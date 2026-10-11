@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
+import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo, setDatabaseProjectFeature } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -9,7 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { dismissOnboarding, featureFlagRow, selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 
@@ -30,10 +30,13 @@ interface AccountSummary {
 
 interface AppResponse {
   app_id: string;
+  project_id: string;
   name: string;
   slug: string;
   url: string;
   desired_state: string;
+  kind: string;
+  capabilities: string[];
 }
 
 test.describe('18 — Kortix Apps UI', () => {
@@ -140,35 +143,20 @@ test.describe('18 — Kortix Apps UI', () => {
       expect(disabledAppRequests).toEqual([]);
       page.off('request', recordDisabledRequest);
 
-      // Enable through the flag list — the only activation path. The gate
-      // screen's "Feature flags" row is a real link
-      // (`feature-gate-screen.tsx`) to `/projects/[id]/settings/feature-flags`,
-      // the Settings overlay's deep-link route for its Feature flags tab.
-      await page.getByRole('link', { name: 'Feature flags' }).click();
-      const panel = page.locator('body');
-      await expect(
-        page.getByRole('heading', { name: 'Feature flags', exact: true }),
-      ).toBeVisible({ timeout: 30_000 });
-      const enabledRequest = page.waitForRequest(
-        (request) =>
-          request.method() === 'PATCH' &&
-          request.url().endsWith(`/v1/projects/${project.id}/features`),
+      // Apps is internal-only (catalogHidden): the gate names no toggle and
+      // links nowhere, because Settings → Feature flags does not list it.
+      await expect(page.getByText('Contact Kortix to enable it.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Feature flags' })).toHaveCount(0);
+      // A project owner cannot enable it: only a Kortix operator writes it.
+      await api(
+        session.access_token,
+        'PATCH',
+        `/projects/${project.id}/features`,
+        { feature: 'apps', enabled: true },
+        403,
       );
-      const enabledResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PATCH' &&
-          response.url().endsWith(`/v1/projects/${project.id}/features`),
-      );
-      // `Apps` is the registry's display name for the flag
-      // (apps/api/src/feature-flags/registry.ts:212).
-      await featureFlagRow(panel, page, 'Apps').getByRole('switch').click();
-      expect((await enabledRequest).postDataJSON()).toEqual({
-        feature: 'apps',
-        enabled: true,
-      });
-      expect((await enabledResponse).status()).toBe(200);
-      // No overlay to dismiss any more — Feature flags is a plain page now,
-      // so navigating straight to Apps is the whole "leave" step.
+      // The operator writes the same override (PUT /v1/admin/api/projects/:id/features).
+      await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
@@ -183,7 +171,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await emptyListResponse).status()).toBe(200);
       await dismissOnboarding(page);
-      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('Apps you publish will show up here', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
@@ -287,9 +275,8 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      await expect(
-        appModal.getByRole('button', { name: 'Put this App to sleep' }),
-      ).toBeDisabled();
+      // Not deployed yet: there is no runtime to put to sleep, so no control.
+      await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);
       // …and this is where the URL went: the control that opens the App names
       // the host it will open, so the tile can stay a picture of the App.
       const openInNewTab = appModal.getByRole('link', { name: 'Open in a new tab' });
@@ -426,7 +413,14 @@ test.describe('18 — Kortix Apps UI', () => {
       // `/v1/` keeps the glob on the API: `**/projects/<id>/apps` also matches
       // the Apps PAGE URL, so the reload below got the fixture JSON as its document.
       const appApi = `**/v1/projects/${project.id}/apps`;
-      const liveApp = { ...seeded, active_deployment_id: 'deployment-current', desired_state: 'running' };
+      // A deployed server App: the API lists `sleep` once its active deployment runs in a sandbox.
+      const liveApp = {
+        ...seeded,
+        active_deployment_id: 'deployment-current',
+        desired_state: 'running',
+        hosting_type: 'sandbox',
+        capabilities: [...seeded.capabilities, 'sleep'],
+      };
       let activeDeployment = 'deployment-current';
       await page.route(appApi, (route) => route.request().method() === 'GET'
         ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment }] } }) : route.continue());
@@ -490,6 +484,80 @@ test.describe('18 — Kortix Apps UI', () => {
         }
       }
       await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+
+      // An App of kind convex on the same page: a kind badge, a machine tile
+      // instead of a screenshot, the framed dashboard instead of a preview,
+      // capability items in the menu, and a delete that needs the slug typed.
+      expect(seeded.kind).toBe('web');
+      const convexApp = {
+        ...liveApp,
+        app_id: '00000000-0000-4000-8000-00000000c0c0',
+        slug: `db-${runId}`,
+        name: 'Seed DB',
+        kind: 'convex',
+        capabilities: ['deployments', 'snapshots', 'restore', 'admin_credentials', 'dashboard', 'logs', 'member_tokens'],
+        hosting_type: 'convex',
+        active_deployment_id: null,
+        url: 'https://synthetic-db.example.test',
+        used_by: [seeded.slug],
+        instance: {
+          status: 'running', url: 'https://synthetic-db.example.test', site_url: 'https://synthetic-site.example.test',
+          dashboard_url: new URL('/synthetic-app-dashboard', page.url()).href, error: null, operation: null,
+          last_operation_error: null, health: null, auth_env: null, client_version: '1.0.0', budget_alert: null, purge_after: null,
+        },
+      };
+      const convexApi = `${appApi}/${convexApp.app_id}`;
+      const accessSessions: string[] = [];
+      page.on('request', (request) => {
+        if (request.url().includes(`${convexApp.app_id}/access-session`)) accessSessions.push(request.url());
+      });
+      await page.unroute(appApi);
+      await page.route(appApi, (route) => route.request().method() === 'GET'
+        ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment, uses: [convexApp.slug] }, convexApp] } }) : route.continue());
+      await page.route(`${convexApi}/deployments`, (route) => route.fulfill({ json: { deployments: [] } }));
+      await page.route(convexApp.instance.dashboard_url, (route) => route.fulfill({ contentType: 'text/html', body: '<p>dashboard</p>' }));
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const convexCard = page.getByRole('button', { name: 'Open Seed DB' });
+      await expect(convexCard.getByTestId('app-kind')).toHaveText('Backend');
+      await expect(convexCard.getByTestId('app-instance-tile')).toContainText('Running');
+      await expect(convexCard.getByTestId('app-instance-tile')).toContainText('No deploy yet');
+      await expect(convexCard.getByTestId('app-live-preview')).toHaveCount(0);
+      await convexCard.click();
+      const convexModal = page.getByRole('dialog', { name: 'Seed DB App' });
+      await expect(convexModal.getByTestId('app-dashboard')).toBeVisible();
+      await expect(convexModal.getByTestId('app-live-preview')).toHaveCount(0);
+      await expect(convexModal.getByRole('link', { name: 'Open in a new tab' })).toHaveCount(0);
+      await expect(convexModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);
+      // Used by: the slug opens the App that uses it.
+      await expect(convexModal.getByRole('button', { name: seeded.slug, exact: true })).toBeVisible();
+      await convexModal.getByRole('button', { name: 'More actions' }).click();
+      for (const item of ['Connect…', 'Backups…', 'Rotate admin key', 'Resize…']) {
+        await expect(page.getByRole('menuitem', { name: new RegExp(`^${escapeRe(item)}`) })).toBeVisible();
+      }
+      await expect(page.getByRole('menuitemcheckbox', { name: /Always on/ })).toHaveCount(0);
+      await page.getByRole('menuitem', { name: 'Delete App', exact: true }).click();
+      const confirmDelete = deleteModal.getByRole('button', { name: 'Delete', exact: true });
+      await expect(confirmDelete).toBeDisabled();
+      await deleteModal.getByRole('textbox', { name: 'Slug' }).fill(convexApp.slug);
+      await expect(confirmDelete).toBeEnabled();
+      let deleteUrl = '';
+      const convexDelete = (url: URL) => url.pathname.endsWith(`/apps/${convexApp.app_id}`);
+      await page.route(convexDelete, (route) => {
+        if (route.request().method() !== 'DELETE') return route.continue();
+        deleteUrl = route.request().url();
+        return route.fulfill({ json: { ok: true, images: { released: 0, pending: 0 }, retained_until: '2099-01-01T00:00:00Z', final_snapshot_id: 'final-1' } });
+      });
+      await confirmDelete.click();
+      await expect(page.getByText('Seed DB deleted', { exact: true })).toBeVisible();
+      expect(new URL(deleteUrl).searchParams.get('confirm')).toBe(convexApp.slug);
+      expect(accessSessions).toEqual([]);
+      await page.unroute(convexDelete);
+      await page.unroute(`${convexApi}/deployments`);
+      await page.unroute(convexApp.instance.dashboard_url);
+      await page.unroute(appApi);
+      await page.route(appApi, (route) => route.request().method() === 'GET'
+        ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment }] } }) : route.continue());
+
       // Deny only Apps write/deploy probes, leaving project navigation intact.
       await page.route('**/effective?*', async (route) => {
         if (route.request().method() === 'OPTIONS') return route.fallback();

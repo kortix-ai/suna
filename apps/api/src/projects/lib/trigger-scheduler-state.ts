@@ -206,10 +206,3 @@ export function triggerExecutionConcurrency(): number {
 export function triggersPausedForProject(metadata: unknown): boolean {
   return isPlainObject(metadata) && (metadata as Record<string, unknown>).triggers_paused === true;
 }
-
-export function withTriggersPaused(metadata: unknown, paused: boolean): Record<string, unknown> {
-  const base = isPlainObject(metadata) ? { ...(metadata as Record<string, unknown>) } : {};
-  if (paused) base.triggers_paused = true;
-  else delete base.triggers_paused;
-  return base;
-}

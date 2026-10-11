@@ -30,6 +30,7 @@ import {
   platinumWarmReadinessTimeoutMs,
   stat as statPlatinum,
   waitForWarmSandbox,
+  platinumSandboxListPath,
 } from './platinum-ci';
 import {
   PREVIEW_SUITE_PID_PATH,
@@ -170,7 +171,7 @@ async function allPlatinumPreviewSandboxes(api: PlatinumApi): Promise<ListedPlat
   const limit = 100;
   for (let offset = 0; ; offset += limit) {
     const page = await api.json<PlatinumSandboxPage>(
-      `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
+      platinumSandboxListPath(limit, offset),
     );
     sandboxes.push(...(page.rows ?? []));
     if (!page.has_more || (page.rows ?? []).length === 0) return sandboxes;

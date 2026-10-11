@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
-import type { GrantInput } from '../../billing/wallet';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,

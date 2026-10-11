@@ -1,0 +1,1793 @@
+{
+  "schema": "kortix.session/2",
+  "v": 1,
+  "session_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+  "title": "New session - 2026-10-09T16:36:01.850Z",
+  "created_at": "2026-10-09T16:36:01.850Z",
+  "harness": {
+    "current": "opencode-v2",
+    "history": [
+      {
+        "harness": "opencode-v2",
+        "version": "1.18.23",
+        "from_seq": 1,
+        "at": "2026-10-09T16:36:01.850Z"
+      }
+    ]
+  },
+  "selection": {
+    "agent": "build",
+    "model": {
+      "provider": "mock",
+      "model": "mock-model-2",
+      "api": "openai-chat"
+    }
+  },
+  "todos": [
+    {
+      "content": "Create hello.txt",
+      "status": "completed",
+      "priority": "high"
+    },
+    {
+      "content": "List files",
+      "status": "in_progress",
+      "priority": "medium"
+    }
+  ],
+  "pending": {
+    "questions": [],
+    "permissions": []
+  },
+  "threads": [
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+      "parent_thread_id": null,
+      "spawned_by": null,
+      "agent": "build",
+      "title": "New session - 2026-10-09T16:36:01.850Z",
+      "created_at": "2026-10-09T16:36:01.850Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_1218588c1001bbi4p0GFDL4cYG",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 1,
+          "created_at": "2026-10-09T16:36:01.857Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:01.857Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Create hello.txt containing hi"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_1218588c1001bbi4p0GFDL4cYG"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_1218588da001ywM655xZ6ZHVqR",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 2,
+          "created_at": "2026-10-09T16:36:01.882Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:01.900Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "I'll create the file.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t1w72i",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "echo hi > hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Command exited with code 0."
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0,
+                "details": {
+                  "exit": 0,
+                  "truncated": false
+                }
+              },
+              "started_at": "2026-10-09T16:36:01.885Z",
+              "ended_at": "2026-10-09T16:36:01.899Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563761885,
+                      "ran": 1791563761887,
+                      "completed": 1791563761899
+                    },
+                    "state": "completed",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {
+                      "exit": 0,
+                      "truncated": false
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_1218588da001ywM655xZ6ZHVqR"
+            }
+          },
+          "reply_to": "msg_1218588c1001bbi4p0GFDL4cYG"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_1218588f2001k10ubpFO2fksQu",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 3,
+          "created_at": "2026-10-09T16:36:01.906Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:01.910Z",
+          "blocks": [
+            {
+              "type": "reasoning",
+              "text": "The file exists now.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "reasoning-0",
+                    "time": {
+                      "created": 1791563761907,
+                      "completed": 1791563761908
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "Done.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_1218588f2001k10ubpFO2fksQu"
+            }
+          },
+          "reply_to": "msg_1218588c1001bbi4p0GFDL4cYG"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_1218589f9001YhRNH9bJdF2W8S",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 4,
+          "created_at": "2026-10-09T16:36:02.169Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.169Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Read hello.txt and look at this image"
+            },
+            {
+              "type": "attachment",
+              "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "mime": "image/png",
+              "name": "dot.png",
+              "bytes": 70,
+              "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_1218589f9001YhRNH9bJdF2W8S"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858a04001n1tET9OHjMHQnV",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 5,
+          "created_at": "2026-10-09T16:36:02.180Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.186Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t24k2l",
+              "name": "read",
+              "kind": "read",
+              "input": {
+                "path": "hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"uri\":\"file:///work/proto/harness/opencode-v2/live/ws/hello.txt\",\"name\":\"hello.txt\",\"content\":\"hi\\n\",\"encoding\":\"utf8\",\"mime\":\"text/plain\"}"
+                  }
+                ],
+                "is_error": false,
+                "details": {
+                  "uri": "file:///work/proto/harness/opencode-v2/live/ws/hello.txt",
+                  "name": "hello.txt",
+                  "content": "hi\n",
+                  "encoding": "utf8",
+                  "mime": "text/plain"
+                }
+              },
+              "started_at": "2026-10-09T16:36:02.181Z",
+              "ended_at": "2026-10-09T16:36:02.185Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563762181,
+                      "ran": 1791563762182,
+                      "completed": 1791563762185
+                    },
+                    "state": "completed",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {
+                      "uri": "file:///work/proto/harness/opencode-v2/live/ws/hello.txt",
+                      "name": "hello.txt",
+                      "content": "hi\n",
+                      "encoding": "utf8",
+                      "mime": "text/plain"
+                    },
+                    "content": []
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858a04001n1tET9OHjMHQnV"
+            }
+          },
+          "reply_to": "msg_1218589f9001YhRNH9bJdF2W8S"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858a0f001UcrqDLhWaancgg",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 6,
+          "created_at": "2026-10-09T16:36:02.191Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.192Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "It says hi. The image is a single pixel.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858a0f001UcrqDLhWaancgg"
+            }
+          },
+          "reply_to": "msg_1218589f9001YhRNH9bJdF2W8S"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858b300011ENQ9tjwCgFVu0",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 7,
+          "created_at": "2026-10-09T16:36:02.480Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.480Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Run the command `false` and report the result."
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858b300011ENQ9tjwCgFVu0"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858b37001QqrZGoJcx025Kd",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 8,
+          "created_at": "2026-10-09T16:36:02.487Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.496Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t2d32o",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "false"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Command exited with code 1."
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 1,
+                "details": {
+                  "exit": 1,
+                  "truncated": false
+                }
+              },
+              "started_at": "2026-10-09T16:36:02.488Z",
+              "ended_at": "2026-10-09T16:36:02.495Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563762488,
+                      "ran": 1791563762489,
+                      "completed": 1791563762495
+                    },
+                    "state": "completed",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {
+                      "exit": 1,
+                      "truncated": false
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858b37001QqrZGoJcx025Kd"
+            }
+          },
+          "reply_to": "msg_121858b300011ENQ9tjwCgFVu0"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858b4a001Kx4Sx2Vs2vDj2l",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 9,
+          "created_at": "2026-10-09T16:36:02.506Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.508Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The command failed with exit code 1.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858b4a001Kx4Sx2Vs2vDj2l"
+            }
+          },
+          "reply_to": "msg_121858b300011ENQ9tjwCgFVu0"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858c67001fhFhoxXQ60wNpB",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 10,
+          "created_at": "2026-10-09T16:36:02.791Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.791Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Read missing.txt"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858c67001fhFhoxXQ60wNpB"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858c6e001pHVZ1jacwAperx",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 11,
+          "created_at": "2026-10-09T16:36:02.798Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.802Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t2lq2r",
+              "name": "read",
+              "kind": "read",
+              "input": {
+                "path": "missing.txt"
+              },
+              "status": "error",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Unable to read missing.txt"
+                  }
+                ],
+                "model_content": [
+                  {
+                    "type": "text",
+                    "text": "{\"error\":{\"type\":\"unknown\",\"message\":\"Unable to read missing.txt\"},\"content\":[],\"structured\":{}}"
+                  }
+                ],
+                "is_error": true,
+                "error": {
+                  "code": "unknown",
+                  "message": "Unable to read missing.txt"
+                }
+              },
+              "started_at": "2026-10-09T16:36:02.799Z",
+              "ended_at": "2026-10-09T16:36:02.801Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563762799,
+                      "ran": 1791563762800,
+                      "completed": 1791563762801
+                    },
+                    "state": "error",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {},
+                    "error": {
+                      "type": "unknown",
+                      "message": "Unable to read missing.txt"
+                    },
+                    "content": [],
+                    "result": {
+                      "type": "error",
+                      "value": "Unable to read missing.txt"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858c6e001pHVZ1jacwAperx"
+            }
+          },
+          "reply_to": "msg_121858c67001fhFhoxXQ60wNpB"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858c7600139p7H4BKvehfqW",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 12,
+          "created_at": "2026-10-09T16:36:02.806Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:02.809Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "missing.txt does not exist.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858c7600139p7H4BKvehfqW"
+            }
+          },
+          "reply_to": "msg_121858c67001fhFhoxXQ60wNpB"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858d9e0010YlOSA8VXaDcmr",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 13,
+          "created_at": "2026-10-09T16:36:03.102Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.102Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Track the work as todos"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858d9e0010YlOSA8VXaDcmr"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858da50018T1oOgnrD4vxIg",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 14,
+          "created_at": "2026-10-09T16:36:03.109Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.114Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t2ud2u",
+              "name": "todowrite",
+              "kind": "todo",
+              "input": {
+                "todos": [
+                  {
+                    "content": "Create hello.txt",
+                    "status": "completed",
+                    "priority": "high"
+                  },
+                  {
+                    "content": "List files",
+                    "status": "in_progress",
+                    "priority": "medium"
+                  }
+                ]
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[\n  {\n    \"content\": \"Create hello.txt\",\n    \"status\": \"completed\",\n    \"priority\": \"high\"\n  },\n  {\n    \"content\": \"List files\",\n    \"status\": \"in_progress\",\n    \"priority\": \"medium\"\n  }\n]"
+                  }
+                ],
+                "is_error": false,
+                "details": {
+                  "todos": [
+                    {
+                      "content": "Create hello.txt",
+                      "status": "completed",
+                      "priority": "high"
+                    },
+                    {
+                      "content": "List files",
+                      "status": "in_progress",
+                      "priority": "medium"
+                    }
+                  ]
+                }
+              },
+              "started_at": "2026-10-09T16:36:03.110Z",
+              "ended_at": "2026-10-09T16:36:03.113Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563763110,
+                      "ran": 1791563763111,
+                      "completed": 1791563763113
+                    },
+                    "state": "completed",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {
+                      "todos": [
+                        {
+                          "content": "Create hello.txt",
+                          "status": "completed",
+                          "priority": "high"
+                        },
+                        {
+                          "content": "List files",
+                          "status": "in_progress",
+                          "priority": "medium"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858da50018T1oOgnrD4vxIg"
+            }
+          },
+          "reply_to": "msg_121858d9e0010YlOSA8VXaDcmr"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858db3001pVtalQNO69siSz",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 15,
+          "created_at": "2026-10-09T16:36:03.123Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.125Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Todos recorded.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858db3001pVtalQNO69siSz"
+            }
+          },
+          "reply_to": "msg_121858d9e0010YlOSA8VXaDcmr"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858ed5001W97Bvs0Dp8fEYV",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 16,
+          "created_at": "2026-10-09T16:36:03.413Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.413Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Show big.txt"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858ed5001W97Bvs0Dp8fEYV"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858edc001jX6Qy9fR2c6G39",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 17,
+          "created_at": "2026-10-09T16:36:03.420Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.430Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t3302x",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "cat big.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "line 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0002 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0003 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0004 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0005 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0006 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0007 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0008 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0009 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0010 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0011 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0012 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0013 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0014 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0015 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0016 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0017 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0018 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0019 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0020 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0021 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0022 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0023 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0024 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0025 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0026 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0027 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0028 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0029 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0030 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0031 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0032 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0033 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0034 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0035 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0036 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0037 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0038 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0039 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0040 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0041 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0042 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0043 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0044 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0045 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0046 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0047 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0048 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0049 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0050 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0051 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0052 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0053 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0054 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0055 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0056 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0057 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0058 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0059 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0060 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0061 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0062 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0063 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0064 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0065 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0066 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0067 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0068 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0069 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0070 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0071 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0072 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0073 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0074 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0075 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0076 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0077 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0078 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0080 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0081 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0082 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0083 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0084 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0085 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0086 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0087 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0088 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0089 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0090 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0091 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0092 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0093 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0094 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0095 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0096 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0097 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0098 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0099 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0100 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0101 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0102 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0103 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0104 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0105 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0106 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0107 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0108 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0109 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0110 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0111 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0112 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0113 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0114 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0115 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0117 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0118 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0119 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0120 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0121 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0122 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0123 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0124 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0125 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0126 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0127 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0128 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0129 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0130 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0131 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0132 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0133 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0134 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0135 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0136 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0137 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0138 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0139 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0140 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0141 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0142 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0143 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0144 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0145 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0146 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0147 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0148 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0149 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0150 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0151 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0152 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0153 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0154 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0155 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0156 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0157 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0158 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0159 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0160 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0161 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0162 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0163 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0164 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0165 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0166 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0167 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0168 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0169 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0170 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0171 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0172 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0173 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0174 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0175 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0176 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0177 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0178 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0179 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0180 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0181 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0182 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0183 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0184 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0185 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0186 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0187 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0188 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0189 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0190 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0191 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0192 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0193 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0194 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0195 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0196 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0197 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0198 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0199 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0200 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0201 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0202 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0203 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0204 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0205 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0206 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0207 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0208 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0209 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0210 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0211 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0212 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0213 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0214 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0215 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0216 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0217 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0218 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0219 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0220 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0221 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0222 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0223 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0224 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0225 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0226 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0227 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0228 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0229 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0230 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0231 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0232 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0233 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0234 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0235 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0236 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0237 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0238 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0239 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0240 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0241 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0242 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0243 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0244 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0245 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0246 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0247 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0248 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0249 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0250 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0251 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0252 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0253 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0254 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0255 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0256 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0257 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0258 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0259 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0260 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0261 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0262 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0263 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0264 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0265 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0266 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0267 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0268 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0269 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0270 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0271 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0272 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0273 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0274 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0275 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0276 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0277 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0278 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0279 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0280 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0281 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0282 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0283 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0284 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0285 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0286 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0287 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0288 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0289 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0290 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0291 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0292 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0293 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0294 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0295 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0296 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0297 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0298 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0299 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Command exited with code 0."
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0,
+                "details": {
+                  "exit": 0,
+                  "truncated": false
+                }
+              },
+              "started_at": "2026-10-09T16:36:03.421Z",
+              "ended_at": "2026-10-09T16:36:03.429Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563763421,
+                      "ran": 1791563763422,
+                      "completed": 1791563763429
+                    },
+                    "state": "completed",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {
+                      "exit": 0,
+                      "truncated": false
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858edc001jX6Qy9fR2c6G39"
+            }
+          },
+          "reply_to": "msg_121858ed5001W97Bvs0Dp8fEYV"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858eea001i0laAr9txIATtZ",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 18,
+          "created_at": "2026-10-09T16:36:03.439Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "compaction",
+          "status": "complete",
+          "in_context": true,
+          "origin": "automation",
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.439Z",
+          "blocks": [
+            {
+              "type": "compaction",
+              "summary": "SUMMARY-L: created hello.txt (hi); read it with an image; `false` exited 1; missing.txt is absent; todos recorded; big.txt printed.",
+              "first_kept_message_id": null,
+              "layout": [
+                {
+                  "summary": true
+                },
+                {
+                  "text": "[Assistant]: Todos recorded.\n\n[User]: Show big.txt\n\n[Assistant tool call]: bash({\"command\":\"cat big.txt\"})\n[Tool result]: line 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0002 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0003 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0004 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0005 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0006 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0007 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0008 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0009 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0010 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0011 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0012 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0013 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0014 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0015 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0016 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0017 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0018 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0019 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[truncated]"
+                }
+              ],
+              "trigger": "auto",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "recent": "[Assistant]: Todos recorded.\n\n[User]: Show big.txt\n\n[Assistant tool call]: bash({\"command\":\"cat big.txt\"})\n[Tool result]: line 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0002 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0003 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0004 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0005 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0006 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0007 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0008 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0009 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0010 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0011 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0012 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0013 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0014 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0015 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0016 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0017 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0018 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0019 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[truncated]"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858eea001i0laAr9txIATtZ"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121858ef3001LQeEa2lc52Lc8z",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 19,
+          "created_at": "2026-10-09T16:36:03.443Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.446Z",
+          "blocks": [
+            {
+              "type": "reasoning",
+              "text": "Big file seen.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "reasoning-0",
+                    "time": {
+                      "created": 1791563763444,
+                      "completed": 1791563763444
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "big.txt is large.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121858ef3001LQeEa2lc52Lc8z"
+            }
+          },
+          "reply_to": "msg_121858ed5001W97Bvs0Dp8fEYV"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_12185900d001DLVFXEx1EF1HWZ",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 20,
+          "created_at": "2026-10-09T16:36:03.725Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.725Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "List the files"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_12185900d001DLVFXEx1EF1HWZ"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121859013001k6ysgokZI4WKds",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 21,
+          "created_at": "2026-10-09T16:36:03.731Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.740Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t3bm31",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "ls"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "big.txt\nhello.txt\n"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Command exited with code 0."
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0,
+                "details": {
+                  "exit": 0,
+                  "truncated": false
+                }
+              },
+              "started_at": "2026-10-09T16:36:03.731Z",
+              "ended_at": "2026-10-09T16:36:03.739Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563763731,
+                      "ran": 1791563763732,
+                      "completed": 1791563763739
+                    },
+                    "state": "completed",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {
+                      "exit": 0,
+                      "truncated": false
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121859013001k6ysgokZI4WKds"
+            }
+          },
+          "reply_to": "msg_12185900d001DLVFXEx1EF1HWZ"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121859020001m5eU2gT1H9Mwcx",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 22,
+          "created_at": "2026-10-09T16:36:03.744Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:03.745Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Found big.txt and hello.txt.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121859020001m5eU2gT1H9Mwcx"
+            }
+          },
+          "reply_to": "msg_12185900d001DLVFXEx1EF1HWZ"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121859143001Iqym2YXstpiCAS",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 23,
+          "created_at": "2026-10-09T16:36:04.035Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:04.035Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Spawn a helper to list the files"
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_121859143001Iqym2YXstpiCAS"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_12185914e00108mG2EgOTqBBnf",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 24,
+          "created_at": "2026-10-09T16:36:04.046Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:04.050Z",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv16t3kd34",
+              "name": "task",
+              "kind": "task",
+              "input": {
+                "description": "list files",
+                "prompt": "List the files in the workspace",
+                "subagent_type": "general"
+              },
+              "status": "error",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Unknown tool: task"
+                  }
+                ],
+                "model_content": [
+                  {
+                    "type": "text",
+                    "text": "{\"error\":{\"type\":\"unknown\",\"message\":\"Unknown tool: task\"},\"content\":[],\"structured\":{}}"
+                  }
+                ],
+                "is_error": true,
+                "error": {
+                  "code": "unknown",
+                  "message": "Unknown tool: task"
+                }
+              },
+              "started_at": "2026-10-09T16:36:04.047Z",
+              "ended_at": "2026-10-09T16:36:04.049Z",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "time": {
+                      "created": 1791563764047,
+                      "ran": 1791563764049,
+                      "completed": 1791563764049
+                    },
+                    "state": "error",
+                    "provider": {
+                      "executed": false
+                    },
+                    "structured": {},
+                    "error": {
+                      "type": "unknown",
+                      "message": "Unknown tool: task"
+                    },
+                    "content": [],
+                    "result": {
+                      "type": "error",
+                      "value": "Unknown tool: task"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_12185914e00108mG2EgOTqBBnf"
+            }
+          },
+          "reply_to": "msg_121859143001Iqym2YXstpiCAS"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_1218591560015ZWAo6D2iUm6xd",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 25,
+          "created_at": "2026-10-09T16:36:04.054Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:04.056Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The task tool is not available here.",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_1218591560015ZWAo6D2iUm6xd"
+            }
+          },
+          "reply_to": "msg_121859143001Iqym2YXstpiCAS"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_12185927e001Ed0Wn9U1YLCnBL",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 26,
+          "created_at": "2026-10-09T16:36:04.350Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "prompt",
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "completed_at": "2026-10-09T16:36:04.350Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "What is in hello.txt? Answer in one word."
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_12185927e001Ed0Wn9U1YLCnBL"
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_1218592850011JTnObrHL5WgpZ",
+          "thread_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
+          "seq": 27,
+          "created_at": "2026-10-09T16:36:04.357Z",
+          "producer": {
+            "harness": "opencode-v2",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.1.0"
+          },
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "completed_at": "2026-10-09T16:36:04.359Z",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "hi",
+              "ext": {
+                "opencode-v2": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "text-0"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode-v2": {
+              "version": "1.18.23",
+              "native_id": "msg_1218592850011JTnObrHL5WgpZ"
+            }
+          },
+          "reply_to": "msg_12185927e001Ed0Wn9U1YLCnBL"
+        }
+      ],
+      "ext": {
+        "opencode-v2": {
+          "version": "1.18.23",
+          "native_id": "ses_ede7a7748ffeXTyzbpKmHVNslA"
+        }
+      }
+    }
+  ]
+}

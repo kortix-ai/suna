@@ -30,7 +30,6 @@ const catalog = code(readFileSync(join(here, 'use-catalog.ts'), 'utf8'));
 const browseSectionsSource = code(readFileSync(join(here, 'browse-sections.ts'), 'utf8'));
 const autoload = code(readFileSync(join(here, 'use-catalog-autoload.ts'), 'utf8'));
 const paging = code(readFileSync(join(here, 'catalog-paging.ts'), 'utf8'));
-const icons = readFileSync(join(here, 'category-icon.tsx'), 'utf8');
 const shell = code(readFileSync(join(capabilities, 'shared', 'capability-page-shell.tsx'), 'utf8'));
 
 /**
@@ -103,20 +102,13 @@ describe('the catalogue reaches the whole catalogue', () => {
     //
     // Now: `hasMore` is the query's, and `loadMore` is the query's. Nothing
     // else grows the grid.
-    expect(browse).toContain('const hasMore = !showSections && state.hasMore;');
+    expect(browse).toContain('const hasMore = state.hasMore;');
     expect(browse).toContain('const loadMore = state.loadMore;');
 
     // The reveal window is gone, not merely unused.
     expect(browse).not.toContain('canRevealMore');
     expect(browse).not.toContain('nextRevealCount');
     expect(browse).not.toContain('revealed');
-  });
-
-  test('the browse page never paginates — sections are fixed', () => {
-    // A section is a fixed top slice of a complete category, chosen by the
-    // server. It must not grow while the user reads it, which is what made the
-    // page reflow under them. `!showSections` is what enforces that.
-    expect(browse).toContain('const hasMore = !showSections && state.hasMore;');
   });
 
   test('there is a control as well as a gesture', () => {
@@ -163,7 +155,6 @@ describe('the catalogue reaches the whole catalogue', () => {
     // a category parameter and ignores it, so a client-side slice was the only
     // option and every category was a sample of the first few pages. The API
     // filters against its own snapshot of the whole catalogue now.
-    expect(page).toContain('focusCategory');
     expect(catalog).toContain('...(category ? { category } : {})');
 
     // The category is part of the query KEY. Without it, changing category
@@ -180,8 +171,6 @@ describe('the catalogue reaches the whole catalogue', () => {
     // "Marketing · 207" over six cards; deriving it from `items.length` would
     // put the loaded count back on the heading.
     expect(catalog).toContain('listPipedreamSections');
-    expect(browse).toContain('section.total');
-    expect(browse).toContain('section.total > section.items.length');
   });
 
   test('useInfiniteQuery survives, and not by accident', () => {
@@ -204,56 +193,6 @@ describe('the catalogue browses in place', () => {
     expect(browse).toContain('GRID_CLASSNAME');
   });
 
-  test('the button says "View all", and opens the category', () => {
-    // The label is the old one and the behaviour behind it is not: expansion
-    // could never keep the promise it made, because a section only ever held
-    // what the loaded pages happened to contain — "View all" on Finance opened
-    // 8 cards out of ~2,700. Opening the category puts it in front of both
-    // fetchers, so the label is now true.
-    expect(browse).toContain('View all');
-    expect(browse).toContain('onViewAll');
-    // The slice is the server's, and the button appears only when the category
-    // genuinely holds more than the section shows.
-    expect(browse).toContain('section.total > section.items.length');
-    expect(browse).not.toContain('setExpanded');
-    expect(browse).not.toContain("expanded ? 'Show less' : 'View all'");
-    expect(browse).not.toContain('See all');
-  });
-
-  test('an open category can be left, and says which one it is', () => {
-    // The only thing in-place expansion was protecting against: a page that
-    // swaps every section for one grid and gives no account of itself. One
-    // heading row with a Back control is that account.
-    expect(browse).toContain('function CategoryViewHeader');
-    expect(browse).toContain("raw('text74fc2cf3bb54')");
-    expect(browse).toContain('onBack={() => openCategory(ALL_CATEGORIES)}');
-  });
-
-  test('opening or leaving a category returns the user to the top', () => {
-    // The gesture replaces a page of sections with one grid, and Back replaces
-    // it again. Keeping the scroll offset lands the user mid-grid on a view
-    // they just arrived at the top of.
-    expect(browse).toContain('scrollRootRef.current?.scrollTo');
-    expect(browse).toContain('prefers-reduced-motion: reduce');
-  });
-
-  test('there is NO persistent category strip above the catalogue', () => {
-    // Rejected on sight, and this is the pin. A row of every category standing
-    // above the grid at all times is a second navigation layer on a page that
-    // already has tabs, and it turns a category from a place you go into a
-    // switch you have to notice is flipped. The catalogue is the page; a
-    // category is reached through "View all" and left through Back.
-    expect(browse).not.toContain('CategoryRail');
-    expect(browse).not.toContain('CategorySelect');
-    expect(page).not.toContain('CategoryRail');
-    expect(page).not.toContain('CategorySelect');
-    expect(existsSync(join(here, 'category-rail.tsx'))).toBe(false);
-
-    // The heading that DOES exist is scoped to an open category. If it ever
-    // renders while browsing everything, it has become the strip this forbids.
-    expect(browse).toContain('activeCategory !== ALL_CATEGORIES ? (\n        <CategoryViewHeader');
-  });
-
   test('the page still says how much of the catalogue is on screen', () => {
     // The grid stops somewhere. A page that ends at 192 of 2,713 with no
     // remark reads as a catalogue of 192.
@@ -261,36 +200,6 @@ describe('the catalogue browses in place', () => {
     expect(browse).toContain('tabular-nums');
   });
 
-  test('a section heading states the category label the source published', () => {
-    // The grid renders `section.label` verbatim. Every catalogue normalises to
-    // `CatalogSection` through `browseSections` — Composio and Discover titled
-    // by key, Pipedream by its own label, all through `localizedSectionTitle` —
-    // so the grid has exactly one label to draw and cannot pick a second
-    // vocabulary.
-    expect(browse).toContain('{section.label}');
-    expect(catalog).toContain('title: (label) => localizedSectionTitle(label, tI18nComplete)');
-    expect(browseSectionsSource).toContain('label: opts.title(section.label)');
-    // Bucketing does not happen in the grid any more.
-    expect(browse).not.toContain('groupIntoSections');
-    expect(browse).not.toContain('groupByCategory');
-  });
-
-  test('every curated section has its own glyph', () => {
-    // `CATEGORY_ICON` is keyed by FOLDED section key, so a curated key that is
-    // absent silently renders as the generic `FolderIcon` — a visual
-    // regression nothing else in this suite can see, and one that has already
-    // happened once on this branch when an edit to this map was reverted.
-    for (const section of CURATED_SECTIONS) {
-      expect(icons).toContain(`  ${section.key.replace(/-/g, '')}:`);
-    }
-  });
-
-  test('the glyph map has exactly one home', () => {
-    // The rail and the section headings both draw these. A second copy lets
-    // one surface fall back to `FolderIcon` for a category the other draws.
-    expect(browse).toContain("from './category-icon'");
-    expect(browse).not.toContain('const CATEGORY_ICON');
-  });
 });
 
 /**
@@ -340,12 +249,15 @@ describe('appended cards do not stagger', () => {
   });
 });
 
-describe('the connectors page has four tabs', () => {
-  test('Discovery, All, Connected, Channels — and no Available', () => {
+describe('the connectors page has three tabs', () => {
+  test('All, Connected, Channels — and no Discovery or Available', () => {
     expect(page).toContain(
-      "const SCOPES: readonly ConnectorScope[] = ['discover', 'all', 'connected', 'channels'];",
+      "const SCOPES: readonly ConnectorScope[] = ['all', 'connected', 'channels'];",
     );
-    expect(page).toContain("discover: 'Discovery'");
+    // `'discover'` is still a catalogue SOURCE (`catalogSource`), never a tab.
+    expect(page).not.toContain("scope === 'discover'");
+    expect(page).not.toContain("s !== 'discover'");
+    expect(browse).not.toContain('sectioned');
     expect(page).toContain("channels: 'Channels'");
     expect(page).not.toContain("'available'");
   });

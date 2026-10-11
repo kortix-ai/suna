@@ -214,7 +214,7 @@ export async function sendPrompt(
   projectId: string,
   sessionId: string,
   text: string,
-  opts?: { model?: { providerID: string; modelID: string } },
+  opts?: { model?: { providerID: string; modelID: string }; agent?: string },
 ): Promise<string> {
   const r = await ctx.client.as(ctx.P.OWNER).post(
     '/v1/projects/:projectId/sessions/:sessionId/prompts',
@@ -224,7 +224,9 @@ export async function sendPrompt(
       parts: [{ type: 'text', text }],
       client_sent_at_ms: Date.now(),
       remint_on_delivery: true,
-      ...(opts?.model ? { overrides: { model: opts.model } } : {}),
+      ...(opts?.model || opts?.agent
+        ? { overrides: { ...(opts.model ? { model: opts.model } : {}), ...(opts.agent ? { agent: opts.agent } : {}) } }
+        : {}),
     },
     { params: { projectId, sessionId } },
   );

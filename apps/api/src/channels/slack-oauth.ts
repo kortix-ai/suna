@@ -5,7 +5,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
-import { chatUser, linkChatIdentity, lookupChatIdentity } from './core/identity';
+import { chatUser, linkChatIdentity } from './core/identity';
 import {
   frontendBase,
   installHandoffUrl,

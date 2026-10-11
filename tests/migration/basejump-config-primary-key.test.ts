@@ -91,7 +91,7 @@ suite('basejump.config primary key (throwaway Postgres)', () => {
   let colsBefore: string[] = [];
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -117,18 +117,14 @@ suite('basejump.config primary key (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+    // which initdb's temporary socket-only server satisfies while nothing serves
+    // TCP yet — the published port's proxy then accepts and closes the suite's
+    // first `psql` (`server closed the connection unexpectedly`). See
+    // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
     let ready = false;
     for (let i = 0; i < 60; i++) {
-      ready = sh([
-        'docker',
-        'exec',
-        CONTAINER,
-        'pg_isready',
-        '-U',
-        'postgres',
-        '-d',
-        'postgres',
-      ]).ok;
+      ready = sh(['psql', url, '-tAc', 'select 1']).ok;
       if (ready) break;
       await Bun.sleep(1000);
     }
@@ -147,7 +143,7 @@ suite('basejump.config primary key (throwaway Postgres)', () => {
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('the seeded legacy shape reproduces the advisor finding (red before the fix)', () => {

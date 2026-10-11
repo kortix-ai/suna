@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "電子メール内のリンクをクリックしてアカウントを確認し、サインインします。",
     "browseAsGuest": "ゲストとして閲覧",
     "signOutFailed": "サインアウトできませんでした。接続を確認してもう一度お試しください。",
-    "signingOut": "サインアウト中…"
+    "signingOut": "サインアウト中…",
+    "mfa": {
+      "title": "本人確認",
+      "enterCode": "認証アプリの6桁のコードを入力してください。",
+      "codeLabel": "6桁のコード",
+      "verify": "確認",
+      "verifying": "確認中…",
+      "invalidCode": "このコードは使用できませんでした。認証アプリを確認して、もう一度お試しください。",
+      "verifyFailed": "コードを確認できませんでした。接続を確認して、もう一度お試しください。"
+    }
   },
   "onboarding": {
     "welcome": "Kortixができることを見る",

@@ -26,6 +26,7 @@ export function useOpenCodeToolIds() {
   });
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useRuntimeTools(providerID: string, modelID: string) {
   const runtimeReady = useRuntimeReady();
   return useQuery<ToolListItem[]>({

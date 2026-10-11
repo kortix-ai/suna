@@ -7,10 +7,10 @@ import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
-import { SteerNotTaken, postPrompt, removeStrandedOpencodeMessage } from './runtime-client';
+import { SteerNotTaken, postPrompt, readInboxTranscriptState, retractStrandedMessage } from './runtime-client';
 import { awakeDeliveryTarget } from './deliver';
 import { recordSteerFallback } from './command-transitions';
-import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, verifyLivePlacement } from './inbox-placement';
+import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, remintWireMessageId, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
 import type { PromptOverridesWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
@@ -67,7 +67,7 @@ async function repairPlacement(row: SessionLifecycleCommandRow, wireMessageId: s
     });
     return null;
   }
-  const removed = await removeStrandedOpencodeMessage(row, wireMessageId);
+  const removed = await retractStrandedMessage(row, wireMessageId);
   if (!removed) {
     logger.info('[session-lifecycle] stranded prompt detected mid-turn — turn-end reconciliation will re-place it', {
       session_id: row.sessionId, command_id: row.commandId, wire_message_id: wireMessageId, stranded_by: proof.strandedBy,
@@ -137,6 +137,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
+        ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
       payload.clientMessageId ? () => assertInboxDeliveryActive(row) : undefined);
       tl.mark('delivered');
@@ -185,18 +186,27 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
  *   until the next step reads it. That is the strand shape the repair removes.
  * - No turn-identity bind: admission proved the sender is the turn's prompter.
  *
+ * It keeps one step of placement: a row marked `remintOnDelivery` gets a new
+ * id above the live transcript before the POST. That id is either minted
+ * where no transcript was read (a server-minted id is dated 2 min back) or
+ * passed by the turn's own steps while the row waited. Posted as is, the
+ * message sorts above the turn that reads it, and the web groups the rest of
+ * the turn under it (2026-10-10, the connector-connected notice).
+ *
  * `turn_ended` (409 `no_active_turn`) and `unsupported` (501) fall back to
  * `queue` and requeue the row due now, with the claim's attempt given back.
  */
 export async function deliverSteer(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   text: string, steerInto: string, tl: ProvisionTimeline): Promise<Status> {
   const sessionId = row.sessionId!;
-  const wireMessageId = payload.wireMessageId!;
   const attempt = Number(payload.deliveryAttempt ?? 0);
   try {
     if (payload.clientMessageId) await assertInboxDeliveryActive(row);
     const target = await awakeDeliveryTarget(sessionId);
     if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
+    const wireMessageId = payload.remintOnDelivery
+      ? await remintWireMessageId(row, payload, await readInboxTranscriptState(row, []))
+      : payload.wireMessageId!;
     const delivery = await postPrompt(target.externalId, target.opencodeSessionId, text, row.actorUserId!, sessionId,
       `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {
         ...(payload.parts?.length ? { parts: payload.parts } : {}),

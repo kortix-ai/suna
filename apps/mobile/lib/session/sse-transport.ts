@@ -26,7 +26,13 @@ export interface SseEventSource {
   close(): void;
   /** Library internal: called when a response finishes, to open the next one. */
   _pollAgain?: (time: number, allowZero: boolean) => void;
+  /** Library internal: hands one event to the listeners of its `type`. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the library types it per event name
+  dispatch?: (type: any, event: any) => void;
 }
+
+/** The library's own lifecycle event types. Every other type is a frame. */
+const LIFECYCLE_TYPES = new Set(['open', 'error', 'close']);
 
 export interface SseTransportDeps {
   EventSource: new (
@@ -69,6 +75,14 @@ export function createSseTransport(deps: SseTransportDeps): RuntimeEventTranspor
     // A finished response calls this whatever `pollingInterval` is: it ends
     // the connection, and the SDK decides when the next one opens.
     if (typeof source._pollAgain === 'function') source._pollAgain = () => end();
+    // The library delivers an `event: <name>` frame only to a listener for that
+    // exact name and drops it otherwise. The session stream names every frame
+    // (`kortix.control.turn`, `message.part.delta`, ...), and the SDK reads the
+    // type from the data, so every frame goes to the one `message` listener.
+    if (typeof source.dispatch === 'function') {
+      const dispatch = source.dispatch.bind(source);
+      source.dispatch = (type, event) => dispatch(LIFECYCLE_TYPES.has(type) ? type : 'message', event);
+    }
 
     source.addEventListener('message', (event) => {
       if (ended || typeof event?.data !== 'string' || !event.data) return;

@@ -76,9 +76,6 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // network, same reasoning as `convergeBeforeTurnStart` above.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
 let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];

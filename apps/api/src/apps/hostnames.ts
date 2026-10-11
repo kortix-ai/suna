@@ -78,11 +78,14 @@ export function appsBaseDomain(): string | null {
   return derived ? `apps.${derived}` : null;
 }
 
+/** `http://<label>.apps.localhost:<port>`: a local-mode host this API answers. */
+export function appsLocalUrl(label: string): string {
+  const localPort = process.env.KORTIX_APPS_LOCAL_PORT || String(config.PORT);
+  return `http://${label}.apps.localhost:${localPort}`;
+}
+
 export function appPublicUrl(row: { slug: string; routeKey: string }): string {
-  if (appsLocalMode()) {
-    const localPort = process.env.KORTIX_APPS_LOCAL_PORT || String(config.PORT);
-    return `http://${row.routeKey}.apps.localhost:${localPort}`;
-  }
+  if (appsLocalMode()) return appsLocalUrl(row.routeKey);
   const domain = appsBaseDomain();
   if (!domain) {
     throw new Error(

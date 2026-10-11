@@ -40,10 +40,26 @@ mock.module('../repositories/credit-accounts', () => ({
   },
 }));
 
+/** Whether the conditional turn-off wins (false: the account was already off). */
+let disableResult = true;
+const disables: string[] = [];
+const alerts: Array<{ accountId: string; reason: string }> = [];
+
 mock.module('../repositories/auto-topup-claim', () => ({
   claimAutoTopupCharge: async (_accountId: string, observed: string | null) => {
     claims.push(observed);
     return claimResult;
+  },
+  disableAutoTopupIfEnabled: async (accountId: string) => {
+    disables.push(accountId);
+    return disableResult;
+  },
+}));
+
+mock.module('./auto-topup-alert', () => ({
+  notifyAutoTopupDisabled: async (accountId: string, reason: string) => {
+    alerts.push({ accountId, reason });
+    return 1;
   },
 }));
 
@@ -132,6 +148,9 @@ beforeEach(() => {
   claimResult = '2026-10-06T10:00:00.000000+00';
   claims.length = 0;
   intentKeys.length = 0;
+  disableResult = true;
+  disables.length = 0;
+  alerts.length = 0;
 });
 
 describe('auto-topup payment-method discovery — non-card checkouts', () => {
@@ -196,6 +215,9 @@ describe('auto-topup with no payment method — the skip must be observable', ()
     expect(updates[0]?.autoTopupDisabledReason).toBe(NO_PAYMENT_METHOD_REASON);
     expect(updates[0]?.autoTopupConsecutiveFailures).toBe(1);
     expect(updates[0]?.autoTopupLastCharged).toBeString();
+    // A first soft failure keeps auto top-up on and tells nobody.
+    expect(disables).toEqual([]);
+    expect(alerts).toEqual([]);
   });
 
   test('repeated skips eventually disable auto-topup rather than retrying forever', async () => {
@@ -207,8 +229,20 @@ describe('auto-topup with no payment method — the skip must be observable', ()
 
     await checkAndTriggerAutoTopup('acct-1');
 
-    expect(updates[0]?.autoTopupEnabled).toBe(false);
     expect(updates[0]?.autoTopupDisabledReason).toBe(NO_PAYMENT_METHOD_REASON);
+    expect(disables).toEqual(['acct-1']);
+    // KRTX-1718: the turn-off tells the owners why.
+    expect(alerts).toEqual([{ accountId: 'acct-1', reason: NO_PAYMENT_METHOD_REASON }]);
+  });
+
+  test('a failure on an account that is already off tells nobody a second time', async () => {
+    account = creditAccount({ autoTopupConsecutiveFailures: 2 });
+    disableResult = false;
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(disables).toEqual(['acct-1']);
+    expect(alerts).toEqual([]);
   });
 });
 

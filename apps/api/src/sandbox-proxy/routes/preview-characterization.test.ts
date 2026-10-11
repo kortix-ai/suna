@@ -93,9 +93,6 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
@@ -645,6 +642,62 @@ describe('forwardToSandbox authentication failures', () => {
       expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
     });
   }
+
+  test('a not-ready 503 on a GET passthrough carries the daemon attribution', async () => {
+    // The hydrate reads (/lsp/diagnostics, /permission, /question, /vcs/diff, …)
+    // land on this branch when the runtime restarts behind a live box. The
+    // passthrough must say WHICH hop answered (proxy-hop.ts): `daemon`, plus
+    // the status the daemon returned, so the request log can tell the designed
+    // boot-window answer from a failure (request-log-level.ts).
+    const args = {
+      method: 'GET',
+      path: '/lsp/diagnostics',
+      port: 8000,
+      origin: 'http://localhost:3000',
+    } as const;
+    queueFetch(
+      new Response('{"error":"starting"}', {
+        status: 503,
+        headers: { 'X-Kortix-Boot-Phase': 'opencode-starting' },
+      }),
+    );
+    const res = await forward(args);
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe('{"error":"starting"}');
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('daemon');
+    expect(res.headers.get('X-Kortix-Upstream-Status')).toBe('503');
+    // The web app and the API are different origins: without the expose the
+    // browser hides both headers from JS and the probe is back to guessing.
+    expect(res.headers.get('Access-Control-Expose-Headers')).toBe(
+      'X-Kortix-Proxy-Hop, X-Kortix-Upstream-Status',
+    );
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('a not-ready-shaped 503 from an APP port is attributed to that port, not the daemon', async () => {
+    // The not-ready match is header/body text (KRTX-397 self-review): a user
+    // app on an ordinary port could answer with the same shape. The hop must
+    // be the PORT's hop (portFailureHop), so the GET line stays logged
+    // (request-log-level.ts suppresses only the `daemon` hop) and the probe
+    // counts it — an app cannot borrow the daemon's designed answer.
+    const args = {
+      method: 'GET',
+      path: '/healthz',
+      port: 3000,
+      origin: 'http://localhost:3000',
+    } as const;
+    queueFetch(
+      new Response('starting', {
+        status: 503,
+        headers: { 'X-Kortix-Boot-Phase': 'opencode-starting' },
+      }),
+    );
+    const res = await forward(args);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('upstream_port');
+    expect(res.headers.get('X-Kortix-Upstream-Status')).toBe('503');
+    expect(fetchCalls).toBe(1);
+  });
 
   test('a 503 that only mentions "not ready" in an unrelated body keeps the claim', async () => {
     const args = {

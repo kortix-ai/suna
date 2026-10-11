@@ -34,18 +34,23 @@
 import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
+  HARNESS_TOOL_NAMES,
   HEX_COLOR_RE_V2,
+  KORTIX_TOOL_NAMES,
+  kortixToolRef,
   PI_PACKAGE_NAME_RE,
   PI_PACKAGE_NPM_RE,
   PI_PACKAGE_PATH_RE,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   SLUG_RE,
+  selectedKortixTools,
+  TOOL_NAME_RE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
-import { safeAgentFile } from './layout';
+import { safeAgentFile, safeToolFile } from './layout';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -107,6 +112,30 @@ export type PermissionConfigV2 = PermissionActionV2 | PermissionConfigObjectV2;
 export type GrantSetV2 = 'all' | 'none' | string[];
 
 /**
+ * `agents.<name>.tools`: which tools the agent may use, by tool name. A tool
+ * is a harness tool (`bash`, `read`, …), a Kortix tool (`web_search`, …) or a
+ * project tool (top-level `tools`). `all` or omitted: every tool. `none`: no
+ * tool. A list: only those tools. `exclude`: every tool but those. The earlier
+ * map form (tool name → boolean) still works: `false` removes a tool.
+ */
+export type AgentToolsV2 = 'all' | 'none' | string[] | { exclude: string[] } | Record<string, boolean>;
+
+/**
+ * Compile an agent's `tools` into the map a harness reads
+ * (`CompiledAgent.tools` in @kortix/api-contract): tool name → visible, with
+ * `*` for every tool not named. Undefined means every tool.
+ */
+export function resolveAgentTools(value: AgentToolsV2 | undefined): Record<string, boolean> | undefined {
+  if (value === undefined || value === 'all') return undefined;
+  if (value === 'none') return { '*': false };
+  if (Array.isArray(value)) {
+    return value.includes('*') ? undefined : Object.fromEntries([['*', false], ...value.map((name) => [name, true])]);
+  }
+  if (Array.isArray(value.exclude)) return Object.fromEntries((value.exclude as string[]).map((name) => [name, false]));
+  return value as Record<string, boolean>;
+}
+
+/**
  * One entry of the v2 `agents:` map — GOVERNANCE ONLY (decision 2026-07-05,
  * "one home per concern"). Agent behavior (mode, model, temperature, top_p,
  * steps, variant, color, hidden, permission, and the prompt itself) lives
@@ -140,8 +169,8 @@ export interface AgentBlockV2 {
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
-  /** Built-in tool availability; omitted names retain the runtime default. */
-  tools?: Record<string, boolean>;
+  /** The tools this agent may use: `all` (default), `none`, a list, or `{ exclude: [...] }`. */
+  tools?: AgentToolsV2;
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
   /** Declarative only: sandbox egress is NOT restricted until provider gateway isolation is enabled. */
@@ -201,6 +230,8 @@ export interface ManifestV2 {
   default_agent: string;
   runtime?: RuntimeV2;
   harnesses?: HarnessesV2;
+  /** Project tools: tool name → repo-relative module path. Every harness loads them. */
+  tools?: Record<string, string>;
   agents: Record<string, AgentBlockV2>;
   project?: Record<string, unknown>;
   env?: Record<string, unknown>;
@@ -219,6 +250,10 @@ export interface AppResourcesV2 {
 
 /** Local deployment defaults. The server remains the App control plane. */
 export interface AppBlockV2 {
+  /** Fixed at create. `web` (default): built from `path`. `convex`: `path` deploys with the Convex CLI. */
+  kind?: 'web' | 'convex';
+  /** The Apps, by slug, this App uses: it may bind to them and mint their sign-in tokens. */
+  uses?: string[];
   path?: string;
   type?: 'static' | 'bundle' | 'dockerfile' | 'oci_image';
   image?: string;
@@ -232,6 +267,8 @@ export interface AppBlockV2 {
   spa?: boolean;
   readiness_path?: string;
   idle_timeout_seconds?: number;
+  /** Run 24/7 (cron jobs, workers, websockets) instead of stopping when idle. */
+  always_on?: boolean;
   monthly_budget_usd?: number;
   resources?: AppResourcesV2;
   env?: Record<string, string>;
@@ -673,9 +710,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     return;
   }
 
-  if (entry.tools !== undefined && (!isTable(entry.tools) || Object.values(entry.tools).some((value) => typeof value !== 'boolean'))) {
-    issues.push({ path: `${where}.tools`, message: 'tools must map tool names to booleans.', severity: 'error' });
-  }
+  validateAgentToolsV2(entry.tools, `${where}.tools`, issues);
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });
@@ -734,7 +769,8 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   if (v3) {
     if (entry.prompt !== undefined && typeof entry.prompt !== 'string') issues.push({ path: `${where}.prompt`, message: 'must be a string.', severity: 'error' });
     if (entry.prompt_file !== undefined && (!safeAgentFile(entry.prompt_file) || entry.prompt !== undefined)) issues.push({ path: `${where}.prompt_file`, message: 'must be a repo-relative .md path and cannot be combined with prompt.', severity: 'error' });
-    validateAgentMdFrontmatter(entry, where, issues);
+    // `tools` is the governance key above, not the retired frontmatter field.
+    validateAgentMdFrontmatter({ ...entry, tools: undefined }, where, issues);
   }
 
   if (!v3 && entry.file !== undefined && !safeAgentFile(entry.file)) {
@@ -937,3 +973,100 @@ export function validateTriggerAgentRefsV2(
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
+
+// ─── Tools ──────────────────────────────────────────────────────────────────
+
+/**
+ * Top-level `tools:` — the project's tools, by name: tool name → repo-relative
+ * path of the module that implements it (the folder is the author's choice),
+ * or `kortix:<name>` for a Kortix tool under its own name. A Kortix tool name
+ * with a module path replaces the Kortix tool. A `tools` key also selects the
+ * Kortix tools: only the ones it lists load (`selectedKortixTools`).
+ */
+export function validateToolsV2(value: unknown, path: string, issues: ManifestIssue[]): void {
+  if (value === undefined) return;
+  if (value !== null && !isTable(value)) {
+    issues.push({ path, message: 'tools must map tool names to module paths or `kortix:<name>` (e.g. `lookup_order: tools/lookup_order.ts`, `web_search: kortix:web_search`).', severity: 'error' });
+    return;
+  }
+  for (const [name, file] of Object.entries(value ?? {})) {
+    const where = `${path}.${name}`;
+    if (!TOOL_NAME_RE.test(name)) {
+      issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
+    } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
+      issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });
+    }
+    const ref = kortixToolRef(file);
+    if (ref === null ? !safeToolFile(file) : ref !== name || !isKortixTool(name)) {
+      issues.push({ path: where, message: toolValueMessage(name), severity: 'error' });
+    }
+  }
+  if (selectedKortixTools(value).length === 0) {
+    issues.push({
+      path,
+      message: `Sessions of this project get no Kortix tool (${KORTIX_TOOL_NAMES.join(', ')}). Add \`<name>: kortix:<name>\` to keep one.`,
+      severity: 'warning',
+    });
+  }
+}
+
+function isKortixTool(name: string): boolean {
+  return (KORTIX_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+/** The values `tools.<name>` allows. */
+function toolValueMessage(name: string): string {
+  const module = `a repo-relative path to a .ts or .js module (e.g. \`tools/${name}.ts\`)`;
+  if (isKortixTool(name)) return `must be \`kortix:${name}\` (the Kortix tool) or ${module} that replaces it.`;
+  return `must be ${module}. \`kortix:<name>\` names a Kortix tool under its own name: ${KORTIX_TOOL_NAMES.map((tool) => `\`${tool}: kortix:${tool}\``).join(', ')}.`;
+}
+
+/** `agents.<name>.tools` — see `AgentToolsV2`. */
+function validateAgentToolsV2(value: unknown, where: string, issues: ManifestIssue[]): void {
+  if (value === undefined || value === 'all' || value === 'none') return;
+  const names = (list: unknown, at: string) => {
+    if (!Array.isArray(list) || list.some((name) => typeof name !== 'string' || !name.trim())) {
+      issues.push({ path: at, message: 'must be a list of tool names.', severity: 'error' });
+    }
+  };
+  if (Array.isArray(value)) return names(value, where);
+  if (isTable(value) && 'exclude' in value && Object.keys(value).length === 1 && Array.isArray(value.exclude)) {
+    return names(value.exclude, `${where}.exclude`);
+  }
+  if (!isTable(value) || Object.values(value).some((enabled) => typeof enabled !== 'boolean')) {
+    issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
+  }
+}
+
+/**
+ * A tool name in an agent's `tools` that no harness, Kortix or project tool
+ * has. Probably a typo: an excluded typo leaves the real tool on. Also a
+ * Kortix tool the project's `tools` does not list, so no session loads it.
+ * A warning, not an error: a harness may have tools this list does not know.
+ */
+export function warnUnknownAgentTools(agents: unknown, tools: unknown, issues: ManifestIssue[]): void {
+  if (!isTable(agents)) return;
+  const known = new Set<string>(['*', ...HARNESS_TOOL_NAMES, ...selectedKortixTools(tools), ...(isTable(tools) ? Object.keys(tools) : [])]);
+  for (const [agent, block] of Object.entries(agents)) {
+    if (!isTable(block)) continue;
+    const value = block.tools;
+    const listed = Array.isArray(value)
+      ? value
+      : isTable(value) && Array.isArray(value.exclude)
+        ? value.exclude
+        : isTable(value)
+          ? Object.keys(value)
+          : [];
+    for (const name of listed) {
+      if (typeof name !== 'string' || known.has(name) || name.startsWith('pty_')) continue;
+      issues.push({
+        path: `agents.${agent}.tools`,
+        message: isKortixTool(name)
+          ? `"${name}" is a Kortix tool this project does not load: add \`${name}: kortix:${name}\` under the top-level \`tools\`, or remove it here.`
+          : `"${name}" is not a harness, Kortix or project tool (declare project tools under the top-level \`tools\`).`,
+        severity: 'warning',
+      });
+    }
+  }
+}
+

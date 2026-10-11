@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { posix, resolve, sep } from 'node:path';
 
 export type AppSourceSpec =
@@ -104,7 +104,11 @@ async function loadDockerfile(sourceDir: string, requested = 'Dockerfile'): Prom
   const absoluteRoot = resolve(sourceDir);
   const absolutePath = resolve(absoluteRoot, path);
   if (!isWithin(absoluteRoot, absolutePath)) throw new Error('dockerfile escapes the source directory');
-  const contents = await readFile(absolutePath, 'utf8');
+  // The lexical check above does not see symlinks: resolve both and compare again.
+  const realRoot = await realpath(absoluteRoot);
+  const realPath = await realpath(absolutePath);
+  if (!isWithin(realRoot, realPath)) throw new Error('dockerfile escapes the source directory');
+  const contents = await readFile(realPath, 'utf8');
   if (!contents.trim()) throw new Error('Dockerfile is empty');
   if (Buffer.byteLength(contents) > 1024 * 1024) throw new Error('Dockerfile exceeds 1 MiB');
   return { path, contents };

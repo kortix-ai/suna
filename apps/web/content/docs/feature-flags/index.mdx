@@ -11,12 +11,12 @@ Flags are per project. Turning a flag on in one project changes nothing in
 another project, and nothing for other accounts.
 
 <CardGroup>
-  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, OCI images, and Convex backends to stable URLs.</Card>
 </CardGroup>
 
 ## Turn a flag on
 
-1. Open **Settings → Experimental**. The tab lists every flag the platform
+1. Open **Settings → Feature flags**. The tab lists every flag the platform
    supports.
 2. Read the row: the flag name, its stability badge, one sentence of
    description, and its origin — `Default on`, `Default off`, or
@@ -31,11 +31,11 @@ You need the project's `project.settings.write` permission. The route answers
 The same switches are available to scripts and agents through `kortix projects features`:
 
 ```bash
-kortix projects features            # every flag: key, state, origin, stability
-kortix projects features enable apps
+kortix projects features                # every flag: key, state, origin
+kortix projects features enable reminders
 kortix projects features disable reminders
-kortix projects features reset apps  # drop the override; follow the platform default
-kortix projects features --json      # the full catalog as JSON
+kortix projects features reset reminders  # drop the override; follow the platform default
+kortix projects features --json          # the full catalog as JSON
 ```
 
 Add `--project <id>` to act on a project other than the linked/default one. A
@@ -61,7 +61,7 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Two flags read it from configuration; every other flag is always available:
+Some flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
@@ -93,7 +93,7 @@ A `routes` rejection is identical everywhere:
 
 ```json
 {
-  "error": "Apps is not enabled for this project. Enable it in Settings → Feature flags.",
+  "error": "Apps is not enabled for this project. Contact Kortix to enable it.",
   "code": "feature_disabled",
   "feature": "apps"
 }
@@ -110,6 +110,33 @@ this.
 
 Registry order — the same order **Settings → Feature flags** shows.
 
+### Internal-only flag: `apps`
+
+`apps` starts billable machines, so Kortix turns it on per project on
+request.
+
+- **Off:** Settings and `kortix projects features` do not list the flag. Its
+  routes answer `403` `feature_disabled` with "Contact Kortix to enable it."
+- **On:** the catalog lists the flag with `operator_only: true`. Settings shows
+  it as **Managed by Kortix** with a locked switch. `kortix projects features`
+  shows origin `kortix`, and `kortix projects info` prints a `by kortix` line.
+  Agents read either one, or `experimental.<flag>` in `kortix projects info --json`.
+- **Writes:** `PATCH /v1/projects/:id/features` refuses the flag to every
+  caller except a Kortix platform operator. A project admin or an agent gets:
+
+```json
+{
+  "error": "Apps is managed by Kortix. Contact Kortix to change it.",
+  "code": "feature_operator_only",
+  "feature": "apps"
+}
+```
+
+Kortix operators set the flag with
+`PUT /v1/admin/api/projects/:id/features` `{ "feature": "apps", "enabled": true }`
+(`null` clears it). The audit log records `admin.project.feature.set` on the
+project.
+
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|
 | `marketplace` | Marketplace | Beta | On | `routes` |
@@ -123,6 +150,8 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
+| `event_triggers` | App event triggers | Beta | Off | `routes` |
+| `notification_center` | Notification Center | Beta | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -144,9 +173,17 @@ refs). An explicit project choice always wins.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
-  stable serverless URLs. See [Apps](/docs/feature-flags/apps).
+  stable serverless URLs, and run up to 3 Convex backends (kind `convex`: a
+  database, server functions, realtime queries, file storage, and schedules)
+  where Platinum is configured. See [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
+- **`event_triggers`** — start an agent when something happens in a connected
+  app: a new email, a pull request, a calendar event. Off, the event catalog
+  routes and the creation of an event trigger answer `feature_disabled`, and a
+  `type: event` trigger in `kortix.yaml` is not subscribed (status `error`).
+  Turning it off removes every event subscription; turning it on subscribes
+  the declared triggers. See [App event triggers](/docs/connect/triggers#app-event-triggers).
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or
   on repeat. Off, the reminder routes answer `feature_disabled` and existing
   reminders do not fire. See [Reminders](/docs/connect/reminders).
@@ -169,6 +206,12 @@ refs). An explicit project choice always wins.
   see [`harnesses:`](/docs/project/manifest#harnesses). pi does not serve every
   session feature OpenCode does: see the matrix in
   [Harnesses](/docs/work/harnesses#what-each-harness-supports).
+- **`notification_center`** — tell the people a session concerns, not only its
+  creator: the bell, browser push, email, follow and mute per session, and
+  trigger and reminder alerts. Off, as before: only the session creator's
+  phone gets a session push, and an account owner's phone gets one when a
+  trigger starts failing. The session watch routes answer `feature_disabled`.
+  See [Notifications](/docs/work/notifications#turn-notifications-on).
 
 ### Graduated flags
 
@@ -195,6 +238,13 @@ A graduated feature is on for every project and has no switch.
   `PATCH /v1/projects/:id/features` answers `400` `Unknown feature flag`. A
   stored override from before graduation has no effect. See
   [Microsoft Teams](/docs/connect/teams).
+- **Config releases** graduated out of the flag system. Every session runs
+  the config release of its base branch: a merged agent, skill, or tool
+  reaches every running session, on OpenCode and on pi. `config_releases` is
+  no longer a flag key: `PATCH /v1/projects/:id/features` answers `400`
+  `Unknown feature flag`. A stored override from before graduation has no
+  effect; a stored `false` no longer sends a session back to its `/workspace`
+  config. See [Config convergence](/docs/work/runtime#config-convergence).
 
 ## Side effects of a toggle
 

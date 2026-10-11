@@ -32,6 +32,20 @@ mock.module('../middleware/auth-audit', () => ({
   auditSessionFirstSight: () => {},
 }));
 
+// Sign-up policy and SSO-only domains (KRTX-1716). Defaults keep every other
+// test on today's open, SSO-free path.
+let signupsOpen = true;
+const realAccessControl = await import('../shared/access-control-cache');
+mock.module('../shared/access-control-cache', () => ({
+  ...realAccessControl,
+  canSignUp: (email: string) => signupsOpen || email.endsWith('@allowed.test'),
+}));
+const realSso = await import('../repositories/sso');
+mock.module('../repositories/sso', () => ({
+  ...realSso,
+  ssoEnforcedForEmail: async (email: string) => (email.endsWith('@sso.test') ? { id: 'idp' } : null),
+}));
+
 const gotrueModule = await import('../auth/gotrue');
 const { headlessAuthRouter } = await import('../auth/headless');
 
@@ -68,6 +82,7 @@ const post = (path: string, body: unknown, ip = '203.0.113.7') =>
 beforeEach(() => {
   seen = [];
   claims.clear();
+  signupsOpen = true;
   respond = () => Response.json(SESSION);
 });
 
@@ -191,6 +206,31 @@ describe('/v1/auth headless routes', () => {
  * yet, and the answer ("this domain has an IdP at this URL") is not a secret —
  * it is the same thing the IdP's own discovery endpoint publishes.
  */
+describe('POST /v1/auth/signup applies the sign-up rules of the web form', () => {
+  test('an SSO-only domain → 403 sso_required, GoTrue never called', async () => {
+    const res = await post('/signup', { email: 'new@sso.test', password: 'hunter22-long' });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('sso_required');
+    expect(seen).toEqual([]);
+  });
+
+  test('closed sign-ups → 403 signup_closed for an address off the allowlist, GoTrue never called', async () => {
+    signupsOpen = false;
+    const res = await post('/signup', { email: 'stranger@example.test', password: 'hunter22-long' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'signup_closed', error_description: 'Sign-ups are closed for this email address.' });
+    expect(seen).toEqual([]);
+  });
+
+  test('closed sign-ups still admit an allowlisted address', async () => {
+    signupsOpen = false;
+    const res = await post('/signup', { email: 'Someone@Allowed.test', password: 'hunter22-long' });
+    expect(res.status).toBe(200);
+    expect(seen[0].url).toBe('http://supabase.internal:8000/auth/v1/signup');
+    expect((seen[0].body as { email: string }).email).toBe('someone@allowed.test');
+  });
+});
+
 describe('POST /v1/auth/sign-in/sso', () => {
   test('asks GoTrue for the IdP redirect and returns the URL', async () => {
     respond = () => Response.json({ url: 'https://idp.example/saml?RelayState=x' });

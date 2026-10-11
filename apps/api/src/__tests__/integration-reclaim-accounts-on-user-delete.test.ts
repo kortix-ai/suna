@@ -52,7 +52,11 @@ const P4 = crypto.randomUUID();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({
   ...realSupabase,
-  getSupabase: () => ({ auth: { admin: { deleteUser: async () => ({ error: { status: 404 } }) } } }),
+  getSupabase: () => ({
+    auth: { admin: { deleteUser: async () => ({ error: { status: 404 } }) } },
+    // Session files: an empty bucket (account erasure lists each project).
+    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
+  }),
 }));
 
 async function sweep() {

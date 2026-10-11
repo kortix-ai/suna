@@ -135,6 +135,21 @@ The App's **Access** dialog lists the agents with access, read from
 `kortix.yaml`. The Apps page appears only when the project has the
 [Apps](/docs/feature-flags/apps) feature flag on.
 
+## Apps that hold data
+
+A [`convex` App](/docs/feature-flags/apps#kind-convex-a-convex-backend) holds
+the project's data and an admin key. One permission guards the powers that
+reach past the App's functions:
+
+| Permission | Allows |
+|---|---|
+| `project.app.admin` | Reveal and rotate an App's admin credentials (and open its dashboard), restore a snapshot, and delete an App that holds data. Implies `project.app.write` |
+
+Every role that holds `project.app.write` holds `project.app.admin`: in the
+built-in roles, that is Manager. `project.app.read` lists Apps, reads their
+snapshots and mints a sign-in token. `project.app.write` creates, resizes and
+snapshots them and reads the process log.
+
 ## Changing agents and triggers
 
 `kortix.yaml` shapes what agents may do, so whoever lands a change on the

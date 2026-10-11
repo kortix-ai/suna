@@ -87,6 +87,57 @@ describe('the Kortix turn verbs on OpenCode (W5 E4)', () => {
   })
 })
 
+describe('retract on OpenCode (R7.1)', () => {
+  const calls = (seen: Array<{ method: string; path: string }>) => seen.map((call) => `${call.method} ${call.path}`)
+
+  test('an idle OpenCode removes the message whole', async () => {
+    const { proxy, seen } = fakeProxy(() => ({ status: 200, body: true }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    expect(await turns.retractMessage('ses_1', 'msg_1')).toEqual({ status: 200, body: { retracted: true } })
+    expect(calls(seen)).toEqual(['DELETE /session/ses_1/message/msg_1'])
+  })
+
+  test('a busy OpenCode refuses the whole delete, so the message is emptied part by part', async () => {
+    const { proxy, seen } = fakeProxy((input) => {
+      if (input.method === 'DELETE' && input.path === '/session/ses_1/message/msg_1') return { status: 409, body: { error: 'busy' } }
+      if (input.method === 'GET') return { status: 200, body: { info: { id: 'msg_1', role: 'user' }, parts: [{ id: 'prt_a' }, { id: 'prt_b' }] } }
+      return { status: 200, body: true }
+    })
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    expect(await turns.retractMessage('ses_1', 'msg_1')).toEqual({ status: 200, body: { retracted: true } })
+    expect(calls(seen)).toEqual([
+      'DELETE /session/ses_1/message/msg_1',
+      'GET /session/ses_1/message/msg_1',
+      'DELETE /session/ses_1/message/msg_1/part/prt_a',
+      'DELETE /session/ses_1/message/msg_1/part/prt_b',
+    ])
+  })
+
+  test('an unknown message answers 404, and a refused part delete answers its own status', async () => {
+    const gone = fakeProxy(() => ({ status: 404, body: { error: 'not found' } }))
+    expect((await createOpenCodeTurnService(gone.proxy, () => '/workspace').retractMessage('ses_1', 'msg_1')).status).toBe(404)
+    expect(calls(gone.seen)).toEqual(['DELETE /session/ses_1/message/msg_1'])
+
+    const refused = fakeProxy((input) => {
+      if (input.method === 'GET') return { status: 200, body: { info: { id: 'msg_1' }, parts: [{ id: 'prt_a' }] } }
+      return input.path.endsWith('/part/prt_a') ? { status: 500, body: { error: 'disk' } } : { status: 409, body: { error: 'busy' } }
+    })
+    expect(await createOpenCodeTurnService(refused.proxy, () => '/workspace').retractMessage('ses_1', 'msg_1')).toEqual({
+      status: 500,
+      body: { error: 'disk' },
+    })
+  })
+
+  test('a retracted message may be sent again under its id', async () => {
+    const { proxy, seen } = fakeProxy((input) => (input.method === 'GET' ? { status: 404, body: null } : { status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    await turns.prompt('ses_1', { messageId: 'msg_1', parts: [{ type: 'text', text: 'hi' }] })
+    await turns.retractMessage('ses_1', 'msg_1')
+    expect((await turns.prompt('ses_1', { messageId: 'msg_1', parts: [{ type: 'text', text: 'hi' }] })).status).toBe(202)
+    expect(seen.filter((call) => call.path.endsWith('/prompt_async')).length).toBe(2)
+  })
+})
+
 describe('a repeated messageID on OpenCode is answered as a duplicate, like pi (R9.4)', () => {
   const prompt = (id?: string) => ({ ...(id ? { messageId: id } : {}), parts: [{ type: 'text', text: 'hi' }] })
   const forwards = (seen: Array<{ method: string; path: string }>) => seen.filter((c) => c.path.endsWith('/prompt_async')).length

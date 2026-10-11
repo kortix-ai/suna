@@ -13,6 +13,15 @@ describe('appStatus', () => {
     );
   });
 
+  test('a static App reads Running even when desired_state is stopped: it has no runtime', () => {
+    expect(
+      appStatus({ active_deployment_id: 'dep-1', desired_state: 'stopped', hosting_type: 'static' }),
+    ).toBe('Running');
+    expect(
+      appStatus({ active_deployment_id: 'dep-1', desired_state: 'stopped', hosting_type: 'sandbox' }),
+    ).toBe('Suspended');
+  });
+
   test('no active deployment reads Not deployed', () => {
     expect(appStatus({ active_deployment_id: null, desired_state: 'running' })).toBe(
       'Not deployed',

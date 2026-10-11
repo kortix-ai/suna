@@ -1,4 +1,5 @@
-// Kortix Apps — project-scoped, provider-neutral application deployments.
+// Kortix Apps — project-scoped, provider-neutral applications. Every App has
+// one `kind`; clients branch on its `capabilities`, never on the kind.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -8,7 +9,121 @@ export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';
 export type AppArtifactStatus = 'uploading' | 'uploaded' | 'ready' | 'rejected' | 'deleted';
-export type AppSourceKind = 'static' | 'bundle' | 'dockerfile' | 'oci_image';
+/** `convex`: a deployment of a `convex` App, recorded after the client CLI deployed it. */
+export type AppSourceKind = 'static' | 'bundle' | 'dockerfile' | 'oci_image' | 'convex';
+
+/**
+ * What an App is, fixed at create. `web`: a site or a server built from its
+ * deployments. `convex`: a self-hosted Convex backend in its own always-on
+ * machine. Branch on `capabilities`, not on the kind.
+ */
+export type AppKind = 'web' | 'convex';
+
+/**
+ * What an App supports now. The only thing a client branches on. A route
+ * for a capability the App lacks answers `409 app_capability_unsupported`.
+ *
+ * - `deployments`: has a deployment history.
+ * - `rollback`: traffic can move to an older ready deployment.
+ * - `preview`: opens in a browser through an access session.
+ * - `sleep`: a server that stops when idle (`start` / `stop`).
+ * - `static`: served from storage, no runtime.
+ * - `snapshots`, `restore`: point-in-time copies of its data, and a rollback to one.
+ * - `admin_credentials`: an admin key for the kind's own CLI ({@link getAppCredentials}).
+ * - `dashboard`: an admin dashboard (`instance.dashboard_url`).
+ * - `logs`: a process log ({@link getAppLog}).
+ * - `member_tokens`: Kortix sign-in tokens for the App ({@link createAppToken}).
+ */
+export type AppCapability =
+  | 'deployments'
+  | 'rollback'
+  | 'preview'
+  | 'sleep'
+  | 'static'
+  | 'snapshots'
+  | 'restore'
+  | 'admin_credentials'
+  | 'dashboard'
+  | 'logs'
+  | 'member_tokens';
+
+/**
+ * The public values that verify the Kortix sign-in tokens minted for an App:
+ * the project issuer, `aud` = the App id, and the issuer's key set. No secret.
+ */
+export interface AppAuth {
+  issuer: string;
+  audience: string;
+  jwks_uri: string;
+}
+
+export type AppInstanceStatus = 'provisioning' | 'running' | 'error' | 'deleted';
+
+/**
+ * A day-two operation in flight on the App's machine. `rotating_key`: an
+ * admin-credentials rotation. `recovering`: Kortix is starting the machine, or
+ * restoring it from its last automatic backup. `snapshotting`: a snapshot is
+ * taken or deleted. `restoring`: a snapshot restore.
+ */
+export type AppInstanceOperation = 'resizing' | 'rotating_key' | 'recovering' | 'snapshotting' | 'restoring';
+
+/** The last health probe of a running instance. Kortix probes every 5 minutes. */
+export interface AppInstanceHealth {
+  ok: boolean;
+  checked_at: string;
+  /** The machine's state: `running`, `stopped`, …; `missing` when it no longer exists; `null` when the provider did not answer. */
+  machine_state: string | null;
+  /** Failed probes in a row. */
+  failures: number;
+  error: string | null;
+  /** Percent of the machine disk in use, when known. */
+  disk_used_pct: number | null;
+  /** What the probe started to bring the machine back, if anything. */
+  repair: 'started' | 'restored_from_backup' | null;
+}
+
+/**
+ * The machine of an App whose kind runs one of its own (`convex`). `null` on
+ * every other App. Read `capabilities` to know which fields apply.
+ */
+export interface AppInstance {
+  status: AppInstanceStatus;
+  /** The client URL (the App's `url`): a Kortix host fixed for the App's life. `null` until it runs. */
+  url: string | null;
+  /** The HTTP actions URL, a second Kortix host. `null` until it runs. */
+  site_url: string | null;
+  /** The admin dashboard on a Kortix host (capability `dashboard`). `null` until it runs. */
+  dashboard_url: string | null;
+  error: string | null;
+  /** A day-two operation in flight. `null` when idle. */
+  operation: AppInstanceOperation | null;
+  /** Why the last operation failed. Cleared by the next operation. */
+  last_operation_error: string | null;
+  /** The last health probe; `null` before the first one. */
+  health: AppInstanceHealth | null;
+  /**
+   * `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` as the
+   * machine's environment holds them: public values. `null` before the
+   * project's first sign-in token.
+   */
+  auth_env: Record<string, string> | null;
+  /** The client CLI version that matches the machine, e.g. `npx convex@<version> deploy`. */
+  client_version: string;
+  /**
+   * Always `null`: a `convex` App has no monthly budget (its cost is its size,
+   * 24/7), so no alert is raised. Kept for wire compatibility.
+   * @deprecated Read `App.estimated_monthly_usd` for the monthly cost.
+   */
+  budget_alert: {
+    month: string;
+    percent: number;
+    spent_usd: number;
+    budget_usd: number;
+    at: string;
+  } | null;
+  /** On a deleted App: when Kortix purges the kept machine and its final snapshot. */
+  purge_after: string | null;
+}
 export type AppDeploymentStatus =
   | 'queued'
   | 'validating'
@@ -29,6 +144,10 @@ export interface App {
   app_id: string;
   account_id: string;
   project_id: string;
+  /** Optional for wire compatibility with a server that predates kinds (read it as `web`). */
+  kind?: AppKind;
+  /** What the App supports now. Optional for wire compatibility with a server that predates it. */
+  capabilities?: AppCapability[];
   slug: string;
   name: string;
   url: string;
@@ -38,21 +157,71 @@ export interface App {
   active_deployment_id: string | null;
   machine: AppMachineSpec;
   idle_timeout_seconds: number;
-  monthly_budget_usd: number;
+  /**
+   * `true`: the App runs 24/7 (cron jobs, workers, websockets keep working)
+   * at a fixed monthly cost, `estimated_monthly_usd`. `false`: it stops after
+   * `idle_timeout_seconds` without requests and wakes on the next one. `false`
+   * for a static App, which has no runtime. Optional for wire compatibility
+   * with a server that predates it.
+   */
+  always_on?: boolean;
+  /**
+   * The monthly compute budget of an on-demand server App (`always_on: false`):
+   * the App stops when it is reached. `null` for an always-on, static or
+   * `convex` App: its cost is fixed by its size (`estimated_monthly_usd`) or
+   * zero, and no budget stops it. Setting one on such an App answers
+   * `400 app_budget_not_applicable`.
+   */
+  monthly_budget_usd: number | null;
+  /**
+   * What the App's machine costs running 24/7 for one month at list compute
+   * rates (USD): the monthly cost of an always-on or `convex` App, the most an
+   * on-demand one can cost. `0` for a static App, which runs no machine.
+   * Optional for wire compatibility with a server that predates it.
+   */
+  estimated_monthly_usd?: number;
+  /**
+   * How the active deployment is hosted. `static`: served from storage, with
+   * no runtime: it serves whatever `desired_state` says, and start/stop
+   * answer `409 static_app_no_runtime`. `sandbox`: a server App. `null`: not
+   * deployed yet. `convex`: the App's own machine. Optional for wire
+   * compatibility with a server that predates it.
+   */
+  hosting_type?: 'sandbox' | 'static' | 'convex' | null;
+  /**
+   * Ready deployments the App keeps besides its active one, as rollback
+   * targets. Older ones are retired. Optional for wire compatibility.
+   */
+  retained_deployments?: number;
+  /**
+   * Set on the create and update responses only. Empty today: the
+   * `app_budget_below_always_on` warning is gone, because an always-on App
+   * has no budget.
+   */
+  warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
-   * May the caller OPEN this App, as opposed to merely see it listed?
-   *
-   * These are different verdicts. A project manager is shown every App in the
-   * project so a private one stays manageable when its creator leaves, which
-   * says nothing about whether they may look at it. Check this before asking
-   * for an access session; asking anyway is how a grid of Apps turns into a
-   * console full of 403s.
+   * May the caller OPEN this App? `listApps` returns only Apps the caller
+   * may open (a project manager: every App), so a listed App reads `true`;
+   * an App left out answers 404 on `getApp`.
    *
    * Optional for wire compatibility with a server that predates the field.
    * Treat `undefined` as "unknown", not as "denied".
    */
   viewer_can_access?: boolean;
+  /**
+   * The Apps, by slug, this App uses. Its code may mint their sign-in tokens
+   * (`kortixToken({ audience })`) and reach them through the bindings mount
+   * (`kortixBinding(slug)`). Any other App answers `403 app_not_linked`.
+   * Optional for wire compatibility with a server that predates it.
+   */
+  uses?: string[];
+  /** The Apps, by slug, that use this App. Optional for wire compatibility. */
+  used_by?: string[];
+  /** Verifies the sign-in tokens minted for this App. Optional for wire compatibility. */
+  auth?: AppAuth;
+  /** The App's own machine (kind `convex`); `null` for every other App. Optional for wire compatibility. */
+  instance?: AppInstance | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,11 +229,18 @@ export interface App {
 export interface CreateAppInput {
   slug: string;
   name: string;
+  /** Fixed for the App's life. Default `web`. */
+  kind?: AppKind;
   cpu?: number;
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
+  always_on?: boolean;
+  /** On-demand server Apps only (default `5`); `400 app_budget_not_applicable` for an always-on or `convex` App. */
   monthly_budget_usd?: number;
+  /** The Apps, by slug, this App uses. Each must exist. Default: none. */
+  uses?: string[];
 }
 
 export interface UpdateAppInput {
@@ -73,7 +249,12 @@ export interface UpdateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  /** `false` sets the budget to `monthly_budget_usd` or `5`; `true` clears it (`null`). */
+  always_on?: boolean;
+  /** On-demand server Apps only; `400 app_budget_not_applicable` for an always-on, static or `convex` App. */
   monthly_budget_usd?: number;
+  /** Replaces the Apps this App uses. `[]` removes every link. */
+  uses?: string[];
 }
 
 /**
@@ -173,7 +354,14 @@ export type AppSource =
   | DockerfileAppSource
   | OciImageAppSource;
 
-export interface CreateAppDeploymentInput {
+/**
+ * A build of an uploaded artifact (`web`), or, for an App whose kind deploys
+ * with its own client CLI (`convex`), a record of what that CLI deployed:
+ * `{ source: { kind: 'convex', revision } }` with no artifact.
+ */
+export type CreateAppDeploymentInput = CreateAppBuildInput | { source: { kind: 'convex'; revision?: string } };
+
+export interface CreateAppBuildInput {
   artifact_id: string;
   source: AppSource;
   /** Optional infrastructure preference. Omit it to use the server policy. */
@@ -187,11 +375,13 @@ export interface CreateAppDeploymentInput {
 export interface AppDeployment {
   deployment_id: string;
   app_id: string;
-  artifact_id: string;
+  /** `null` for a deployment recorded without an artifact (kind `convex`). */
+  artifact_id: string | null;
   version: number;
   status: AppDeploymentStatus;
   source_kind: AppSourceKind;
-  hosting_type: 'sandbox';
+  /** `static`: served from storage, no runtime. `sandbox`: runs in its own machine. `convex`: the App's own machine. */
+  hosting_type: 'sandbox' | 'static' | 'convex';
   hosting_provider: AppHostingProvider | null;
   runtime_spec: Record<string, unknown>;
   build_spec: Record<string, unknown>;
@@ -243,6 +433,7 @@ export interface AppLogsOptions {
   limit?: number;
 }
 
+/** The project's Apps the caller may open (a project manager: every App). */
 export async function listApps(projectId: string): Promise<App[]> {
   const data = unwrap(
     await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/apps`),
@@ -287,15 +478,216 @@ export interface AppImageRelease {
   pending: number;
 }
 
-/** Deletes the App, its runtimes, and every deployment image it built. */
+export interface DeleteAppOptions {
+  /**
+   * The App's slug, typed by the person deleting it. An App with
+   * `snapshots` holds data: without it the delete answers
+   * `400 confirmation_required`.
+   */
+  confirm?: string;
+}
+
+export interface DeleteAppResult {
+  ok: boolean;
+  images?: AppImageRelease;
+  /** An App with `snapshots`: Kortix keeps the stopped machine and a `final` snapshot until then. */
+  retained_until?: string | null;
+  final_snapshot_id?: string | null;
+}
+
+/**
+ * Deletes the App, its runtimes, and every deployment image it built. An App
+ * with `snapshots` needs `confirm` (its slug) and project.app.admin; Kortix
+ * keeps its stopped machine and a `final` snapshot 7 days.
+ */
 export async function deleteApp(
   projectId: string,
   appId: string,
-): Promise<{ ok: boolean; images?: AppImageRelease }> {
+  options: DeleteAppOptions = {},
+): Promise<DeleteAppResult> {
+  const query = options.confirm === undefined ? '' : `?confirm=${encodeURIComponent(options.confirm)}`;
   return unwrap(
-    await backendApi.delete<{ ok: boolean; images?: AppImageRelease }>(`/projects/${projectId}/apps/${appId}`),
+    await backendApi.delete<DeleteAppResult>(`/projects/${projectId}/apps/${appId}${query}`),
     'Failed to delete App',
   );
+}
+
+export interface WaitForAppOptions {
+  /** Default 15 minutes: the API's own provisioning deadline. */
+  timeoutMs?: number;
+  /** Default 1 second. */
+  intervalMs?: number;
+}
+
+/**
+ * Polls an App until its instance runs with no operation in flight (after a
+ * create, resize, restore or credentials rotation). Resolves at once for an
+ * App without an instance. Rejects with the instance's error, with an
+ * operation error that appeared during the wait, and after `timeoutMs`.
+ */
+export async function waitForApp(projectId: string, appId: string, options: WaitForAppOptions = {}): Promise<App> {
+  const deadline = Date.now() + (options.timeoutMs ?? 15 * 60_000);
+  let before: string | null | undefined;
+  for (;;) {
+    const app = await getApp(projectId, appId);
+    const instance = app.instance;
+    if (!instance) return app;
+    if (before === undefined) before = instance.last_operation_error;
+    if (instance.status === 'error' || instance.status === 'deleted') {
+      throw new Error(instance.error ?? `App ${app.slug} is ${instance.status}`);
+    }
+    if (instance.status === 'running' && !instance.operation) {
+      if (instance.last_operation_error && instance.last_operation_error !== before) {
+        throw new Error(instance.last_operation_error);
+      }
+      return app;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`App ${app.slug} is still ${instance.operation ?? instance.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 1_000));
+  }
+}
+
+// ── Capability routes ────────────────────────────────────────────────────────
+
+/**
+ * Who made a snapshot, which decides how long it stays. `manual`: kept until
+ * deleted. `automatic`: the daily snapshot, kept 7 days. `resize`: taken
+ * before a resize, kept 24 hours. `final`: taken when the App was deleted,
+ * kept 7 days.
+ */
+export type AppSnapshotKind = 'manual' | 'automatic' | 'resize' | 'final';
+
+export interface AppSnapshot {
+  snapshot_id: string;
+  created_at: string;
+  size_bytes: number | null;
+  kind: AppSnapshotKind;
+  /** When Kortix deletes it; `null` for a manual one. */
+  expires_at: string | null;
+}
+
+/** Capability `snapshots`: the snapshots, the automatic backup and the schedule. */
+export interface AppSnapshots {
+  /** The machine-level backup Kortix restores on its own after a host loss. Not selectable. */
+  automatic: {
+    state: string | null;
+    last_backup_at: string | null;
+    size_bytes: number | null;
+    interval_minutes: number | null;
+  };
+  /** Newest first. */
+  snapshots: AppSnapshot[];
+  /** Manual snapshots an App holds. At the limit a new one answers `409 snapshot_limit`. */
+  snapshot_limit: number;
+  snapshot_schedule: {
+    automatic_interval_hours: number;
+    automatic_retention_days: number;
+    resize_retention_hours: number;
+    /** The last automatic snapshot; `null` before the first. */
+    last_automatic_at: string | null;
+  };
+}
+
+/** Capability `snapshots`. */
+export async function listAppSnapshots(projectId: string, appId: string): Promise<AppSnapshots> {
+  return unwrap(
+    await backendApi.get<AppSnapshots>(`/projects/${projectId}/apps/${appId}/snapshots`),
+    'Failed to list App snapshots',
+  );
+}
+
+/**
+ * Capability `snapshots`. Takes a manual snapshot, kept until deleted. The
+ * machine pauses for the copy (seconds). Answers `409` with `snapshot_limit`
+ * or `app_busy`.
+ */
+export async function createAppSnapshot(projectId: string, appId: string): Promise<AppSnapshot> {
+  return unwrap(
+    await backendApi.post<AppSnapshot>(`/projects/${projectId}/apps/${appId}/snapshots`, {}),
+    'Failed to take an App snapshot',
+  );
+}
+
+/** Capability `snapshots`. Deletes one snapshot of any kind. This cannot be undone. */
+export async function deleteAppSnapshot(projectId: string, appId: string, snapshotId: string): Promise<void> {
+  const response = await backendApi.delete(
+    `/projects/${projectId}/apps/${appId}/snapshots/${encodeURIComponent(snapshotId)}`,
+  );
+  if (!response.success) throw response.error ?? new Error('Failed to delete the App snapshot');
+}
+
+/**
+ * Capability `restore`. Rolls the App back to a snapshot: every change after
+ * it is lost. Resolves once the machine runs the snapshot. Answers `409` with
+ * `snapshot_predates_resize` or `app_busy`.
+ */
+export async function restoreAppSnapshot(projectId: string, appId: string, snapshotId: string): Promise<App> {
+  return unwrap(
+    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/restore`, { snapshot_id: snapshotId }),
+    'Failed to restore the App',
+  );
+}
+
+/** Capability `admin_credentials`. Every read is audited. */
+export interface AppCredentials {
+  url: string;
+  site_url: string;
+  /** Controls the App's code and data. Keep it out of files you commit. */
+  admin_key: string;
+  /** Ready-to-use variables for the kind's client CLI against this App. */
+  env: Record<string, string>;
+}
+
+/** Capability `admin_credentials`. Answers `409 app_not_running` until the App runs. */
+export async function getAppCredentials(projectId: string, appId: string): Promise<AppCredentials> {
+  return unwrap(
+    await backendApi.get<AppCredentials>(`/projects/${projectId}/apps/${appId}/credentials`),
+    'Failed to read the App credentials',
+  );
+}
+
+/**
+ * Capability `admin_credentials`. Replaces the admin key: every key read
+ * before stops working. The machine restarts (about 1 s). Read the new key
+ * with {@link getAppCredentials}.
+ */
+export async function rotateAppCredentials(projectId: string, appId: string): Promise<App> {
+  return unwrap(
+    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/rotate-credentials`, {}),
+    'Failed to rotate the App credentials',
+  );
+}
+
+export interface AppToken {
+  /** ES256 JWT from the project issuer, `aud` = the App id. Verify it with the App's `auth` values. */
+  token: string;
+  expires_at: string;
+}
+
+/**
+ * Capability `member_tokens`. A 15-minute Kortix sign-in token for the App,
+ * naming the caller. In an agent session it names the agent.
+ */
+export async function createAppToken(projectId: string, appId: string): Promise<AppToken> {
+  return unwrap(
+    await backendApi.post<AppToken>(`/projects/${projectId}/apps/${appId}/token`, {}),
+    'Failed to mint an App token',
+  );
+}
+
+export interface GetAppLogOptions {
+  /** 1 to 1000. Default 200. */
+  lines?: number;
+}
+
+/** Capability `logs`. The last lines of the App's process log, newest last. */
+export async function getAppLog(projectId: string, appId: string, options: GetAppLogOptions = {}): Promise<string> {
+  return unwrap(
+    await backendApi.get<{ log: string }>(`/projects/${projectId}/apps/${appId}/logs?lines=${options.lines ?? 200}`),
+    'Failed to read the App log',
+  ).log;
 }
 
 export async function getAppAccess(projectId: string, appId: string): Promise<AppAccessConfig> {

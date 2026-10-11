@@ -195,6 +195,9 @@ export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): s
   if (kind === 'task' || kind === 'delegate') {
     const metaSessionId = (part.state?.metadata as { sessionId?: unknown } | undefined)?.sessionId;
     if (typeof metaSessionId === 'string' && metaSessionId) return metaSessionId;
+    if (kind === 'task' && part.state?.status === 'error') {
+      return part.state.error?.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1];
+    }
   }
   return legacyChildSessionId(tool, part.state);
 }

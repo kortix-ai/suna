@@ -273,7 +273,6 @@ flow(
       'GET /v1/projects',
       'GET /v1/accounts/:accountId',
       'GET /v1/accounts/tokens',
-      'POST /v1/router/web-search',
     ],
   },
   async (ctx) => {
@@ -320,12 +319,6 @@ flow(
     await ctx.step('denied: account-level GET /accounts/tokens → 403', async () => {
       const r = await pat().get('/v1/accounts/tokens');
       r.status(403);
-    });
-    await ctx.step('denied: router surface POST /router/web-search → 401/403', async () => {
-      // enforceTokenProjectScope rejects non-project surfaces (403); even if the
-      // scope check didn't fire, the router is apiKeyAuth-gated against a PAT → 401.
-      const r = await pat().post('/v1/router/web-search', { query: 'ke2e' });
-      r.status([401, 403]);
     });
     await ctx.step('revoke the project token → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
@@ -590,8 +583,8 @@ flow(
       'GET /health',
       'GET /v1/health',
       'POST /v1/access/check-email',
+      'POST /v1/access/request-access',
       'GET /v1/accounts/me',
-      'POST /v1/router/chat/completions',
     ],
   },
   async (ctx) => {
@@ -691,24 +684,18 @@ flow(
       }
     });
 
-    await ctx.step('content-type confusion returns no 5xx', async () => {
-      for (const candidate of [
-        {
-          contentType: 'application/xml',
-          body: '<root><email>x@example.com</email></root>',
-        },
-        {
-          contentType: 'application/x-www-form-urlencoded',
-          body: 'email=x@example.com&role=admin',
-        },
-        { contentType: 'text/plain', body: 'not-json' },
-      ]) {
-        const response = await ctx.client.post('/v1/access/check-email', candidate.body, {
-          raw: true,
-          headers: { 'content-type': candidate.contentType },
-        });
-        if (response.statusCode >= 500) {
-          throw new Error(`${candidate.contentType} returned ${response.statusCode}`);
+    await ctx.step('content-type confusion → 400 Validation failed on both public access routes, never a 5xx', async () => {
+      for (const path of ['/v1/access/check-email', '/v1/access/request-access']) {
+        for (const candidate of [
+          { contentType: 'application/xml', body: '<root><email>x@example.com</email></root>' },
+          { contentType: 'application/x-www-form-urlencoded', body: 'email=x@example.com&role=admin' },
+          { contentType: 'text/plain', body: 'not-json' },
+        ]) {
+          const response = await ctx.client.post(path, candidate.body, {
+            raw: true,
+            headers: { 'content-type': candidate.contentType },
+          });
+          response.status(400).body().has('$.error', true).has('$.message', 'Validation failed').has('$.status', 400);
         }
       }
     });
@@ -725,11 +712,9 @@ flow(
     });
 
     await ctx.step('the router cannot act as an anonymous upstream relay', async () => {
-      const response = await ctx.client.post('/v1/router/chat/completions', {
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: 'pentest' }],
-      });
-      response.status([401, 403, 404]);
+      // `ALL /v1/router/tavily/*` is a catch-all, so it is not in meta.routes.
+      const response = await ctx.client.post('/v1/router/tavily/search', { query: 'pentest' });
+      response.status(401);
     });
   },
 );

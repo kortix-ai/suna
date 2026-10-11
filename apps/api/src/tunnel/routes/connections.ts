@@ -35,13 +35,6 @@ import { uniqueComputerLabel } from '../../connectors/computers';
 import { bearerToken } from '../../shared/bearer-token';
 import { unpairMachine } from '../registrations';
 
-export {
-  retireStaleUnidentifiedRegistrations,
-  retireSupersededRegistrations,
-  UNIDENTIFIED_RETENTION_DAYS,
-  unpairMachine,
-} from '../registrations';
-
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
 

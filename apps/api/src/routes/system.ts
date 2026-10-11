@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
 import { metricsEnabled, renderMetrics } from '../lib/metrics';
@@ -6,11 +5,9 @@ import { json, mountOpenApiDocs } from '../openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';
 import { draining, schemaReady } from '../bootstrap';
 import { eventLoopLagMs } from '../workers/event-loop-lag-worker';
-import { bearerToken } from '../shared/bearer-token';
+import { hasInternalServiceKey } from '../shared/internal-service-key';
 
 const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
-
-export { startEventLoopLagSampler, stopEventLoopLagSampler } from '../workers/event-loop-lag-worker';
 
 export function registerSystemRoutes(app: OpenAPIHono) {
 // === Top-Level Health Check (no auth) ===
@@ -114,19 +111,6 @@ const readinessHandler = (c: any) => {
 app.get('/health/ready', readinessHandler);
 app.get('/v1/health/ready', readinessHandler);
 
-function hasInternalObservabilityAuth(c: any): boolean {
-  const authHeader = c.req.header('Authorization');
-  const bearer = bearerToken(authHeader) ?? '';
-  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
-  const expected = config.INTERNAL_SERVICE_KEY;
-  const safeEq = (a: string, b: string) => {
-    const aa = Buffer.from(a);
-    const bb = Buffer.from(b);
-    return aa.length === bb.length && timingSafeEqual(aa, bb);
-  };
-  return (!!bearer && safeEq(bearer, expected)) || (!!header && safeEq(header, expected));
-}
-
 // Sign in with Kortix — RFC 8414 discovery at the API root. The issuer is the
 // configured public API origin (KORTIX_URL); the request origin is only the
 // fallback for a bare local run. Mirrored under /v1/oauth/.well-known/… for
@@ -159,7 +143,7 @@ app.get('/.well-known/openid-configuration', (c) => {
 });
 
 app.get('/metrics', (c) => {
-  if (!hasInternalObservabilityAuth(c)) {
+  if (!hasInternalServiceKey(c)) {
     return c.text('unauthorized\n', 401);
   }
   if (process.env.KORTIX_LOCAL_TEST_PROFILE === '1') {

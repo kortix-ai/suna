@@ -53,9 +53,8 @@ describe('project sidebar footer ordering', () => {
     expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(orderOf('ProjectComputerNavItem'));
   });
 
-  test('the computer row sits directly below the ChatGPT connect entry', () => {
-    // Both are "connect an account you own" rows: ChatGPT, then your computer.
-    // Nothing else stands between them.
+  test('the computer row sits below the ChatGPT connect entry, Connect MCP between', () => {
+    // "Connect" rows: ChatGPT, then Connect MCP, then your computer.
     const between = source.slice(
       orderOf('ProjectChatGptConnectNavItem'),
       orderOf('ProjectComputerNavItem'),
@@ -63,7 +62,10 @@ describe('project sidebar footer ordering', () => {
     expect(orderOf('ProjectComputerNavItem')).toBeGreaterThan(
       orderOf('ProjectChatGptConnectNavItem'),
     );
-    expect(between.match(/<[A-Z]\w+/g)).toEqual(['<ProjectChatGptConnectNavItem']);
+    expect(between.match(/<Project\w+/g)).toEqual([
+      '<ProjectChatGptConnectNavItem',
+      '<ProjectMcpNavItem',
+    ]);
   });
 
   test('the permanent nav keeps its own order', () => {

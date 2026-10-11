@@ -184,10 +184,6 @@ function showItems(raw: unknown): unknown[] {
 
 type AttachmentSink = (url: unknown, filename: string | null, mime: string | null) => void;
 
-function attachmentsFromFilePart(part: Record<string, unknown>, add: AttachmentSink): void {
-  add(part.url, stringOrNull(part.filename), stringOrNull(part.mime));
-}
-
 function attachmentsFromTextPart(text: string, add: AttachmentSink): void {
   for (const attrs of fileTagAttributes(text)) {
     add(

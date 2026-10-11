@@ -1,4 +1,5 @@
 import {
+  agentSessionStanding,
   isSessionTargetVisibleToCaller,
   isProjectSessionVisibleTo,
   isTriggerRunSession,
@@ -13,7 +14,6 @@ import {
 // is replaced wholesale by `mock.module` in several route tests.
 import { authorize } from '../../iam/authorize';
 import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
-import { agentSessionStanding } from './agent-session-standing';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';

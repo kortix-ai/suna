@@ -6,7 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { commitMultipleFilesToBranch } from './branches';
-import { classifyGitError, isTransientGitMirrorError, refreshMirror } from './mirror';
+import {
+  classifyGitError,
+  isRemotePushPolicyRejection,
+  isTransientGitMirrorError,
+  refreshMirror,
+} from './mirror';
 import type { GitBackedProject } from './types';
 
 // Regression for KRTX-238 (Better Stack FE pattern `0cb9ab43…`, project
@@ -42,6 +47,77 @@ describe('transient classifier — the production KRTX-238 shape', () => {
     );
     expect(err.kind).toBe('failed');
     expect(isTransientGitMirrorError(err)).toBe(true);
+  });
+});
+
+// Regression for KRTX-1683 (Better Stack FE pattern `a1ed728e…`): GitHub's
+// receive-pack itself 500'd mid-push, so git printed the remote's refusal —
+// ` ! [remote rejected] <sha> -> main (Internal Server Error)` — and the push
+// exited non-zero. The remote tip does NOT move, so re-pushing the same commit
+// is safe, and a retry seconds later is what actually recovered the incident
+// (the same POST returned 200 ~8s later). This shape matched NEITHER the
+// transient pattern (no "returned error: 5xx" text) NOR the policy pattern
+// (no rule-violation phrase), so it surfaced as the raw
+// `Failed to commit kortix.yaml: <git stderr>` 502 and paged Sentry from the
+// connector-add flow.
+const PRODUCTION_REMOTE_REJECTED_STDERR = [
+  'To https://github.com/example/repo.git',
+  ' ! [remote rejected] 0123456789abcdef0123456789abcdef01234567 -> main (Internal Server Error)',
+  "error: failed to push some refs to 'https://github.com/example/repo.git'",
+].join('\n');
+
+describe('transient classifier — remote rejected with a GitHub-side 5xx reason (KRTX-1683)', () => {
+  test('classifies the production `remote rejected (Internal Server Error)` push as transient (retryable)', () => {
+    const err = classifyGitError(
+      { stderr: PRODUCTION_REMOTE_REJECTED_STDERR, code: 1, message: 'Command failed: git push' },
+      ['push', '--force-with-lease=refs/heads/main:abc', 'origin', 'def:refs/heads/main'],
+      30_000,
+    );
+    expect(err.kind).toBe('failed');
+    expect(isTransientGitMirrorError(err)).toBe(true);
+  });
+
+  test('does not classify a remote rejection with a permanent reason as transient', () => {
+    const err = classifyGitError(
+      {
+        stderr:
+          " ! [remote rejected] 0123456789abcdef0123456789abcdef01234567 -> main (insufficient permission)",
+        code: 1,
+        message: 'Command failed: git push',
+      },
+      ['push', 'origin', 'def:refs/heads/main'],
+      30_000,
+    );
+    expect(isTransientGitMirrorError(err)).toBe(false);
+  });
+
+  test('does not classify a non-push remote rejection as transient', () => {
+    const err = classifyGitError(
+      {
+        stderr:
+          'From https://github.com/example/repo.git\n ! [remote rejected] refs/tags/v1 (Internal Server Error)',
+        code: 1,
+        message: 'Command failed: git fetch',
+      },
+      ['fetch', 'origin'],
+      30_000,
+    );
+    expect(isTransientGitMirrorError(err)).toBe(false);
+  });
+
+  test('a policy rejection stays non-transient (the policy check owns it)', () => {
+    const err = classifyGitError(
+      {
+        stderr:
+          ' ! [remote rejected] 0123456789abcdef0123456789abcdef01234567 -> main (push declined due to repository rule violations)',
+        code: 1,
+        message: 'Command failed: git push',
+      },
+      ['push', 'origin', 'def:refs/heads/main'],
+      30_000,
+    );
+    expect(isRemotePushPolicyRejection(err)).toBe(true);
+    expect(isTransientGitMirrorError(err)).toBe(false);
   });
 });
 

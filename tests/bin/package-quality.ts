@@ -81,24 +81,21 @@ async function runAll(tasks: Promise<unknown>[]): Promise<void> {
 }
 
 async function rejectFocusedTests(): Promise<void> {
+  // git grep, never rg: GitHub's runner images ship no ripgrep. It searches
+  // tracked and untracked files minus .gitignore (no node_modules), and exits
+  // 1 on no match, like rg.
+  // A pathspec `*` crosses directories, so `apps/*.test.ts` is recursive.
+  const extensions = ['spec.ts', 'test.ts', 'test.tsx', 'test.mts', 'test.js'];
   const child = Bun.spawn(
     [
-      'rg',
+      'git',
+      'grep',
+      '--untracked',
       '-n',
-      String.raw`\b(describe|test|it)\.only\(`,
-      'apps',
-      'packages',
-      'tests',
-      '-g',
-      '*.spec.ts',
-      '-g',
-      '*.test.ts',
-      '-g',
-      '*.test.tsx',
-      '-g',
-      '*.test.mts',
-      '-g',
-      '*.test.js',
+      '-E',
+      String.raw`(^|[^A-Za-z0-9_$.])(describe|test|it)\.only\(`,
+      '--',
+      ...['apps', 'packages', 'tests'].flatMap((dir) => extensions.map((ext) => `${dir}/*.${ext}`)),
     ],
     { cwd: root, stdout: 'pipe', stderr: 'inherit' },
   );

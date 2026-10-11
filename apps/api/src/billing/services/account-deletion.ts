@@ -5,6 +5,7 @@ import {
   accounts,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   apps,
   changeRequests,
   connectorCalls,
@@ -20,6 +21,7 @@ import {
   projectTriggerRuntime,
   projects,
   providerEvents,
+  pushDeviceTokens,
   reviewItems,
   sandboxes,
   sandboxComputeSessions,
@@ -34,8 +36,10 @@ import {
   usageEvents,
 } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
+import { deleteAccountSiteObjects } from '../../apps/static-site';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
+import { config } from '../../config';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { ownedAccountRows } from '../../iam/membership-read';
@@ -43,6 +47,8 @@ import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
+import { deleteAccountBackends } from '../../apps/kinds/convex/lifecycle';
+import { deleteUserNotificationData } from '../../notifications/cleanup';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -60,6 +66,8 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
+import { releaseProjectEventSubscriptions } from '../../projects/surface';
+import { deleteAccountExternalStores } from './account-erasure-stores';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
@@ -131,27 +139,125 @@ export async function cancelAccountDeletion(accountId: string) {
  * The one deletion routine. The immediate path and the scheduled worker both
  * run it, in this order, so neither can leave a login or data behind:
  *
- *   1. `performDeletion`: sandboxes, Stripe cancel, wallet forfeit.
+ *   1. `performDeletion`: sandboxes, `convex` App machines (and their
+ *      snapshots), the stores outside the database (`deleteAccountExternalStores`:
+ *      parked boxes, session files, Kortix-managed repos), Stripe cancel,
+ *      wallet forfeit.
  *   2. `deleteAccountData`: the account's rows. Data goes before the auth
  *      identity: a failure here must not sign a user out of an account whose
  *      data survived (the browser signs out only when the route answered
  *      success).
- *   3. The Supabase auth user.
+ *   3. The Supabase auth user, when the account is the requester's personal
+ *      account.
+ *
+ * The requester's login goes only with their personal account, whose id is
+ * the user id (`bootstrapPersonalAccount`). Deleting any other account keeps
+ * the requester's login and leaves the sandboxes of their other accounts
+ * alone: a team account the requester owns, or a request an operator made
+ * while acting as a customer (impersonation refuses these routes now, but a
+ * pending row from before keeps the operator as its requester).
  *
  * Every step is idempotent and throws on failure, so the caller can retry the
  * whole routine. The caller owns the request row (`completed` only after this
  * returns).
  */
 async function runAccountDeletion(accountId: string, userId?: string, requestId?: string) {
-  await performDeletion(accountId, userId);
+  const requester = userId === accountId ? userId : undefined;
+  await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);
-  if (userId) {
-    const { error } = await getSupabase().auth.admin.deleteUser(userId);
+  if (requester) {
+    await clearLegacyAuthUserReferences(requester);
+    // A device token is the person's data; it has no foreign key to cascade.
+    await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
+    // So are their notifications, watcher rows, preferences and browser push
+    // subscriptions, in every account (KRTX-1742).
+    await deleteUserNotificationData(requester);
+    const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
     if (error && !isAuthUserNotFound(error)) throw error;
-    forgetUserJwtLiveness(userId);
+    forgetUserJwtLiveness(requester);
   }
+}
+
+/** Legacy tables whose rows die with the user (NOT NULL or secret-bearing reference). */
+const LEGACY_ROWS_DELETED_WITH_USER = new Set(['basejump.invitations', 'public.google_oauth_tokens']);
+
+/**
+ * Clear every NO ACTION / RESTRICT foreign key into `auth.users` that would make
+ * GoTrue's delete of the user fail with "Database error deleting user".
+ *
+ * Prod and dev still carry the legacy `basejump` schema: each user owns a
+ * personal `basejump.accounts` row (`primary_owner_user_id`, NO ACTION), and
+ * other legacy tables point at the user too. The FKs come from the catalog, not
+ * a hard-coded list, so a table this code never heard of is handled the same
+ * way. One transaction, idempotent, a no-op where no such FK exists (local,
+ * self-host):
+ *
+ *   1. refuse (throw) while the user owns a NON-personal basejump account:
+ *      that is team data, never deleted here;
+ *   2. delete the user's personal basejump accounts and the rows that
+ *      reference them without cascade (`agent_versions`);
+ *   3. nullable references from other rows are set NULL; invitations and
+ *      Google OAuth tokens of the user are deleted;
+ *   4. any other NOT NULL reference (an admin audit actor) refuses: an audit
+ *      row is never rewritten or dropped.
+ *
+ * Why not a migration that changes the FKs: the legacy tables exist only in
+ * some environments, the change would alter 12 constraints on live tables, and
+ * the routine already runs inside the one place that knows which rows belong to
+ * the deleted person.
+ */
+async function clearLegacyAuthUserReferences(userId: string): Promise<void> {
+  type Ref = { tbl: string; col: string; notnull: boolean };
+  const refsInto = (target: string) => sql`
+    SELECT format('%I.%I', n.nspname, r.relname) AS tbl, quote_ident(a.attname) AS col, a.attnotnull AS notnull
+      FROM pg_constraint c
+      JOIN pg_class r ON r.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = r.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+     WHERE c.contype = 'f' AND c.confrelid = ${target}::regclass AND c.confdeltype IN ('a', 'r')`;
+  await db.transaction(async (tx) => {
+    const personal: string[] = [];
+    const [exists] = (await tx.execute(
+      sql`SELECT to_regclass('basejump.accounts') IS NOT NULL AS has`,
+    )) as unknown as Array<{ has: boolean }>;
+    if (exists?.has) {
+      const owned = (await tx.execute(sql`
+        SELECT id::text AS id, personal_account FROM basejump.accounts WHERE primary_owner_user_id = ${userId}
+      `)) as unknown as Array<{ id: string; personal_account: boolean }>;
+      if (owned.some((row) => !row.personal_account)) {
+        throw new Error(
+          `user ${userId} owns a non-personal basejump account; its team data is not deleted by account deletion`,
+        );
+      }
+      personal.push(...owned.map((row) => row.id));
+      if (personal.length > 0) {
+        const ids = sql.join(personal.map((id) => sql`${id}::uuid`), sql`, `);
+        const dependents = (await tx.execute(refsInto('basejump.accounts'))) as unknown as Ref[];
+        for (const ref of dependents) {
+          await tx.execute(
+            sql`DELETE FROM ${sql.raw(ref.tbl)} WHERE ${sql.raw(ref.col)} IN (${ids})`,
+          );
+        }
+        await tx.execute(sql`DELETE FROM basejump.accounts WHERE id IN (${ids})`);
+      }
+    }
+    const refs = (await tx.execute(refsInto('auth.users'))) as unknown as Ref[];
+    for (const ref of refs) {
+      const target = sql`${sql.raw(ref.tbl)} WHERE ${sql.raw(ref.col)} = ${userId}`;
+      if (LEGACY_ROWS_DELETED_WITH_USER.has(ref.tbl)) {
+        await tx.execute(sql`DELETE FROM ${target}`);
+      } else if (!ref.notnull) {
+        await tx.execute(sql`UPDATE ${sql.raw(ref.tbl)} SET ${sql.raw(ref.col)} = NULL WHERE ${sql.raw(ref.col)} = ${userId}`);
+      } else {
+        const [row] = (await tx.execute(sql`SELECT 1 AS hit FROM ${target} LIMIT 1`)) as unknown as Array<{ hit: number }>;
+        if (row) {
+          throw new Error(`user ${userId} is still referenced by ${ref.tbl}.${ref.col} (NOT NULL); not rewritten or deleted`);
+        }
+      }
+    }
+  });
 }
 
 function isAuthUserNotFound(error: { status?: number; code?: string }): boolean {
@@ -159,8 +265,9 @@ function isAuthUserNotFound(error: { status?: number; code?: string }): boolean 
 }
 
 /**
- * `userId` widens the sandbox sweep to every account this user OWNS, not just
- * the one the route resolved. Optional so existing callers keep compiling, but
+ * `userId` is the requester. When the account is their personal account, the
+ * sandbox sweep widens to every account they OWN and their login is deleted
+ * (see `runAccountDeletion`). Optional so existing callers keep compiling, but
  * the route should always pass it — without it a user's team-account sandboxes
  * survive the deletion. See `reclaimableAccountIds`.
  */
@@ -174,11 +281,18 @@ export async function deleteAccountImmediately(accountId: string, userId?: strin
   return { success: true, message: 'Account deleted' };
 }
 
+/** Requests one tick executes, oldest first. The 15-minute tick takes the rest. */
+export const SWEEP_BATCH_SIZE = 25;
+
 export async function processScheduledDeletions(): Promise<{
   processed: number;
   errors: string[];
 }> {
-  const requests = await getScheduledDeletions();
+  if (config.ACCOUNT_DELETION_SWEEP_PAUSED) {
+    logger.warn('[AccountDeletion] scheduled sweep paused (ACCOUNT_DELETION_SWEEP_PAUSED)');
+    return { processed: 0, errors: [] };
+  }
+  const requests = await getScheduledDeletions(SWEEP_BATCH_SIZE);
   let processed = 0;
   const errors: string[] = [];
 
@@ -196,7 +310,11 @@ export async function processScheduledDeletions(): Promise<{
       processed++;
     } catch (err) {
       const msg = `Error deleting account ${request.accountId}: ${(err as Error).message}`;
-      logger.error(`[AccountDeletion] ${msg}`);
+      logger.error('[AccountDeletion] scheduled deletion failed', {
+        requestId: request.id,
+        accountId: request.accountId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       errors.push(msg);
       // Back to `pending`: the next tick retries the failed step.
       await releaseDeletionRequest(request.id).catch((releaseErr) =>
@@ -241,6 +359,8 @@ export interface SandboxReclaimSummary {
   removed: number;
   sessionsSettled: number;
   errors: number;
+  /** Boxes this pass removed at the provider; the parked-box pass skips them. */
+  removedExternalIds: string[];
 }
 
 /**
@@ -312,6 +432,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     removed: 0,
     sessionsSettled: 0,
     errors: 0,
+    removedExternalIds: [],
   };
   // Deletion must never fail because teardown did. Every failure mode here —
   // the lookup itself, a provider stop, a reconcile — degrades to "leave the
@@ -377,6 +498,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
             try {
               await provider.remove(externalId);
               summary.removed++;
+              summary.removedExternalIds.push(externalId);
             } catch (err) {
               if (!isAlreadyNotRunning(err)) {
                 summary.errors++;
@@ -385,6 +507,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
                 );
               } else {
                 summary.removed++;
+                summary.removedExternalIds.push(externalId);
               }
             }
           } else {
@@ -452,7 +575,13 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
 }
 
 async function performDeletion(accountId: string, userId?: string) {
-  await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
+  const reclaimed = await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
+  // Machines and snapshots go before the rows that name them cascade away.
+  // Throws on a failure, so the deletion retries instead of orphaning one.
+  await deleteAccountBackends(accountId);
+  // Parked boxes, session files and managed repos, before the money steps: a
+  // store that fails leaves the subscription and the credits as they were.
+  await deleteAccountExternalStores(accountId, new Set(reclaimed.removedExternalIds));
 
   const account = await getCreditAccount(accountId);
 
@@ -536,6 +665,11 @@ async function deleteInChunks(table: PgTable, where: SQL): Promise<void> {
  * the account. `prompt_attachments` and `connector_attachments` stay with
  * their existing TTL sweeps, which own both their rows and their Storage
  * objects — deleting the rows here would orphan their objects forever.
+ *
+ * Static App files are deleted here, objects first: every object under the
+ * account's `app-sites/<account_id>/` prefix, then the `app_site_blobs` rows
+ * in pass 2 (`app_site_files` cascades from `app_deployments`). A failed
+ * object delete throws before any row goes, so the retry still finds them.
  */
 async function deleteAccountData(accountId: string, keepRequestId?: string): Promise<void> {
   // Pass 0 — bounded chunks. Children before parents, as in pass 1.
@@ -548,6 +682,16 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
   await deleteInChunks(sessionLifecycleCommands, eq(sessionLifecycleCommands.accountId, accountId));
   await deleteInChunks(sessionTurns, inAccountSessions(sessionTurns.sessionId));
   await deleteInChunks(sessionPendingQuestions, inAccountSessions(sessionPendingQuestions.sessionId));
+  await deleteAccountSiteObjects(accountId);
+
+  // Provider-side app-event instances live outside our database: release them
+  // before the cascade drops the rows that name them.
+  for (const { projectId } of await db
+    .select({ projectId: projects.projectId })
+    .from(projects)
+    .where(eq(projects.accountId, accountId))) {
+    await releaseProjectEventSubscriptions(projectId);
+  }
 
   await db.transaction(async (tx) => {
     // Scopes for the child rows that carry no account_id of their own.
@@ -582,6 +726,22 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
     await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
     await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    await tx.delete(appSiteBlobs).where(eq(appSiteBlobs.accountId, accountId));
+    // kortix.guard_session_sandbox_identity() refuses to delete a session box
+    // that has an external_id unless its session is soft-deleted. The account is
+    // going away, so soft-delete its sessions first. Without this the delete
+    // below threw and every account with an established box failed to delete.
+    await tx
+      .update(projectSessions)
+      .set({
+        metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object('deletedAt', to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`,
+      })
+      .where(
+        and(
+          eq(projectSessions.accountId, accountId),
+          sql`${projectSessions.metadata}->>'deletedAt' is null`,
+        ),
+      );
     await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
     await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
     await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));

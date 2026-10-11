@@ -31,5 +31,12 @@ describe('billing auth skip', () => {
     expect(isBillingGateExemptPath('/v1/billing/webhooks/stripe')).toBe(true);
     expect(isBillingGateExemptPath('/v1/billing/cron/x')).toBe(true);
     expect(isBillingGateExemptPath('/v1/billing/subscription')).toBe(false);
+    expect(isBillingGateExemptPath('/v1/billing/accounts')).toBe(false);
+  });
+
+  // Account deletion lives on /v1/account/*, which has no billing gate. The
+  // /v1/billing/account/* mirror is retired (410) and no longer exempt.
+  test('the retired /v1/billing/account mirror is not exempt', () => {
+    expect(isBillingGateExemptPath('/v1/billing/account/deletion-status')).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { eq, and, gt, lte, or, sql } from 'drizzle-orm';
+import { eq, and, gt, lte, or, sql, asc } from 'drizzle-orm';
 import { accountDeletionRequests } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -105,8 +105,14 @@ export async function countOverdueBacklog(): Promise<number> {
   return row?.count ?? 0;
 }
 
-export async function getScheduledDeletions() {
-  return db.select().from(accountDeletionRequests).where(dueRequest());
+/** The `limit` oldest due requests. */
+export async function getScheduledDeletions(limit: number) {
+  return db
+    .select()
+    .from(accountDeletionRequests)
+    .where(dueRequest())
+    .orderBy(asc(accountDeletionRequests.scheduledFor))
+    .limit(limit);
 }
 
 /**

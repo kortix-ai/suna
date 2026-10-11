@@ -35,7 +35,7 @@ permissions:
 jobs:
   scale:
     name: scale ${{ inputs.service }} to ${{ inputs.desired_count }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # Inputs reach the shell only through env, never through `${{ }}` in `run:`.
     env:
       CLUSTER: ${{ inputs.cluster }}
@@ -53,7 +53,7 @@ jobs:
           done
           [[ "$REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]$ ]] || { echo "::error::bad region '$REGION'"; exit 1; }
           [[ "$DESIRED_COUNT" =~ ^[0-9]+$ ]] || { echo "::error::bad desired_count '$DESIRED_COUNT'"; exit 1; }
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: ${{ inputs.region }}

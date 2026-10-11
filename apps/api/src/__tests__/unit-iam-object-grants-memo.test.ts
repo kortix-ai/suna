@@ -66,7 +66,6 @@ describe('loadObjectGrants — cross-replica staleness for connection', () => {
   test('a replica that cached the pre-grant empty map re-queries after a sibling writes the first grant', async () => {
     const table = new Map<string, string[]>();
     const replicaA = makeReplica(table); // reads before the grant exists
-    const replicaB = makeReplica(table); // writes the grant
 
     // Replica A observes "no grants yet" and (per the fix) must NOT cache it.
     expect((await replicaA.memo('p1', 'connection')).size).toBe(0);

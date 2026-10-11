@@ -236,64 +236,23 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls[0]!.mustRespawn).toBe(false)
   })
 
-  it('enabling the connectors MCP face mid-session takes the dispose path', async () => {
-    // Pins CURRENT behaviour, which is not obviously the intended one.
-    // `KORTIX_CONNECTORS_MCP_ENABLED` shapes `out.mcp` inside the config file,
-    // so it follows the config-file rule and disposes rather than respawns —
-    // consistent with RESPAWN_REQUIRED_ENV_NAMES (lifecycle.ts).
-    //
-    // But routes/env.ts:21 claims this variable "must restart OpenCode because
-    // MCP servers are registered only at spawn". If that claim is right, the
-    // email channel's mid-session enable (channels/email/session.ts:123, 208)
-    // silently does nothing and this expectation should flip to `true`. Nobody
-    // has measured which is true against the pinned opencode — see the note on
-    // RESPAWN_REQUIRED_ENV_NAMES in opencode.ts.
-    const { opencode, calls } = fakeOpencode()
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'v1',
-    } as NodeJS.ProcessEnv)
-    const app = buildTestApp(opencode, store)
+  it('an older API pushing the retired KORTIX_CONNECTORS_MCP_ENABLED changes nothing', async () => {
+    // The in-sandbox connectors MCP is gone. An API built before its removal
+    // still sends this name on email follow-ups; the allowlist drops it.
+    const { opencode } = fakeOpencode()
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
 
-    const { status } = await postEnv(app, {
-      revision: 'rev-1',
-      env: { API_KEY: 'v1' },
-      names: ['API_KEY'],
+    const { status, json } = await postEnv(app, {
+      revision: 'rev-email-mcp',
+      env: {},
+      names: [],
       refreshModels: true,
       opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     })
 
     expect(status).toBe(200)
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.mustRespawn).toBe(false)
-  })
-
-  it('a connectors-MCP push reloads once and sets the env; re-pushing the SAME value reloads nothing', async () => {
-    // The fleet default sets this at boot, so every caller that includes it
-    // re-sends it. The route compares against process.env before marking the
-    // name changed: an identical value produces no reload at all.
-    const { opencode, calls } = fakeOpencode()
-    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
-    const push = () =>
-      postEnv(app, {
-        revision: 'rev-email-mcp',
-        env: {},
-        names: [],
-        refreshModels: true,
-        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-      })
-
-    const first = await push()
-    expect(first.status).toBe(200)
-    expect(first.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_CONNECTORS_MCP_ENABLED'] })
-    expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBe('1')
-    expect(calls).toHaveLength(1)
-
-    const replay = await push()
-    expect(replay.status).toBe(200)
-    expect(replay.json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
-    expect(calls).toHaveLength(1)
+    expect(json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBeUndefined()
   })
 
   it('a runtime env value sets process.env and reloads; null deletes it and reloads again', async () => {

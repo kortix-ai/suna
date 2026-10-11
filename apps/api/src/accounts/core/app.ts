@@ -1,7 +1,7 @@
 import { AccountSummarySchema as ContractAccountSummarySchema } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers, accountMemberships, type accounts } from '@kortix/db';
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { accountInvitations, accountMemberships, type accounts } from '@kortix/db';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import {
@@ -219,7 +219,7 @@ export async function countOwners(accountId: string): Promise<number> {
 // Batched + cached owner-email lookup. Lives in ./owner-emails so it stays a
 // leaf module (db + sql only) and can be unit-tested without the account graph.
 // Re-exported here because it was part of this module's public surface.
-export { clearOwnerEmailCache, ownerEmailCacheSize } from './owner-emails';
+export { clearOwnerEmailCache } from './owner-emails';
 export { lookupEmailsByUserIds };
 
 // Display names for a batch of accounts, deriving the fallback for unnamed

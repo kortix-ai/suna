@@ -6,11 +6,6 @@ import {
   llmProxyBaseUrl,
   stopLlmProxy,
   LLM_PROXY_PLACEHOLDER_KEY,
-  startConnectorProxy,
-  setConnectorProxyToken,
-  connectorProxyReady,
-  connectorProxyBaseUrl,
-  stopConnectorProxy,
 } from '@/services/llm-proxy/llm-proxy'
 
 // A mock upstream that echoes back the Authorization header + path it received,
@@ -39,7 +34,6 @@ async function fetchJson(url: string): Promise<{ auth: string | null; path: stri
 describe('credential proxy — live token swap (the no-restart mechanism)', () => {
   afterEach(() => {
     stopLlmProxy()
-    stopConnectorProxy()
   })
 
   test('fails closed (503) before any token is set — never an open relay', async () => {
@@ -99,27 +93,6 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
       upstream.stop(true)
     }
   })
-
-  test('the connector and LLM proxies hold separate tokens: a swap on one leaves the other', async () => {
-    const up = mockUpstream()
-    try {
-      startLlmProxy(14319, up.url, 'llm-A')
-      startConnectorProxy(14320, up.url, 'exec-A')
-      expect(connectorProxyBaseUrl()).toBe('http://127.0.0.1:14320')
-      expect(connectorProxyReady()).toBe(true)
-      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-A')
-
-      setConnectorProxyToken('exec-B')
-      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-B')
-      expect((await fetchJson(`${llmProxyBaseUrl()}/v1/llm/models`)).auth).toBe('Bearer llm-A')
-
-      setLlmProxyToken('llm-B')
-      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-B')
-    } finally {
-      up.stop()
-    }
-  })
-
 })
 
 describe('in-sandbox inline image window (SampleCo 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {

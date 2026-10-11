@@ -21,6 +21,7 @@ import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
 import { getSupabase } from '../shared/supabase';
+import { hasInternalServiceKey } from '../shared/internal-service-key';
 /** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
 type HealthCheck = { ok: boolean; error?: string };
@@ -30,6 +31,8 @@ export const setupApp = makeOpenApiApp<AppEnv>();
 // ─── Auth ───────────────────────────────────────────────────────────────────
 // All setup routes require Supabase JWT auth EXCEPT /install-status which must
 // remain public (the installer/login page calls it before any user exists).
+// /bootstrap-owner runs before any user exists too, so it takes the host's
+// INTERNAL_SERVICE_KEY instead (checked in its handler).
 setupApp.use('/*', async (c, next) => {
   // Allow public routes without auth
   if (
@@ -74,61 +77,8 @@ function getProjectRoot(): string {
   return findRepoRoot() ?? process.cwd();
 }
 
-function getMasterUrlCandidates(): string[] {
-  const candidates: string[] = [];
-  const explicit = process.env.KORTIX_MASTER_URL;
-  if (explicit && explicit.trim()) candidates.push(explicit.trim());
 
-  // Inside docker-compose network, the sandbox service is reachable by name.
-  candidates.push('http://sandbox:8000');
 
-  // When running the API on the host (dev), sandbox is exposed on this port.
-  candidates.push('http://localhost:14000');
-
-  // De-dupe
-  return Array.from(new Set(candidates));
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchMasterJson<T>(path: string, init: RequestInit = {}, timeoutMs = 5000): Promise<T> {
-  const candidates = getMasterUrlCandidates();
-  let lastErr: unknown = null;
-
-  // Inject INTERNAL_SERVICE_KEY for sandbox auth (VPS mode)
-  const serviceKey = process.env.INTERNAL_SERVICE_KEY;
-  if (serviceKey) {
-    const existingHeaders = init.headers ? Object.fromEntries(new Headers(init.headers as HeadersInit).entries()) : {};
-    init = { ...init, headers: { ...existingHeaders, 'Authorization': `Bearer ${serviceKey}` } };
-  }
-
-  for (const base of candidates) {
-    const url = `${base}${path}`;
-    try {
-      const res = await fetchWithTimeout(url, init, timeoutMs);
-      // 503 from /kortix/health means "starting" — still return the JSON body
-      // so callers can inspect the status/opencode fields.
-      if (!res.ok && res.status !== 503) {
-        lastErr = new Error(`Master ${url} returned ${res.status}`);
-        continue;
-      }
-      return (await res.json()) as T;
-    } catch (e) {
-      lastErr = e;
-      continue;
-    }
-  }
-
-  throw lastErr instanceof Error ? lastErr : new Error('Failed to reach sandbox master');
-}
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
@@ -237,12 +187,22 @@ setupApp.openapi(
     responses: {
       200: json(z.object({ success: z.boolean(), created: z.boolean(), email: z.string() }), 'Owner created'),
       400: json(z.object({ success: z.boolean(), error: z.string() }), 'Bad request'),
+      401: json(z.object({ success: z.boolean(), error: z.string() }), 'Host credential required'),
       409: json(z.object({ success: z.boolean(), error: z.string() }), 'Owner already exists'),
       500: json(z.object({ success: z.boolean(), error: z.string() }), 'Server error'),
       503: json(z.object({ success: z.boolean(), error: z.string() }), 'Database not configured'),
     },
   }),
   async (c: any) => {
+  // KRTX-1715. While no user exists this creates a CONFIRMED account for any
+  // email, and DISABLE_SIGNUP does not stop it, so a stranger who reaches a new
+  // instance first could own it. Only the host holds INTERNAL_SERVICE_KEY.
+  if (!hasInternalServiceKey(c)) {
+    return c.json(
+      { success: false, error: 'Send the instance INTERNAL_SERVICE_KEY as X-Kortix-Internal-Key' },
+      401,
+    );
+  }
   if (!hasDatabase) {
     return c.json({ success: false, error: 'Database not configured' }, 503);
   }

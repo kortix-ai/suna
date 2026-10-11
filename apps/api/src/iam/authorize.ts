@@ -41,6 +41,7 @@ import {
   roleAssignments,
   serviceAccounts,
 } from '@kortix/db';
+import { ssoProviderIdOf } from '../shared/auth-identity';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
@@ -87,6 +88,9 @@ export type Reason =
   | 'not_a_member'
   | 'super_admin'
   | 'account_mfa_required'
+  /** The account requires single sign-on for this person's email domain, and
+   *  the credential is not an identity of the account's own IdP. */
+  | 'sso_required'
   | 'role'
   | 'account_role_insufficient'
   | 'project_target_required'
@@ -171,6 +175,18 @@ export function authorize(actor: Actor, action: string, obj: Obj = { type: 'acco
   return timeStage('iam', () => authorizeDecision(actor, action, obj));
 }
 
+/**
+ * The SSO-only gate alone (step 4a below), for account routes that decide on
+ * membership without `authorize` (`GET /v1/accounts/:id`, members, invites,
+ * branding, secret resources). `middleware/sso-gate.ts` applies it to every
+ * `/v1/accounts/:accountId` request.
+ */
+export async function ssoRequiredFor(actor: Actor): Promise<boolean> {
+  if (isImpersonatingAccount(actor.userId, actor.accountId)) return false;
+  const rec = await resolvePrincipal(actingPrincipal(actor), actor.accountId);
+  return rec?.accountSsoRequired === true;
+}
+
 async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
@@ -200,6 +216,15 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // 4. A token bound to one project is refused on every other project and on
   // every account-level action.
   if (!tokenScopeAllows(binding, tokenId, rec.kind, scope, obj)) return deny('token_out_of_scope');
+
+  // 4a. SSO only. Above the super-admin bypass: the account creator holds
+  // `is_super_admin`, and enforcement exists to close exactly that person's
+  // password door. Every credential of a non-SSO identity in the enforced
+  // domain is refused, a PAT included; an identity of the account's own IdP
+  // passes. Break-glass for a broken IdP: a platform admin marks the domain
+  // unverified (`PUT /v1/admin/api/accounts/:id/sso-domain-verification`),
+  // which lifts enforcement.
+  if (rec.accountSsoRequired) return deny('sso_required');
 
   // 5. Super-admin. Above the MFA gate on purpose: flipping account MFA must
   // never be able to lock an account out permanently.
@@ -385,6 +410,11 @@ async function listAccessibleProjectsUntimed(actor: Actor, action: string): Prom
     }
   }
 
+  // SSO only IS applied to the listing, unlike MFA below: the remedy is a new
+  // sign-in through the IdP, not a step-up on this page, and a password
+  // identity of the enforced domain must not enumerate the account's projects.
+  if (rec.accountSsoRequired) return { mode: 'none', reason: 'sso_required' };
+
   if (rec.isSuperAdmin) return { mode: 'all' };
 
   // The account-wide MFA gate is DELIBERATELY not applied here. Enumerating a
@@ -567,6 +597,9 @@ interface PrincipalRecord {
   kind: 'member' | 'service_account';
   isSuperAdmin: boolean;
   accountMfaRequired: boolean;
+  /** The account enforces SSO on a verified domain, this principal's email is
+   *  in that domain, and the principal is not an identity of that IdP. */
+  accountSsoRequired: boolean;
   /** 'owner' | 'admin' | 'member', from the system role held at account scope. */
   accountRoleKey: string | null;
   accountRoleActions: ReadonlySet<string>;
@@ -616,7 +649,25 @@ async function resolvePrincipalUncached(
   const [identityRows, groupRows, assignmentRows, customRows] = await Promise.all([
     // is_super_admin and mfa_required are NOT permissions — see the module note.
     db
-      .select({ isSuperAdmin: accountMembers.isSuperAdmin, mfaRequired: accounts.mfaRequired })
+      .select({
+        isSuperAdmin: accountMembers.isSuperAdmin,
+        mfaRequired: accounts.mfaRequired,
+        // SSO only: the account's IdP enforces sign-in for a domain it proved
+        // control of, this person's email is in that domain, and this auth user
+        // is not an identity of that IdP (a password, email-code or social
+        // identity, or another IdP's). A subquery of the same read, so the
+        // resolve stays one round trip deep.
+        ssoRequired: sql<boolean>`EXISTS (
+          SELECT 1
+            FROM kortix.account_sso_providers enforcing
+            JOIN auth.users person ON person.id::text = ${pid}
+           WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
+             AND enforcing.enforce_sso
+             AND enforcing.domain_verified_at IS NOT NULL
+             AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
+             AND ${ssoProviderIdOf(sql`person`)} IS DISTINCT FROM enforcing.supabase_sso_provider_id::text
+        )`,
+      })
       .from(accountMembers)
       .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
       .where(and(eq(accountMembers.userId, pid), eq(accountMembers.accountId, accountId)))
@@ -704,6 +755,7 @@ async function resolvePrincipalUncached(
       kind: 'member',
       isSuperAdmin: identityRows[0]?.isSuperAdmin ?? false,
       accountMfaRequired: identityRows[0]?.mfaRequired ?? false,
+      accountSsoRequired: identityRows[0]?.ssoRequired === true,
       accountRoleKey,
       accountRoleActions,
       groupIds: groupRows.map((g) => g.groupId),
@@ -732,6 +784,7 @@ async function resolvePrincipalUncached(
     kind: 'service_account',
     isSuperAdmin: false,
     accountMfaRequired: false,
+    accountSsoRequired: false,
     accountRoleKey: null,
     accountRoleActions: EMPTY_SET,
     groupIds: [],

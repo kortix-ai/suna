@@ -284,7 +284,6 @@ describe('buildConfigRelease', () => {
     const mirror = await refreshMirror(project);
     const tree = run('git', ['rev-parse', `${sha}^{tree}`], mirror);
 
-    expect(release.format).toBe('config-release-v2');
     expect(release.source_commit).toBe(sha);
     expect(release.config_dir).toBe('.kortix/opencode');
     expect(release.config_tree_id).toBe(tree);
@@ -385,6 +384,40 @@ describe('buildConfigRelease', () => {
     expect(again.equals(archive)).toBe(true);
   });
 
+  // KRTX-1728: the too-large reason, the docs and `kortix validate` tell an
+  // owner to mark big paths export-ignore. The release used to ship them
+  // anyway, so the remedy changed nothing and the repository stayed over the cap.
+  test('a path the repository marks export-ignore is left out of the release, outside the config dir', async () => {
+    seed();
+    const sha = commit(
+      {
+        '.gitattributes': 'assets/** export-ignore\nfixtures export-ignore\n',
+        // Random bytes do not compress: each stays over the 32 KiB test cap.
+        'assets/hero.bin': randomBytes(48 * 1024),
+        'assets/deep/clip.bin': randomBytes(48 * 1024),
+        'fixtures/big.json': randomBytes(48 * 1024),
+        // The config dir is exempt: what it marks export-ignore still ships verbatim.
+        '.kortix/opencode/.gitattributes': 'secret-notes.md export-ignore\n',
+        '.kortix/opencode/secret-notes.md': 'kept verbatim\n',
+      },
+      'export-ignored assets',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
+    expect(release.reason ?? null).toBeNull();
+    expect(release.release_id).not.toBeNull();
+
+    const paths = release.files!.map(([path]) => path);
+    expect(paths.filter((path) => path.startsWith('assets/') || path.startsWith('fixtures/'))).toEqual([]);
+    expect(paths).toEqual(expect.arrayContaining(['.gitattributes', 'src/app.ts', '.kortix/opencode/secret-notes.md']));
+
+    const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
+    expect(existsSync(join(dir, 'assets'))).toBe(false);
+    expect(existsSync(join(dir, 'fixtures'))).toBe(false);
+    expect(readFileSync(join(dir, '.kortix/opencode/secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
+    // On-box blob verification: every listed file is in the archive, byte for byte.
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+  });
+
   test('a code-only commit and a governance-only commit each move the release', async () => {
     const first = seed();
     const a = await buildConfigRelease(project, first, 'project', { store });
@@ -460,7 +493,7 @@ describe('buildConfigRelease', () => {
     expect((await buildConfigRelease(project, moved, 'meta', { store })).release_id).toBe(first.release_id);
   });
 
-  test('a repository over the archive limit produces no release', async () => {
+  test('a repository over the archive limit keeps its release; only the archive is withheld', async () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
@@ -471,19 +504,52 @@ describe('buildConfigRelease', () => {
       'huge',
     );
     const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
-    expect(release.release_id).toBeNull();
-    expect(release.config_tree_id).toMatch(/^[0-9a-f]{40}$/);
-    expect(release.reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
-    expect(release.reason).toContain('`kortix validate` lists the largest files');
+    const mirror = await refreshMirror(project);
+    const tree = run('git', ['rev-parse', `${sha}^{tree}`], mirror);
+    expect(release.config_tree_id).toBe(tree);
+    expect(release.release_id).toBe(configReleaseId(tree, release.compiled_governance_etag));
+    expect(release.archive).toBeNull();
+    expect(release.reason).toBeNull();
+    expect(release.files!.map(([path]) => path)).toContain('.kortix/opencode/blob.bin');
+    expect(release.archive_reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
+    expect(release.archive_reason).toContain('`kortix validate` lists the largest files');
     expect(store.objects.size).toBe(0);
     // The answer is a fact of the commit: every box's descriptor request (one
     // per minute per box) must not rebuild and gzip the whole tree again.
     expect(await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 })).toBe(release);
 
-    const mirror = await refreshMirror(project);
+    // v3: the release, no archive. v2: no release and the reason, because a v2
+    // daemon reads `archive: null` as governance only.
+    const v3 = toDescriptor(release, { repositoryAccess: true, format: 'config-release-v3' });
+    expect(v3).toMatchObject({ format: 'config-release-v3', release_id: release.release_id, archive: null, reason: null });
+    expect(v3.files).toEqual(release.files);
+    expect('archive_reason' in v3).toBe(false);
+    const v2 = toDescriptor(release, { repositoryAccess: true, format: 'config-release-v2' });
+    expect(v2).toMatchObject({ format: 'config-release-v2', release_id: null, files: null, archive: null });
+    expect(v2.reason).toBe(release.archive_reason!);
+
     await expect(buildConfigArchive(mirror, release.config_tree_id!, 1024)).rejects.toBeInstanceOf(
       ConfigArchiveTooLargeError,
     );
+  });
+
+  test('an agent variant over the archive limit lists its composed tree', async () => {
+    const sha = commit(
+      {
+        'kortix.yaml': MANIFEST('first'),
+        '.kortix/opencode/opencode.json': '{}\n',
+        '.kortix/opencode/blob.bin': randomBytes(64 * 1024),
+        '.gitattributes': 'assets/** export-ignore\n',
+        'assets/skip.bin': randomBytes(1024),
+      },
+      'huge composed',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
+    const paths = release.files!.map(([path]) => path);
+    expect(release.archive).toBeNull();
+    expect(paths).toContain('.kortix/opencode/blob.bin');
+    expect(paths.some((path) => path.startsWith('assets/'))).toBe(false);
+    expect(release.release_id).toBe(configReleaseId(release.config_tree_id!, release.compiled_governance_etag));
   });
 
   test('a store failure still returns a complete descriptor', async () => {

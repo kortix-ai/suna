@@ -252,4 +252,27 @@ describe('serveConfigArchive — a release is the commit tree', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('X-Kortix-Config-Archive-Source')).toBe('mirror');
   });
+
+  // KRTX-1728: a release without its export-ignored paths is a tree no mirror
+  // holds, so the route rebuilds it from the commit, the same way.
+  test('a release without export-ignored paths is rebuilt from its commit', async () => {
+    writeFileSync(join(repo, '.gitattributes'), 'assets/** export-ignore\n');
+    mkdirSync(join(repo, 'assets'), { recursive: true });
+    writeFileSync(join(repo, 'assets/big.bin'), randomBytes(1024));
+    git('add', '-A');
+    git('commit', '-qm', 'export-ignored assets');
+    const sha = git('rev-parse', 'HEAD');
+    const resolved = await resolveReleaseTreeSource(repo, project, sha);
+    if (!('source' in resolved)) throw new Error(resolved.reason);
+    expect(resolved.source.exportIgnored).toEqual(['assets/big.bin']);
+    const read = await readComposedRelease(repo, resolved.source, { archive: false });
+    expect(read.treeId).not.toBe(git('rev-parse', `${sha}^{tree}`));
+    expect(read.files.some(([path]) => path.startsWith('assets/'))).toBe(false);
+
+    const m = mirrors();
+    const deps = { store: new MemoryConfigArchiveStore(), ...PRIVATE };
+    expect((await serveConfigArchive(project, read.treeId, m.mirror, m.forced, deps, sha)).status).toBe(200);
+    // Without its commit the tree is unknown: 404, as for any tree no mirror holds.
+    expect((await serveConfigArchive(project, read.treeId, m.mirror, m.forced, { store: new MemoryConfigArchiveStore(), ...PRIVATE })).status).toBe(404);
+  });
 });

@@ -20,6 +20,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { appTlsCheckStatus, type AppExistsCheck } from '../apps/edge';
+import { backendHostTlsCheckStatus } from '../apps/kinds/convex/hosts';
 import { resolvePreviewHost } from '../sandbox-proxy/preview-hosts';
 import { resolveExternalIdFromHostLabel } from '../sandbox-proxy/backend';
 import { requestClientKey } from '../middleware/client-ip';
@@ -58,9 +59,10 @@ export async function previewTlsCheckStatus(
 }
 
 /**
- * 200 if `domain` is a hostname this deployment actually serves — an App or a
- * sandbox preview. Checked in that order; they cannot both match, because the
- * two families sit under different base domains.
+ * 200 if `domain` is a hostname this deployment actually serves — an App, a
+ * `convex` App host (Convex API, HTTP actions, dashboard), or a sandbox preview.
+ * Checked in that order; no two can match: web App and `convex` App hosts differ in
+ * label shape, previews sit under a different base domain.
  */
 export async function edgeTlsCheckStatus(
   domain: string | null | undefined,
@@ -68,6 +70,8 @@ export async function edgeTlsCheckStatus(
 ): Promise<200 | 403 | 404> {
   const app = await appTlsCheckStatus(domain, deps.appExists);
   if (app !== 403) return app;
+  const backend = await backendHostTlsCheckStatus(domain);
+  if (backend !== 403) return backend;
   return previewTlsCheckStatus(domain, deps.sandboxExists);
 }
 

@@ -56,6 +56,7 @@ mock.module('../../platform/providers', () => ({
 
 const { db } = await import('../../shared/db');
 const fixtures = await import('../../__tests__/helpers/integration-fixtures');
+const { insertConvexRow } = await import('../../__tests__/helpers/convex-apps');
 const {
   endComputeSession,
   markComputeSessionAlive,
@@ -120,7 +121,7 @@ async function openWindow(input: {
   startedAt: string;
   lastBilledAt?: string;
   metadata?: Record<string, unknown>;
-  workloadType?: 'session' | 'app' | 'monitor';
+  workloadType?: 'session' | 'app' | 'monitor' | 'backend';
   appRuntimeId?: string;
 }): Promise<{ id: string; sandboxId: string }> {
   const sandboxId = input.sandboxId ?? crypto.randomUUID();
@@ -741,6 +742,50 @@ withDb('compute metering on PostgreSQL', () => {
             metadata: expect.objectContaining({ unresolvedSince: iso(now) }) }),
         ]);
       }
+    });
+
+    test('a running backend keeps its window; a parked or deleted backend, or a missing row, closes it', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const now = Date.now();
+      const project = await fixtures.seedProject('compute-backend', { accountId });
+      const backend = async (name: string, extra: Partial<Parameters<typeof insertConvexRow>[0]> = {}) => {
+        const row = await insertConvexRow({
+          projectId: project.project_id, accountId, slug: name, status: 'running',
+          externalId: `backend-ext-${name}`, ...extra,
+        });
+        return openWindow({ accountId, sandboxId: row.appId, startedAt: iso(now - MINUTE), workloadType: 'backend' });
+      };
+      const running = await backend('live');
+      const parked = await backend('parked', { metadata: { parked: iso(now) } });
+      const deleted = await backend('deleted', { status: 'deleted', deletedAt: new Date(now) });
+      const rowless = await openWindow({ accountId, startedAt: iso(now - MINUTE), workloadType: 'backend' });
+
+      expect(await countBillingInvariantViolations()).toBe(3);
+      const result = await reconcileOrphanComputeSessions(new Date(now));
+
+      expect(result).toMatchObject({ checked: 4, closed: 3, errors: 0 });
+      expect(result.byReason['sandbox-not-active']).toBe(2);
+      expect(result.byReason['sandbox-row-missing']).toBe(1);
+      expect(probed).toEqual(['backend-ext-live']);
+      expect(await windowsOf(running.sandboxId)).toEqual([expect.objectContaining({ state: 'active', endedAt: null })]);
+      for (const closed of [parked, deleted, rowless]) {
+        expect(await windowsOf(closed.sandboxId)).toEqual([expect.objectContaining({ state: 'stopped' })]);
+      }
+    });
+
+    test('a backend window settles a Backend compute debit at its reserved size', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = crypto.randomUUID();
+      await startComputeSession({ sandboxId, accountId, provider: 'platinum', spec: SPEC, workloadType: 'backend' });
+      await backdate(sandboxId, iso(Date.now() - 30 * MINUTE));
+      await markComputeSessionAlive(sandboxId);
+      await endComputeSession(sandboxId);
+      const [window] = await windowsOf(sandboxId);
+      expect(window).toMatchObject({ workloadType: 'backend', state: 'finalized' });
+      const ledger = await ledgerOf(accountId);
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]!.description).toStartWith('Backend compute · 2vCPU/4GB/20GB · ');
+      expect(Math.abs(ledger[0]!.amount)).toBeCloseTo(HOURLY / 2, 3);
     });
 
     test('the monitors count open windows of dead boxes and live boxes not observed inside the grace', async () => {

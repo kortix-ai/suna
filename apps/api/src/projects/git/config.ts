@@ -200,8 +200,11 @@ export function resolveConfigAgents(
   const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
   return {
     agent_discovery: 'declarative',
+    // The FULL registered roster: a disabled agent stays listed with
+    // `enabled: false` (the SDK pickers' `isSelectableAgent` and the web agents
+    // page's disabled badge already filter it at their own layer). Dropping it
+    // here made GET agents answer a subset of what the manifest registers.
     agents: loadedAgents.specs
-      .filter((spec) => spec.enabled)
       .map((spec) => {
         const file = spec.file ?? resolveFile(spec);
         const native = (file ? nativeByPath.get(file) : undefined) ?? nativeByName.get(spec.name);
@@ -280,6 +283,10 @@ async function resolveProjectManifest(
         raw: parsedManifest,
         format: manifestFormat,
         path: manifestFilePath,
+        // The import origins: an agent declared in an imported (nested YAML)
+        // file is attributed to the file that declares it, not the root
+        // manifest. Without it every spec anchored at the root path.
+        imports: resolved?.imports,
       })
     : hasAgentsDeclaration(manifestRaw)
       ? {

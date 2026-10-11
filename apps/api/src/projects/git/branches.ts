@@ -29,7 +29,6 @@ export {
   GitFileRevisionConflictError,
   isExpectedFileRevisionRace,
 } from './commit-writer';
-export type { ExpectedFileRevision } from './commit-writer';
 
 const BRANCH_COMPARE_CONCURRENCY = 8;
 const BRANCH_COMPARE_LIMIT = 100;

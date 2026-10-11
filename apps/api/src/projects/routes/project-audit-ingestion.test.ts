@@ -484,8 +484,10 @@ describe('audit ingest contention', () => {
  * slow database used to run past the deadline mid-loop and die with the
  * error-level `request exceeded the 25s server processing deadline` abort
  * (prod 2026-09-28: the route's dominant error class, hours of 700-1000
- * lines/h against a 141/h baseline). Now the loop stops at a chunk boundary
- * and answers with the same controlled contended 503 the lock path returns.
+ * lines/h against a 141/h baseline). Now `boundChunkWrite` races every chunk
+ * against the remaining budget, so the race — not a statement worst case —
+ * decides how far the loop goes, and what it cannot finish becomes the same
+ * controlled contended 503 the lock path returns.
  */
 describe('audit ingest request-deadline budget', () => {
   beforeEach(() => {
@@ -540,16 +542,54 @@ describe('audit ingest request-deadline budget', () => {
     );
   }
 
-  test('a request with no budget left for another chunk 503s before any insert', async () => {
-    // 20s spent before the handler: ~5s left, under the ~23s one-chunk budget.
+  test('a request with 5s of budget left writes its full batch on a healthy audit pool', async () => {
+    // 20s spent before the handler. The write path is what matters here: the
+    // race (`boundChunkWrite`) bounds every chunk inside the deadline, so the
+    // statement timeout no longer gates STARTING a chunk — refusing here used
+    // to bounce the whole batch to the relay for another 5s-later POST (prod
+    // 2026-10-07 06:40: 20 such refusals in one 3-minute window).
     const { status, retryAfter, body } = await postWithStartedAt(200, 20_000);
 
-    expect(status).toBe(503);
-    expect(retryAfter).toBe('5');
-    expect(body).toMatchObject({ accepted: 200, inserted: 0, retry_after_seconds: 5 });
-    expect(typeof body.error).toBe('string');
-    // Nothing reached the database; the relay's spool keeps the whole batch.
-    expect(insertStatements).toHaveLength(0);
+    expect(status).toBe(200);
+    expect(retryAfter).toBeNull();
+    expect(body).toMatchObject({ accepted: 200, inserted: 200 });
+    expect(insertStatements.map((batch) => batch.length)).toEqual(
+      Array.from({ length: 8 }, () => 25),
+    );
+  });
+
+  test('a request whose main pool already ate most of its budget still writes a small batch (prod 2026-10-07 class)', async () => {
+    // 14.4s spent in auth + handler lookups on a degraded main pool: ~10.6s
+    // left. That is below the old statement-timeout reserve (11s), and prod
+    // refused every such batch there (remaining_ms 4–10.6s, attempted=0,
+    // batches of 1–36 rows) while the audit pool itself was healthy (zero
+    // contention, zero races in 100h of logs). ~10.6s is ample to land rows in
+    // milliseconds; dropping them only amplified the relay's retries.
+    const { status, body } = await postWithStartedAt(2, 14_400);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ accepted: 2, inserted: 2 });
+    expect(insertStatements).toHaveLength(1);
+  });
+
+  test('a chunk stops at the response margin, not at the statement timeout', async () => {
+    // 22.5s spent: ~2.5s left, above the reserve — the chunk still starts (its
+    // race bound is remaining - 1s). Anything under the reserve refuses
+    // before it. (The reserve itself is a wall-clock comparison; the two posts
+    // sit well clear of it either side.)
+    insertDelayMs = 700;
+    const { status, body } = await postWithStartedAt(25, 22_500);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ accepted: 25, inserted: 25 });
+
+    // 23.9s spent: ~1.1s left — below the reserve. Starting a chunk here
+    // would queue work nobody waits for; the relay holds the batch instead.
+    insertDelayMs = 0;
+    const refused = await postWithStartedAt(25, 23_900);
+    expect(refused.status).toBe(503);
+    expect(refused.retryAfter).toBe('5');
+    expect(refused.body).toMatchObject({ accepted: 25, inserted: 0, retry_after_seconds: 5 });
+    expect(insertStatements).toHaveLength(1); // only the first request wrote
   });
 
   test('a fresh request still writes a full 200-row batch', async () => {
@@ -562,19 +602,22 @@ describe('audit ingest request-deadline budget', () => {
     );
   });
 
-  test('stops at a chunk boundary once the budget is spent, keeping committed rows', async () => {
-    // 10s spent before the handler. Each chunk consumes 1.5s in a slow
-    // statement; after three chunks (~10.5s left) the remaining budget can no
-    // longer cover one more statement's worst case (its capped lock wait plus
-    // the audit pool's statement timeout), so the loop stops here.
+  test('keeps writing slow chunks while the race bound still fits the deadline', async () => {
+    // 10s spent before the handler, and each chunk consumes 1.5s in a slow
+    // statement (a degraded pool). Eight 25-row statements take 12s, finishing
+    // ~3s before the deadline — all 200 rows land. The race, not a statement
+    // worst case, is what bounds this: a chunk slower than its race bound is
+    // abandoned mid-flight and answered with the contended 503 instead.
     insertDelayMs = 1_500;
     const { status, retryAfter, body } = await postWithStartedAt(200, 10_000);
 
-    expect(status).toBe(503);
-    expect(retryAfter).toBe('5');
-    expect(body).toMatchObject({ accepted: 200, inserted: 75, retry_after_seconds: 5 });
-    expect(insertStatements).toHaveLength(3);
-  });
+    expect(status).toBe(200);
+    expect(retryAfter).toBeNull();
+    expect(body).toMatchObject({ accepted: 200, inserted: 200 });
+    expect(insertStatements.map((batch) => batch.length)).toEqual(
+      Array.from({ length: 8 }, () => 25),
+    );
+  }, 20_000);
 });
 
 /**
@@ -690,9 +733,10 @@ describe('audit ingest contention fallback', () => {
   });
 
   test('a request with little budget left still lands rows the full-chunk budget refused', async () => {
-    // 13s spent before the handler: the old 23s one-chunk preflight answered
-    // 503 with zero inserts. The per-attempt budget caps the lock wait to what
-    // ~12s affords, so the batch still writes — in statements that fit.
+    // 13s spent before the handler: ~12s left, above the 2s reserve, so the
+    // full 200-row chunk starts and lands the whole batch in one statement.
+    // (The per-attempt budget that keeps fallback statements inside the
+    // deadline is exercised by the contended tests below.)
     return runWithContext(
       'POST',
       `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
@@ -740,8 +784,8 @@ describe('audit ingest contention fallback', () => {
       );
       const body = (await response.json()) as Record<string, unknown>;
       // Statement 1 (100 rows) committed, then only ~1s of the 25s deadline
-      // remained — under one statement's worst case, so the loop stopped and
-      // answered the controlled 503 instead of racing the deadline.
+      // remained — under the 2s reserve, so the loop stopped and answered the
+      // controlled 503 instead of starting a chunk nobody can wait for.
       expect(response.status).toBe(503);
       expect(response.headers.get('retry-after')).toBe('5');
       expect(body).toMatchObject({ accepted: 200, inserted: 100 });

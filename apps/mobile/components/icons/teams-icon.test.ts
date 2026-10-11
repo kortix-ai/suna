@@ -39,8 +39,9 @@ describe('the mobile channel card', () => {
   });
 
   test("draws each platform's own mark, and names Teams in full", () => {
-    expect(userMessage).toMatch(/platform === 'Teams' \? <TeamsIcon size=\{size\} \/>/);
-    expect(userMessage).toMatch(/platform === 'Slack' \? <SlackIcon size=\{size\} \/>/);
+    // `ChannelMark` returns each platform's mark (#9369 made the ternary ifs).
+    expect(userMessage).toMatch(/platform === 'Teams'\)? (\?|return) <TeamsIcon size=\{size\} \/>/);
+    expect(userMessage).toMatch(/platform === 'Slack'\)? (\?|return) <SlackIcon size=\{size\} \/>/);
     expect(userMessage).toContain("Teams: 'Microsoft Teams'");
   });
 });

@@ -323,6 +323,7 @@ export function ShowFileActions({
       onSecondary={openFullScreen}
       refreshButtonClassName="active:scale-[0.96]"
       secondaryButtonClassName="active:scale-[0.96]"
+      secondaryIconClassName="size-4"
       primary={previewButton}
     />
   );

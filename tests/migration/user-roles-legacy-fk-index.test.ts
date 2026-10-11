@@ -42,7 +42,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('user_roles granted_by FK index (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -76,7 +76,7 @@ suite('user_roles granted_by FK index (throwaway Postgres)', () => {
   }, 120_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('applies green where the legacy table does not exist (fresh database)', async () => {

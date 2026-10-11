@@ -60,7 +60,7 @@ describe('harness ownership boundary', () => {
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
-      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
+      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
       background: { start: unexpected },
       assets: {
         harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
@@ -74,7 +74,7 @@ describe('harness ownership boundary', () => {
     // facts ride in `details`) and one readiness verdict (E19).
     expect(await response.json()).toMatchObject({
       daemon: 'ok',
-      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'session.subagents'],
+      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
       status: 'ok',
       runtimeReady: true,
       boot_error: null,

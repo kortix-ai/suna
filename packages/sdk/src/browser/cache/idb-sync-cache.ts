@@ -1,319 +1,162 @@
 /**
- * IndexedDB persistence layer for the sync store.
+ * IndexedDB on the web: where the device keeps each session's saved copy.
  *
- * **NOTHING IN KORTIX WRITES OR READS TRANSCRIPTS HERE ANY MORE.** The mirror
- * that painted a session before its sandbox woke is gone (`use-session-sync.ts`
- * carries the full reasoning): its freshness test read the transcript's SHAPE —
- * message count, total part count, tail id — and the two changes that END a
- * turn move none of them. `time.completed` on the tail and the `error` an abort
- * stamps were both invisible, so a stopped thread's disk copy claimed the turn
- * was still running and the next cold paint dimmed every message after it to
- * "Queued".
+ * `indexedDBKeyValueStorage()` is the `KeyValueStorage` the web host hands to
+ * `createSavedCopyStore`. It replaced `localStorage` for the saved copies for
+ * two reasons: a localStorage read is synchronous, so opening a session parsed
+ * up to 300 KB of JSON before the first frame; and localStorage is one ~5 MB
+ * bucket per origin, shared with drafts and preferences, which 1.5 MB of
+ * copies crowded out. An IndexedDB read is asynchronous, and its quota is the
+ * disk's.
  *
- * What remains, and why:
+ * The database is `kortix-session-cache`, the one the retired transcript
+ * mirror used. That mirror is GONE: its freshness test read the transcript's
+ * SHAPE, so a stopped turn painted as running (`no-transcript-mirror.test.ts`
+ * keeps it out of the live path). Version 4 drops its `sessions` rows and
+ * creates `saved-copies`, a plain key-value store of the saved-copy store's
+ * strings. Every function the mirror published stays, deprecated:
  *
- *  - `deleteSessionFromIDB` / `clearSessionIDBCache` / `pruneIDBCache` — the
- *    CLEANUP half, still wired to session delete, sign-out and account switch.
- *    They must keep working to purge what earlier versions left on disk.
+ *  - `clearSessionIDBCache` empties `saved-copies` (sign-out, user switch);
+ *  - `deleteSessionFromIDB` drops one session's saved copy when given its
+ *    Kortix session scope;
  *  - `saveSessionToIDB` / `loadSessionFromIDB` / `flushIDBWrites` /
- *    `loadAllSessionIdsFromIDB` — published API (`public-surface.snapshot.json`).
- *    Removing an export is a breaking change for a package on npm, so they stay
- *    and keep their contract. No Kortix host calls them.
- *
- * Schema: one object store "sessions" keyed by cacheKey, each entry holds
- * { cacheKey, userId, sessionId, messages, parts, updatedAt }.
+ *    `loadAllSessionIdsFromIDB` / `pruneIDBCache` keep their signatures and
+ *    store nothing.
  */
 
-import { platformConfig } from '../../core/http/config';
-import { buildSessionCacheKey } from './idb-sync-cache-key';
+import type { KeyValueStorage } from '../../core/cache/persisted-query-cache';
+import { currentSavedCopyStore } from '../../core/session-sync/saved-copy-store';
+import { parseKortixSessionScope } from '../session-sync/server-transcript-mirror';
 
 const DB_NAME = 'kortix-session-cache';
-/**
- * 3 — bumped to PURGE what the retired mirror left behind: `onupgradeneeded`
- * drops and recreates the store.
- *
- * BUT NOT ON PAGE LOAD, and that is worth being exact about. `openDB` is lazy,
- * and with the mirror gone the only callers that still reach it are
- * `deleteSessionFromIDB` (a session was deleted) and `clearSessionIDBCache`
- * (sign-out / account switch). So a user who does neither keeps their old
- * entries on disk indefinitely — `pruneIDBCache`'s 50-session / 7-day caps are
- * unreachable too, because the only thing that called it was the flush.
- *
- * That data is INERT: nothing reads it, so it cannot affect the transcript. It
- * is wasted quota, not a correctness risk. Purging it eagerly would need a
- * host-side call at app start, which is deliberately not added here.
- */
-const DB_VERSION = 3;
-/** Debounce for the batched write. Flat: the caller that made this cadence
- *  worth tuning is gone. */
-const FLUSH_INTERVAL_MS = 500;
-const STORE_NAME = 'sessions';
-const MAX_CACHED_SESSIONS = 50;
-const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/** 4 — drops the retired mirror's `sessions` store and creates `saved-copies`. */
+const DB_VERSION = 4;
+const STORE_NAME = 'saved-copies';
+const RETIRED_STORE_NAME = 'sessions';
 
-interface CachedSession {
-  cacheKey: string;
-  userId: string;
-  sessionId: string;
-  kortixSessionScope?: string;
-  messages: any[];
-  parts: Record<string, any[]>;
-  updatedAt: number;
+/** One open connection per factory: a test installs a fresh one per case. */
+const connections = new WeakMap<IDBFactory, Promise<IDBDatabase>>();
+
+function factory(): IDBFactory | undefined {
+  try {
+    return (globalThis as { indexedDB?: IDBFactory }).indexedDB;
+  } catch {
+    // Reading the property throws where storage is blocked.
+    return undefined;
+  }
 }
 
-let cacheScopePromise: Promise<string | null> | null = null;
-
-function getCurrentCacheScope(): Promise<string | null> {
-  if (cacheScopePromise) return cacheScopePromise;
-
-  const pending = (async () => {
-    try {
-      const userId = (await platformConfig().getUserId?.()) ?? null;
-      return userId ? `user:${userId}` : null;
-    } catch {
-      return null;
-    }
-  })();
-  cacheScopePromise = pending;
-
-  // Authentication can hydrate after the first cache access. Retain a real
-  // user scope for this browser session, but let an unauthenticated lookup be
-  // retried instead of pinning `null` until reload.
-  void pending.then((scope) => {
-    if (!scope && cacheScopePromise === pending) {
-      cacheScopePromise = null;
-    }
+function openDB(): Promise<IDBDatabase> {
+  const idb = factory();
+  if (!idb) return Promise.reject(new Error('IndexedDB not available'));
+  const open = connections.get(idb);
+  if (open) return open;
+  const pending = new Promise<IDBDatabase>((resolve, reject) => {
+    const request = idb.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (db.objectStoreNames.contains(RETIRED_STORE_NAME)) db.deleteObjectStore(RETIRED_STORE_NAME);
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      // A newer build's upgrade in another tab must not wait on this one.
+      db.onversionchange = () => {
+        db.close();
+        connections.delete(idb);
+      };
+      resolve(db);
+    };
+    request.onerror = () => reject(request.error);
+    // Another tab holds an older version open. Without this the open waits
+    // until that tab closes, and every read parks behind it.
+    request.onblocked = () => reject(new Error('IndexedDB upgrade blocked by another tab'));
   });
-
+  connections.set(idb, pending);
+  pending.catch(() => connections.delete(idb));
   return pending;
 }
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function openDB(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      reject(new Error('IndexedDB not available'));
-      return;
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (db.objectStoreNames.contains(STORE_NAME)) {
-        db.deleteObjectStore(STORE_NAME);
-      }
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'cacheKey' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => {
-      dbPromise = null;
-      reject(req.error);
-    };
-  });
-  return dbPromise;
+function run<T>(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return openDB().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, mode);
+        const request = operation(tx.objectStore(STORE_NAME));
+        tx.oncomplete = () => resolve(request.result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      }),
+  );
 }
 
-const pendingWrites = new Map<
-  string,
-  {
-    scope: string;
-    sessionId: string;
-    kortixSessionScope?: string;
-    messages: any[];
-    parts: Record<string, any[]>;
-  }
->();
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
-
-// The caps below are only real if something enforces them. Prune once per page
-// load, off the back of the first flush, so the cache cannot grow forever
-// without any host having to remember to call it.
-let prunedThisLoad = false;
-
-async function flushPendingWrites(): Promise<void> {
-  flushTimer = null;
-  if (pendingWrites.size === 0) return;
-  if (!prunedThisLoad) {
-    prunedThisLoad = true;
-    void pruneIDBCache();
-  }
-  const batch = new Map(pendingWrites);
-  pendingWrites.clear();
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    for (const [cacheKey, { scope, sessionId, kortixSessionScope, messages, parts }] of batch) {
-      const partsForSession: Record<string, any[]> = {};
-      for (const msg of messages) {
-        if (parts[msg.id]) {
-          partsForSession[msg.id] = parts[msg.id];
-        }
-      }
-      store.put({
-        cacheKey,
-        userId: scope,
-        sessionId,
-        kortixSessionScope,
-        messages,
-        parts: partsForSession,
-        updatedAt: Date.now(),
-      } satisfies CachedSession);
-    }
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // Non-critical — this cache is disposable by construction.
-  }
+/**
+ * IndexedDB as an asynchronous {@link KeyValueStorage}, or `null` where there
+ * is none (server render, React Native). A read that fails resolves `null`; a
+ * write that fails (quota, blocked upgrade) rejects, so the caller can evict
+ * and retry.
+ */
+export function indexedDBKeyValueStorage(): KeyValueStorage | null {
+  if (!factory()) return null;
+  return {
+    getItem: (key) =>
+      run('readonly', (store) => store.get(key)).then(
+        (value) => (typeof value === 'string' ? value : null),
+        () => null,
+      ),
+    setItem: (key, value) => run('readwrite', (store) => store.put(value, key)).then(() => undefined),
+    removeItem: (key) => run('readwrite', (store) => store.delete(key)).then(() => undefined),
+  };
 }
 
+/** @deprecated The transcript mirror is retired. Stores nothing. Removed in the next major. */
 export async function saveSessionToIDB(
-  sessionId: string,
-  messages: any[],
-  parts: Record<string, any[]>,
-  kortixSessionScope?: string,
-): Promise<void> {
-  const scope = await getCurrentCacheScope();
-  if (!scope) return;
+  _sessionId: string,
+  _messages: any[],
+  _parts: Record<string, any[]>,
+  _kortixSessionScope?: string,
+): Promise<void> {}
 
-  const cacheKey = buildSessionCacheKey(scope, sessionId, kortixSessionScope);
-  pendingWrites.set(cacheKey, {
-    scope,
-    sessionId,
-    kortixSessionScope,
-    messages,
-    parts,
-  });
-  if (!flushTimer) {
-    flushTimer = setTimeout(flushPendingWrites, FLUSH_INTERVAL_MS);
-  }
-}
-
+/** @deprecated The transcript mirror is retired. Removed in the next major. */
 export function flushIDBWrites(): Promise<void> {
-  if (flushTimer) {
-    clearTimeout(flushTimer);
-  }
-  return flushPendingWrites();
+  return Promise.resolve();
 }
 
+/** @deprecated The transcript mirror is retired. Always `null`. Removed in the next major. */
 export async function loadSessionFromIDB(
-  sessionId: string,
-  kortixSessionScope?: string,
+  _sessionId: string,
+  _kortixSessionScope?: string,
 ): Promise<{ messages: any[]; parts: Record<string, any[]> } | null> {
-  try {
-    const scope = await getCurrentCacheScope();
-    if (!scope) return null;
-
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.get(buildSessionCacheKey(scope, sessionId, kortixSessionScope));
-    const result = await new Promise<CachedSession | undefined>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (!result) return null;
-    if (result.userId !== scope) return null;
-    if (kortixSessionScope) {
-      if (result.kortixSessionScope !== kortixSessionScope) return null;
-    } else if (result.sessionId !== sessionId) {
-      return null;
-    }
-    if (Date.now() - result.updatedAt > MAX_SESSION_AGE_MS) {
-      deleteSessionFromIDB(sessionId, kortixSessionScope);
-      return null;
-    }
-    return { messages: result.messages, parts: result.parts };
-  } catch {
-    return null;
-  }
+  return null;
 }
 
+/** @deprecated The transcript mirror is retired. Always empty. Removed in the next major. */
 export async function loadAllSessionIdsFromIDB(): Promise<string[]> {
-  try {
-    const scope = await getCurrentCacheScope();
-    if (!scope) return [];
-
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.getAll();
-    const entries = await new Promise<CachedSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result as CachedSession[]);
-      req.onerror = () => reject(req.error);
-    });
-    return entries.filter((entry) => entry.userId === scope).map((entry) => entry.sessionId);
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-export async function deleteSessionFromIDB(
-  sessionId: string,
-  kortixSessionScope?: string,
-): Promise<void> {
-  try {
-    const scope = await getCurrentCacheScope();
-    if (!scope) return;
-
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(buildSessionCacheKey(scope, sessionId, kortixSessionScope));
-  } catch {
-    // ignore
-  }
+/**
+ * @deprecated Delete the session with `deleteProjectSession`, which drops its
+ * saved copy. This drops the saved copy of the Kortix session `kortixSessionScope`
+ * (`<projectId>/<sessionId>`); without a scope it does nothing.
+ */
+export async function deleteSessionFromIDB(_sessionId: string, kortixSessionScope?: string): Promise<void> {
+  const scope = parseKortixSessionScope(kortixSessionScope);
+  if (!scope) return;
+  await currentSavedCopyStore()?.remove(scope.projectId, scope.sessionId);
 }
 
+/**
+ * @deprecated Kept for its callers. Forgets every saved copy on this device;
+ * the host calls it on sign-out and on a user switch.
+ */
 export async function clearSessionIDBCache(): Promise<void> {
-  // The host calls this on sign-out and account changes. Invalidate identity
-  // before touching IndexedDB so the next write cannot reuse the previous user.
-  cacheScopePromise = null;
   try {
-    pendingWrites.clear();
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
-    }
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).clear();
+    await run('readwrite', (store) => store.clear());
   } catch {
-    // ignore
+    // Nothing kept, or nothing reachable.
   }
 }
 
-export async function pruneIDBCache(): Promise<void> {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.getAll();
-    const entries = await new Promise<CachedSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    const now = Date.now();
-    // Delete by `cacheKey` — it is the store's keyPath. Deleting by `sessionId`
-    // matched no record, so prune silently kept every entry forever and the
-    // 50-session / 7-day caps were never enforced.
-    const stale = entries.filter((e) => now - e.updatedAt > MAX_SESSION_AGE_MS);
-    for (const e of stale) {
-      store.delete(e.cacheKey);
-    }
-    const fresh = entries
-      .filter((e) => now - e.updatedAt <= MAX_SESSION_AGE_MS)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-    if (fresh.length > MAX_CACHED_SESSIONS) {
-      for (const e of fresh.slice(MAX_CACHED_SESSIONS)) {
-        store.delete(e.cacheKey);
-      }
-    }
-  } catch {
-    // ignore
-  }
-}
+/** @deprecated The saved-copy store bounds itself. Does nothing. Removed in the next major. */
+export async function pruneIDBCache(): Promise<void> {}

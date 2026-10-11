@@ -7,6 +7,7 @@ import {
   type ProvisionResult,
   type ResolvedSandboxIngress,
   type SandboxProvider,
+  type SandboxStatus,
 } from '../platform/providers';
 import {
   getSandboxProvider,
@@ -18,6 +19,8 @@ export const APP_CONTROL_PORT = 7331;
 export const APP_INGRESS_PORT = 8080;
 const APP_PROVIDER_WAKE_TIMEOUT_MS = 30_000;
 const APP_PROVIDER_WAKE_POLL_MS = 250;
+const APP_PROVIDER_STOP_SETTLE_TIMEOUT_MS = 30_000;
+const APP_PROVIDER_STOP_SETTLE_POLL_MS = 2_000;
 const APPD_RESTART_INTERVAL_MS = 5_000;
 
 export interface AppMachineSpec {
@@ -46,6 +49,8 @@ export interface StartAppRuntimeInput {
   snapshotName: string;
   machine: AppMachineSpec;
   envVars?: Record<string, string>;
+  /** An always-on App: the provider must never auto-stop it (Platinum: auto_stop_minutes 0). */
+  alwaysOn?: boolean;
 }
 
 export interface AppRuntimeHandle extends ProvisionResult {
@@ -68,6 +73,7 @@ interface HostingDependencies {
   fetch: typeof globalThis.fetch;
   controlSecret: string;
   sleep: (ms: number) => Promise<void>;
+  stopSettleTimeoutMs: number;
 }
 
 function defaultDependencies(): HostingDependencies {
@@ -77,6 +83,7 @@ function defaultDependencies(): HostingDependencies {
     fetch: globalThis.fetch,
     controlSecret: config.API_KEY_SECRET,
     sleep: (ms) => Bun.sleep(ms),
+    stopSettleTimeoutMs: APP_PROVIDER_STOP_SETTLE_TIMEOUT_MS,
   };
 }
 
@@ -137,6 +144,11 @@ export class AppHostingProvider {
       resourceSpec: input.machine,
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
+      // On-demand Apps keep the provider's idle backstop. An always-on App opts
+      // out of it on Platinum, where 0 means persistent. Daytona clamps 0 to a
+      // 1-minute stop and E2B ignores it, so there it keeps the backstop and
+      // the keep-alive pass renews it every 5 minutes (`renewLifecycle`).
+      ...(input.alwaysOn && input.provider === 'platinum' ? { autoStopInterval: 0 } : {}),
     });
     try {
       await provider.ensureAppRuntimeStarted(result.externalId);
@@ -172,6 +184,16 @@ export class AppHostingProvider {
     }
     await this.waitForProviderRunning(runtimeProvider, externalId);
     await runtimeProvider.ensureAppRuntimeStarted(externalId);
+  }
+
+  /** The provider's own answer. The database row can be wrong about it. */
+  async providerStatus(provider: SandboxProviderName, externalId: string): Promise<SandboxStatus> {
+    return this.dependencies.runtimeProvider(provider).getStatus(externalId);
+  }
+
+  /** Reset the provider's idle timer without waking a stopped runtime. */
+  async renewLifecycle(provider: SandboxProviderName, externalId: string): Promise<void> {
+    await this.dependencies.runtimeProvider(provider).renewLifecycle(externalId);
   }
 
   async ensureRunning(provider: SandboxProviderName, externalId: string): Promise<void> {
@@ -226,8 +248,29 @@ export class AppHostingProvider {
       // Provider stop endpoints are not consistently idempotent. Daytona, for
       // example, rejects a second stop after it already archived the sandbox.
       // Confirm provider truth before deciding whether the operation failed.
-      const status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+      let status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
       if (status === 'stopped' || status === 'removed') return;
+      // A conflict can also mean the sandbox is mid-flight between provider
+      // states: Daytona rejects a stop with "Sandbox state change in progress"
+      // while a start, archive or restore is running, and its reported state
+      // still reads running at that instant. The desired state is stopped
+      // either way, so give the transition a bounded window to settle — a
+      // sandbox that reports stopped or removed satisfies the request, and one
+      // that stays running accepts a stop retry. Exhausting the window keeps
+      // the enriched rethrow below.
+      const settleDeadline = Date.now() + this.dependencies.stopSettleTimeoutMs;
+      while (Date.now() < settleDeadline) {
+        if (status === 'running') {
+          const stopped = await runtimeProvider.stop(externalId).then(
+            () => true,
+            () => false,
+          );
+          if (stopped) return;
+        }
+        await this.dependencies.sleep(APP_PROVIDER_STOP_SETTLE_POLL_MS);
+        status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+        if (status === 'stopped' || status === 'removed') return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`${message} (provider status: ${status})`, { cause: error });
     }

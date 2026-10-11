@@ -357,9 +357,9 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
 
 /**
  * The blocker this round fixed. Each of these steps could hang FOREVER, and one
- * of them demonstrably can: `resetClientState()` awaits `clearSessionIDBCache()`,
- * whose `openDB()` registers no `onblocked` handler, so an upgrade blocked by a
- * stale tab settles neither `success` nor `error`. Unbounded, `leave()` was
+ * of them demonstrably did: `resetClientState()` awaits `clearSessionIDBCache()`,
+ * whose `openDB()` had no `onblocked` handler before database version 4, so an
+ * upgrade blocked by a stale tab settled neither `success` nor `error`. Unbounded, `leave()` was
  * never reached — the user could not sign out and saw no error.
  *
  * A `try`/`catch` cannot catch a promise that never settles. Only a clock can,

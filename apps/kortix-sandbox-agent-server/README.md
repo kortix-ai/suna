@@ -80,9 +80,10 @@ import rules, and where new code goes; `bun run lint` enforces them.
    of repo/harness state — previews work while the agent is still booting.
    Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
 3. Materialize the project repo in `/workspace/.kortix` through the
-   config-provider coordinator (`src/services/config-provider/config-provider.ts`). A
+   workspace provider (`src/services/workspace-provider/workspace-provider.ts`). A
    baked checkout that IS the session's base is adopted first, in every mode.
-   Then `KORTIX_PROJECT_SNAPSHOT_MODE` selects the transport: `git` (default)
+   Then `acquire` (`src/services/workspace-provider/acquire.ts`) reads
+   `KORTIX_PROJECT_SNAPSHOT_MODE` to select the transport: `git` (default)
    is the legacy path — image-baked scaffold + API delta, or `git clone`;
    `prefer-s3` fetches the PREPARED boot object pinned in
    `KORTIX_PROJECT_SNAPSHOT_PIN` from object storage (descriptor from the Git
@@ -96,7 +97,8 @@ import rules, and where new code goes; `bun run lint` enforces them.
    failed import leaves lazy blob fetches through the proxy). The outcome —
    provider, expected vs actual SHA, extractor, classified S3 failure,
    fallback, hydration — is on `GET /kortix/health` (`config_provider`) and in
-   the boot timeline marks (`config-provider:*`). A prepared-S3 start defers
+   the boot timeline marks (`config-provider:*`); both wire names predate the
+   rename to workspace-provider and stay. A prepared-S3 start defers
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
@@ -211,7 +213,7 @@ KORTIX_BRANCH_FETCH_ATTEMPTS=60
 KORTIX_BRANCH_FETCH_DELAY=0.25
 KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
-KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/config-provider)
+KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/workspace-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
 KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=       # base64 JSON of the presigned download descriptor for that pin, signed by the API at session create; first attempt only, the proxy route is the fallback
 KORTIX_REPO_URL=

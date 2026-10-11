@@ -114,7 +114,7 @@ const PUBLIC_ROUTES = [
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
   '/install.sh',
-  '/mcp', // Public read-only MCP server and server card
+  '/mcp', // Public MCP server card (/mcp/server-card) naming the API's MCP server
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
   '/presentation', // Legacy deck paths, now 307'd to /presentations (next.config.ts)

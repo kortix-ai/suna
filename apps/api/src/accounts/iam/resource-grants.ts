@@ -17,8 +17,8 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq } from 'drizzle-orm';
-import { accountGroups, projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
 import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { accountGroupNamesAmong } from '../../iam/group-read';
@@ -59,7 +59,6 @@ export function registerIamResourceGrantsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       // Read-only account-wide access-footprint view — same gate the member
       // detail page already uses for "which projects does this person reach"

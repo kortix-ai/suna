@@ -69,7 +69,7 @@ const MARKETING_SOURCES = {
   careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
   'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
-  download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
+  download: 'apps/web/src/app/[locale]/(public)/(marketing)/download/page.tsx',
 };
 
 function gitAvailable() {

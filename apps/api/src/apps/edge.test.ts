@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 
 // hostnames.ts reads config at import time; pin the env the same way
 // hostnames.test.ts does so resolveAppHost matches a known base domain + env.

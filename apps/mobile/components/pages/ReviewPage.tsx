@@ -43,7 +43,8 @@ import {
   KortixBottomSheetModal,
 } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { OpenCRSheet, shortRef } from '@/components/review/OpenCRSheet';
+import { OpenCRSheet } from '@/components/review/OpenCRSheet';
+import { shortRef } from '@/lib/review/review-detail';
 import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { REVIEW_KIND_ICONS } from '@/components/review/review-icons';
 import { Button } from '@/components/ui/button';

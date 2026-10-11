@@ -8,12 +8,10 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  agentSpecToTomlEntry,
   applyAgentScope,
   extractAgents,
   GRANTABLE_KORTIX_PERMISSIONS,
   sandboxFromLoadedAgents,
-  type AgentSpec,
 } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 import { GRANTABLE_KORTIX_PERMISSIONS as SCHEMA_GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
@@ -42,8 +40,8 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('48 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(48);
+  test('49 grantable project actions (all of PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(49);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent
@@ -247,38 +245,9 @@ kortix_permissions = ["project.frobnicate", "project.file.read"]
   });
 });
 
-describe('[[agents]] — round-trip', () => {
-  test('spec → TOML entry → re-parse is stable', () => {
-    const spec: AgentSpec = {
-      name: 'release-bot',
-      path: 'kortix.toml#agents.release-bot',
-      enabled: true,
-      connectors: ['github'],
-      permissions: ['project.trigger.create'],
-      env: 'all',
-      file: null,
-      model: 'anthropic/claude-sonnet-4-6',
-    };
-    const entry = agentSpecToTomlEntry(spec);
-    const { specs, errors } = parse(`
-[[agents]]
-name = "${entry.name}"
-connectors = ${JSON.stringify(entry.connectors)}
-kortix_permissions = ${JSON.stringify(entry.kortix_permissions)}
-model = "${entry.model}"
-`);
-    expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ name: 'release-bot', connectors: ['github'], permissions: ['project.trigger.create'], model: 'anthropic/claude-sonnet-4-6' });
-  });
+describe('[[agents]] — env', () => {
 
-  test('minimal spec emits only name', () => {
-    const entry = agentSpecToTomlEntry({
-      name: 'kortix', path: '', enabled: true, connectors: [], permissions: [], env: 'all', file: null, model: null,
-    });
-    expect(entry).toEqual({ name: 'kortix' });
-  });
-
-  test('env defaults to "all" when omitted; an explicit list narrows + round-trips', () => {
+  test('env defaults to "all" when omitted; an explicit list narrows', () => {
     const { specs } = parse(`
 [[agents]]
 name = "no-env"
@@ -291,9 +260,6 @@ env = ["GITHUB_TOKEN", "OPENAI_API_KEY"]
     const scoped = specs.find((s) => s.name === 'scoped');
     expect(noEnv?.env).toBe('all'); // omitted → all (back-compat for the new dimension)
     expect(scoped?.env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
-    // only the narrowed one emits an `env` key
-    expect(agentSpecToTomlEntry(noEnv!).env).toBeUndefined();
-    expect(agentSpecToTomlEntry(scoped!).env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
   });
 });
 

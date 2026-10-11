@@ -10,6 +10,8 @@ import * as realProviders from '../../platform/providers';
 import { db } from '../../shared/db';
 
 const deletedUsers: string[] = [];
+// The `app-sites` bucket: static App objects by key (`<account_id>/<sha256>`).
+const siteObjects = new Set<string>();
 
 // The service's external seams are mocked; the database is real. Spread the
 // real module: `mock.module` replaces it WHOLESALE, so a stub that lists
@@ -25,6 +27,16 @@ mock.module('../../shared/supabase', () => ({
           return { error: null };
         },
       },
+    },
+    storage: {
+      from: () => ({
+        // Session files: an empty bucket (account erasure lists each project).
+        list: async () => ({ data: [], error: null }),
+        remove: async (keys: string[]) => {
+          for (const key of keys) siteObjects.delete(key);
+          return { error: null };
+        },
+      }),
     },
   }),
 }));
@@ -47,8 +59,10 @@ const confirmed = Boolean(
 );
 const withDb = confirmed ? describe : describe.skip;
 
-const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+// The user's personal account: its id is the user id, so deleting it also
+// deletes the user's login.
+const ACCOUNT_ID = USER_ID;
 const OTHER_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333';
 const OTHER_USER_ID = '44444444-4444-4444-8444-444444444444';
 const PROJECT_ID = '55555555-5555-4555-8555-555555555555';
@@ -57,6 +71,9 @@ const SANDBOX_ID = '66666666-6666-4666-8666-666666666666';
 const CONNECTOR_ID = '77777777-7777-4777-8777-777777777777';
 const APP_ID = '88888888-8888-4888-8888-888888888888';
 const ARTIFACT_ID = '99999999-9999-4999-8999-999999999999';
+// A team account the requester belongs to, with a neighbor's rows that stay.
+const OTHER_PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER_SESSION_ID = 'del-other-session';
 
 // Records the deletion retains on purpose (see deleteAccountData): the audit
 // trail and the financial records outlive the account, matching
@@ -79,7 +96,12 @@ const RETAINED = new Set([
   'warm_pool_presence',
 ]);
 
+const SITE_SHA = 'f'.repeat(64);
+
 async function seed(): Promise<void> {
+  // The account's stored object, and a neighbor's that must survive.
+  siteObjects.add(`${ACCOUNT_ID}/${SITE_SHA}`);
+  siteObjects.add(`${OTHER_ACCOUNT_ID}/${SITE_SHA}`);
   const statements = [
     sql`INSERT INTO kortix.accounts (account_id, name) VALUES (${ACCOUNT_ID}, 'deletion-test')`,
     // The cascade core: membership, project, session, sandbox row.
@@ -142,6 +164,10 @@ async function seed(): Promise<void> {
       VALUES (${SANDBOX_ID}, 'built', 'deletion-test event')`,
     sql`INSERT INTO kortix.app_runtimes (deployment_id, account_id, provider, external_id, control_token_hash)
       VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'platinum', 'del-test-external', 'del-test-hash')`,
+    // Static App files: a manifest row, its blob ledger row and stored objects.
+    sql`INSERT INTO kortix.app_site_files (deployment_id, account_id, path, sha256, size_bytes, content_type)
+      VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'index.html', ${SITE_SHA}, 1, 'text/html')`,
+    sql`INSERT INTO kortix.app_site_blobs (account_id, sha256, size_bytes) VALUES (${ACCOUNT_ID}, ${SITE_SHA}, 1)`,
     // Project-plane children with NO ACTION edges into project sessions.
     sql`INSERT INTO kortix.change_requests (account_id, project_id, number, title, base_ref, head_ref, created_by)
       VALUES (${ACCOUNT_ID}, ${PROJECT_ID}, 1, 'deletion-test', 'base', 'head', ${USER_ID})`,
@@ -171,6 +197,26 @@ async function seed(): Promise<void> {
       VALUES (${ACCOUNT_ID}, 'account.deleted.test', 'account', ${USER_ID})`,
     sql`INSERT INTO kortix.credit_accounts (account_id, tier, payment_status, balance) VALUES (${ACCOUNT_ID}, 'free', 'active', 5)`,
     sql`INSERT INTO kortix.billing_customers (account_id, id, provider) VALUES (${ACCOUNT_ID}, 'cus_deletion_test', 'stripe')`,
+    // The person's phone, and a neighbor's that must survive (KRTX-1722).
+    sql`INSERT INTO kortix.push_device_tokens (token, user_id, platform)
+      VALUES ('ExponentPushToken[deletion-test]', ${USER_ID}, 'ios'), ('ExponentPushToken[deletion-other]', ${OTHER_USER_ID}, 'ios')`,
+    // The person's notification rows in ANOTHER account, and the neighbor's
+    // that must survive (KRTX-1742): no foreign key reaches them.
+    sql`INSERT INTO kortix.projects (project_id, account_id, name, repo_url)
+      VALUES (${OTHER_PROJECT_ID}, ${OTHER_ACCOUNT_ID}, 'deletion-other-project', 'https://example.test/other.git')`,
+    sql`INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, status)
+      VALUES (${OTHER_SESSION_ID}, ${OTHER_ACCOUNT_ID}, ${OTHER_PROJECT_ID}, 'main', 'running')`,
+    sql`INSERT INTO kortix.notifications (user_id, account_id, project_id, session_id, kind, title)
+      VALUES (${USER_ID}, ${OTHER_ACCOUNT_ID}, ${OTHER_PROJECT_ID}, ${OTHER_SESSION_ID}, 'shared', 'deletion-test'),
+             (${OTHER_USER_ID}, ${OTHER_ACCOUNT_ID}, ${OTHER_PROJECT_ID}, ${OTHER_SESSION_ID}, 'turn_done', 'deletion-other')`,
+    sql`INSERT INTO kortix.notification_watchers (project_id, session_id, user_id)
+      VALUES (${OTHER_PROJECT_ID}, ${OTHER_SESSION_ID}, ${USER_ID}), (${OTHER_PROJECT_ID}, ${OTHER_SESSION_ID}, ${OTHER_USER_ID})`,
+    sql`INSERT INTO kortix.trigger_watchers (project_id, slug, user_id)
+      VALUES (${OTHER_PROJECT_ID}, 'del-other-trigger', ${USER_ID}), (${OTHER_PROJECT_ID}, 'del-other-trigger', ${OTHER_USER_ID})`,
+    sql`INSERT INTO kortix.notification_preferences (user_id) VALUES (${USER_ID}), (${OTHER_USER_ID})`,
+    sql`INSERT INTO kortix.web_push_subscriptions (endpoint, user_id, p256dh, auth, auth_session_id, aal)
+      VALUES ('https://fcm.googleapis.com/fcm/send/deletion-test', ${USER_ID}, 'p', 'a', ${SANDBOX_ID}, 'aal1'),
+             ('https://fcm.googleapis.com/fcm/send/deletion-other', ${OTHER_USER_ID}, 'p', 'a', ${SANDBOX_ID}, 'aal1')`,
   ];
   for (const statement of statements) await db.execute(statement);
 }
@@ -232,6 +278,8 @@ withDb('account deletion on PostgreSQL', () => {
     // The one retained row is the deletion receipt: the request, `completed`,
     // its free-text reason scrubbed.
     expect(await accountScopedTablesWithRows(ACCOUNT_ID)).toEqual(['account_deletion_requests']);
+    // Every stored static App object of the account is gone; the neighbor's stays.
+    expect([...siteObjects]).toEqual([`${OTHER_ACCOUNT_ID}/${SITE_SHA}`]);
     expect(
       await rows<{ status: string; reason: string | null }>(
         sql`SELECT status, reason FROM kortix.account_deletion_requests WHERE account_id = ${ACCOUNT_ID}`,
@@ -240,6 +288,14 @@ withDb('account deletion on PostgreSQL', () => {
 
     // The neighboring account is untouched.
     expect(await countWhere('accounts', sql`account_id = ${OTHER_ACCOUNT_ID}`)).toBe(1);
+    // The person's push tokens go with the login; the neighbor's stays.
+    expect(await countWhere('push_device_tokens', sql`user_id = ${USER_ID}`)).toBe(0);
+    expect(await countWhere('push_device_tokens', sql`user_id = ${OTHER_USER_ID}`)).toBe(1);
+    // So do their notification rows in every account; the neighbor's stay (KRTX-1742).
+    for (const table of ['notifications', 'notification_watchers', 'trigger_watchers', 'notification_preferences', 'web_push_subscriptions']) {
+      expect({ table, n: await countWhere(table, sql`user_id = ${USER_ID}`) }).toEqual({ table, n: 0 });
+      expect({ table, n: await countWhere(table, sql`user_id = ${OTHER_USER_ID}`) }).toEqual({ table, n: 1 });
+    }
 
     // The retained records survive, with the deletion marker the service wrote.
     const [credit] = await rows<{ tier: string; payment_status: string }>(
@@ -261,8 +317,8 @@ withDb('account deletion on PostgreSQL', () => {
     // deletion transaction fail mid-sweep with a test-only trigger, then
     // prove nothing was deleted — and that removing the trigger completes
     // the same deletion.
-    const failAccount = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const failUser = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const failAccount = failUser;
     const failProject = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     for (const statement of [
       sql`INSERT INTO kortix.accounts (account_id, name) VALUES (${failAccount}, 'deletion-fail')`,

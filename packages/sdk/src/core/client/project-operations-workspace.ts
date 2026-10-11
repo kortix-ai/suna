@@ -7,11 +7,17 @@ export function bindProjectOperationsWorkspace(projectId: string) {
     files: {
       list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
         P.listProjectFiles(projectId, options),
+      /** One folder level, complete up to its entry cap (not cut at 1,000 recursive files). */
+      listDirectory: (options?: Parameters<typeof P.listProjectDirectory>[1]) =>
+        P.listProjectDirectory(projectId, options),
       read: (path: string, ref?: string) => P.readProjectFile(projectId, path, ref),
       search: (...a: DropFirst<Parameters<typeof P.searchProjectFiles>>) =>
         P.searchProjectFiles(projectId, ...a),
       archive: (...a: DropFirst<Parameters<typeof P.fetchProjectArchive>>) =>
         P.fetchProjectArchive(projectId, ...a),
+      /** The archive download as a request the host streams to disk itself. */
+      archiveRequest: (...a: DropFirst<Parameters<typeof P.projectArchiveRequest>>) =>
+        P.projectArchiveRequest(projectId, ...a),
       history: (...a: DropFirst<Parameters<typeof P.getProjectFileHistory>>) =>
         P.getProjectFileHistory(projectId, ...a),
     },
@@ -31,6 +37,9 @@ export function bindProjectOperationsWorkspace(projectId: string) {
     changeRequests: {
       list: () => P.listChangeRequests(projectId),
       get: (crId: string) => P.getChangeRequest(projectId, crId),
+      /** Edit an open change request's title or description. */
+      update: (...a: DropFirst<Parameters<typeof P.updateChangeRequest>>) =>
+        P.updateChangeRequest(projectId, ...a),
       diff: (crId: string) => P.getChangeRequestDiff(projectId, crId),
       mergePreview: (crId: string) => P.getChangeRequestMergePreview(projectId, crId),
       open: (...a: DropFirst<Parameters<typeof P.openChangeRequest>>) =>

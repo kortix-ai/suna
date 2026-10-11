@@ -6,6 +6,7 @@
  */
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
+import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
@@ -15,6 +16,8 @@ flow(
     domain: "apps",
     routes: [
       "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
+      "GET /v1/projects/:projectId",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
@@ -28,13 +31,8 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
 
-    await ctx.step("clear any apps flag override from a reused project", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: null },
-        { params: projectParams },
-      );
-      response.status(200);
+    await ctx.step("clear any apps flag override from a reused project (operator route)", async () => {
+      await setFeatureAsOperator(ctx, project.id, "apps", null);
     });
 
     await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
@@ -46,13 +44,26 @@ flow(
       response.body().has("$.feature", "apps");
     });
 
-    await ctx.step("enable the apps flag (canonical /features route)", async () => {
+    await ctx.step("owner cannot write the internal-only apps flag: /features → 403 feature_operator_only", async () => {
       const response = await owner.patch(
         "/v1/projects/:projectId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
-      response.status(200);
+      response.status(403);
+      response.body().has("$.code", "feature_operator_only");
+      response.body().has("$.feature", "apps");
+    });
+
+    await ctx.step("a platform operator enables apps; the owner's catalog lists it read-only", async () => {
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
+      const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
+      read.status(200);
+      const row = (read.json() as { experimental_features: Array<{ key: string; enabled: boolean; operator_only?: boolean }> })
+        .experimental_features.find((f) => f.key === "apps");
+      if (!row || row.enabled !== true || row.operator_only !== true) {
+        throw new Error(`apps catalog row is ${JSON.stringify(row)}; want enabled + operator_only`);
+      }
     });
 
     await ctx.step("list starts empty", async () => {
@@ -71,7 +82,7 @@ flow(
       response.status(400);
     });
 
-    await ctx.step("create returns stable App policy and URL", async () => {
+    await ctx.step("create returns stable App policy and URL; an always-on App has no budget and refuses one", async () => {
       const slug = ctx.fixtures
         .name("app")
         .toLowerCase()
@@ -86,7 +97,7 @@ flow(
           memory_gb: 2,
           disk_gb: 10,
           idle_timeout_seconds: 300,
-          monthly_budget_usd: 5,
+          always_on: true,
         },
         { params: projectParams },
       );
@@ -96,8 +107,27 @@ flow(
         .exists("$.app_id")
         .exists("$.url")
         .has("$.slug", slug)
-        .has("$.desired_state", "running");
+        .has("$.desired_state", "running")
+        .has("$.always_on", true)
+        .has("$.estimated_monthly_usd", 73.48)
+        .has("$.monthly_budget_usd", null)
+        .has("$.warnings", [])
+        // Kind web by default; clients branch on capabilities. Uses no App until it lists one.
+        .has("$.kind", "web")
+        .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
+        .has("$.instance", null)
+        .has("$.uses", []);
       appId = response.json<any>().app_id;
+
+      const refused = await owner.post(
+        "/v1/projects/:projectId/apps",
+        { slug: `${slug.slice(0, 55)}-budget`, name: "ke2e App", always_on: true, monthly_budget_usd: 5 },
+        { params: projectParams },
+      );
+      refused.status(400).body().has("$.code", "app_budget_not_applicable").has("$.estimated_monthly_usd", 73.48);
+      if (!String(refused.json<any>().error).includes("about $73.48 a month")) {
+        throw new Error(`the refusal does not name the 24/7 cost: ${refused.text()}`);
+      }
     });
 
     await ctx.step("get and patch read back the same App", async () => {
@@ -116,7 +146,70 @@ flow(
         .status(200)
         .body()
         .has("$.name", "Updated ke2e App")
-        .has("$.idle_timeout_seconds", 420);
+        .has("$.idle_timeout_seconds", 420)
+        .has("$.warnings", []);
+
+      // An always-on App costs its size: a budget is refused and nothing changes.
+      const refused = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { monthly_budget_usd: 100 },
+        { params },
+      );
+      refused.status(400).body().has("$.code", "app_budget_not_applicable");
+      // On demand: the default budget, then the one sent; back to always on clears it.
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: false }, { params }))
+        .status(200).body().has("$.always_on", false).has("$.monthly_budget_usd", 5).has("$.warnings", []);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { monthly_budget_usd: 20 }, { params }))
+        .status(200).body().has("$.monthly_budget_usd", 20);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
+        .status(200).body().has("$.always_on", true).has("$.monthly_budget_usd", null);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: false, monthly_budget_usd: 12 }, { params }))
+        .status(200).body().has("$.monthly_budget_usd", 12);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true, monthly_budget_usd: 12 }, { params }))
+        .status(400).body().has("$.code", "app_budget_not_applicable");
+      (await owner.get("/v1/projects/:projectId/apps/:appId", { params }))
+        .status(200).body().has("$.always_on", false).has("$.monthly_budget_usd", 12);
+
+      // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
+      const unknown = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { uses: ["no-such-app"] },
+        { params },
+      );
+      unknown.status(400).body().has("$.code", "app_not_found").has("$.slugs", ["no-such-app"]);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { uses: ["Not A Slug"] }, { params })).status(400);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { uses: [] }, { params }))
+        .status(200)
+        .body()
+        .has("$.uses", []);
+    });
+
+    await ctx.step("an on-demand App gets $5 or the budget sent, and a machine change never moves it", async () => {
+      let counter = 0;
+      const slugFor = (label: string) =>
+        `${ctx.fixtures.name(label).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 50)}-${++counter}`;
+      const create = async (body: Record<string, unknown>) => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug: slugFor("bd"), name: "ke2e budget", ...body },
+          { params: projectParams },
+        );
+        response.status(201);
+        return response.json<any>() as { app_id: string; monthly_budget_usd: number | null };
+      };
+      const patch = (id: string, body: Record<string, unknown>) =>
+        owner.patch("/v1/projects/:projectId/apps/:appId", body, { params: { ...projectParams, appId: id } });
+
+      const defaulted = await create({ always_on: false });
+      if (defaulted.monthly_budget_usd !== 5) throw new Error(`on-demand default budget is ${defaulted.monthly_budget_usd}, want 5`);
+      (await patch(defaulted.app_id, { cpu: 2 })).status(200).body().has("$.monthly_budget_usd", 5);
+
+      const explicit = await create({ always_on: false, monthly_budget_usd: 200 });
+      if (explicit.monthly_budget_usd !== 200) throw new Error(`explicit budget is ${explicit.monthly_budget_usd}, want 200`);
+      (await patch(explicit.app_id, { memory_gb: 1 })).status(200).body().has("$.monthly_budget_usd", 200);
+      for (const id of [defaulted.app_id, explicit.app_id]) {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: id } })).status(200);
+      }
     });
 
     await ctx.step(
@@ -153,7 +246,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/artifacts",
@@ -176,12 +269,7 @@ flow(
     const projectParams = { projectId: project.id };
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -342,7 +430,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "DELETE /v1/projects/:projectId/apps/:appId",
@@ -355,12 +443,7 @@ flow(
     let appId = "";
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -445,7 +528,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
@@ -465,12 +548,7 @@ flow(
     const teammate = ctx.client.as(editor);
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -565,6 +643,47 @@ flow(
     );
 
     await ctx.step(
+      "an App restricted to the owner alone is absent from the teammate's list and 404 on get; the owner lists both, every card openable",
+      async () => {
+        const created = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug: `${slug.slice(0, 55)}-owner`, name: "ke2e owner-only App" },
+          { params: projectParams },
+        );
+        created.status(201);
+        const ownerOnly = created.json<any>().app_id as string;
+        (await owner.patch(
+          "/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", member_ids: [ctx.P.OWNER.userId] },
+          { params: { ...projectParams, appId: ownerOnly } },
+        )).status(200).body().has("$.mode", "restricted");
+
+        const teammateList = await teammate.get("/v1/projects/:projectId/apps", { params: projectParams });
+        teammateList.status(200);
+        const teammateApps = teammateList.json<any>().apps as Array<{ app_id: string; viewer_can_access: boolean }>;
+        const teammateIds = teammateApps.map((app) => app.app_id);
+        if (teammateIds.includes(ownerOnly)) throw new Error(`owner-only App ${ownerOnly} was listed to a teammate`);
+        if (!teammateIds.includes(appId)) throw new Error(`App ${appId} restricted to the teammate was hidden from them`);
+        if (teammateApps.some((app) => app.viewer_can_access !== true)) {
+          throw new Error(`the teammate's list holds an App they cannot open: ${JSON.stringify(teammateApps)}`);
+        }
+        (await teammate.get("/v1/projects/:projectId/apps/:appId", {
+          params: { ...projectParams, appId: ownerOnly },
+        })).status(404);
+
+        const ownerList = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        ownerList.status(200);
+        const ownerIds = (ownerList.json<any>().apps as Array<{ app_id: string }>).map((app) => app.app_id);
+        if (!ownerIds.includes(ownerOnly) || !ownerIds.includes(appId)) {
+          throw new Error(`the owner does not list every App: ${JSON.stringify(ownerIds)}`);
+        }
+        (await owner.del("/v1/projects/:projectId/apps/:appId", {
+          params: { ...projectParams, appId: ownerOnly },
+        })).status(200);
+      },
+    );
+
+    await ctx.step(
       "restricting it to nobody else puts the teammate back out",
       async () => {
         const owned = await owner.patch(
@@ -618,7 +737,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "GET /v1/apps/edge/tls-check",
@@ -638,12 +757,7 @@ flow(
     let appHost = "";
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     await ctx.step("create an App and take its public hostname", async () => {
@@ -727,7 +841,7 @@ flow(
       : {}),
     timeoutMs: 180_000,
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
       "POST /v1/projects/:projectId/apps/:appId/access-session",
@@ -787,8 +901,7 @@ flow(
 
     try {
       await ctx.step("enable Apps; create an App restricted to the viewer that acts as them (api scope)", async () => {
-        (await owner.patch("/v1/projects/:projectId/features", { feature: "apps", enabled: true },
-          { params: projectParams })).status(200);
+        await setFeatureAsOperator(ctx, project.id, "apps", true);
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e viewer token" },
           { params: projectParams });
         created.status(201);
@@ -845,6 +958,25 @@ flow(
         (await asToken(next.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(200);
       });
 
+      await ctx.step("a browser App reaches the API on its own origin: /_kortix/api/v1/accounts/me answers as the viewer; the App's cookie never reaches the API; a cross-site call gets 403", async () => {
+        const cookie = await signIn();
+        const me = await gate("/_kortix/api/v1/accounts/me", { cookie, "sec-fetch-site": "same-origin" });
+        if (me.status !== 200 || me.body?.user_id !== viewerPrincipal.userId || me.body?.token_context?.auth_type !== "oauth") {
+          throw new Error(`expected 200 as the viewer through the gate, got ${me.status} ${me.text.slice(0, 300)}`);
+        }
+        if (me.headers.get("set-cookie")) throw new Error("the App API path set a cookie on the App origin");
+        const read = await gate(`/_kortix/api/v1/projects/${project.id}`, { cookie, "sec-fetch-site": "same-origin" });
+        if (read.status !== 200 || read.body?.project_id !== project.id) {
+          throw new Error(`expected the viewer's project through the gate, got ${read.status} ${read.text.slice(0, 300)}`);
+        }
+        const crossSite = await gate("/_kortix/api/v1/accounts/me", { cookie, "sec-fetch-site": "cross-site" });
+        if (crossSite.status !== 403 || crossSite.body?.error !== "cross_site_request") {
+          throw new Error(`expected 403 cross_site_request, got ${crossSite.status} ${crossSite.text.slice(0, 200)}`);
+        }
+        const oauth = await gate("/_kortix/api/v1/oauth/clients", { cookie, "sec-fetch-site": "same-origin" });
+        if (oauth.status !== 404) throw new Error(`expected 404 for /v1/oauth through the gate, got ${oauth.status}`);
+      });
+
       await ctx.step("kortix apps access --viewer identity switches the scope and keeps mode and members", async () => {
         const cli = new CliSandbox("app6");
         try {
@@ -867,12 +999,16 @@ flow(
         }
       });
 
-      await ctx.step("an identity-scoped App's token names the viewer but opens no project route (403)", async () => {
+      await ctx.step("an identity-scoped App's token names the viewer but opens no project route (403); its /_kortix/api path answers 403 viewer_api_disabled", async () => {
         const session = await viewerToken(await signIn());
         if (JSON.stringify(session.scopes) !== JSON.stringify(["profile", "email"]) || !session.access_token) {
           throw new Error(`identity scope returned ${JSON.stringify(session.scopes)}`);
         }
         (await asToken(session.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(403);
+        const proxied = await gate("/_kortix/api/v1/accounts/me", { cookie: await signIn(), "sec-fetch-site": "same-origin" });
+        if (proxied.status !== 403 || proxied.body?.error !== "viewer_api_disabled") {
+          throw new Error(`expected 403 viewer_api_disabled through the gate, got ${proxied.status} ${proxied.text.slice(0, 200)}`);
+        }
       });
 
       await ctx.step("an App that shares nothing answers /_kortix/viewer with 404 viewer_disabled", async () => {
@@ -897,7 +1033,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps/artifacts",
       "POST /v1/projects/:projectId/apps/:appId/deployments",
@@ -915,11 +1051,7 @@ flow(
     const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
 
     await ctx.step("enable the apps flag", async () => {
-      (await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      )).status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -1036,6 +1168,192 @@ flow(
       if (appId) {
         await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
       }
+    }
+  },
+);
+
+flow(
+  "APP-8",
+  {
+    domain: "apps",
+    requires: ["appHost"],
+    timeoutMs: 300_000,
+    routes: [
+      "PUT /v1/admin/api/projects/:id/features",
+      "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/artifacts",
+      "POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize",
+      "POST /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
+      "POST /v1/projects/:projectId/apps/:appId/rollback",
+      "GET /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/start",
+      "POST /v1/projects/:projectId/apps/:appId/stop",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    const slug = ctx.fixtures.name("static").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, "");
+    const cli = new CliSandbox("app8");
+    const asset = "assets/index-Qx7Lm2Pa.js";
+    let appId = "";
+    let appHost = "";
+    const versions: string[] = [];
+
+    const page = async (path: string, headers: Record<string, string> = {}) => {
+      const response = await fetch(`${apiOrigin}${path}`, {
+        headers: { "x-kortix-app-host": appHost, ...headers },
+        redirect: "manual",
+      });
+      return { status: response.status, headers: response.headers, text: await response.text() };
+    };
+    const writeSite = (marker: string, script: string) => {
+      cli.writeFile("dist/index.html", `<!doctype html><title>${marker}</title><script src="/${asset}"></script>`);
+      cli.writeFile(`dist/${asset}`, script);
+      cli.writeFile("dist/robots.txt", "User-agent: *");
+      cli.writeFile("dist/docs/index.html", `<!doctype html><title>docs ${marker}</title>`);
+    };
+    const deploy = async (marker: string, script = "console.log('app')") => {
+      writeSite(marker, script);
+      const started = Date.now();
+      const result = await cli.run([
+        "apps", "deploy", "dist", "--type", "static", "--spa", "--access", "public",
+        ...(appId ? ["--app", appId] : ["--slug", slug, "--name", "ke2e static"]),
+        "--project", project.id, "--json",
+      ]);
+      if (result.exitCode !== 0) throw new Error(`kortix apps deploy: ${result.exitCode} ${result.stderr}`);
+      const out = JSON.parse(result.stdout);
+      versions.push(out.deployment.deployment_id);
+      return { out, ms: Date.now() - started };
+    };
+
+    try {
+      await ctx.step("enable Apps and sign the CLI in", async () => {
+        await setFeatureAsOperator(ctx, project.id, "apps", true);
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app8") });
+        const login = await cli.login(pat, { noProject: true, account: project.accountId });
+        if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
+      });
+
+      await ctx.step("kortix apps deploy of a built SPA is ready with no runtime: hosting_type static", async () => {
+        const { out, ms } = await deploy("v1");
+        appId = out.app.app_id;
+        appHost = new URL(out.app.url).hostname;
+        if (out.deployment.status !== "ready" || out.deployment.hosting_type !== "static") {
+          throw new Error(`expected a ready static deployment, got ${out.deployment.status}/${out.deployment.hosting_type}`);
+        }
+        if (ms > 90_000) throw new Error(`a static deploy took ${ms} ms`);
+        const read = await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+          { params: { ...projectParams, appId, deploymentId: versions[0]! } });
+        read.status(200).body().has("$.deployment.hosting_type", "static").has("$.deployment.status", "ready");
+      });
+
+      await ctx.step("the App serves its files: shell, hashed asset, SPA deep link, 404 for a missing asset, 304", async () => {
+        const home = await page("/");
+        if (home.status !== 200 || !home.text.includes("<title>v1</title>")) {
+          throw new Error(`GET /: ${home.status} ${home.text.slice(0, 120)}`);
+        }
+        if (home.headers.get("cache-control") !== "public, no-cache") {
+          throw new Error(`HTML cache-control: ${home.headers.get("cache-control")}`);
+        }
+        const script = await page(`/${asset}`);
+        if (script.status !== 200 || script.headers.get("cache-control") !== "public, max-age=31536000, immutable") {
+          throw new Error(`asset: ${script.status} ${script.headers.get("cache-control")}`);
+        }
+        const deep = await page("/deals/42", { accept: "text/html" });
+        if (deep.status !== 200 || !deep.text.includes("<title>v1</title>")) throw new Error(`deep link: ${deep.status}`);
+        const missing = await page("/assets/missing-file.js", { accept: "*/*" });
+        if (missing.status !== 404) throw new Error(`missing asset: ${missing.status}`);
+        const revalidated = await page("/", { "if-none-match": home.headers.get("etag") ?? "" });
+        if (revalidated.status !== 304) throw new Error(`If-None-Match: ${revalidated.status}`);
+        if (revalidated.headers.get("vary") !== "accept-encoding") throw new Error(`304 vary: ${revalidated.headers.get("vary")}`);
+      });
+
+      await ctx.step("a directory URL without its slash redirects 308 to the slash, keeping the query; the slash URL serves its index", async () => {
+        const bare = await page("/docs?tab=2");
+        if (bare.status !== 308 || bare.headers.get("location") !== "/docs/?tab=2") {
+          throw new Error(`GET /docs: ${bare.status} location ${bare.headers.get("location")}`);
+        }
+        if (bare.headers.get("cloudflare-cdn-cache-control") !== "no-store") {
+          throw new Error(`redirect cloudflare-cdn-cache-control: ${bare.headers.get("cloudflare-cdn-cache-control")}`);
+        }
+        const slash = await page("/docs/");
+        if (slash.status !== 200 || !slash.text.includes("<title>docs v1</title>")) throw new Error(`GET /docs/: ${slash.status}`);
+      });
+
+      await ctx.step("a redeploy uploads only the changed files and switches atomically", async () => {
+        const { out } = await deploy("v2");
+        if (out.deployment.status !== "ready") throw new Error(`v2 is ${out.deployment.status}`);
+        const logs = await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
+          { params: { ...projectParams, appId, deploymentId: versions[1]! } });
+        logs.status(200);
+        if (!JSON.stringify(logs.json()).includes("(2 new, 2 unchanged)")) {
+          throw new Error(`expected 2 new and 2 unchanged files: ${JSON.stringify(logs.json()).slice(0, 400)}`);
+        }
+        const home = await page("/");
+        if (!home.text.includes("<title>v2</title>")) throw new Error(`v2 is not served: ${home.text.slice(0, 120)}`);
+      });
+
+      await ctx.step("rollback to v1 is a pointer flip: no runtime to start", async () => {
+        const rolled = await owner.post("/v1/projects/:projectId/apps/:appId/rollback",
+          { deployment_id: versions[0] }, { params: { ...projectParams, appId } });
+        rolled.status(200).body().has("$.active_deployment_id", versions[0]);
+        const home = await page("/");
+        if (!home.text.includes("<title>v1</title>")) throw new Error(`v1 is not served after rollback`);
+      });
+
+      await ctx.step("a static App lists as hosting_type static with no estimate; start and stop answer 409 static_app_no_runtime on the API and the CLI; it keeps serving", async () => {
+        const list = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        list.status(200);
+        const row = (list.json<any>().apps as Array<Record<string, unknown>>).find((app) => app.app_id === appId);
+        if (row?.hosting_type !== "static" || row.estimated_monthly_usd !== 0 || row.retained_deployments !== 5) {
+          throw new Error(`expected hosting_type static, estimate 0, retained 5: ${JSON.stringify(row)}`);
+        }
+        (await owner.post("/v1/projects/:projectId/apps/:appId/start", {}, { params: { ...projectParams, appId } }))
+          .status(409).body().has("$.code", "static_app_no_runtime");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/stop", {}, { params: { ...projectParams, appId } }))
+          .status(409).body().has("$.code", "static_app_no_runtime");
+        const stop = await cli.run(["apps", "stop", appId, "--project", project.id]);
+        if (stop.exitCode !== 1 || !stop.stderr.includes("no runtime to start or stop")) {
+          throw new Error(`kortix apps stop: exit ${stop.exitCode}, stderr ${stop.stderr}`);
+        }
+        const ls = await cli.run(["apps", "ls", "--project", project.id]);
+        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+web\\s+static\\s`).test(ls.stdout)) {
+          throw new Error(`kortix apps ls does not print static: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
+        }
+        const home = await page("/");
+        if (home.status !== 200 || !home.text.includes("<title>v1</title>")) throw new Error(`not served after stop: ${home.status}`);
+      });
+
+      await ctx.step("retention: after 8 deploys the App keeps its active deployment and the 5 newest others", async () => {
+        for (let i = 3; i <= 8; i += 1) await deploy(`v${i}`, `console.log(${i})`);
+        const list = await owner.get("/v1/projects/:projectId/apps/:appId/deployments",
+          { params: { ...projectParams, appId } });
+        list.status(200);
+        const rows = (list.json<any>().deployments ?? list.json<any>()) as Array<{ deployment_id: string; status: string; version: number }>;
+        const ready = rows.filter((row) => row.status === "ready").map((row) => row.version).sort((a, b) => a - b);
+        // Retired deployments are `deleted`, which the list leaves out.
+        const listed = rows.map((row) => row.version);
+        if (JSON.stringify(ready) !== JSON.stringify([3, 4, 5, 6, 7, 8]) || listed.includes(1) || listed.includes(2)) {
+          throw new Error(`expected exactly 3-8 ready and 1-2 retired, got ready ${ready}, listed ${listed}`);
+        }
+        const home = await page("/");
+        if (!home.text.includes("<title>v8</title>")) throw new Error("the newest deployment is not served");
+      });
+
+      await ctx.step("delete the App", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
+        appId = "";
+      });
+    } finally {
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
+      cli.dispose();
     }
   },
 );

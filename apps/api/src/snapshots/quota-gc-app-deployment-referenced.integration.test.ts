@@ -9,7 +9,7 @@
  * rule this feeds).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, appArtifacts, appDeployments, apps, projects } from '@kortix/db';
+import { accounts, appArtifacts, appDeployments, appImages, apps, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { appDeploymentSnapshotName, loadReferencedSnapshotNames } from './quota-gc';
@@ -30,7 +30,10 @@ const FAILED_DEPLOYMENT_ID = '00000000-0000-4000-a000-00000000b906';
 const ORPHAN_DEPLOYMENT_ID = '00000000-0000-4000-a000-00000000b907';
 const ROUTE_KEY = 'bbbbbbbbbbbbbbbb';
 
+const TRACKED_IMAGE = 'kortix-appimg-test-cccccccccccccccccccccccc';
+
 async function cleanup(): Promise<void> {
+  await db.delete(appImages).where(eq(appImages.imageName, TRACKED_IMAGE));
   await db.update(apps).set({ activeDeploymentId: null }).where(eq(apps.projectId, PROJECT_ID));
   await db.delete(apps).where(eq(apps.projectId, PROJECT_ID));
   await db.delete(appArtifacts).where(eq(appArtifacts.projectId, PROJECT_ID));
@@ -106,5 +109,11 @@ withDb('loadReferencedSnapshotNames — App deployment protection', () => {
     expect(referenced.has(appDeploymentSnapshotName(READY_DEPLOYMENT_ID))).toBe(true);
     expect(referenced.has(appDeploymentSnapshotName(FAILED_DEPLOYMENT_ID))).toBe(false);
     expect(referenced.has(appDeploymentSnapshotName(ORPHAN_DEPLOYMENT_ID))).toBe(false);
+  });
+
+  test('protects every shared App image this environment tracks', async () => {
+    expect((await loadReferencedSnapshotNames(Date.now())).has(TRACKED_IMAGE)).toBe(false);
+    await db.insert(appImages).values({ imageName: TRACKED_IMAGE, provider: 'daytona', status: 'ready' });
+    expect((await loadReferencedSnapshotNames(Date.now())).has(TRACKED_IMAGE)).toBe(true);
   });
 });

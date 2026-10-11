@@ -48,8 +48,8 @@ export const MIN_DAEMON_BUILD = parseMinDaemonBuild();
  * branch. Every box that exists the day THIS code merges reports nothing, so
  * `evaluateAdmission` refuses every one of them (a box that cannot prove
  * `daemon_build` cannot pass the floor check — see `buildMeetsFloor`). Ungated,
- * that would park every session on every project running `config_releases`
- * the moment this deploys, independent of whether the daemon side has shipped.
+ * that would park every session the moment this deploys, independent of
+ * whether the daemon side has shipped.
  *
  * So admission is evaluated and LOGGED unconditionally (`admitRunningSandbox`'s
  * `onRefused` always fires — the failure is observable from the moment this

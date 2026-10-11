@@ -4,7 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
-import { actorForToken, actorForUser } from '../iam/actor';
+import { actorForToken } from '../iam/actor';
 import { agentMayOpenApp } from '../iam/agent-scope';
 import { db } from '../shared/db';
 import { accountMembersAmong } from '../iam/membership-read';

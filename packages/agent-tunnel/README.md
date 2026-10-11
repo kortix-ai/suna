@@ -27,11 +27,31 @@ Connecting the same computer again reuses its entry. The agent sends a SHA-256
 hash of the hardware ID (IOPlatformUUID, `/etc/machine-id`, or `MachineGuid`);
 the raw ID never leaves the computer.
 
-After approval, the interactive flow asks whether it should install a persistent background service. The default answer is yes.
+After approval, `connect` in a terminal installs the background service, the
+same way the desktop app does, and prints the commands that pause, resume,
+and remove it. It asks no question. `--foreground` keeps the connection in the
+terminal instead. A script without a TTY, or `--json`, stays in the foreground
+unless it passes `--daemon`.
+
+## One runtime with the desktop app (macOS)
+
+When the Kortix desktop app is installed (`/Applications/Kortix.app` or
+`~/Applications/Kortix.app`), the service a CLI install writes runs on the
+app's own agent and driver: `Kortix.app/Contents/MacOS/Kortix` with
+`ELECTRON_RUN_AS_NODE=1` and `Contents/Resources/agent-tunnel/agent-cli.js`.
+A CLI install and an app install are then the same connection. macOS grants
+Accessibility and Screen Recording to Kortix once, never to `node` or a
+terminal, and **Your computer** in the app controls it. Without the app,
+the service runs on `node`, and Computer Use needs a separately installed
+`cua-driver`.
+
+The service restarts itself when its code changes on disk (an app update or
+a new vendored bundle). macOS refuses every permission to a process whose
+binary was replaced under it, so a stale process would lose Computer Use.
 
 ## Run in the background
 
-Install the operating-system background service during connection:
+The service is the default for a person at a terminal. A script installs it with `--daemon`:
 
 ```bash
 npx --yes @kortix/agent-tunnel@latest connect \

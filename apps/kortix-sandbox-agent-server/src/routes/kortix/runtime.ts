@@ -16,7 +16,7 @@ export const MAX_MESSAGE_PAGE = 200
 /** Heartbeat cadence on `/events`. Three of these fit in a 60 s client budget. */
 const EVENT_HEARTBEAT_MS = 15_000
 /**
- * Frames one `/events` consumer may leave unread. The ring holds 2000; a
+ * Frames one `/events` consumer may leave unread. The ring holds 20,000; a
  * consumer further behind than this is dropped, and reconnects with its cursor
  * (replay, or a typed resync), instead of buffering every event for the life of
  * the connection.
@@ -172,6 +172,13 @@ export function createRuntimeRouter(
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
       return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
+    })
+
+    // Take back a user message no model call has read (RUNTIME_RETRACT_CAPABILITY).
+    app.post('/messages/:sessionId/:messageId/retract', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.retractMessage(c.req.param('sessionId'), c.req.param('messageId')))
     })
 
     app.get('/agents', async (c) => {

@@ -3,7 +3,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { auditEventsAll } from '@kortix/db';
 import { and, asc } from 'drizzle-orm';
-import pg from 'pg';
+import { PgClient } from '../../__tests__/helpers/pg-client';
 import { type AuditFilterInput, buildFilters } from '../../accounts/audit-filters';
 import { parseAuditCursor } from '../audit-query';
 import { db } from '../db';
@@ -41,7 +41,7 @@ function fakeStore() {
   return store;
 }
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 const q = (text: string, values?: unknown[]) => client!.query(text, values);
 const none: AuditFilterInput = { actor: null, actionPrefix: null, resourceType: null, sinceRaw: null, untilRaw: null, q: null };
 
@@ -87,7 +87,7 @@ describe.skipIf(!databaseUrl)('export across the archive and PostgreSQL — real
   const expected = new Map<string, string[]>();
 
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new PgClient({ connectionString: databaseUrl });
     await client.connect();
     await q(`SELECT kortix.audit_events_ensure_partitions('kortix.audit_events', current_date - 140, 8)`);
     const ins = (account: string, action: string, at: string, extra: { project?: string; outcome?: string; resource?: string; type?: string } = {}) =>

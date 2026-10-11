@@ -207,5 +207,4 @@ function getTunnelServiceStatus(): {
   };
 }
 
-export { startTunnelService, stopTunnelService } from '../workers/tunnel-worker';
 export { tunnelApp, wsHandlers, getTunnelServiceStatus };

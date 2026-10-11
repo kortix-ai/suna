@@ -4,6 +4,7 @@ import { DevSettings } from 'react-native';
 
 import { supabase } from '@/api/supabase';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
+import { signOutThisDevice } from '@/lib/auth/sign-out';
 import { keysToClear } from '@/lib/auth/sign-out-keys';
 import { log } from '@/lib/logger';
 
@@ -21,7 +22,7 @@ import { saveDeployment } from './store';
  */
 export async function switchDeployment(deployment: Deployment | null): Promise<boolean> {
   sessionExpiry.disarm();
-  await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+  await signOutThisDevice(supabase.auth);
   try {
     await AsyncStorage.multiRemove(keysToClear(await AsyncStorage.getAllKeys()));
   } catch (error) {

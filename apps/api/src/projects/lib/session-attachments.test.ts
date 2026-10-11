@@ -104,3 +104,41 @@ test('raises an older private bucket limit to the current composer limit', async
   await store.put(input());
   expect(updateBucket).toHaveBeenCalledWith('session-attachments', { public: false, fileSizeLimit: 50 * 1024 * 1024 });
 });
+
+test("removeProject deletes the files of every session under the project, and only that project", async () => {
+  // Real Storage lists ONE level: a project prefix names its session folders.
+  const bucket = new Set([
+    "p1/s1/a1",
+    "p1/s1/a2",
+    "p1/s2/a3",
+    "p2/s3/a4",
+  ]);
+  const oneLevel = {
+    from: () => ({
+      list: async (prefix: string) => ({
+        data: [...new Set([...bucket]
+          .filter((k) => k.startsWith(prefix + "/"))
+          .map((k) => k.slice(prefix.length + 1).split("/")[0]!))].map((name) => ({ name })),
+        error: null,
+      }),
+      remove: async (keys: string[]) => {
+        keys.forEach((k) => bucket.delete(k));
+        return { error: null };
+      },
+    }),
+  };
+  const store = createSessionAttachmentStore(oneLevel as never);
+  await store.removeProject("p1");
+  expect([...bucket]).toEqual(["p2/s3/a4"]);
+});
+
+test("removeProject stops with an error when a folder does not empty", async () => {
+  const stuck = {
+    from: () => ({
+      list: async (prefix: string) => ({ data: [{ name: prefix === "p1" ? "s1" : "a1" }], error: null }),
+      remove: async () => ({ error: null }),
+    }),
+  };
+  const store = createSessionAttachmentStore(stuck as never);
+  await expect(store.removeProject("p1")).rejects.toThrow("Could not delete the files under p1/s1");
+});

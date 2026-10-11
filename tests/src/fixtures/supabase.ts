@@ -141,6 +141,17 @@ export async function adminCreateUser(env: Env, email: string, password: string)
   return { id: data.id, email: data.email ?? email };
 }
 
+/** Move a synthetic user to a new address, freeing the old one for another user. */
+export async function adminUpdateUserEmail(env: Env, userId: string, email: string): Promise<void> {
+  if (!env.supabaseServiceRoleKey) throw new Error("Supabase service-role key required to change a user email");
+  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
+    method: "PUT",
+    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, { anonKey: env.supabaseAnonKey ?? undefined, json: true }),
+    body: JSON.stringify({ email, email_confirm: true }),
+  });
+  if (!res.ok) throw new Error(`admin email update for ${userId} failed: ${res.status}`);
+}
+
 export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) return;
   const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {

@@ -138,7 +138,7 @@ await kortix.projects.list();                   // as that user
 
 | Call | Route | Notes |
 |---|---|---|
-| `auth.signUp({ email, password, redirect_to? })` | `POST /v1/auth/signup` | `requires_email_confirmation: true` → no session until the emailed link/code is used. |
+| `auth.signUp({ email, password, redirect_to? })` | `POST /v1/auth/signup` | `requires_email_confirmation: true` → no session until the emailed link/code is used. It applies the web form's sign-up rules: `403 sso_required` for a domain that must sign in with SSO, and `403 signup_closed` when the instance's sign-ups are closed to the address. |
 | `auth.signInWithPassword({ email, password })` | `POST /v1/auth/sign-in/password` | |
 | `auth.sendMagicLink({ email, redirect_to? })` → `auth.verifyOtp({ email, token, type: 'magiclink' })` | `/sign-in/magic-link`, `/verify-otp` | The email carries a link and a 6-digit code. |
 | `auth.signInWithProvider({ provider, redirect_to })` → `auth.exchangeCode({ code, code_verifier })` | `/sign-in/oauth`, `/oauth/exchange` | PKCE: keep `code_verifier` until the provider redirects back with `?code=`. `redirect_to` must be on the instance's redirect allow-list. |

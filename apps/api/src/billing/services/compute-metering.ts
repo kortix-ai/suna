@@ -56,7 +56,6 @@ import {
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { wallet } from '../wallet';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
@@ -95,6 +94,10 @@ export interface StartComputeOpts {
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
   /**
+   * `backend` is the machine of an App of kind `convex`: its `sandbox_id` IS
+   * the App id (`app_convex_instances.app_id`), opened and observed by the
+   * convex health probe (apps/kinds/convex/maintenance.ts).
+   *
    * `monitor` is the per-project monitor box. It has no `session_sandboxes` and
    * no `app_runtimes` row — its `sandbox_id` IS `project_monitor_boxes.box_id`,
    * which is what every monitor-aware billing join keys on. No extra column is
@@ -297,7 +300,7 @@ async function settleComputeWindow(
       // The multiplier is named in the description only when it is not list
       // price, so a custom-priced debit is self-explaining in the ledger and an
       // ordinary one reads exactly as it always has.
-      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
+      description: `${row.workloadType === 'backend' ? 'Backend' : 'Sandbox'} compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
         rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
       }`,
       kind: 'compute_debit',

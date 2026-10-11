@@ -1,5 +1,5 @@
 import type { ModelFallbackPolicy } from '@kortix/llm-gateway';
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 
 const fallbackPolicySchema = z.object({
   id: z.string().min(1),

@@ -1,0 +1,769 @@
+{
+  "schema": "kortix.session/2",
+  "v": 0,
+  "session_id": "ses_golden0000000000000001",
+  "title": "Golden session",
+  "created_at": "2026-10-01T10:00:00Z",
+  "harness": {
+    "current": "fixture",
+    "history": [
+      {
+        "harness": "fixture",
+        "version": "0",
+        "from_seq": 1,
+        "at": "2026-10-01T10:00:00Z"
+      }
+    ]
+  },
+  "selection": {
+    "agent": "build",
+    "model": {
+      "provider": "mock",
+      "model": "mock-model-2"
+    }
+  },
+  "todos": [
+    {
+      "id": "t1",
+      "content": "Create hello.txt",
+      "status": "completed",
+      "priority": "high"
+    },
+    {
+      "id": "t2",
+      "content": "List files",
+      "status": "in_progress"
+    }
+  ],
+  "pending": {
+    "questions": [],
+    "permissions": []
+  },
+  "threads": [
+    {
+      "schema": "kortix.session/2",
+      "v": 0,
+      "thread_id": "ses_golden0000000000000001",
+      "parent_thread_id": null,
+      "spawned_by": null,
+      "agent": "build",
+      "title": "Golden session",
+      "created_at": "2026-10-01T10:00:01.000Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g01",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 1,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-01T10:00:02.000Z",
+          "completed_at": "2026-10-01T10:00:02.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Create hello.txt containing hi"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g02",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 2,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-01T10:00:03.000Z",
+          "completed_at": "2026-10-01T10:00:03.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "I'll create the file."
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_g01",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "echo hi > hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": ""
+                  }
+                ],
+                "is_error": false
+              }
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g03",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 3,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-01T10:00:04.000Z",
+          "completed_at": "2026-10-01T10:00:04.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "reasoning",
+              "text": "The file exists now."
+            },
+            {
+              "type": "text",
+              "text": "Done."
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g04",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 4,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-01T10:00:05.000Z",
+          "completed_at": "2026-10-01T10:00:05.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Read hello.txt and look at this image"
+            },
+            {
+              "type": "attachment",
+              "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "mime": "image/png",
+              "name": "dot.png",
+              "bytes": 70,
+              "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g05",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 5,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-01T10:00:06.000Z",
+          "completed_at": "2026-10-01T10:00:06.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_g02",
+              "name": "read",
+              "kind": "read",
+              "input": {
+                "filePath": "hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hi"
+                  }
+                ],
+                "is_error": false
+              }
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g06",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 6,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-01T10:00:07.000Z",
+          "completed_at": "2026-10-01T10:00:07.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "It says hi. The image is a single pixel."
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g07",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 7,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-01T10:00:08.000Z",
+          "completed_at": "2026-10-01T10:00:08.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "/check",
+              "model_text": "Run the command `false` and report the result."
+            }
+          ],
+          "origin": "command"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g08",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 8,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "error",
+          "in_context": false,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "error",
+          "error": {
+            "code": "unknown",
+            "message": "stream reset"
+          },
+          "created_at": "2026-10-01T10:00:09.000Z",
+          "completed_at": "2026-10-01T10:00:09.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Partial answer that failed"
+            }
+          ],
+          "hidden_reason": "failed_attempt"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g09",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 9,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-01T10:00:10.000Z",
+          "completed_at": "2026-10-01T10:00:10.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_g03",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "false"
+              },
+              "status": "error",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "exit code 1"
+                  }
+                ],
+                "is_error": true
+              }
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g10",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 10,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-01T10:00:11.000Z",
+          "completed_at": "2026-10-01T10:00:11.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The command failed with exit code 1."
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g11",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 11,
+          "role": "user",
+          "kind": "compaction",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-01T10:00:12.000Z",
+          "completed_at": "2026-10-01T10:00:12.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "compaction",
+              "summary": "SUMMARY-G: the user created hello.txt containing hi and checked an image.",
+              "first_kept_message_id": "msg_g04",
+              "tokens_before": 4200,
+              "trigger": "auto"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g12",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 12,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-01T10:00:13.000Z",
+          "completed_at": "2026-10-01T10:00:13.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Spawn a helper to list the files"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g13",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 13,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-01T10:00:14.000Z",
+          "completed_at": "2026-10-01T10:00:14.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_g04",
+              "name": "task",
+              "kind": "task",
+              "input": {
+                "description": "list files",
+                "prompt": "List the files in the workspace",
+                "subagent_type": "general"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Found hello.txt"
+                  }
+                ],
+                "is_error": false
+              }
+            },
+            {
+              "type": "subtask",
+              "thread_id": "ses_golden0000000000000002",
+              "agent": "general",
+              "description": "list files",
+              "call_id": "call_g04"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_g14",
+          "thread_id": "ses_golden0000000000000001",
+          "seq": 14,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-01T10:00:15.000Z",
+          "completed_at": "2026-10-01T10:00:15.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The helper found hello.txt."
+            },
+            {
+              "type": "harness",
+              "harness": "fixture",
+              "kind": "note",
+              "data": {
+                "anything": true
+              },
+              "model_visible": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "schema": "kortix.session/2",
+      "v": 0,
+      "thread_id": "ses_golden0000000000000002",
+      "parent_thread_id": "ses_golden0000000000000001",
+      "spawned_by": {
+        "message_id": "msg_g13",
+        "call_id": "call_g04"
+      },
+      "agent": "general",
+      "title": "list files",
+      "created_at": "2026-10-01T10:00:16.000Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_c01",
+          "thread_id": "ses_golden0000000000000002",
+          "seq": 1,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-01T10:00:17.000Z",
+          "completed_at": "2026-10-01T10:00:17.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "List the files in the workspace"
+            }
+          ],
+          "origin": "subagent"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_c02",
+          "thread_id": "ses_golden0000000000000002",
+          "seq": 2,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-01T10:00:18.000Z",
+          "completed_at": "2026-10-01T10:00:18.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_c01",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "ls"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hello.txt"
+                  }
+                ],
+                "is_error": false
+              }
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 0,
+          "message_id": "msg_c03",
+          "thread_id": "ses_golden0000000000000002",
+          "seq": 3,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-01T10:00:19.000Z",
+          "completed_at": "2026-10-01T10:00:19.000Z",
+          "producer": {
+            "harness": "fixture",
+            "harness_version": "0",
+            "adapter_version": "0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Found hello.txt"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

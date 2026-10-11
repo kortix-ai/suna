@@ -316,6 +316,14 @@ describe('Apps public edge', () => {
     expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now)).toBe(true);
   });
 
+  test('an always-on runtime past its idle deadline is proxied directly; a stopped one still wakes', () => {
+    const now = new Date('2026-08-07T10:30:00.000Z');
+    const pastDeadline = new Date('2026-08-07T10:00:00.000Z');
+    expect(appRuntimeNeedsWake({ status: 'running', idleDeadlineAt: pastDeadline }, now, true)).toBe(false);
+    expect(appRuntimeNeedsWake({ status: 'running', idleDeadlineAt: pastDeadline }, now, false)).toBe(true);
+    expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now, true)).toBe(true);
+  });
+
   test('direct-edge mode refuses a caller-supplied App host header', () => {
     // x-kortix-app-host is an EDGE-SIGNED field. In direct-edge mode (a
     // self-host with no Apps Worker, which `kortix self-host configure` now
@@ -531,6 +539,17 @@ describe('Apps public edge', () => {
       "default-src 'self'; script-src 'self'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
     );
     expect(result.get('content-security-policy-report-only')).toBe("img-src 'self'");
+  });
+
+  test('an App cannot mark its own response shareable at the edge, and the API origin never caches it', () => {
+    const result = appPublicResponseHeaders(new Headers({
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-kortix-edge-cacheable': 'public',
+    }));
+
+    expect(result.get('x-kortix-edge-cacheable')).toBeNull();
+    expect(result.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(result.get('cache-control')).toBe('public, max-age=31536000, immutable');
   });
 
   test('allows a self-host frontend origin to frame its own App previews', () => {

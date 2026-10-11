@@ -218,7 +218,9 @@ test('an App with no deployment never claims to be Running', () => {
   const view = appsSource();
 
   expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
-  expect(view).toContain("const live = deployed && app.desired_state === 'running';");
+  // `deployed` gates both branches; a static App is live without a runtime
+  // (behavior asserted in app-shared.test.ts).
+  expect(view).toContain("const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');");
   expect(view).toContain("!deployed ? 'Not deployed'");
   // The badge and its tint must both follow real state, not intent.
   expect(view).not.toContain("variant={app.desired_state === 'running' ? 'success' : 'muted'}");

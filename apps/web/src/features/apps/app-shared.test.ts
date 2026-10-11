@@ -1,0 +1,32 @@
+import { expect, test } from 'bun:test';
+import type { App } from '@kortix/sdk';
+import type { UiTranslator } from '@/i18n/translator';
+import { appCostLabel, appHasBudget, appStatus } from './app-shared';
+
+const t = { raw: (key: string) => key } as unknown as UiTranslator;
+const app = (overrides: Partial<App>): App => ({
+  app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'site', name: 'Site',
+  url: 'https://site.apps.example.test', access_mode: 'public', access_revision: 1, desired_state: 'running',
+  active_deployment_id: 'deployment-1', machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+  monthly_budget_usd: 5, last_request_at: null, created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  ...overrides,
+});
+
+test('a static App with an active deployment is live even when desired_state says stopped', () => {
+  expect(appStatus(app({ hosting_type: 'static', desired_state: 'stopped' }), t).live).toBe(true);
+});
+
+test('a stopped server App is not live; an undeployed App is not deployed', () => {
+  expect(appStatus(app({ hosting_type: 'sandbox', desired_state: 'stopped' }), t)).toMatchObject({ deployed: true, live: false });
+  expect(appStatus(app({ active_deployment_id: null, hosting_type: null }), t)).toMatchObject({ deployed: false, live: false });
+});
+
+test('only an on-demand server App has a budget; always-on, Convex and static Apps show a fixed cost or none', () => {
+  const tc = ((key: string, values: Record<string, unknown>) => `${key}:${values.value0}`) as unknown as UiTranslator;
+  const onDemand = app({ kind: 'web', always_on: false, hosting_type: 'sandbox', monthly_budget_usd: 5 });
+  const alwaysOn = app({ kind: 'web', always_on: true, hosting_type: 'sandbox', monthly_budget_usd: null, estimated_monthly_usd: 59.29 });
+  const convex = app({ kind: 'convex', always_on: true, hosting_type: null, monthly_budget_usd: null, estimated_monthly_usd: 59.29 });
+  const site = app({ kind: 'web', always_on: false, hosting_type: 'static', monthly_budget_usd: null, estimated_monthly_usd: 0 });
+  expect([onDemand, alwaysOn, convex, site].map(appHasBudget)).toEqual([true, false, false, false]);
+  expect([onDemand, alwaysOn, convex, site].map((a) => appCostLabel(a, tc))).toEqual([null, 'texte15cb9ffae7f:59', 'texte15cb9ffae7f:59', null]);
+});

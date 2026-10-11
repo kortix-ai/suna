@@ -2,6 +2,7 @@ import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import type { AttachedFile } from './composer/types';
+import { serializePromptWithPastes } from '@kortix/shared';
 import { cleanPromptText, composerSendDelivery, projectQueueRows } from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
@@ -91,6 +92,45 @@ describe('projectQueueRows', () => {
       // No server id yet: nothing to remove or take back.
       ['optimistic:q_9', 'sending', false, false, null],
     ]);
+  });
+
+  // A queued prompt runs as its author. The API answers 403 not_prompt_author
+  // to anyone else's edit, Stop and send or retry, so none is offered.
+  test("another member's rows offer no edit, Stop and send or retry", () => {
+    const prompts = [
+      prompt({ prompt_id: 'theirs', author_user_id: 'user-b' }),
+      prompt({ prompt_id: 'theirs-failed', state: 'failed', author_user_id: 'user-b' }),
+      prompt({ prompt_id: 'mine', author_user_id: 'user-a' }),
+      prompt({ prompt_id: 'mine-failed', state: 'failed', author_user_id: 'user-a' }),
+    ];
+    const controls = (managesSession: boolean) =>
+      projectQueueRows({ prompts, viewer: { userId: 'user-a', managesSession } }).rows.map((r) => [
+        r.id,
+        r.takeBackEligible,
+        r.interruptible,
+        r.retryable,
+        r.removable,
+        r.fromAnotherMember ?? false,
+      ]);
+    expect(controls(false)).toEqual([
+      ['theirs', false, false, false, false, true],
+      ['theirs-failed', false, false, false, false, true],
+      ['mine', true, true, false, true, false],
+      ['mine-failed', false, false, true, true, false],
+    ]);
+    // A session manager may remove another member's row, and nothing else.
+    expect(controls(true)).toEqual([
+      ['theirs', false, false, false, true, true],
+      ['theirs-failed', false, false, false, true, true],
+      ['mine', true, true, false, true, false],
+      ['mine-failed', false, false, true, true, false],
+    ]);
+  });
+
+  test('without a viewer every row keeps its controls (an older API lists no author)', () => {
+    const { rows } = projectQueueRows({ prompts: [prompt({ prompt_id: 'old' })] });
+    expect(rows[0]).toMatchObject({ takeBackEligible: true, interruptible: true, removable: true });
+    expect(rows[0]?.fromAnotherMember).toBeUndefined();
   });
 
   test('a row already on screen in the transcript is not a queued entry — by any of its ids', () => {
@@ -316,5 +356,34 @@ describe('cleanPromptText', () => {
       '<session_ref id="ses_1" title="Intro" />\n\n<file_ref path="notes.md" name="notes.md" />\n\n<agent_ref name="coder" />';
     expect(cleanPromptText(text)).toEqual({ text: 'look at @notes', fileCount: 0 });
   });
-});
 
+  test('a paste block is not the visible words; a paste-only prompt reads "Pasted text"', () => {
+    const block = serializePromptWithPastes('', [{ id: 'abcd1234', text: 'pasted body' }]);
+    expect(cleanPromptText(`${block}\n\nsummarize`)).toEqual({ text: 'summarize', fileCount: 0, pasteCount: 1 });
+    const [row] = projectQueueRows({ prompts: [prompt({ text: block })] }).rows;
+    expect(row.text).toBe('Pasted text');
+    // No visible words: nothing for the composer to edit in place.
+    expect(row.editText).toBeNull();
+    const [typed] = projectQueueRows({
+      prompts: [prompt({ text: `${block}\n\nsummarize` })],
+    }).rows;
+    expect(typed.text).toBe('summarize');
+  });
+
+  test('a queued prompt with a typed <pasted_content> tag stays editable, and shows the tag as typed', () => {
+    const typed = 'see <pasted_content id="abcd1234" chars="3">abc</pasted_content> now';
+    const [row] = projectQueueRows({ prompts: [prompt({ text: serializePromptWithPastes(typed, []) })] }).rows;
+    expect(row.text).toBe(typed);
+    expect(row.editText).toBe(typed);
+    expect(row.takeBackEligible).toBe(true);
+  });
+
+  test('a draft row still uploading shows the typed words, not the paste XML', () => {
+    const block = serializePromptWithPastes('summarize', [{ id: 'abcd1234', text: 'pasted body' }]);
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_9', { text: block, posted: false, placement: 'composer' })],
+    });
+    expect(rows[0].text).toBe('summarize');
+  });
+});

@@ -28,8 +28,7 @@ import { productionPlatinumClient, observeTemplates, findTemplateByName, findTem
 import type { PlatinumClient, PlatinumTemplate } from './platinum-templates';
 import { uploadWithRetry, templateInUseCount } from './platinum-upload';
 export { PlatinumTemplateListingError, PlatinumTemplateBuildFailedError, summarizePlatinumBuildFailure, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
-export type { PlatinumClient } from './platinum-templates';
-export { uploadUrlGuardOptsFromEnv, uploadWithRetry, UploadUrlRejectedError } from './platinum-upload';
+export { uploadWithRetry } from './platinum-upload';
 import type {
   BuildableTemplate,
   BuildLogTap,

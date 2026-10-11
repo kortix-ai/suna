@@ -21,7 +21,13 @@ export interface EasyConnectConnectionInput {
 }
 
 export type ConnectorSetupStatus =
-  'connected' | 'error' | 'needs_setup' | 'no_auth' | 'user_managed';
+  | 'connected'
+  | 'error'
+  /** An MCP server asked for sign-in (401/403) and nobody has signed in yet. */
+  | 'pending'
+  | 'needs_setup'
+  | 'no_auth'
+  | 'user_managed';
 
 export function connectorConnectionQueryKeys(projectId: string) {
   return [
@@ -43,9 +49,24 @@ export function connectorSyncErrorForSlug(
   return result.sync?.errors.find((error) => error.slug === slug)?.error ?? null;
 }
 
+/** A sync error that is the server asking for sign-in: HTTP 401 or 403. */
+export function isAuthChallenge(error: string): boolean {
+  return /\bHTTP 40[13]\b|\bunauthori[sz]ed\b/i.test(error);
+}
+
 export function connectorSetupStatus(
-  connector: Pick<AdminConnector, 'authorizationStrategy' | 'authSecret' | 'secretSet' | 'status'>,
+  connector: Pick<AdminConnector, 'authorizationStrategy' | 'authSecret' | 'secretSet' | 'status'> &
+    Partial<Pick<AdminConnector, 'provider' | 'lastError'>>,
 ): ConnectorSetupStatus {
+  // An MCP server that signs in with OAuth answers 401 until someone signs in.
+  // That is setup still in progress, not a failure.
+  if (
+    connector.status === 'error' &&
+    connector.provider === 'mcp' &&
+    !connector.secretSet &&
+    isAuthChallenge(connector.lastError ?? '')
+  )
+    return 'pending';
   if (connector.status === 'error') return 'error';
   // An authorization that never completed is setup that never finished. This
   // used to fall through to the `authSecret`/`secretSet` branches, so an

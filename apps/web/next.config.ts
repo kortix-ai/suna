@@ -7,6 +7,7 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
+import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
 import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import {
@@ -243,9 +244,6 @@ function resolveTurbopackFileSystemCacheForDev(): boolean {
 // (next start never reads .next/standalone) and skip ESLint.
 const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
 
-// Origin of the blog deployment that /blog is served from (see rewrites()).
-const BLOG_ORIGIN = process.env.KORTIX_BLOG_ORIGIN?.replace(/\/+$/, '');
-
 // --- Cross-origin dev / preview access -----------------------------------
 // The app is frequently reached through a proxy whose hostname differs from the
 // origin the browser sends: the Kortix platform proxy (p<port>-<id>.localhost:<port>),
@@ -323,7 +321,8 @@ const nextConfig = (): NextConfig => ({
   // missing config" later or wonders whether we missed the release. The only
   // knobs we set are turbopackMemoryEviction and turbopackFileSystemCacheForDev
   // (both below) — and both only as escape hatches that default to upstream's
-  // value when their env var is unset.
+  // value when their env var is unset. 16.4 adds turbopackGc (below), which we
+  // turn on: upstream defaults it off.
   //
   // Already default-ON in 16.3 — restating them here would be dead config that
   // silently diverges the day upstream changes a default:
@@ -457,6 +456,13 @@ const nextConfig = (): NextConfig => ({
     // aborts the dev server and takes the whole browser shard with it — the
     // full rationale is on resolveTurbopackFileSystemCacheForDev above.
     turbopackFileSystemCacheForDev: resolveTurbopackFileSystemCacheForDev(),
+    // Without GC (the default, and the only mode before 16.4) the persistent
+    // cache keeps every task it ever computed. Each `git merge origin/dev`
+    // adds a new set, so a busy worktree's .next/dev/cache/turbopack reached
+    // 20GB in 2 days and 60GB in one case. GC drops unreachable work from
+    // memory and from that cache. It is a no-op when the FS cache is off, and
+    // Turbopack skips it when turbopackMemoryEviction is false.
+    turbopackGc: true,
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',
@@ -523,6 +529,13 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects/:id/customize/:tab',
         permanent: false,
       },
+      // Backends became Apps of kind `convex` (2026-10-09), and a migrated
+      // App keeps its backend's id. The retired Backends pages and the
+      // Customize tab land on the Apps page, the one with an id opening that App.
+      ...['/projects/:id/backends', '/projects/:id/customize/backends'].flatMap((retired) => [
+        { source: `${retired}/:appId`, destination: '/projects/:id/apps?app=:appId', permanent: false },
+        { source: retired, destination: '/projects/:id/apps', permanent: false },
+      ]),
       // Decks moved from the single /presentation route to the /presentations
       // framework (index + one route per registered deck). The old paths were
       // shared in Slack and calendar invites, so they keep working.
@@ -706,8 +719,11 @@ const nextConfig = (): NextConfig => ({
       // so posts ship on a push to that repo, without a release of this one.
       // Every page, asset, feed and Markdown twin lives under /blog there, so
       // these two rules carry all of it. The middleware lets /blog through
-      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). Unset, as in local dev
-      // and self-hosted deployments, /blog is simply not served.
+      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). KORTIX_BLOG_ORIGIN is
+      // unset on dev and self-hosted deployments, so the shared resolver
+      // (src/config/blog-origin.ts) falls back to the canonical origin: /blog
+      // serves the real blog everywhere instead of 404ing under the link the
+      // footer and navbar advertise. An explicit empty value keeps it off.
       ...(BLOG_ORIGIN
         ? [
             { source: '/blog', destination: `${BLOG_ORIGIN}/blog` },
