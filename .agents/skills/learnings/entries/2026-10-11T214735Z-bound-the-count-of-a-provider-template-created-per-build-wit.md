@@ -33,12 +33,14 @@ and `cursor` tried, so the API could not list the inventory. The dev table
 `kortix.project_snapshot_builds` held 1320 rows (901 ready, 409 failed, 10 building). Ready
 rows older than 30 days: `kortix-ppwarm-*` 538 of 538, `kortix-default-*` 146 of 206,
 `kortix-tpl-*` 126 of 157. Seven daemon-affecting PRs merged that day, so many predecessors
-sat inside the 6 h window. The quota cleared between 20:48Z and about 21:30Z by an unknown actor
-(an operator deleting templates, a provider recount or quota change, or the prune catching
-up); the incident session deleted nothing. Starts worked again from about 21:30Z; a probe at 21:44Z confirmed it.
+sat inside the 6 h window. The quota cleared between 20:48Z and about 21:30Z when an operator
+deleted 997 templates by hand (262 failed builds, 736 superseded `kortix-default-*`; the org
+went from 1,645 to 646), as `2026-10-11T211903Z-watch-the-platinum-template-count-per-org-kortix-reclaims-on.md`
+records. The incident session deleted nothing. Starts worked again from about 21:30Z; a probe at 21:44Z confirmed it.
 
 **Enforcement:** none yet. To build: a periodic template reaper in `apps/api/src/workers/`
 with bounded retention per namespace (N newest ready plus pinned) that also removes failed
 and dead-chain templates, and a template-count metric with an alarm at a fraction of the
-quota. Until then, an operator deletes old `kortix-ppwarm-*`, `kortix-default-*` and
+quota. The entry above names a Platinum branch of the snapshot-quota GC in
+`projects/maintenance.ts` as the same follow-up: build one reaper, not two. Until then, an operator deletes old `kortix-ppwarm-*`, `kortix-default-*` and
 `kortix-tpl-*` templates by hand when the symptom appears.
