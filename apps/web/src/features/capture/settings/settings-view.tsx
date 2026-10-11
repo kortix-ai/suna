@@ -23,9 +23,9 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
+import { relativeTime } from '@/lib/relative-time';
 import { CapturePage } from '../area/capture-area-shell';
 import { useCaptureArea } from '../area/use-capture-area';
-import { relativeTime } from '../capture-time';
 import { ExclusionsEditor } from './exclusions-editor';
 import { applyToPrivacy, fromPolicy } from './exclusions-model';
 

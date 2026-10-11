@@ -30,6 +30,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl, isDesktop } from '@/lib/desktop';
 
+import { relativeTime } from '@/lib/relative-time';
 import { CaptureApiModal } from '../api/capture-api-modal';
 import { CapturePage } from '../area/capture-area-shell';
 import {
@@ -39,7 +40,6 @@ import {
   useCaptureArea,
   useCaptureDirectory,
 } from '../area/use-capture-area';
-import { relativeTime } from '../capture-time';
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
 import { deviceStatus, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, StatusLabel } from './device-status-ui';

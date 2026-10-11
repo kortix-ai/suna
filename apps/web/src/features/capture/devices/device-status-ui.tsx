@@ -17,7 +17,9 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
-import { clockTime, relativeTime } from '../capture-time';
+import { relativeTime } from '@/lib/relative-time';
+
+import { clockTime } from '../capture-time';
 import type { DeviceStatusView } from './device-status';
 
 /** The status dot: green records, orange needs a person, a ring is offline, grey is idle. */

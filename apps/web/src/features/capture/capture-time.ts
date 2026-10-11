@@ -48,17 +48,6 @@ export function indexAtOrBefore<T extends { ts: string }>(items: readonly T[], a
   return found;
 }
 
-/** "12 seconds ago", "3 hours ago" in the given locale. */
-export function relativeTime(at: number, locale: string, now = Date.now()): string {
-  const seconds = Math.round((at - now) / 1000);
-  const abs = Math.abs(seconds);
-  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
-  if (abs < 60) return format.format(seconds, 'second');
-  if (abs < 3_600) return format.format(Math.round(seconds / 60), 'minute');
-  if (abs < 86_400) return format.format(Math.round(seconds / 3_600), 'hour');
-  return format.format(Math.round(seconds / 86_400), 'day');
-}
-
 /** `14:32`, `2:32 PM` in the given locale: the hour without a leading zero. */
 export function clockTime(at: string | number, locale: string, withSeconds = false): string {
   return new Date(at).toLocaleTimeString(locale, {
