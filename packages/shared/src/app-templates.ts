@@ -11,6 +11,8 @@ export interface AppTemplate {
   name: string;
   /** One line for `kortix apps launch --help`. */
   summary: string;
+  /** The App slug `launch` uses without `--name`: what the App is, not what runs it. */
+  defaultName: string;
   /** `apps.<slug>` blocks; `name` is the slug the user chose. */
   blocks: (name: string) => Record<string, Record<string, unknown>>;
   /** Files the blocks build from, by path from the project root. A file that exists is kept. */
@@ -110,6 +112,8 @@ COPY start.js /kortix/start.js
 export const APP_TEMPLATES: Record<string, AppTemplate> = {
   convex: {
     name: 'convex',
+    // A Convex App is a whole backend (data, functions, realtime, files, schedules), not a database.
+    defaultName: 'backend',
     summary: 'A self-hosted Convex backend: data on a volume, the client and HTTP-action services, and an admins-only dashboard tab.',
     blocks: (name) => ({
       [name]: {
