@@ -1036,6 +1036,10 @@
         "ephemeral_sandboxes": {
           "name": "Ephemeral sandboxes",
           "description": "A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop."
+        },
+        "session_log": {
+          "name": "Session log v2",
+          "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
         }
       }
     },
