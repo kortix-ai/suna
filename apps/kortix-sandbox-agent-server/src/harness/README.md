@@ -66,15 +66,32 @@ route, the body, the credential, the retries and the dead-token breaker.
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4)
+## Session log (P2.4, P2.5)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
 patch since one `ExportCursor` per thread; `restore(log)` writes a session log
 into the native store before the harness starts and returns the cursors of what
 it wrote; `fingerprint()` digests the native store for the boot reconcile;
-`capabilities` is the adapter's `AdapterCapabilities`. No adapter implements it
-yet: P2.5 (pi) and P2.6 (OpenCode) do, and call `startSessionLogJournal`.
+`capabilities` is the adapter's `AdapterCapabilities`. pi implements it
+(`pi/session-log.ts`, P2.5); OpenCode does in P2.6.
+
+The pi boot starts the journal once the runtime is ready and a session is
+bound, before the first turn, with generation 0: nothing mints a session
+generation before P6's restore. `lifecycle.stop()` stops it before the runtime
+stops. The adapter reads `PiRuntime.sessionLogSnapshot()`: the root's
+`SessionManager` branch and session header, each sub-agent child's agent
+messages, and the v1 transcript. pi entries carry pi's own ids, so the runtime
+records the Kortix message id of each pi message (and of each compaction
+entry: its marker) and persists the map and the header in its dump; block ids
+are the v1 part ids. `restore` returns no cursors until P6 writes the native
+store. The mapping decisions are in the header of `pi/session-log.ts`.
+
+Debug: `KORTIX_SESSION_LOG_DUMP_DIR=<dir>` (off by default) makes the journal
+write each batch body as JSON to `<dir>` and acknowledge it at once, instead of
+posting it. Use it to read what a box exports before the ingest route exists
+(read the files back through `/file/content`). Nothing reaches apps/api while
+it is set.
 
 The journal (`shared/session-log-journal.ts`) drops a message whose native hash
 equals its cursor's (schema rule C13), so an unchanged or restored message is

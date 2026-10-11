@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
-import type { AgentSessionEvent, SessionEntry, Skill } from '@earendil-works/pi-coding-agent'
+import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
@@ -44,6 +44,7 @@ import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
+import type { PiSessionSnapshot } from './session-log'
 
 export type { CompiledAgent }
 
@@ -192,6 +193,8 @@ interface ChildDump {
   createdAt: number
   updatedAt: number
   agentMessages: AgentMessage[]
+  /** The Kortix message id of each agent message (session log). Absent in dumps written before P2.5. */
+  messageIds?: Array<string | null>
   transcript: KortixMessage[]
 }
 
@@ -228,6 +231,10 @@ interface Dump {
   agentMessages: AgentMessage[]
   /** pi's session entries: the conversation, its context edits and its compactions. Absent in a dump written before pi 1.0. */
   entries?: SessionEntry[]
+  /** pi's session header, which `entries` leaves out. Absent in dumps written before P2.5. */
+  header?: SessionHeader
+  /** pi entry id → Kortix message id (session log). Absent in dumps written before P2.5. */
+  messageIds?: Record<string, string>
   transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
@@ -316,6 +323,16 @@ export class PiRuntime {
   private compaction: KortixAssistantMessageInfo | null = null
   private resetProgressWatchdog: (() => void) | null = null
   private workspaceReady = true
+  /**
+   * The Kortix message id of each pi message object (root and children): pi
+   * stores its own ids, the session log uses the transcript's. Read into
+   * `entryIds` (and a child's `messageIds`) when persisted.
+   */
+  private readonly nativeIds = new WeakMap<object, string>()
+  /** pi entry id → Kortix message id: what `nativeIds` resolved, the restored map and compaction entries. */
+  private readonly entryIds = new Map<string, string>()
+  /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
+  private turnPromptMapped = false
 
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
@@ -451,7 +468,7 @@ export class PiRuntime {
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
       // pi's session store is the model context: the agent's messages are its projection.
-      const sessionManager = coding.SessionManager.inMemory(this.workspace, undefined, restored?.entries)
+      const sessionManager = coding.SessionManager.inMemory(this.workspace, undefined, restored?.entries && restored.header ? [restored.header, ...restored.entries] : restored?.entries)
       if (restored && !restored.entries) for (const message of restored.agentMessages) sessionManager.appendMessage(message as never)
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
@@ -619,7 +636,9 @@ export class PiRuntime {
         if (slot.retracted) return
         const images = this.images(input)
         const session = this.pi!.session
-        const entryId = session.sessionManager.appendMessage({ role: 'user', content: images.length ? [{ type: 'text', text: input.text }, ...images] : input.text, timestamp: this.now() })
+        const message = { role: 'user' as const, content: images.length ? [{ type: 'text' as const, text: input.text }, ...images] : input.text, timestamp: this.now() }
+        this.nativeIds.set(message, messageId)
+        const entryId = session.sessionManager.appendMessage(message)
         this.unreadNoReply.set(messageId, entryId)
         session.refreshContext()
         this.completedTurns.set(messageId, 'idle')
@@ -841,6 +860,7 @@ export class PiRuntime {
     const agent = this.agent!
     this.active = turn
     this.turnParent = turn.messageId
+    this.turnPromptMapped = false
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
@@ -998,6 +1018,9 @@ export class PiRuntime {
     if (event.type !== 'compaction_end' || !this.compaction) return
     const info = this.compaction
     this.compaction = null
+    // pi appended the compaction entry before it emitted the end: it is the leaf.
+    const leaf = event.result ? this.pi?.session.sessionManager.getLeafEntry() : undefined
+    if (leaf?.type === 'compaction' && info.parentID) this.entryIds.set(leaf.id, info.parentID)
     const completed = this.now()
     const error: KortixMessageError | undefined = event.result
       ? undefined
@@ -1048,6 +1071,14 @@ export class PiRuntime {
       const messageID = this.active.messageId
       this.publish({ type: 'message.part.updated', properties: { sessionID: this.rootId, time: this.now(), part: { id: `${messageID}-p0`, messageID, sessionID: this.rootId, type: 'text', text } } })
     }
+    if (event.type === 'message_start' && event.message.role === 'user' && !this.nativeIds.has(event.message)) {
+      if (steered) this.nativeIds.set(event.message, steered.messageId)
+      else if (this.active && !this.turnPromptMapped) {
+        this.turnPromptMapped = true
+        this.nativeIds.set(event.message, this.active.messageId)
+      }
+    }
+    if (event.type === 'message_end' && event.message.role === 'assistant' && this.adapter) this.nativeIds.set(event.message, this.adapter.messageId)
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       // pi-ai reports a request that the stop cancelled before it went out as an error ("The operation was aborted.").
       if (event.message.stopReason === 'error' && this.active?.stopRequested) event.message.stopReason = 'aborted'
@@ -1215,6 +1246,10 @@ export class PiRuntime {
       return own ?? session
     }, false, this.childExtensionGate())
     agent.subscribe((event) => {
+      if (event.type === 'message_end' && !this.nativeIds.has(event.message)) {
+        if (event.message.role === 'assistant') this.nativeIds.set(event.message, adapter.messageId)
+        else if (event.message.role === 'user') this.nativeIds.set(event.message, messageId)
+      }
       for (const frame of adapter.translate(event)) this.publish(frame, frame.transcriptOnly ? { transcriptOnly: true } : undefined)
     })
     child.agent = agent
@@ -1666,6 +1701,48 @@ export class PiRuntime {
     return last ? (last === 'error' ? 'failed' : 'completed') : null
   }
 
+  // ── session log ──────────────────────────────────────────────────────────
+
+  /** pi entry id → Kortix message id, for every entry whose message has one. */
+  private entryMessageIds(): Record<string, string> {
+    for (const entry of this.pi?.session.sessionManager.getEntries() ?? []) {
+      const id = entry.type === 'message' ? this.nativeIds.get(entry.message) : undefined
+      if (id) this.entryIds.set(entry.id, id)
+    }
+    return Object.fromEntries(this.entryIds)
+  }
+
+  /** What the session-log adapter (session-log.ts) reads; null while the runtime is down. */
+  sessionLogSnapshot(): PiSessionSnapshot | null {
+    const manager = this.pi?.session.sessionManager
+    if (!manager || this.state !== 'ok') return null
+    return {
+      sessionId: this.sessionId,
+      rootId: this.rootId,
+      title: this.title,
+      header: manager.getHeader(),
+      entries: manager.getBranch(),
+      entryMessageIds: this.entryMessageIds(),
+      transcript: this.transcript.all(),
+      children: [...this.children.values()].map((child) => {
+        const agentMessages = child.agent ? child.agent.state.messages : child.agentMessages
+        return {
+          id: child.id,
+          title: child.title,
+          agentName: child.agentName,
+          createdAt: child.createdAt,
+          agentMessages,
+          messageIds: agentMessages.map((m) => this.nativeIds.get(m) ?? null),
+          transcript: child.transcript.all(),
+          busy: child.agent !== null,
+        }
+      }),
+      busy: this.status === 'busy' || this.active !== null,
+      agent: this.sessionAgentName,
+      model: this.selected ? { provider: this.selected.providerID, model: this.selected.modelID } : null,
+    }
+  }
+
   // ── durability ───────────────────────────────────────────────────────────
 
   private dumpPath(): string {
@@ -1682,7 +1759,9 @@ export class PiRuntime {
         title: this.title,
         createdAt: this.createdAt,
         agentMessages: this.agent.state.messages,
-        ...(this.pi ? { entries: this.pi.session.sessionManager.getEntries() } : {}),
+        ...(this.pi
+          ? { entries: this.pi.session.sessionManager.getEntries(), header: this.pi.session.sessionManager.getHeader() ?? undefined, messageIds: this.entryMessageIds() }
+          : {}),
         transcript: this.transcript.all(),
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
         children: [...this.children.values()].map((child) => ({
@@ -1692,6 +1771,7 @@ export class PiRuntime {
           createdAt: child.createdAt,
           updatedAt: child.updatedAt,
           agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
+          messageIds: (child.agent ? child.agent.state.messages : child.agentMessages).map((m) => this.nativeIds.get(m) ?? null),
           transcript: child.transcript.all(),
         })),
       }
@@ -1726,12 +1806,14 @@ export class PiRuntime {
       this.transcript.load(dump.transcript)
       for (const message of dump.transcript) this.clock.observe(message.info.id as string)
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
+      for (const [entryId, messageId] of Object.entries(dump.messageIds ?? {})) this.entryIds.set(entryId, messageId)
       this.children.clear()
       for (const saved of dump.children ?? []) {
         const transcript = new TranscriptStore()
         transcript.load(saved.transcript)
         for (const message of saved.transcript) this.clock.observe(message.info.id as string)
-        const { transcript: _saved, ...rest } = saved
+        const { transcript: _saved, messageIds, ...rest } = saved
+        saved.agentMessages.forEach((m, i) => messageIds?.[i] && this.nativeIds.set(m, messageIds[i]!))
         this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null })
       }
       this.title = dump.title
