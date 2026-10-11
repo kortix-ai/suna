@@ -449,6 +449,8 @@ export interface DesktopCaptureSignIn {
 export interface DesktopCaptureSignInResult {
   ok: boolean;
   error?: string;
+  /** The person cancelled: nothing failed, the page goes back to where it was. */
+  cancelled?: boolean;
   status?: DesktopCaptureStatus;
 }
 

@@ -124,4 +124,8 @@ describe('turning on Capture never touches the computer agent (tunnel)', () => {
     expect(requests).toEqual(['http://api.test/v1/capture/device/grants/ABCD-1234/approve']);
     expect(requests.some((url) => url.includes('/tunnel'))).toBe(false);
   });
+  test('a sign-in the person cancelled resolves as cancelled, not as an error', async () => {
+    const { d } = deps({ finish: async () => ({ ok: false, error: 'cancelled' }) });
+    expect(await connectDesktopCapture(ACCOUNT, d)).toEqual({ ok: false, cancelled: true });
+  });
 });

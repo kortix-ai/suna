@@ -118,6 +118,7 @@ export function useDesktopCaptureActions(
           if (!openExternalRoute(url.replace(/^https?:\/\/[^/]+/, ''))) window.open(url, '_blank');
         },
       });
+      if (result.cancelled) return null;
       if (!result.ok) throw new Error(result.error || 'Capture did not start.');
       return result.status;
     },

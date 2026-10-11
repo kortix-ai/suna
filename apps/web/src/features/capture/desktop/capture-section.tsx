@@ -147,7 +147,8 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
   const turnOn = () => {
     actions.turnOn.reset();
     actions.turnOn.mutate(view, {
-      onSuccess: () => successToast(t('toast.started')),
+      // null: the person cancelled the sign-in; the page simply goes back.
+      onSuccess: (status) => (status ? successToast(t('toast.started')) : undefined),
       onSettled: () => setWaitingOnPage(false),
     });
   };

@@ -36,5 +36,7 @@ export async function connectDesktopCapture(
     }
     deps.openApproval(started.verificationUrl);
   }
-  return (await deps.finish()) ?? { ok: false, error: 'The desktop app stopped answering.' };
+  const result = (await deps.finish()) ?? { ok: false, error: 'The desktop app stopped answering.' };
+  // The desktop answers an aborted sign-in with `cancelled`: the person's choice, not a failure.
+  return result.error === 'cancelled' ? { ok: false, cancelled: true } : result;
 }
