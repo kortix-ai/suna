@@ -165,7 +165,8 @@ export async function runProviders(argv: string[]): Promise<number> {
   // shared grammar prints `unknown option "<first>"` + the usage, exit 2
   // (command-argv.ts) — the flag a customer guesses (`--available`) can no
   // longer masquerade as a no-op success.
-  const leftovers = sub === 'ls' || sub === 'list' ? rest : rest.filter((arg) => arg.startsWith('-'));
+  const leftovers =
+    sub === 'ls' || sub === 'list' ? rest : rest.filter((arg) => arg.startsWith('-'));
   const unknown = rejectUnknownArgs(leftovers, usage);
   if (unknown !== null) return unknown;
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
