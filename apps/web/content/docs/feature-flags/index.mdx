@@ -152,6 +152,7 @@ project.
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
 | `event_triggers` | App event triggers | Beta | Off | `routes` |
 | `notification_center` | Notification Center | Beta | Off | `routes` |
+| `session_log` | Session log v2 | Experimental | Off, hidden | `behavioral` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -213,6 +214,13 @@ refs). An explicit project choice always wins.
   phone gets a session push, and an account owner's phone gets one when a
   trigger starts failing. The session watch routes answer `feature_disabled`.
   See [Notifications](/docs/work/notifications#turn-notifications-on).
+- **`session_log`** — read a session through the v2 session log instead of the
+  v1 transcript. The flag is internal-only, like `apps`: Settings does not list
+  it, and a Kortix operator sets it per project with
+  `PUT /v1/admin/api/projects/:id/features`. Rollout: internal projects, then
+  10% of projects, then every project. The flag becomes the default in the
+  release that ships v2 to everyone, and the key is deleted in the next
+  release.
 
 ### Graduated flags
 
