@@ -1,0 +1,15 @@
+{
+  "source_hash": "930eaa06a88db7dd9800b02fcd874eda59d02d0749994b084496483578800f41",
+  "diff_files": [
+    "apps/api/src/llm-gateway/models/provider-registry.test.ts"
+  ],
+  "diff_hash": "f21fa0f765e880db06141717ef777f541f8c9195d1986cc2500e54baa6e3a40a",
+  "head": "26c352d0aa201ff119760e20e4474c8081b5c277",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T15:52:30.957Z"
+}
