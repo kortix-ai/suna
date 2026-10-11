@@ -19777,6 +19777,7 @@
     "providerError": "Não foi possível atualizar o acesso ao provedor.",
     "managedTitle": "Modelos gerenciados pela Kortix",
     "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
+    "managedUpgradeHint": "Faça upgrade para usar os modelos gerenciados da Kortix ou conecte seu próprio provedor.",
     "pricingEstimate": "Preço estimado para o cliente. A rota utilizada determina o custo.",
     "pricingRoute": "{route}: {input} entrada / {cacheRead} cache / {output} saída por 1 milhão de tokens",
     "pricingPreferred": "Preferida",

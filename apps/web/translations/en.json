@@ -19788,6 +19788,7 @@
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
     "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
+    "managedUpgradeHint": "Upgrade to use Kortix's managed models, or connect your own provider.",
     "pricingEstimate": "Estimated customer price. The serving route determines the charge.",
     "pricingRoute": "{route}: {input} input / {cacheRead} cached / {output} output per 1M tokens",
     "pricingPreferred": "Preferred",

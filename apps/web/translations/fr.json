@@ -19777,6 +19777,7 @@
     "providerError": "Impossible de modifier l’accès au fournisseur.",
     "managedTitle": "Modèles gérés par Kortix",
     "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
+    "managedUpgradeHint": "Passez à une offre supérieure pour utiliser les modèles gérés de Kortix, ou connectez votre propre fournisseur.",
     "pricingEstimate": "Prix client estimé. Le coût dépend de la route utilisée.",
     "pricingRoute": "{route} : {input} entrée / {cacheRead} cache / {output} sortie par million de tokens",
     "pricingPreferred": "Préférée",
