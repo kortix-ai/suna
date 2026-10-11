@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { FlatModel } from '@kortix/sdk/react';
 import { buildPickerSections, isPickerGroupOpen, modelItemValue, pickerGroupId, pickerGroupLabel, splitModelLabel } from './model-grouping';
-import type { FlatModel } from './session-chat-input';
 
 // Regression coverage for the "every provider shows as Kortix" picker bug.
 //

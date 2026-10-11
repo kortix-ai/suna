@@ -1,4 +1,4 @@
-import type { FlatModel } from './session-chat-input';
+import type { FlatModel } from '@kortix/sdk/react';
 
 const FREE_TOKEN = /(^|[\s/_-])free($|[\s/_-])/i;
 

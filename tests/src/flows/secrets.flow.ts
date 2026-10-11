@@ -281,6 +281,15 @@ flow(
     });
     await ctx.step('a shared session uses only keys shared with the whole project', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');
+      // Each API process caches project membership for up to 15 s: wait until
+      // 8 reads in a row see the member, so no process judges the session's
+      // owner a non-member (no_project_membership) instead of the key rule.
+      for (let streak = 0, deadline = Date.now() + 30_000; streak < 8; ) {
+        const read = await ctx.client.as(member).get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        if (read.statusCode !== 200 && Date.now() > deadline) throw new Error(`the member cannot read the project: ${read.statusCode}`);
+        streak = read.statusCode === 200 ? streak + 1 : 0;
+        if (streak < 8) await new Promise((resolve) => setTimeout(resolve, read.statusCode === 200 ? 100 : 1_000));
+      }
       const memberSession = await createDatabaseSession(ctx.env, {
         projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'project',
       });

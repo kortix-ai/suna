@@ -37,6 +37,8 @@
  *  F9  AdapterCapabilities split into `native` and `rendered`
  *  F11 error.code 'interrupted' for the closure rule
  *  F12 ToolKind passes unknown kinds through
+ *  F13 an attachment whose bytes are missing (a converted row with no stored object) has no
+ *      `ref` and no `bytes`, and keeps the v1 `url` (P1.3)
  * Not added: F7 `{ context }` layout entry (the existing `{ text }` entry is the OpenCode v2
  * recent-context) and F10 `orphan_calls` (see the HarnessBlock comment).
  *
@@ -180,16 +182,24 @@ export type TextBlock = BlockBase & { type: 'text'; text: string; model_text?: s
  */
 export type ReasoningBlock = BlockBase & { type: 'reasoning'; text: string; summary?: string[]; redacted?: boolean; ext?: Ext }
 
-/** model: the bytes behind `ref`. C4: label/source_path are display (Codex "[Image #1]", Claude "[Image: source: …]"). */
+/**
+ * model: the bytes behind `ref`. C4: label/source_path are display (Codex "[Image #1]", Claude "[Image: source: …]").
+ * F13: `ref` and `bytes` are both set or both absent. Both absent = the bytes are missing: a row
+ * converted from the Kortix v1 store whose object was not found. Such a block keeps `mime`, `name`
+ * and the v1 `url`, counts in `SessionLog.grade_counts.attachment`, and the model sees nothing for it.
+ * (Before P1.3 both were required and an unresolved converted attachment would have needed a
+ * sentinel `ref: ''`; no record was stored with that shape.)
+ */
 export type AttachmentBlock = BlockBase & {
   type: 'attachment'
-  ref: string
+  ref?: string
   mime: string
   name?: string
   label?: string
   source_path?: string
-  bytes: number
+  bytes?: number
   sha256?: string                                       // F5: absent only when `ref` names an existing object (converted rows); an exporter that stores the bytes sets it
+  url?: string                                          // F13: the v1 url a converted attachment came with (a `kortix-attachment://` session-attachments reference)
   ext?: Ext
 }
 
@@ -202,7 +212,8 @@ export type KnownToolKind = (typeof KNOWN_TOOL_KINDS)[number]
 /** F12: a harness may define its own kind. A reader renders a kind it does not know as 'other'. */
 export type ToolKind = KnownToolKind | (string & {})
 
-export type ToolResultContent = { type: 'text'; text: string } | { type: 'attachment'; ref: string; mime: string; sha256?: string }
+/** F13: a tool-result attachment follows the AttachmentBlock rule: no `ref` = the bytes are missing, `url` = the v1 url. */
+export type ToolResultContent = { type: 'text'; text: string } | { type: 'attachment'; ref?: string; mime: string; sha256?: string; url?: string }
 
 /**
  * C2. model: call_id, name, input, and `result.model_content ?? result.content`.
