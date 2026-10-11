@@ -20699,6 +20699,8 @@
       "unnamed": "Ordenador sin nombre",
       "you": "Tú",
       "member": "Un miembro",
+      "memberNone": "Aún sin ordenador",
+      "memberSummary": "{count, plural, one {# ordenador} other {# ordenadores}} · {recording} grabando",
       "actionsFor": "Acciones para {name}",
       "revoke": "Revocar ordenador",
       "revokeTitle": "¿Revocar este ordenador?",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "No se pudo revocar el ordenador",
       "recordThisComputer": "Grabar este ordenador",
       "title": "Dispositivos",
-      "descriptionAll": "Todos los equipos que graban en {name}. Los admins y lectores ven a todos los miembros; los miembros ven los suyos.",
+      "descriptionAll": "Cada miembro de {name} y los ordenadores que graba. Los miembros solo ven los suyos.",
       "descriptionMine": "Tus equipos. Solo tú y los admins de esta organización veis lo que graban.",
       "viewLabel": "Vista",
-      "viewAll": "Todos los dispositivos",
+      "viewAll": "Todos",
       "viewMine": "Mis dispositivos",
       "thisComputer": "Este equipo",
       "thisComputerBadge": "Este equipo",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "Aprueba el inicio de sesión en la página que se abrió en tu navegador."
       },
       "layerOffByPolicy": "Desactivado para tu organización",
+      "layerOn": "Activado",
+      "layersHint": "{org} decide qué se graba.",
       "notice": "De quienes gestionan {org}",
       "otherOrg": "Este ordenador graba ahora para otra organización. Empezar aquí lo pasa a {org}.",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "Grabación reanudada",
         "signedOut": "Sesión de Kortix Capture cerrada"
       },
-      "pausedByOrgHint": "Quienes gestionan {org} pausaron la grabación. Se reanuda cuando quiten la pausa."
+      "pausedByOrgHint": "Quienes gestionan {org} pausaron la grabación. Se reanuda cuando quiten la pausa.",
+      "gate": {
+        "title": "Permite Kortix Capture en este ordenador",
+        "body": "Kortix Capture graba este ordenador en {org}, pero macOS aún no lo ha permitido. No se graba nada hasta que permitas el acceso.",
+        "later": "Más tarde",
+        "done": "Kortix Capture está grabando."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Volver a Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix y Kortix Capture",
       "signedInAs": "Sesión iniciada como {email}",
       "switchOrg": "Cambiar de organización",
       "organizations": "Organizaciones",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "No se pudo abrir Kortix Capture.",
       "tryAgain": "Reintentar"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "Grabar los ordenadores de los miembros",
+      "description": "Los miembros graban su pantalla, acciones y audio en esta organización con la app de escritorio de Kortix. Los administradores ven a todos los miembros; cada miembro ve lo suyo.",
+      "descriptionReadOnly": "Un administrador de esta organización activa o desactiva Kortix Capture.",
+      "open": "Abrir Kortix Capture",
+      "failed": "No se pudo cambiar Kortix Capture."
     },
     "thisComputer": {
       "title": "Este equipo",

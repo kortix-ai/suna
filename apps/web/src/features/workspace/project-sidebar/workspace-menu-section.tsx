@@ -23,15 +23,15 @@
  * only: no `DropdownMenu`, no trigger, no portal of its own.
  */
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { useTranslations } from '@/i18n/use-translations';
+import { hubTarget } from '@/stores/account-panel-store';
 import {
   GearSixIcon as CogOne,
-  MagnifyingGlassIcon as Search,
   PlusIcon,
+  MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import { useQueries } from '@tanstack/react-query';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useMemo, useState, type MouseEvent } from 'react';
@@ -47,6 +47,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { captureHref } from '@/features/capture/area/use-capture-area';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import {
@@ -57,7 +58,6 @@ import {
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { InvitationsMenuGroup } from './invitations-menu-group';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -66,8 +66,9 @@ import {
   useProjectSwitchStore,
 } from '@/stores/project-switch-store';
 import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
+import { contract, qk, useCaptureWorkspace } from '@kortix/sdk/react';
+import { CheckCircleIcon as CheckCircleSolid, MonitorPlayIcon } from '@phosphor-icons/react';
+import { InvitationsMenuGroup } from './invitations-menu-group';
 
 export function WorkspaceMenuSection() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -175,6 +176,10 @@ export function WorkspaceMenuSection() {
     activeWorkspaceId: activeProjectId ?? null,
     selectedAccountId,
   });
+  // Kortix Capture is an account feature: the menu links to it once the
+  // account has it on.
+  const tCapture = useTranslations('capture.account');
+  const captureOn = useCaptureWorkspace(switcherAccountId ?? null).data?.enabled ?? false;
 
   // A failed account never appears in `groups` (it has zero workspaces, and
   // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
@@ -270,6 +275,14 @@ export function WorkspaceMenuSection() {
                 <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
               </HubLink>
             </DropdownMenuItem>
+            {captureOn ? (
+              <DropdownMenuItem asChild className="cursor-pointer px-1.5">
+                <Link href={captureHref(switcherAccountId, 'devices')}>
+                  <MonitorPlayIcon className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{tCapture('open')}</span>
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
           </div>
           <DropdownMenuSeparator />
         </>
@@ -317,37 +330,37 @@ export function WorkspaceMenuSection() {
                   const target = resolveWorkspaceRowNavigation(workspace, activeProjectId);
                   const rowBody = (
                     <>
-                        {/* Same union as the trigger above — see `workspace-switcher.tsx`.
+                      {/* Same union as the trigger above — see `workspace-switcher.tsx`.
                             Without `glyph`, every glyph-icon workspace in this
                             list falls back to its initial. */}
-                        <EntityAvatar
-                          label={workspace.name}
-                          glyph={workspace.icon_glyph}
-                          emoji={workspace.icon}
-                          size="sm"
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {workspace.name}
+                      <EntityAvatar
+                        label={workspace.name}
+                        glyph={workspace.icon_glyph}
+                        emoji={workspace.icon}
+                        size="sm"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {workspace.name}
+                      </span>
+                      {loading ? (
+                        <Loading className="text-muted-foreground size-3.5" />
+                      ) : active ? (
+                        // The active row navigates to account settings rather
+                        // than switching, so pointing at it swaps the "you are
+                        // here" check for the destination's own icon. Stacked
+                        // rather than swapped in the tree so the trailing
+                        // column keeps one width and the label never reflows.
+                        <span className="relative size-4 shrink-0">
+                          <CheckCircleSolid
+                            weight="fill"
+                            className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
+                          />
+                          <CogOne
+                            aria-hidden
+                            className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
+                          />
                         </span>
-                        {loading ? (
-                          <Loading className="text-muted-foreground size-3.5" />
-                        ) : active ? (
-                          // The active row navigates to account settings rather
-                          // than switching, so pointing at it swaps the "you are
-                          // here" check for the destination's own icon. Stacked
-                          // rather than swapped in the tree so the trailing
-                          // column keeps one width and the label never reflows.
-                          <span className="relative size-4 shrink-0">
-                            <CheckCircleSolid
-                              weight="fill"
-                              className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
-                            />
-                            <CogOne
-                              aria-hidden
-                              className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
-                            />
-                          </span>
-                        ) : null}
+                      ) : null}
                     </>
                   );
                   return (

@@ -20699,6 +20699,8 @@
       "unnamed": "Unbenannter Computer",
       "you": "Du",
       "member": "Ein Mitglied",
+      "memberNone": "Noch kein Computer",
+      "memberSummary": "{count, plural, one {# Computer} other {# Computer}} · {recording} nehmen auf",
       "actionsFor": "Aktionen für {name}",
       "revoke": "Computer widerrufen",
       "revokeTitle": "Diesen Computer widerrufen?",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "Computer konnte nicht widerrufen werden",
       "recordThisComputer": "Diesen Computer aufnehmen",
       "title": "Geräte",
-      "descriptionAll": "Jeder Computer, der in {name} aufnimmt. Admins und Betrachter sehen alle Mitglieder, Mitglieder sehen nur ihre eigenen.",
+      "descriptionAll": "Alle Mitglieder von {name} und die Computer, die sie aufzeichnen. Mitglieder sehen nur ihre eigenen.",
       "descriptionMine": "Deine Computer. Nur du und die Admins dieser Organisation sehen, was sie aufnehmen.",
       "viewLabel": "Ansicht",
-      "viewAll": "Alle Geräte",
+      "viewAll": "Alle",
       "viewMine": "Meine Geräte",
       "thisComputer": "Dieser Computer",
       "thisComputerBadge": "Dieser Computer",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "Bestätige die Anmeldung auf der Seite, die sich in deinem Browser geöffnet hat."
       },
       "layerOffByPolicy": "Für deine Organisation aus",
+      "layerOn": "An",
+      "layersHint": "{org} legt fest, was aufgezeichnet wird.",
       "notice": "Von den Personen, die {org} verwalten",
       "otherOrg": "Dieser Computer nimmt gerade für eine andere Organisation auf. Ein Start hier wechselt zu {org}.",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "Aufnahme fortgesetzt",
         "signedOut": "Von Kortix Capture abgemeldet"
       },
-      "pausedByOrgHint": "Die Personen, die {org} verwalten, haben die Aufnahme pausiert. Sie läuft weiter, sobald sie die Pause aufheben."
+      "pausedByOrgHint": "Die Personen, die {org} verwalten, haben die Aufnahme pausiert. Sie läuft weiter, sobald sie die Pause aufheben.",
+      "gate": {
+        "title": "Kortix Capture auf diesem Computer erlauben",
+        "body": "Kortix Capture zeichnet diesen Computer in {org} auf, aber macOS hat es noch nicht erlaubt. Bis du den Zugriff erlaubst, wird nichts aufgezeichnet.",
+        "later": "Später",
+        "done": "Kortix Capture zeichnet auf."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Zurück zu Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix und Kortix Capture",
       "signedInAs": "Angemeldet als {email}",
       "switchOrg": "Organisation wechseln",
       "organizations": "Organisationen",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "Kortix Capture konnte nicht geöffnet werden.",
       "tryAgain": "Erneut versuchen"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "Computer der Mitglieder aufzeichnen",
+      "description": "Mitglieder zeichnen Bildschirm, Aktionen und Audio mit der Kortix-Desktop-App in dieser Organisation auf. Admins sehen alle Mitglieder; jedes Mitglied sieht seine eigenen.",
+      "descriptionReadOnly": "Ein Admin dieser Organisation schaltet Kortix Capture ein oder aus.",
+      "open": "Kortix Capture öffnen",
+      "failed": "Kortix Capture konnte nicht geändert werden."
     },
     "thisComputer": {
       "title": "Dieser Computer",

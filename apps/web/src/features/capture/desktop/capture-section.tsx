@@ -23,7 +23,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
-import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
@@ -33,7 +32,13 @@ import {
 } from '@/lib/desktop';
 
 import { CapturePermissions } from './capture-permissions';
-import { CaptureRow, CaptureRowSection, StatusDot, type StatusTone } from './capture-rows';
+import {
+  CaptureRow,
+  CaptureRowSection,
+  GrantState,
+  StatusDot,
+  type StatusTone,
+} from './capture-rows';
 import { CAPTURE_LAYERS, activeLayers, capturePhase, type CapturePhase } from './capture-state';
 import {
   captureRoutes,
@@ -236,22 +241,20 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
         />
       ) : null}
 
-      <CaptureRowSection title={t('layersTitle')}>
+      <CaptureRowSection title={t('layersTitle')} hint={t('layersHint', { org: org.name })}>
         {CAPTURE_LAYERS.map((layer) => {
-          const blocked = view.policy?.layers[layer] === false;
+          const recorded = view.policy?.layers[layer] !== false && Boolean(view.layers?.[layer]);
           return (
             <CaptureRow
               key={layer}
               icon={LAYER_ICONS[layer]}
               title={t(`layers.${layer}`)}
-              description={blocked ? t('layerOffByPolicy') : t(`layers.${layer}Description`)}
-              muted={blocked}
+              description={t(`layers.${layer}Description`)}
+              muted={!recorded}
               trailing={
-                <Switch
-                  checked={!blocked && Boolean(view.layers?.[layer])}
-                  disabled={blocked || actions.set.isPending || phase === 'turningOn'}
-                  onCheckedChange={(value) => actions.set.mutate({ [layer]: value })}
-                  aria-label={t(`layers.${layer}`)}
+                <GrantState
+                  allowed={recorded}
+                  label={recorded ? t('layerOn') : t('layerOffByPolicy')}
                 />
               }
             />

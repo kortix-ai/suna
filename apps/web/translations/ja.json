@@ -20699,6 +20699,8 @@
       "unnamed": "名前のないコンピューター",
       "you": "あなた",
       "member": "メンバー",
+      "memberNone": "コンピューターはまだありません",
+      "memberSummary": "{count, plural, other {# 台のコンピューター}} · 記録中 {recording}",
       "actionsFor": "{name} の操作",
       "revoke": "コンピューターを取り消す",
       "revokeTitle": "このコンピューターを取り消しますか?",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "コンピューターを取り消せませんでした",
       "recordThisComputer": "このコンピューターを記録",
       "title": "デバイス",
-      "descriptionAll": "{name} に録画するすべてのコンピュータ。管理者と閲覧者は全メンバーのものを、メンバーは自分のものを見られます。",
+      "descriptionAll": "{name} のすべてのメンバーと、記録しているコンピューター。メンバーには自分のものだけが表示されます。",
       "descriptionMine": "あなたのコンピュータ。録画内容を見られるのは、あなたとこの組織の管理者だけです。",
       "viewLabel": "表示",
-      "viewAll": "すべてのデバイス",
+      "viewAll": "全員",
       "viewMine": "自分のデバイス",
       "thisComputer": "このコンピュータ",
       "thisComputerBadge": "このコンピュータ",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "ブラウザーで開いたページでサインインを承認してください。"
       },
       "layerOffByPolicy": "組織でオフ",
+      "layerOn": "オン",
+      "layersHint": "何を記録するかは {org} が決めます。",
       "notice": "{org}の管理者より",
       "otherOrg": "このコンピュータは現在、別の組織のために記録しています。ここで開始すると{org}に切り替わります。",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "記録を再開しました",
         "signedOut": "Kortix Capture からサインアウトしました"
       },
-      "pausedByOrgHint": "{org}の管理者が記録を一時停止しました。一時停止が解除されると再開します。"
+      "pausedByOrgHint": "{org}の管理者が記録を一時停止しました。一時停止が解除されると再開します。",
+      "gate": {
+        "title": "このコンピューターで Kortix Capture を許可",
+        "body": "Kortix Capture はこのコンピューターを {org} に記録しますが、macOS がまだ許可していません。アクセスを許可するまで何も記録されません。",
+        "later": "後で",
+        "done": "Kortix Capture が記録しています。"
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Kortix に戻る",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix と Kortix Capture",
       "signedInAs": "{email} でサインイン中",
       "switchOrg": "組織を切り替える",
       "organizations": "組織",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "Kortix Capture を開けませんでした。",
       "tryAgain": "再試行"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "メンバーのコンピューターを記録",
+      "description": "メンバーは Kortix デスクトップアプリで画面、操作、音声をこの組織に記録します。管理者はすべてのメンバーを、各メンバーは自分のものを表示できます。",
+      "descriptionReadOnly": "この組織の管理者が Kortix Capture をオンまたはオフにします。",
+      "open": "Kortix Capture を開く",
+      "failed": "Kortix Capture を変更できませんでした。"
     },
     "thisComputer": {
       "title": "このコンピュータ",

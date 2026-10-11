@@ -243,23 +243,22 @@ from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
 Kortix Capture is its own product inside the desktop app. It is separate from
 the computer agent ("Your computer"): no Kortix Capture file imports
 `computer.js`, `computer-tray.js` or `packages/agent-tunnel`
-(`capture-service.test.js` fails if one does). A Kortix Capture device has its
+(`capture.test.js` fails if one does). A Kortix Capture device has its
 own identity (the engine's device row), and it records for a Kortix account,
 never for a project.
 
 The app bundles the Kortix Capture engine from the private repository
-`kortix-ai/capture`, so a person installs one app. The engine runs under the
-Kortix Capture service, an OS service that runs the Kortix binary itself:
-macOS attributes Screen Recording, Accessibility, Input Monitoring and the
-Microphone to Kortix, and there is one set of grants. The engine's own tray
-app (`kortix-tray`) is not shipped. Pieces:
+`kortix-ai/capture`, so a person installs one app. The engine's CLI
+(`kortix-capture`) is the one control surface: `login`, `start`, `stop`,
+`logout`, `status --json`, and its own OS service. The app passes itself as
+that service's host, so macOS attributes Screen Recording, Accessibility,
+Input Monitoring and the Microphone to Kortix, and there is one set of
+grants. The engine's own tray app (`kortix-tray`) is not shipped. Pieces:
 
 | File | Role |
 | --- | --- |
-| `src/capture.js` | Rules, parsing, supervision, tray items. Unit-tested, no Electron. |
-| `src/capture-service.js` | The OS service and its install/pause/resume/status verbs. |
-| `src/capture-os-service.js` | The supervisors: launchd, systemd, Task Scheduler. |
-| `src/capture-host.js` | The app as controller, and the `capture_*` commands. |
+| `src/capture.js` | Rules, CLI output parsing, the service host arguments, tray items. Unit-tested, no Electron. |
+| `src/capture-host.js` | The app as controller (CLI calls), and the `capture_*` commands. |
 | `src/capture-tray.js` | Kortix Capture's own menu bar item. |
 | `scripts/fetch-capture-engine.js` | Build-time fetch of the pinned engine. |
 
@@ -327,64 +326,77 @@ GH_TOKEN="$(gh auth token)" node apps/desktop-electron/scripts/fetch-capture-eng
 The release builds macOS on an arm64 runner only and has no Linux build, so
 `darwin-x64` and `linux-x64` stay `null` until the capture workflow adds them.
 
-### Lifecycle: its own OS service
+### Lifecycle: the CLI's own OS service
 
-Kortix Capture runs as its own OS service, so it keeps recording after Quit,
-after a crash of the app, and across reboots. `src/capture-service.js` is the
-service. `scripts/ensure-runtime.js` bundles it with bun (with
-`capture-os-service.js`) into `vendor/capture-service.js`, shipped outside
-the asar as `Resources/capture-service/capture-service.js`.
+Kortix Capture keeps recording after Quit, after a crash of the app, and
+across reboots: `kortix-capture start` installs and turns on one OS service
+per library, and `stop` turns it off until the next `start`. The engine owns
+the service (`apps/recorder/src/memory/service.rs` in `kortix-ai/capture`).
 
-| OS | Service | Restart | "Turn off" |
+| OS | Service | Restart | `stop` |
 | --- | --- | --- | --- |
-| macOS | LaunchAgent `~/Library/LaunchAgents/ai.kortix.desktop.capture.<8 hex>.plist`, `RunAtLoad` | `KeepAlive` (any exit), at most every 10 s | `launchctl disable` + `bootout` |
-| Linux | systemd user unit `~/.config/systemd/user/ai.kortix.desktop.capture.<8 hex>.service`, `WantedBy=default.target` | `Restart=always`, 5 s | `systemctl --user disable --now` |
-| Windows | Scheduled Task `ai.kortix.desktop.capture.<8 hex>` at logon, running a PowerShell loop | the loop, 5 s | `schtasks /Change /DISABLE` + `/End` |
+| macOS | LaunchAgent `~/Library/LaunchAgents/ai.kortix.capture.service.<8 hex>.plist`, `RunAtLoad` | `KeepAlive` (any exit), at most every 10 s | `launchctl disable` + `bootout` |
+| Linux | systemd user unit `~/.config/systemd/user/ai.kortix.capture.service.<8 hex>.service` | `Restart=always`, 5 s | `systemctl --user disable --now` |
+| Windows | Scheduled Task `ai.kortix.capture.service.<8 hex>` at logon, running a PowerShell loop | the loop, 5 s | `schtasks /Change /DISABLE` + `/End` |
 
-The supervisors are `src/capture-os-service.js`: label
-`ai.kortix.desktop.capture.<sha8(library)>` (never the computer agent's
-`ai.kortix.agent-tunnel*` or the standalone engine's `ai.kortix.capture.tray`),
-logs `<library>/logs/capture-service.{out,err}.log`.
+The label is `ai.kortix.capture.service.<sha8(library)>` (never the computer
+agent's `ai.kortix.agent-tunnel*` or the standalone engine's
+`ai.kortix.capture.tray`); logs are `<library>/logs/capture-service.{out,err}.log`.
 
-- **Who macOS holds responsible.** The unit runs `/bin/sh -lc "exec <Kortix
-  binary> capture-service.js run"` with `ELECTRON_RUN_AS_NODE=1`. The
-  `exec` leaves the Kortix binary as the launchd job's process, and the
-  service starts the engine as its own child. macOS attributes a child's
-  Screen Recording, Accessibility and Microphone use to the responsible
-  process, which is the app bundle of the Kortix binary: the prompts and the
+- **Who macOS holds responsible.** The app calls `kortix-capture start --host
+  <Kortix binary> --host-arg -e --host-arg <SERVICE_SHIM> --host-env
+  ELECTRON_RUN_AS_NODE=1 …` (`capture.serviceHostArgs`). launchd starts the
+  Kortix binary as Node; the shim runs `kortix-capture service run` as its
+  child, and that supervisor starts the engine processes as its children.
+  macOS attributes a child's Screen Recording, Accessibility and Microphone
+  use to the responsible process, the Kortix app bundle: the prompts and the
   System Settings entries name **Kortix**. It cannot be proven headlessly
-  (see [Real-device checklist](#real-device-checklist)).
+  (see [Real-device checklist](#real-device-checklist)). The CLI saves the
+  host in `<library>/service-host.json`.
+- **The name in Login Items.** The app also passes `--host-bundle-id <its
+  CFBundleIdentifier>` (`capture.bundleIdOf`, read from the `Info.plist` next
+  to the binary: `com.kortix.desktop` when packaged). The plist then carries
+  `AssociatedBundleIdentifiers`, so System Settings ▸ General ▸ Login Items &
+  Extensions and the "can run in the background" notice name **Kortix**.
+- **The service older builds installed.** Before the CLI owned the service,
+  the app installed `ai.kortix.desktop.capture.<8 hex>`, which ran `/bin/sh`
+  and so appeared as "sh". The first launch of this build removes it
+  (`capture.removeLegacyService`: `launchctl bootout` and the plist, the
+  systemd unit, or the Scheduled Task), once per library.
+- **Who controls it.** In the app: "This computer" (Start recording, Pause,
+  More ▸ Stop recording) and the menu bar item. In macOS: the Kortix entry
+  under Login Items & Extensions ▸ Allow in the Background. In a terminal,
+  with `KORTIX_CAPTURE_DIR=<library>`: `kortix-capture status`,
+  `kortix-capture stop` (off, also after login), `kortix-capture start`.
+- **No Actions switch here.** The account's Capture policy decides which
+  layers record; `desktop.json` holds only `on`.
 - **No prompt from a background start.** The service, the recorder and the
-  action service only check permissions (`AXIsProcessTrusted`,
-  `CGPreflight*Access`) and report `permission_needed`; the recorder checks
-  again every 30 s with a fresh engine process. The one path that asks macOS
-  is "Allow access" on the "This computer" page (`capture_grants_request`,
-  one request per click per missing permission).
-- **The service.** Every 30 s it reads `desktop.json` (the person's switches)
-  and the engine's `sync status`, then runs or stops
-  `kortix-capture record --supervised` (screen, audio, the library's sync)
-  and, while Actions is on and the account policy allows actions,
-  `kortix-backend --service` under a stdin guard. Both end when the service
-  ends. A child that exits restarts after 2 s, doubling to 60 s; a minute of
-  uptime resets the backoff; after 5 crashes in a row the status says
-  `crashed` and restarts continue. After a new macOS grant it restarts the
-  recorder and the action service once. It writes `<library>/service.json` (pid, children, last
-  probe) as its heartbeat; a second service for the same library exits.
+  action service only check permissions and report `permission_needed`. The
+  one path that asks macOS is "Allow access" on the "This computer" page
+  (`capture_grants_request`, one request per click per missing permission).
+- **The supervisor** (`kortix-capture service run`). Every 30 s it reads the
+  library's sync status, then runs or stops `kortix-capture record
+  --supervised` and, while the account policy allows actions,
+  `kortix-backend --service`. A Kortix library runs them only while its
+  sign-in stands. A child that exits restarts after 2 s, doubling to 60 s.
+  After a new macOS grant it restarts both once. It writes
+  `<library>/service.json` (pid, children, last probe) as its heartbeat; a
+  second supervisor for the same library exits.
 - **The app is the controller** (`src/capture-host.js`,
-  `capture.serviceAction`). It runs
-  `<Kortix binary> capture-service.js install|pause|resume|uninstall|status --json`:
-  - A launch or a status poll never starts what someone stopped (a disabled
-    label, a removed unit, a killed service). It only rewrites an enabled
-    unit that no longer matches this app (`upToDate: false`: an update or a
-    move). The page then shows "Stopped" and offers Start recording.
-  - A person's action (Start recording, the switches, a sign-in, Resume):
-    install when missing or out of date, resume when disabled, reinstall
-    when not running.
-  - Recording off (More ▸ Stop recording): the service is disabled; it does
-    not start at login.
+  `capture.serviceAction`). It runs `kortix-capture --json service status`,
+  `start` (install, resume, repair), `stop` (Capture off) and `logout`:
+  - A launch or a status poll never starts what someone stopped. It only
+    rewrites an enabled unit that no longer matches this app (`up_to_date:
+    false`: an update or a move). The page then shows "Stopped" and offers
+    Start recording.
+  - A person's action (Start recording, the switch, a sign-in, Resume):
+    `start`, which installs when missing or out of date.
+  - Recording off: `stop`; it does not start at login.
   - Pause in the menu bar item or the page: the engine's own `pause --for`;
     the service keeps running.
-  - Sign out: the service is uninstalled, then the device token is removed.
+  - Sign in: `kortix-capture --json login` prints a `challenge` line (the
+    code the page approves) and a `signed_in` line.
+  - Sign out: `logout` removes the service, then the device token.
   - A copy that runs from a disk image or ~/Downloads never installs.
 - **Library.** `<userData>/capture/<sha8(api origin)>/` (`KORTIX_CAPTURE_DIR`):
   one library, one sign-in and one service per Kortix instance, separate from
@@ -401,7 +413,7 @@ logs `<library>/logs/capture-service.{out,err}.log`.
   credentials; a 401 or 403 marks the sign-in refused, and the service stops
   both children within 30 s. The service stays installed and idle; the page
   shows "Signed out" and offers Sign in again.
-- **Linux AppImage.** The engine and the service file live inside the
+- **Linux AppImage.** The engine lives inside the
   AppImage mount, whose path changes per launch. Linux ships no engine yet;
   copy both out of the mount (like the tunnel's vendored runner) before a
   Linux engine is pinned.
@@ -415,11 +427,12 @@ session and a signed app).
 
 1. App menu ▸ Kortix Capture… opens `/capture/<account>/this-computer`. Start
    recording for an account with Kortix Capture on. Expect
-   `~/Library/LaunchAgents/ai.kortix.desktop.capture.<hex>.plist`; the page
+   `~/Library/LaunchAgents/ai.kortix.capture.service.<hex>.plist`; the page
    shows "Recording" and a second menu bar item (the record mark) appears.
 2. "Allow access" asks once per missing permission. Screen Recording,
    Accessibility, Input Monitoring (Actions on) and Microphone (Audio on)
-   name **Kortix**, with no "sh" or "kortix-capture" entry. No dialog
+   name **Kortix**, with no "sh" or "kortix-capture" entry. Login Items &
+   Extensions ▸ Allow in the Background lists **Kortix**, not "sh". No dialog
    appears at launch or after a service restart. Recording resumes on its
    own after you allow them.
 3. Quit Kortix. Activity Monitor still shows the Kortix service process and
@@ -434,7 +447,7 @@ session and a signed app).
    "Signed out" and no `kortix-capture` runs.
 8. Sign out. The plist and the job are gone; the menu bar item goes.
 9. The page at 720×480, light and dark: no overlap with the window controls.
-10. Windows: the Scheduled Task `ai.kortix.desktop.capture.<hex>` exists;
+10. Windows: the Scheduled Task `ai.kortix.capture.service.<hex>` exists;
     steps 3, 4 and 8 behave the same.
 
 ### Sign-in without a second browser trip

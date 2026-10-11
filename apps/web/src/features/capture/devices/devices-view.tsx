@@ -4,7 +4,7 @@ import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
 import { CodeIcon, DesktopIcon, LaptopIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,18 +97,10 @@ export function DevicesView({ accountId }: { accountId: string }) {
     <CapturePage
       title={t('title')}
       description={
-        scope === 'account' ? t('descriptionAll', { name: area.accountName }) : t('descriptionMine')
+        area.readsEveryone ? t('descriptionAll', { name: area.accountName }) : t('descriptionMine')
       }
       actions={
         <>
-          {area.readsEveryone ? (
-            <Tabs value={scope} onValueChange={(value) => setScope(value as Scope)}>
-              <TabsList aria-label={t('viewLabel')}>
-                <TabsTrigger value="account">{t('viewAll')}</TabsTrigger>
-                <TabsTrigger value="mine">{t('viewMine')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          ) : null}
           <Button asChild variant="outline" size="sm" className="gap-1.5">
             <Link href={captureHref(accountId, 'this-computer')}>
               <LaptopIcon className="size-3.5 shrink-0" />
@@ -131,17 +123,30 @@ export function DevicesView({ accountId }: { accountId: string }) {
         </>
       }
     >
-      {scope === 'account' && devices.length > 0 ? (
-        <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
-          <TabsListCompact aria-label={t('filterLabel')}>
-            {FILTERS.map((value) => (
-              <TabsTriggerCompact key={value} value={value} className="gap-1.5">
-                {t(`filter.${value}`)}
-                <span className="text-muted-foreground tabular-nums">{counts[value]}</span>
-              </TabsTriggerCompact>
-            ))}
-          </TabsListCompact>
-        </Tabs>
+      {/* One toolbar row in a fixed place: who (everyone or you), then status. */}
+      {area.readsEveryone || devices.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3">
+          {area.readsEveryone ? (
+            <Tabs value={scope} onValueChange={(value) => setScope(value as Scope)}>
+              <TabsList aria-label={t('viewLabel')}>
+                <TabsTrigger value="account">{t('viewAll')}</TabsTrigger>
+                <TabsTrigger value="mine">{t('viewMine')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          ) : null}
+          {devices.length > 0 ? (
+            <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
+              <TabsListCompact aria-label={t('filterLabel')}>
+                {FILTERS.map((value) => (
+                  <TabsTriggerCompact key={value} value={value} className="gap-1.5">
+                    {t(`filter.${value}`)}
+                    <span className="text-muted-foreground tabular-nums">{counts[value]}</span>
+                  </TabsTriggerCompact>
+                ))}
+              </TabsListCompact>
+            </Tabs>
+          ) : null}
+        </div>
       ) : null}
 
       {query.isLoading ? (
@@ -192,7 +197,8 @@ export function DevicesView({ accountId }: { accountId: string }) {
           <DeviceTable
             accountId={accountId}
             rows={rows}
-            showPerson={scope === 'account'}
+            byMember={scope === 'account'}
+            withIdleMembers={filter === 'all'}
             canManage={area.canManage}
             thisDeviceId={thisDeviceId}
           />
@@ -228,29 +234,56 @@ export function DevicesView({ accountId }: { accountId: string }) {
   );
 }
 
+/**
+ * One group per member, you first, then by email. With `withIdleMembers`
+ * every member of the organization gets a group, so a member who never set up
+ * a computer is visible too.
+ */
+function groupByMember(
+  rows: readonly CaptureDevice[],
+  memberIds: readonly string[],
+  viewerId: string | null,
+  emailOf: (userId: string) => string,
+) {
+  const groups = new Map<string, CaptureDevice[]>(memberIds.map((id) => [id, []]));
+  for (const device of rows)
+    groups.set(device.user_id, [...(groups.get(device.user_id) ?? []), device]);
+  return [...groups.entries()].sort(([a], [b]) =>
+    a === viewerId ? -1 : b === viewerId ? 1 : emailOf(a).localeCompare(emailOf(b)),
+  );
+}
+
 function DeviceTable({
   accountId,
   rows,
-  showPerson,
+  byMember,
+  withIdleMembers,
   canManage,
   thisDeviceId,
 }: {
   accountId: string;
   rows: readonly CaptureDevice[];
-  showPerson: boolean;
+  byMember: boolean;
+  withIdleMembers: boolean;
   canManage: boolean;
   thisDeviceId: string | null;
 }) {
   const t = useTranslations('capture.devices');
-  const locale = useLocale();
-  const statusNote = useStatusNote();
-  const people = useCaptureDirectory(accountId, showPerson);
+  const people = useCaptureDirectory(accountId, byMember);
+  const groups = byMember
+    ? groupByMember(
+        rows,
+        withIdleMembers ? people.members.map((member) => member.user_id) : [],
+        people.viewerId,
+        (userId) => people.personOf(userId).email ?? '',
+      )
+    : [[people.viewerId ?? '', [...rows]] as const];
+  const columns = 6;
   return (
     <Table className="min-w-4xl">
       <TableHeader>
         <TableRow>
           <TableHead className="pl-4">{t('col.device')}</TableHead>
-          {showPerson ? <TableHead>{t('col.person')}</TableHead> : null}
           <TableHead>{t('col.os')}</TableHead>
           <TableHead>{t('col.status')}</TableHead>
           <TableHead>{t('col.lastFrame')}</TableHead>
@@ -261,80 +294,115 @@ function DeviceTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((device) => {
-          const view = deviceStatus(device);
-          const name = deviceName(device, t('unnamed'));
-          const person = people.personOf(device.user_id);
-          const href = captureHref(accountId, 'devices', `/${device.device_id}`);
-          const note = statusNote(view);
+        {groups.map(([userId, devices]) => {
+          const person = people.personOf(userId);
+          const label = person.isYou ? t('you') : (person.email ?? t('member'));
+          const recording = devices.filter(
+            (device) => deviceStatus(device).key === 'recording',
+          ).length;
           return (
-            <TableRow key={device.device_id} className="group relative">
-              <TableCell className="pl-4">
-                <Link
-                  href={href}
-                  className="text-foreground flex items-center gap-2.5 font-medium after:absolute after:inset-0 after:content-['']"
-                >
-                  <DesktopIcon className="text-muted-foreground size-4 shrink-0" />
-                  <span className="truncate">{name}</span>
-                  {device.device_id === thisDeviceId ? (
-                    <Badge variant="outline" size="xs">
-                      {t('thisComputerBadge')}
-                    </Badge>
-                  ) : null}
-                </Link>
-              </TableCell>
-              {showPerson ? (
-                <TableCell>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <UserAvatar email={person.email ?? ''} size="xs" />
-                    <span className="truncate">
-                      {person.isYou ? t('you') : (person.email ?? t('member'))}
-                    </span>
-                  </span>
-                </TableCell>
-              ) : null}
-              <TableCell className="text-muted-foreground">{deviceOs(device)}</TableCell>
-              <TableCell>
-                <span className="flex flex-col gap-0.5">
-                  <span className="flex items-center gap-2">
-                    <StatusDot view={view} />
-                    {t(`status.${view.key}`)}
-                  </span>
-                  {note ? <span className="text-muted-foreground text-xs">{note}</span> : null}
-                </span>
-              </TableCell>
-              <TableCell className="text-muted-foreground text-xs tabular-nums">
-                {view.lastFrameMs ? relativeTime(view.lastFrameMs, locale) : t('never')}
-              </TableCell>
-              <TableCell>
-                <span className="flex gap-2.5 text-xs font-medium">
-                  {LAYERS.map((layer) => {
-                    const on = view.layers.includes(layer);
-                    return (
-                      <span
-                        key={layer}
-                        className={cn(!on && 'text-muted-foreground line-through')}
-                        aria-label={
-                          on ? t(`layer.${layer}`) : t('layerOff', { layer: t(`layer.${layer}`) })
-                        }
-                      >
-                        {t(`layer.${layer}`)}
+            <Fragment key={userId}>
+              {byMember ? (
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell colSpan={columns} className="pl-4">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <UserAvatar email={person.email ?? ''} size="xs" />
+                      <span className="text-foreground truncate font-medium">{label}</span>
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        {devices.length === 0
+                          ? t('memberNone')
+                          : t('memberSummary', { count: devices.length, recording })}
                       </span>
-                    );
-                  })}
-                </span>
-              </TableCell>
-              <TableCell className="pr-4 text-right">
-                <span className="relative z-10 inline-flex items-center gap-1">
-                  {canManage || device.user_id === people.viewerId ? (
-                    <DeviceActionsMenu accountId={accountId} device={device} name={name} />
-                  ) : null}
-                </span>
-              </TableCell>
-            </TableRow>
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {devices.map((device) => (
+                <DeviceRow
+                  key={device.device_id}
+                  accountId={accountId}
+                  device={device}
+                  canAct={canManage || device.user_id === people.viewerId}
+                  isThisComputer={device.device_id === thisDeviceId}
+                />
+              ))}
+            </Fragment>
           );
         })}
       </TableBody>
     </Table>
+  );
+}
+
+function DeviceRow({
+  accountId,
+  device,
+  canAct,
+  isThisComputer,
+}: {
+  accountId: string;
+  device: CaptureDevice;
+  canAct: boolean;
+  isThisComputer: boolean;
+}) {
+  const t = useTranslations('capture.devices');
+  const locale = useLocale();
+  const statusNote = useStatusNote();
+  const view = deviceStatus(device);
+  const name = deviceName(device, t('unnamed'));
+  const note = statusNote(view);
+  return (
+    <TableRow className="group relative">
+      <TableCell className="pl-4">
+        <Link
+          href={captureHref(accountId, 'devices', `/${device.device_id}`)}
+          className="text-foreground flex items-center gap-2.5 font-medium after:absolute after:inset-0 after:content-['']"
+        >
+          <DesktopIcon className="text-muted-foreground size-4 shrink-0" />
+          <span className="truncate">{name}</span>
+          {isThisComputer ? (
+            <Badge variant="outline" size="xs">
+              {t('thisComputerBadge')}
+            </Badge>
+          ) : null}
+        </Link>
+      </TableCell>
+      <TableCell className="text-muted-foreground">{deviceOs(device)}</TableCell>
+      <TableCell>
+        <span className="flex flex-col gap-0.5">
+          <span className="flex items-center gap-2">
+            <StatusDot view={view} />
+            {t(`status.${view.key}`)}
+          </span>
+          {note ? <span className="text-muted-foreground text-xs">{note}</span> : null}
+        </span>
+      </TableCell>
+      <TableCell className="text-muted-foreground text-xs tabular-nums">
+        {view.lastFrameMs ? relativeTime(view.lastFrameMs, locale) : t('never')}
+      </TableCell>
+      <TableCell>
+        <span className="flex gap-2.5 text-xs font-medium">
+          {LAYERS.map((layer) => {
+            const on = view.layers.includes(layer);
+            return (
+              <span
+                key={layer}
+                className={cn(!on && 'text-muted-foreground line-through')}
+                aria-label={
+                  on ? t(`layer.${layer}`) : t('layerOff', { layer: t(`layer.${layer}`) })
+                }
+              >
+                {t(`layer.${layer}`)}
+              </span>
+            );
+          })}
+        </span>
+      </TableCell>
+      <TableCell className="pr-4 text-right">
+        <span className="relative z-10 inline-flex items-center gap-1">
+          {canAct ? <DeviceActionsMenu accountId={accountId} device={device} name={name} /> : null}
+        </span>
+      </TableCell>
+    </TableRow>
   );
 }

@@ -53,11 +53,11 @@ import { KeyRulesCard } from '@/components/iam/key-rules-card';
 import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { SessionOversightCard } from '@/components/iam/session-oversight-card';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
+import { SessionOversightCard } from '@/components/iam/session-oversight-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,6 +85,7 @@ import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useBrandingScope } from '@/features/branding/branding-provider';
+import { CaptureAccountCard } from '@/features/capture/area/capture-account-card';
 import { Close } from '@/features/icon/icons/close';
 import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -131,6 +132,7 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
+
 import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
 import { AccountPane, AccountPaneSkeleton } from './account-pane';
 import { type AccountSection, localizedAccountPaneMeta, paneWidth } from './sections';
@@ -166,6 +168,7 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCapture = useTranslations('capture.account');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -580,6 +583,12 @@ export function AccountHubContent() {
                   <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
+              </SettingsGroup>
+
+              <SettingsGroup title={tCapture('title')}>
+                <SettingsRowGroup>
+                  <CaptureAccountCard accountId={account.account_id} />
+                </SettingsRowGroup>
               </SettingsGroup>
 
               {/* Tucked away, not headline: this reports whether the

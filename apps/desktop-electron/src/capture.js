@@ -1,19 +1,22 @@
 // Kortix Capture inside the desktop app: the engine from kortix-ai/capture
-// (scripts/fetch-capture-engine.js), run as children of this app so macOS
-// attributes Screen Recording, Accessibility and the Microphone to Kortix. No
-// Electron imports here: every rule is unit-tested with plain bun.
+// (scripts/fetch-capture-engine.js). No Electron imports here: every rule is
+// unit-tested with plain bun.
 //
-// The engine owns recording, the library, sign-in (RFC 8628) and sync. This
-// module finds its binaries, builds its environment, parses its output, and
-// decides which of its processes run. The engine's own tray (`kortix-tray`)
-// is never shipped or started: Capture's tray section is capture-tray.js.
+// The engine's CLI owns recording, the library, sign-in (RFC 8628), sync and
+// the 24/7 OS service (`kortix-capture login|start|stop|logout|service`). This
+// app only bundles it, asks macOS for the grants, passes itself as the
+// service's host (so the grants belong to Kortix: the OS starts this binary,
+// which runs the engine as its child), and renders `--json` output. The
+// engine's own tray (`kortix-tray`) is never shipped or started: Capture's
+// tray section is capture-tray.js.
 //
 // Capture is its own product: nothing here imports the computer agent's
 // modules (computer.js, computer-tray.js, packages/agent-tunnel).
 
-const { execFile, spawn } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const sha8 = (text) => crypto.createHash('sha256').update(text).digest('hex').slice(0, 8);
@@ -143,12 +146,13 @@ function engineEnv({ library, paths, base = process.env }) {
 
 /* ─── desktop.json: what the person chose in this app ─────────────────── */
 
-const DEFAULT_DESKTOP = { on: false, actions: true };
+/** Only the on switch: which layers record is the account policy's call. */
+const DEFAULT_DESKTOP = { on: false };
 
 function readDesktop(library) {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(library, 'desktop.json'), 'utf8'));
-    return { on: raw.on === true, actions: raw.actions !== false };
+    return { on: raw.on === true };
   } catch {
     return { ...DEFAULT_DESKTOP };
   }
@@ -158,18 +162,6 @@ const writeDesktop = (library, state) => writePrivateJson(library, 'desktop.json
 
 /* ─── Sign-in ──────────────────────────────────────────────────────────── */
 
-/**
- * `sync setup --provider kortix --no-browser` prints to stderr:
- *   Approve this computer in your browser:
- *     <verification_uri_complete>
- *   Code: <user_code>
- */
-function parseSignInChallenge(text) {
-  const code = /^Code:\s*(\S+)\s*$/m.exec(String(text));
-  const url = /^\s+(https?:\/\/\S+)\s*$/m.exec(String(text));
-  return code && url ? { userCode: code[1], verificationUrl: url[1] } : null;
-}
-
 /** The engine's last `Error:` line, without the prefix; else `fallback`. */
 function lastError(stderr, fallback) {
   const line = String(stderr || '').split('\n').reverse().find((l) => l.startsWith('Error:'));
@@ -177,42 +169,45 @@ function lastError(stderr, fallback) {
 }
 
 /**
- * Runs the engine's sign-in. `onChallenge({ userCode, verificationUrl })`
- * fires once the code exists; the promise resolves when the CLI exits:
- * `{ ok: true, deviceId, prefix }` or `{ ok: false, error }`.
+ * Runs `kortix-capture --json login`: one JSON line per event on stdout,
+ * `challenge` (the code) then `signed_in`. `onChallenge({ userCode,
+ * verificationUrl })` fires once the code exists; the promise resolves when
+ * the CLI exits: `{ ok: true, deviceId, prefix }` or `{ ok: false, error }`.
+ * The CLI holds the library's sign-in marker while it runs, so the service waits.
  */
 function signIn({ paths, env, issuer, onChallenge, signal, spawnFn = spawn }) {
   return new Promise((resolve) => {
-    const child = spawnFn(
-      paths.capture,
-      ['--json', 'sync', 'setup', '--provider', 'kortix', '--issuer', issuer, '--no-browser'],
-      { env, stdio: ['ignore', 'pipe', 'pipe'], signal },
-    );
-    let stdout = '';
+    const child = spawnFn(paths.capture, ['--json', 'login', '--issuer', issuer, '--no-browser'], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      signal,
+    });
+    let buffer = '';
     let stderr = '';
-    let challenged = false;
+    let done = null;
     child.stdout.on('data', (chunk) => {
-      stdout += chunk;
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        let event;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (event.event === 'challenge') onChallenge?.({ userCode: event.user_code, verificationUrl: event.verification_uri_complete });
+        if (event.event === 'signed_in') done = event;
+      }
     });
     child.stderr.on('data', (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-8000);
-      const challenge = !challenged && parseSignInChallenge(stderr);
-      if (challenge) {
-        challenged = true;
-        onChallenge?.(challenge);
-      }
     });
     child.on('error', (error) => resolve({ ok: false, error: error.name === 'AbortError' ? 'cancelled' : error.message }));
     child.on('close', (code) => {
       if (signal?.aborted) return resolve({ ok: false, error: 'cancelled' });
-      if (code === 0) {
-        try {
-          const result = JSON.parse(stdout);
-          return resolve({ ok: true, deviceId: result.device_id, prefix: result.prefix });
-        } catch {
-          /* fall through */
-        }
-      }
+      if (code === 0 && done) return resolve({ ok: true, deviceId: done.device_id, prefix: done.prefix });
       resolve({ ok: false, error: lastError(stderr, `sign-in exited with code ${code}`) });
     });
   });
@@ -233,156 +228,98 @@ async function engineJson(file, args, options) {
   return JSON.parse(result.stdout);
 }
 
-/* ─── Supervision ──────────────────────────────────────────────────────── */
+/* ─── The CLI-owned service ───────────────────────────────────────────── */
 
 /**
- * `kortix-backend --service` has no `--supervised` mode, so it runs under this
- * guard (`<app binary> -e GUARD <file> <args…>` with ELECTRON_RUN_AS_NODE=1).
- * The app holds the guard's stdin: when the app quits or crashes the pipe
- * closes and the guard ends the service. No action recorder outlives Kortix.
- * ponytail: drop the guard once the engine's backend takes `--supervised`.
+ * What the OS service's host runs: `<this binary> -e SERVICE_SHIM <engine>
+ * service run` with ELECTRON_RUN_AS_NODE=1. It keeps the engine's supervisor
+ * as its child, so macOS holds Kortix responsible for its grants, and ends
+ * with it: launchd / systemd / Task Scheduler restart the pair.
  */
-const GUARD = `
-const { spawn } = require('node:child_process');
-const [file, ...args] = process.argv.slice(1);
-const child = spawn(file, args, { stdio: ['ignore', 'inherit', 'inherit'] });
-let stopping = false;
-const stop = () => {
-  if (stopping) return;
-  stopping = true;
-  child.kill('SIGTERM');
-  setTimeout(() => child.kill('SIGKILL'), 5000).unref();
-};
-process.stdin.on('end', stop);
-process.stdin.on('close', stop);
-process.stdin.resume();
-process.on('SIGTERM', stop);
-process.on('SIGINT', stop);
+const SERVICE_SHIM = `
+const child = require('node:child_process').spawn(process.argv[1], process.argv.slice(2), { stdio: 'inherit' });
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => child.kill(signal));
 child.on('error', (error) => { console.error(error.message); process.exit(1); });
 child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 `;
 
-const BACKOFF_MIN_MS = 2_000;
-const BACKOFF_MAX_MS = 60_000;
-/** A child that ran this long counts as healthy: its next crash restarts fast. */
-const HEALTHY_AFTER_MS = 60_000;
-/** Crashes in a row after which the status says so. Restarts continue. */
+/** Engine variables the service needs beyond the library (which the CLI sets itself). */
+const SERVICE_ENV_KEYS = ['KORTIX_CAPTURE_ENGINE', 'KORTIX_CONFIG', 'KORTIX_TRAY_AUTO_LAUNCH', 'LOCAL_PORT', 'KORTIX_CAPTURE_KEY_STORE'];
+
+/**
+ * `start` / `service install` arguments that make this app the service's host.
+ * `bundleId` (macOS) lets Login Items and the "can run in the background"
+ * notice name the app instead of its executable.
+ */
+function serviceHostArgs({ host, env, bundleId = null }) {
+  const args = ['--host', host, '--host-arg', '-e', '--host-arg', SERVICE_SHIM, '--host-env', 'ELECTRON_RUN_AS_NODE=1'];
+  for (const key of SERVICE_ENV_KEYS) if (env[key] !== undefined) args.push('--host-env', `${key}=${env[key]}`);
+  if (bundleId) args.push('--host-bundle-id', bundleId);
+  return args;
+}
+
+const readBundleId = (plist) =>
+  execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', plist], { encoding: 'utf8' });
+
+/** The bundle id of an app binary (`<X>.app/Contents/MacOS/<x>`), else null. */
+function bundleIdOf(execPath, read = readBundleId) {
+  const contents = path.dirname(path.dirname(execPath));
+  if (path.basename(path.dirname(execPath)) !== 'MacOS' || path.basename(contents) !== 'Contents') return null;
+  try {
+    return read(path.join(contents, 'Info.plist')).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes the service this app installed before the engine's CLI owned it:
+ * `ai.kortix.desktop.capture.<sha8(library)>` started `/bin/sh`, so macOS
+ * named it "sh". Runs once per library (a marker in the library); true when it ran.
+ */
+function removeLegacyService({ library, platform = process.platform, home = os.homedir(), uid = process.getuid?.(), run }) {
+  const marker = path.join(library, 'legacy-service-removed');
+  if (fs.existsSync(marker)) return false;
+  const label = `ai.kortix.desktop.capture.${sha8(path.resolve(library))}`;
+  if (platform === 'darwin') {
+    const plist = path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
+    if (fs.existsSync(plist)) {
+      run('launchctl', ['bootout', `gui/${uid}/${label}`]);
+      fs.rmSync(plist, { force: true });
+    }
+  } else if (platform === 'linux') {
+    const unit = path.join(home, '.config', 'systemd', 'user', `${label}.service`);
+    if (fs.existsSync(unit)) {
+      run('systemctl', ['--user', 'disable', '--now', `${label}.service`]);
+      fs.rmSync(unit, { force: true });
+    }
+  } else if (platform === 'win32') {
+    run('schtasks.exe', ['/Delete', '/TN', label, '/F']);
+  }
+  fs.mkdirSync(library, { recursive: true });
+  fs.writeFileSync(marker, '');
+  return true;
+}
+
+/** `kortix-capture --json service status` → the shape serviceAction and the page read. */
+function serviceFromCli(v) {
+  return { installed: v?.installed === true, active: v?.active === true, enabled: v?.enabled !== false, upToDate: v?.up_to_date !== false, heartbeat: v?.heartbeat ?? null };
+}
+
+/** Crashes in a row after which the status says so. The service keeps restarting. */
 const CRASH_LOOP = 5;
 
-/** 2 s, doubling to 60 s (the engine's own tray uses the same curve). */
-function restartDelay(crashes) {
-  return Math.min(BACKOFF_MAX_MS, BACKOFF_MIN_MS * 2 ** Math.max(0, crashes - 1));
+/** The service heartbeat's children, as captureStatusFrom reads them. */
+function childrenFromHeartbeat(heartbeat) {
+  const child = (c) => ({ running: c?.running === true, crashLoop: (c?.crashes ?? 0) >= CRASH_LOOP, lastExit: c?.last_exit ? { error: c.last_exit } : null });
+  return { recorder: child(heartbeat?.recorder), actions: child(heartbeat?.actions) };
 }
 
-/**
- * Which engine processes should run. The recorder (screen, audio, and the
- * library's sync) runs while Capture is on and signed in. The action service
- * runs beside it while the person's Actions switch is on and the project's
- * policy allows actions. A refused device (revoked, project flag off) runs
- * nothing until it signs in again.
- */
-function desiredChildren({ available, desktop, signedIn, signInRequired, policy }) {
-  const recorder = Boolean(available && desktop.on && signedIn && !signInRequired);
-  return { recorder, actions: recorder && desktop.actions && policy?.layers?.actions !== false };
-}
-
-/**
- * Keeps one process running while wanted: restart on exit with backoff, stop
- * with SIGTERM then SIGKILL after `killAfterMs`. Timers and the clock are
- * injectable for tests. `start()` returns a ChildProcess-like emitter.
- */
-function supervise({ name, start, onChange = () => {}, now = Date.now, timers = { setTimeout, clearTimeout }, killAfterMs = 5_000 }) {
-  let child = null;
-  let wanted = false;
-  let crashes = 0;
-  let startedAt = 0;
-  let timer = null;
-  let lastExit = null;
-
-  let restarting = false;
-
-  function launch() {
-    timer = null;
-    if (!wanted || child) return;
-    startedAt = now();
-    try {
-      child = start();
-    } catch (error) {
-      child = null;
-      lastExit = { code: null, error: error instanceof Error ? error.message : String(error) };
-      return scheduleRestart();
-    }
-    const current = child;
-    current.on('error', (error) => {
-      lastExit = { code: null, error: error.message };
-    });
-    current.on('exit', (code, signal) => {
-      if (child !== current) return;
-      child = null;
-      lastExit = { code, signal, error: lastExit?.error };
-      if (!wanted) return onChange();
-      if (restarting) {
-        restarting = false;
-        return launch();
-      }
-      crashes = now() - startedAt >= HEALTHY_AFTER_MS ? 1 : crashes + 1;
-      console.warn(`[kortix] capture ${name} exited (code ${code}, signal ${signal}); restart #${crashes}`);
-      scheduleRestart();
-    });
-    onChange();
-  }
-
-  /** SIGTERM, then SIGKILL after `killAfterMs` if it is still there. */
-  function terminate(current) {
-    current.kill('SIGTERM');
-    const force = timers.setTimeout(() => {
-      if (current.exitCode === null && current.signalCode === null) current.kill('SIGKILL');
-    }, killAfterMs);
-    current.once('exit', () => timers.clearTimeout(force));
-  }
-
-  function scheduleRestart() {
-    if (!timer && wanted) timer = timers.setTimeout(launch, restartDelay(crashes));
-    onChange();
-  }
-
-  return {
-    run() {
-      if (wanted) return;
-      wanted = true;
-      crashes = 0;
-      launch();
-    },
-    /** Replace a running child now (macOS applies a new grant only to a new process). */
-    restart() {
-      if (!wanted || !child || restarting) return;
-      restarting = true;
-      terminate(child);
-    },
-    stop() {
-      wanted = false;
-      restarting = false;
-      if (timer) timers.clearTimeout(timer);
-      timer = null;
-      if (!child) return onChange();
-      terminate(child);
-    },
-    state: () => ({
-      wanted,
-      running: Boolean(child),
-      pid: child?.pid ?? null,
-      crashes,
-      crashLoop: crashes >= CRASH_LOOP,
-      lastExit,
-    }),
-  };
-}
-
-/* ─── The OS service (capture-service.js) ──────────────────────────────── */
+/* ─── The OS service (`kortix-capture start|stop|service`) ───────────────── */
 
 /**
  * What the desktop app does to the Capture service, from the person's switch,
- * the sign-in, and `capture-service.js status`: `install` (missing, or the
+ * the sign-in, and `kortix-capture service status`: `install` (missing, or the
  * unit points at an old app path: an update or a move), `resume` (disabled),
  * `repair` (installed and enabled, but not running: reinstall, throttled),
  * `pause` (Capture off: disabled, so login does not start it), `uninstall`
@@ -461,7 +398,7 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
     reason: status?.inactive_reason || null,
     layers: {
       screen: status?.recording_enabled !== false,
-      actions: desktop.actions,
+      actions: policy?.layers?.actions !== false,
       audio: status?.audio_enabled === true,
     },
     policy: policy
@@ -547,16 +484,18 @@ const PERMISSION_PANES = {
 
 module.exports = {
   backendFromRuntimeConfig,
+  bundleIdOf,
+  removeLegacyService,
   sha8,
   writePrivateJson,
   CRASH_LOOP,
-  GUARD,
   PERMISSION_PANES,
+  SERVICE_SHIM,
   captureLabel,
   captureStatusFrom,
   captureKeepsRunning,
   captureTrayItems,
-  desiredChildren,
+  childrenFromHeartbeat,
   policyOf,
   engineConfigYaml,
   engineDir,
@@ -568,13 +507,12 @@ module.exports = {
   issuerFromBackend,
   lastError,
   libraryDir,
-  parseSignInChallenge,
   accountFromPrefix,
   readDesktop,
-  restartDelay,
   runEngine,
   serviceAction,
+  serviceFromCli,
+  serviceHostArgs,
   signIn,
-  supervise,
   writeDesktop,
 };

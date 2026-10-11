@@ -1,14 +1,13 @@
-// Kortix Capture in the desktop app: the kortix:invoke capture_* commands and
-// the controller of the Capture service. The engine does not run inside this
-// app: capture-service.js runs as an OS service (launchd, systemd, Task
-// Scheduler) with this app's binary as Node and supervises it, so Capture
-// keeps recording while the app is quit and across reboots. This file
-// installs, pauses and removes that service, and reads the engine's and the
-// service's status. Rules live in capture.js; Capture's tray is
+// Kortix Capture in the desktop app: the kortix:invoke capture_* commands. The
+// engine's CLI does the work: `login`, `start` / `stop` (its own OS service:
+// launchd, systemd, Task Scheduler, so Capture keeps recording while the app
+// is quit and across reboots), `logout`, `status`. This app passes itself as
+// the service's host (macOS grants belong to Kortix), asks for the grants, and
+// renders the CLI's JSON. Rules live in capture.js; Capture's tray is
 // capture-tray.js. Capture is its own product: no computer-agent module here.
 
 const { app, desktopCapturer, net, shell, systemPreferences } = require('electron');
-const { execFileSync, spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const capture = require('./capture');
@@ -16,15 +15,6 @@ const capture = require('./capture');
 const REFRESH_EVERY_MS = 30_000;
 /** The page polls capture_status; within this age the cached answer is reused. */
 const FRESH_MS = 2_000;
-const SIGN_IN_MARKER = 'sign-in.pending';
-
-/** Dev only: the service bundle from src (bun). */
-function devServiceScript() {
-  const root = path.join(__dirname, '..');
-  const out = path.join(root, 'vendor', 'capture-service.js');
-  execFileSync('bun', ['build', 'src/capture-service.js', '--target=node', '--format=cjs', '--outfile', out], { cwd: root, stdio: 'ignore' });
-  return out;
-}
 
 /**
  * @param {{
@@ -37,13 +27,6 @@ function setupCapture(deps) {
   const userData = app.getPath('userData');
   const engineDir = capture.engineDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   const paths = capture.enginePaths(engineDir);
-
-  /** @type {string | null} */
-  let script = null;
-  function serviceScript() {
-    script ??= app.isPackaged ? path.join(process.resourcesPath, 'capture-service', 'capture-service.js') : devServiceScript();
-    return script;
-  }
 
   /** A copy opened from a disk image or ~/Downloads would point the service at a path that disappears. */
   const runsFromTemporaryLocation = () => process.platform === 'darwin' && app.isPackaged && !app.isInApplicationsFolder();
@@ -99,6 +82,8 @@ function setupCapture(deps) {
     const library = capture.libraryDir(userData, new URL(backendUrl).origin);
     fs.mkdirSync(path.join(library, 'logs'), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(library, 'engine-config.yaml'), capture.engineConfigYaml(library));
+    const legacy = capture.removeLegacyService({ library, run: (program, args) => spawnSync(program, args, { stdio: 'ignore' }) });
+    if (legacy) console.log('[kortix] capture: removed the service an older Kortix installed');
     ctx = { appOrigin, backendUrl, library, issuer: capture.issuerFromBackend(backendUrl), env: capture.engineEnv({ library, paths }) };
     return ctx;
   }
@@ -106,13 +91,23 @@ function setupCapture(deps) {
   const engine = async (args, timeoutMs) => capture.runEngine(paths.capture, args, { env: (await context()).env, timeoutMs });
   const engineJson = async (args) => capture.engineJson(paths.capture, args, { env: (await context()).env });
 
-  /** One capture-service.js verb, run by this app's binary as Node. */
+  /** One service verb, run by the engine's CLI: `status`, `install` (also resume and repair: `start`), `pause` (`stop`), `uninstall`. */
   async function service(verb) {
-    const { library } = await context();
-    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', KORTIX_CAPTURE_DIR: library, KORTIX_CAPTURE_ENGINE_DIR: engineDir };
-    const result = await capture.runEngine(process.execPath, [serviceScript(), verb, '--json'], { env, timeoutMs: 60_000 });
-    if (result.code !== 0) throw new Error(capture.lastError(result.stderr, `capture service ${verb} failed`));
-    return JSON.parse(result.stdout);
+    const { env } = await context();
+    const host = process.env.APPIMAGE || process.execPath;
+    const bundleId = process.platform === 'darwin' ? capture.bundleIdOf(host) : null;
+    const args =
+      verb === 'status'
+        ? ['service', 'status']
+        : verb === 'pause'
+          ? ['stop']
+          : verb === 'uninstall'
+            ? ['service', 'uninstall']
+            : ['start', ...capture.serviceHostArgs({ host, env, bundleId })];
+    const result = await capture.runEngine(paths.capture, ['--json', ...args], { env, timeoutMs: 60_000 });
+    if (result.code !== 0) throw new Error(capture.lastError(result.stderr, `kortix-capture ${args[0]} failed`));
+    const out = JSON.parse(result.stdout);
+    return capture.serviceFromCli(verb === 'status' || verb === 'uninstall' ? out : out.service);
   }
 
   /* ─── Status and the service ─────────────────────────────────────────── */
@@ -140,7 +135,7 @@ function setupCapture(deps) {
       return current;
     }
     console.log(`[kortix] capture service: ${action}`);
-    return service(action === 'repair' ? 'install' : action);
+    return service(action === 'repair' || action === 'resume' ? 'install' : action);
   }
 
   async function readView({ explicit = false } = {}) {
@@ -156,6 +151,7 @@ function setupCapture(deps) {
     ]);
     const after = pending ? current : await reconcile(desktop, sync, current, { explicit }).catch((error) => ({ ...current, error: error.message }));
     const heartbeat = after.heartbeat?.running ? after.heartbeat : null;
+    const children = capture.childrenFromHeartbeat(heartbeat);
     return {
       ...capture.captureStatusFrom({
         available: true,
@@ -163,7 +159,7 @@ function setupCapture(deps) {
         status,
         sync,
         permissions,
-        children: { recorder: heartbeat?.recorder ?? { running: false }, actions: heartbeat?.actions ?? { running: false } },
+        children,
         // Removed or disabled outside the app, and not running: it waits for a person.
         serviceStopped: !heartbeat && !pending && (after.installed !== true || after.enabled === false),
       }),
@@ -207,15 +203,13 @@ function setupCapture(deps) {
    * the issuer gave one: `{ ok, userCode, verificationUrl }`. The page then
    * approves the code with the person's own session (SDK
    * `approveCaptureDeviceGrant`) and calls `capture_sign_in_finish`. While it
-   * runs, the service keeps the engine stopped (the sign-in marker).
+   * runs, the CLI keeps the service's engine stopped (its sign-in marker).
    */
   async function signInStart() {
     const engineState = await engineAvailable();
     if (!engineState.ok) return { ok: false, error: engineState.error };
     if (!pending) {
       const { env, issuer, library } = await context();
-      const marker = path.join(library, SIGN_IN_MARKER);
-      fs.writeFileSync(marker, String(Date.now()));
       const controller = new AbortController();
       let resolveChallenge;
       const challenge = new Promise((resolve) => {
@@ -229,7 +223,6 @@ function setupCapture(deps) {
           return result;
         })
         .finally(() => {
-          fs.rmSync(marker, { force: true });
           pending = null;
         })
         .then(async (result) => ({ ...result, status: await refresh({ explicit: true }) }));
@@ -243,7 +236,6 @@ function setupCapture(deps) {
     const { library } = await context();
     const desktop = capture.readDesktop(library);
     if (typeof args.on === 'boolean') desktop.on = args.on;
-    if (typeof args.actions === 'boolean') desktop.actions = args.actions;
     capture.writeDesktop(library, desktop);
     for (const [key, setting] of [['screen', 'recording_enabled'], ['audio', 'audio.enabled']]) {
       if (typeof args[key] !== 'boolean') continue;
@@ -259,12 +251,11 @@ function setupCapture(deps) {
     return refresh({ explicit: true });
   }
 
-  /** The service goes first (its engine stops), then the device token. */
+  /** `logout`: the CLI removes its service (the engine stops), then forgets the device token. */
   async function signOut() {
     const { library } = await context();
     capture.writeDesktop(library, { ...capture.readDesktop(library), on: false });
-    await service('uninstall');
-    const result = await engine(['sync', 'sign-out']);
+    const result = await engine(['logout']);
     if (result.code !== 0) throw new Error(capture.lastError(result.stderr, 'Could not sign out of Capture.'));
     return refresh();
   }

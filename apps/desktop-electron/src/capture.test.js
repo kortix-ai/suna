@@ -8,185 +8,8 @@ const capture = require('./capture');
 
 const UUID = '3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b';
 
-/** A ChildProcess stand-in: emits 'exit' when killed or when the test says so. */
-function fakeChild() {
-  const child = new EventEmitter();
-  child.exitCode = null;
-  child.signalCode = null;
-  child.pid = Math.floor(Math.random() * 1e5);
-  child.signals = [];
-  child.kill = (signal) => {
-    child.signals.push(signal);
-  };
-  child.exit = (code, signal = null) => {
-    child.exitCode = code;
-    child.signalCode = signal;
-    child.emit('exit', code, signal);
-  };
-  return child;
-}
-
-/** Timers you advance by hand. */
-function fakeTimers() {
-  let clock = 0;
-  const pending = [];
-  return {
-    now: () => clock,
-    timers: {
-      setTimeout: (fn, ms) => {
-        const t = { at: clock + ms, fn };
-        pending.push(t);
-        return t;
-      },
-      clearTimeout: (t) => {
-        const i = pending.indexOf(t);
-        if (i >= 0) pending.splice(i, 1);
-      },
-    },
-    advance(ms) {
-      clock += ms;
-      for (const t of pending.filter((p) => p.at <= clock)) {
-        pending.splice(pending.indexOf(t), 1);
-        t.fn();
-      }
-    },
-    pending: () => pending.map((t) => t.at - clock),
-  };
-}
-
-describe('supervise', () => {
-  test('restarts a crashing child at 2, 4, 8 … 60 s, and a healthy run resets the backoff', () => {
-    const t = fakeTimers();
-    const children = [];
-    const sup = capture.supervise({ name: 'recorder', start: () => children[children.push(fakeChild()) - 1], now: t.now, timers: t.timers });
-    sup.run();
-    expect(children).toHaveLength(1);
-
-    const delays = [];
-    for (let i = 0; i < 7; i++) {
-      children.at(-1).exit(1);
-      delays.push(t.pending()[0]);
-      t.advance(t.pending()[0]);
-    }
-    expect(delays).toEqual([2000, 4000, 8000, 16000, 32000, 60000, 60000]);
-    expect(sup.state().crashLoop).toBe(true);
-
-    // Ran a minute: the next crash restarts after 2 s again.
-    t.advance(60_000);
-    children.at(-1).exit(1);
-    expect(t.pending()[0]).toBe(2000);
-    expect(sup.state().crashLoop).toBe(false);
-  });
-
-  test('stop sends SIGTERM, then SIGKILL after 5 s if the child is still there, and never restarts it', () => {
-    const t = fakeTimers();
-    const children = [];
-    const sup = capture.supervise({ name: 'actions', start: () => children[children.push(fakeChild()) - 1], now: t.now, timers: t.timers });
-    sup.run();
-    sup.stop();
-    expect(children[0].signals).toEqual(['SIGTERM']);
-    t.advance(5_000);
-    expect(children[0].signals).toEqual(['SIGTERM', 'SIGKILL']);
-    children[0].exit(null, 'SIGKILL');
-    t.advance(120_000);
-    expect(children).toHaveLength(1);
-    expect(sup.state()).toMatchObject({ wanted: false, running: false });
-  });
-
-  test('a child that exits after SIGTERM is not killed again', () => {
-    const t = fakeTimers();
-    const child = fakeChild();
-    const sup = capture.supervise({ name: 'recorder', start: () => child, now: t.now, timers: t.timers });
-    sup.run();
-    sup.stop();
-    child.exit(0);
-    t.advance(10_000);
-    expect(child.signals).toEqual(['SIGTERM']);
-  });
-
-  test('a spawn that throws is retried with backoff and reported', () => {
-    const t = fakeTimers();
-    let attempts = 0;
-    const sup = capture.supervise({
-      name: 'recorder',
-      start: () => {
-        attempts++;
-        throw new Error('ENOENT kortix-capture');
-      },
-      now: t.now,
-      timers: t.timers,
-    });
-    sup.run();
-    expect(attempts).toBe(1);
-    expect(sup.state().lastExit.error).toBe('ENOENT kortix-capture');
-    t.advance(2_000);
-    expect(attempts).toBe(2);
-  });
-
-  test('restart (a new macOS grant) replaces the child once: no crash count, no backoff, no crash log', () => {
-    const t = fakeTimers();
-    const children = [];
-    const warnings = [];
-    const warn = console.warn;
-    console.warn = (...args) => warnings.push(args.join(' '));
-    try {
-      const sup = capture.supervise({ name: 'recorder', start: () => children[children.push(fakeChild()) - 1], now: t.now, timers: t.timers });
-      sup.run();
-      sup.restart();
-      sup.restart(); // a second request while the first is in flight changes nothing
-      expect(children[0].signals).toEqual(['SIGTERM']);
-      children[0].exit(0);
-      expect(children).toHaveLength(2);
-      expect(t.pending()).toEqual([]);
-      expect(sup.state()).toMatchObject({ wanted: true, running: true, crashLoop: false });
-      expect(warnings).toEqual([]);
-      // A restart of a stopped supervisor starts nothing.
-      sup.stop();
-      children[1].exit(0);
-      sup.restart();
-      expect(children).toHaveLength(2);
-    } finally {
-      console.warn = warn;
-    }
-  });
-
-  test('run twice starts one child', () => {
-    let starts = 0;
-    const sup = capture.supervise({ name: 'r', start: () => (starts++, fakeChild()) });
-    sup.run();
-    sup.run();
-    expect(starts).toBe(1);
-  });
-});
-
-describe('desiredChildren', () => {
-  const base = { available: true, desktop: { on: true, actions: true }, signedIn: true, signInRequired: false, policy: null };
-  test('Capture on and signed in: the recorder and the action service run', () => {
-    expect(capture.desiredChildren(base)).toEqual({ recorder: true, actions: true });
-  });
-  test('the Actions switch off, or a policy without actions: only the recorder', () => {
-    expect(capture.desiredChildren({ ...base, desktop: { on: true, actions: false } })).toEqual({ recorder: true, actions: false });
-    expect(capture.desiredChildren({ ...base, policy: { layers: { actions: false } } })).toEqual({ recorder: true, actions: false });
-  });
-  test('off, signed out, refused (revoked / project flag off) or no engine: nothing runs', () => {
-    const none = { recorder: false, actions: false };
-    expect(capture.desiredChildren({ ...base, desktop: { on: false, actions: true } })).toEqual(none);
-    expect(capture.desiredChildren({ ...base, signedIn: false })).toEqual(none);
-    expect(capture.desiredChildren({ ...base, signInRequired: true })).toEqual(none);
-    expect(capture.desiredChildren({ ...base, available: false })).toEqual(none);
-  });
-});
-
 describe('sign-in', () => {
-  const stderr = 'Approve this computer in your browser:\n  http://localhost:3000/capture/authorize?user_code=ABCD-1234\nCode: ABCD-1234\n';
-
-  test('parseSignInChallenge reads the code and URL the engine prints, and nothing before both exist', () => {
-    expect(capture.parseSignInChallenge(stderr)).toEqual({
-      userCode: 'ABCD-1234',
-      verificationUrl: 'http://localhost:3000/capture/authorize?user_code=ABCD-1234',
-    });
-    expect(capture.parseSignInChallenge('Approve this computer in your browser:\n')).toBeNull();
-  });
+  const challenge = { event: 'challenge', user_code: 'ABCD-1234', verification_uri_complete: 'http://localhost:3000/capture/authorize?user_code=ABCD-1234' };
 
   function fakeSpawn(script) {
     const calls = [];
@@ -201,11 +24,11 @@ describe('sign-in', () => {
     return { spawnFn, calls };
   }
 
-  test('runs sync setup against the issuer without a browser, hands over the code, then resolves with the device', async () => {
+  test('runs `login --json` against the issuer, hands over the code from its challenge line, then resolves with the device', async () => {
+    const lines = `${JSON.stringify(challenge)}\n${JSON.stringify({ event: 'signed_in', ok: true, device_id: 'dev1', prefix: `orgs/${UUID}` })}\n`;
     const { spawnFn, calls } = fakeSpawn((child) => {
-      child.stderr.emit('data', stderr.slice(0, 40));
-      child.stderr.emit('data', stderr.slice(40));
-      child.stdout.emit('data', JSON.stringify({ ok: true, device_id: 'dev1', prefix: `orgs/${UUID}` }));
+      child.stdout.emit('data', lines.slice(0, 30));
+      child.stdout.emit('data', lines.slice(30));
       child.emit('close', 0);
     });
     const challenges = [];
@@ -217,7 +40,7 @@ describe('sign-in', () => {
       spawnFn,
     });
     expect(calls[0].file).toBe('/engine/kortix-capture');
-    expect(calls[0].args).toEqual(['--json', 'sync', 'setup', '--provider', 'kortix', '--issuer', 'http://localhost:8008', '--no-browser']);
+    expect(calls[0].args).toEqual(['--json', 'login', '--issuer', 'http://localhost:8008', '--no-browser']);
     expect(calls[0].options.env.KORTIX_CAPTURE_DIR).toBe('/lib');
     expect(challenges).toEqual([{ userCode: 'ABCD-1234', verificationUrl: 'http://localhost:3000/capture/authorize?user_code=ABCD-1234' }]);
     expect(result).toEqual({ ok: true, deviceId: 'dev1', prefix: `orgs/${UUID}` });
@@ -225,16 +48,17 @@ describe('sign-in', () => {
 
   test('a denied or expired sign-in resolves with the engine error line', async () => {
     const { spawnFn } = fakeSpawn((child) => {
-      child.stderr.emit('data', `${stderr}Error: the sign-in was denied\n`);
+      child.stdout.emit('data', `${JSON.stringify(challenge)}\n`);
+      child.stderr.emit('data', 'Error: the sign-in was denied\n');
       child.emit('close', 1);
     });
     const result = await capture.signIn({ paths: { capture: 'x' }, env: {}, issuer: 'i', spawnFn });
     expect(result).toEqual({ ok: false, error: 'the sign-in was denied' });
   });
 
-  test('an engine that dies after printing the code reports its exit, never the code line', async () => {
+  test('an engine that dies after printing the code reports its exit', async () => {
     const { spawnFn } = fakeSpawn((child) => {
-      child.stderr.emit('data', stderr);
+      child.stdout.emit('data', `${JSON.stringify(challenge)}\n`);
       child.emit('close', null);
     });
     expect(await capture.signIn({ paths: { capture: 'x' }, env: {}, issuer: 'i', spawnFn })).toEqual({ ok: false, error: 'sign-in exited with code null' });
@@ -250,6 +74,67 @@ describe('sign-in', () => {
       ok: false,
       error: 'cancelled',
     });
+  });
+});
+
+describe('the CLI-owned service', () => {
+  test('the app is the host: the OS starts this binary as Node with the shim, which runs the engine', () => {
+    const args = capture.serviceHostArgs({ host: '/Applications/Kortix.app/Contents/MacOS/Kortix', env: { KORTIX_CONFIG: '/lib/engine-config.yaml', LOCAL_PORT: '0', PATH: '/usr/bin', KORTIX_CAPTURE_DIR: '/lib' } });
+    expect(args).toEqual([
+      '--host', '/Applications/Kortix.app/Contents/MacOS/Kortix',
+      '--host-arg', '-e',
+      '--host-arg', capture.SERVICE_SHIM,
+      '--host-env', 'ELECTRON_RUN_AS_NODE=1',
+      '--host-env', 'KORTIX_CONFIG=/lib/engine-config.yaml',
+      '--host-env', 'LOCAL_PORT=0',
+    ]);
+    const named = capture.serviceHostArgs({ host: '/Applications/Kortix.app/Contents/MacOS/Kortix', bundleId: 'com.kortix.app', env: {} });
+    expect(named.slice(-2)).toEqual(['--host-bundle-id', 'com.kortix.app']);
+  });
+
+  test('the bundle id comes from the Info.plist next to the app binary, so Login Items names the app', () => {
+    const read = (plist) => (plist === '/Applications/Kortix.app/Contents/Info.plist' ? 'com.kortix.app\n' : '');
+    expect(capture.bundleIdOf('/Applications/Kortix.app/Contents/MacOS/Kortix', read)).toBe('com.kortix.app');
+    expect(capture.bundleIdOf('/usr/local/bin/node', read)).toBe(null);
+    expect(capture.bundleIdOf('/Applications/Kortix.app/Contents/MacOS/Kortix', () => { throw new Error('no plist'); })).toBe(null);
+  });
+
+  test('the service the app installed before the CLI owned it is removed once', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-legacy-home-'));
+    const lib = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-legacy-lib-'));
+    const label = `ai.kortix.desktop.capture.${capture.sha8(path.resolve(lib))}`;
+    const plist = path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
+    fs.mkdirSync(path.dirname(plist), { recursive: true });
+    fs.writeFileSync(plist, '<plist/>');
+    const calls = [];
+    const run = (program, args) => calls.push([program, ...args].join(' '));
+    expect(capture.removeLegacyService({ library: lib, platform: 'darwin', home, uid: 501, run })).toBe(true);
+    expect(calls).toEqual([`launchctl bootout gui/501/${label}`]);
+    expect(fs.existsSync(plist)).toBe(false);
+    expect(capture.removeLegacyService({ library: lib, platform: 'darwin', home, uid: 501, run })).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('the shim runs the engine as its child, passes its exit code on, and forwards SIGTERM', async () => {
+    const run = (args) =>
+      new Promise((resolve) => {
+        const shim = spawn(process.execPath, ['-e', capture.SERVICE_SHIM, ...args], { stdio: 'ignore' });
+        shim.on('exit', (code, signal) => resolve({ code, signal, pid: shim.pid }));
+        if (args[0] === '/bin/sleep') setTimeout(() => shim.kill('SIGTERM'), 300);
+      });
+    expect((await run(['/bin/sh', '-c', 'exit 7'])).code).toBe(7);
+    const stopped = await run(['/bin/sleep', '30']);
+    expect(stopped.code === 1 || stopped.signal === 'SIGTERM' || stopped.code === 143).toBe(true);
+  });
+
+  test('`service status --json` maps to the page\'s service view; the heartbeat to its children', () => {
+    const cli = { installed: true, active: true, enabled: false, up_to_date: false, heartbeat: { running: true, recorder: { running: true, pid: 9, crashes: 5, last_exit: 'exit status: 1' }, actions: { running: false, crashes: 0, last_exit: null } } };
+    expect(capture.serviceFromCli(cli)).toEqual({ installed: true, active: true, enabled: false, upToDate: false, heartbeat: cli.heartbeat });
+    expect(capture.childrenFromHeartbeat(cli.heartbeat)).toEqual({
+      recorder: { running: true, crashLoop: true, lastExit: { error: 'exit status: 1' } },
+      actions: { running: false, crashLoop: false, lastExit: null },
+    });
+    expect(capture.childrenFromHeartbeat({ running: false })).toEqual({ recorder: { running: false, crashLoop: false, lastExit: null }, actions: { running: false, crashLoop: false, lastExit: null } });
   });
 });
 
@@ -304,11 +189,11 @@ describe('paths and environment', () => {
     }
   });
 
-  test('desktop.json: defaults, round trip, mode 0600', () => {
+  test('desktop.json: defaults, round trip, mode 0600; Actions is the account policy, not a switch here', () => {
     const lib = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-desktop-'));
-    expect(capture.readDesktop(lib)).toEqual({ on: false, actions: true });
+    expect(capture.readDesktop(lib)).toEqual({ on: false });
     capture.writeDesktop(lib, { on: true, actions: false });
-    expect(capture.readDesktop(lib)).toEqual({ on: true, actions: false });
+    expect(capture.readDesktop(lib)).toEqual({ on: true });
     expect((fs.statSync(path.join(lib, 'desktop.json')).mode & 0o777).toString(8)).toBe('600');
   });
 });
@@ -344,6 +229,8 @@ describe('status and tray', () => {
       sync: { state: 'ok', pending: 2, lastUploadMs: 5, error: null },
     });
     expect(capture.captureLabel(view)).toBe('Recording · Screen, Actions');
+    const noActions = { ...sync, policy: { ...sync.policy, policy: { ...sync.policy.policy, layers: { actions: false } } } };
+    expect(capture.captureStatusFrom({ available: true, desktop: { on: true }, status, sync: noActions, children: running }).layers.actions).toBe(false);
   });
 
   test('refused, signed out, off, crashed: the state says which', () => {
@@ -404,19 +291,47 @@ describe('status and tray', () => {
   });
 });
 
-test('GUARD ends its child when the app side closes stdin (no orphaned action recorder)', async () => {
-  const guard = spawn(process.execPath, ['-e', capture.GUARD, '/bin/sleep', '30'], { stdio: ['pipe', 'ignore', 'inherit'] });
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  const sleeper = (await new Promise((resolve) => {
-    const ps = spawn('pgrep', ['-P', String(guard.pid)]);
-    let out = '';
-    ps.stdout.on('data', (d) => (out += d));
-    ps.on('close', () => resolve(out.trim()));
-  }));
-  expect(sleeper).toMatch(/^\d+$/);
-  const exited = new Promise((resolve) => guard.on('exit', resolve));
-  guard.stdin.end();
-  await exited;
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(() => process.kill(Number(sleeper), 0)).toThrow();
+describe('serviceAction (the desktop app as controller)', () => {
+  const ok = { installed: true, enabled: true, upToDate: true, active: true, heartbeat: { running: true } };
+  const on = { desktopOn: true, signedIn: true, signInRequired: false };
+  test('an explicit action with Capture on: install when missing or out of date, resume when disabled, repair when not running', () => {
+    const user = { ...on, explicit: true };
+    expect(capture.serviceAction({ ...user, service: { installed: false } })).toBe('install');
+    expect(capture.serviceAction({ ...user, service: { ...ok, upToDate: false } })).toBe('install');
+    expect(capture.serviceAction({ ...user, service: { ...ok, enabled: false } })).toBe('resume');
+    expect(capture.serviceAction({ ...user, service: { ...ok, active: false, heartbeat: { running: false } } })).toBe('repair');
+    expect(capture.serviceAction({ ...user, service: ok })).toBeNull();
+  });
+  test('Capture off: the service is disabled (paused), not removed', () => {
+    expect(capture.serviceAction({ ...on, desktopOn: false, service: ok })).toBe('pause');
+    expect(capture.serviceAction({ ...on, desktopOn: false, service: { ...ok, enabled: false } })).toBeNull();
+  });
+  test('a passive check (launch, poll) never starts, resumes or reinstalls a service someone stopped', () => {
+    const passive = { ...on, explicit: false };
+    // Removed, disabled (launchctl disable / Pause), or not running: left alone.
+    expect(capture.serviceAction({ ...passive, service: { installed: false } })).toBeNull();
+    expect(capture.serviceAction({ ...passive, service: { ...ok, enabled: false } })).toBeNull();
+    expect(capture.serviceAction({ ...passive, service: { ...ok, enabled: false, upToDate: false } })).toBeNull();
+    expect(capture.serviceAction({ ...passive, service: { ...ok, active: false, heartbeat: { running: false } } })).toBeNull();
+    // An app update or move rewrites an enabled service's unit.
+    expect(capture.serviceAction({ ...passive, service: { ...ok, upToDate: false } })).toBe('install');
+    // Stopping is always safe.
+    expect(capture.serviceAction({ ...passive, desktopOn: false, service: ok })).toBe('pause');
+    expect(capture.serviceAction({ ...passive, signedIn: false, service: ok })).toBe('uninstall');
+  });
+  test('the default is passive: only an explicit action resumes or repairs', () => {
+    expect(capture.serviceAction({ ...on, service: { ...ok, enabled: false } })).toBeNull();
+    expect(capture.serviceAction({ ...on, explicit: true, service: { ...ok, enabled: false } })).toBe('resume');
+  });
+  test('signed out: removed; refused (revoked, flag off): kept, so a new sign-in resumes', () => {
+    expect(capture.serviceAction({ desktopOn: true, signedIn: false, signInRequired: false, service: ok })).toBe('uninstall');
+    expect(capture.serviceAction({ desktopOn: true, signedIn: false, signInRequired: true, service: ok })).toBeNull();
+  });
+});
+
+test('Capture shares no module with the computer agent', () => {
+  for (const file of ['capture.js', 'capture-host.js', 'capture-tray.js']) {
+    const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    expect(source).not.toMatch(/require\(['"]\.\/computer(-tray)?['"]\)|agent-tunnel\/src/);
+  }
 });

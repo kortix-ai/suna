@@ -78,7 +78,9 @@ export function CaptureAreaShell({
   }
 
   return (
-    <div className="bg-background flex min-h-svh flex-col">
+    // `data-kx-titlebar-owner`: the top bar is the way back to Kortix, so the
+    // desktop window's own Back steps aside and the bar clears the traffic lights.
+    <div className="bg-background flex min-h-svh flex-col" data-kx-titlebar-owner="">
       <CaptureTopBar accountId={accountId} />
       {area.enabled ? (
         children
@@ -132,25 +134,28 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
   return (
     <header
       data-sidebar-collapsed
-      className="kx-titlebar-row bg-background sticky top-0 z-30 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-1.5"
+      className="kx-titlebar-row kx-titlebar-band-height bg-background sticky top-0 z-30 flex h-12 shrink-0 items-center gap-4 overflow-x-auto border-b px-4"
     >
-      <div className="flex items-center gap-2">
+      <nav aria-label={t('breadcrumb')} className="flex items-center gap-1.5">
         <Hint label={t('backToKortix')}>
           <Link
             href="/projects"
-            aria-label={t('backToKortix')}
-            className="text-foreground hover:bg-hover flex size-8 items-center justify-center rounded-md transition-colors"
+            className="text-muted-foreground hover:bg-hover hover:text-foreground flex h-8 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors"
           >
-            <KortixLogo variant="icon" size={16} />
+            <KortixLogo variant="icon" size={14} />
+            {t('kortix')}
           </Link>
         </Hint>
+        <span aria-hidden className="text-muted-foreground text-sm">
+          /
+        </span>
         <Link
           href={captureHref(accountId, 'devices')}
-          className="text-foreground text-sm font-semibold whitespace-nowrap"
+          className="text-foreground px-1 text-sm font-semibold whitespace-nowrap"
         >
           {t('wordmark')}
         </Link>
-      </div>
+      </nav>
       {area.enabled ? (
         <nav aria-label={t('wordmark')} className="flex flex-wrap items-center gap-0.5">
           {CAPTURE_SECTIONS.map((item) => {

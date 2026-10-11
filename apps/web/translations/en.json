@@ -20699,6 +20699,8 @@
       "unnamed": "Unnamed computer",
       "you": "You",
       "member": "A member",
+      "memberNone": "No computer yet",
+      "memberSummary": "{count, plural, one {# computer} other {# computers}} · {recording} recording",
       "actionsFor": "Actions for {name}",
       "revoke": "Revoke computer",
       "revokeTitle": "Revoke this computer?",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "Could not revoke the computer",
       "recordThisComputer": "Record this computer",
       "title": "Devices",
-      "descriptionAll": "Every computer that records into {name}. Admins and viewers see every member; members see their own.",
+      "descriptionAll": "Every member of {name} and the computers they record. Members see only their own.",
       "descriptionMine": "Your computers. Only you and the admins of this organization see what they record.",
       "viewLabel": "View",
-      "viewAll": "All devices",
+      "viewAll": "Everyone",
       "viewMine": "My devices",
       "thisComputer": "This computer",
       "thisComputerBadge": "This computer",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "Approve the sign-in on the page that opened in your browser."
       },
       "layerOffByPolicy": "Off for your organization",
+      "layerOn": "On",
+      "layersHint": "{org} decides what is recorded.",
       "notice": "From the people who manage {org}",
       "otherOrg": "This computer records for another organization now. Starting here moves it to {org}.",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "Recording resumed",
         "signedOut": "Signed out of Kortix Capture"
       },
-      "pausedByOrgHint": "The people who manage {org} paused recording. It resumes when they lift the pause."
+      "pausedByOrgHint": "The people who manage {org} paused recording. It resumes when they lift the pause.",
+      "gate": {
+        "title": "Allow Kortix Capture on this computer",
+        "body": "Kortix Capture records this computer into {org}, but macOS has not allowed it yet. Nothing is recorded until you allow access.",
+        "later": "Later",
+        "done": "Kortix Capture is recording."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Back to Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix and Kortix Capture",
       "signedInAs": "Signed in as {email}",
       "switchOrg": "Switch organization",
       "organizations": "Organizations",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "Could not open Kortix Capture.",
       "tryAgain": "Try again"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "Record members' computers",
+      "description": "Members record their screen, actions and audio into this organization from the Kortix desktop app. Admins see every member; each member sees their own.",
+      "descriptionReadOnly": "An admin of this organization turns Kortix Capture on or off.",
+      "open": "Open Kortix Capture",
+      "failed": "Could not change Kortix Capture."
     },
     "thisComputer": {
       "title": "This computer",

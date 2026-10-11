@@ -20699,6 +20699,8 @@
       "unnamed": "Рачунар без имена",
       "you": "Ти",
       "member": "Члан",
+      "memberNone": "Još nema računara",
+      "memberSummary": "{count, plural, one {# računar} few {# računara} other {# računara}} · {recording} snima",
       "actionsFor": "Радње за {name}",
       "revoke": "Опозови рачунар",
       "revokeTitle": "Опозвати овај рачунар?",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "Није могуће опозвати рачунар",
       "recordThisComputer": "Снимај овај рачунар",
       "title": "Уређаји",
-      "descriptionAll": "Сваки рачунар који снима у {name}. Админи и гледаоци виде све чланове; чланови виде своје.",
+      "descriptionAll": "Svaki član organizacije {name} i računari koje snima. Članovi vide samo svoje.",
       "descriptionMine": "Ваши рачунари. Само ви и админи ове организације видите шта снимају.",
       "viewLabel": "Приказ",
-      "viewAll": "Сви уређаји",
+      "viewAll": "Svi",
       "viewMine": "Моји уређаји",
       "thisComputer": "Овај рачунар",
       "thisComputerBadge": "Овај рачунар",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "Одобри пријаву на страници која се отворила у прегледачу."
       },
       "layerOffByPolicy": "Искључено за твоју организацију",
+      "layerOn": "Uključeno",
+      "layersHint": "{org} odlučuje šta se snima.",
       "notice": "Од оних који управљају са {org}",
       "otherOrg": "Овај рачунар сада снима за другу организацију. Почетак овде га пребацује на {org}.",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "Снимање је настављено",
         "signedOut": "Одјављен из Kortix Capture-а"
       },
-      "pausedByOrgHint": "Они који управљају са {org} паузирали су снимање. Наставља се када уклоне паузу."
+      "pausedByOrgHint": "Они који управљају са {org} паузирали су снимање. Наставља се када уклоне паузу.",
+      "gate": {
+        "title": "Dozvoli Kortix Capture na ovom računaru",
+        "body": "Kortix Capture snima ovaj računar u {org}, ali macOS to još nije dozvolio. Ništa se ne snima dok ne dozvoliš pristup.",
+        "later": "Kasnije",
+        "done": "Kortix Capture snima."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Назад на Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix i Kortix Capture",
       "signedInAs": "Пријављени сте као {email}",
       "switchOrg": "Промени организацију",
       "organizations": "Организације",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "Kortix Capture није могао да се отвори.",
       "tryAgain": "Покушај поново"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "Snimanje računara članova",
+      "description": "Članovi snimaju ekran, radnje i zvuk u ovu organizaciju preko Kortix desktop aplikacije. Administratori vide sve članove; svaki član vidi svoje.",
+      "descriptionReadOnly": "Administrator ove organizacije uključuje ili isključuje Kortix Capture.",
+      "open": "Otvori Kortix Capture",
+      "failed": "Promena za Kortix Capture nije uspela."
     },
     "thisComputer": {
       "title": "Овај рачунар",

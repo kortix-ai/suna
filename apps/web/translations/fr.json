@@ -20699,6 +20699,8 @@
       "unnamed": "Ordinateur sans nom",
       "you": "Vous",
       "member": "Un membre",
+      "memberNone": "Aucun ordinateur pour l’instant",
+      "memberSummary": "{count, plural, one {# ordinateur} other {# ordinateurs}} · {recording} en enregistrement",
       "actionsFor": "Actions pour {name}",
       "revoke": "Révoquer l’ordinateur",
       "revokeTitle": "Révoquer cet ordinateur ?",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "Impossible de révoquer l’ordinateur",
       "recordThisComputer": "Enregistrer cet ordinateur",
       "title": "Appareils",
-      "descriptionAll": "Chaque ordinateur qui enregistre dans {name}. Les admins et les lecteurs voient tous les membres ; les membres voient les leurs.",
+      "descriptionAll": "Chaque membre de {name} et les ordinateurs qu’il enregistre. Les membres ne voient que les leurs.",
       "descriptionMine": "Vos ordinateurs. Seuls vous et les admins de cette organisation voyez ce qu’ils enregistrent.",
       "viewLabel": "Vue",
-      "viewAll": "Tous les appareils",
+      "viewAll": "Tout le monde",
       "viewMine": "Mes appareils",
       "thisComputer": "Cet ordinateur",
       "thisComputerBadge": "Cet ordinateur",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "Approuvez la connexion sur la page ouverte dans votre navigateur."
       },
       "layerOffByPolicy": "Désactivé pour votre organisation",
+      "layerOn": "Activé",
+      "layersHint": "{org} décide de ce qui est enregistré.",
       "notice": "De la part des personnes qui gèrent {org}",
       "otherOrg": "Cet ordinateur enregistre maintenant pour une autre organisation. Démarrer ici le passe à {org}.",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "Enregistrement repris",
         "signedOut": "Déconnecté de Kortix Capture"
       },
-      "pausedByOrgHint": "Les personnes qui gèrent {org} ont mis l’enregistrement en pause. Il reprend quand elles lèvent la pause."
+      "pausedByOrgHint": "Les personnes qui gèrent {org} ont mis l’enregistrement en pause. Il reprend quand elles lèvent la pause.",
+      "gate": {
+        "title": "Autoriser Kortix Capture sur cet ordinateur",
+        "body": "Kortix Capture enregistre cet ordinateur dans {org}, mais macOS ne l’a pas encore autorisé. Rien n’est enregistré tant que vous n’autorisez pas l’accès.",
+        "later": "Plus tard",
+        "done": "Kortix Capture enregistre."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Retour à Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix et Kortix Capture",
       "signedInAs": "Connecté en tant que {email}",
       "switchOrg": "Changer d’organisation",
       "organizations": "Organisations",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "Impossible d’ouvrir Kortix Capture.",
       "tryAgain": "Réessayer"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "Enregistrer les ordinateurs des membres",
+      "description": "Les membres enregistrent leur écran, leurs actions et leur audio dans cette organisation avec l’app de bureau Kortix. Les admins voient tous les membres ; chaque membre voit les siens.",
+      "descriptionReadOnly": "Un admin de cette organisation active ou désactive Kortix Capture.",
+      "open": "Ouvrir Kortix Capture",
+      "failed": "Impossible de modifier Kortix Capture."
     },
     "thisComputer": {
       "title": "Cet ordinateur",

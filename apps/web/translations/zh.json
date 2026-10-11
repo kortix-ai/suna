@@ -20699,6 +20699,8 @@
       "unnamed": "未命名的电脑",
       "you": "你",
       "member": "一位成员",
+      "memberNone": "还没有电脑",
+      "memberSummary": "{count, plural, other {# 台电脑}} · {recording} 台正在录制",
       "actionsFor": "{name} 的操作",
       "revoke": "撤销电脑",
       "revokeTitle": "撤销这台电脑？",
@@ -20707,10 +20709,10 @@
       "revokeFailed": "无法撤销这台电脑",
       "recordThisComputer": "记录这台电脑",
       "title": "设备",
-      "descriptionAll": "所有向 {name} 录制的电脑。管理员和查看者可看到所有成员的设备，成员只能看到自己的。",
+      "descriptionAll": "{name} 的每位成员及其录制的电脑。成员只能看到自己的。",
       "descriptionMine": "你的电脑。只有你和此组织的管理员能看到它们录制的内容。",
       "viewLabel": "视图",
-      "viewAll": "所有设备",
+      "viewAll": "所有人",
       "viewMine": "我的设备",
       "thisComputer": "此电脑",
       "thisComputerBadge": "此电脑",
@@ -20832,6 +20834,8 @@
         "waitingOnPage": "请在浏览器中打开的页面上批准登录。"
       },
       "layerOffByPolicy": "你的组织已关闭",
+      "layerOn": "开启",
+      "layersHint": "{org} 决定录制哪些内容。",
       "notice": "来自 {org} 的管理者",
       "otherOrg": "这台电脑目前在为另一个组织记录。在这里开始会将它切换到 {org}。",
       "signInRequired": {
@@ -20885,11 +20889,19 @@
         "resumed": "已继续记录",
         "signedOut": "已退出 Kortix Capture"
       },
-      "pausedByOrgHint": "{org} 的管理者暂停了记录。解除暂停后会继续。"
+      "pausedByOrgHint": "{org} 的管理者暂停了记录。解除暂停后会继续。",
+      "gate": {
+        "title": "在这台电脑上允许 Kortix Capture",
+        "body": "Kortix Capture 会将这台电脑录制到 {org}，但 macOS 尚未允许。在你允许访问之前不会录制任何内容。",
+        "later": "稍后",
+        "done": "Kortix Capture 正在录制。"
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "返回 Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix 与 Kortix Capture",
       "signedInAs": "已登录为 {email}",
       "switchOrg": "切换组织",
       "organizations": "组织",
@@ -20908,6 +20920,14 @@
       },
       "loadFailed": "无法打开 Kortix Capture。",
       "tryAgain": "重试"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "录制成员的电脑",
+      "description": "成员通过 Kortix 桌面应用将屏幕、操作和音频录制到此组织。管理员可查看所有成员；每位成员只能查看自己的。",
+      "descriptionReadOnly": "此组织的管理员可开启或关闭 Kortix Capture。",
+      "open": "打开 Kortix Capture",
+      "failed": "无法更改 Kortix Capture。"
     },
     "thisComputer": {
       "title": "此电脑",
