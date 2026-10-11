@@ -23,7 +23,7 @@ import {
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
-  ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
+  ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS, supabaseBin,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
   listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
   parseDuration, selectForPrune, type PruneCandidate,
@@ -510,7 +510,7 @@ async function cmdStart(a: Args) {
     step('Applying pending migrations (pnpm migrate)');
     if (await runMigrate(e.path, e.ports) !== 0) die('migrate failed');
     if (!hasKortixSchema(e.ports)) die(`schema not built for "${name}"`);
-    if (!sh(['supabase', '--workdir', supaWorkdir(name), 'status']).ok) {
+    if (!sh([supabaseBin(), '--workdir', supaWorkdir(name), 'status']).ok) {
       step(`Starting Supabase for "${name}"`);
       if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
     } else if (!portInUse(e.ports.sbApi).inUse) {
@@ -658,7 +658,7 @@ async function cmdStop(a: Args) {
   if (!e) die(`unknown worktree "${name}"`);
   step(`Stopping "${name}"`);
   const res = await stopStack(e!);
-  if (dbModeOf(e!) === 'isolated') sh(['supabase', '--workdir', supaWorkdir(name), 'stop']);
+  if (dbModeOf(e!) === 'isolated') sh([supabaseBin(), '--workdir', supaWorkdir(name), 'stop']);
   else sub('shared primary Supabase left running');
   if (res.survived.length) {
     await setStatus(name, 'running');
@@ -708,7 +708,7 @@ async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string 
   // an unverified kill here surfaces later as a confusing `git worktree remove` failure.
   if (stopped.survived.length) warn(`${plural(stopped.survived.length, 'process', 'processes')} survived (${stopped.survived.join(', ')}) — removal may fail`);
   if (dbMode === 'isolated') {
-    await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
+    await spin('Stopping Supabase containers', [supabaseBin(), '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
     await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
     await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
   } else {
@@ -873,7 +873,7 @@ function cmdStatus(a: Args) {
     if (!e) { warn(`${n}: unknown`); continue; }
     const dbMode = dbModeOf(e);
     const sb = dbMode === 'isolated'
-      ? sh(['supabase', '--workdir', supaWorkdir(n), 'status']).ok
+      ? sh([supabaseBin(), '--workdir', supaWorkdir(n), 'status']).ok
       : portInUse(SHARED_SUPABASE_PORTS.sbApi).inUse;
     const procs = stackPids(e.path, e.ports.api, procTables).length;
     console.log(`\n${pc.bold(n)}  ${pc.dim(`(slot ${e.slot} · ${e.status} · ${dbMode})`)}  ${pc.dim(e.path)}`);

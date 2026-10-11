@@ -123,15 +123,17 @@ test.describe("25 — A failed target cannot trap the user in a redirect loop", 
       // landing door and its target — never a loop back into the dead project.
       expect(navigations.length).toBeLessThanOrEqual(4);
 
-      // Either path forgets the dead project as the landing target.
+      // Either path forgets the dead project as the landing target. The
+      // self-heal's landing door then remembers the project it opened, so the
+      // cookie is either gone or names another project — never the dead one.
       await expect
         .poll(async () => {
           const cookie = (await page.context().cookies()).find(
             (item) => item.name === "kortix_last_project",
           );
-          return cookie?.value || null;
+          return cookie ? decodeURIComponent(cookie.value) : null;
         })
-        .toBeNull();
+        .not.toBe(`${user.id}:${doomed.id}`);
 
       // Opened directly, the dead project renders its terminal screen inline.
       // Deployed staging answers the access gate's project read after the

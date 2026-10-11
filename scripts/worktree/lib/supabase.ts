@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Ports } from './ports';
 import { portInUse, run, sh, type ShResult } from './exec';
 import { supaWorkdir } from './registry';
+import { supabaseBin } from './supabase-cli';
 
 export const SHARED_SUPABASE_PORTS = {
   sbApi: 54321,
@@ -53,14 +54,14 @@ export function renderSupabaseProject(name: string, worktreePath: string, projec
 }
 
 export async function startSupabaseDb(name: string): Promise<number> {
-  return run(['supabase', '--workdir', supaWorkdir(name), 'db', 'start']);
+  return run([supabaseBin(), '--workdir', supaWorkdir(name), 'db', 'start']);
 }
 
 export async function startSupabaseFullStack(name: string, ports: Ports): Promise<number> {
   if (!portInUse(ports.sbApi).inUse) {
-    await run(['supabase', '--workdir', supaWorkdir(name), 'stop']);
+    await run([supabaseBin(), '--workdir', supaWorkdir(name), 'stop']);
   }
-  return run(['supabase', '--workdir', supaWorkdir(name), 'start']);
+  return run([supabaseBin(), '--workdir', supaWorkdir(name), 'start']);
 }
 
 export function hasKortixSchema(ports: Ports): boolean {
@@ -73,12 +74,12 @@ export function hasKortixSchema(ports: Ports): boolean {
 }
 
 export function supa(name: string, args: string[], opts: { stream?: boolean } = {}): ShResult | Promise<number> {
-  const cmd = ['supabase', '--workdir', supaWorkdir(name), ...args];
+  const cmd = [supabaseBin(), '--workdir', supaWorkdir(name), ...args];
   return opts.stream ? run(cmd) : sh(cmd);
 }
 
 export function supaStatusEnv(name: string): Record<string, string> {
-  const r = sh(['supabase', '--workdir', supaWorkdir(name), 'status', '-o', 'env']);
+  const r = sh([supabaseBin(), '--workdir', supaWorkdir(name), 'status', '-o', 'env']);
   if (!r.ok) return {};
   const env: Record<string, string> = {};
   for (const line of r.stdout.split('\n')) {
@@ -113,7 +114,7 @@ export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): S
 }
 
 export function primarySupabaseStatusEnv(root: string): Record<string, string> {
-  const r = sh(['supabase', 'status', '-o', 'env'], { cwd: root });
+  const r = sh([supabaseBin(), 'status', '-o', 'env'], { cwd: root });
   if (!r.ok) return {};
   const env: Record<string, string> = {};
   for (const line of r.stdout.split('\n')) {
@@ -137,8 +138,8 @@ export async function ensurePrimarySupabase(root: string): Promise<Record<string
   //
   // NEVER add --no-backup: it deletes the data volumes, i.e. the primary
   // checkout's local Postgres that every shared-db worktree runs against.
-  await run(['supabase', 'stop'], { cwd: root });
-  const started = await run(['supabase', 'start'], { cwd: root });
+  await run([supabaseBin(), 'stop'], { cwd: root });
+  const started = await run([supabaseBin(), 'start'], { cwd: root });
   if (started !== 0) return {};
   env = primarySupabaseStatusEnv(root);
   return env;

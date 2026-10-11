@@ -82,7 +82,7 @@ async function holdSessionsInBoot(page: Page, projectId: string) {
   });
 }
 
-test("48 — the bell opens another session's notification and the settings save Push per kind", async ({
+test("48 — the bell opens another session's notification and the settings save Push per kind", { tag: "@local-only" }, async ({
   page,
 }) => {
   test.skip(isDeployedTarget(), "local stack only: writes the notification row into the database");

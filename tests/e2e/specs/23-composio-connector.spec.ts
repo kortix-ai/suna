@@ -364,9 +364,8 @@ test.describe("23 — Composio managed connector", () => {
       ),
       { timeout: 60_000 },
     );
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Composio Search" }),
-    ).toBeVisible();
+    // The dialog is modal: the page behind it leaves the accessibility tree
+    // until it closes, so its heading is asserted after Continue.
     const addDialog = page.getByRole("dialog", {
       name: "Add a Composio Search account",
     });
@@ -390,6 +389,9 @@ test.describe("23 — Composio managed connector", () => {
       }),
     );
     await expect(addDialog).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Composio Search" }),
+    ).toBeVisible();
 
     // A no-auth toolkit needs no sign-in: the shared account turns active.
     const readShared = async () =>

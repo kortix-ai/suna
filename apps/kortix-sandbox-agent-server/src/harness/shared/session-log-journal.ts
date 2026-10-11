@@ -26,6 +26,10 @@
  *   dropped message stays in the native store, and the P6 boot reconcile
  *   sends it again.
  *
+ * Debug: `KORTIX_SESSION_LOG_DUMP_DIR` (off by default) turns the API into a
+ * directory. Each batch body is written there as JSON and acknowledged at
+ * once; nothing is posted.
+ *
  * Same credential and relay context as every other daemon callback
  * (`sandboxRelayContext`); same backoff as the audit relay (`computeRetryDelay`).
  */
@@ -33,15 +37,18 @@ import {
   SessionLogJournalConflictSchema,
   SessionLogJournalResponseSchema,
   type ExportCursor,
+  type SessionLog,
   type SessionLogJournalRequest,
   type SessionLogMessage,
   type SessionLogSessionPatch,
   type SessionLogThreadUpsert,
 } from '@kortix/api-contract/session-log'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
-import type { SessionLogPort } from '../contract/session-log'
+import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
@@ -70,7 +77,7 @@ export interface SessionLogJournalOptions {
 
 /** A pending revision: a whole message, or a tombstone when `message` is absent. */
 type Entry = { id: string; rev: number; message?: SessionLogMessage }
-type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array }
+type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array<ArrayBuffer> }
 
 export class SessionLogJournal {
   private readonly cursors = new Map<string, ExportCursor>()
@@ -92,6 +99,8 @@ export class SessionLogJournal {
   private wakeBackoff: (() => void) | null = null
   /** Flushes waiting for the drain to finish or to start backing off. */
   private waiters: Array<() => void> = []
+  private readonly dumpDir = process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null
+  private dumped = 0
 
   constructor(
     private readonly port: SessionLogPort,
@@ -235,6 +244,7 @@ export class SessionLogJournal {
 
   /** One POST. True when the batch is settled (acknowledged or dropped); false to back off. */
   private async send(batch: Batch): Promise<boolean> {
+    if (this.dumpDir) return this.dump(batch, this.dumpDir)
     const ctx = sandboxRelayContext()
     if (!ctx) {
       this.off = 'no control plane'
@@ -299,6 +309,20 @@ export class SessionLogJournal {
     return true
   }
 
+  /** Debug sink (`KORTIX_SESSION_LOG_DUMP_DIR`): the batch body as JSON in `dir`, acknowledged at once. Nothing is posted. */
+  private dump(batch: Batch, dir: string): boolean {
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      writeFileSync(join(dir, `batch-${Date.now()}-${++this.dumped}.json`), new TextDecoder().decode(Bun.gunzipSync(batch.body)), { mode: 0o600 })
+    } catch (err) {
+      logger.warn('[session-log] journal dump failed', { dir, err: (err as Error).message })
+      return false
+    }
+    for (const e of batch.entries) if (this.dirty.get(e.id) === e) this.dirty.delete(e.id)
+    this.settle(batch)
+    return true
+  }
+
   /** Threads and the session patch of a settled batch, unless they changed since. */
   private settle(batch: Batch): void {
     for (const thread of batch.threads) if (this.threads.get(thread.thread_id) === thread) this.threads.delete(thread.thread_id)
@@ -323,6 +347,41 @@ export class SessionLogJournal {
         resolve()
       }
     })
+  }
+}
+
+/**
+ * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi,
+ * OpenCode): every message after its thread's cursor or with a new native hash, every id a
+ * cursor holds that the log no longer has (a tombstone), every thread (the journal drops an
+ * unchanged one), and the session fields when their JSON differs from `previousSessionJson`.
+ */
+export function logChanges(
+  log: SessionLog,
+  hashes: ReadonlyMap<string, string>,
+  cursors: readonly ExportCursor[],
+  previousSessionJson: string | null,
+): { changes: SessionLogChanges; sessionJson: string } {
+  const byThread = new Map(cursors.map((c) => [c.thread_id, c]))
+  const messages: ExportedMessage[] = []
+  for (const thread of log.threads) {
+    const cursor = byThread.get(thread.thread_id)
+    for (const message of thread.messages) {
+      const native_hash = hashes.get(message.message_id)!
+      if (!cursor || message.seq > cursor.last_seq || cursor.native_hashes[message.message_id] !== native_hash) messages.push({ message, native_hash })
+    }
+  }
+  const tombstones = cursors.flatMap((c) => Object.keys(c.native_hashes).filter((id) => !hashes.has(id)))
+  const { threads, ...session } = log
+  const sessionJson = JSON.stringify(session)
+  return {
+    changes: {
+      messages,
+      tombstones,
+      threads: threads.map(({ messages: _messages, ...thread }) => thread),
+      ...(sessionJson !== previousSessionJson ? { session } : {}),
+    },
+    sessionJson,
   }
 }
 
