@@ -451,6 +451,16 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   return 0;
 }
 
+/** ./kortix.yaml, or a new manifest when there is none. One read, no exists-then-read race. */
+function readManifestOrNew(path: string): string {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'kortix_version: 2\n';
+    throw error;
+  }
+}
+
 /**
  * `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` (Fly
  * `launch`): write a template's `apps` blocks into ./kortix.yaml (comments
@@ -467,7 +477,7 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   if (!template) return fail(`no template "${templateName}"; there is ${Object.keys(APP_TEMPLATES).join(', ')}`);
   const slug = slugFrom(slugFlag ?? template.name);
   const path = resolve(process.cwd(), 'kortix.yaml');
-  const text = existsSync(path) ? readFileSync(path, 'utf8') : 'kortix_version: 2\n';
+  const text = readManifestOrNew(path);
   const doc = parseDocument(text);
   const blocks = template.blocks(slug);
   const taken = Object.keys(blocks).filter((name) => doc.hasIn(['apps', name]));
