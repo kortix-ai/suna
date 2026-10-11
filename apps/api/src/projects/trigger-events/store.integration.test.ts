@@ -7,7 +7,10 @@ import {
   type Database,
   projects,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { DEFAULT_DB_POOL_MAX } from '@kortix/db/connection-defaults';
+import { eq, sql } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { ACCOUNT_LOCK_MAX_HOLDERS } from '../../billing/services/webhook-concurrency';
 import * as store from './store';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -140,24 +143,67 @@ describeWithDb('trigger event subscription store — real PostgreSQL', () => {
     expect(await store.listByProject(PROJECT_ID)).toHaveLength(0);
   });
 
-  test('withProjectEventLock serializes one project and skips the loser', async () => {
+  test('withProjectEventLock skips a project another replica holds', async () => {
+    // testDb() is its own pool, so its lock transaction stands in for another API replica.
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
     let entered!: () => void;
     const inside = new Promise<void>((r) => (entered = r));
-    const first = store.withProjectEventLock(PROJECT_ID, async () => {
+    const replica = testDb().transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`trigger-events:${PROJECT_ID}`}, 0))`);
       entered();
       await held;
     });
     await inside;
     let ran = false;
-    const second = await store.withProjectEventLock(PROJECT_ID, async () => {
+    const skipped = await store.withProjectEventLock(PROJECT_ID, async () => {
       ran = true;
     });
-    expect(second).toBe(false);
+    expect(skipped).toBe(false);
     expect(ran).toBe(false);
     release();
-    expect(await first).toBe(true);
+    await replica;
     expect(await store.withProjectEventLock(PROJECT_ID, async () => {})).toBe(true);
   });
+
+  test('two locks in one process run one after the other', async () => {
+    const order: string[] = [];
+    const run = (name: string) =>
+      store.withProjectEventLock(PROJECT_ID, async () => {
+        order.push(`${name} in`);
+        await Bun.sleep(20);
+        order.push(`${name} out`);
+      });
+    expect(await Promise.all([run('a'), run('b')])).toEqual([true, true]);
+    expect(order).toEqual(['a in', 'a out', 'b in', 'b out']);
+  });
+
+  test('a burst of locks across projects never exhausts the request pool', async () => {
+    // The connector sweep reconciles several projects at once. Each lock pins
+    // one pooled connection and its body queries the same pool; when the
+    // holders reached the pool size, every body waited for a connection only
+    // another body could free (a staging API task, 2026-10-11).
+    const poolMax = Number(process.env.DB_POOL_MAX) || DEFAULT_DB_POOL_MAX;
+    const projectIds = Array.from({ length: poolMax * 2 }, (_, i) =>
+      `00000000-0000-4000-a000-${String(9900 + i).padStart(12, '0')}`,
+    );
+    const burst = Promise.all(
+      projectIds.map((projectId) =>
+        store.withProjectEventLock(projectId, async () => {
+          await store.listByProject(projectId);
+        }),
+      ),
+    );
+    const settled = await Promise.race([burst, Bun.sleep(10_000).then(() => 'stalled' as const)]);
+    expect(settled).toEqual(projectIds.map(() => true));
+  });
+});
+
+test('every pinned-connection lock together stays below the smallest deployed pool', () => {
+  const workflow = readFileSync(new URL('../../../../../.github/workflows/deploy-staging.yml', import.meta.url), 'utf8');
+  const stagingPool = Number(workflow.match(/DB_POOL_MAX: "(\d+)"/)?.[1]);
+  expect(stagingPool).toBeGreaterThan(0);
+  expect(ACCOUNT_LOCK_MAX_HOLDERS + store.EVENT_LOCK_MAX_HOLDERS).toBeLessThan(
+    Math.min(stagingPool, DEFAULT_DB_POOL_MAX),
+  );
 });
