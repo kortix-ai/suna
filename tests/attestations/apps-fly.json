@@ -1,28 +1,17 @@
 {
-  "source_hash": "e939ecbb565f6d003cad757708547cbb0f85f688f0c1c56c205515c5cd53cb25",
+  "source_hash": "38335af1e5d6f48ac185b0be943dcc00b67f2beef5c5d77982a143ea4f94ef18",
   "diff_files": [
-    ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-10-11T012716Z-edit-a-translation-catalog-key-in-place-never-pop-and-re-add.md",
-    ".agents/skills/learnings/entries/2026-10-11T015601Z-when-a-package-the-api-image-copies-piecemeal-gains-a-worksp.md",
-    "apps/api/Dockerfile",
-    "apps/api/src/__tests__/unit-api-dockerfile-runtime-artifacts.test.ts",
-    "apps/web/translations/de.json",
-    "apps/web/translations/en.json",
-    "apps/web/translations/es.json",
-    "apps/web/translations/fr.json",
-    "apps/web/translations/it.json",
-    "apps/web/translations/ja.json",
-    "apps/web/translations/pt.json",
-    "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json"
+    "apps/cli/src/__tests__/apps-launch-yaml.test.ts",
+    "apps/cli/src/commands/apps-launch-yaml.ts",
+    "apps/cli/src/commands/apps.ts"
   ],
-  "diff_hash": "a54ffb45320828de8a3012b02c33442afcf3864f8e5d646cb63ec9c0aa4df324",
-  "head": "a23044aadee4241c0b5db06a4ee85ec688cdca8b",
+  "diff_hash": "7999bb2e9e175bd357956f3b5d241c0d529ab5916680fc8bd503d3743dd3fcf8",
+  "head": "9d56092c0afce9d857c7fcfee4874f936cea0b0d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T02:49:52.097Z"
+  "at": "2026-10-11T03:41:08.411Z"
 }
