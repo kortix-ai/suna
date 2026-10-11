@@ -206,10 +206,19 @@ the fields the frames do not carry, so a live put carries the `message_id`,
 The collection's put of a message has a higher rev than its live puts, and a
 message the journal has collected gets no live put again.
 
+A live message the harness removes before the journal collects it (pi
+retracts a queued prompt, OpenCode reverts) leaves no ghost: on
+`message.removed` the journal drops its row and, if a put of it went out,
+publishes the journal-form tombstone `{ message_id, rev }` on the v2 bus; on
+`message.part.removed` it publishes a fresh put without the part.
+
 Limits:
 - A tool's result and a block's changes after it first appears (a reasoning
   block's end, a call's output) reach the v2 stream with the next live put of
   that message or at the turn end, not on their own.
+- A daemon that crashes mid-turn never sends the turn end's put: a client
+  keeps a `streaming` put until the next epoch's `kortix.resync` or its reread
+  of the saved session log (P4.5).
 - A journal the API turned off (404, 409) publishes no `log.*` frame more,
   deltas included: a 404 API has no relay for the stream, and a 409 box is a
   zombie. A box with no control plane starts no journal: its v2 stream

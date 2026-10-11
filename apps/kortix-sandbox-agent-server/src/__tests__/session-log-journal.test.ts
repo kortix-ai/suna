@@ -450,6 +450,8 @@ describe('session-log journal', () => {
     expect(v1.every((line) => !line.includes('Answer'))).toBe(true)
     // Nothing live reached the API. The turn end's collection sends the stored records at higher revs.
     expect(api.received).toHaveLength(1)
+    // The live puts never entered the dirty set: a journal in backoff would post a streaming record.
+    expect(journal.clean).toBe(true)
     const live = [...frames]
     fake.put('u2', 2, 'question')
     fake.put('m3', 3, 'Answer')
@@ -463,6 +465,44 @@ describe('session-log journal', () => {
     const seen = frames.length
     bus.publish('message.part.updated', { sessionID: T, part: { id: 'm3-p2', messageID: 'm3', sessionID: T, type: 'text', text: 'late' } }, T)
     expect(frames).toHaveLength(seen)
+    await journal.stop(0)
+  })
+
+  test('live turn (P4.3b): a live message removed before its collection gets a tombstone on v2; a removed part a fresh put', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any; session?: string }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    fake.liveSeq('u1', 1)
+    fake.liveSeq('m2', 2)
+    // A queued prompt the user retracts, and a reply whose part the harness drops.
+    bus.publish('message.updated', { sessionID: T, info: { id: 'u1', sessionID: T, role: 'user', time: { created: 1_000 } } }, T)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'm2', sessionID: T, role: 'assistant', parentID: 'u1', time: { created: 2_000 } } }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm2-p0', messageID: 'm2', sessionID: T, type: 'text', text: 'draft' } }, T)
+    bus.publish('message.part.removed', { sessionID: T, messageID: 'm2', partID: 'm2-p0' }, T)
+    bus.publish('message.removed', { sessionID: T, messageID: 'u1' }, T)
+    // A message no put named: nothing to retract.
+    bus.publish('message.removed', { sessionID: T, messageID: 'never-seen' }, T)
+    expect(frames.map((f) => [f.payload.message?.message_id ?? f.payload.message_id, f.payload.message ? f.payload.message.blocks.length : 'tombstone'])).toEqual([
+      ['u1', 0],
+      ['m2', 0],
+      ['m2', 1],
+      ['m2', 0], // the part is gone
+      ['u1', 'tombstone'],
+    ])
+    expect(frames[4]!.payload).toEqual({ message_id: 'u1', rev: expect.any(Number) })
+    expect(frames[4]!.session).toBe(T)
+    expect(frames[4]!.payload.rev).toBeGreaterThan(frames[0]!.payload.rev)
+    // The reply ends in the store; the collection takes it, and no live row is left.
+    fake.put('m2', 2, 'final')
+    expect(await journal.flush()).toBe(true)
+    expect(putIds(api.received.slice(1))).toEqual(['m2'])
+    expect((journal as unknown as { live: Map<string, unknown> }).live.size).toBe(0)
     await journal.stop(0)
   })
 

@@ -47,7 +47,9 @@
  * is built in the bus listener, before the next frame, so its text is exactly
  * the deltas published before it. A message whose seq the adapter cannot know
  * yet waits for the next live frame. The collection's put of the message has
- * a higher rev and ends its live puts.
+ * a higher rev and ends its live puts. A live message the harness removes
+ * before the collection (`message.removed`) gets the journal-form tombstone
+ * if a put of it went out; a removed part (`message.part.removed`) a fresh put.
  *
  * Debug: `KORTIX_SESSION_LOG_DUMP_DIR` (off by default) turns the API into a
  * directory. Each batch body is written there as JSON and acknowledged at
@@ -108,8 +110,8 @@ export interface SessionLogJournalOptions {
 /** A pending revision: a whole message, or a tombstone when `message` is absent. */
 type Entry = { id: string; rev: number; message?: SessionLogMessage }
 type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array<ArrayBuffer> }
-/** A message of the live turn as its v1 frames describe it; `due` until a live put carries its latest change. */
-type LiveRow = { info: KortixMessageInfo | null; parts: Map<string, KortixPart & Record<string, unknown>>; due: boolean }
+/** A message of the live turn as its v1 frames describe it; `due` until a live put carries its latest change; `sent` once one went out. */
+type LiveRow = { info: KortixMessageInfo | null; parts: Map<string, KortixPart & Record<string, unknown>>; due: boolean; sent: boolean }
 
 export class SessionLogJournal {
   private readonly cursors = new Map<string, ExportCursor>()
@@ -141,6 +143,8 @@ export class SessionLogJournal {
     const p = event.payload as Record<string, any> | null
     if (event.type === 'message.updated') return this.liveMessage(p?.info)
     if (event.type === 'message.part.updated') return this.livePart(p?.part)
+    if (event.type === 'message.removed') return this.liveRemoved(p?.messageID)
+    if (event.type === 'message.part.removed') return this.livePartRemoved(p?.messageID, p?.partID)
     if (event.type !== 'message.part.delta' || p?.field !== 'text' || typeof p.delta !== 'string') return
     const { sessionID: thread_id, messageID: message_id, partID: block_id } = p
     if (typeof thread_id !== 'string' || typeof message_id !== 'string' || typeof block_id !== 'string') return
@@ -226,7 +230,7 @@ export class SessionLogJournal {
 
   private row(id: string): LiveRow {
     let row = this.live.get(id)
-    if (!row) this.live.set(id, (row = { info: null, parts: new Map(), due: false }))
+    if (!row) this.live.set(id, (row = { info: null, parts: new Map(), due: false, sent: false }))
     return row
   }
 
@@ -245,6 +249,21 @@ export class SessionLogJournal {
     // A copy: deltas extend it, and the v1 ring must keep the frame as published.
     row.parts.set(part.id, structuredClone(part))
     if (row.due) this.publishLive()
+  }
+
+  /** A live message the harness removed before the journal collected it (a retracted prompt, a revert): its tombstone, if a put went out. */
+  private liveRemoved(id: unknown): void {
+    const row = typeof id === 'string' ? this.live.get(id) : undefined
+    if (!row) return
+    this.live.delete(id as string)
+    if (row.sent) sessionLogEventBus().publish('log.message', { message_id: id as string, rev: nextRev() } satisfies SessionLogMessageEvent, row.info?.sessionID)
+  }
+
+  private livePartRemoved(messageId: unknown, partId: unknown): void {
+    const row = typeof messageId === 'string' ? this.live.get(messageId) : undefined
+    if (!row || typeof partId !== 'string' || !row.parts.delete(partId)) return
+    row.due = true
+    this.publishLive()
   }
 
   /** A put of each due message whose seq the adapter knows, in the order the v1 bus named them. */
@@ -271,6 +290,7 @@ export class SessionLogJournal {
           open = true
         }
         if (open) Object.assign(message, { status: 'streaming', completed_at: null, finish: null })
+        row.sent = true
         sessionLogEventBus().publish('log.message', { rev: nextRev(), message } satisfies SessionLogMessageEvent, thread)
       } catch (err) {
         logger.warn('[session-log] live put failed', { message_id: id, err: String(err) })
