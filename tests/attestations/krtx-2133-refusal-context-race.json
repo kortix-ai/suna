@@ -1,0 +1,16 @@
+{
+  "source_hash": "4317bd393ee8d232b0526ece409e9743a58753f03d6c051f7f9de1d5a18c38a7",
+  "diff_files": [
+    "apps/api/src/shared/preview-ownership.test.ts",
+    "apps/api/src/shared/preview-ownership.ts"
+  ],
+  "diff_hash": "1f910f3e0bd68d5a5ab1a2a8824b78b02142c063e58e6770530ddf444b1b4dca",
+  "head": "8a9cebf0ddc3fe4c217c32e78c25eca586f6f015",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T04:16:52.992Z"
+}
