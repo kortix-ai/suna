@@ -147,7 +147,7 @@ export async function changeComputerAccess(
       ok: false,
       status: 409,
       kind: 'computer_offline',
-      message: `${name} is offline. Change access on the computer itself: the Kortix menu bar, or \`${npxAccess}\`.`,
+      message: `${name} is offline. Change access on the computer itself: the Kortix menu bar, or ${npxAccess}.`,
     };
   }
   if (computerAccessView(row.machineInfo)?.controllable !== true) {
@@ -155,7 +155,7 @@ export async function changeComputerAccess(
       ok: false,
       status: 409,
       kind: 'agent_update_required',
-      message: `Update Kortix on ${name} to change its access from here, or use \`${npxAccess}\` on it.`,
+      message: `Update Kortix on ${name} to change its access from here, or run ${npxAccess} on it.`,
     };
   }
 

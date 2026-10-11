@@ -459,8 +459,10 @@ function setupComputer(deps) {
    * time, while the person is looking at the setup screen. Each prompt names
    * Kortix. Once Accessibility and Screen Recording hold, the agent restarts:
    * macOS applies them only to a process launched after the grant.
+   * `restartAgent`: the agent reports a grant missing that macOS gives this
+   * app, so the agent process predates the grant; it restarts now.
    */
-  async function requestGrants() {
+  async function requestGrants({ restartAgent = false } = {}) {
     const before = await grants();
     if (!before) return null;
     if (before.missing.includes('files')) {
@@ -484,6 +486,7 @@ function setupComputer(deps) {
       }
     }
     const needsRestart = before.missing.includes('accessibility') || before.missing.includes('screenRecording');
+    if (restartAgent === true && !needsRestart) await serviceVerb('restart', (next) => next.serviceActive === true);
     if (needsRestart && !grantWatch) {
       const until = Date.now() + 10 * 60_000;
       grantWatch = setInterval(async () => {
@@ -720,7 +723,7 @@ function setupComputer(deps) {
       case 'computer_grants':
         return grants();
       case 'computer_grants_request':
-        return requestGrants();
+        return requestGrants({ restartAgent: args?.restartAgent === true });
       default:
         throw new Error(`Unknown command: ${cmd}`);
     }

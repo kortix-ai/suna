@@ -239,6 +239,8 @@ test('useSetComputerAccess rejects with the API error, so its message and status
   const config = tunnel.useSetComputerAccess() as Config;
   const error = await config.mutationFn!({ tunnelId: 'tunnel-1', mode: 'always' }).catch((e: unknown) => e);
   expect(error).toBe(refused);
+  // The caller shows the message; a host's global mutation toast must not repeat it.
+  expect(typeof (config as { onError?: unknown }).onError).toBe('function');
 });
 
 test('a listed machine carries the access its agent reports (null before the first report)', () => {

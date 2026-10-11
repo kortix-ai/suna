@@ -706,7 +706,7 @@ export class TunnelAgent {
     this.reportAccess();
     if (wakeDesktopApp(this.home) === 'no-app') {
       clearAccessRequest(asked.id, this.home);
-      throw unconfirmed(`Only the owner can allow more access, on the computer itself. Run \`${accessCommand(change)}\` there.`);
+      throw unconfirmed(`Only the owner can allow more access, on the computer itself. Run ${accessCommand(change)} there.`);
     }
     const hold = this.options.accessHoldMs ?? ACCESS_HOLD_MS;
     const deadline = Date.now() + hold;

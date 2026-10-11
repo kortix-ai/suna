@@ -268,6 +268,9 @@ export function useSetComputerAccess() {
       queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
       queryClient.invalidateQueries({ queryKey: tunnelKeys.connection(vars.tunnelId) });
     },
+    // The caller shows the error: its message says what to do on the machine.
+    // Without this, a host's default mutation `onError` would show it twice.
+    onError: () => {},
   });
 }
 

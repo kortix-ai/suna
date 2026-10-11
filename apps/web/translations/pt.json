@@ -20280,10 +20280,11 @@
         "desktop": "Um agente quer usar sua tela e seu teclado",
         "other": "Um agente quer usar este computador"
       },
-      "requestHint": "Responda aqui ou no aviso deste computador.",
-      "allowHour": "Permitir por 1 hora",
-      "allowDay": "Permitir por 24 horas",
-      "deny": "Negar"
+      "requestHint": "Permita no aviso deste computador ou negue aqui.",
+      "deny": "Negar",
+      "offlineHint": "Este computador está offline. Altere o acesso nele: na barra de menus do Kortix ou com npx @kortix/agent-tunnel access.",
+      "updateHint": "Atualize o Kortix neste computador para alterar o acesso daqui.",
+      "confirmOnComputer": "Confirme no aviso deste computador…"
     },
     "unpairDescription": "Remove este computador do Kortix e de todos os projetos. Ele deixa de se conectar até você conectá-lo de novo.",
     "notConnected": "Não conectado",

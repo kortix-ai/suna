@@ -20280,10 +20280,11 @@
         "desktop": "Un agent veut utiliser votre écran et votre clavier",
         "other": "Un agent veut utiliser cet ordinateur"
       },
-      "requestHint": "Répondez ici ou dans la fenêtre affichée sur cet ordinateur.",
-      "allowHour": "Autoriser 1 heure",
-      "allowDay": "Autoriser 24 heures",
-      "deny": "Refuser"
+      "requestHint": "Autorisez-le dans l'invite sur cet ordinateur, ou refusez-le ici.",
+      "deny": "Refuser",
+      "offlineHint": "Cet ordinateur est hors ligne. Modifiez l'accès sur l'ordinateur : dans la barre des menus Kortix, ou avec npx @kortix/agent-tunnel access.",
+      "updateHint": "Mettez à jour Kortix sur cet ordinateur pour modifier l'accès d'ici.",
+      "confirmOnComputer": "Confirmez dans l'invite sur cet ordinateur…"
     },
     "unpairDescription": "Retire cet ordinateur de Kortix et de chaque projet. Il ne se connecte plus tant que vous ne le reconnectez pas.",
     "notConnected": "Non connecté",
