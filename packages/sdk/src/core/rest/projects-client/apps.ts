@@ -514,6 +514,36 @@ export async function createAppToken(projectId: string, appId: string): Promise<
   );
 }
 
+/** What verifies an App's Kortix sign-in tokens offline, as env values (public, no secret). */
+export interface AppAuthEnv {
+  KORTIX_AUTH_ISSUER: string;
+  KORTIX_AUTH_AUDIENCE: string;
+  /** The project key set inline, as a `data:application/json;base64,…` URL: the reader fetches nothing. */
+  KORTIX_AUTH_JWKS: string;
+}
+
+/**
+ * The env a backend needs to verify the App's sign-in tokens without a network
+ * call (self-hosted Convex takes the key set as a URL and fetches nothing;
+ * `verifyKortixToken` reads the same values). A rotated project key needs a re-run.
+ */
+export async function getAppAuthEnv(projectId: string, appId: string): Promise<AppAuthEnv> {
+  const app = await getApp(projectId, appId);
+  if (!app.auth) throw new Error('This server does not report sign-in values for Apps.');
+  const keySet = unwrap(
+    await backendApi.get<unknown>(`/projects/${projectId}/jwks.json`),
+    'Failed to read the project key set',
+  );
+  const bytes = new TextEncoder().encode(JSON.stringify(keySet));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return {
+    KORTIX_AUTH_ISSUER: app.auth.issuer,
+    KORTIX_AUTH_AUDIENCE: app.auth.audience,
+    KORTIX_AUTH_JWKS: `data:application/json;base64,${btoa(binary)}`,
+  };
+}
+
 export async function getAppAccess(projectId: string, appId: string): Promise<AppAccessConfig> {
   return unwrap(
     await backendApi.get<AppAccessConfig>(`/projects/${projectId}/apps/${appId}/access`),

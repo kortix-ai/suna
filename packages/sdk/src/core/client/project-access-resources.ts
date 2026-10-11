@@ -21,6 +21,7 @@ export function bindProjectAccessResources(projectId: string) {
       remove: (appId: string) => P.deleteApp(projectId, appId),
       /** Capability `member_tokens`: a 15-minute sign-in token for the App, naming the caller. */
       token: (appId: string) => P.createAppToken(projectId, appId),
+      authEnv: (appId: string) => P.getAppAuthEnv(projectId, appId),
       artifacts: {
         register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>
           P.registerAppArtifact(projectId, input),

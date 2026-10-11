@@ -261,16 +261,7 @@ export async function authEnvCommand(rest: string[], options: ContextOptions, js
   if (!target) return fail('auth-env needs an App id or slug');
   const ctx = await context(options);
   if (!ctx) return 1;
-  const app = await scoped(ctx, () => resolveApp(ctx.apps, target));
-  if (!app.auth) return fail('this server does not report sign-in values for Apps');
-  const response = await fetch(app.auth.jwks_uri, { signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) return fail(`could not read the key set (${response.status}) from ${app.auth.jwks_uri}`);
-  const env = {
-    KORTIX_AUTH_ISSUER: app.auth.issuer,
-    KORTIX_AUTH_AUDIENCE: app.auth.audience,
-    // A `data:` URL: Convex takes the key set as a URL and fetches nothing; `verifyKortixToken` reads it too.
-    KORTIX_AUTH_JWKS: `data:application/json;base64,${Buffer.from(JSON.stringify(await response.json())).toString('base64')}`,
-  };
+  const env = await scoped(ctx, async () => ctx.apps.authEnv((await resolveApp(ctx.apps, target)).app_id));
   if (json) emitJson(env);
   else process.stdout.write(Object.entries(env).map(([name, value]) => `${name}=${value}\n`).join(''));
   return 0;

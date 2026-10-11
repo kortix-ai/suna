@@ -249,10 +249,15 @@ describe('kortix apps — capabilities and links', () => {
   test('--help lists the subcommands and no retired one', async () => {
     const r = await runCli(['apps', '--help'], join(tmp, 'none.json'));
     expect(r.code).toBe(0);
-    for (const sub of ['--uses <slugs>', 'link <id|slug> --uses <slugs>', 'unlink <id|slug> --uses <slugs>', 'token <id|slug>', 'connect <id|slug>']) {
+    for (const sub of [
+      '--uses <slugs>', 'link <id|slug> --uses <slugs>', 'unlink <id|slug> --uses <slugs>', 'token <id|slug>', 'connect <id|slug>',
+      'launch --template <name>', 'releases <id|slug>', 'machines [ls] <id|slug>', 'scale count <id|slug> <n>',
+      'exec <id|slug> -- <command…>', 'volumes [ls] <id|slug>', 'labels <id|slug>', 'auth-env <id|slug>',
+    ]) {
       expect(r.stdout).toContain(sub);
     }
-    expect(r.stdout).not.toMatch(/backends|convex|--kind|credentials|dashboard|--confirm/i);
+    // Retired: the convex kind's subcommands and flags. `convex` survives only as a template name.
+    expect(r.stdout).not.toMatch(/backends|--kind|credentials|^ {2}(dashboard|snapshots?|restore|delete-snapshot)\b|--confirm/im);
   });
 
   test('`kortix backends` is gone', async () => {

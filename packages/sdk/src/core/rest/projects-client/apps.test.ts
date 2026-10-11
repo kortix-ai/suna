@@ -10,6 +10,7 @@ import {
   finalizeAppArtifact,
   getApp,
   getAppAccess,
+  getAppAuthEnv,
   getAppDeployment,
   getAppDeploymentLogs,
   listAppAgents,
@@ -182,6 +183,26 @@ test('an App names the Apps it uses and the Apps that use it; create and update 
   const update: UpdateAppInput = { uses: [] };
   await updateApp('project-1', 'app-1', update);
   expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/projects/project-1/apps/app-1', body: { uses: [] } });
+});
+
+test('getAppAuthEnv: issuer, audience and the key set inline as a data: URL (a backend that fetches nothing verifies offline)', async () => {
+  const keys = { keys: [{ kty: 'EC', kid: 'k1', crv: 'P-256', x: 'x', y: 'y' }] };
+  responses.push(
+    { body: { app_id: 'app-2', auth: { issuer: 'https://api.test/v1/projects/project-1', audience: 'app-2', jwks_uri: 'https://api.test/v1/projects/project-1/jwks.json' } } },
+    { body: keys },
+  );
+  const env = await getAppAuthEnv('project-1', 'app-2');
+  expect(last().url).toBe('http://backend.test/v1/projects/project-1/jwks.json');
+  expect(env.KORTIX_AUTH_ISSUER).toBe('https://api.test/v1/projects/project-1');
+  expect(env.KORTIX_AUTH_AUDIENCE).toBe('app-2');
+  const prefix = 'data:application/json;base64,';
+  expect(env.KORTIX_AUTH_JWKS.startsWith(prefix)).toBe(true);
+  expect(JSON.parse(atob(env.KORTIX_AUTH_JWKS.slice(prefix.length)))).toEqual(keys);
+});
+
+test('getAppAuthEnv refuses an App the server reports no sign-in values for', async () => {
+  responses.push({ body: { app_id: 'app-3' } });
+  await expect(getAppAuthEnv('project-1', 'app-3')).rejects.toThrow('sign-in values');
 });
 
 test('an App carries its capabilities and sign-in values; no kind, no instance', () => {
