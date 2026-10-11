@@ -229,7 +229,7 @@ describe('native test-lane workflow', () => {
     expect(laneJob).toContain("|| (github.event.action == 'labeled' && github.event.label.name == 'test')");
     // A later push must not cancel the run a person asked for.
     expect(testWorkflow).toContain(
-      "group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}",
+      "group: tests-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}${{ github.event.action == 'labeled' && '-label' || '' }}",
     );
     expect(laneJob).toContain('fail-fast: false');
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
@@ -289,7 +289,7 @@ describe('native test-lane workflow', () => {
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    // A PR cancels its superseded run; a push or scheduled run queues.
+    // A PR cancels its superseded run; each push SHA has its own group.
     expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
@@ -304,7 +304,7 @@ describe('native test-lane workflow', () => {
     expect(report).toContain('contents: write');
     // The suspects list starts at the last green trunk run of ANY event: with
     // push runs, the newest green trunk run is a push run, not the schedule.
-    expect(report).toContain('runs?branch=dev&status=success&per_page=1');
+    expect(report).toContain('runs?branch=dev&status=success&per_page=100');
     expect(report).not.toContain('event=schedule');
 
     // A red trunk has to reach someone, or nobody learns dev is broken.

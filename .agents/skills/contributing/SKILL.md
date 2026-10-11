@@ -196,7 +196,7 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
 | PR into `main` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `main` (the merge) | the `Tests` lanes at the merge commit (restored 2026-10-11, KRTX-2114) plus `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
+| Push to `dev` (the merge) | the `Tests` lanes at the merge commit (restored 2026-10-11, KRTX-2114) plus `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
 | Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily drift net. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
 | PR into `staging` | the `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |

@@ -43,13 +43,13 @@ on:
   workflow_dispatch:
 
 # A pull request cancels its superseded run: only its newest commit matters.
-# A push, scheduled, or manual run on `dev` QUEUES instead, so it always ends
-# with a verdict.
+# Each push SHA has its own group: GitHub replaces pending runs in a shared
+# group even with cancellation disabled. Schedule/manual runs share a ref group.
 #
 # A labelled run has its own group: a later push (whose lanes skip) must not
 # cancel the run a person asked for. Only re-adding the label supersedes it.
 concurrency:
-  group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
+  group: tests-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}${{ github.event.action == 'labeled' && '-label' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -303,13 +303,24 @@ jobs:
           # Merges land faster than the suite completes, so the red commit is
           # often not the culprit. Name every commit since the last green trunk
           # run of any event: those are the suspects.
-          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&status=success&per_page=1" \
-            --jq '.workflow_runs[0].head_sha // empty' || true)"
+          green=""
           suspects=""
-          if [ -n "$green" ]; then
-            suspects="$(gh api "repos/$REPO/compare/${green}...${SHA}" \
-              --jq '.commits[] | "- `\(.sha[0:10])` \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' || true)"
-          fi
+          # Overlapping pushes can finish out of order. A newer or same-SHA
+          # green is not this failure's baseline; skipped PR runs are not trunk
+          # verdicts either. Search the latest 100 successful trunk runs.
+          candidates="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&status=success&per_page=100" \
+            --jq '.workflow_runs[] | select(.event == "push" or .event == "schedule" or .event == "workflow_dispatch") | .head_sha' || true)"
+          while IFS= read -r candidate; do
+            [ -n "$candidate" ] && [ "$candidate" != "$SHA" ] || continue
+            comparison="$(gh api "repos/$REPO/compare/${candidate}...${SHA}" || true)"
+            # `ahead` proves a strict ancestor; `behind`/`diverged` cannot
+            # identify the commits that led to this failing revision.
+            if [ "$(printf '%s' "$comparison" | jq -r '.status // empty' 2>/dev/null)" = ahead ]; then
+              green="$candidate"
+              suspects="$(printf '%s' "$comparison" | jq -r '.commits[] | "- `\(.sha[0:10])` \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' || true)"
+              break
+            fi
+          done <<< "$candidates"
 
           {
             echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
