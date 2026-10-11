@@ -1,5 +1,5 @@
 /**
- * Machines (Fly machines). A release runs `apps.scale[group] ?? 1` machines per
+ * Machines. A release runs `apps.scale[group] ?? 1` machines per
  * process group. Each machine has a stable `machine_id`; each box that runs it
  * is an instance, one `app_runtimes` row. A new release's instance inherits
  * the machine id (and the volume) of the instance it replaces.
@@ -524,7 +524,7 @@ export async function reconcileAppMachines(
 /**
  * The release command (`deploy.release_command`): once per release, before
  * any machine changes, in a temporary machine from the new image with the
- * release's env and secrets and no volume (Fly verbatim). The box is always
+ * release's env and secrets and no volume. The box is always
  * removed. Returns the exit code and output; the caller fails the release on a
  * non-zero exit.
  */
