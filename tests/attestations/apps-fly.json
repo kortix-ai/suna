@@ -1,0 +1,21 @@
+{
+  "source_hash": "a24781b450e00b494ef9027fde6b38d2117e88ac6bfe1e3848c0c1d04e5587ad",
+  "diff_files": [
+    "apps/api/src/apps/machines.integration.test.ts",
+    "apps/api/src/apps/machines.ts",
+    "apps/web/content/docs/feature-flags/apps.mdx",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/managed/skills/kortix-apps/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-apps/references/bindings.md",
+    "packages/starter/templates/managed/skills/kortix-apps/references/fly-model.md"
+  ],
+  "diff_hash": "2b98a284af01c2e9bcc632eb7998b5497015667ae352b0e27b1e6428874ecfa9",
+  "head": "b45e9748f9d5a510b5c8403fd12f78b21b4e5d5d",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T04:05:00.953Z"
+}

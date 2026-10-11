@@ -48,6 +48,7 @@ export * from './setup-links';
 export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
+export * from './apps-fleet';
 export * from './drives';
 export * from './notifications';
 

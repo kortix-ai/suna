@@ -402,7 +402,7 @@ both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
-`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+`kortix.project(projectId).apps` deploys immutable App releases behind one stable URL, on the Fly.io model: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
 
 ```ts
 const apps = kortix.project(projectId).apps;
@@ -422,19 +422,29 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine, with no budget). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
+Branch on `app.capabilities` (`machines`, `scale`, `exec`, `volumes`, `snapshots`, `static`, …). A call for a capability the App lacks answers `409 app_capability_unsupported`. A backend (database, Convex) is an ordinary server App with a volume; there is no backend type.
 
-`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Only an on-demand server App has a `monthly_budget_usd`; an always-on or `convex` App has `null` and a fixed `estimated_monthly_usd`, and a budget on one answers `400 app_budget_not_applicable`.
+`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Apps have no budget: account credits pay for App compute. An always-on App bills its machines 24/7; an on-demand App only while awake.
 
 ```ts
-const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });
-await apps.waitUntilReady(db.app_id);                 // instance.status 'running', no operation in flight
-await apps.update(site.app_id, { uses: ['db'] });     // the site may mint db tokens and bind to it
-const { env } = await apps.credentials(db.app_id);    // capability admin_credentials (audited)
-await apps.deployments.create(db.app_id, { source: { kind: 'convex', revision: gitSha } }); // record a CLI deploy
-const { snapshots } = await apps.snapshots.list(db.app_id);
-await apps.remove(db.app_id, { confirm: 'db' });      // an App with snapshots needs its typed slug
+await apps.deployments.create(api.app_id, {
+  artifact_id, source: { kind: 'oci_image', image, command: ['node', 'server.js'] },
+  config: {                                              // the release config (kortix.yaml apps.<name> ≈ fly.toml)
+    processes: { app: '', worker: 'node worker.js' },
+    http_service: { internal_port: 3000, access: 'app', processes: ['app'] },
+    mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10, processes: ['app'] }],
+  },
+});
+const machines = await apps.machines.list(api.app_id);  // machine_id stays across releases
+await apps.scale(api.app_id, { worker: 3 });            // 0-20 per group, applied in the background
+const { exit_code, stdout } = await apps.exec(api.app_id, { command: ['ls', '/data'] });  // project.app.admin
+const [data] = await apps.volumes.list(api.app_id);
+const snap = await apps.volumes.snapshot(api.app_id, data.volume_id);
+await apps.volumes.restore(api.app_id, data.volume_id, snap.snapshot_id);  // project.app.admin
+await apps.update(site.app_id, { uses: ['api'], labels: ['frontend'] });    // the site may mint api tokens and bind to it
 ```
+
+`@kortix/sdk/react` adds `useAppMachines`, `useAppVolumes`, and `useAppVolumeSnapshots`.
 
 `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
@@ -562,7 +572,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, and the capability calls: `snapshots.list/create/delete/restore`, `credentials`, `rotateCredentials`, `token`, `log`, `waitUntilReady`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

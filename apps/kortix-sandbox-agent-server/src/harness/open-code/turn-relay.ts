@@ -1,4 +1,5 @@
 import { postTurnStream, relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
+import { flushSessionLogJournal } from '../shared/session-log-journal'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
@@ -164,6 +165,9 @@ export async function relayTurnEndToApi(
 
   // A credential the API has refused, repeatedly and without contradiction,
   if (sessionTokenPresumedDead()) return
+
+  // The turn's messages go to the session log first (at most 3 s), as on pi.
+  await flushSessionLogJournal()
 
   // This is the ONLY signal that finalizes a turn the agent ended without
   for (let attempt = 1; attempt <= 4; attempt++) {

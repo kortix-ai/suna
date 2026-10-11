@@ -10,10 +10,9 @@
  * sealed with the project secret envelope. Kortix mints a token for a member
  * (POST /v1/projects/:projectId/apps/:appId/token) or for the viewer of an App
  * (`/_kortix/token?audience=<slug|id>` on its host, for itself or an App it
- * uses). A verifier needs only the three public values of `authEnv`: a Convex
- * App gets them in its environment (`convex/auth.config.ts` `customJwt`), any
- * other server reads them from the App (`auth`) or discovers the key set from
- * the token's `iss`.
+ * uses). A verifier needs only the three public values of `authEnv`: an App
+ * gets them in its environment, or reads them from the App (`auth`) or discovers
+ * the key set from the token's `iss`.
  *
  * Claims: `sub` (Kortix user id), `email`, `name`, `picture`, `groups` (group
  * names in the account), `group_ids`, `role` (account role), `account_id`,
