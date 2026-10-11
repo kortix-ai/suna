@@ -26,6 +26,10 @@
  *   dropped message stays in the native store, and the P6 boot reconcile
  *   sends it again.
  *
+ * Debug: `KORTIX_SESSION_LOG_DUMP_DIR` (off by default) turns the API into a
+ * directory. Each batch body is written there as JSON and acknowledged at
+ * once; nothing is posted.
+ *
  * Same credential and relay context as every other daemon callback
  * (`sandboxRelayContext`); same backoff as the audit relay (`computeRetryDelay`).
  */
@@ -38,6 +42,8 @@ import {
   type SessionLogSessionPatch,
   type SessionLogThreadUpsert,
 } from '@kortix/api-contract/session-log'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
@@ -70,7 +76,7 @@ export interface SessionLogJournalOptions {
 
 /** A pending revision: a whole message, or a tombstone when `message` is absent. */
 type Entry = { id: string; rev: number; message?: SessionLogMessage }
-type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array }
+type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array<ArrayBuffer> }
 
 export class SessionLogJournal {
   private readonly cursors = new Map<string, ExportCursor>()
@@ -92,6 +98,8 @@ export class SessionLogJournal {
   private wakeBackoff: (() => void) | null = null
   /** Flushes waiting for the drain to finish or to start backing off. */
   private waiters: Array<() => void> = []
+  private readonly dumpDir = process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null
+  private dumped = 0
 
   constructor(
     private readonly port: SessionLogPort,
@@ -235,6 +243,7 @@ export class SessionLogJournal {
 
   /** One POST. True when the batch is settled (acknowledged or dropped); false to back off. */
   private async send(batch: Batch): Promise<boolean> {
+    if (this.dumpDir) return this.dump(batch, this.dumpDir)
     const ctx = sandboxRelayContext()
     if (!ctx) {
       this.off = 'no control plane'
@@ -294,6 +303,20 @@ export class SessionLogJournal {
       return false
     }
     logger.error('[session-log] journal rejected a batch; dropping it', { status: response.status, body: text.slice(0, 200) })
+    for (const e of batch.entries) if (this.dirty.get(e.id) === e) this.dirty.delete(e.id)
+    this.settle(batch)
+    return true
+  }
+
+  /** Debug sink (`KORTIX_SESSION_LOG_DUMP_DIR`): the batch body as JSON in `dir`, acknowledged at once. Nothing is posted. */
+  private dump(batch: Batch, dir: string): boolean {
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      writeFileSync(join(dir, `batch-${Date.now()}-${++this.dumped}.json`), new TextDecoder().decode(Bun.gunzipSync(batch.body)), { mode: 0o600 })
+    } catch (err) {
+      logger.warn('[session-log] journal dump failed', { dir, err: (err as Error).message })
+      return false
+    }
     for (const e of batch.entries) if (this.dirty.get(e.id) === e) this.dirty.delete(e.id)
     this.settle(batch)
     return true

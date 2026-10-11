@@ -47,6 +47,8 @@ import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
 import type { PiRuntimeHooks } from './runtime'
 import { createPiHarnessService, type PiHarnessService } from './service'
+import { createPiSessionLogPort } from './session-log'
+import { startSessionLogJournal } from '../shared/session-log-journal'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
@@ -230,6 +232,13 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     // A builder boot with no session (image warm-up): nothing to claim or pin.
     logger.info('[boot] no session bound to this box; pi idle', { timeline: bootState.timeline })
     return
+  }
+
+  // ── The session log (P2.5) ──────────────────────────────────────────────
+  // Before the first turn, so its turn end flushes it. Nothing mints a session
+  // generation before P6's restore, so this box writes under generation 0.
+  if (startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })) {
+    logger.info('[session-log] journal started', { harness: 'pi', generation: 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
   }
 
   // ── The session's root and its first turn ───────────────────────────────
