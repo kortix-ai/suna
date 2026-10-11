@@ -276,8 +276,8 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `dev` | nothing, unless a person adds `test` (~20 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `dev` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
-| Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
+| Push to `dev` (after the merge) | the `Tests` lanes at the merge commit (the fresh-checkout trunk run the merge gate watches) plus the cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
+| Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily drift net. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
@@ -350,9 +350,10 @@ sandbox — it has no skip and must attest `pass`.
    `/health` response alone is not deployment proof. The run comments "Live on
    dev" on the merged pull request, and "Not live on dev yet" names the
    surface that failed. The surfaces and their checks are in
-   `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
-   attestation (`pnpm test:verify`) was the gate, and the scheduled daily
-   `Tests` run on `dev` is the backstop. A red scheduled run comments the
+   `.github/workflows/deploy-dev.yml`. The merge push runs the `Tests` lanes
+   at the merge commit: the attestation (`pnpm test:verify`) was the gate, and
+   the fresh-checkout push run is the independent second opinion; the daily
+   scheduled run stays as the drift net. A red trunk run comments the
    failing lanes and every commit since the last green run. The author whose
    commit broke `dev` fixes forward. If `dev` is still red 1 hour after the
    comment, anyone may revert the culprit PR. A red run never blocks a merge or
@@ -569,12 +570,17 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The lanes run daily on `dev` (`schedule`), on a pull request into `staging`,
-  once when a person adds the `test` label to a pull request, and on manual
-  dispatch. A push to `dev` does not run them (Actions minutes, 2026-10-03). A
-  scheduled run blocks nothing: a red run comments the failing lanes on the
-  `dev` HEAD commit. A pull request into `prod` runs
-  `tests-release.yml` against deployed staging instead.
+- The lanes run on every push to `dev` (every merge), daily on `dev`
+  (`schedule`), on a pull request into `staging`, once when a person adds the
+  `test` label to a pull request, and on manual dispatch. #8844 removed the
+  push trigger on 2026-10-03 to save Actions minutes; KRTX-2114 restored it on
+  2026-10-11 — on a public repo the hosted runners are free, and with no push
+  run a fresh-checkout red surfaced only at the next daily schedule (the
+  2026-10-08..10 schedule runs were red for three days and nothing routed on
+  them). No run blocks a merge into `dev`: a red run comments the failing
+  lanes and every commit since the last green trunk run on the `dev` HEAD
+  commit. A pull request into `prod` runs `tests-release.yml` against
+  deployed staging instead.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
   into `dev`, and pins both label gates to the label-added event.
