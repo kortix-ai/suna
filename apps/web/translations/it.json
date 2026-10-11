@@ -2367,6 +2367,8 @@
       },
       "errors": {
         "unexpected": "Si è verificato un errore imprevisto",
+        "submitTimedOut": "Sta richiedendo più tempo del previsto. Riprova.",
+        "networkFailed": "Impossibile inviare la richiesta. Riprova.",
         "signupsClosed": "Le registrazioni sono momentaneamente chiuse. Contatta l'amministratore o richiedi l'accesso.",
         "ssoRequired": "La tua organizzazione richiede il single sign-on. Continua invece con SSO.",
         "incorrectPassword": "Password errata. Riprova oppure reimpostala tramite “Hai dimenticato la password?”.",
