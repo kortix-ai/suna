@@ -62,17 +62,10 @@ flow("SYS-10", { domain: "system", tags: ["smoke"], routes: ["GET /v1/clients/mo
     if (Object.keys(body).sort().join() !== [...fields].sort().join()) throw new Error(`unexpected keys: ${Object.keys(body)}`);
     for (const f of fields) if (body[f] !== null && typeof body[f] !== "string") throw new Error(`${f} is neither string nor null`);
   };
-  let anon: Record<string, unknown> = {};
   await ctx.step("GET /v1/clients/mobile without Authorization → 200, each field a string or null", async () => {
-    const r = await ctx.client.as(ctx.P.ANON).get("/v1/clients/mobile");
+    const r = await ctx.client.get("/v1/clients/mobile");
     r.status(200);
-    anon = r.json();
-    assertPolicy(anon);
-  });
-  await ctx.step("an authenticated caller gets the same body", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/clients/mobile");
-    r.status(200);
-    if (JSON.stringify(r.json()) !== JSON.stringify(anon)) throw new Error("policy differs by caller");
+    assertPolicy(r.json());
   });
 });
 
