@@ -189,7 +189,7 @@ describe('REST call timeout', () => {
 
   // A connection to a stalled server: honors the fetch abort contract
   // (rejects with the signal's reason when aborted) but never responds.
-  const hungFetch = (_url: string | URL, init?: RequestInit): Promise<never> => {
+  const hungFetch = (_url: Parameters<typeof fetch>[0], init?: RequestInit): Promise<never> => {
     const signal = init?.signal;
     return new Promise<never>((_, reject) => {
       signal?.addEventListener('abort', () => reject(signal.reason));
@@ -197,7 +197,7 @@ describe('REST call timeout', () => {
   };
 
   test('listStoppedDaytonaSandboxesOldestFirst rejects a never-resolving fetch within the budget', async () => {
-    global.fetch = mock(hungFetch) as unknown as typeof fetch;
+    global.fetch = Object.assign(mock(hungFetch), { preconnect: originalFetch.preconnect });
     const outcome = await settleWithin(
       listStoppedDaytonaSandboxesOldestFirst(10),
       SETTLE_BUDGET_MS,
@@ -207,7 +207,7 @@ describe('REST call timeout', () => {
   });
 
   test('archiveDaytonaSandboxById returns false on a never-resolving fetch within the budget', async () => {
-    global.fetch = mock(hungFetch) as unknown as typeof fetch;
+    global.fetch = Object.assign(mock(hungFetch), { preconnect: originalFetch.preconnect });
     const outcome = await settleWithin(archiveDaytonaSandboxById('sb-1'), SETTLE_BUDGET_MS);
     expect(outcome).toBe(false);
   });
