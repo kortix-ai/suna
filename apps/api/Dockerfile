@@ -249,6 +249,10 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+# manifest-schema imports @kortix/shared/app-config. pnpm links it in the
+# package's own node_modules; without this the API exits at startup with
+# "Cannot find module '@kortix/shared/app-config'".
+COPY --from=deps /app/packages/manifest-schema/node_modules ./packages/manifest-schema/node_modules
 COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
 COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
 COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json
