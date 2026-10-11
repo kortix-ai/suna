@@ -42,7 +42,10 @@
  * tombstoned row with its seq and rejects a second row on (session, thread,
  * seq). The first time the adapter sees a message it issues the thread's next
  * seq, in `fromV1`'s order (OpenCode's `time_created`, then id, which is the
- * order OpenCode creates them in). The map lives in
+ * order OpenCode creates them in). A message of the live turn (P4.3b) gets
+ * its seq when the journal first sees its v1 frames: OpenCode stores a message
+ * before it publishes it, and publishes a thread's messages in the order it
+ * creates them, so the turn end's collection reads the same seq. The map lives in
  * `$KORTIX_RUNTIME_STATE_DIR/opencode-session-log.json`, so a restart keeps
  * every seq, and a revert (OpenCode deletes the messages) never hands a deleted
  * message's seq to the next one. On a store without reverts the seqs equal
@@ -318,6 +321,18 @@ export function createOpenCodeSessionLogPort(options: {
     async fingerprint(): Promise<string> {
       const store = read()
       return sha256(JSON.stringify(store ? [store.sessions, store.messages, store.parts, store.todos] : null))
+    },
+    live(threadId: string, messageId: string) {
+      const state = (seqs[threadId] ??= { next: 1, seqs: {} })
+      if (state.seqs[messageId] === undefined) {
+        state.seqs[messageId] = state.next++
+        try {
+          writeSeqs(statePath, seqs)
+        } catch {
+          unsaved = true // changes() writes it before any batch leaves
+        }
+      }
+      return { seq: state.seqs[messageId]! }
     },
   }
 }

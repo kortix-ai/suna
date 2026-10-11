@@ -46,3 +46,81 @@ export function volumesFor(accountId: string | null | undefined): VolumesDecisio
 export function volumesEnabledFor(accountId: string | null | undefined): boolean {
   return volumesFor(accountId).enabled;
 }
+
+/** This organization's own Volumes entry, if it has one (undefined ⇒ the global switch and rollout decide). */
+export function volumesOrgEntry(accountId: string | null | undefined): boolean | undefined {
+  const id = (accountId ?? '').toLowerCase();
+  if (!id) return undefined;
+  return bootModePolicy().policy.volumes.orgs[id];
+}
+
+/**
+ * Set (`true`/`false`) or clear (`null`) one organization's Volumes entry in
+ * the same policy row Admin → Volumes edits. The merge runs in SQL on the
+ * stored value, so it never overwrites a concurrent change to another field.
+ */
+export async function setVolumesForOrg(accountId: string, enabled: boolean | null): Promise<void> {
+  const id = accountId.toLowerCase();
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('invalid organization id');
+  const { db } = await import('../../shared/db');
+  const { sql } = await import('drizzle-orm');
+  const orgs = (value: ReturnType<typeof sql>) =>
+    enabled === null
+      ? sql`coalesce(${value}->'volumes'->'orgs', '{}'::jsonb) - ${id}::text`
+      : sql`coalesce(${value}->'volumes'->'orgs', '{}'::jsonb) || jsonb_build_object(${id}::text, ${enabled}::boolean)`;
+  const merged = (value: ReturnType<typeof sql>) =>
+    sql`coalesce(${value}, '{}'::jsonb) || jsonb_build_object('volumes', coalesce(${value}->'volumes', '{}'::jsonb) || jsonb_build_object('orgs', ${orgs(value)}))`;
+  await db.execute(sql`
+    INSERT INTO kortix.platform_settings (key, value, updated_at)
+    VALUES (${BOOT_MODE_SETTING_KEY}, ${merged(sql`NULL::jsonb`)}, now())
+    ON CONFLICT (key) DO UPDATE
+      SET value = ${merged(sql`kortix.platform_settings.value`)}, updated_at = now()
+  `);
+  await setting.refresh();
+}
+
+/**
+ * Stateless sessions for this organization: Volumes is on and the
+ * organization's boot mode (its own rule, else the default) is `volume`, so a
+ * stopped session gives up its box and wakes on a fresh one.
+ */
+export function statelessEnabledFor(accountId: string | null | undefined): boolean {
+  const id = (accountId ?? '').toLowerCase();
+  if (!id || !volumesEnabledFor(id)) return false;
+  const { policy } = bootModePolicy();
+  if (policy.killSwitch) return false;
+  return (policy.orgs[id] ?? policy.default).mode === 'volume';
+}
+
+/** This organization's own boot-mode rule, if it has one. */
+export function bootModeOrgEntry(accountId: string | null | undefined): unknown {
+  const id = (accountId ?? '').toLowerCase();
+  if (!id) return undefined;
+  return bootModePolicy().policy.orgs[id];
+}
+
+/**
+ * Set the organization's boot mode to `volume` (true) or `standard` (false),
+ * or clear its rule (null, back to the default), in the same policy row
+ * Admin → Volumes edits. Merged in SQL so other fields are never overwritten.
+ */
+export async function setStatelessForOrg(accountId: string, enabled: boolean | null): Promise<void> {
+  const id = accountId.toLowerCase();
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('invalid organization id');
+  const { db } = await import('../../shared/db');
+  const { sql } = await import('drizzle-orm');
+  const mode = enabled ? 'volume' : 'standard';
+  const orgs = (value: ReturnType<typeof sql>) =>
+    enabled === null
+      ? sql`coalesce(${value}->'orgs', '{}'::jsonb) - ${id}::text`
+      : sql`coalesce(${value}->'orgs', '{}'::jsonb) || jsonb_build_object(${id}::text, jsonb_build_object('mode', ${mode}::text, 'standardFallback', true))`;
+  const merged = (value: ReturnType<typeof sql>) =>
+    sql`coalesce(${value}, '{}'::jsonb) || jsonb_build_object('orgs', ${orgs(value)})`;
+  await db.execute(sql`
+    INSERT INTO kortix.platform_settings (key, value, updated_at)
+    VALUES (${BOOT_MODE_SETTING_KEY}, ${merged(sql`NULL::jsonb`)}, now())
+    ON CONFLICT (key) DO UPDATE
+      SET value = ${merged(sql`kortix.platform_settings.value`)}, updated_at = now()
+  `);
+  await setting.refresh();
+}

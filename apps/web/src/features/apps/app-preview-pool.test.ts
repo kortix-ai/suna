@@ -22,11 +22,15 @@ class FakeElement {
     return this === body || (this.parentElement?.isConnected ?? false);
   }
   appendChild(child: FakeElement) {
+    const wasConnected = child.isConnected;
     child.remove();
     this.children.push(child);
     child.parentElement = this;
+    if (child.tag !== 'iframe' || !this.isConnected) return;
+    // HTML: a frame inserted with no src loads its initial about:blank and fires `load`.
+    if (!child.source) child.listeners.get('load')?.();
     // A plain re-parent reloads a frame; moveBefore does not.
-    if (child.tag === 'iframe' && child.source) child.loads += 1;
+    else if (wasConnected) child.loads += 1;
   }
   moveBefore(child: FakeElement) {
     child.remove();
@@ -101,6 +105,14 @@ test('a frame loads once, parks off screen, and moves between the card and the b
 
   expect(frame.moves).toBe(4);
   expect(frame.loads).toBe(1);
+});
+
+test('a new frame stays loading until its App loads, not on the about:blank insert', async () => {
+  const pool = await import('./app-preview-pool');
+  pool.ensureFrame('d:1', 'https://d.example.test/', attributes);
+  expect(pool.frameStatus('d:1')).toBe('loading');
+  frames().find((node) => node.dataset.frameKey === 'd:1')!.listeners.get('load')!();
+  expect(pool.frameStatus('d:1')).toBe('loaded');
 });
 
 test('Refresh loads the App again from a fresh URL; load events drive the status', async () => {

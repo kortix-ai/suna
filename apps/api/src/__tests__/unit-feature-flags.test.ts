@@ -39,7 +39,10 @@ describe('registry ↔ contract', () => {
         .sort(),
     ).toEqual(
       [...FEATURE_FLAG_KEYS]
-        .filter((key) => !REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.catalogHidden)
+        .filter((key) => {
+          const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
+          return !def?.catalogHidden && !def?.derivedFrom;
+        })
         .sort(),
     );
   });
@@ -382,8 +385,9 @@ describe('catalogHidden', () => {
     });
   }
 
-  test('every offered flag is writable by project admins (operator_only false)', () => {
-    for (const f of buildFeatureFlagCatalog({})) {
+  test('every offered project flag is writable by project admins (operator_only false)', () => {
+    // An organization flag (`volumes`) is listed, but only a platform operator writes it.
+    for (const f of buildFeatureFlagCatalog({}).filter((f) => f.scope === 'project')) {
       expect(f.operator_only).toBe(false);
       expect(isOperatorOnlyFeatureFlag(f.key)).toBe(false);
     }
