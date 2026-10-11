@@ -226,6 +226,12 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
+  /**
+   * Harness context that rides beside `initial_prompt` and is delivered to the
+   * model as a synthetic (model-only) message part — the transcript keeps
+   * showing the caller's own words. At most 8192 characters.
+   */
+  initial_context?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
   /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
