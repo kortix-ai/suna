@@ -1,0 +1,18 @@
+{
+  "source_hash": "e5583671d3c698ed95ce91e16c8c8c39076859f96ada1d832d6ff699263a9154",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-11T123700Z-typecheck-a-shared-workspace-package-under-the-strictest-con.md",
+    "packages/api-contract/src/session-log/v1.ts",
+    "tests/bin/package-quality.ts"
+  ],
+  "diff_hash": "04e2c9905de950cfa2b6b8242ad194fc4ecb7d6b7ad80a49f0e4352a342d0fac",
+  "head": "3d5a3839ec00c220f4172962aac116a1d331abc7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T12:47:45.825Z"
+}
