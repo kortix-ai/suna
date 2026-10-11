@@ -48,6 +48,13 @@ export function deviceSessionPolicy(bucket: string, prefix: string, deviceId: st
         Resource: [`arn:aws:s3:::${bucket}/${folder}/*`],
       },
       {
+        // The account policy is the only policy: a device never writes one of its own.
+        Sid: 'NoDevicePolicy',
+        Effect: 'Deny',
+        Action: ['s3:PutObject', 's3:DeleteObject'],
+        Resource: [`arn:aws:s3:::${bucket}/${folder}/policy.json`],
+      },
+      {
         Sid: 'AccountPolicy',
         Effect: 'Allow',
         Action: ['s3:GetObject'],

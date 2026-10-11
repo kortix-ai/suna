@@ -38,6 +38,15 @@ test('the issued credentials match the engine’s issuer-credentials schema and 
   expect(JSON.parse(String(sent[0]!.Policy))).toEqual(deviceSessionPolicy('kortix-capture', PREFIX, DEVICE));
 });
 
+test('a device cannot write or delete its own policy.json: the account policy stays the only one', () => {
+  const policy = deviceSessionPolicy('kortix-capture', PREFIX, DEVICE);
+  const deny = policy.Statement.find((s) => s.Effect === 'Deny');
+  expect(deny).toMatchObject({
+    Action: ['s3:PutObject', 's3:DeleteObject'],
+    Resource: [`arn:aws:s3:::kortix-capture/${PREFIX}/${DEVICE}/policy.json`],
+  });
+});
+
 test('the session policy reaches exactly one device folder (read, write, delete, multipart), the project policy.json, and a prefix-bound list', () => {
   const policy = deviceSessionPolicy('kortix-capture', PREFIX, DEVICE);
   const byId = Object.fromEntries(policy.Statement.map((s) => [s.Sid, s]));
@@ -54,7 +63,7 @@ test('the session policy reaches exactly one device folder (read, write, delete,
   });
   const flat = JSON.stringify(policy);
   // Delete reaches the device folder only: never the project policy.json or another device.
-  expect(policy.Statement.filter((s) => s.Action.includes('s3:DeleteObject')).map((s) => s.Resource)).toEqual([[`arn:aws:s3:::kortix-capture/${PREFIX}/${DEVICE}/*`]]);
+  expect(policy.Statement.filter((s) => s.Effect === 'Allow' && s.Action.includes('s3:DeleteObject')).map((s) => s.Resource)).toEqual([[`arn:aws:s3:::kortix-capture/${PREFIX}/${DEVICE}/*`]]);
   expect(flat).not.toContain('DeleteObjects');
   expect(flat).not.toContain('"s3:*"');
   expect(flat).not.toContain(`${PREFIX}/*`);
