@@ -10,8 +10,9 @@ name: Mobile OTA
 #                             dev-backend builds; `production` ships the `prod`
 #                             branch, never unreleased dev code
 #
-# No push trigger: since 2026-10-03 a push to dev starts only cheap guards and
-# path-gated infra (tests/unit/sandbox-workflow.test.ts, Actions minutes).
+# No push trigger: a push to dev already runs the Tests lanes, the cheap
+# guards and path-gated infra (tests.yml, tests/unit/sandbox-workflow.test.ts);
+# OTA builds publish when prod deploys (workflow_run) or on a manual dispatch.
 #
 # Rollback and the full runbook: apps/mobile/BUILD_GUIDE.md.
 
