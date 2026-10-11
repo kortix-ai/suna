@@ -26,7 +26,7 @@ session) the command fails with 403 capture_no_human.
 
 Subcommands:
   search <query>    Full-text search, newest first.
-  timeline          One day: what ran when (app, window) and the activity ranges.
+  timeline          One day: what ran when (app, window), in UTC.
   frame <id>        One screen frame with its full on-screen text.
 
 Options:
@@ -113,20 +113,14 @@ export async function runCapture(argv: string[]): Promise<number> {
         getMyCaptureTimeline(f.from || f.to ? { from: f.from, to: f.to } : { day: f.day }),
       );
       if (json) return (emitJson(timeline), 0);
-      if (timeline.runs.length === 0 && timeline.ranges.length === 0) {
+      if (timeline.runs.length === 0) {
         process.stdout.write(`  ${C.dim}Nothing recorded from ${timeline.from} to ${timeline.to}.${C.reset}\n`);
         return 0;
       }
-      process.stdout.write(`\n  ${C.dim}${pad('START', 22)}${pad('TIME', 9)}APP — WINDOW${C.reset}\n`);
+      process.stdout.write(`\n  ${C.dim}${pad('START (UTC)', 22)}${pad('TIME', 9)}APP — WINDOW${C.reset}\n`);
       for (const run of timeline.runs) {
         const span = Date.parse(run.end_at) - Date.parse(run.start_at);
         process.stdout.write(`  ${pad(run.start_at.slice(0, 19).replace('T', ' '), 22)}${pad(minutes(span), 9)}${run.app ?? '-'} — ${run.title ?? ''}\n`);
-      }
-      if (timeline.ranges.length) {
-        process.stdout.write(`\n  ${C.dim}RANGES${C.reset}\n`);
-        for (const range of timeline.ranges) {
-          process.stdout.write(`  ${range.start_at.slice(11, 16)}–${range.end_at.slice(11, 16)}  ${range.title ?? range.source}  ${C.dim}${range.status}${C.reset}\n`);
-        }
       }
       process.stdout.write('\n');
       return 0;

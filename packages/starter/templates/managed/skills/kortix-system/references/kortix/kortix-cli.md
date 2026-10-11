@@ -408,7 +408,7 @@ switched on per account (off by default); while it is off the API answers
 | Command | What it does |
 | --- | --- |
 | `kortix capture search "<words>" [--kinds screen,actions,audio] [--app <name>] [--from <iso>] [--to <iso>] [--limit n] [--json]` | Full-text search, newest first: one hit per screen window, action or audio line, with a snippet and an id. |
-| `kortix capture timeline [--day YYYY-MM-DD] [--json]` | One UTC day: what ran when (app — window) and the activity ranges. |
+| `kortix capture timeline [--day YYYY-MM-DD] [--json]` | One UTC day: what ran when (app — window). |
 | `kortix capture frame <frame_id> [--json]` | One screen frame with its full on-screen text. |
 
 The timeline is personal data. Read the least that answers the task, treat

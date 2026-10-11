@@ -431,7 +431,7 @@ flow(
         (await trigger.client.get(path(R.meTimeline), { query: { day: '2026-10-01' } })).status(403).body().has('$.code', 'capture_no_human');
       });
 
-      await ctx.step('real CLI inside the session: `kortix capture search <marker> --json` exits 0 with the member’s hits; `capture frame` prints the text', async () => {
+      await ctx.step('real CLI inside the session: `kortix capture search <marker> --json` exits 0 with the member’s hits; `capture frame` prints the text; `capture timeline --day` prints the day (runs, displays, focus)', async () => {
         const env = { KORTIX_TOKEN: own.secret, KORTIX_API_URL: ctx.env.apiUrl, KORTIX_PROJECT_ID: project.id, KORTIX_SESSION_ID: own.sessionId };
         const searched = await sandbox.run(['capture', 'search', marker, '--json'], { env });
         if (searched.exitCode !== 0) throw new Error(`capture search exit ${searched.exitCode}: ${searched.all.slice(0, 600)}`);
@@ -440,6 +440,12 @@ flow(
         const frameId = result.hits.find((h) => h.kind === 'screen')!.id;
         const frame = await sandbox.run(['capture', 'frame', frameId], { env });
         if (frame.exitCode !== 0 || !frame.stdout.includes('quarterly roadmap')) throw new Error(`capture frame: ${frame.all.slice(0, 400)}`);
+        const day = await sandbox.run(['capture', 'timeline', '--day', '2026-10-01', '--json'], { env });
+        if (day.exitCode !== 0) throw new Error(`capture timeline exit ${day.exitCode}: ${day.all.slice(0, 600)}`);
+        const timeline = JSON.parse(day.stdout.trim()) as { runs: unknown[]; displays: unknown[]; focus: unknown[] };
+        if (!timeline.runs.length || !Array.isArray(timeline.displays) || !Array.isArray(timeline.focus)) throw new Error(`capture timeline: ${day.stdout.slice(0, 400)}`);
+        const table = await sandbox.run(['capture', 'timeline', '--day', '2026-10-01'], { env });
+        if (table.exitCode !== 0 || !table.stdout.includes('START (UTC)')) throw new Error(`capture timeline table: ${table.all.slice(0, 400)}`);
       });
 
       await ctx.step('each agent read wrote a capture.agent_read row for the member', async () => {
