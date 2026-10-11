@@ -1,14 +1,8 @@
 /**
- * Apps of kind `convex` and the capability routes. A `convex` App is a
- * self-hosted Convex backend in its own Platinum machine; clients branch on
- * `capabilities`, never on `kind`. Maps to spec section 34 (APP-9).
- *
- * The local profile has no Platinum, so a `convex` create answers 409
- * `app_kind_unavailable` here, and the capability routes are proven on a web
- * App, which lacks every one of them (409 `app_capability_unsupported`). The
- * machine path (provision, snapshots, restore, credentials, retention) is
- * proven by the DB suites `apps/api/src/apps/kinds/convex/*.integration.test.ts`
- * against a fake Platinum, and on a deployed environment.
+ * The App capability surface, links and sign-in tokens. Clients branch on
+ * `capabilities`; the capability routes that retired with the `convex` kind
+ * (snapshots, restore, credentials, logs) answer 404. Maps to spec section 34
+ * (APP-9).
  *
  * APP-10: one sign-in issuer per project, tokens for any App as audience, and
  * the App host's `/_kortix/token` and bindings mount gated by `uses` links.
@@ -20,14 +14,13 @@ import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
-const CAPABILITY_ROUTES = [
-  { method: "get", path: "/v1/projects/:projectId/apps/:appId/snapshots", capability: "snapshots" },
-  { method: "post", path: "/v1/projects/:projectId/apps/:appId/snapshots", capability: "snapshots" },
-  { method: "del", path: "/v1/projects/:projectId/apps/:appId/snapshots/:snapshotId", capability: "snapshots" },
-  { method: "post", path: "/v1/projects/:projectId/apps/:appId/restore", capability: "restore" },
-  { method: "get", path: "/v1/projects/:projectId/apps/:appId/credentials", capability: "admin_credentials" },
-  { method: "post", path: "/v1/projects/:projectId/apps/:appId/rotate-credentials", capability: "admin_credentials" },
-  { method: "get", path: "/v1/projects/:projectId/apps/:appId/logs", capability: "logs" },
+const RETIRED_ROUTES = [
+  { method: "get", path: "/v1/projects/:projectId/apps/:appId/snapshots" },
+  { method: "post", path: "/v1/projects/:projectId/apps/:appId/snapshots" },
+  { method: "post", path: "/v1/projects/:projectId/apps/:appId/restore" },
+  { method: "get", path: "/v1/projects/:projectId/apps/:appId/credentials" },
+  { method: "post", path: "/v1/projects/:projectId/apps/:appId/rotate-credentials" },
+  { method: "get", path: "/v1/projects/:projectId/apps/:appId/logs" },
 ] as const;
 
 flow(
@@ -39,13 +32,6 @@ flow(
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
       "DELETE /v1/projects/:projectId/apps/:appId",
-      "GET /v1/projects/:projectId/apps/:appId/snapshots",
-      "POST /v1/projects/:projectId/apps/:appId/snapshots",
-      "DELETE /v1/projects/:projectId/apps/:appId/snapshots/:snapshotId",
-      "POST /v1/projects/:projectId/apps/:appId/restore",
-      "GET /v1/projects/:projectId/apps/:appId/credentials",
-      "POST /v1/projects/:projectId/apps/:appId/rotate-credentials",
-      "GET /v1/projects/:projectId/apps/:appId/logs",
       "GET /v1/projects/:projectId/apps",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/:appId/token",
@@ -57,111 +43,49 @@ flow(
     const projectParams = { projectId: project.id };
     let webAppId = "";
     let otherAppId = "";
-    let convexAppId = "";
-    const convexSlug = `cvx-${ctx.fixtures.name("main").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40)}`.replace(/-+$/, "");
+    const appSlug = (name: string) => ctx.fixtures.name(name).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40).replace(/-+$/, "");
 
-    await ctx.step("apps flag off: a convex create and every capability route answer 403 feature_disabled", async () => {
+    await ctx.step("apps flag off: the token route answers 403 feature_disabled", async () => {
       await setFeatureAsOperator(ctx, project.id, "apps", null);
-      const create = await owner.post(
-        "/v1/projects/:projectId/apps",
-        { kind: "convex", slug: "main", name: "main" },
-        { params: projectParams },
-      );
-      create.status(403).body().has("$.code", "feature_disabled").has("$.feature", "apps");
-      const params = { ...projectParams, appId: UNKNOWN_ID, snapshotId: "snap_none" };
-      for (const route of CAPABILITY_ROUTES) {
-        const body = route.path.endsWith("/restore") ? { snapshot_id: "snap_none" } : {};
-        const response =
-          route.method === "get" || route.method === "del"
-            ? await owner[route.method](route.path, { params })
-            : await owner.post(route.path, body, { params });
-        response.status(403).body().has("$.code", "feature_disabled");
-      }
+      const params = { ...projectParams, appId: UNKNOWN_ID };
+      (await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params }))
+        .status(403)
+        .body()
+        .has("$.code", "feature_disabled");
     });
 
-    await ctx.step("an operator enables apps; an invalid kind or slug answers 400 before any machine is requested", async () => {
+    await ctx.step("an operator enables apps; an invalid slug answers 400", async () => {
       await setFeatureAsOperator(ctx, project.id, "apps", true);
       (
-        await owner.post("/v1/projects/:projectId/apps", { kind: "mysql", slug: "db", name: "db" }, { params: projectParams })
-      ).status(400);
-      (
-        await owner.post("/v1/projects/:projectId/apps", { kind: "convex", slug: "Bad Slug", name: "x" }, { params: projectParams })
+        await owner.post("/v1/projects/:projectId/apps", { slug: "Bad Slug", name: "x" }, { params: projectParams })
       ).status(400);
     });
 
-    await ctx.step("a convex create: 201 provisioning where Platinum is configured, else 409 app_kind_unavailable; always_on false or a budget → 400", async () => {
-      (
-        await owner.post(
-          "/v1/projects/:projectId/apps",
-          { kind: "convex", slug: "sleepy", name: "sleepy", always_on: false },
-          { params: projectParams },
-        )
-      )
-        .status([400, 409])
-        .body()
-        .exists("$.code");
-      // A convex App costs its size 24/7: it has no budget to set.
-      const budgeted = await owner.post(
-        "/v1/projects/:projectId/apps",
-        { kind: "convex", slug: "budgeted", name: "budgeted", monthly_budget_usd: 50 },
-        { params: projectParams },
-      );
-      budgeted.status([400, 409]);
-      budgeted.body().has("$.code", budgeted.statusCode === 400 ? "app_budget_not_applicable" : "app_kind_unavailable");
-      const create = await owner.post(
-        "/v1/projects/:projectId/apps",
-        { kind: "convex", slug: convexSlug, name: "main", uses: [] },
-        { params: projectParams },
-      );
-      create.status([201, 409]);
-      if (create.statusCode === 409) {
-        create.body().has("$.code", "app_kind_unavailable");
-      } else {
-        convexAppId = create.json<{ app_id: string }>().app_id;
-        create
-          .body()
-          .has("$.kind", "convex")
-          .has("$.always_on", true)
-          .has("$.monthly_budget_usd", null)
-          .has("$.instance.budget_alert", null)
-          .has("$.instance.status", "provisioning")
-          .has("$.capabilities", ["deployments", "snapshots", "restore", "admin_credentials", "dashboard", "logs", "member_tokens"]);
-        (
-          await owner.patch(
-            "/v1/projects/:projectId/apps/:appId",
-            { monthly_budget_usd: 50 },
-            { params: { ...projectParams, appId: convexAppId } },
-          )
-        ).status(400).body().has("$.code", "app_budget_not_applicable");
-      }
-    });
-
-    await ctx.step("a web App lacks every convex capability route: 409 app_capability_unsupported naming the capability", async () => {
+    await ctx.step("a create answers 201 with capabilities, no kind, no instance and no budget; a `kind` in the body is ignored", async () => {
       const created = await owner.post(
         "/v1/projects/:projectId/apps",
-        { slug: ctx.fixtures.name("site").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40), name: "site" },
+        { slug: appSlug("site"), name: "site", kind: "convex" },
         { params: projectParams },
       );
-      created.status(201).body().has("$.kind", "web").has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"]);
+      created.status(201).body().has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"]);
+      const body = created.json<Record<string, unknown>>();
+      for (const retired of ["kind", "instance", "monthly_budget_usd"]) {
+        if (retired in body) throw new Error(`an App carries ${retired}: ${created.text()}`);
+      }
       webAppId = created.json<{ app_id: string }>().app_id;
+    });
+
+    await ctx.step("the capability routes that retired with the convex kind answer 404", async () => {
       const params = { ...projectParams, appId: webAppId, snapshotId: "snap_none" };
-      for (const route of CAPABILITY_ROUTES) {
-        const body = route.path.endsWith("/restore") ? { snapshot_id: "snap_none" } : {};
+      for (const route of RETIRED_ROUTES) {
         const response =
-          route.method === "get" || route.method === "del"
-            ? await owner[route.method](route.path, { params })
-            : await owner.post(route.path, body, { params });
-        response
-          .status(409)
-          .body()
-          .has("$.code", "app_capability_unsupported")
-          .has("$.capability", route.capability)
-          .has("$.kind", "web");
+          route.method === "get" ? await owner.get(route.path, { params }) : await owner.post(route.path, {}, { params });
+        response.status(404);
       }
     });
 
-    await ctx.step("the real CLI: link/unlink set `uses`, show prints kind and capabilities, a missing capability exits 1 before the route, token prints a JWT", async () => {
-      const otherSlug = ctx.fixtures.name("other").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40).replace(/-+$/, "");
+    await ctx.step("the real CLI: link/unlink set `uses`, show prints capabilities, a retired subcommand exits nonzero, token prints a JWT", async () => {
+      const otherSlug = appSlug("other");
       const other = await owner.post("/v1/projects/:projectId/apps", { slug: otherSlug, name: "other" }, { params: projectParams });
       other.status(201);
       otherAppId = other.json<{ app_id: string }>().app_id;
@@ -184,14 +108,14 @@ flow(
 
         const show = await cli.run(["apps", "show", webAppId, ...P, "--json"]);
         if (show.exitCode !== 0) throw new Error(`kortix apps show: ${show.exitCode} ${show.stderr}`);
-        const shown = JSON.parse(show.stdout).app as { kind: string; capabilities: string[]; uses: string[] };
-        if (shown.kind !== "web" || !shown.capabilities.includes("member_tokens") || shown.uses[0] !== otherSlug) {
+        const shown = JSON.parse(show.stdout).app as { kind?: string; capabilities: string[]; uses: string[] };
+        if (shown.kind !== undefined || !shown.capabilities.includes("member_tokens") || shown.uses[0] !== otherSlug) {
           throw new Error(`show printed ${JSON.stringify(shown)}`);
         }
 
         const snapshots = await cli.run(["apps", "snapshots", webAppId, ...P]);
-        if (snapshots.exitCode !== 1 || !/\(kind web\) does not support snapshots/.test(snapshots.stderr)) {
-          throw new Error(`kortix apps snapshots on a web App: ${snapshots.exitCode} ${snapshots.stderr}`);
+        if (snapshots.exitCode === 0 || !/unknown Apps subcommand "snapshots"/.test(snapshots.stderr)) {
+          throw new Error(`kortix apps snapshots: ${snapshots.exitCode} ${snapshots.stderr}`);
         }
 
         const token = await cli.run(["apps", "token", webAppId, ...P]);
@@ -208,35 +132,17 @@ flow(
       }
     });
 
-    await ctx.step("an unknown App answers 404 on a capability route", async () => {
-      (
-        await owner.get("/v1/projects/:projectId/apps/:appId/snapshots", {
-          params: { ...projectParams, appId: UNKNOWN_ID },
-        })
-      ).status(404);
+    await ctx.step("an unknown App answers 404 on the token route", async () => {
+      (await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params: { ...projectParams, appId: UNKNOWN_ID } })).status(404);
     });
 
     await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {
       const params = { ...projectParams, appId: webAppId };
-      (await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/apps/:appId/credentials", { params })).status([403, 404]);
-      (await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/apps/:appId/credentials", { params })).status(401);
+      (await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status([403, 404]);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status(401);
     });
 
-    await ctx.step("a convex App delete needs its typed slug (400 confirmation_required), then answers 200 with retained_until", async () => {
-      if (!convexAppId) return;
-      const params = { ...projectParams, appId: convexAppId };
-      (await owner.del("/v1/projects/:projectId/apps/:appId", { params }))
-        .status(400)
-        .body()
-        .has("$.code", "confirmation_required");
-      (await owner.del("/v1/projects/:projectId/apps/:appId", { params, query: { confirm: convexSlug } }))
-        .status(200)
-        .body()
-        .exists("$.retained_until");
-      (await owner.get("/v1/projects/:projectId/apps/:appId", { params })).status(404);
-    });
-
-    await ctx.step("cleanup: delete the web App, clear the flag override", async () => {
+    await ctx.step("cleanup: delete the Apps, clear the flag override", async () => {
       for (const appId of [webAppId, otherAppId].filter(Boolean)) {
         (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
       }
@@ -391,10 +297,10 @@ flow(
         await expectGate(`/_kortix/token?audience=${names.d}`, 403, "app_not_linked");
       });
 
-      await ctx.step("bindings mount: 403 app_not_linked for B and D, 409 app_binding_unsupported for C (a web App has no endpoint)", async () => {
+      await ctx.step("bindings mount: 403 app_not_linked for B and D, 503 app_binding_unavailable for C (used, but no release runs)", async () => {
         await expectGate(`/_kortix/apps/${names.b}/api/version`, 403, "app_not_linked");
         await expectGate(`/_kortix/apps/${names.d}/`, 403, "app_not_linked");
-        await expectGate(`/_kortix/apps/${names.c}/api/version`, 409, "app_binding_unsupported");
+        await expectGate(`/_kortix/apps/${names.c}/api/version`, 503, "app_binding_unavailable");
       });
     } finally {
       for (const [projectId, appId] of [[project.id, ids.a], [project.id, ids.b], [project.id, ids.c], [otherProject.id, ids.d]]) {

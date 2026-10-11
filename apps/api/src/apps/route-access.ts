@@ -12,16 +12,16 @@ import type { AppEnv } from '../types';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { db } from '../shared/db';
 import { appVisibleToUser } from './access';
-import { type AppCapability, type AppHostingType, appCapabilities, capabilityUnsupportedBody } from './kinds';
+import { type AppCapability, type AppHostingType, appCapabilities, capabilityUnsupportedBody } from './capabilities';
 
 /**
  * The App permission a route needs. Apps own these leaves outright — they no
  * longer borrow project.customize.write / project.gitops.read, so a custom role
  * can grant or revoke Apps without touching any other capability.
  *   read    list and inspect Apps, connect, mint a member token
- *   write   create, rename, resize, set access, snapshot, read logs
+ *   write   create, rename, resize, set access, read logs
  *   deploy  ship a version, roll back, start, stop
- *   admin   reveal or rotate admin credentials, restore, delete a `convex` App
+ *   admin   administer the App
  */
 export type AppPermission = 'read' | 'write' | 'deploy' | 'admin';
 
@@ -77,10 +77,9 @@ export async function visibleApp(projectId: string, appId: string, userId: strin
 /** 409 `app_capability_unsupported` when the App lacks `capability`, else null. */
 export function capabilityRefusal(
   c: Context<AppEnv>,
-  app: { kind: string },
   capability: AppCapability,
   hostingType: AppHostingType | null = null,
 ) {
-  if (appCapabilities(app, hostingType).includes(capability)) return null;
-  return c.json(capabilityUnsupportedBody(app, capability), 409);
+  if (appCapabilities(hostingType).includes(capability)) return null;
+  return c.json(capabilityUnsupportedBody(capability), 409);
 }

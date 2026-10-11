@@ -290,6 +290,12 @@ describe('shared App image names', () => {
     expect(names[0]).toStartWith('kortix-appimg-staging-');
   });
 
+  test('a Platinum image has no machine size in its name, so a resize reuses it', () => {
+    const { machine: _machine, ...platinum } = IMAGE_INPUTS;
+    expect(appImageName(platinum)).toBe(appImageName({ ...platinum, machine: undefined }));
+    expect(appImageName(platinum)).not.toBe(appImageName(IMAGE_INPUTS));
+  });
+
   test('an artifact without a fixed digest never shares an image', () => {
     const a = appImageName({ ...IMAGE_INPUTS, artifactDigest: null });
     const b = appImageName({ ...IMAGE_INPUTS, artifactDigest: null, deploymentId: DEPLOYMENT_B });

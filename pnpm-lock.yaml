@@ -1524,6 +1524,9 @@ importers:
 
   packages/manifest-schema:
     dependencies:
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../shared
       croner:
         specifier: ^9.1.0
         version: 9.1.0
