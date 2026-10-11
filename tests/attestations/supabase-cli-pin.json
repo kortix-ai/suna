@@ -1,0 +1,18 @@
+{
+  "source_hash": "2b0dd7c4b432c2731459eea1b40154aa5afa19631ad32d55f2002f9e720787ef",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-11T004250Z-start-a-local-supabase-project-only-with-the-repo-s-pinned-s.md",
+    "scripts/worktree/__tests__/supabase-version.test.ts",
+    "scripts/worktree/lib/deps.ts"
+  ],
+  "diff_hash": "11f56b431592de9c02a586e12753687aa0fd9339aba75dd9f07abbaaf4d7da8f",
+  "head": "c1dc87ee9beb04e94bf81721cf2e33db7bef2e4c",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T11:11:52.375Z"
+}
