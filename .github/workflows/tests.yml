@@ -5,24 +5,35 @@ name: Tests
 # `pnpm test -- <args>`.
 #
 # It runs when ANY of these holds:
-#   1. a daily `schedule` on `dev`        — safety-net trunk signal
-#   2. a pull request into `staging`       — the release candidate
-#   3. someone adds the `test` label       — one explicit run on that PR
-#   4. a `workflow_dispatch`               — manual
+#   1. a push to `dev` (every merge) — the fresh-checkout trunk run
+#   2. a daily `schedule` on `dev`   — safety-net trunk signal
+#   3. a pull request into `staging` — the release candidate
+#   4. someone adds the `test` label — one explicit run on that PR
+#   5. a `workflow_dispatch`         — manual
 #
 # Nothing else runs it. A pull request into `dev` runs no lane unless a person
 # adds `test`; that runs the suite ONCE, at the head SHA of that moment. A later
 # push does not re-run it: re-add the label. The developer's box is the
 # pre-merge gate (`pnpm test`). No run blocks a merge into `dev`.
 #
-# A push to `dev` does NOT run it (since 2026-10-03: Actions minutes). The
-# per-merge gate is the local attestation plus the pre-push hook. The schedule
-# only catches drift the attestation missed.
+# A push to `dev` runs the lanes again at the merge commit, on a fresh
+# checkout. The attestation is keyed to the PR's own diff, so it stays green
+# across a merge of `origin/dev` and cannot catch what the merge itself breaks;
+# the push run is the independent second opinion. The merge gate's main-red
+# loop polls `--event push` runs of this workflow and routes a red run back to
+# the merge's pull request. #8844 (2026-10-03) removed this trigger to save
+# Actions minutes; on a public repo the hosted runners are free, and with no
+# push run a fresh-checkout red surfaced only at the next 05:41 UTC schedule.
+# The 2026-10-08..10 schedule runs were red for three days and nothing routed
+# on them (KRTX-2114). The trigger is back.
 #
-# `trunk-report` comments on the HEAD commit when a scheduled run is red.
-# A superseded (cancelled) run reports nothing. A green run runs no extra job.
+# `trunk-report` comments on the HEAD commit when a push or scheduled run is
+# red. A superseded (cancelled) run reports nothing. A green run runs no extra
+# job.
 
 on:
+  push:
+    branches: [dev]
   pull_request:
     branches: [dev, staging]
     types: [opened, reopened, synchronize, ready_for_review, labeled]
@@ -32,8 +43,8 @@ on:
   workflow_dispatch:
 
 # A pull request cancels its superseded run: only its newest commit matters.
-# A scheduled or manual run on `dev` QUEUES instead, so it always ends with a
-# verdict.
+# A push, scheduled, or manual run on `dev` QUEUES instead, so it always ends
+# with a verdict.
 #
 # A labelled run has its own group: a later push (whose lanes skip) must not
 # cancel the run a person asked for. Only re-adding the label supersedes it.
@@ -48,7 +59,8 @@ jobs:
   lane:
     name: ${{ matrix.lane }} lane
     # A release pull request runs on every update except a label change. Into
-    # `dev`, only the act of adding `test` runs it.
+    # `dev`, only the act of adding `test` runs it. A push or scheduled run
+    # always runs it.
     if: >-
       github.event_name != 'pull_request'
       || (github.base_ref == 'staging' && github.event.action != 'labeled')
@@ -267,7 +279,7 @@ jobs:
     # so `failure()` would miss it. `cancelled()` is true only when the whole
     # run is cancelled: a manual cancel, or a queued run that a newer
     # one replaced before it started.
-    if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'
+    if: (github.event_name == 'schedule' || github.event_name == 'push') && !cancelled() && needs.lane.result != 'success'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
@@ -288,10 +300,10 @@ jobs:
           failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
             --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name] | join(", ")' || true)"
 
-          # Merges land faster than the suite and queued runs supersede each
-          # other, so the red commit is often not the culprit. Name every
-          # commit since the last green scheduled run: those are the suspects.
-          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&event=schedule&status=success&per_page=1" \
+          # Merges land faster than the suite completes, so the red commit is
+          # often not the culprit. Name every commit since the last green trunk
+          # run of any event: those are the suspects.
+          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&status=success&per_page=1" \
             --jq '.workflow_runs[0].head_sha // empty' || true)"
           suspects=""
           if [ -n "$green" ]; then
@@ -302,7 +314,7 @@ jobs:
           {
             echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
-            echo "Full local suite (\`core\`, \`browser-1..4\`, \`packages\`)."
+            echo "Full local suite (\`core\`, \`browser-1..8\`, \`packages\`)."
             if [ -n "$failed" ]; then
               echo
               echo "Failing lanes: \`$failed\`"
@@ -327,8 +339,8 @@ jobs:
             echo "The author whose commit broke it fixes forward. If \`dev\` is still"
             echo "red 1 hour after this comment, anyone may revert the culprit PR."
             echo
-            echo "This is the scheduled trunk suite (\`tests.yml\`). It did not"
-            echo "block the merge — \`dev\` is the dev trunk. Reproduce locally with"
+            echo "This is the trunk suite (\`tests.yml\`). It did not block"
+            echo "the merge — \`dev\` is the dev trunk. Reproduce locally with"
             echo "\`pnpm test -- --full\`, or one lane at a time:"
             echo
             echo '```'

@@ -68,8 +68,8 @@ needs a new version and a store build: OTA cannot ship it.
 | Actions → Mobile OTA → Run workflow, channel `dev` | `dev` | `dev-store`, `dev-apk` builds |
 | Actions → Mobile OTA → Run workflow, channel `production` | `production` | a re-run of the released `prod` branch, whichever branch the button runs from (`dry_run` publishes nothing) |
 
-A push to `dev` publishes nothing: since 2026-10-03 only cheap guards and
-path-gated infra run on `dev` (Actions minutes).
+A push to `dev` publishes nothing: the `Tests` lanes, the cheap guards, and
+path-gated infra run on `dev`.
 
 Per platform the script **skips** (warning on the run) when:
 1. no finished build on the channel has the current `runtimeVersion`;

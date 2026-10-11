@@ -212,10 +212,10 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('runs the local suite on a schedule, on a release pull request, or when a person adds `test`', () => {
+  test('runs the local suite on a push to dev, on a schedule, on a release pull request, or when a person adds `test`', () => {
     // 2026-09-28. Labels ran the suite on nearly every pull request into
     // `dev`: every agent PR carried `preview`, and each push re-ran six lanes.
-    // Into `dev`, only the act of adding `test` runs it, once; a push does not.
+    // Into `dev`, only the act of adding `test` runs it, once.
     expect(testWorkflow).toContain('branches: [dev, staging]');
     expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
     expect(testWorkflow).not.toContain('labels.*.name');
@@ -271,11 +271,17 @@ describe('native test-lane workflow', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('a push to dev runs no suite: the trunk is tested on a daily schedule and cannot block anything', () => {
-    // 2026-10-03 (Actions minutes). The per-merge gate is the local attestation
-    // and the pre-push hook. A scheduled run on `dev` HEAD is the safety net.
+  test('every push to dev runs the trunk suite: the fresh-checkout lane the merge gate watches', () => {
+    // 2026-10-11 (KRTX-2114). #8844 (2026-10-03) removed the push trigger for
+    // Actions minutes; on a public repo the hosted runners are free, and the
+    // merge gate's main-red loop polls `--event push` runs of this workflow.
+    // With the trigger gone it watched a lane that never ran: a fresh-checkout
+    // red surfaced only at the next 05:41 UTC schedule, and the 2026-10-08..10
+    // schedule runs were red for three days with nothing routing on them.
+    // The per-merge gate is still the local attestation and the pre-push hook;
+    // the push run is the independent fresh-checkout second opinion.
     const on = testWorkflow.slice(testWorkflow.indexOf('\non:'), testWorkflow.indexOf('\nconcurrency:'));
-    expect(on).not.toMatch(/^ {2}push:/m);
+    expect(on).toMatch(/^ {2}push:\n {4}branches: \[dev\]\n/m);
     expect(on).toMatch(/^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '/m);
     expect(on).toContain('workflow_dispatch:');
     // The suite parses markdown (tests/spec/end-to-end.md feeds route coverage).
@@ -283,7 +289,7 @@ describe('native test-lane workflow', () => {
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    // A PR cancels its superseded run; a scheduled run queues.
+    // A PR cancels its superseded run; a push or scheduled run queues.
     expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
@@ -291,20 +297,25 @@ describe('native test-lane workflow', () => {
     // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
     // so `failure()` would miss it. `cancelled()` covers a replaced queued run.
     expect(report).toContain(
-      "if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'",
+      "if: (github.event_name == 'schedule' || github.event_name == 'push') && !cancelled() && needs.lane.result != 'success'",
     );
     expect(report).not.toMatch(/^\s+if:.*failure\(\)/m);
     // Top level is `contents: read`; the commit comment 403s without this.
     expect(report).toContain('contents: write');
+    // The suspects list starts at the last green trunk run of ANY event: with
+    // push runs, the newest green trunk run is a push run, not the schedule.
+    expect(report).toContain('runs?branch=dev&status=success&per_page=1');
+    expect(report).not.toContain('event=schedule');
 
     // A red trunk has to reach someone, or nobody learns dev is broken.
     expect(testWorkflow).toContain('repos/$REPO/commits/$SHA/comments');
     expect(testWorkflow).toContain('::error::dev is red at $SHA');
   });
 
-  test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
-    // 2026-10-03 (Actions minutes). Dev deploy, Tests, CI, CodeQL, Drata and the
-    // desktop build are dispatch, schedule, or release-branch only.
+  test('a push to dev triggers the trunk suite, the cheap guards, and path-gated infra', () => {
+    // 2026-10-03 (Actions minutes); `Tests` rejoined the push trigger on
+    // 2026-10-11 (KRTX-2114). Dev deploy, CI, CodeQL, Drata and the desktop
+    // build stay dispatch, schedule, or release-branch only.
     const dir = resolve(root, '.github/workflows');
     const pushesToMain = (file: string): boolean => {
       const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
@@ -329,6 +340,7 @@ describe('native test-lane workflow', () => {
       'secret-scan.yml', // ~15 s
       'secrets-guard.yml', // ~15 s
       'terraform-apply-global.yml', // path-gated: infra/terraform roots
+      'tests.yml', // the trunk suite: ten lanes on every merge (KRTX-2114)
     ]);
     // Release branches keep their gates.
     for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {

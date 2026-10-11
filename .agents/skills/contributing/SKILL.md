@@ -196,15 +196,16 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
 | PR into `main` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `main` (the merge) | `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
-| Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
+| Push to `main` (the merge) | the `Tests` lanes at the merge commit (restored 2026-10-11, KRTX-2114) plus `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
+| Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily drift net. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
 | PR into `staging` | the `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
 `tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to a schedule, a dispatch, or the release
-PRs, never to PRs into `main`. Add it to `push: main` only when it takes seconds: a
-push runs on GitHub-billed minutes, and the factory merges ~37 PRs a day.
+PRs, never to PRs into `main`. Add it to `push: main` only when it takes seconds or is
+the `Tests` suite itself: the trunk runs it on every merge (KRTX-2114), and every
+push competes for the ~20 concurrent free-runner jobs on this public repo.
 
 ## Labels
 
