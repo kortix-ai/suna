@@ -49,7 +49,7 @@ import {
   useRemindersUrlState,
 } from './use-reminders-url-state';
 
-const DOCS_HREF = '/docs/connect/reminders';
+const DOCS_HREF = '/docs/connect/triggers#reminders';
 
 /** The app's mobile breakpoint (`useIsMobile`): below it the page is the List only. */
 const NARROW = '(max-width: 767px)';
