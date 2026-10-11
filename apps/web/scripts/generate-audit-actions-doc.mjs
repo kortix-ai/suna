@@ -106,13 +106,7 @@ ${events.join('\n')}
 
 Platform admins and Kortix services record these: the platform admin console (\`admin.\`), the LLM gateway's internal calls (\`gateway.internal.\`), billing jobs, payment-provider webhooks and credit deductions. An \`admin.\` row in your account's log means a platform admin acted on your account: Kortix staff on Kortix Cloud, or your instance's platform admin when you self-host.
 
-<Accordion>
-  <AccordionItem title="${operator.length} operator actions">
-
 ${[...TABLE_HEAD, ...operator.map(row)].join('\n')}
-
-  </AccordionItem>
-</Accordion>
 `;
 }
 

@@ -1018,9 +1018,6 @@ Sandboxes, background jobs and database triggers record these outside a request.
 
 Platform admins and Kortix services record these: the platform admin console (`admin.`), the LLM gateway's internal calls (`gateway.internal.`), billing jobs, payment-provider webhooks and credit deductions. An `admin.` row in your account's log means a platform admin acted on your account: Kortix staff on Kortix Cloud, or your instance's platform admin when you self-host.
 
-<Accordion>
-  <AccordionItem title="51 operator actions">
-
 | Action | Title | Route |
 | --- | --- | --- |
 | `admin.account.credit.debit` | Debited account credits | `POST /v1/admin/api/accounts/:id/credits/debit` |
@@ -1074,6 +1071,3 @@ Platform admins and Kortix services record these: the platform admin console (`a
 | `gateway.internal.trace.record` | Recorded LLM gateway trace | `POST /internal/gateway/trace` |
 | `gateway.internal.upstream.resolve` | Resolved LLM upstream provider | `POST /internal/gateway/resolve-upstream` |
 | `gateway.internal.usage.record` | Recorded LLM gateway usage | `POST /internal/gateway/usage` |
-
-  </AccordionItem>
-</Accordion>

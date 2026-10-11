@@ -803,35 +803,46 @@ apps/crm/              Vite + React UI: src/convex.ts wires the binding
 kortix.yaml            apps.db and apps.db-dashboard (the template), apps.crm
 ```
 
-1. Launch the backend: `kortix apps launch --template convex --name db`.
-2. Write the schema and functions in `apps/db/convex/`, with
-   `auth.config.ts` from the template section. Call `requireKortixMember`
-   first in every public query and mutation. Push with `npx convex deploy`.
-3. Wire the UI to the backend through the binding:
-   ```ts
-   // apps/crm/src/convex.ts
-   import { ConvexReactClient } from 'convex/react';
-   import { kortixBinding } from '@kortix/sdk';
+<Steps>
+<Step title="Launch the backend">
+`kortix apps launch --template convex --name db`.
+</Step>
+<Step title="Write the functions">
+Write the schema and functions in `apps/db/convex/`, with `auth.config.ts` from the template section. Call `requireKortixMember` first in every public query and mutation. Push with `npx convex deploy`.
+</Step>
+<Step title="Wire the UI to the backend">
+Connect through the binding:
 
-   const db = kortixBinding('db');
-   export const convex = new ConvexReactClient(db.url);
-   convex.setAuth(db.token);
-   ```
-4. Declare the UI App:
-   ```yaml
-   apps:
-     crm:
-       path: apps/crm/dist
-       type: static
-       spa: true
-       uses: [db]
-   ```
-5. Build and deploy it, then open it to the project:
-   ```bash
-   (cd apps/crm && npm run build)
-   kortix apps deploy apps/crm/dist
-   kortix apps access crm --mode project
-   ```
+```ts
+// apps/crm/src/convex.ts
+import { ConvexReactClient } from 'convex/react';
+import { kortixBinding } from '@kortix/sdk';
+
+const db = kortixBinding('db');
+export const convex = new ConvexReactClient(db.url);
+convex.setAuth(db.token);
+```
+</Step>
+<Step title="Declare the UI App">
+
+```yaml
+apps:
+  crm:
+    path: apps/crm/dist
+    type: static
+    spa: true
+    uses: [db]
+```
+</Step>
+<Step title="Build, deploy and open it to the project">
+
+```bash
+(cd apps/crm && npm run build)
+kortix apps deploy apps/crm/dist
+kortix apps access crm --mode project
+```
+</Step>
+</Steps>
 
 Never use `public` for internal data. A `public` App has no signed-in member, so
 every function that requires one refuses the call.

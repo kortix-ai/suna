@@ -7,37 +7,43 @@ description: "@kortix/sdk/react: useSession for a whole session view, a chat kit
 
 ## Set up
 
-1. Install the SDK and its two optional peers: `react` 18 or later and `@tanstack/react-query` 5.75.2 or later.
+<Steps>
+<Step title="Install">
+Install the SDK and its two optional peers: `react` 18 or later and `@tanstack/react-query` 5.75.2 or later.
 
-   ```bash
-   npm install @kortix/sdk react @tanstack/react-query
-   ```
+```bash
+npm install @kortix/sdk react @tanstack/react-query
+```
+</Step>
+<Step title="Create the client">
+Create the client once, at module scope. Every hook reads this client. See [SDK](/docs/sdk) for the options and [Authentication](/docs/sdk/auth) for `getToken`.
 
-2. Create the client once, at module scope. Every hook reads this client. See [SDK](/docs/sdk) for the options and [Authentication](/docs/sdk/auth) for `getToken`.
+```ts
+// lib/kortix.ts
+import { createKortix } from '@kortix/sdk';
 
-   ```ts
-   // lib/kortix.ts
-   import { createKortix } from '@kortix/sdk';
+export const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => getMyToken(),
+});
+```
+</Step>
+<Step title="Add the providers">
+Import that module once, then wrap the tree in `QueryClientProvider`. `useSession`, the prompt hooks and most data hooks are React Query hooks. They throw without a provider.
 
-   export const kortix = createKortix({
-     backendUrl: 'https://api.kortix.com/v1',
-     getToken: async () => getMyToken(),
-   });
-   ```
+```tsx
+'use client';
+import '@/lib/kortix';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
 
-3. Import that module once, then wrap the tree in `QueryClientProvider`. `useSession`, the prompt hooks and most data hooks are React Query hooks. They throw without a provider.
-
-   ```tsx
-   'use client';
-   import '@/lib/kortix';
-   import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-   import { useState } from 'react';
-
-   export function Providers({ children }: { children: React.ReactNode }) {
-     const [queryClient] = useState(() => new QueryClient());
-     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-   }
-   ```
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+```
+</Step>
+</Steps>
 
 Keep one client and one `QueryClient` per host. A second `createKortix()` call with other options re-points every earlier client.
 
