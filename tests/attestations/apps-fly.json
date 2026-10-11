@@ -1,5 +1,5 @@
 {
-  "source_hash": "7b3e9f1280d24625b934aa97e4d309548b884dc2975be208227075898142ddba",
+  "source_hash": "79fcde79fa642a6997d34fe04557d0e6756670e54938b6303d74f72975666c68",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-11T211903Z-watch-the-platinum-template-count-per-org-kortix-reclaims-on.md",
@@ -18,13 +18,13 @@
     "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
     "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-yaml.md"
   ],
-  "diff_hash": "b2c1a933b62ebd9b12ef629e653a53bb19949016ab42d97e0feb61682a9b435b",
-  "head": "b39e6b9a1604ed4975dc860a6a01de4d07eddc26",
+  "diff_hash": "32a3594d2788c6297bd990d959a93a12644e998029182f49451a814b3c5ee5bf",
+  "head": "74ad947263d3f85db829438a60ecff9be6d89d96",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T22:19:09.068Z"
+  "at": "2026-10-11T22:32:55.761Z"
 }
