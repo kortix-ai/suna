@@ -110,11 +110,16 @@ describe('production database connection capacity', () => {
     // healthy while at most desired tasks exist, at every autoscaled count.
     expect(ecsModuleVariables).toMatch(/variable "deployment_minimum_healthy_percent"[\s\S]*?default\s*=\s*100/);
     expect(ecsModuleVariables).toMatch(/variable "deployment_maximum_percent"[\s\S]*?default\s*=\s*200/);
-    expect(ecsModule).toMatch(/deployment_minimum_healthy_percent\s*=\s*var\.deployment_minimum_healthy_percent/);
-    expect(ecsModule).toMatch(/deployment_maximum_percent\s*=\s*var\.deployment_maximum_percent/);
-    expect(productionTerraform).toMatch(/module "api"[\s\S]*?deployment_minimum_healthy_percent\s*=\s*50/);
-    expect(productionTerraform).toMatch(/module "api"[\s\S]*?deployment_maximum_percent\s*=\s*100/);
-    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?deployment_minimum_healthy_percent\s*=\s*50/);
-    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?deployment_maximum_percent\s*=\s*100/);
+    // Anchored to assignment lines (two-space indent, end of line) so the
+    // explanatory comments above cannot satisfy them, and matched-once per
+    // file so no other module (gateway, web) picks the pins up.
+    expect(ecsModule).toMatch(/^  deployment_minimum_healthy_percent\s*=\s*var\.deployment_minimum_healthy_percent$/m);
+    expect(ecsModule).toMatch(/^  deployment_maximum_percent\s*=\s*var\.deployment_maximum_percent$/m);
+    for (const t of [productionTerraform, shadowTerraform]) {
+      expect(t.match(/^  deployment_minimum_healthy_percent\s*=\s*50$/gm)).toHaveLength(1);
+      expect(t.match(/^  deployment_maximum_percent\s*=\s*100$/gm)).toHaveLength(1);
+      expect(t).toMatch(/module "api"[\s\S]*?^  deployment_minimum_healthy_percent\s*=\s*50$/m);
+      expect(t).toMatch(/module "api"[\s\S]*?^  deployment_maximum_percent\s*=\s*100$/m);
+    }
   });
 });
