@@ -10,7 +10,8 @@
  * budget is the rolling-deployment envelope in `apps/api/src/shared/database-capacity.ts`:
  * 10 tasks × 1× rolling overlap × (6 + 2 + 1 + 1) = 100 ≤ 205 API connections
  * (237 usable minus the 32 non-API reserve). Prod pins the ECS rolling
- * deployment at 100% (`deployment_maximum_percent = 100` in
+ * deployment to one replacement at a time (`deployment_maximum_percent = 100`
+ * with the deployable `deployment_minimum_healthy_percent = 50` pairing, in
  * `infra/terraform/environments/prod/main.tf`, KRTX-586), which is what makes
  * the next raise (7 → 110 ≤ 205) fit; dev and staging keep the 200% module
  * default and their own budgets. The headroom came from moving the boot schema

@@ -30,13 +30,16 @@ export const PROD_DB_USABLE_CONNECTIONS = 237;
 export const PROD_API_MAX_TASKS = 10;
 
 /**
- * Prod pins the ECS rolling deployment at 100% (one replacement task at a
- * time): the prod API fleet holds the largest per-task DB budget, and the
- * old-plus-new overlap window is when `SQLSTATE 53300` bursts happen (the
- * 2026-09-27 incident). One extra task at the peak keeps the envelope at
- * half of the two-task overlap — see the Terraform cross-check in
- * `database-capacity.test.ts`. Dev and staging keep the module's 200% default
- * for faster deploys; their DB budgets are separate.
+ * Prod rolls its ECS API service one replacement at a time:
+ * `deployment_maximum_percent = 100` means the fleet never exceeds
+ * desired_count during a deploy, so the peak task count is PROD_API_MAX_TASKS
+ * itself (the old 200% overlap would have held ten extra tasks — the window
+ * where `SQLSTATE 53300` bursts happen, the 2026-09-27 incident). The paired
+ * `deployment_minimum_healthy_percent = 50` lets replacements actually run
+ * (AWS rounds minimum UP and maximum DOWN) and may dip capacity below
+ * desired, which only shrinks this envelope — see the Terraform cross-check
+ * in `database-capacity.test.ts`. Dev and staging keep the module's 200%
+ * default for faster deploys; their DB budgets are separate.
  */
 export const ROLLING_TASK_OVERLAP = 1;
 

@@ -60,8 +60,9 @@ describe('production database connection capacity', () => {
   });
 
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {
-    // Prod sets deployment_maximum_percent = 100 (one extra task, see the
-    // Terraform cross-check below), so the envelope overlaps one task, not two.
+    // Prod rolls one replacement at a time (max=100%: the fleet never exceeds
+    // desired_count, see the Terraform cross-check below), so the envelope
+    // counts zero extra tasks — the peak stays PROD_API_MAX_TASKS.
     expect(PROD_API_MAX_TASKS).toBe(10);
     expect(ROLLING_TASK_OVERLAP).toBe(1);
     expect(PROD_DB_USABLE_CONNECTIONS).toBe(237);
@@ -100,13 +101,20 @@ describe('production database connection capacity', () => {
 
     expect(productionTerraform).toMatch(/module "api"[\s\S]*?max_capacity\s*=\s*10/);
 
-    // The module keeps the old 200% as its default (dev and staging are
-    // unchanged); prod pins 100% on BOTH prod API stacks: one extra task at
-    // the rolling peak instead of ten. The us-east-2 shadow serves the same
-    // database budget, so its fleet must honor the same pin.
+    // The module keeps its old behavior as defaults (min_healthy 100, max 200
+    // — dev and staging are unchanged); prod pins the DEPLOYABLE one-at-a-time
+    // pairing on BOTH prod API stacks: min_healthy 50 with max 100. AWS rounds
+    // minimumHealthyPercent UP and maximumPercent DOWN, so min=100 + max=100
+    // means ECS can neither stop nor start a task (prod desired=3, shadow
+    // desired=2 — every release would hang); min=50 keeps ceil(desired×0.5)
+    // healthy while at most desired tasks exist, at every autoscaled count.
+    expect(ecsModuleVariables).toMatch(/variable "deployment_minimum_healthy_percent"[\s\S]*?default\s*=\s*100/);
     expect(ecsModuleVariables).toMatch(/variable "deployment_maximum_percent"[\s\S]*?default\s*=\s*200/);
+    expect(ecsModule).toMatch(/deployment_minimum_healthy_percent\s*=\s*var\.deployment_minimum_healthy_percent/);
     expect(ecsModule).toMatch(/deployment_maximum_percent\s*=\s*var\.deployment_maximum_percent/);
+    expect(productionTerraform).toMatch(/module "api"[\s\S]*?deployment_minimum_healthy_percent\s*=\s*50/);
     expect(productionTerraform).toMatch(/module "api"[\s\S]*?deployment_maximum_percent\s*=\s*100/);
+    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?deployment_minimum_healthy_percent\s*=\s*50/);
     expect(shadowTerraform).toMatch(/module "api"[\s\S]*?deployment_maximum_percent\s*=\s*100/);
   });
 });
