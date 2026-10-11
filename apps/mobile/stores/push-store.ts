@@ -8,7 +8,8 @@
  *
  * In memory only:
  * - `viewingSessionId`: the project session on screen, for the foreground rule.
- * - `pendingOpen`: a tapped notification's session, until ProjectScreen opens it.
+ * - `pendingOpen`: a tapped notification's session, or its project for an
+ *   alert without a session, until ProjectScreen opens it.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,7 +20,8 @@ export const PUSH_STORE_KEY = '@push_registration';
 
 export interface PendingOpen {
   projectId: string;
-  sessionId: string;
+  /** The session to open; null opens the project (an automation alert). */
+  sessionId: string | null;
   /** The bridge already moved to the project route for this request. */
   navigated: boolean;
 }
@@ -32,7 +34,7 @@ interface PushState {
   setToken: (token: string | null) => void;
   markPermissionAsked: () => void;
   setViewingSessionId: (sessionId: string | null) => void;
-  requestOpen: (projectId: string, sessionId: string) => void;
+  requestOpen: (projectId: string, sessionId: string | null) => void;
   markOpenNavigated: () => void;
   /** Takes the pending open for `projectId`, or null when none is for it. */
   takeOpen: (projectId: string) => PendingOpen | null;

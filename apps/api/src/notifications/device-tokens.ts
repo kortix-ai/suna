@@ -7,6 +7,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { pushDeviceTokens, type Database } from '@kortix/db';
 import { db as defaultDb } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 export type PushPlatform = 'ios' | 'android';
 
@@ -29,6 +30,8 @@ export interface UpsertDeviceTokenInput {
   provider: 'expo';
   /** Keys that are absent keep their stored value (or the column default on insert). */
   preferences?: Partial<PushPreferences>;
+  /** The caller's sign-in (`auth.sessions.id`); absent for a personal token. */
+  authSessionId?: string | null;
 }
 
 export interface PushDeviceTokenStore {
@@ -36,7 +39,12 @@ export interface PushDeviceTokenStore {
   upsert(input: UpsertDeviceTokenInput): Promise<PushDeviceTokenRow>;
   /** Delete `token` only when `userId` owns it. Returns true when a row was deleted. */
   deleteForUser(token: string, userId: string): Promise<boolean>;
-  /** Every token registered by `userId`. */
+  /**
+   * The tokens of `userId` whose registering sign-in still exists. A device
+   * signed out (Settings > Security, GoTrue's sign-out of other devices, an
+   * expired session) gets no push. A token with no recorded sign-in counts as
+   * live; the app re-registers on every signed-in launch.
+   */
   listByUser(userId: string): Promise<PushDeviceTokenRow[]>;
   /** Delete the given tokens regardless of owner. Returns the deleted count. */
   deleteTokens(tokens: readonly string[]): Promise<number>;
@@ -63,14 +71,14 @@ function definedPreferences(preferences: Partial<PushPreferences> | undefined): 
 
 export function createPushDeviceTokenStore(database: Database = defaultDb): PushDeviceTokenStore {
   return {
-    async upsert({ token, userId, platform, provider, preferences }) {
+    async upsert({ token, userId, platform, provider, preferences, authSessionId = null }) {
       const prefs = definedPreferences(preferences);
       const [row] = await database
         .insert(pushDeviceTokens)
-        .values({ token, userId, platform, provider, ...prefs })
+        .values({ token, userId, platform, provider, authSessionId, ...prefs })
         .onConflictDoUpdate({
           target: pushDeviceTokens.token,
-          set: { userId, platform, provider, ...prefs, updatedAt: sql`now()` },
+          set: { userId, platform, provider, authSessionId, ...prefs, updatedAt: sql`now()` },
         })
         .returning();
       if (!row) throw new Error('push device token upsert returned no row');
@@ -86,7 +94,18 @@ export function createPushDeviceTokenStore(database: Database = defaultDb): Push
     },
 
     async listByUser(userId) {
-      return database.select().from(pushDeviceTokens).where(eq(pushDeviceTokens.userId, userId));
+      const signIn = qualifiedColumn(pushDeviceTokens.authSessionId);
+      return database
+        .select()
+        .from(pushDeviceTokens)
+        .where(
+          and(
+            eq(pushDeviceTokens.userId, userId),
+            sql`(${signIn} IS NULL OR EXISTS (
+              SELECT 1 FROM auth.sessions s
+              WHERE s.id = ${signIn} AND (s.not_after IS NULL OR s.not_after > now())))`,
+          ),
+        );
     },
 
     async deleteTokens(tokens) {

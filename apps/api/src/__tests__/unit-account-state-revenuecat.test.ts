@@ -19,7 +19,6 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../billing/services/credits', () => ({
   getCreditSummary: () => creditSummary,
-  calculateTokenCost: () => 0,
 }));
 
 mock.module('../billing/services/auto-topup', () => ({

@@ -7,6 +7,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
+import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -144,6 +145,22 @@ function useRestartedBootClock(restart: {
     wasPending.current = restart.isPending;
   }, [restart.isPending, restart.errorMessage]);
   return clockStart;
+}
+
+/**
+ * Whether the stuck-boot restart offer may render. Restart is the session
+ * owner's or a project manager's; the server answers anyone else 403
+ * (`can_manage_lifecycle`, the same verdict every session menu follows). A
+ * member who can open the session still gets the loader, just without the
+ * escape hatch. An absent row cannot deny yet: a fresh session's row arrives
+ * with the boot that wedged.
+ */
+export function canOfferBootRestart(
+  session: { can_manage_lifecycle?: boolean } | undefined,
+  projectId?: string,
+  sessionId?: string,
+): boolean {
+  return Boolean(projectId && sessionId) && session?.can_manage_lifecycle !== false;
 }
 
 /** The stalled-boot escape hatch, shared by the loader and instant session shell. */
@@ -293,13 +310,14 @@ export function SessionStartingLoader({
     return () => clearTimeout(timeout);
   }, [delayMs]);
 
+  const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
   const slow = now - clockStart >= SLOW_AFTER_MS;
   const stuck = now - clockStart >= STUCK_AFTER_MS;
-  const canRestart = !!projectId && !!sessionId;
+  const canRestart = canOfferBootRestart(session, projectId, sessionId);
 
   return (
     <QuietProgressLoader
@@ -337,12 +355,13 @@ export function SessionConnectingBanner({
   failure?: StartFailure;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
-  const canRestart = !!projectId && !!sessionId;
+  const canRestart = canOfferBootRestart(session, projectId, sessionId);
   const steps = useLocalizedUiCatalog(STEPS);
   const step = steps[Math.min(active, steps.length - 1)];
 

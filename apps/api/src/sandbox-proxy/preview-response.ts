@@ -81,6 +81,14 @@ export function clientResponseHeaders(upstreamHeaders: Headers, origin: string):
   for (const [key, value] of Object.entries(previewCorsHeaders(origin))) {
     headers.set(key, value);
   }
+  // The attribution headers are the PROXY's voice about which hop failed
+  // (proxy-hop.ts). The request-log suppression keys on them
+  // (request-log-level.ts), so an upstream that shipped its own copy could
+  // name a designed-answer hop and silence a real failure from the sweep. The
+  // proxy re-sets both where it means to; a plain passthrough leaves them
+  // absent.
+  headers.delete(PROXY_HOP_HEADER);
+  headers.delete(PROXY_UPSTREAM_STATUS_HEADER);
 
   // The app inside the sandbox writes its own cookies, and they are forwarded —
   // that is what makes a cookie-session app work. What it may NOT do is widen

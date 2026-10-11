@@ -31,9 +31,9 @@ const TYPE_ICON: Record<Exclude<ToastType, 'loading'>, { icon: AppIcon; color: s
   warning: { icon: WarningIcon, color: THEME.accent.yellow },
 };
 
-export const TOAST_ICON_SIZE = 20;
+const TOAST_ICON_SIZE = 20;
 /** The message's line height; the icon centres on it. */
-export const TOAST_TITLE_LINE_HEIGHT = 22;
+const TOAST_TITLE_LINE_HEIGHT = 22;
 
 /** The icons handed to `<Toaster icons={…}>`; `loading` is the brand loader, never a spun glyph. */
 export function useToastIcons() {
@@ -70,7 +70,7 @@ function ToastIcon({ type }: { type: Exclude<ToastType, 'loading'> }) {
   );
 }
 
-export interface ToastSkin {
+interface ToastSkin {
   /** The card. */
   toast: ViewStyle;
   /** Row inside the card: icon · text · buttons. */

@@ -4,7 +4,7 @@ import { createDatabaseSession } from '../../src/fixtures/database-project';
 import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
 import { queryDatabaseRows, runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
-import { createManifestProject, fundAccount } from '../helpers/manifest-project';
+import { createManifestProject, fundAccount, isDeployedTarget } from '../helpers/manifest-project';
 import {
   createAuthUser,
   deleteAuthUser,
@@ -76,6 +76,43 @@ test('30 — saved session history paints while sandbox start and the open bundl
       [sessionId],
       env.databaseUrl,
     );
+    if (!isDeployedTarget()) {
+      // Since #9244 the composer's model gate holds during boot: with no
+      // selectable model, Send is refused before the prompt is queued. The
+      // deterministic local profile has no live managed model catalog, so hand
+      // the picker its real server-resolved default, as journeys 28 and 39 do.
+      // A deployed target keeps its real catalog.
+      const defaults = await api<{ resolvedForCaller: string | null }>(
+        auth.access_token,
+        'GET',
+        `/projects/${projectId}/model-defaults`,
+      );
+      const modelId = defaults.resolvedForCaller ?? '';
+      expect(modelId).not.toBe('');
+      const picker = await api<Record<string, unknown>>(
+        auth.access_token,
+        'GET',
+        `/projects/${projectId}/model-picker`,
+      );
+      const enabledPicker = {
+        ...picker,
+        models: {
+          [modelId]: {
+            id: modelId,
+            name: 'E2E managed model',
+            provider: 'openai',
+            enabled: true,
+            tool_call: true,
+            attachment: true,
+            limit: { context: 128_000, output: 8_000 },
+          },
+        },
+        defaultModel: modelId,
+      };
+      await page.route(`**/projects/${projectId}/model-picker`, (route) =>
+        route.request().method() === 'GET' ? route.fulfill({ json: enabledPicker }) : route.continue(),
+      );
+    }
     await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
     await selectAccountForUi(page, accountId);
     await dismissOnboarding(page);

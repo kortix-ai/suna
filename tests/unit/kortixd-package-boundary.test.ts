@@ -85,7 +85,11 @@ function violations(): string[] {
 }
 
 describe('the kortixd package boundary', () => {
-  it('no test outside kortixd reads its source, and kortixd imports no other app', () => {
+  // The walker reads every tracked source file; solo it is well under a second
+  // (638 ms measured), but under a concurrent lane wave on a slower box the file
+  // reads starve past vitest's 5 s default. Same budget rationale as the bun
+  // suites' KORTIX_TEST_TIMEOUT_MS=30000: the violation contract is unchanged.
+  it('no test outside kortixd reads its source, and kortixd imports no other app', { timeout: 30_000 }, () => {
     expect(violations()).toEqual([]);
   });
 

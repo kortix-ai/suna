@@ -4,8 +4,9 @@
  * Opening a session painted nothing until the control plane answered with the
  * saved copy it captured at the last turn end: skeleton rows for 0.3-2.3 s on
  * every cold open, and for as long as the backend took when it was slow. With
- * this store the next open paints the last copy in the first frame, and the
- * fresh one reconciles into it by message id.
+ * this store the next open paints the last copy as soon as the device reads it
+ * (one task after the first frame), and the fresh one reconciles into it by
+ * message id.
  *
  * WHAT IT STORES, AND WHY THAT IS SAFE. Only envelopes the SERVER sent: the
  * transcript mirror, which the API writes because a turn ended, carrying
@@ -17,8 +18,9 @@
  * wrong, and the painting side keeps its root-identity guard
  * (`shouldHydrateFromMirror`).
  *
- * Framework-free: the host passes the storage (`localStorage` on web,
- * AsyncStorage on mobile) and the signed-in user. Every failure — a full,
+ * Framework-free: the host passes the storage (IndexedDB on web, through
+ * `indexedDBKeyValueStorage`; AsyncStorage on mobile) and the signed-in user.
+ * Both are asynchronous, so no read blocks a frame. Every failure — a full,
  * corrupt or missing store — costs only the old cold open; nothing throws.
  */
 

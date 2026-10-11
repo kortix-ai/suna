@@ -28,11 +28,6 @@ function isManagedEnv(name: string): boolean {
     || providerCredentialEnv().has(name);
 }
 
-/** Provider API-key env names opencode must never see (gateway-only routing). */
-export function nativeProviderEnvNames(): string[] {
-  return [...providerCredentialEnv()];
-}
-
 export function isGatewayManagedEnv(name: string): boolean {
   return isManagedEnv(name);
 }

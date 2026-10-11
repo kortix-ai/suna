@@ -149,7 +149,7 @@ export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: stri
   ].filter(Boolean);
   if (needs.length) {
     steps.push(
-      `Walk me through connecting what it needs — ${needs.join('; ')}. Mint setup links with the \`request_secret\` / \`connect\` tools — never ask me to paste a raw key into the chat.`,
+      `Walk me through connecting what it needs — ${needs.join('; ')}. Mint setup links with \`kortix secrets request\` / \`kortix connectors connect\` — never ask me to paste a raw key into the chat.`,
     );
   }
   steps.push(

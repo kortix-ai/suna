@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { queueHeaderLabel, queueRowCaption, restoreQueued } from './queue-undo';
+import { serializePromptWithPastes } from '@kortix/shared';
+
+import { queueHeaderLabel, queueRowCaption, queueRowText, restoreQueued } from './queue-undo';
 
 const m = (id: string, sessionId = 's1') => ({ id, sessionId, text: id, timestamp: 0 });
 
@@ -64,5 +66,18 @@ describe('queueRowCaption', () => {
   test('a plain queued message, or one from an older server, has no caption', () => {
     expect(queueRowCaption({ delivery: 'queue', steer_fallback: null })).toBeNull();
     expect(queueRowCaption({})).toBeNull();
+  });
+});
+
+describe('queueRowText', () => {
+  const paste = { id: '0a1b2c3d', text: 'synthetic pasted line' };
+  test('shows the typed text without its pastes', () => {
+    expect(queueRowText(serializePromptWithPastes('my question', [paste]))).toBe('my question');
+  });
+  test('a pastes-only prompt reads "Pasted text"', () => {
+    expect(queueRowText(serializePromptWithPastes('', [paste]))).toBe('Pasted text');
+  });
+  test('plain text is unchanged', () => {
+    expect(queueRowText('hello')).toBe('hello');
   });
 });

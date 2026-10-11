@@ -163,6 +163,8 @@ function legacyHashSecretKey(secretKey: string): string {
     .digest('hex');
 }
 
+/** Synchronous oracle for `candidateSecretKeyHashesAsync` (token-hash.ts): the
+ *  test pins the async path to the stored hash format. */
 export function candidateSecretKeyHashes(secretKey: string): string[] {
   return [hashSecretKey(secretKey), legacyHashSecretKey(secretKey)];
 }
@@ -188,12 +190,6 @@ export function verifySecretKey(secretKey: string, storedHash: string): boolean 
 
 export function isApiKeySecretConfigured(): boolean {
   return !!config.API_KEY_SECRET;
-}
-
-export function deriveSigningKey(token: string, secret: string): string {
-  return createHmac('sha256', secret)
-    .update(token)
-    .digest('hex');
 }
 
 /**

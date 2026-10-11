@@ -263,15 +263,6 @@ async function applyGroupChanges(accountId: string, groupId: string, changes: Gr
   }
 }
 
-export function parseGroupPut(body: Record<string, unknown>) {
-  const changes = groupChanges(body);
-  return {
-    displayName: changes.find(c => c.path === 'displayName')?.value ?? null,
-    externalId: changes.find(c => c.path === 'externalId')?.value ?? null,
-    members: changes.find(c => c.path === 'members')?.value ?? null,
-  };
-}
-
 async function writeGroup(c: any) {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');

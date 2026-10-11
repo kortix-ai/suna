@@ -22,7 +22,7 @@ export const PLACEHOLDER_TITLE_SQL_PATTERN = '^new (session|agent)([^[:alnum:]_]
 
 /**
  * The runtime's own title for a session's canonical ROOT conversation, read
- * from the `metadata.opencode_sessions` snapshot (opencode-session-snapshot.ts).
+ * from the `metadata.opencode_sessions` snapshot (`writeRuntimeSessionList`).
  *
  * This is a READ-time preference, not a second title writer: `metadata.name`
  * stays owned solely by session-title-generate.ts. The snapshot mirrors what

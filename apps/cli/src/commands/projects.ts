@@ -71,8 +71,9 @@ Subcommands:
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
                        back to your local Git credentials for direct BYO repos.
-  rm [<id>]            Archive a project (defaults to the linked one).
-                       --purge also deletes its managed git repo (irreversible).
+  rm [<id>]            Delete a project and its Kortix-managed git repo
+                       (defaults to the linked one). Repositories you
+                       connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
                        project (Settings → Feature flags). (--json)
@@ -252,6 +253,10 @@ Options:
 
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
+
+Internal-only flags (apps) are listed only while they are on, with
+origin "kortix". Only Kortix changes them: enable, disable and reset answer
+feature_operator_only. Contact Kortix to change one.
 `;
 
 interface FeatureFlagRow {
@@ -262,6 +267,8 @@ interface FeatureFlagRow {
   available: boolean;
   enabled: boolean;
   overridden: boolean;
+  /** Internal-only flag: listed only while on, changed only by Kortix. */
+  operator_only?: boolean;
 }
 
 function featureRows(project: Record<string, unknown>): FeatureFlagRow[] {
@@ -285,8 +292,17 @@ function printFeatureTable(rows: FeatureFlagRow[]): void {
       : r.enabled
         ? `${C.green}on   ${C.reset}`
         : `${C.dim}off  ${C.reset}`;
-    const origin = !r.available ? 'unavailable' : r.overridden ? 'override' : 'default';
+    const origin = !r.available
+      ? 'unavailable'
+      : r.operator_only
+        ? 'kortix'
+        : r.overridden
+          ? 'override'
+          : 'default';
     process.stdout.write(`  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`);
+  }
+  if (rows.some((r) => r.operator_only)) {
+    process.stdout.write(`\n  ${C.dim}origin kortix: enabled by Kortix for this project. Contact Kortix to change it.${C.reset}\n`);
   }
   process.stdout.write('\n');
 }
@@ -558,6 +574,17 @@ async function projectsRename(argv: string[]): Promise<number> {
 
 // ── Project-scoped CLI tokens ──────────────────────────────────────────────
 
+/** The API hides session-bound tokens from the CLI token list (they are the
+ *  runtime's per-session KORTIX_TOKEN, minted and revoked with the session —
+ *  a person never creates one). The count keeps their provenance visible
+ *  instead of a silent hole in the list. */
+function writeSessionTokenNote(count: number): void {
+  if (count <= 0) return;
+  process.stdout.write(
+    `${C.dim}  Not listed: ${count} session token${count === 1 ? '' : 's'} — minted by the runtime, one per session (the sandbox's KORTIX_TOKEN); each lives and dies with its session.${C.reset}\n`,
+  );
+}
+
 const CLI_TOKENS_HELP = help`Usage: kortix projects cli-tokens [ls | new | rm <token-id>] [options]
 
 Project-scoped CLI tokens (kortix_pat_…). A token is bound to ONE project —
@@ -565,7 +592,8 @@ the API rejects it on every other project. Session sandboxes use their
 session-bound KORTIX_TOKEN instead.
 
 Subcommands:
-  ls                   List this project's tokens. (--json)
+  ls                   List this project's CLI tokens. Session tokens are not
+                       listed (the count below the table). (--json)
   new                  Mint one. The secret is printed ONCE and never again.
   rm <token-id>        Revoke one.
 
@@ -593,6 +621,12 @@ interface CliTokenRow {
   last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
+}
+
+/** `session_tokens` is absent from an older API's answer; treat that as 0. */
+interface CliTokenList {
+  items: CliTokenRow[];
+  session_tokens?: number;
 }
 
 interface CreatedCliToken extends CliTokenRow {
@@ -632,13 +666,14 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
 
   if (sub === 'ls' || sub === 'list') {
     try {
-      const { items } = await ctx.client.get<{ items: CliTokenRow[] }>(path);
+      const { items, session_tokens: sessionTokens = 0 } = await ctx.client.get<CliTokenList>(path);
       if (json) {
         emitJson(items);
         return 0;
       }
       if (items.length === 0) {
         process.stdout.write(`${status.info('No CLI tokens on this project.')}\n`);
+        writeSessionTokenNote(sessionTokens);
         return 0;
       }
       const idW = Math.max(8, ...items.map((t) => t.token_id.length));
@@ -653,9 +688,9 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
           `  ${pad(t.token_id, idW)}  ${pad(t.name, nameW)}  ${pad(t.status, 8)}  ${C.faded}${used}${C.reset}\n`,
         );
       }
-      process.stdout.write(
-        `\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`,
-      );
+      process.stdout.write(`\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n`);
+      writeSessionTokenNote(sessionTokens);
+      process.stdout.write('\n');
       return 0;
     } catch (err) {
       return surfaceApiError(err);
@@ -1088,7 +1123,7 @@ async function projectsClone(
   destination?: string,
   hostArg?: string,
 ): Promise<number> {
-  const id = arg ?? resolveProjectId();
+  const id = resolveProjectId(arg, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project selected. Run `kortix projects use`, link a directory, or pass an id.')}\n`,
@@ -1341,7 +1376,7 @@ function renderProjectTable(
 }
 
 async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
-  const id = arg ?? resolveProjectId();
+  const id = resolveProjectId(arg, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project linked. Run `kortix projects link` or pass an id.')}\n`,
@@ -1356,7 +1391,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   if (!located) return 1;
   const p = located.located.project;
   if (json) {
-    emitJson(p);
+    // The API's wire name for the id is `project_id`; scripts read `.id`.
+    emitJson({ id: p.project_id, ...p });
     return 0;
   }
   process.stdout.write('\n');
@@ -1367,7 +1403,16 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${p.default_branch}\n`);
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
-  process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n\n`);
+  process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
+  // Internal-only surfaces Kortix turned on (apps). Agents read this
+  // to know `kortix apps` works here.
+  const managed = featureRows(p as unknown as Record<string, unknown>)
+    .filter((r) => r.operator_only && r.enabled)
+    .map((r) => r.key);
+  if (managed.length > 0) {
+    process.stdout.write(`  ${C.dim}by kortix  ${C.reset}${managed.join(', ')}\n`);
+  }
+  process.stdout.write('\n');
   return 0;
 }
 
@@ -1605,7 +1650,7 @@ async function projectsUnlink(): Promise<number> {
 }
 
 async function projectsOpen(arg?: string, hostArg?: string): Promise<number> {
-  const id = arg ?? resolveProjectId();
+  const id = resolveProjectId(arg, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
     return 1;
@@ -1630,7 +1675,6 @@ interface RmResult {
 
 async function projectsRm(args: string[]): Promise<number> {
   const rest = [...args];
-  const purge = takeFlagBool(rest, ['--purge']);
   const yes = takeFlagBool(rest, ['-y', '--yes']);
   let hostArg: string | undefined;
   try {
@@ -1639,7 +1683,7 @@ async function projectsRm(args: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId();
+  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId(undefined, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project to remove.')} Pass an id or run inside a linked project.\n`,
@@ -1656,9 +1700,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const { client, project } = located.located;
 
   if (!yes) {
-    const msg = purge
-      ? `Archive ${C.bold}${project.name}${C.reset} AND permanently delete its managed git repo? ${C.red}This cannot be undone.${C.reset}`
-      : `Archive ${C.bold}${project.name}${C.reset}? (the git repo is kept; pass --purge to delete it)`;
+    const msg = `Delete ${C.bold}${project.name}${C.reset} and its Kortix-managed git repo? ${C.red}This cannot be undone.${C.reset}`;
     const ok = await confirm(msg, false);
     if (!ok) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1668,7 +1710,7 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}${purge ? '?purge=true' : ''}`);
+    result = await client.delete<RmResult>(`/projects/${id}`);
   } catch (err) {
     return surface(err);
   }
@@ -1677,15 +1719,11 @@ async function projectsRm(args: string[]): Promise<number> {
   if (loadLink()?.project_id === id) clearLink();
 
   process.stdout.write(
-    `${status.ok(`${purge ? 'Purged' : 'Archived'} ${C.bold}${project.name}${C.reset}`)}\n`,
-  );
-  if (purge) {
-    process.stdout.write(
-      result.repo_deleted
+    `${status.ok(`Deleted ${C.bold}${project.name}${C.reset}`)}\n` +
+      (result.repo_deleted
         ? `  ${C.dim}managed git repo deleted${C.reset}\n`
-        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`,
-    );
-  }
+        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
+  );
   return 0;
 }
 

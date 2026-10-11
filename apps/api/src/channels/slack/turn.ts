@@ -580,18 +580,6 @@ export type TurnRelayReason =
 
 export type TurnRelayResult = { ok: true } | { ok: false; reason: TurnRelayReason };
 
-export async function relayTurnStep(
-  sessionId: string,
-  title: string,
-  opts: {
-    detail?: string;
-    outputForPrev?: string;
-    sourcesForPrev?: Array<{ url: string; text: string }>;
-  } = {},
-): Promise<boolean> {
-  return (await relayTurnStepDetailed(sessionId, title, opts)).ok;
-}
-
 export async function relayTurnStepDetailed(
   sessionId: string,
   title: string,
@@ -663,14 +651,6 @@ export async function relayTurnStepDetailed(
   await repaintLivePlan(handle);
   await saveTurn(handle);
   return { ok: true };
-}
-
-export async function relayTurnAnswer(
-  sessionId: string,
-  text: string,
-  blocks?: unknown[],
-): Promise<boolean> {
-  return (await relayTurnAnswerDetailed(sessionId, text, blocks)).ok;
 }
 
 export async function relayTurnAnswerDetailed(

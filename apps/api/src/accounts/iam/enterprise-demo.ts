@@ -41,7 +41,6 @@ export function registerIamEnterpriseDemoRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
       return c.json({ enabled: await isDemoEnterprise(accountId) });

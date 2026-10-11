@@ -50,8 +50,6 @@ export {
 export {
   loadPermissionCatalog,
   loadSystemRoles,
-  loadAccountRoles,
-  scopeForAction,
   unscopedDefaultFor,
   type ObjectType,
   type ScopeType,
@@ -79,9 +77,7 @@ export {
 export {
   normalizeProjectRole,
   parseAssignableProjectRole,
-  maxProjectRole,
   isAccountManager,
-  PROJECT_ROLE_RANK,
   PROJECT_ROLE_INPUT_ERROR,
   type AccountRole,
   type ProjectRole,

@@ -1,5 +1,4 @@
 import {
-  type GitBackend,
   resolveGitBackend,
 } from '../../platform/services/managed-git-backend';
 import {
@@ -11,6 +10,7 @@ import {
   isGithubAppConfigured,
   isOrgAccount,
 } from '../github';
+import { GitHubApiError } from '../github-http';
 import { seedRepoViaGitPush } from './seed';
 import {
   type GitConnectionRef,
@@ -40,17 +40,6 @@ export function managedGithubOwner(): string | null {
 export function managedGithubInstallId(): string | null {
   const backend = resolveGitBackend();
   return backend?.kind === 'app' ? backend.installationId : null;
-}
-
-/**
- * The stored account type for the App-installation owner (install-callback
- * records `account.type` straight off the installation payload). `undefined`
- * when it was never recorded; callers fall back to a live `isOrgAccount`
- * lookup in that case (see `managedAdminAuth` below).
- */
-export function managedGithubOwnerType(): 'User' | 'Organization' | undefined {
-  const backend = resolveGitBackend();
-  return backend?.kind === 'app' ? (backend.ownerType ?? undefined) : undefined;
 }
 
 /**
@@ -171,7 +160,15 @@ export const githubBackend: GitHostBackend = {
   async deleteRepo(ref: GitConnectionRef): Promise<void> {
     if (!ref.repoOwner || !ref.repoName) return;
     const auth = await managedAdminAuth();
-    await ghDeleteRepo({ owner: ref.repoOwner, repo: ref.repoName, auth });
+    try {
+      await ghDeleteRepo({ owner: ref.repoOwner, repo: ref.repoName, auth });
+    } catch (err) {
+      // Gone is the state a delete produces (as code-storage treats 404). An
+      // archived project keeps its managed connection after its repo was
+      // deleted, so account erasure deletes it again (KRTX-1734).
+      if (err instanceof GitHubApiError && err.status === 404) return;
+      throw err;
+    }
   },
 
   buildUpstream(ref: GitConnectionRef, token: string | null, _scope: GitScope): UpstreamGit {

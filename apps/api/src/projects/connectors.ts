@@ -82,7 +82,6 @@ export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STR
 export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
-export const EMAIL_RESERVED_SLUG = 'kortix_email';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
@@ -278,75 +277,6 @@ export function extractConnectors(manifest: ParsedManifest): LoadedConnectors {
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
   errors.sort((a, b) => a.slug.localeCompare(b.slug));
   return { specs, errors };
-}
-
-/**
- * Convert a ConnectorSpec back to the raw object that lives in
- * `manifest.raw.connectors` (serialized as YAML for `kortix.yaml`, or TOML
- * for a legacy v1 `kortix.toml`). Inverse of `parseConnectorEntry`. Used by
- * the CRUD path to round-trip a dashboard edit before committing.
- */
-export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, unknown> {
-  const entry: Record<string, unknown> = {
-    slug: spec.slug,
-    name: spec.name,
-    provider: spec.provider,
-    enabled: spec.enabled,
-    authorization_strategy: spec.authorizationStrategy,
-  };
-  // `shared` is the only mode and the implicit default for every provider —
-  // never emit `credential` (mirrors how `sensitive: false` is omitted).
-  // Provider-specific keys — only emit what carries information.
-  if (spec.provider === 'pipedream' || spec.provider === 'composio') {
-    if (spec.app) entry.app = spec.app;
-    if (spec.account) entry.account = spec.account;
-  } else if (spec.provider === 'mcp') {
-    if (spec.url) entry.url = spec.url;
-    if (spec.transport) entry.transport = spec.transport;
-  } else if (spec.provider === 'graphql') {
-    if (spec.endpoint) entry.endpoint = spec.endpoint;
-    if (spec.spec) entry.spec = spec.spec;
-  } else if (spec.provider === 'http') {
-    if (spec.baseUrl) entry.base_url = spec.baseUrl;
-    if (spec.spec) entry.spec = spec.spec;
-  } else if (spec.provider === 'channel') {
-    if (spec.platform) entry.platform = spec.platform;
-  } else if (spec.provider === 'openapi' || spec.provider === 'postman') {
-    if (spec.spec) entry.spec = spec.spec;
-  }
-
-  if (spec.authAuto === false || spec.auth.type !== 'none') {
-    const auth: Record<string, unknown> = { type: spec.auth.type };
-    if (spec.auth.type === 'custom' || spec.auth.type === 'api_key' || spec.auth.type === 'hmac') {
-      if (spec.auth.in !== 'header') auth.in = spec.auth.in;
-      if (spec.auth.name) auth.name = spec.auth.name;
-    }
-    if (spec.auth.prefix) auth.prefix = spec.auth.prefix;
-    if (spec.auth.secret) auth.secret = spec.auth.secret;
-    entry.auth = auth;
-  }
-
-  // Only emit a `headers` table when there is one — an empty map carries no
-  // information and would just churn the manifest (same rule as `policies`).
-  if (Object.keys(spec.headers).length > 0) {
-    entry.headers = { ...spec.headers };
-  }
-
-  if (spec.policies.length > 0) {
-    entry.policies = spec.policies.map((p) => {
-      const row: Record<string, unknown> = { match: p.match, action: p.action };
-      if (p.conditions && p.conditions.length > 0) {
-        row.conditions = p.conditions.map((c) => ({
-          arg: c.arg,
-          match: c.match,
-          ...(c.negate ? { negate: true } : {}),
-        }));
-      }
-      return row;
-    });
-  }
-
-  return entry;
 }
 
 /**

@@ -6,6 +6,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface FeedbackWithUser {
   feedback_id: string;
   account_id: string;
@@ -45,6 +46,7 @@ interface FeedbackListParams {
   sort_order?: 'asc' | 'desc';
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface FeedbackStats {
   total_feedback: number;
   average_rating: number;
@@ -52,6 +54,7 @@ export interface FeedbackStats {
   rating_distribution: Record<string, number>;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface SentimentSummary {
   total: number;
   positive: number;
@@ -63,6 +66,7 @@ export interface SentimentSummary {
   negative_percentage: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface TimeSeriesPoint {
   period: string;
   count: number;
@@ -72,11 +76,13 @@ export interface TimeSeriesPoint {
   with_text_count: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface RatingTrends {
   periods: string[];
   data: Record<string, Record<string, number>>;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface CriticalFeedback {
   feedback_id: string;
   rating: number;
@@ -86,6 +92,7 @@ export interface CriticalFeedback {
   user_email: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ImprovementArea {
   area: string;
   severity: 'high' | 'medium' | 'low';
@@ -94,6 +101,7 @@ export interface ImprovementArea {
   suggested_action: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ActionableRecommendation {
   recommendation: string;
   priority: 'high' | 'medium' | 'low';
@@ -102,6 +110,7 @@ export interface ActionableRecommendation {
   implementation_hint: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface LLMAnalysisResponse {
   analysis: string;
   key_themes: string[];
@@ -112,43 +121,44 @@ export interface LLMAnalysisResponse {
   generated_at: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface LLMAnalysisRequest {
   focus_area?: 'negative' | 'positive' | 'all' | 'critical';
   days?: number;
   max_feedback?: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminFeedbackList(params: FeedbackListParams = {}) {
   return useRetiredQuery<FeedbackListResponse>('useAdminFeedbackList', ['admin', 'feedback', 'list', params]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminFeedbackStats() {
   return useRetiredQuery<FeedbackStats>('useAdminFeedbackStats', ['admin', 'feedback', 'stats']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSentimentSummary() {
   return useRetiredQuery<SentimentSummary>('useAdminSentimentSummary', ['admin', 'feedback', 'sentiment']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminFeedbackTimeSeries(days: number = 30, granularity: string = 'day') {
   return useRetiredQuery<TimeSeriesPoint[]>('useAdminFeedbackTimeSeries', ['admin', 'feedback', 'time-series', days, granularity]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminRatingTrends(days: number = 30) {
   return useRetiredQuery<RatingTrends>('useAdminRatingTrends', ['admin', 'feedback', 'rating-trends', days]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminCriticalFeedback(limit: number = 20) {
   return useRetiredQuery<CriticalFeedback[]>('useAdminCriticalFeedback', ['admin', 'feedback', 'critical', limit]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminFeedbackExport(params: {
   rating_filter?: number;
   has_text?: boolean;
@@ -158,7 +168,7 @@ export function useAdminFeedbackExport(params: {
   return useRetiredQuery<FeedbackWithUser[]>('useAdminFeedbackExport', ['admin', 'feedback', 'export', params], false);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminFeedbackAnalysis() {
   return useRetiredMutation<LLMAnalysisResponse, LLMAnalysisRequest>('useAdminFeedbackAnalysis');
 }

@@ -35,6 +35,10 @@ const server = Bun.serve({
     return Response.json({ id, state: 'stopped' });
   },
 });
+// `localhost` does not resolve on a platform sandbox, which answers
+// ConnectionRefused instead of serving the stub fleet. Loopback by address
+// connects on every host (the same convention as shared/platinum.test.ts).
+const STUB_ORIGIN = `http://127.0.0.1:${server.port}`;
 
 beforeAll(async () => {
   if (!process.env.TEST_DATABASE_URL) throw new Error('Run through pnpm test -- --db-only sandbox-ownership');
@@ -46,7 +50,7 @@ beforeAll(async () => {
   await peer.execute(sql`create table kortix.platform_settings (
     key varchar(255) primary key, value jsonb not null, updated_at timestamptz not null default now()
   )`);
-  config.PLATINUM_API_URL = server.url.origin;
+  config.PLATINUM_API_URL = STUB_ORIGIN;
   config.PLATINUM_API_KEY = 'pt_synthetic_ownership';
   config.ALLOWED_SANDBOX_PROVIDERS = ['platinum'];
   config.KORTIX_INSTANCE_ID = undefined;

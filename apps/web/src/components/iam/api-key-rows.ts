@@ -27,10 +27,10 @@ import type { AccountToken, KortixProject } from '@kortix/sdk';
  * listing them turns this tab into a session log nobody asked for.
  *
  * Matching on the name is a heuristic, and it is deliberate: the list payload
- * carries no `session_id` (`repositories/account-tokens.ts`'s
- * `listAccountTokens` selects nine columns and `session_id` is not one of
- * them), so the name plus the project binding is the only signal the browser
- * has.
+ * carries no `session_id` (the `/accounts/tokens` route maps nine response
+ * fields and `session_id` is not one of them —
+ * `accounts/core/tokens.ts`), so the name plus the project binding is the only
+ * signal the browser has.
  *
  * Since 2026-08-18 the one surface that lists personal keys — a person's own
  * settings (`features/workspace/settings/tabs/tokens-tab.tsx`) — reads

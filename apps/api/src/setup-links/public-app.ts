@@ -26,7 +26,7 @@ import {
   withheldSecretsFix,
   type SessionWithheldSecrets,
 } from '../projects/lib/session-secret-reach';
-import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
+import { isValidSecretName, projectSecretsDeletedSince, writeSharedProjectSecret } from '../projects/secrets';
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
@@ -50,6 +50,10 @@ const setupLinksPublicApp = makeOpenApiApp();
 // Unauthenticated on purpose: the token in the path IS the capability.
 const TokenParams = z.object({ token: z.string() });
 const LinkErrors = errors(400, 404, 410);
+/** Statuses a SECRET link adds to a link error: the link can also name a
+ *  secret the owner removed after the token was minted (409 — see the
+ *  tombstone check in the two secret routes). */
+const SecretLinkErrors = errors(400, 404, 409, 410);
 /** Statuses `resolveConnectorLink` adds to a link error. */
 const ConnectorLinkErrors = errors(400, 404, 409, 410, 501, 502);
 
@@ -185,6 +189,18 @@ setupLinksPublicApp.use('/connectors/:token', createSetupLinkRateLimitMiddleware
 setupLinksPublicApp.use('/connectors/:token/start', createSetupLinkRateLimitMiddleware());
 setupLinksPublicApp.use('/connectors/:token/finalize', createSetupLinkRateLimitMiddleware());
 
+/**
+ * The one message a link whose target secret was removed after minting
+ * answers with, on the intake page (GET) and on the submit (POST): what
+ * happened, which secret, and the way out. 409, not 410: the link itself did
+ * not expire — the state it pointed at did, and only a fresh link fixes it.
+ */
+function deadSecretLinkMessage(names: string[]): string {
+  const list = names.join(', ');
+  const was = names.length === 1 ? 'was' : 'were';
+  return `This link is no longer valid: ${list} ${was} removed from the project after the link was issued. Ask the agent for a fresh link.`;
+}
+
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
 setupLinksPublicApp.openapi(createRoute({
   method: 'get',
@@ -192,7 +208,7 @@ setupLinksPublicApp.openapi(createRoute({
   tags: ['setup-links'],
   summary: 'Read what a secret setup link asks for',
   request: { params: TokenParams },
-  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...LinkErrors },
+  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...SecretLinkErrors },
 }), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
@@ -203,6 +219,16 @@ setupLinksPublicApp.openapi(createRoute({
   if (!project || project.status === 'archived') {
     return c.json({ error: 'This link is unavailable' }, 404);
   }
+  // A secret the owner removed after this token was minted must not look
+  // collectable: the form would take values the submit then has to refuse.
+  // Tokens minted before `iat` carry no mint time, so 0 — any deletion of a
+  // requested name kills them (an unknown mint time is the oldest possible).
+  const dead = await projectSecretsDeletedSince(
+    resolved.projectId,
+    resolved.payload.fields.map((f) => f.name),
+    resolved.payload.iat ?? 0,
+  );
+  if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
 
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
@@ -231,7 +257,7 @@ setupLinksPublicApp.openapi(createRoute({
       only_requester: z.boolean().optional().openapi({ description: 'Keep the values to the member who asked.' }),
     }) } } },
   },
-  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...LinkErrors },
+  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...SecretLinkErrors },
 }), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
@@ -255,6 +281,17 @@ setupLinksPublicApp.openapi(createRoute({
     if (!project || project.status === 'archived') {
       return c.json({ error: 'This link is unavailable' }, 404);
     }
+    // Same tombstone check as the page, now inside the write transaction and
+    // after the same project-row lock: either this submission commits before
+    // an unset deletes the row, or the unset's tombstone is already visible
+    // here and the submission is refused. A link can never re-create what the
+    // owner removed after minting it (KRTX-2056).
+    const dead = await projectSecretsDeletedSince(
+      resolved.projectId,
+      payload.fields.map((f) => f.name),
+      payload.iat ?? 0,
+    );
+    if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
     // "Only the person who asked" — the one audience a link holder may choose.
     // It can only narrow: the default is everyone in the project.
     // The minter must still be in the account: a removed member's links die with them.

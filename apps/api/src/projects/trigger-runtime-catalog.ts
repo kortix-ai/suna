@@ -116,5 +116,3 @@ export async function ensureProjectTriggerRuntime(
 ): Promise<{ upserted: number; removed: number }> {
   return reconcileProjectTriggerRuntimeWithStore(projectId, specs, store, { pruneStale: false });
 }
-
-export type { TriggerRuntimeCatalogStore } from './trigger-runtime-catalog-core';

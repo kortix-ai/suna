@@ -100,7 +100,12 @@ export function useDriveRowInteractions({
     [intentOf, node.path, onDropMove, onDropUpload],
   );
 
+  // Enter commits, and so does the blur when the input then goes away: one
+  // rename per edit, not two (the second answered "not found").
+  const renameCommittedRef = useRef(false);
+
   const startRenaming = useCallback(() => {
+    renameCommittedRef.current = false;
     setRenameName(node.name);
     setIsRenaming(true);
     requestAnimationFrame(() => {
@@ -111,7 +116,16 @@ export function useDriveRowInteractions({
     });
   }, [node.name, selectRenameInput]);
 
+  // Closing the editor any other way (Escape) is a cancel: the blur that
+  // follows must not commit the half-typed name.
+  const setRenaming = useCallback((renaming: boolean) => {
+    if (!renaming) renameCommittedRef.current = true;
+    setIsRenaming(renaming);
+  }, []);
+
   const confirmRename = useCallback(() => {
+    if (renameCommittedRef.current) return;
+    renameCommittedRef.current = true;
     const trimmed = renameName.trim();
     if (trimmed && trimmed !== node.name) {
       onRename?.(node, trimmed);
@@ -120,7 +134,7 @@ export function useDriveRowInteractions({
   }, [renameName, node, onRename]);
 
   return {
-    isDragOver, isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
+    isDragOver, isDragging, isRenaming, setIsRenaming: setRenaming, renameName, setRenameName,
     renameInputRef, handleDragStart, handleDragEnd, handleDragOver, handleDragEnter,
     handleDragLeave, handleDrop, startRenaming, confirmRename,
   };

@@ -33,10 +33,8 @@ import {
 } from './provider-transition-core';
 import {
   serializeTransition,
-  toPublicTransitionView,
   toPublicTransitionState,
   type PreparationView,
-  type PublicTransitionView,
   type PublicTransitionState,
 } from './provider-transition-view';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
@@ -168,13 +166,6 @@ export function kickDrive(transitionId: string, database: Database = appDb): voi
     }),
   );
 }
-
-// FIX-L: the PATCH-response + poll-endpoint shapes (PreparationView,
-// serializeTransition, the PUBLIC projection) live in the pure, config-free
-// provider-transition-view module (imported above). Re-export the locals so
-// existing importers keep this module as their entrypoint.
-export { serializeTransition, toPublicTransitionView, toPublicTransitionState };
-export type { PreparationView, PublicTransitionView, PublicTransitionState };
 
 export class ProviderTransitionError extends Error {
   constructor(message: string, readonly code: 'bad_provider' | 'not_found') {

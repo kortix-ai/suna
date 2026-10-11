@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 
-export interface PressableSurfaceProps extends Omit<PressableProps, 'style'> {
+interface PressableSurfaceProps extends Omit<PressableProps, 'style'> {
   style: (state: { pressed: boolean }) => StyleProp<ViewStyle>;
 }
 

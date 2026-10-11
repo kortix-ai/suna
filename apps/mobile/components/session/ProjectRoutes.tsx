@@ -9,6 +9,8 @@
  *   /projects/[id]/sessions sessions — every session of the project (drawer)
  *   /projects/[id]/files    files    — the project's files (drawer)
  *   /projects/[id]/account  account  — the Account page (drawer avatar)
+ *   /projects/[id]/inbox    inbox    — the caller's notifications across
+ *                                      every project (drawer, KRTX-1742)
  *   /projects/[id]/page     page     — a sub-page (`?pageId=`), pushed over
  *                                      the page it was opened from: project
  *                                      Settings from Settings, Schedules or
@@ -16,7 +18,7 @@
  *                                      from the thread's ··· sheet
  *
  * The stack is `[index]`, `[index, X]`, or `[index, X, page, …]`. The
- * drawer never deepens it: it pushes `sessions`, `files`, or `account` over
+ * drawer never deepens it: it pushes `sessions`, `files`, `account`, or `inbox` over
  * home, replaces a covering route with them, and drops any sub-pages
  * (lib/session/project-stack, ProjectScreen). A covering route replaces
  * itself with the view when a session opens (useCoveringRoute). Every
@@ -34,7 +36,7 @@
  * through ProjectRouteProvider. The tab store still decides WHICH page or
  * thread shows. The routes mirror only whether the project is on its home:
  *   - home route: the store leaves the home state → push `view`
- *   - covering route (sessions, files, account): the store leaves the home
+ *   - covering route (sessions, files, account, inbox): the store leaves the home
  *     state → replace this route with `view`
  *   - view route: the store returns to the home state (deleted session, New
  *     session) → pop to home
@@ -73,6 +75,7 @@ export {
   PROJECT_ACCOUNT_ROUTE,
   PROJECT_FILES_ROUTE,
   PROJECT_HOME_ROUTE,
+  PROJECT_INBOX_ROUTE,
   PROJECT_PAGE_ROUTE,
   PROJECT_SESSIONS_ROUTE,
   PROJECT_VIEW_ROUTE,
@@ -211,7 +214,7 @@ export function ProjectViewRoute() {
 }
 
 /**
- * A route that covers project home: `sessions`, `files`, or `account`. Call it
+ * A route that covers project home: `sessions`, `files`, `account`, or `inbox`. Call it
  * once in the component the route renders: `useNavigation()` there is the
  * project stack.
  *

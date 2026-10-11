@@ -121,14 +121,23 @@ flow('SESS-30', {
     (await owner.get(descriptorPath, descriptorOptions)).status(403);
     (await ctx.client.withBearer(tokenBody.secret_key, 'plain project PAT').get(descriptorPath, descriptorOptions)).status(403);
 
-    await bindDatabaseSessionCredential(ctx.env, {
-      tokenId: tokenBody.token_id,
-      commandId: first.json<any>().prompt_id,
-      sessionId,
-      accountId: ctx.P.OWNER.accountId!,
-      projectId: project.id,
-    });
-    const descriptor = await ctx.client.withBearer(tokenBody.secret_key, 'session PAT').get(descriptorPath, descriptorOptions);
+    // A deployed target's lifecycle drain can claim the queued command before
+    // the fixture marks it running and finish it after (409
+    // attachment_command_not_running). Mark it again and read again.
+    const descriptor = await (async () => {
+      for (let attempt = 1; ; attempt++) {
+        await bindDatabaseSessionCredential(ctx.env, {
+          tokenId: tokenBody.token_id,
+          commandId: first.json<any>().prompt_id,
+          sessionId,
+          accountId: ctx.P.OWNER.accountId!,
+          projectId: project.id,
+        });
+        const read = await ctx.client.withBearer(tokenBody.secret_key, 'session PAT').get(descriptorPath, descriptorOptions);
+        if (read.statusCode !== 409 || attempt === 5) return read;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+    })();
     descriptor.status(200);
     const descriptorBody = descriptor.json<any>();
     if (
@@ -136,8 +145,9 @@ flow('SESS-30', {
       descriptorBody.attachment_id !== attachmentId ||
       descriptorBody.part_index !== 1 ||
       descriptorBody.filename !== 'eager.txt' ||
-      // The upload maps every non-model-native MIME to octet-stream (#8229).
-      descriptorBody.mime !== 'application/octet-stream' ||
+      // #9380 keeps a text/plain upload as text/plain (before it, #8229 mapped
+      // every non-model-native MIME to application/octet-stream).
+      descriptorBody.mime !== 'text/plain' ||
       descriptorBody.size_bytes !== bytes.length ||
       !String(descriptorBody.target_path).endsWith(`/1-eager.txt`) ||
       !String(descriptorBody.download_url).startsWith('http') ||

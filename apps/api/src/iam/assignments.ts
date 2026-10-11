@@ -131,6 +131,10 @@ export interface AssignmentRow {
  * the writer-authorization step — `skipWriterAuthz` — and NOTHING else.
  */
 export const SYSTEM_ACTOR = Symbol('kortix.iam.system-actor');
+
+/** The system roles a `folder` object grant carries (the project's Files). Like
+ *  `agent-user`, they hold no permissions; the level is the role. */
+export const FOLDER_ROLE_KEYS: ReadonlySet<string> = new Set(['folder-reader', 'folder-writer', 'folder-manager']);
 export type Writer = Actor | typeof SYSTEM_ACTOR;
 
 // ─── Reads ──────────────────────────────────────────────────────────────────
@@ -700,10 +704,11 @@ function assertProjectPrincipalShape(
   scopeId: string | null,
 ): void {
   if (input.principal.type !== 'project') return;
-  if (!input.object || !scopeId || input.principal.id !== scopeId || role.key !== 'agent-user') {
+  const objectRole = role.key === 'agent-user' || (input.object?.type === 'folder' && FOLDER_ROLE_KEYS.has(role.key));
+  if (!input.object || !scopeId || input.principal.id !== scopeId || !objectRole) {
     throw new HTTPException(400, {
       message:
-        "a 'project' principal is valid only as an object grant on its own project: object required, principal_id = scope_id, role agent-user",
+        "a 'project' principal is valid only as an object grant on its own project: object required, principal_id = scope_id, role agent-user (or a folder role on a folder)",
     });
   }
 }

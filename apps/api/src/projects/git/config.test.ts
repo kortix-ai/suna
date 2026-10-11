@@ -131,6 +131,42 @@ afterEach(async () => {
 });
 
 describe('loadProjectConfig characterization', () => {
+  test('imported agents: every registered agent is listed, a disabled one with enabled: false, attributed to its declaring file', async () => {
+    // The reported shape: a root manifest that declares no `agents:` of its own
+    // and imports a domain file that does — one enabled, one disabled agent.
+    await push(
+      {
+        'kortix.yaml': `# Synthetic root manifest
+kortix_version: 2
+imports:
+  - domains/kortix.yaml
+opencode:
+  config_dir: .kortix/opencode
+`,
+        'domains/kortix.yaml': `agents:
+  builder:
+    connectors: all
+  observer:
+    enabled: false
+    connectors: all
+`,
+      },
+      'declare agents through an imported domain file',
+    );
+
+    const config = await loadProjectConfig(project);
+
+    expect(config.agent_discovery).toBe('declarative');
+    // Every registered agent is listed — the disabled one carries `enabled: false`
+    // instead of vanishing (launch surfaces filter it at their own layer).
+    expect(config.agents.map((agent) => [agent.name, agent.enabled, agent.path])).toEqual([
+      ['builder', true, 'domains/kortix.yaml#agents.builder'],
+      ['observer', false, 'domains/kortix.yaml#agents.observer'],
+    ]);
+    // The scope mirror still resolves from the declaring block.
+    expect(config.agents[1]?.scope?.connectors).toBe('all');
+  });
+
   test('pins the manifest, signals and opencode.jsonc fields of an imported manifest', async () => {
     const config = await loadProjectConfig(project);
 

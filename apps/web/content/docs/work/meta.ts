@@ -2,5 +2,5 @@ import { defineMeta } from 'blume';
 
 export default defineMeta({
   title: 'Running work',
-  pages: ['index', 'sessions', 'change-requests', 'harnesses', 'runtime'],
+  pages: ['index', 'sessions', 'notifications', 'change-requests', 'harnesses', 'runtime'],
 });

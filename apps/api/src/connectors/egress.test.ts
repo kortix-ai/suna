@@ -96,6 +96,24 @@ describe('connector egress fetch', () => {
     expect(fetchCalls).toEqual(['https://93.184.216.34/x']);
   });
 
+  test('maxResponseBytes refuses a body over the cap while it streams', async () => {
+    responses = [{ status: 200, body: 'x'.repeat(2048) }];
+    const res = await egress('https://api.example.com/big', { method: 'GET', headers: {}, maxResponseBytes: 1024 });
+    await expect(res.text()).rejects.toThrow(/^upstream_response_too_large: /);
+  });
+
+  test('maxResponseBytes refuses a declared Content-Length over the cap', async () => {
+    responses = [{ status: 200, body: '{}', headers: { 'content-length': '999999' } }];
+    const res = await egress('https://api.example.com/big', { method: 'GET', headers: {}, maxResponseBytes: 1024 });
+    await expect(res.text()).rejects.toThrow('upstream_response_too_large: the upstream answer exceeds 1024 bytes');
+  });
+
+  test('a body within maxResponseBytes reads as text', async () => {
+    responses = [{ status: 200, body: '{"name":"Zoë"}' }];
+    const res = await egress('https://api.example.com/ok', { method: 'GET', headers: {}, maxResponseBytes: 1024 });
+    expect(await res.text()).toBe('{"name":"Zoë"}');
+  });
+
   test('the refusal never echoes the URL query, where query credentials live', async () => {
     const error = await egress('http://10.0.0.1/x?api_key=secret-value', { method: 'GET', headers: {} }).catch(
       (e: Error) => e,

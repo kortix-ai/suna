@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  advanceTriggerScheduleSlot,
   initialTriggerScheduleSlot,
+  nextTriggerScheduleSlot,
   triggerScheduleRevision,
   validateTriggerCron,
   validateTriggerTimezone,
@@ -94,9 +94,8 @@ describe('materialized next_fire_at', () => {
     expect(
       initialTriggerScheduleSlot(oneOff, new Date('2026-07-27T16:00:00.000Z'))?.toISOString(),
     ).toBe('2026-07-27T15:00:00.000Z');
-    expect(advanceTriggerScheduleSlot(oneOff, new Date('2026-07-27T15:00:00.000Z'))).toBeNull();
     expect(
-      advanceTriggerScheduleSlot(schedule(), new Date('2026-07-27T15:00:00.000Z'))?.toISOString(),
+      nextTriggerScheduleSlot(schedule(), new Date('2026-07-27T15:00:00.000Z'))?.toISOString(),
     ).toBe('2026-07-28T15:00:00.000Z');
   });
 });
@@ -136,7 +135,7 @@ describe('type = "monitor" never schedules', () => {
 
   test('claims no initial or next slot', () => {
     expect(initialTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
-    expect(advanceTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
+    expect(nextTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
   });
 
   test('its revision tracks the monitor fields', () => {
@@ -157,6 +156,91 @@ describe('type = "monitor" never schedules', () => {
   test('a cron revision is unchanged by the monitor fields', () => {
     expect(triggerScheduleRevision(schedule({ run: './x.ts', monitorMode: 'poll' }))).toBe(
       triggerScheduleRevision(schedule()),
+    );
+  });
+});
+
+// Characterization: the hash string of an existing trigger must not move when
+// the event type lands. A moved revision re-upserts every catalog row.
+describe('schedule revision is pinned for non-event types', () => {
+  test('cron and webhook revisions equal the pre-event hashes', () => {
+    expect(triggerScheduleRevision(schedule())).toBe(
+      'c62c42e5c5e7b7b69d399925bf34ff11d22f12c1a62044a72c80e3e502316b75',
+    );
+    expect(triggerScheduleRevision(schedule({ type: 'webhook' }))).toBe(
+      'fca2ff133482b29721769bfaf3e9b4c1b88dbe71c45654f2a32ede10e065f2e5',
+    );
+  });
+
+  test('an event revision tracks connector, event type and config', () => {
+    const event = (config: Record<string, unknown> = {}, type = 'E') =>
+      schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', type, config } });
+    const original = triggerScheduleRevision(event());
+    expect(triggerScheduleRevision(event())).toBe(original);
+    expect(triggerScheduleRevision(event({ repo: 'api' }))).not.toBe(original);
+    expect(triggerScheduleRevision(event({}, 'OTHER'))).not.toBe(original);
+  });
+
+  test('an event revision tracks the account only when one is set', () => {
+    const event = (account?: string | null) =>
+      schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', ...(account === undefined ? {} : { account }), type: 'E', config: {} } });
+    const original = triggerScheduleRevision(event());
+    expect(triggerScheduleRevision(event('acme-bot'))).not.toBe(original);
+    expect(triggerScheduleRevision(event('acme-bot'))).not.toBe(triggerScheduleRevision(event('other-bot')));
+  });
+
+  test('an event with no account keeps the revision it had before accounts existed', () => {
+    // Characterization: a changed revision re-upserts the catalog row of every existing event trigger.
+    expect(
+      triggerScheduleRevision(schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', type: 'E', config: {} } })),
+    ).toBe('aebeec2d7fd43e59cd497b5d0fcb86933ad38c51c7316cc755252d702c520fbf');
+  });
+});
+
+// KRTX-1721: croner reads a 6-field cron seconds-first, so a cron that steps
+// the first field fires every few seconds, and each fire starts a session.
+// New crons are refused at write time; a stored one runs at most once a minute.
+describe('a stored cron that fires more than once a minute', () => {
+  const at = new Date('2026-07-27T10:00:00.000Z');
+
+  test('advances at least 60 seconds past the previous slot', () => {
+    for (const cron of ['*/5 * * * * *', '*/30 * * * * *', '0,30 * * * * *']) {
+      expect(nextTriggerScheduleSlot(schedule({ cron, timezone: 'UTC' }), at)?.toISOString()).toBe(
+        '2026-07-27T10:01:00.000Z',
+      );
+    }
+  });
+
+  test('keeps its floor with jitter', () => {
+    const next = nextTriggerScheduleSlot(schedule({ cron: '*/5 * * * * *', timezone: 'UTC' }), at, {
+      jitterKey: 'trigger-a',
+      jitterWindowMs: 60_000,
+    });
+    expect(next!.getTime() - at.getTime()).toBeGreaterThanOrEqual(60_000);
+  });
+
+  test('a once-a-minute cron is unchanged', () => {
+    expect(nextTriggerScheduleSlot(schedule({ cron: '0 * * * * *', timezone: 'UTC' }), at)?.toISOString()).toBe(
+      '2026-07-27T10:01:00.000Z',
+    );
+    expect(
+      nextTriggerScheduleSlot(schedule({ cron: '0 */30 * * * *', timezone: 'UTC' }), at)?.toISOString(),
+    ).toBe('2026-07-27T10:30:00.000Z');
+  });
+});
+
+describe('type = "event" revision', () => {
+  const event = (overrides: NonNullable<GitTriggerSpec['event']>): GitTriggerSpec =>
+    schedule({ type: 'event', cron: null, timezone: 'UTC', event: overrides });
+  const base = { connector: 'github-work', account: 'acme-bot', type: 'GITHUB_PULL_REQUEST_CREATED', config: { repo: 'acme/api' } };
+
+  // `source` joins the hash only when set, so every event trigger cataloged before `source`
+  // existed keeps its revision (a changed revision re-upserts the catalog row).
+  test('is unchanged when source is unset and changes when it is set', () => {
+    expect(triggerScheduleRevision(event(base))).toBe('b49d4f780a9dcd704633f5a4a9764469846d3b5b19d49796c98ad9e951257bac');
+    expect(triggerScheduleRevision(event({ ...base, source: null }))).toBe(triggerScheduleRevision(event(base)));
+    expect(triggerScheduleRevision(event({ connector: base.connector, account: base.account, source: 'composio', type: base.type, config: base.config }))).not.toBe(
+      triggerScheduleRevision(event(base)),
     );
   });
 });

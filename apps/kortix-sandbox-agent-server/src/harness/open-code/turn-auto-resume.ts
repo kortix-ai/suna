@@ -124,11 +124,103 @@ function describeError(error: OpencodeTurnError): string {
   return msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
 }
 
-function resumePrompt(error: OpencodeTurnError): string {
-  return (
+// ── KRTX-1746: name the interrupted subagent in the resume prompt ───────────
+//
+// When a root turn dies while a `task` (subagent) call was in flight, the bare
+// resume prompt's "re-run it if it did not complete" makes the model re-send
+// the SAME prompt to a NEW subagent — the failed child's work is lost and the
+// failure looks unrecoverable. The child session survives (OpenCode keeps a
+// failed child; its id rides the part's `state.metadata.sessionId`, or the
+// `task_id:` sentence in `state.error` when the task tool failed), so the
+// resume prompt names it and tells the model to resume THAT subagent via the
+// task tool's `task_id` parameter instead of re-dispatching.
+//
+// Shapes verified against opencode 1.18.23 with a mock provider (2026-10-07):
+// a failed task part ends `status: 'error'` with `state.error =
+// "Subagent failed (task_id: <childId>): …"` and `state.metadata` retained; a
+// turn cut mid-task leaves the part `running` with the same metadata.
+export interface InterruptedSubagent {
+  /** The child session id — the task tool's `task_id` resume parameter. */
+  taskId: string;
+  /** The dispatch's `description` (or first prompt line), for the prompt text. */
+  description?: string;
+  /** The failed task tool's error text, so the model sees WHY it failed. */
+  error?: string;
+  /** `true` — the task tool failed; `false` — the turn died with it running. */
+  failed: boolean;
+}
+
+/** Row shape of opencode's `GET /session/{id}/message`. */
+export interface MessageRows
+  extends Array<{
+    info?: { role?: string; error?: unknown; time?: { completed?: number } };
+    parts?: unknown;
+  }> {}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+const SESSION_ID_IN_ERROR = /\btask_id:\s*(ses_[A-Za-z0-9]+)/;
+
+/**
+ * Pure: the subagent dispatches the errored turn left behind, from the last
+ * assistant message's parts. Only the `task` tool's calls count — its child
+ * sessions are the ones the task tool itself can resume via `task_id`; the
+ * legacy delegate twins (agent_spawn, session_spawn, …) spawn worker sessions
+ * no task tool can resume. Dispatches that finished (`completed`) are not
+ * interrupted and are skipped.
+ */
+export function interruptedSubagents(rows: MessageRows): InterruptedSubagent[] {
+  const last = rows[rows.length - 1];
+  if (!last || last.info?.role !== 'assistant' || !Array.isArray(last.parts)) return [];
+  const found: InterruptedSubagent[] = [];
+  for (const raw of last.parts) {
+    if (!isRecord(raw) || raw.type !== 'tool' || raw.tool !== 'task') continue;
+    const state = isRecord(raw.state) ? raw.state : undefined;
+    const status = typeof state?.status === 'string' ? state.status : '';
+    if (status !== 'error' && status !== 'running' && status !== 'pending') continue;
+    const metadata = isRecord(state?.metadata) ? state.metadata : undefined;
+    const metaSessionId = typeof metadata?.sessionId === 'string' ? metadata.sessionId : undefined;
+    const errorText = typeof state?.error === 'string' ? state.error : undefined;
+    const errorSessionId = errorText ? (errorText.match(SESSION_ID_IN_ERROR)?.[1] ?? undefined) : undefined;
+    const taskId = metaSessionId ?? errorSessionId;
+    if (!taskId) continue;
+    const input = isRecord(state?.input) ? state.input : undefined;
+    const descriptionInput = typeof input?.description === 'string' ? input.description : undefined;
+    const promptInput = typeof input?.prompt === 'string' ? input.prompt : undefined;
+    const description = (descriptionInput ?? promptInput?.split('\n')[0]?.trim() ?? undefined)?.slice(0, 80) || undefined;
+    found.push({
+      taskId,
+      description,
+      error: errorText ? errorText.slice(0, 160) : undefined,
+      failed: status === 'error',
+    });
+  }
+  return found;
+}
+
+function resumePrompt(error: OpencodeTurnError, subagents: readonly InterruptedSubagent[]): string {
+  const base =
     `[auto-recovery] Your previous response was interrupted by a transient provider error (${describeError(error)}). ` +
     'Resume the task from where it stopped: check which step or tool call was cut off, re-run it if it did not complete, ' +
-    'and continue to the original goal. Do not redo work that already succeeded.'
+    'and continue to the original goal. Do not redo work that already succeeded.';
+  if (subagents.length === 0) return base;
+  // A turn in flight rarely has more than a couple of live dispatches; cap the
+  // list so a pathological transcript cannot balloon the resume prompt.
+  const lines = subagents
+    .slice(0, 3)
+    .map((task) => {
+      const fate = task.failed
+        ? `the task tool failed: ${task.error ?? 'unknown error'}`
+        : 'the task tool never returned';
+      return `- "${task.description ?? 'a dispatched subagent'}" — subagent session ${task.taskId} (${fate})`;
+    })
+    .join('\n');
+  return (
+    `${base}\n\nThe interruption hit while a subagent call was in flight, so the subagent did not finish:\n${lines}\n` +
+    'Resume THAT subagent instead of starting a new one: call the task tool again passing its task_id to continue it with its context intact. ' +
+    'Start a fresh subagent only if resuming that one fails.'
   );
 }
 
@@ -177,6 +269,8 @@ interface LastMessageView {
   role?: string;
   hasError: boolean;
   completed: boolean;
+  /** Subagent dispatches the errored turn left behind (KRTX-1746). */
+  subagents: InterruptedSubagent[];
 }
 
 export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResumer {
@@ -204,15 +298,14 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
       const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(deps.cfg.workspace)}`;
       const res = await fetchImpl(url, { signal: AbortSignal.timeout(5_000) });
       if (!res.ok) return null;
-      const rows = (await res.json()) as Array<{
-        info?: { role?: string; error?: unknown; time?: { completed?: number } };
-      }>;
+      const rows = (await res.json()) as MessageRows;
       if (!Array.isArray(rows) || rows.length === 0) return null;
       const info = rows[rows.length - 1]?.info;
       return {
         role: info?.role,
         hasError: Boolean(info?.error),
         completed: Boolean(info?.time?.completed),
+        subagents: interruptedSubagents(rows),
       };
     } catch {
       return null;
@@ -332,7 +425,10 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
       return false;
     }
 
-    const delivered = await deliverResume(sessionId, runtimeFault ? RUNTIME_FAULT_PROMPT : resumePrompt(error));
+    const delivered = await deliverResume(
+      sessionId,
+      runtimeFault ? RUNTIME_FAULT_PROMPT : resumePrompt(error, last.subagents),
+    );
     if (!delivered) {
       logger.warn('[turn-auto-resume] resume prompt delivery failed — surfacing error', {
         sessionId,

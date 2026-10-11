@@ -86,7 +86,6 @@ let pricingIndex: ModelPricingIndex = new Map();
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-let lastFetchedAt: Date | null = null;
 let modelCount = 0;
 
 // ---------------------------------------------------------------------------
@@ -164,7 +163,6 @@ async function refreshPricing(): Promise<void> {
     // Atomic swap — readers never see a partially-built map
     pricingIndex = newIndex;
     modelCount = [...newIndex.values()].reduce((count, models) => count + models.size, 0);
-    lastFetchedAt = new Date();
 
     console.log(
       `[model-pricing] Loaded ${modelCount} provider-qualified model prices from models.dev (live)`,

@@ -67,8 +67,10 @@ function nonSessionRuntimeBillingStatus(status: string | null): string | null {
  * Every compute window belongs to exactly one runtime model. Session windows
  * join through `session_sandboxes`; App windows join through `app_runtime_id`;
  * monitor windows join through `project_monitor_boxes.box_id`, which IS the
- * monitor window's `sandbox_id`. Keeping all three joins in one bounded query
- * preserves oldest-first sweep order.
+ * monitor window's `sandbox_id`. A leftover `backend` window (the retired
+ * `convex` App machine) has no runtime row: it reads as `sandbox-row-missing`
+ * and this sweep closes it. Keeping all three joins in one
+ * bounded query preserves oldest-first sweep order.
  *
  * The monitor join is load-bearing, not defensive: a monitor box has NO
  * `session_sandboxes` row, so without it every open monitor window reads as
@@ -158,7 +160,11 @@ export async function reconcileOrphanComputeSessions(
           ? row.monitorUpdatedAt
           : row.sbUpdatedAt;
       const runtimeMetadata = (
-        isApp ? row.appMetadata : isMonitor ? row.monitorMetadata : row.sbMetadata
+        isApp
+          ? row.appMetadata
+          : isMonitor
+            ? row.monitorMetadata
+            : row.sbMetadata
       ) as Record<string, unknown> | null;
       const provider = isApp
         ? row.appProvider

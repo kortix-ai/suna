@@ -68,6 +68,7 @@ export interface WarmSendCreateInput {
   connector_bindings?: SessionConnectorBindingsInput;
   provider_secret_pools?: Record<string, string[]>;
   inherit_unbound?: boolean;
+  persistent_machine?: boolean;
 }
 
 /** What was actually created, so a send can tell whether it fits. */
@@ -107,6 +108,8 @@ export function warmSessionFitsSend(
   if (create.connector_bindings !== undefined) return false;
   if (create.provider_secret_pools !== undefined) return false;
   if (create.inherit_unbound !== undefined) return false;
+  // A warm session boots an ordinary box; a persistent machine is its own create.
+  if (create.persistent_machine) return false;
   if (create.agent_name !== undefined && create.agent_name !== warm.agentName) return false;
   if (create.sandbox_slug !== undefined && create.sandbox_slug !== warm.sandboxSlug) return false;
   return true;
@@ -232,7 +235,7 @@ const defaultClient: WarmSessionClient = {
 
 export interface CreateWarmSessionOptions {
   /** Forwarded to the client — see `ensureWarmProjectSession`'s option of the
-   *  same name. Set by `takeWarmSession`'s replenish to the id it just took. */
+   *  same name. Set by a take's replenish to the id it just took. */
   excludeSessionId?: string;
   /**
    * Retries left after the store rejects a produced session as already-taken
@@ -311,23 +314,20 @@ export interface TakeWarmSessionOptions {
 }
 
 /**
- * Take this project's warm session for a send, or null to create normally.
- *
- * Synchronous and network-free — the session already exists. Null covers both
- * "none ready" and "the one we have cannot serve this send"; either way the
- * caller falls back to the ordinary create path, which re-evaluates every gate
- * and surfaces the same outcome the user would have seen regardless.
- *
- * A warm session that does not fit is CONSUMED, not kept: the user changed their
- * mind about the agent, so it will not fit the next send either.
- */
-/**
  * Take this project's warm session for a send, or null to create normally —
- * the FULL entry (id, agent, sandbox, and the server row itself), not just
- * the id. `takeWarmSession` below is the historical id-only surface every
- * existing caller and test uses; `use-new-project-session.ts` calls this one
- * so it can seed the sessions-list cache with `.session` at adoption time
- * (`warm-session-seed.ts`) — see JAY-599 / T21.
+ * the FULL entry (id, agent, sandbox, and the server row itself). Synchronous
+ * and network-free — the session already exists. Null covers both "none ready",
+ * "the one we have cannot serve this send" and "another tab took it already";
+ * either way the caller falls back to the ordinary create path, which
+ * re-evaluates every gate and surfaces the same outcome the user would have
+ * seen regardless.
+ *
+ * A warm session that does not fit is CONSUMED, not kept: the user changed
+ * their mind about the agent, so it will not fit the next send either.
+ *
+ * `use-new-project-session.ts` calls this one so it can seed the sessions-list
+ * cache with `.session` at adoption time (`warm-session-seed.ts`) — see
+ * JAY-599 / T21.
  */
 export function takeWarmSessionEntry(
   projectId: string,
@@ -363,13 +363,6 @@ export function takeWarmSessionEntry(
   }
   if (stale) return null;
   return warmSessionFitsSend(warm, options.create) ? warm : null;
-}
-
-export function takeWarmSession(
-  projectId: string,
-  options: TakeWarmSessionOptions = {},
-): string | null {
-  return takeWarmSessionEntry(projectId, options)?.sessionId ?? null;
 }
 
 /**

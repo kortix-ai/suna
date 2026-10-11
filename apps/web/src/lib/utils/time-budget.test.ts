@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import { DEFAULT_TIME_BUDGET_MS, withTimeBudget } from './time-budget';
 
 /**
- * The clock exists for one reachable hang: `openDB()` in the SDK's
- * `idb-sync-cache` has no `onblocked` handler, so a blocked version upgrade
- * settles NEITHER `success` nor `error`. A promise that never settles cannot be
+ * The clock exists for one hang: before database version 4, `openDB()` in the
+ * SDK's `idb-sync-cache` had no `onblocked` handler, so a blocked version
+ * upgrade settled NEITHER `success` nor `error`. A promise that never settles cannot be
  * caught, only outrun — so the case that matters most here is the one a
  * try/catch test would never reach.
  */

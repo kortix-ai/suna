@@ -64,7 +64,14 @@ function bindQueries(
     async readMessages({ sessionId, limit, before, after, afterSeq }) {
       const version = await state.opencodeVersion()
       const probe = db.probe()
-      const useDb = probe.supported && isSupportedOpencodeVersion(version)
+      const versionSupported = isSupportedOpencodeVersion(version)
+      const useDb = probe.supported && versionSupported
+      /** Same shape on every unreadable-mirror error: what degraded, and why. */
+      const dbDiagnostics = {
+        supported: probe.supported,
+        reason: probe.reason,
+        version_supported: versionSupported,
+      }
 
       let page: Awaited<ReturnType<OpencodeDb['messagePage']>> = null
       let source: 'sqlite' | 'opencode-http' = 'sqlite'
@@ -79,6 +86,20 @@ function bindQueries(
         })
       }
       if (!page) {
+        // A cursor read cannot fall back to OpenCode HTTP: the daemon route
+        // serves only the newest page, so the client would re-apply old
+        // messages or skip the delta. Fail loud instead of answering wrong.
+        if (after || afterSeq != null) {
+          return {
+            ok: false,
+            body: {
+              error: 'transcript unreadable',
+              source: 'opencode-http',
+              detail: 'cursor reads need the sqlite mirror; it is unavailable',
+              db: dbDiagnostics,
+            },
+          }
+        }
         source = 'opencode-http'
         const fallback = await readMessagesOverHttp(opencode, workspace(), sessionId, {
           limit,
@@ -91,11 +112,7 @@ function bindQueries(
               error: 'transcript unreadable',
               source,
               detail: fallback.detail,
-              db: {
-                supported: probe.supported,
-                reason: probe.reason,
-                version_supported: isSupportedOpencodeVersion(version),
-              },
+              db: dbDiagnostics,
             },
           }
         }
@@ -152,6 +169,11 @@ function bindQueries(
   }
 }
 
+/**
+ * Reads a newest-page (and `before`) page from OpenCode's own HTTP route.
+ * Cannot serve a cursor read: OpenCode's message route has no `after`, so a
+ * degraded cursor read must fail in `readMessages`, never reach here.
+ */
 async function readMessagesOverHttp(
   opencode: Opencode,
   workspace: string,

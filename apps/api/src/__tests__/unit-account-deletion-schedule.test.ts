@@ -5,8 +5,8 @@
  * schema moved to `kortix` (KRTX-1260): the only wired processor was the
  * legacy pg_cron job, whose SQL read the pre-baseline `public` copy of
  * `account_deletion_requests`. These tests pin the wiring: start() runs the
- * first tick immediately (the leader drains the backlog it inherits), gated
- * on the same billing flag as the deletion routes, ticks are serialized and
+ * first tick immediately (the leader drains the backlog it inherits), with
+ * billing on or off (self-host deletes accounts too), ticks are serialized and
  * stop() awaits the tick in flight.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -70,12 +70,19 @@ describe('startAccountDeletionSchedule', () => {
     expect(processorCalls).toBe(1);
   });
 
-  test('billing disabled schedules nothing', async () => {
+  // Self-hosted deployments run with billing off. Their users request
+  // deletions through the same routes, and the auth-user-delete trigger
+  // schedules orphan accounts there too.
+  test('billing disabled still executes the due deletions', async () => {
     actualConfig.config.KORTIX_BILLING_INTERNAL_ENABLED = false;
+    processor = async () => {
+      processorCalls += 1;
+      return { processed: 1, errors: [] };
+    };
     startAccountDeletionSchedule();
-    await Bun.sleep(50);
-    expect(processorCalls).toBe(0);
+    await until(() => processorCalls === 1, 'the first tick with billing off');
     await stopAccountDeletionSchedule();
+    expect(processorCalls).toBe(1);
   });
 
   test('stop awaits the tick in flight and no tick fires after stop', async () => {

@@ -154,6 +154,20 @@ export async function createAgentMailInbox(input: {
   return agentMailRequest<AgentMailInbox>(input.apiKey, '/inboxes', { method: 'POST', body });
 }
 
+/** Reply in the thread of `messageId`, as the inbox. */
+export async function replyToAgentMailMessage(input: {
+  apiKey: string;
+  inboxId: string;
+  messageId: string;
+  text: string;
+}): Promise<void> {
+  await agentMailRequest(
+    input.apiKey,
+    `/inboxes/${encodeURIComponent(input.inboxId)}/messages/${encodeURIComponent(input.messageId)}/reply`,
+    { method: 'POST', body: { text: input.text } },
+  );
+}
+
 export async function createAgentMailWebhook(input: {
   apiKey: string;
   inboxId: string;

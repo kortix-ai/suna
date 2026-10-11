@@ -56,7 +56,7 @@ const SHIMMER_BASE = {
   dark: 'hsl(240 3.8% 46.1%)', // hex-allowlist: web text-shimmer `#71717a` (zinc-500) = hsl(240 3.8% 46.1%)
 } as const;
 
-export type TextShimmerTone = 'default' | 'muted';
+type TextShimmerTone = 'default' | 'muted';
 
 type TextVariant = ComponentProps<typeof Text>['variant'];
 
@@ -104,7 +104,7 @@ function shimmerColors(tone: TextShimmerTone, isDark: boolean) {
   return { base: isDark ? SHIMMER_BASE.dark : SHIMMER_BASE.light, highlight: t.foreground };
 }
 
-function TextShimmerSweep({
+export const TextShimmer = memo(function TextShimmer({
   children,
   variant,
   style,
@@ -115,8 +115,13 @@ function TextShimmerSweep({
   containerStyle,
 }: TextShimmerProps) {
   const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const { base, highlight } = useMemo(() => shimmerColors(tone, isDark), [tone, isDark]);
+  const { base, highlight } = useMemo(() => shimmerColors(tone, colorScheme === 'dark'), [tone, colorScheme]);
+  const toolMotion = useContext(ToolMotionContext);
+  const loopMotion = useContext(LoopMotionContext);
+  const reduceMotion = useReduceMotion();
+  // All hooks run every render: a mounted label's contexts flip when a turn
+  // ends or a segment is appended. With motion off the sweep never starts.
+  const motionOn = toolMotion && loopMotion && !reduceMotion;
   const band = shimmerSpread(children, spread);
 
   const [measured, setMeasured] = useState(false);
@@ -132,6 +137,7 @@ function TextShimmerSweep({
   );
 
   useEffect(() => {
+    if (!motionOn) return;
     const sweepMs = duration * 1000;
     progress.value = withRepeat(
       withSequence(
@@ -144,13 +150,13 @@ function TextShimmerSweep({
       false,
     );
     return () => cancelAnimation(progress);
-  }, [duration, progress]);
+  }, [duration, progress, motionOn]);
 
   const bandStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shimmerBandCenter(progress.value, width.value) - band }],
   }));
 
-  const animate = measured;
+  const animate = motionOn && measured;
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -188,33 +194,11 @@ function TextShimmerSweep({
       )}
     </View>
   );
-}
-
-/** The same box and base colour the sweep starts from, with no animation. */
-function TextShimmerStill({ children, variant, style, numberOfLines, tone = 'default', containerStyle }: TextShimmerProps) {
-  const { colorScheme } = useColorScheme();
-  const { base } = shimmerColors(tone, colorScheme === 'dark');
-  return (
-    <View style={[styles.container, containerStyle]}>
-      <Text variant={variant} style={[style, { color: base }]} numberOfLines={numberOfLines}>
-        {children}
-      </Text>
-    </View>
-  );
-}
-
-function TextShimmerImpl(props: TextShimmerProps) {
-  // All hooks run every render: a mounted label's contexts flip when a turn ends or a segment is appended.
-  const toolMotion = useContext(ToolMotionContext);
-  const loopMotion = useContext(LoopMotionContext);
-  const reduceMotion = useReduceMotion();
-  return toolMotion && loopMotion && !reduceMotion ? <TextShimmerSweep {...props} /> : <TextShimmerStill {...props} />;
-}
+});
+TextShimmer.displayName = 'TextShimmer';
 
 const styles = StyleSheet.create({
   container: { flexShrink: 1, minWidth: 0 },
   band: { position: 'absolute', top: 0, bottom: 0, left: 0 },
 });
 
-export const TextShimmer = memo(TextShimmerImpl);
-TextShimmer.displayName = 'TextShimmer';

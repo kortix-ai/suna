@@ -210,3 +210,27 @@ describe('runConnectLinkFlow', () => {
     expect(harness.closeCalls).toBe(1);
   });
 });
+
+describe('runConnectLinkFlow: a closed popup ends a pending request', () => {
+  test('a finalize that never answers rejects once the popup is closed', async () => {
+    const harness = popupHarness();
+    const flow = runConnectLinkFlow(
+      async () => ({ connected: false, connectUrl: 'https://connect.example/a' }),
+      () => new Promise(() => undefined),
+      { openWindow: () => harness.popup, sleep: async () => undefined },
+    );
+    setTimeout(() => harness.setClosed(true), 20);
+    await expect(flow).rejects.toThrow('The connection popup closed before authorization completed.');
+  });
+
+  test('a start that never answers rejects once the popup is closed', async () => {
+    const harness = popupHarness();
+    const flow = runConnectLinkFlow(
+      () => new Promise(() => undefined),
+      async () => ({ connected: false }),
+      { openWindow: () => harness.popup, sleep: async () => undefined },
+    );
+    setTimeout(() => harness.setClosed(true), 20);
+    await expect(flow).rejects.toThrow('The connection popup closed before authorization completed.');
+  });
+});

@@ -1,6 +1,6 @@
 ---
 name: kortix-connectors
-description: Use Kortix connectors to reach external systems from a session. Use the `kortix connectors` CLI for agent work, `@kortix/sdk` for durable TypeScript workflows, and `kortix connectors mcp` when a stdio MCP server is required. Load this skill to inspect, add, connect, or call external tools without exposing third-party credentials to the sandbox.
+description: Use Kortix connectors to reach external systems from a session, an App, a Convex backend, or an external program. Use the `kortix connectors` CLI for agent work, `@kortix/sdk` for durable TypeScript workflows and for App, backend, and script code, and the hosted Kortix MCP server (`<api>/v1/mcp`) for an MCP client outside Kortix. Load this skill to inspect, add, connect, or call external tools without exposing third-party credentials to the sandbox, an App, or a backend.
 ---
 
 <skill name="kortix-connectors">
@@ -39,10 +39,7 @@ Use the **`kortix connectors` CLI** for normal agent work:
   `<file>` and prints only `saved_to`, `bytes`, and `shape` (keys, array
   lengths, `pageInfo`). Use it for list and search calls; tool output above
   ~50 KB is truncated. Then query the file with `jq` or `bun`, never `cat`.
-  The `kortix-connectors_call` MCP tool does this by itself above 16 KB: it
-  returns `{ saved_to, bytes, shape, preview }`.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
-- `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
 Durable TypeScript workflows use **`@kortix/sdk`** and `createKortix`. Every
 call runs through the connector gateway. The
@@ -116,11 +113,10 @@ account resolves first and report "one account connected". If the human says
 work@example.com — …".
 
 **Adding another account.** When the human wants a new one ("connect my other
-Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
-apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
-where the human names the account and chooses who can use it; you are then told
-its name. Call it with `--account "<name>"` from then on. `kortix connectors
-connect` from a shell cannot name a new account.
+Gmail"), mint a link with a `--label` that tells it apart:
+`kortix connectors connect <slug> --label "Personal Gmail"`. The link opens a
+dialog where the human names the account and chooses who can use it; you are
+then told its name. Call it with `--account "<name>"` from then on.
 </choosing-the-account>
 
 <cli-first-loop>
@@ -216,6 +212,28 @@ Run repository scripts with `bun run path/to/script.ts`. Keep provider
 credentials out of code and repository files.
 </sdk-workflows>
 
+<from-apps-and-backends>
+App, Convex backend, and external-program code calls connectors through
+`@kortix/sdk` too. Never give that code a provider API key when a connector
+for the provider exists: a raw key skips policy, approvals, and audit. The
+Kortix credential decides which accounts a call reaches:
+
+| Where the code runs | Credential | Reaches |
+|---|---|---|
+| App, browser | `backendUrl: '/_kortix/api/v1'` + `kortixAppViewerToken()` (App set to `--viewer api`) | the viewer's shared and private accounts |
+| App, server | `createAppViewerKortix(request, { backendUrl })` | the same, per request |
+| Convex action, App job with no viewer | a service account bearer (`kortix_sa_…`) in an env var | shared accounts nobody narrowed; never a private one |
+| External program, CI | a personal access token, `kortix tokens new <name> --project <id>` | the token owner's shared and private accounts |
+
+A service account is a human step. An agent session cannot create one. Ask
+the person to run `kortix tokens service-accounts new <name>` and
+`kortix access grant --service-account <id> --role member --project <id>`,
+and to store the bearer (`npx convex env set KORTIX_API_KEY …` for Convex; a
+project secret mapped under `apps.<slug>.secrets` for an App, with a name that
+does not start with `KORTIX_`). Build the rest while you wait. Recipes and
+errors: `references/sdk.md` → "Calling from an App, a backend, or a script".
+</from-apps-and-backends>
+
 <adding-connectors>
 Connector definitions live in `kortix.yaml`. Connections remain server-side.
 
@@ -261,7 +279,8 @@ kortix channels connect
   them with `kortix connectors accounts <slug>`. Never infer accounts from a
   profile/whoami call.
 - Use `kortix connectors` for one-off agent actions.
-- Use `@kortix/sdk` for durable or testable workflows.
+- Use `@kortix/sdk` for durable or testable workflows, and for App, Convex
+  backend, and external-program code (see **From apps and backends**).
 - Use Composio for every new managed SaaS connector. Never select Pipedream
   unless the human explicitly approves the legacy rollback path.
 - Do not use raw provider tokens from the sandbox.
@@ -272,7 +291,6 @@ kortix channels connect
 - Report which account ran when it could matter — read the result's
   `account` field, never assume.
 - Confirm irreversible work before a destructive connector call.
-- The `kortix-connectors` MCP server is optional. Use the CLI if it is absent.
 </rules>
 
 </skill>

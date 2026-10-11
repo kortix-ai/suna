@@ -1,10 +1,11 @@
 import { createInterface } from 'node:readline';
 import {
-  extractGatewayErrorDetails,
-  findSessionAttachments,
-  unwrapError,
   type MessageWithParts,
   type Part,
+  extractGatewayErrorDetails,
+  findSessionAttachments,
+  sessionModelPin,
+  unwrapError,
 } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
@@ -868,7 +869,8 @@ By default shows active sessions (running / provisioning / failed); pass --all
 to include stopped ones. Aliases: \`overview\`, \`ps\`.
 
   --all, -a         Include stopped/completed sessions.
-  --json            Structured output for scripting.
+  --json            Structured output for scripting; each session carries
+                    model, its resolved model id (null when none stored).
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -955,6 +957,9 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         status: s.status,
         branch: s.branch_name,
         agent: s.agent_name,
+        // Stored resolved model pin; null = the row stores none and the
+        // session follows the default chain.
+        model: sessionModelPin(s),
         updated_at: s.updated_at,
         activity: activity.get(s.session_id) ?? null,
       })),

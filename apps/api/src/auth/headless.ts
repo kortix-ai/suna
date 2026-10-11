@@ -23,8 +23,9 @@ import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../middleware/auth-audit';
-import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
+import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
+import { canSignUp } from '../shared/access-control-cache';
 import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';
 
@@ -178,15 +179,25 @@ headlessAuthRouter.openapi(
         z.object({ user: UserSchema.nullable(), session: SessionSchema.nullable(), requires_email_confirmation: z.boolean() }),
         'Created. `session` is null until the email is confirmed when confirmation is required.',
       ),
-      ...errors(400, 422, 429),
+      ...errors(400, 403, 422, 429),
     },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const email = body.email.trim().toLowerCase();
+    // The same two rules the web sign-up form gets from `/access/check-email`,
+    // so a direct API call cannot create the account the form would refuse
+    // (KRTX-1716): an SSO-only domain, and closed sign-ups off the allowlist.
+    const denied = await ssoRequired(c, email);
+    if (denied) return denied;
+    if (!canSignUp(email)) {
+      auditLoginFail({ c, reason: 'signup_closed', authType: 'supabase' });
+      return c.json({ error: 'signup_closed', error_description: 'Sign-ups are closed for this email address.' }, 403);
+    }
     const result = await gotrue<Record<string, unknown>>('/signup', {
-      body: { email: body.email.trim().toLowerCase(), password: body.password, data: body.data ?? {} },
+      body: { email, password: body.password, data: body.data ?? {} },
       clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
@@ -496,5 +507,3 @@ headlessAuthRouter.openapi(
     return c.json({ sent: true as const });
   },
 );
-
-export type { GoTrueSession };

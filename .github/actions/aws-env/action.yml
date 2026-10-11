@@ -1,6 +1,6 @@
 # aws-env: the single path by which a workflow in this repository reads a
 # credential. GitHub Actions stores no secret; every value lives in AWS Secrets
-# Manager (us-west-2):
+# Manager, in the region that `blob_region` in fetch.sh lists for its blob:
 #   - kortix-ci-env            CI-only values, keyed by the old GitHub secret name
 #   - kortix-{dev,staging,preview,prod}-env, kortix-*-web-env
 #                              runtime blobs; CI reads a key from them instead of
@@ -39,10 +39,6 @@ inputs:
       `permissions: id-token: write`. The credentials go only to the fetch
       step; the job's own AWS credentials and region stay unchanged. An empty
       string reuses the AWS credentials already present in the job.
-  aws-region:
-    required: false
-    default: us-west-2
-    description: Region of the Secrets Manager blobs.
 
 runs:
   using: composite
@@ -55,6 +51,5 @@ runs:
       shell: bash
       env:
         AWS_ENV_KEYS: ${{ inputs.keys }}
-        AWS_ENV_REGION: ${{ inputs.aws-region }}
         AWS_ENV_ROLE: ${{ inputs.role-to-assume }}
       run: bash "$GITHUB_ACTION_PATH/fetch.sh"

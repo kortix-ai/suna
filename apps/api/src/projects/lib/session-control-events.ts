@@ -83,7 +83,9 @@ export type ControlEventType =
    */
   | 'kortix.control.audit'
   /** The daemon's `/kortix/opencode/state` projection, when the stream has one. */
-  | 'kortix.control.runtime_state';
+  | 'kortix.control.runtime_state'
+  /** The session's title and the project's secrets version (R5.2). */
+  | 'kortix.control.session';
 
 export interface ControlEvent {
   /** Which id-space this frame belongs to. Present on EVERY frame the stream writes. */

@@ -1,5 +1,4 @@
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
@@ -11,6 +10,7 @@ import { RootClientHosts, RootQueryHosts } from '@/components/root-client-hosts'
 import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
+import { SsoRequiredProvider } from '@/features/auth/sso-required';
 import { BrandingProvider } from '@/features/branding/branding-provider';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
@@ -31,6 +31,8 @@ import { loadMessages } from '@/i18n/messages';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { Toaster } from 'sonner';
+
+import { TurnAttentionBadge } from '@/components/turn-attention-badge';
 import { roobert } from '../(system)/fonts/roobert';
 import { roobertMono } from '../(system)/fonts/roobert-mono';
 import '../globals.css';
@@ -341,12 +343,12 @@ export default async function RootLayout({
               <TooltipProvider delayDuration={150}>
                 <AuthProvider>
                   <I18nProvider initialLocale={htmlLang}>
-                    <WebMcpTools />
                     {/* Publishes the App Router to lib/navigation/router-bridge so
                     stores and error handlers navigate softly instead of
                     reloading the document. */}
                     <RouterBridge />
                     <BrowserNoiseGuard />
+                    <TurnAttentionBadge />
                     <DesktopChrome />
                     {/* The window's one Back: every screen gets an exit on the
                     desktop shell unless its shell navigates already. */}
@@ -367,7 +369,11 @@ export default async function RootLayout({
                           event (coded 403) and walks the user through a TOTP
                           step-up so the retried action passes the IAM gate. */}
                           <MfaStepUpProvider>
-                            <KortixProjectScope>{children}</KortixProjectScope>
+                            {/* SSO only: catches kortix:sso-required (coded 403)
+                            and offers to sign out and sign in through the IdP. */}
+                            <SsoRequiredProvider>
+                              <KortixProjectScope>{children}</KortixProjectScope>
+                            </SsoRequiredProvider>
                           </MfaStepUpProvider>
                         </RequestDemoProvider>
                       </BrandingProvider>

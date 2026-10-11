@@ -1,14 +1,15 @@
 /**
  * The Kortix turn verbs on pi, answered in-process by the runtime: admit a
- * prompt, abort the run, read the transcript and the compiled agent set.
+ * prompt, abort the run, read or retract a message, list the compiled agent set.
  */
-import { STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay'
+import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessTurnResponse, HarnessTurnService, RuntimePromptInput } from '../contract/turns'
 import { PromptRejected, parsePromptBody, type PiRuntime, type PromptInput } from './runtime'
 
 const answer = (status: number, body: unknown): HarnessTurnResponse => ({ status, body })
 const NOT_STARTED = answer(503, { error: 'pi runtime is not started' })
+const READ = answer(409, { code: MESSAGE_READ_CODE, error: 'a model call read this message' })
 
 /** The runtime's prompt input, or the 400 that refuses the body. */
 function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse {
@@ -19,6 +20,7 @@ function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse 
       ...(input.agent ? { agent: input.agent } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.variant ? { variant: input.variant } : {}),
+      ...(input.noReply ? { noReply: true } : {}),
     })
   } catch (err) {
     return answer(400, { error: err instanceof Error ? err.message : String(err) })
@@ -28,6 +30,9 @@ function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse 
 export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTurnService {
   const transcriptOf = (rt: PiRuntime, sessionId: string) =>
     sessionId === rt.rootId ? rt.transcript : rt.childSession(sessionId)?.transcript ?? null
+  /** A subagent's child session is driven by its parent's task tool: every message in it was read. */
+  const retract = (rt: PiRuntime, sessionId: string, messageId: string) =>
+    sessionId === rt.rootId ? rt.retract(messageId) : transcriptOf(rt, sessionId)?.messageById(messageId) ? 'read' : null
 
   return {
     async prompt(sessionId, input) {
@@ -83,16 +88,21 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       return answer(200, stripInlineAttachmentBytes(message, ref).value)
     },
 
+    // pi removes only what no model call has read, so a removal is a retract.
     async removeMessage(sessionId, messageId) {
       const rt = runtime()
       if (!rt) return NOT_STARTED
-      // A steered message the turn has not read is taken back out of its queue.
-      const withdrawn = sessionId === rt.rootId ? rt.withdrawSteer(messageId) : null
-      if (withdrawn === 'removed') return answer(200, true)
-      if (withdrawn === 'read') return answer(409, { error: 'message is already running' })
-      if (!transcriptOf(rt, sessionId)?.messageById(messageId)) return answer(404, { error: 'unknown message' })
-      if (rt.activeTurnMessageId() === messageId) return answer(409, { error: 'message is already running' })
-      return answer(409, { error: 'message deletion is not supported by the pi harness' })
+      const outcome = retract(rt, sessionId, messageId)
+      if (outcome === 'retracted') return answer(200, true)
+      return outcome === 'read' ? READ : answer(404, { error: 'unknown message' })
+    },
+
+    async retractMessage(sessionId, messageId) {
+      const rt = runtime()
+      if (!rt) return NOT_STARTED
+      const outcome = retract(rt, sessionId, messageId)
+      if (outcome === 'retracted') return answer(200, { retracted: true })
+      return outcome === 'read' ? READ : answer(404, { error: 'unknown message' })
     },
 
     async agents() {

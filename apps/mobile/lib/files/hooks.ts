@@ -1,14 +1,14 @@
 /**
  * Sandbox file hooks. Reads and the rename/delete verbs go through the
  * `@kortix/sdk` file client, each call naming its sandbox with `baseUrl`. The
- * `{ uri }` multipart upload goes through the SDK's `uploadNativeFile`. One path
- * stays native: the download to disk (bytes never enter the JS heap).
+ * `{ uri }` multipart upload goes through the SDK's `uploadNativeFile`. The
+ * download to disk streams natively (bytes never enter the JS heap) with the
+ * SDK's `fileDownloadRequest` URL and headers.
  */
 
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
-import { deleteFile, listFiles, readBlob, readFile, renameFile, uploadNativeFile } from '@kortix/sdk';
-import { getAuthToken } from '@/api/config';
+import { deleteFile, fileDownloadRequest, listFiles, readBlob, readFile, renameFile, uploadNativeFile } from '@kortix/sdk';
 import type { SandboxFile } from '@/api/types';
 import { normalizeFilenameToNFC } from './utils';
 
@@ -101,13 +101,9 @@ export async function downloadSandboxFileToCache(
   filePath: string,
   fileName: string,
 ): Promise<string> {
-  const token = await getAuthToken();
+  const request = await fileDownloadRequest(filePath, sandboxUrl);
   const target = `${FileSystem.cacheDirectory}${fileName}`;
-  const result = await FileSystem.downloadAsync(
-    `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}`,
-    target,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-  );
+  const result = await FileSystem.downloadAsync(request.url, target, { headers: request.headers });
   const contentType = Object.entries(result.headers).find(
     ([name]) => name.toLowerCase() === 'content-type',
   )?.[1];

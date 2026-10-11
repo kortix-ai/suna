@@ -12,8 +12,8 @@
  *
  * `kortix ship` runs the same checks before it commits, and the backend runs
  * the same schema on CR-merge. The repository size check is only ever a
- * warning: a large repository still pushes, but its agent config build fails
- * above 32 MiB compressed.
+ * warning: a large repository still pushes and its sessions still start, but
+ * above 512 MiB compressed a running session stops picking up config changes.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
@@ -39,9 +39,10 @@ const HELP = help`Usage: kortix validate [options]
 Statically validate the project's kortix.yaml against the canonical schema,
 and lint every \`sandbox.templates\` Dockerfile for the constraints the cloud
 builder enforces (no COPY from the repo, no RUN heredocs, Debian-family base).
-Warn when the files in Git are large: a session builds its agent config from
-the whole repository, and that build fails above 32 MiB compressed. Keep big
-static assets in object storage, not in Git. \`kortix ship\` runs these checks.
+Warn when the files in Git are large: every session downloads them, and above
+512 MiB compressed a running session stops picking up agent config changes
+from the base branch. Keep big static assets in object storage, not in Git.
+\`kortix ship\` runs these checks.
 
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml.

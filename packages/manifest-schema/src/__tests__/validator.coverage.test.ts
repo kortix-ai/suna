@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  CRON_MIN_INTERVAL_SECONDS,
+  cronIntervalError,
   validateManifest,
   formatIssues,
   ENV_NAME_RE,
@@ -350,6 +352,31 @@ describe('validateManifest — trigger edge cases', () => {
         'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 25 * * *"\nprompt = "go"\ntimezone = "UTC"',
       ),
     ).toContain('triggers[0].cron');
+  });
+
+  // KRTX-1721: croner reads 6 fields as seconds-first, so `*/30 * * * * *` is
+  // every 30 SECONDS. Each fire starts or prompts a session.
+  test('a cron that fires more than once a minute is rejected and names the 60-second minimum', () => {
+    for (const cron of ['*/30 * * * * *', '*/5 * * * * *', '0,30 * * * * *', '0,1 0 * * * *']) {
+      const issue = validateManifest(
+        `kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "${cron}"\nprompt = "go"`,
+      ).issues.find((i) => i.path === 'triggers[0].cron' && i.severity === 'error');
+      expect(issue?.message).toContain('60 seconds');
+    }
+  });
+
+  test('a cron at most once a minute passes the floor', () => {
+    for (const cron of ['0 */30 * * * *', '*/30 * * * *', '0 * * * * *', '* * * * *', '0 9 * * 1-5']) {
+      expect(
+        errorPaths(`kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "${cron}"\nprompt = "go"`),
+      ).not.toContain('triggers[0].cron');
+    }
+  });
+
+  test('cronIntervalError is null at the floor and names the minimum below it', () => {
+    expect(CRON_MIN_INTERVAL_SECONDS).toBe(60);
+    expect(cronIntervalError('0 * * * * *')).toBeNull();
+    expect(cronIntervalError('*/59 * * * * *')).toContain('60 seconds');
   });
 
   test('non-boolean enabled is rejected', () => {

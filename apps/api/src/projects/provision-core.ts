@@ -857,7 +857,7 @@ async function seedProvisionedRepo(
 
       // Same switch as the create-time hint (#6973): a seeded project's FIRST
       // session must already find its base tip + scaffold delta cached.
-      if (config.KORTIX_FAST_GIT_BOOT_ENABLED && writeUpstream) {
+      if (writeUpstream) {
         const hintTask = resolveFastBootGitHintWithCache(
           {
             projectId: row.projectId,

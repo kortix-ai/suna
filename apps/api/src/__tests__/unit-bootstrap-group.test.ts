@@ -3,7 +3,7 @@
 // Malformed jsonb must be rejected (null), never fed into account_group_members.
 import { describe, expect, test } from 'bun:test';
 import { validateBootstrapGroup } from '../accounts/invites';
-import { parseGroupPut, resolveInviteMemberAction, stripGroupGrant } from '../scim/groups';
+import { resolveInviteMemberAction, stripGroupGrant } from '../scim/groups';
 
 const UUID = '5888c520-d8f0-489a-a807-d2f8bf007fd1';
 
@@ -83,40 +83,5 @@ describe('stripGroupGrant', () => {
     expect(stripGroupGrant(null, UUID)).toEqual({ changed: false, remaining: [] });
     expect(stripGroupGrant(undefined, UUID)).toEqual({ changed: false, remaining: [] });
     expect(stripGroupGrant([], UUID)).toEqual({ changed: false, remaining: [] });
-  });
-});
-
-// Group PUT body interpretation — Okta group-push renames arrive as PUT with
-// the full resource. Omitted fields must mean "leave alone" (a partial client
-// must not wipe a group), while a PRESENT members array — even empty — is the
-// IdP's authoritative member list.
-describe('parseGroupPut', () => {
-  test('a rename-only PUT changes the name and leaves members alone', () => {
-    expect(parseGroupPut({ displayName: 'Platform Team' })).toEqual({
-      displayName: 'Platform Team',
-      externalId: null,
-      members: null,
-    });
-  });
-
-  test('a full Okta-style body extracts name + member values', () => {
-    expect(
-      parseGroupPut({
-        schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
-        id: UUID,
-        displayName: 'Engineers',
-        members: [{ value: UUID, display: 'A' }, { value: '00000000-0000-4000-8000-000000000002' }],
-      }),
-    ).toEqual({ displayName: 'Engineers', externalId: null, members: [UUID, '00000000-0000-4000-8000-000000000002'] });
-  });
-
-  test('an EMPTY members array is authoritative (clears the group), absent is not', () => {
-    expect(parseGroupPut({ displayName: 'X', members: [] }).members).toEqual([]);
-    expect(parseGroupPut({ displayName: 'X' }).members).toBeNull();
-  });
-
-  test('malformed members and empty names are rejected', () => {
-    expect(() => parseGroupPut({ members: [{ value: 42 }] })).toThrow();
-    expect(() => parseGroupPut({ displayName: '   ' })).toThrow();
   });
 });

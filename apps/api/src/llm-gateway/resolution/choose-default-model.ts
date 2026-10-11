@@ -16,12 +16,14 @@ export function chooseDefaultModel(params: {
   agentName?: string | null;
   projectDefault?: string | null;
   freeModelsOnly?: boolean;
+  platformDefault?: string | null;
 }): string | undefined {
   const { model } = chooseEffectiveModel({
     agentDefault: params.agentName ? params.agentDefaults[params.agentName] : null,
     projectDefault: params.projectDefault ?? null,
     accountDefault: params.accountDefault,
     freeModelsOnly: params.freeModelsOnly,
+    platformDefault: params.platformDefault,
   });
   return model ?? undefined;
 }

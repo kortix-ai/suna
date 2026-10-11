@@ -4,7 +4,9 @@ import publicTypeSurface from '../../../public-type-surface.snapshot.json';
 import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
+  confirmCheckoutSession,
   convertPresentationToGoogleSlides,
+  createCheckoutSession,
   getGoogleAuthUrl,
   getReferralCode,
   getReferralStats,
@@ -12,6 +14,7 @@ import {
   installTemplate,
   listReferrals,
   refreshReferralCode,
+  scheduleDowngrade,
   sendReferralEmails,
   updateTemplateWarmPool,
   validateReferralCode,
@@ -44,6 +47,8 @@ const retired = (name: string, instead?: string) =>
   `${name}() is retired: the Kortix API no longer serves this endpoint.${instead ? ` ${instead}` : ''}`;
 
 const SLIDES_INSTEAD = 'Export the deck as PDF or PPTX with convertRuntimePresentation().';
+const CHECKOUT_INSTEAD = 'Use createPerSeatCheckout().';
+const DOWNGRADE_INSTEAD = 'Change the plan in the Stripe customer portal (createPortalSession()).';
 
 /** `[name, call, message]` for every export that rejects with
  * `ENDPOINT_RETIRED`. */
@@ -78,6 +83,26 @@ const RETIRED: Array<[name: string, call: () => Promise<unknown>, message: strin
     'updateTemplateWarmPool',
     () => updateTemplateWarmPool('p', { slug: 'default', enabled: true }),
     retired('updateTemplateWarmPool'),
+  ],
+  [
+    'createCheckoutSession',
+    () =>
+      createCheckoutSession({
+        tierKey: 'pro',
+        successUrl: 'https://app.test/success',
+        cancelUrl: 'https://app.test/cancel',
+      }),
+    retired('createCheckoutSession', CHECKOUT_INSTEAD),
+  ],
+  [
+    'confirmCheckoutSession',
+    () => confirmCheckoutSession('cs_test', 'acc-1'),
+    retired('confirmCheckoutSession', CHECKOUT_INSTEAD),
+  ],
+  [
+    'scheduleDowngrade',
+    () => scheduleDowngrade('starter', 'monthly', 'acc-1'),
+    retired('scheduleDowngrade', DOWNGRADE_INSTEAD),
   ],
 ];
 

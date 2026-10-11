@@ -224,6 +224,13 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   { re: /^\/v1\/projects\/[^/]+\/apps(?!\/[^/]+\/access-session$)(\/|$)/ },
   // Repository / provider replacement rides PATCH on the project itself.
   { re: /^\/v1\/projects\/[^/]+$/, methods: ['PATCH'] },
+  // Account deletion, both mounts. The deletion routes run as the REAL
+  // caller: the request row records the operator as the requester, and the
+  // deletion sweeps the sandboxes of every account the requester owns. An
+  // operator inside the customer's account would schedule or run the
+  // teardown of their own accounts. Deletion is the customer's decision;
+  // the status read stays open for support.
+  { re: /^\/v1\/(billing\/)?account(\/|$)/ },
 ];
 
 /** HTTP methods that cannot change state, so cannot create durable access. */

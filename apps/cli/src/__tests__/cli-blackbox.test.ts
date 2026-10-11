@@ -190,7 +190,6 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-08-07T00:00:00.000Z',
     updated_at: '2026-08-07T00:00:00.000Z',
@@ -372,7 +371,7 @@ function startCliE2eServer() {
       }
       if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'DELETE') {
         archived = true;
-        return Response.json({ ok: true, archived: true, repo_deleted: url.searchParams.get('purge') === 'true' });
+        return Response.json({ ok: true, archived: true, repo_deleted: true });
       }
       if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
         return Response.json({
@@ -614,7 +613,7 @@ describe('kortix CLI black-box behavior', () => {
   test('Apps commands are discoverable and deploy an OCI image through the SDK', async () => {
     const unscopedHelp = await runCli(['--help']);
     expect(unscopedHelp.stdout).toContain('apps <subcommand>');
-    expect(unscopedHelp.stdout).toContain('Experimental: deploy serverless Apps');
+    expect(unscopedHelp.stdout).toContain('Experimental: deploy Apps (sites and servers)');
 
     const apiBase = startAppsServer();
     const configFile = writeConfig(apiBase, true);
@@ -773,7 +772,7 @@ describe('kortix CLI black-box behavior', () => {
     const landing = await runCli(['--help'], tmp, env);
     expect(landing.code).toBe(0);
     expect(landing.stdout).toContain('apps <subcommand>');
-    expect(landing.stdout).toContain('Experimental: deploy serverless Apps');
+    expect(landing.stdout).toContain('Experimental: deploy Apps (sites and servers)');
 
     const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
     expect(help.code).toBe(0);
@@ -908,10 +907,8 @@ describe('kortix CLI black-box behavior', () => {
     // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'memory.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
+    // The Kortix tools are hosted by the runtime on every harness: no copies in the project.
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
     // The full kit is the default now, so domain skills like pdf ARE present.
     expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
@@ -951,11 +948,10 @@ describe('kortix CLI black-box behavior', () => {
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);
@@ -994,10 +990,11 @@ describe('kortix CLI black-box behavior', () => {
     expect(relink.code).toBe(0);
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(true);
 
-    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
+    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(removeProject.code).toBe(0);
-    // --purge is the irreversible path: the result line says Purged, never Archived.
-    expect(removeProject.stdout).toContain('Purged');
+    // Deleting the project deletes its managed git repo: the result line says
+    // Deleted, never Archived, and the repo line follows.
+    expect(removeProject.stdout).toContain('Deleted');
     expect(removeProject.stdout).not.toContain('Archived');
     expect(removeProject.stdout).toContain('managed git repo deleted');
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
@@ -1011,7 +1008,7 @@ describe('kortix CLI black-box behavior', () => {
       ['GET', '/v1/marketplace/items/agent-browser', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
-      ['DELETE', '/v1/projects/proj_e2e?purge=true', null],
+      ['DELETE', '/v1/projects/proj_e2e', null],
     ]);
     expect(requests.every((r) => r.authorization === 'Bearer tok_blackbox')).toBe(true);
   }, 30_000);

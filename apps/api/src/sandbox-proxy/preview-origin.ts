@@ -58,8 +58,6 @@ import {
   touchPublicShare,
 } from '../shared/session-public-shares';
 
-export { resolvePreviewHost };
-
 export interface ResolvedPreviewRequest {
   target: ResolvedPreviewHost;
   /** The hostname the BROWSER used — what the app must believe it is served on. */

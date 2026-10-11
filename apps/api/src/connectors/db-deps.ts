@@ -60,6 +60,7 @@ import type { ConnectorRouterDeps } from './router-contract';
 import {
   connectorCatalogSections,
   getConnectorCatalogDetail,
+  connectorCatalogDirectIds,
   listConnectorCatalog,
 } from './connector-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
@@ -99,20 +100,13 @@ import { connectorConnected } from './db-deps-rows';
 export {
   composioConnectionMetadata,
   connectLinkEligibility,
-  type ConnectLinkEligibility,
-  loadComposioConnector,
-  loadPipedreamConnector,
-  readRequestingSessionId,
 } from './db-deps-connect';
 export {
-  consumeApprovedExecution,
-  isPendingApprovalExecution,
   makeDbGatewayDeps,
 } from './db-deps-gateway';
 export {
   projectSessionIdForProjectPrincipal,
   resolveTokenBoundSessionId,
-  sessionChannelConnectorSlugs,
 } from './db-deps-principal';
 export {
   composioConnectedAccountId,
@@ -681,6 +675,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  catalogDirectIds: () => connectorCatalogDirectIds(),
   listDiscoverSections: (input) => connectorCatalogSections(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,

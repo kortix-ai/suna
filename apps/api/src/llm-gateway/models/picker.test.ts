@@ -5,11 +5,9 @@ import {
   connectedByokPickerModels,
   flagshipRefForEnvVar,
   labelForModelRef,
-  managedPickerModels,
   projectPickerCatalog,
   providerFlagship,
 } from './picker-catalog';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 const catalogHas = (providerId: string, modelId: string): boolean =>
   CATALOG.providers.some((p) => p.id === providerId && p.models.some((m) => m.id === modelId));
@@ -61,21 +59,6 @@ describe('labelForModelRef', () => {
 
   test('an unknown ref falls back to the raw id (never throws)', () => {
     expect(labelForModelRef('madeup/model-x')).toBe('madeup/model-x');
-  });
-});
-
-describe('managedPickerModels', () => {
-  test('every served managed model is offered as a kortix/<id> opencode ref with its tier hint', () => {
-    const hint = { flagship: 'Most capable', fast: 'Fastest', balanced: 'Balanced, fast' };
-    expect(managedPickerModels()).toEqual(
-      SERVED_MANAGED_MODELS.map((m) => ({
-        id: `kortix/${m.id}`,
-        label: m.name,
-        provider: 'kortix',
-        managed: true,
-        hint: hint[m.tier],
-      })),
-    );
   });
 });
 

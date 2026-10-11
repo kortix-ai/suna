@@ -15,7 +15,6 @@ import { triggerSessionAccessToVisibility } from './trigger-session-access-polic
 export {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
-  triggerSessionAccessToVisibility,
 } from './trigger-session-access-policy';
 
 function publicMode(mode: string): TriggerSessionAccess['mode'] {

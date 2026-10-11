@@ -242,14 +242,6 @@ export function billingStateAllowsRun(state: BillingState): boolean {
   return state === 'active';
 }
 
-/**
- * Whether the account's problem is fixed by adding credits (top-up) rather
- * than by subscribing. Drives which CTA/modal every blocked surface shows.
- */
-export function billingStateNeedsTopUp(state: BillingState): boolean {
-  return state === 'out_of_credits' || state === 'payment_failed';
-}
-
 /** Build a snapshot from a `credit_accounts` row (or its absence). */
 export function billingSnapshotFromAccount(
   account:

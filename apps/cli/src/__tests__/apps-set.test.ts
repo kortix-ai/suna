@@ -13,6 +13,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let appsEnabled = true;
+let rollbackBody: unknown = null;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -50,7 +51,8 @@ function app(overrides: Record<string, unknown> = {}) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
+    always_on: false,
+    estimated_monthly_usd: 73.48,
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -99,9 +101,22 @@ function startServer(): string {
               disk_gb: (patch.disk_gb as number) ?? 10,
             },
             idle_timeout_seconds: (patch.idle_timeout_seconds as number) ?? 300,
-            monthly_budget_usd: (patch.monthly_budget_usd as number) ?? 5,
+            always_on: (patch.always_on as boolean) ?? false,
+            uses: (patch.uses as string[]) ?? [],
           }),
         );
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'GET') {
+        return Response.json({
+          deployments: [
+            { deployment_id: 'dep-v2', version: 2, status: 'ready' },
+            { deployment_id: 'dep-v1', version: 1, status: 'ready' },
+          ],
+        });
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/rollback` && req.method === 'POST') {
+        rollbackBody = await req.json().catch(() => null);
+        return Response.json(app({ active_deployment_id: 'dep-v1' }));
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -185,6 +200,39 @@ describe('kortix apps set', () => {
     }
   });
 
+  test('show prints no budget and no price: an on-demand App runs on demand, an always-on App runs 24/7', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toMatch(/budget|cost|\$/);
+    expect(r.stdout).toMatch(/runs\s+on demand/);
+    const on = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on'], config);
+    expect(on.stdout).toMatch(/runs\s+24\/7/);
+    expect(on.stdout).not.toMatch(/\$|USD|month/);
+  });
+
+  test('set --uses sends the list (deduplicated, trimmed) and prints it; `--uses=` clears it', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses', 'db, crm,db'], config);
+    expect(r.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ uses: ['db', 'crm'] });
+    expect(r.stdout).toMatch(/uses\s+db, crm/);
+
+    calls = [];
+    const cleared = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses='], config);
+    expect(cleared.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ uses: [] });
+    expect(cleared.stdout).toMatch(/uses\s+none/);
+  });
+
+  test('set refuses an App slug the API would refuse, before any request', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses', 'Main'], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('--uses');
+    expect(patchCall()).toBeUndefined();
+  });
+
   test('set PATCHes only the flags passed, resolving the App by slug', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
@@ -220,8 +268,6 @@ describe('kortix apps set', () => {
         '20',
         '--idle-timeout',
         '600',
-        '--budget',
-        '12.5',
       ],
       config,
     );
@@ -232,18 +278,41 @@ describe('kortix apps set', () => {
       memory_gb: 4,
       disk_gb: 20,
       idle_timeout_seconds: 600,
-      monthly_budget_usd: 12.5,
     });
   });
 
   test('set --json emits the updated App', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['apps', 'set', 'storefront', '--project', PROJECT, '--budget', '9', '--json'],
+      ['apps', 'set', 'storefront', '--project', PROJECT, '--name', 'Shop', '--json'],
       config,
     );
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).monthly_budget_usd).toBe(9);
+    expect(JSON.parse(r.stdout).name).toBe('Shop');
+  });
+
+  test('set --always-on / --on-demand send always_on; both at once is refused before any request', async () => {
+    const config = writeConfig(startServer());
+    const on = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on'], config);
+    expect(on.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ always_on: true });
+    const off = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--on-demand'], config);
+    expect(off.code).toBe(0);
+    expect(calls.filter((c) => c.method === 'PATCH').at(-1)?.body).toEqual({ always_on: false });
+    const both = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--on-demand'], config);
+    expect(both.code).not.toBe(0);
+    expect(both.stderr).toContain('not both');
+  });
+
+  test('the retired --budget flag is ignored with a notice and never sent; alone it leaves nothing to set', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', '--budget', '100', 'storefront', '--project', PROJECT, '--always-on'], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain('--budget is ignored: Apps have no budget');
+    expect(patchCall()?.body).toEqual({ always_on: true });
+    const alone = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--budget', '100'], config);
+    expect(alone.code).toBe(2);
+    expect(alone.stderr).toContain('needs at least one of');
   });
 
   test('set with no field flags exits 2 and sends nothing', async () => {
@@ -280,3 +349,26 @@ describe('kortix apps set', () => {
     expect(patchCall()).toBeUndefined();
   });
 });
+
+describe('kortix apps rollback', () => {
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-apps-rollback-'));
+    process.env = { ...ORIGINAL_ENV };
+    calls = [];
+    appsEnabled = true;
+    rollbackBody = null;
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('accepts a version (v1) as the target, the form `apps show` prints', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'rollback', 'storefront', 'v1', '--project', PROJECT], config);
+    expect({ code: r.code, body: rollbackBody }).toEqual({ code: 0, body: { deployment_id: 'dep-v1' } });
+  });
+});
+

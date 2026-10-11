@@ -3,7 +3,6 @@ import {
   nextFailoverProvider,
   resolveSessionProvider,
   sessionProviderIsLocked,
-  warmPrebakeProviders,
 } from './provider-precedence';
 
 // Per-project sandbox-provider override — precedence unit test. Deterministic:
@@ -61,89 +60,6 @@ describe('resolveSessionProvider (per-project provider override)', () => {
     expect(
       resolveSessionProvider({ requested: null, projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),
     ).toEqual({ fallback: true });
-  });
-});
-
-// Build-on-push warm-prebake target selection. A git push carries no per-session
-// context, so it must warm the provider(s) a session on this project COULD land
-// on: an enabled pin ⇒ that one; no/stale pin ⇒ every enabled provider. This is
-// the parity fix — an unpinned project (or one that never used to warm Platinum)
-// now pre-warms BOTH backends, while a pinned project warms only what it uses.
-describe('warmPrebakeProviders (build-on-push provider parity)', () => {
-  test('no pin → EVERY enabled provider (daytona + platinum + e2b) — full parity', () => {
-    expect(
-      warmPrebakeProviders({ projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),
-    ).toEqual(['daytona', 'platinum', 'e2b']);
-  });
-
-  test('enabled pin → ONLY that provider (no wasted bake on the one it never uses)', () => {
-    expect(
-      warmPrebakeProviders({ projectPin: 'platinum', allowed: ALLOWED, isEnabled: bothEnabled }),
-    ).toEqual(['platinum']);
-    expect(
-      warmPrebakeProviders({ projectPin: 'daytona', allowed: ALLOWED, isEnabled: bothEnabled }),
-    ).toEqual(['daytona']);
-  });
-
-  test('Daytona pre-warm is NEVER dropped — daytona is warmed with no pin and when pinned', () => {
-    // Regression guard for the task invariant: the working Daytona pre-warm keeps
-    // firing. Both the no-pin (all-enabled) path and the daytona-pinned path
-    // include 'daytona'.
-    expect(warmPrebakeProviders({ projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled })).toContain('daytona');
-    expect(warmPrebakeProviders({ projectPin: 'daytona', allowed: ALLOWED, isEnabled: bothEnabled })).toContain('daytona');
-  });
-
-  test('stale/disabled/absent pin degrades to all-enabled (never bakes a provider that cannot run)', () => {
-    // pin platinum but platinum is keyless → not [platinum]; warm only daytona.
-    expect(
-      warmPrebakeProviders({ projectPin: 'platinum', allowed: ALLOWED, isEnabled: (p) => p === 'daytona' }),
-    ).toEqual(['daytona']);
-    // pin a provider that has since left ALLOWED → all-enabled.
-    expect(
-      warmPrebakeProviders({ projectPin: 'gcp', allowed: ALLOWED, isEnabled: bothEnabled }),
-    ).toEqual(['daytona', 'platinum', 'e2b']);
-  });
-
-  test('single-provider deploy → exactly that one (platinum-only)', () => {
-    expect(
-      warmPrebakeProviders({ projectPin: null, allowed: ['platinum'], isEnabled: (p) => p === 'platinum' }),
-    ).toEqual(['platinum']);
-  });
-
-  test('only enabled providers are warmed — a listed-but-keyless provider is skipped', () => {
-    expect(
-      warmPrebakeProviders({ projectPin: null, allowed: ALLOWED, isEnabled: (p) => p === 'daytona' }),
-    ).toEqual(['daytona']);
-  });
-
-  test('explicit fast mode skips unpinned push fanout', () => {
-    expect(
-      warmPrebakeProviders({
-        projectPin: null,
-        allowed: ALLOWED,
-        isEnabled: bothEnabled,
-        fanoutWhenUnpinned: false,
-      }),
-    ).toEqual([]);
-    expect(
-      warmPrebakeProviders({
-        projectPin: 'disabled-provider',
-        allowed: ALLOWED,
-        isEnabled: bothEnabled,
-        fanoutWhenUnpinned: false,
-      }),
-    ).toEqual([]);
-  });
-
-  test('explicit fast mode still prebuilds one enabled pinned provider', () => {
-    expect(
-      warmPrebakeProviders({
-        projectPin: 'platinum',
-        allowed: ALLOWED,
-        isEnabled: bothEnabled,
-        fanoutWhenUnpinned: false,
-      }),
-    ).toEqual(['platinum']);
   });
 });
 

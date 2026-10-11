@@ -38,7 +38,7 @@ import {
   type OpencodeLifecycleOptions,
 } from '@/harness/open-code/lifecycle'
 import { createOpenCodeHarnessService } from '@/harness/open-code/service'
-import { bootLinkPath } from '@/services/config-release/boot-config'
+import { bootLinkPath } from '@/services/config-provider/boot-config'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 import { reserveOpenCodePortPair } from './helpers/open-code-harness'
 import { createProjectEnvStore, type ProjectEnvStore } from '@/services/sandbox-env/project-env'

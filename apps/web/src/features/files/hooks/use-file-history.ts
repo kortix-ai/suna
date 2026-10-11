@@ -18,6 +18,15 @@ export const fileHistoryKeys = {
     ['runtime-files', 'history', 'content', serverUrl, filePath, commitHash] as const,
 };
 
+// Don't retry on "not a git repo" or file-not-found errors. The rejection may
+// not be an `Error` with a string `message`, so guard before .includes — the
+// guarded sibling useFileList documents the crash class.
+export function fileHistoryRetry(failureCount: number, error: Error): boolean {
+  const msg = typeof error?.message === 'string' ? error.message : '';
+  if (msg.includes('not a git repository') || msg.includes('does not exist')) return false;
+  return failureCount < 2;
+}
+
 /**
  * Fetch the git commit history for a specific file.
  *
@@ -44,16 +53,7 @@ export function useFileHistory(
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error: Error) => {
-      // Don't retry on "not a git repo" or file-not-found errors
-      if (
-        error.message.includes('not a git repository') ||
-        error.message.includes('does not exist')
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    retry: fileHistoryRetry,
   });
 }
 

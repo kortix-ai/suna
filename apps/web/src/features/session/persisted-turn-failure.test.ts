@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Turn } from '@/ui';
-import { failureShownByTurn, persistedFailureText } from './persisted-turn-failure';
+import { failureShownByTurn, failureSupersededByTurn, persistedFailureText } from './persisted-turn-failure';
 
 const BODY = JSON.stringify({
   message: 'All selected ChatGPT connections are cooling down.',
@@ -8,9 +8,9 @@ const BODY = JSON.stringify({
   suggestion: 'Select a granted ChatGPT connection in session settings.',
 });
 
-function turn(id: string, error?: Record<string, unknown>): Turn {
+function turn(id: string, error?: Record<string, unknown>, created?: number): Turn {
   return {
-    userMessage: { info: { id }, parts: [] },
+    userMessage: { info: { id, ...(created === undefined ? {} : { time: { created } }) }, parts: [] },
     assistantMessages: [{ info: { id: `${id}-a`, ...(error ? { error } : {}) }, parts: [] }],
   } as unknown as Turn;
 }
@@ -42,5 +42,29 @@ describe('failureShownByTurn', () => {
   test('a failure is matched to its turn by message id', () => {
     expect(failureShownByTurn({ message_id: 'msg_1', error: null }, [turn('msg_1')])).toBe(true);
     expect(failureShownByTurn({ message_id: 'msg_2', error: { message: `429: ${BODY}` } }, [failed])).toBe(false);
+  });
+});
+
+// Editing a failed message rewinds it and sends a new one. The ledger still
+// lists the old message's failure, and its turn left the transcript, so the
+// failure drew under the new, running turn and never went away.
+describe('failureSupersededByTurn', () => {
+  const ENDED = '2026-10-07T12:00:00.000Z';
+  const endedMs = Date.parse(ENDED);
+
+  test('a turn sent after the failure ended supersedes it', () => {
+    const failure = { message_id: 'msg_rewound', ended_at: ENDED, error: null };
+    expect(failureSupersededByTurn(failure, [turn('msg_edited', undefined, endedMs + 5_000)])).toBe(true);
+  });
+
+  test('a turn sent before the failure ended does not supersede it', () => {
+    const failure = { message_id: 'msg_admission', ended_at: ENDED, error: null };
+    expect(failureSupersededByTurn(failure, [turn('msg_old', undefined, endedMs - 5_000)])).toBe(false);
+    expect(failureSupersededByTurn(failure, [])).toBe(false);
+  });
+
+  test('an unknown end time or send time supersedes nothing', () => {
+    expect(failureSupersededByTurn({ message_id: 'm', ended_at: null, error: null }, [turn('n', undefined, endedMs)])).toBe(false);
+    expect(failureSupersededByTurn({ message_id: 'm', ended_at: ENDED, error: null }, [turn('n')])).toBe(false);
   });
 });

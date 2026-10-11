@@ -114,7 +114,10 @@ Options:
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
-Pinning a provider needs the \`project.settings.write\` permission.
+Pinning a provider needs the \`project.settings.write\` permission and is a person's
+action: an agent session (a session-bound or agent-grant token) is always refused.
+A session that needs a different runtime passes \`provider\` on session create instead —
+that changes only its own session, not the project.
 `;
 
 /** The `sandboxes` flags. Values arrive as strings; each use parses its own. */

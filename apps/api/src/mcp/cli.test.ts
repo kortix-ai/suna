@@ -49,7 +49,8 @@ describe('denial', () => {
     [['env', 'pull']],
     [['env', 'push']],
     [['apps', 'deploy', './x']],
-    [['connectors', 'mcp']],
+    [['apps', 'exec', 'db', '--', 'ls']],
+    [['apps', 'token', 'main']],
     [['sessions', 'shell', 'abc']],
   ])('%j is refused with a reason and an alternative', (args) => {
     const d = denial(args);
@@ -59,6 +60,12 @@ describe('denial', () => {
 
   test('apps deploy names run_command in a session sandbox', () => {
     expect(denial(['apps', 'deploy'])?.use).toContain('run_command in a session sandbox');
+  });
+
+  test('apps list and create run; token points at a session sandbox', () => {
+    expect(denial(['apps', 'list'])).toBeNull();
+    expect(denial(['apps', 'create', 'main'])).toBeNull();
+    expect(denial(['apps', 'token', 'main'])?.use).toContain('run_command in a session sandbox');
   });
 
   test.each([

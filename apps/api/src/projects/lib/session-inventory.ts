@@ -1,12 +1,12 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { config } from '../../config';
 import {
+  agentSessionStanding,
   isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
-import { agentSessionStanding } from './agent-session-standing';
 import { ACTIVE_SESSION_STATUSES } from './session-status';
 import { isWarmProjectSession } from './warm-sessions';
 

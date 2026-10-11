@@ -15,7 +15,8 @@
  * built by `@kortix/sdk` (`useComposerModels`); a model pick is sent as
  * `model`. A gateway project that offers no model never starts a
  * session: Send opens the connect-provider sheet and keeps the draft
- * (KRTX-251, `planComposerSend`).
+ * (KRTX-251, `planComposerSend`). A long paste is a "Pasted text" tile
+ * (`usePastedTiles`) and rides the prompt inline.
  *
  * Layout:
  * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
@@ -38,8 +39,14 @@ import {
   resolveModelDefault,
   type SessionPromptPart,
 } from '@kortix/sdk';
-import { newConfigPrompt } from '@kortix/shared';
-import { Keyboard, Pressable, View } from 'react-native';
+import {
+  newConfigPrompt,
+  serializePromptWithPastes,
+  splitPastedContent,
+  type PastedContent,
+} from '@kortix/shared';
+import { Keyboard, Pressable, View, type TextInput } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
@@ -57,10 +64,12 @@ import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useComposerAttachments } from '@/components/session/useComposerAttachments';
 import { useRecoverPendingPick } from '@/components/session/useRecoverPendingPick';
+import { usePastedTiles } from '@/components/session/use-pasted-tiles';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { uploadErrorMessage } from '@/lib/session/composer-uploads';
-import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
+import { subscribeComposerFocus, takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { isModelUnavailable, sessionModelRef, selectComposerModel } from '@/lib/session/composer-model';
@@ -102,6 +111,12 @@ export interface ProjectHomeSubmit {
   agent: string | null;
 }
 
+/**
+ * The composer focus retries after New session, in ms: past the drawer's
+ * close and the stack's pop (~350 ms on iOS), which can each drop a focus.
+ */
+const COMPOSER_FOCUS_RETRY_MS = [150, 400, 700];
+
 export interface ProjectHomeProps {
   projectId: string;
   /** A send is in flight: the composer keeps its content and locks. */
@@ -135,9 +150,40 @@ export function ProjectHome({
   const toast = useToast();
   // One read at mount: the text seeds the draft, the files seed the uploads.
   const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
-  // The first project, just created on `/new` (COR-161): open with the
-  // keyboard up. One-shot, read once at mount.
+  // The first project, just created on `/new` (COR-161), or the drawer's New
+  // session before home mounted: open with the keyboard up. One-shot, read
+  // once at mount.
   const [focusComposer] = React.useState(() => takeComposerFocus(projectId));
+  // The drawer's New session while home is mounted (under the drawer or a
+  // covering route): focus once home is the screen on top, so the keyboard
+  // never opens behind a route that is still popping. Home is "on top" from
+  // the start of the pop, and the drawer is still closing then: a focus in
+  // that window can be dropped, so it is retried until the field has it.
+  const composerInputRef = React.useRef<TextInput>(null);
+  const isScreenFocused = useIsFocused();
+  const [focusRequest, setFocusRequest] = React.useState(0);
+  const handledFocusRequest = React.useRef(0);
+  React.useEffect(
+    () =>
+      subscribeComposerFocus((requested) => {
+        if (requested === projectId && takeComposerFocus(projectId)) setFocusRequest((n) => n + 1);
+      }),
+    [projectId],
+  );
+  React.useEffect(() => {
+    if (!isScreenFocused || focusRequest === handledFocusRequest.current) return;
+    handledFocusRequest.current = focusRequest;
+    const focusUnlessFocused = () => {
+      const input = composerInputRef.current;
+      if (input && !input.isFocused()) input.focus();
+    };
+    const frame = requestAnimationFrame(focusUnlessFocused);
+    const retries = COMPOSER_FOCUS_RETRY_MS.map((ms) => setTimeout(focusUnlessFocused, ms));
+    return () => {
+      cancelAnimationFrame(frame);
+      retries.forEach(clearTimeout);
+    };
+  }, [focusRequest, isScreenFocused]);
   const attachments = useComposerAttachments(projectId, { initialFiles: initialDraft.files });
   useRecoverPendingPick(attachments.add);
   const files = attachments.files;
@@ -288,8 +334,9 @@ export function ProjectHome({
   // uploads back to the composer. Web does the same (`clearOnSend={false}` on
   // the home composer).
   const isSending = sending || preparing;
-  const submitNow = React.useCallback(async (draft: string) => {
-    const text = draft.trim();
+  const submitNow = React.useCallback(async (draft: string, pastes: PastedContent[]) => {
+    // Every paste tile inline, then the text: what the session's first prompt carries.
+    const text = serializePromptWithPastes(draft.trim(), pastes);
     const plan = planComposerSend({
       text,
       fileCount: files.length,
@@ -375,12 +422,14 @@ export function ProjectHome({
               initialText={initialDraft.text}
               onSubmit={submitNow}
               autoFocus={focusComposer}
+              inputRef={composerInputRef}
               disabled={isSending}
               sending={isSending}
               attachments={files}
               attachmentUploads={attachments.uploads}
               onAttach={openAttachSheet}
               onRemoveAttachment={attachments.remove}
+              onPasteFile={attachments.add}
               chip={chip}
               onChipPress={openModelSheet}
             />
@@ -410,19 +459,24 @@ export function ProjectHome({
 }
 
 /**
- * The home composer and its draft. The draft is state here, so a keystroke
- * re-renders this card only. `onSubmit` gets the draft as rendered.
+ * The home composer, its draft and its paste tiles. Both are state here, so a
+ * keystroke re-renders this card only. `onSubmit` gets the draft as rendered.
+ * A handed-back draft is the prompt as sent: its pastes become tiles again.
+ * An oversized paste goes to `onPasteFile` as a text file.
  */
 function HomeComposer({
   projectId,
   initialText,
   onSubmit,
+  onPasteFile,
   ...composer
 }: {
   projectId: string;
   initialText: string;
-  onSubmit: (draft: string) => Promise<void>;
+  onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
+  onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
+  inputRef: React.Ref<TextInput>;
   disabled: boolean;
   sending: boolean;
   attachments: AttachedFile[];
@@ -432,12 +486,25 @@ function HomeComposer({
   chip: React.ComponentProps<typeof Composer>['chip'];
   onChipPress: () => void;
 }) {
-  const [draft, setDraft] = React.useState(initialText);
+  const [initial] = React.useState(() => splitPastedContent(initialText));
+  const [draft, setDraft] = React.useState(initial.text);
+  const pasted = usePastedTiles(onPasteFile, initial.pastes);
   // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
   // send starts a session.
   useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
   const draftRef = React.useRef(draft);
   draftRef.current = draft;
+  const pastesRef = React.useRef(pasted.pastes);
+  pastesRef.current = pasted.pastes;
+  const { takePaste } = pasted;
+  const handleChangeText = React.useCallback(
+    (next: string) => {
+      const kept = takePaste(draftRef.current, next);
+      draftRef.current = kept;
+      setDraft(kept);
+    },
+    [takePaste],
+  );
 
   // One submission at a time: two taps inside one frame both read the same
   // draft (the cleared text has not rendered yet), so the second would send
@@ -447,7 +514,7 @@ function HomeComposer({
     if (submittingRef.current) return;
     submittingRef.current = true;
     try {
-      await onSubmit(draftRef.current);
+      await onSubmit(draftRef.current, pastesRef.current);
     } finally {
       requestAnimationFrame(() => {
         submittingRef.current = false;
@@ -459,7 +526,11 @@ function HomeComposer({
     <Composer
       {...composer}
       value={draft}
-      onChangeText={setDraft}
+      onChangeText={handleChangeText}
+      onSelectionChange={pasted.onSelectionChange}
+      pastes={pasted.pastes}
+      onRemovePaste={pasted.remove}
+      onOpenPaste={openPastedText}
       onSubmit={handleSubmit}
       placeholder="Ask anything"
     />

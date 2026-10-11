@@ -95,3 +95,45 @@ export function setAdminProviderFallback<T = unknown>(enabled: boolean): Promise
     .put<T>('/admin/api/provider-fallback', { enabled })
     .then((response) => unwrap(response));
 }
+
+// ── Volumes (the master switch) and session boot modes ───────────────────────
+export type AdminBootMode = 'standard' | 'artifacts' | 'volume';
+export interface AdminBootModeRule {
+  mode: AdminBootMode;
+  standardFallback: boolean;
+}
+export interface AdminVolumesPolicy {
+  enabled: boolean;
+  percent: number;
+  orgs: Record<string, boolean>;
+}
+export interface AdminBootModePolicy {
+  volumes: AdminVolumesPolicy;
+  killSwitch: boolean;
+  default: AdminBootModeRule;
+  orgs: Record<string, AdminBootModeRule>;
+  fallback: { volumeAttempts: number; artifactsAttempts: number };
+  artifacts: string | null;
+}
+export interface AdminBootModes {
+  stored: boolean;
+  policy: AdminBootModePolicy;
+  orgs: Array<{ accountId: string; name: string | null; volumes: boolean | null; rule: AdminBootModeRule | null }>;
+  env: { bootArtifacts: string | null; volumeOff: boolean; driveSync: boolean };
+  providers: { allowed: string[]; default: string; volumeProvider: string; volumeProviderConfigured: boolean };
+  stats:
+    | {
+        since: string;
+        modes: { mode: AdminBootMode; requested: number; booted: number }[];
+        fallbacks: { from: AdminBootMode; to: AdminBootMode; reason: string; count: number; sample: string | null }[];
+      }
+    | { error: string };
+}
+
+export function getAdminBootModes(): Promise<AdminBootModes> {
+  return backendApi.get<AdminBootModes>('/admin/api/boot-modes').then((response) => unwrap(response));
+}
+
+export function setAdminBootModes(policy: AdminBootModePolicy): Promise<AdminBootModes> {
+  return backendApi.put<AdminBootModes>('/admin/api/boot-modes', policy).then((response) => unwrap(response));
+}

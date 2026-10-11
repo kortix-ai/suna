@@ -107,7 +107,7 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { ModelSelector } from '@/features/session/model-selector';
-import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { AgentSelector } from '@/features/session/session-chat-input';
 import {
   ChannelDisconnectButton,
   ChannelRow,
@@ -122,6 +122,7 @@ import {
 } from '@/features/workspace/customize/sections/view/channel-settings-patch';
 import { slackConversationName } from '@/features/session/turn/channel-message';
 import { bindingTabs } from '@/features/workspace/customize/sections/view/channel-binding-tabs';
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { AccessRow } from '@/features/workspace/shared/access/access-row';
 import {
   type ChannelBinding,
@@ -149,6 +150,8 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type Agent,
+  flattenModels,
+  modelProviderMode,
   useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
@@ -274,13 +277,17 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
                   onOpenChannels={() => openChannels('slack')}
                 />
               ) : null}
-              {emailChannelEnabled ? (
-                <EmailChannelRow
-                  projectId={projectId}
-                  installation={emailInstall ?? null}
-                  canWrite={canWrite}
-                />
-              ) : null}
+              {/* The Email row renders on every project — the CLI lists Email
+                  on every project (its help line carries the flag note), so the
+                  web list may not drop it when `agentmail_email` is off
+                  (dogfood:channels-page-readonly). The flag only decides the
+                  row's state; `useEmailInstall` stays unfired until it resolves. */}
+              <EmailChannelRow
+                projectId={projectId}
+                enabled={emailChannelEnabled}
+                installation={emailInstall ?? null}
+                canWrite={canWrite}
+              />
               <TeamsChannelRow
                 projectId={projectId}
                 canWrite={canWrite}
@@ -700,7 +707,10 @@ function ChannelSettingsModalContent({
   }, [defaultAgentLabel, tI18nComplete, visibleAgents, binding.agentName]);
 
   const { data: providers } = useRuntimeProviders();
-  const models = useMemo(() => flattenModels(providers), [providers]);
+  const models = useMemo(
+    () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
+    [providers],
+  );
   // Mode-aware read-back: a native (gateway-off) pin is `provider/model` and
   // must not be forced under the synthetic `kortix` provider, or the selector
   // shows "Project default" beside a channel that has an explicit pin.
@@ -1134,10 +1144,15 @@ function TeamsChannelRow({
 
 function EmailChannelRow({
   projectId,
+  enabled,
   installation,
   canWrite,
 }: {
   projectId: string;
+  /** The project's `agentmail_email` flag. Off, the row still renders — the
+   *  CLI lists Email on every project — and points at the one place a flag
+   *  turns on instead of offering an install that would 403. */
+  enabled: boolean;
   installation: EmailInstallation | null;
   canWrite: boolean;
 }) {
@@ -1154,9 +1169,21 @@ function EmailChannelRow({
         name="Email"
         connected={connected}
         detail={installation?.email ?? null}
-        pitch={tI18nComplete.raw('text27ba4ec98716')}
+        pitch={
+          enabled
+            ? tI18nComplete.raw('text27ba4ec98716')
+            : // `FeatureGateScreen`'s exact words for a flag that is off, with
+              // the name the Feature flags section lists the flag under.
+              `AgentMail Email ${tI18nComplete.raw('text26965989cce5')}`
+        }
         actions={
-          !canWrite ? null : connected ? (
+          !enabled ? (
+            <Button size="sm" variant="secondary" asChild>
+              <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
+                {tI18nComplete.raw('text20a2e59ba129')}
+              </Link>
+            </Button>
+          ) : !canWrite ? null : connected ? (
             <ChannelDisconnectButton
               pending={disconnect.isPending}
               onConfirm={(done) =>

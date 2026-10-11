@@ -11,7 +11,7 @@
  * thread sends to that sub-agent's own runtime session.
  */
 
-import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react';
 import {
   View,
   FlatList,
@@ -25,12 +25,13 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import {
-  KeyboardAvoidingView,
   KeyboardController,
   KeyboardEvents,
   KeyboardGestureArea,
+  useKeyboardHandler,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
+import { nextKeyboardInset } from '@/lib/session/keyboard-inset';
 import Reanimated, {
   Easing as ReanimatedEasing,
   useAnimatedStyle,
@@ -39,7 +40,6 @@ import Reanimated, {
   withTiming,
   interpolate,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
@@ -60,19 +60,22 @@ import { SessionParticipantsSheet } from '@/components/session/SessionParticipan
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
-import { messageAvatarPerson, type AvatarPerson } from '@/lib/session/participants';
+import { messageAvatarPerson, messageSessionAuthor, type AvatarPerson } from '@/lib/session/participants';
 import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
+import { anchorChangeRequests, sessionChangeRequests } from '@/lib/session/session-change-requests';
+import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
-import { SessionChangeRequests } from '@/components/session/SessionChangeRequests';
+import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
 
 import {
   addOptimisticMessage,
@@ -96,9 +99,10 @@ import {
   extractSendErrorMessage,
   promptRuntimeMessage,
   rejectQuestion,
-  SESSION_PROMPTS_IDLE_POLL_MS,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
+  useSessionPrompts,
+  useSessionStreamConnected,
   useRuntimeCommands,
   useRuntimeConfig,
   useRuntimeSession,
@@ -114,6 +118,7 @@ import {
   groupMessagesIntoTurns,
   listSessionPrompts,
   retrySessionPrompt,
+  sessionPromptActions,
   type SessionPrompt,
   type SessionPromptDelivery,
   resolveWorkingTurn,
@@ -169,7 +174,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
-import { queueHeaderLabel, queueRowCaption } from '@/lib/session/queue-undo';
+import { queueHeaderLabel, queueRowCaption, queueRowText } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { Command } from '@/lib/session/runtime-data';
@@ -284,10 +289,10 @@ const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
- * shows what lies under it; the list ends at the composer, so without this
+ * shows what lies under it; the list ends at the keyboard, so without this
  * only the flat page is under the keyboard and it reads as a solid panel.
- * The later rows now draw under the composer (opaque, `bottomBackground`) and
- * under the keyboard, as in Messages. Layout and scroll geometry do not change.
+ * The later rows now draw under the keyboard, as in Messages. Layout and
+ * scroll geometry do not change.
  */
 const LIST_DRAWS_UNDER_KEYBOARD = Platform.OS === 'ios' ? ({ overflow: 'visible' } as const) : undefined;
 
@@ -300,6 +305,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
   const insets = useSafeAreaInsets();
   // Top inset for the message list. The chrome is the floating menu button
   // only (the static header bar is gone, COR-140): the list would start under
@@ -311,10 +317,40 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
   // the keyboard, the same gap as the project home composer (design.md §5).
   const bottomInset = insets.bottom;
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  const { progress: keyboardProgress, height: providerKeyboardHeight } = useReanimatedKeyboardAnimation();
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
   }));
+  // The page pads its bottom by the keyboard's live height, so the composer
+  // always sits on the keyboard (KRTX-1672, `lib/session/keyboard-inset.ts`).
+  // Seeded from the provider before the first paint, and again when a frozen
+  // screen shows: a keyboard that moved meanwhile sent this page no event.
+  const keyboardInset = useSharedValue(0);
+  useLayoutEffect(() => {
+    keyboardInset.value = -providerKeyboardHeight.value;
+  }, [keyboardInset, providerKeyboardHeight]);
+  useKeyboardHandler(
+    {
+      onStart: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'start', e.height);
+      },
+      onMove: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'move', e.height);
+      },
+      onInteractive: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'interactive', e.height);
+      },
+      onEnd: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'end', e.height);
+      },
+    },
+    [],
+  );
+  const pageStyle = useAnimatedStyle(() => ({ flex: 1, paddingBottom: keyboardInset.value }));
   // Height of the composer (or the question card), without the inset above.
   // It is the offset of the list's drag-to-dismiss: the keyboard starts to
   // follow the finger at the top of the composer, as in Messages, not at the
@@ -330,6 +366,23 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     bottomAreaHeightRef.current = height;
     setGestureOffsetRef.current?.(height);
   }, []);
+  // The composer floats over the list: the list runs to the bottom edge and
+  // scrolls behind it. The list's end padding is the height the composer
+  // covers: the composer area (pill, queue, chips, input) plus the inset
+  // under it, the same expression as `bottomAreaStyle`. It runs on the UI
+  // thread: a line wrap or a keyboard frame renders nothing.
+  const composerAreaHeight = useSharedValue(0);
+  const composerAreaHeightRef = useRef(0);
+  const bottomInsetRef = useRef(bottomInset);
+  bottomInsetRef.current = bottomInset;
+  const endPaddingStyle = useAnimatedStyle(() => ({
+    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
+  }));
+  /** The end padding as the room reads it (the UI thread's last value). */
+  const endPaddingNow = useCallback(
+    () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
+    [keyboardProgress],
+  );
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
@@ -371,8 +424,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
   // pulls the next older page (COR-144).
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  // The session stream (R5.3): while it is up, the SDK's tail and ask polls
+  // stand down — the box's ring replays what a reconnect missed.
+  const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
   const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
     kortixSessionScope,
+    streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
@@ -438,8 +495,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // is lost, and the agent then waits on a blocked tool call with nothing
   // above the composer. The SDK re-reads the runtime's pending lists while a
   // question tool (or a gated tool) runs with nothing pending in the store.
-  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
-  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
+  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
+  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);
@@ -481,17 +538,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     return () => { cancelled = true; };
   }, [projectId, projectSessionId, sessionId, refreshQueue]);
 
-  // Every 3 s while prompts wait or the agent works. An empty queue on an idle
-  // thread is still read, every 15 s (the SDK's idle floor): the server can
-  // hand a prompt back, or another device can queue one. A send, a queue
-  // action and the end of a turn read it at once.
-  const queuePollMs = queuedMessages.length > 0 || isBusy ? 3000 : SESSION_PROMPTS_IDLE_POLL_MS;
+  // The SDK's queue (R5.3): every inbox write arrives on the session stream
+  // as a `kortix.control.queue` frame, and it polls only while that stream is
+  // down. A send and a queue action still read the list at once.
+  const sdkQueue = useSessionPrompts(projectId, projectSessionId);
+  useEffect(() => {
+    setQueueRows(sdkQueue.prompts);
+  }, [sdkQueue.prompts, setQueueRows]);
+  // One read when the page opens, so the queue paints with the page.
   useEffect(() => {
     void refreshQueue();
-    if (!projectId || !projectSessionId) return;
-    const timer = setInterval(() => void refreshQueue(), queuePollMs);
-    return () => clearInterval(timer);
-  }, [projectId, projectSessionId, refreshQueue, queuePollMs]);
+  }, [refreshQueue]);
 
   // The composer calls this while a turn runs: the running turn reads the
   // message at its next step (`steer`, D9.1). A prompt request from another
@@ -979,6 +1036,43 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
+
+  // The change requests this session opened, each at the end of the turn that
+  // opened it (web `anchorOutcomes`; KRTX-1678). Reads the Review list
+  // `ProjectScreen` already polls, so it adds no request of its own.
+  const { data: reviewItems } = useReviewItems(projectId ?? null, { poll: false });
+  const sessionChanges = useMemo(
+    () => sessionChangeRequests(reviewItems, projectSessionId),
+    [reviewItems, projectSessionId],
+  );
+  // Keyed by content: `turns` changes on every stream delta, the starts only
+  // when a turn is added, so each turn keeps one change request array.
+  const turnStartsKey = useMemo(
+    () => turns.map((turn) => `${turn.userMessage.info.id}@${turn.userMessage.info.time?.created ?? ''}`).join(' '),
+    [turns],
+  );
+  const changesByTurn = useMemo(() => {
+    const starts = turnStartsKey
+      ? turnStartsKey.split(' ').map((entry) => {
+          const at = entry.lastIndexOf('@');
+          const created = Number(entry.slice(at + 1));
+          // A message with no `time.created` reads 0: no start, skipped.
+          return { key: entry.slice(0, at), startedAt: created > 0 ? created : null };
+        })
+      : [];
+    return anchorChangeRequests(sessionChanges, starts);
+  }, [sessionChanges, turnStartsKey]);
+  const changeSheetRef = useRef<SheetRef>(null);
+  const [selectedChangeId, setSelectedChangeId] = useState<string | null>(null);
+  // Read from the live list, so a merge made elsewhere updates the open sheet.
+  const selectedChange = useMemo(
+    () => sessionChanges.find((item) => item.id === selectedChangeId) ?? null,
+    [sessionChanges, selectedChangeId],
+  );
+  const openChangeRequest = useCallback((id: string) => {
+    setSelectedChangeId(id);
+    changeSheetRef.current?.open();
+  }, []);
   // Who can open this session, and who wrote each prompt. A new prompt with
   // no recorded author yet makes the authors hook ask once more.
   const participants = useSessionParticipants(projectId, projectSessionId).data;
@@ -1004,12 +1098,37 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       return cache.get(messageId) ?? null;
     };
   }, [messageAuthors, participants, viewerId]);
+  // The Kortix session that sent a message (a coordinator, a spawn), same
+  // memo rule as `senderOf`.
+  // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
+  // with the same ids, and a new array here would remake `renderItem` per delta.
+  const userMessageIdsKey = turns.map((turn) => turn.userMessage.info.id).join('\n');
+  const userMessageIds = useMemo(
+    () => (userMessageIdsKey ? userMessageIdsKey.split('\n') : []),
+    [userMessageIdsKey],
+  );
+  const sessionAuthorOf = useMemo(() => {
+    const cache = new Map<string, ReturnType<typeof messageSessionAuthor>>();
+    return (messageId: string) => {
+      if (!cache.has(messageId)) cache.set(messageId, messageSessionAuthor(messageAuthors, userMessageIds, messageId));
+      return cache.get(messageId) ?? null;
+    };
+  }, [messageAuthors, userMessageIds]);
   // A queued prompt is keyed by its own message id, or by the wire id it was
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
     (prompt: SessionPrompt) =>
       senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
     [senderOf],
+  );
+  // A queued prompt runs as its author: only they send it now, and they or a
+  // session manager remove it. The API answers 403 to anyone else. The
+  // participants list puts the session's owner first; a project manager who is
+  // not the owner keeps only their own rows here (the web offers them Remove).
+  const managesSession = participants?.participants[0]?.is_viewer === true;
+  const queuedActions = useCallback(
+    (prompt: SessionPrompt) => sessionPromptActions(prompt, { userId: viewerId, managesSession }),
+    [viewerId, managesSession],
   );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
@@ -1051,8 +1170,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // applies the result to the FlatList.
   //
   // FACT 1 — the room: the footer spacer under the newest reached turn is
-  //   max(24, viewport − span(anchor turn → content end) − topOffset), so that
-  //   turn can sit `topOffset` below the top of the list.
+  //   max(24, viewport − end padding − span(anchor turn → content end) −
+  //   topOffset), so that turn can sit `topOffset` below the top of the list.
+  //   The end padding is the height the floating composer covers.
   // FACT 2 — the end: because of the room, `content − viewport` IS that turn
   //   at the top while the answer fits, and the answer's tail once it does not.
   // THE RULE — follow: while on, every layout change puts the list at the end.
@@ -1090,7 +1210,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const roomRef = useRef(0);
   const renderedRoomRef = useRef(0);
   // The last room handed to `setRoom`. While the keyboard moves, the list's
-  // height changes every frame (the `padding` of `KeyboardAvoidingView`), and a
+  // height changes every frame (the page's `keyboardInset` padding), and a
   // room per frame is a page render per frame. A room that shrinks is blank
   // space the smaller list clips anyway, so it waits for the keyboard to stop.
   // A room that grows is set at once: the list cannot scroll past its content.
@@ -1217,7 +1337,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       });
       // A turn in the span has not laid out yet: keep the room until it has.
       if (span === null) return { measured: false, anchorChanged: false };
-      next = Math.round(roomUnderNewestTurn(viewportHeight, span, topOffset));
+      // The composer covers the end of the list: the room is sized in the
+      // part above it.
+      next = Math.round(roomUnderNewestTurn(viewportHeight - endPaddingNow(), span, topOffset));
       const anchorId = list[index].userMessage.info.id;
       anchorChanged = previous !== null && previous.id !== anchorId;
       lastAnchorRef.current = {
@@ -1234,7 +1356,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       setRoom(next);
     }
     return { measured: true, anchorChanged };
-  }, []);
+  }, [endPaddingNow]);
 
   /** The end the list settles at once the latest room is laid out. */
   const settledEnd = useCallback(
@@ -1277,6 +1399,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       settleRef.current();
     });
   }, []);
+
+  // A taller or shorter composer moves the end padding: settle once, like any layout change.
+  const handleComposerAreaLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const height = Math.round(e.nativeEvent.layout.height);
+      composerAreaHeightRef.current = height;
+      composerAreaHeight.value = height;
+      scheduleSettle();
+    },
+    [composerAreaHeight, scheduleSettle],
+  );
 
   // The keyboard's start and end events bound its motion. The end sets the
   // room the motion held back, then settles once. The fallback ends a motion
@@ -1636,7 +1769,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [scheduleSettle],
   );
 
-  // The viewport shrinks when the keyboard opens or the composer grows.
+  // The viewport shrinks when the keyboard opens.
   const handleListLayout = useCallback(
     (e: LayoutChangeEvent) => {
       viewportHeightRef.current = e.nativeEvent.layout.height;
@@ -1813,13 +1946,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
+            sessionAuthor={sessionAuthorOf(id)}
             onScreen={isWorkingTurn ? workingTurnOnScreen : true}
+            changeRequests={changesByTurn.get(id)}
+            onOpenChangeRequest={openChangeRequest}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1875,6 +2011,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onSendNow={handleQueueSendNow}
           isDark={isDark}
           senderOf={queuedSender}
+          actionsOf={queuedActions}
         />,
       );
     }
@@ -1890,6 +2027,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleQueueSendNow,
     isDark,
     queuedSender,
+    queuedActions,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -1965,11 +2103,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior="padding"
-      className="bg-background"
-    >
+    <Reanimated.View style={pageStyle} className="bg-background">
       {/* Floating menu button — opens the project drawer (every project page
           shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
           the status bar, so they fade out there instead of showing through.
@@ -2006,6 +2140,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       </FloatingMenuButton>
       <SubAgentListSheet ref={subAgentListSheetRef} subAgents={subAgents ?? EMPTY_PROJECT_SESSIONS} onSelect={handleSubAgentSelect} />
       <SessionParticipantsSheet ref={participantsSheetRef} participants={participants} />
+      {projectId ? <ReviewDetailSheet ref={changeSheetRef} projectId={projectId} item={selectedChange} /> : null}
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
@@ -2061,15 +2196,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             <View>
               {/* Footer content above the spacer — part of the anchor span. */}
               <View onLayout={handleFooterContentLayout} className="px-4">
-                {/* Web: the change requests this session opened, as cards.
-                    A tap opens the Review page's sheet. */}
-                {projectId && projectSessionId ? (
-                  <SessionChangeRequests
-                    projectId={projectId}
-                    projectSessionId={projectSessionId}
-                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
-                  />
-                ) : null}
                 {/* Web: the optimistic compaction marker, where the real
                     compaction turn will mount, until that turn exists. */}
                 {isCompacting && !hasCompactionTurn ? (
@@ -2087,6 +2213,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
               </View>
               {/* The room (FACT 1): lets the newest turn pin near the top. */}
               <View onLayout={handleSpacerLayout} style={{ height: room }} />
+              {/* The height the floating composer covers. */}
+              <Reanimated.View testID="session-list-end-padding" style={endPaddingStyle} />
             </View>
           }
           onScrollToIndexFailed={handleScrollToIndexFailed}
@@ -2095,22 +2223,22 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         </ConnectorHandoffContext.Provider>
         </ComposerGestureArea>
 
-        <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
-
+        {/* The composer floats over the list, at the bottom of this view: the
+            keyboard's `padding` above lifts the view, so the composer rides
+            on the keyboard. `box-none`: taps reach the list everywhere but
+            on the composer. */}
+        <View pointerEvents="box-none" style={COMPOSER_OVERLAY}>
+        <ComposerBottomFade testID="session-composer-fade" background={pageBackground} bottomInset={insets.bottom} />
+        <View pointerEvents="box-none" style={FILL}>
         {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
-      </View>
 
-      {/* Fade gradient above input — only when textarea is shown */}
-      {!hasQuestion && (
-        <LinearGradient
-          colors={isDark ? [withAlpha(THEME.dark.background, 0), withAlpha(THEME.dark.background, 1)] : [withAlpha(THEME.light.background, 0), withAlpha(THEME.light.background, 1)]}
-          style={{ height: 24, marginTop: -24, zIndex: 1 }}
-          pointerEvents="none"
-        />
-      )}
+        <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
+        </View>
 
-      {/* Opaque: the list draws under this block on iOS (LIST_DRAWS_UNDER_KEYBOARD). */}
-      <View style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
+      {/* No fill of its own: the fade behind it is the project drawer's. */}
+      <Reanimated.View testID="session-composer-block" style={bottomAreaStyle}>
+      {/* The composer area, without the inset: the list's end padding. */}
+      <View testID="session-composer-area" onLayout={handleComposerAreaLayout}>
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
@@ -2123,7 +2251,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       )}
 
       {/* Bottom area — question prompt OR chat input, above the safe area. */}
-      <Reanimated.View style={bottomAreaStyle}>
         <View onLayout={handleBottomAreaLayout}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
@@ -2174,7 +2301,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           />
         )}
         </View>
+      </View>
       </Reanimated.View>
+        </View>
       </View>
 
       <ConnectProviderSheet
@@ -2196,7 +2325,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       {/* Given the connector hand-off so a Connect inside it dismisses the
           activity sheet before the auth sheet opens (never two overlays). */}
       <ActivitySheetHost sessionId={sessionId} markdownActions={markdownActions} connectorHandoff={connectorHandoffApi} />
-    </KeyboardAvoidingView>
+    </Reanimated.View>
   );
 }
 
@@ -2207,6 +2336,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 export const SessionPage = React.memo(SessionPageImpl);
 
 const FILL = { flex: 1 } as const;
+/** Fills its parent: the overlay over the message area. */
+const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
@@ -2273,8 +2404,8 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       // Bottom-right, directly above the composer: the 16pt project edge
-      // (`px-4`) on the right; 8pt above the 24pt fade that overlaps the
-      // bottom of the list — lower, and the fade would paint over it.
+      // (`px-4`) on the right; 10pt above the composer's top edge, over the
+      // list (`zIndex`).
       style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
       <Button
@@ -2353,10 +2484,13 @@ function QueuePanel({
   onSendNow,
   isDark,
   senderOf,
+  actionsOf,
 }: {
   messages: SessionPrompt[];
   /** The prompt's sender avatar in a shared session, else null. */
   senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
+  /** What the viewer may do to the prompt (`sessionPromptActions`). */
+  actionsOf?: (prompt: SessionPrompt) => { own: boolean; removable: boolean };
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2407,7 +2541,9 @@ function QueuePanel({
       {expanded && messages.length > 0 && (
         <View style={{ maxHeight: 176 }}>
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            {messages.map((qm) => (
+            {messages.map((qm) => {
+              const actions = actionsOf?.(qm) ?? { own: true, removable: true };
+              return (
               <View
                 key={qm.prompt_id}
                 style={{
@@ -2428,7 +2564,7 @@ function QueuePanel({
                 })()}
                 <View className="flex-1">
                   <Text variant="small" numberOfLines={1} className="leading-5">
-                    {qm.text}
+                    {queueRowText(qm.text)}
                   </Text>
                   {queueRowCaption(qm) ? (
                     <Text variant="muted" numberOfLines={2}>
@@ -2436,28 +2572,33 @@ function QueuePanel({
                     </Text>
                   ) : null}
                 </View>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
-                  onPress={() => onSendNow(qm.prompt_id)}
-                  accessibilityLabel="Send now"
-                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
-                >
-                  <Text>Send now</Text>
-                </Button>
+                {actions.own && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    onPress={() => onSendNow(qm.prompt_id)}
+                    accessibilityLabel="Send now"
+                    accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                  >
+                    <Text>Send now</Text>
+                  </Button>
+                )}
                 {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  onPress={() => onRemove(qm.prompt_id)}
-                  accessibilityLabel="Remove from queue"
-                >
-                  <XIcon size={16} color={mutedText} />
-                </Button>
+                {actions.removable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    onPress={() => onRemove(qm.prompt_id)}
+                    accessibilityLabel="Remove from queue"
+                  >
+                    <XIcon size={16} color={mutedText} />
+                  </Button>
+                )}
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}

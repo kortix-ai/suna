@@ -19,14 +19,10 @@ flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   });
 });
 
-flow("SYS-2", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/status", "POST /v1/prewarm"] }, async (ctx) => {
+flow("SYS-2", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/status"] }, async (ctx) => {
   await ctx.step("GET /v1/system/status", async () => {
     const r = await ctx.client.get("/v1/system/status");
     r.status(200).body().has("$.maintenanceNotice.enabled", false).has("$.technicalIssue.enabled", false);
-  });
-  await ctx.step("POST /v1/prewarm", async () => {
-    const r = await ctx.client.post("/v1/prewarm", {});
-    r.status(200).body().has("$.success", true);
   });
 });
 
@@ -119,7 +115,7 @@ flow("ACC-1", { domain: "access", tags: ["smoke"], routes: ["GET /v1/access/sign
   });
 });
 
-flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-email"] }, async (ctx) => {
+flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-email", "GET /v1/access/signup-status"] }, async (ctx) => {
   await ctx.step("POST /v1/access/check-email (missing email) → 400", async () => {
     const r = await ctx.client.post("/v1/access/check-email", {});
     r.status(400);
@@ -127,6 +123,19 @@ flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-emai
   await ctx.step("POST /v1/access/check-email (valid) → 200 with flow mode", async () => {
     const r = await ctx.client.post("/v1/access/check-email", { email: `probe-${Date.now()}@ke2e.kortix.test` });
     r.status(200).body().exists("$.allowed").exists("$.mode");
+  });
+  await ctx.step("POST /v1/access/check-email (malformed email) → 400", async () => {
+    const r = await ctx.client.post("/v1/access/check-email", { email: "not-an-email" });
+    r.status(400);
+  });
+  await ctx.step("a new address → {allowed:true, mode:'signup'} while signups are open; allowed matches mode otherwise", async () => {
+    const status = await ctx.client.get("/v1/access/signup-status");
+    status.status(200);
+    const open = status.json<{ signupsEnabled: boolean }>().signupsEnabled;
+    const r = await ctx.client.post("/v1/access/check-email", { email: `probe-new-${Date.now()}@ke2e.kortix.test` });
+    r.status(200);
+    if (open) r.body().has("$.allowed", true).has("$.mode", "signup");
+    else r.body().has("$.allowed", r.json<{ mode: string }>().mode === "signup");
   });
 });
 

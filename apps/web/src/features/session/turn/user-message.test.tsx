@@ -16,6 +16,7 @@ import {
   sentAttachmentsOf,
   uploadedFileRefXml,
 } from '../uploaded-file-refs';
+import { serializePromptWithPastes } from '@kortix/shared';
 import {
   MessageAttachments,
   UserMessage,
@@ -23,7 +24,9 @@ import {
   editResendAttachments,
   editablePromptText,
   normalizeAttachments,
+  userMessageCopyText,
 } from './user-message';
+import { pastedTextCounts } from '../pasted-text';
 
 const message = {
   info: { id: 'message-1', role: 'user' },
@@ -81,7 +84,7 @@ const renderText = (text: string, props: Record<string, unknown> = {}) =>
 describe('UserMessage actions', () => {
   test('keeps copy available while rewind is disabled', () => {
     const markup = render(true);
-    expect(markup).toContain('aria-label="Copy code"');
+    expect(markup).toContain('aria-label="Copy"');
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
@@ -98,7 +101,7 @@ describe('UserMessage actions', () => {
     const status = markup.indexOf('data-queued-status="sending"');
     expect(markup.indexOf('<time')).toBeGreaterThan(-1);
     expect(status).toBeGreaterThan(markup.indexOf('<time'));
-    expect(status).toBeGreaterThan(markup.indexOf('aria-label="Copy code"'));
+    expect(status).toBeGreaterThan(markup.indexOf('aria-label="Copy"'));
   });
 });
 
@@ -199,12 +202,12 @@ describe('UserMessageBubble — a clamped message is expandable without swallowi
 
   test('the expand affordance is a real button, named and stateful', () => {
     const collapsed = renderBubble();
-    expect(collapsed).toContain('aria-label="Expand message"');
+    expect(collapsed).toContain('>Show more</button>');
     expect(collapsed).toContain('aria-expanded="false"');
     expect(collapsed).toContain('aria-controls="m1-text"');
 
     const open = renderBubble({ expanded: true });
-    expect(open).toContain('aria-label="Collapse message"');
+    expect(open).toContain('>Show less</button>');
     expect(open).toContain('aria-expanded="true"');
   });
 
@@ -225,7 +228,7 @@ describe('UserMessageBubble — a clamped message is expandable without swallowi
 
   test('an unclamped bubble offers no expand control and no ARIA state at all', () => {
     const markup = renderBubble({ canExpand: false });
-    expect(markup).not.toContain('aria-label="Expand message"');
+    expect(markup).not.toContain('Show more');
     expect(markup).not.toContain('aria-expanded');
     expect(markup).not.toContain('role="button"');
     // The chip is still the one and only control.
@@ -281,7 +284,7 @@ describe('UserMessage timestamp', () => {
     expect(markup).not.toContain('NaN');
     // The rest of the turn is unaffected.
     expect(markup).toContain('ship the thing');
-    expect(markup).toContain('aria-label="Copy code"');
+    expect(markup).toContain('aria-label="Copy"');
   });
 
   test('the timestamp reveals with the actions, inside the same hover row', () => {
@@ -296,7 +299,7 @@ describe('UserMessage timestamp', () => {
     // would sit outside it and these positions would invert.
     expect(fadeAt).toBeGreaterThan(-1);
     expect(markup.indexOf('<time')).toBeGreaterThan(fadeAt);
-    expect(markup.indexOf('aria-label="Copy code"')).toBeGreaterThan(fadeAt);
+    expect(markup.indexOf('aria-label="Copy"')).toBeGreaterThan(fadeAt);
 
     // Exactly one reveal — the row's. Nothing nested fades on its own.
     expect(markup.split('group-hover/turn:opacity-100').length - 1).toBe(1);
@@ -1338,5 +1341,180 @@ describe('UserMessage member author', () => {
     expect(renderWith(MEMBER, false)).not.toContain('Sent by');
     expect(renderWith(MEMBER, false)).not.toContain('data-slot="avatar"');
     expect(renderWith(undefined, true)).toBe(renderWith(undefined, false));
+  });
+});
+
+describe('UserMessage platform prompts', () => {
+  const renderText = (text: string) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+          <TooltipProvider>
+            <UserMessage
+              message={{ ...message, parts: [{ ...message.parts[0], text }] } as MessageWithParts}
+              sessionId="session-1"
+              ownsPlan={false}
+            />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a reminder fire is a source pill over a plain bubble, not the raw header', () => {
+    const markup = renderText(
+      '[REMINDER reminder.0123456789ab — one-time scheduled check-in on this session, not a new user message.]\n\nCheck whether the vendor replied.',
+    );
+    expect(markup).toContain('data-testid="reminder-turn"');
+    expect(markup).toContain('data-testid="message-source"');
+    expect(markup).toContain('>Reminder</span>');
+    expect(markup).toContain('>One-time</span>');
+    expect(markup).toContain('Check whether the vendor replied.');
+    expect(markup).not.toContain('[REMINDER');
+  });
+
+  test('a trigger fire names the trigger in the pill and the prompt in the bubble', () => {
+    const markup = renderText(
+      '<trigger_event>{"trigger":"daily-digest","data":{"manual":true}}</trigger_event>\nWrite the daily digest.',
+    );
+    expect(markup).toContain('data-testid="trigger-turn"');
+    expect(markup).toContain('data-testid="message-source"');
+    expect(markup).toContain('>daily-digest</span>');
+    expect(markup).toContain('Write the daily digest.');
+    expect(markup).not.toContain('trigger_event');
+  });
+});
+
+describe('UserMessageBubble clamp toggle', () => {
+  test('only the Show more button toggles: the bubble carries no click affordance', () => {
+    const markup = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+        <UserMessageBubble canExpand expanded={false} onToggle={() => {}} textId="m1-text">
+          long text
+        </UserMessageBubble>
+      </NextIntlClientProvider>,
+    );
+    expect(markup).not.toContain('cursor-pointer');
+    expect(markup).toContain('>Show more</button>');
+  });
+});
+
+describe('UserMessage pasted-text tiles', () => {
+  const PASTE = 'line one of the paste\n<file path="/workspace/x.txt" mime="text/plain" filename="x.txt">u</file>\nline three';
+  const sent = (typed: string, pastes = [{ id: 'abcd1234', text: PASTE }]) =>
+    serializePromptWithPastes(typed, pastes);
+
+  test('a paste is a PASTED tile above the bubble; no raw XML reaches the markup', () => {
+    const markup = renderText(sent('summarize this'));
+    expect(markup).toContain('summarize this');
+    expect(markup).toContain('line one of the paste');
+    expect(markup).toContain('pasted');
+    expect(markup).not.toContain('&lt;pasted_content');
+    expect(markup).not.toContain('pasted_content');
+    // The tile leads the bubble, like the composer row.
+    expect(markup.indexOf('line one of the paste')).toBeLessThan(markup.indexOf('summarize this'));
+  });
+
+  test('a <file> ref inside a paste stays paste text, never an attachment tile', () => {
+    const markup = renderText(sent('summarize this'));
+    expect(markup).not.toContain('title="x.txt"');
+  });
+
+  test('a paste-only message draws the tile, no bubble, and no notification card', () => {
+    const markup = renderText(sent(''));
+    expect(markup).toContain('line one of the paste');
+    expect(markup).not.toContain('Pasted content');
+    expect(markup).not.toContain('id="message-1-text"');
+  });
+
+  test('the tile opens the paste when the host has a panel, and is inert without one', () => {
+    const opened: Array<[string, string]> = [];
+    const inert = renderText(sent('hi'));
+    expect(inert).not.toContain('<button type="button" title="Pasted text"');
+    const live = renderText(sent('hi'), {
+      onOpenPastedContent: (id: string, text: string) => opened.push([id, text]),
+    });
+    expect(live).toContain('<button type="button" title="Pasted text"');
+  });
+
+  test('a /command carrying a paste in its halves draws the tile, not the XML', () => {
+    const markup = renderText(`expanded template ${sent('fix it')}`, {
+      commandInfo: {
+        name: 'review',
+        args: sent('fix it'),
+        split: { before: sent('please'), after: 'fix it' },
+      },
+    });
+    expect(markup).not.toContain('pasted_content');
+    expect(markup).toContain('line one of the paste');
+    // One tile per paste id, though the template, the args and `before` all carry it.
+    expect((markup.match(/title="Pasted text"/g) ?? []).length).toBe(1);
+  });
+
+  test('the editor keeps each paste as a removable tile and the textarea holds only the typed text', () => {
+    const markup = renderText(sent('summarize this'), {
+      editingText: editablePromptText(sent('summarize this')),
+      onEditCancel: () => {},
+      onEditSend: () => {},
+    });
+    expect(markup).toContain('aria-label="Remove pasted text"');
+    expect(markup).toContain('line one of the paste');
+    expect(markup).not.toContain('pasted_content');
+  });
+
+  test('a typed <pasted_content> tag shows, copies and edits as typed, as plain text', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    const wire = sent(typed, []);
+    const markup = renderText(wire);
+    expect(markup).toContain('&lt;pasted_content id=&quot;abcd1234&quot; chars=&quot;3&quot;&gt;abc&lt;/pasted_content&gt; hello');
+    expect(markup).not.toContain('&amp;lt;');
+    expect(markup).not.toContain('title="Pasted text"');
+    expect(editablePromptText(wire)).toBe(typed);
+    const parts = [{ id: 'p', messageID: 'm', type: 'text', text: wire }] as never;
+    expect(userMessageCopyText(parts)).toBe(typed);
+    expect(editResendAttachments([], typed).text).toBe(wire);
+  });
+
+  test('a /command detected from its template keeps a typed tag in its args as text, never a tile', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    const commands = [
+      { name: 'review', template: 'Please review the following change carefully: $ARGUMENTS' },
+    ] as never;
+    const wire = sent(`Please review the following change carefully: ${typed}`, []);
+    const markup = renderText(wire, { commands });
+    expect(markup).not.toContain('title="Pasted text"');
+    expect(markup).toContain('&lt;pasted_content id=&quot;abcd1234&quot;');
+    expect(markup).toContain('hello');
+  });
+
+  test('editablePromptText drops paste blocks', () => {
+    expect(editablePromptText(sent('summarize this'))).toBe('summarize this');
+  });
+
+  test('editResendAttachments writes kept pastes back ahead of the text', () => {
+    const kept = [
+      { key: 'pasted:abcd1234', filename: 'Pasted text', pasted: { id: 'abcd1234', text: PASTE } },
+    ];
+    const { files, text } = editResendAttachments(kept, 'summarize this');
+    expect(files).toEqual([]);
+    expect(text).toBe(sent('summarize this'));
+  });
+
+  test('Copy message copies the paste body, not its XML', () => {
+    const parts = [{ id: 'p', messageID: 'm', type: 'text', text: sent('summarize this') }] as never;
+    expect(userMessageCopyText(parts)).toBe(`${PASTE}\n\nsummarize this`);
+  });
+});
+
+describe('pastedTextCounts', () => {
+  test('counts words across spaces, tabs and newlines, and every character', () => {
+    expect(pastedTextCounts('  one two\tthree\n\nfour  ')).toEqual({ words: 4, chars: 23 });
+  });
+  test('an empty or blank paste has no words', () => {
+    expect(pastedTextCounts('')).toEqual({ words: 0, chars: 0 });
+    expect(pastedTextCounts(' \n ')).toEqual({ words: 0, chars: 3 });
+  });
+  test('an emoji is one character, not two UTF-16 units', () => {
+    expect(pastedTextCounts('🚀'.repeat(600))).toEqual({ words: 1, chars: 600 });
+    expect(pastedTextCounts('👍🏽 é')).toEqual({ words: 2, chars: 3 });
   });
 });

@@ -1,7 +1,8 @@
-import { connectorCalls, projectSessions, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
+import { connectorCalls, projectSecrets, projectSessions, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { and, count, eq, isNull, max } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import { wakeLadderBudgetOf } from '../session-lifecycle/attended-wake-ladder';
 
 export interface RuntimeControlState {
   known: true;
@@ -14,6 +15,13 @@ export interface RuntimeControlState {
   /** Provider status observed by the wake loop, when it recorded one. */
   wake_provider_status: string | null;
   deadline_at: string | null;
+  /** When the current wake started and last showed progress (ISO), or null. */
+  wake_started_at: string | null;
+  wake_progress_at: string | null;
+  /** Why the box last stopped (`runtime_wake_failed`, `manual`, ...), or null. */
+  stop_reason: string | null;
+  /** The server wake ladder's spent budget for this episode (R5.2). */
+  wake_ladder_budget: { retried: boolean; restarts: number; last_action_ms: number | null };
 }
 
 /** One indexed read: the sandbox row plus the wake fence's verdict on it. */
@@ -39,6 +47,10 @@ export async function readRuntimeControlState(sessionId: string): Promise<Runtim
       waking: false,
       wake_provider_status: null,
       deadline_at: null,
+      wake_started_at: null,
+      wake_progress_at: null,
+      stop_reason: null,
+      wake_ladder_budget: { retried: false, restarts: 0, last_action_ms: null },
     };
   }
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -53,7 +65,18 @@ export async function readRuntimeControlState(sessionId: string): Promise<Runtim
         ? metadata.runtimeWakeProviderStatus
         : null,
     deadline_at: row.deadlineAt ? row.deadlineAt.toISOString() : null,
+    wake_started_at: stringOrNull(metadata.runtimeWakeStartedAt),
+    wake_progress_at: stringOrNull(metadata.runtimeWakeProgressAt),
+    stop_reason: stringOrNull(metadata.stopReason),
+    wake_ladder_budget: (() => {
+      const budget = wakeLadderBudgetOf(metadata);
+      return { retried: budget.retried, restarts: budget.restarts, last_action_ms: budget.lastActionMs };
+    })(),
   };
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
 }
 
 export interface MirrorWatermark {
@@ -184,5 +207,48 @@ export async function readSessionAuditWatermark(
     latest_resolved_at: stamps?.latestResolved
       ? new Date(stamps.latestResolved).toISOString()
       : null,
+  };
+}
+
+export interface SessionControlState {
+  known: true;
+  /** The title a client shows: the user's own name for the session, else the
+   *  generated one, else null. */
+  title: string | null;
+  /**
+   * A version of the project's secrets: their count and newest write. It
+   * changes when a provider is connected or removed, so a client re-reads its
+   * provider list on change instead of polling. Never a name or a value.
+   */
+  secrets_rev: string;
+}
+
+/**
+ * The session's title and the project's secrets version (R5.2). A title write
+ * NOTIFYs (`kortix_session_changed`); a secret write lands on the next pass.
+ */
+export async function readSessionControlState(sessionId: string): Promise<SessionControlState> {
+  const [session] = await db
+    .select({ sessionMetadata: projectSessions.metadata, sessionProjectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const metadata = (session?.sessionMetadata ?? {}) as Record<string, unknown>;
+  const projectId = session?.sessionProjectId ?? null;
+  const named = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim() ? value.trim() : null;
+  let secretsRev = '0:';
+  if (projectId) {
+    const [secrets] = await db
+      .select({ secretCount: count(), secretsUpdatedAt: max(projectSecrets.updatedAt) })
+      .from(projectSecrets)
+      .where(eq(projectSecrets.projectId, projectId));
+    const newest = secrets?.secretsUpdatedAt ? new Date(secrets.secretsUpdatedAt).toISOString() : '';
+    secretsRev = `${secrets?.secretCount ?? 0}:${newest}`;
+  }
+  return {
+    known: true,
+    title: named(metadata.custom_name) ?? named(metadata.name),
+    secrets_rev: secretsRev,
   };
 }

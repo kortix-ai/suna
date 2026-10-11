@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectFiles, readProjectFile } from './files';
+import { invalidateTokenCache } from '../../http/auth';
+import { fetchProjectFileRaw, listProjectDirectory, listProjectFiles, projectArchiveRequest, readProjectFile } from './files';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -46,6 +47,27 @@ test('listProjectFiles is a silent background read — a 403 never hits the glob
   }
 });
 
+// KRTX-1723: the recursive list stops at 1,000 files, so a tree built from it
+// lost every folder that sorts after file 1,000. One level per request instead.
+test('listProjectDirectory GETs one level of a folder (depth=1) and keeps the truncation flag', async () => {
+  nextResponse = {
+    status: 200,
+    body: { entries: [{ path: 'src/lib', type: 'directory' }, { path: 'src/index.ts', type: 'file' }], truncated: false },
+  };
+  const result = await listProjectDirectory('P1', { ref: 'main', path: 'src' });
+  expect(last().url).toContain('/projects/P1/files?ref=main&path=src&depth=1');
+  expect(result).toEqual({
+    entries: [{ path: 'src/lib', type: 'directory' }, { path: 'src/index.ts', type: 'file' }],
+    truncated: false,
+  });
+});
+
+test('listProjectDirectory at the root sends no path', async () => {
+  nextResponse = { status: 200, body: { entries: [], truncated: false } };
+  await listProjectDirectory('P1');
+  expect(last().url).toMatch(/\/projects\/P1\/files\?depth=1$/);
+});
+
 test('readProjectFile GETs /projects/:id/files/content with path/ref query', async () => {
   nextResponse = { status: 200, body: { path: 'a.md', ref: 'main', content: 'hi' } };
   const result = await readProjectFile('P1', 'a.md', 'main');
@@ -67,4 +89,46 @@ test('readProjectFile is a silent background read — a 403 never hits the globa
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   }
+});
+
+test('projectArchiveRequest names the archive route with ref, path and the bearer, without fetching', async () => {
+  const request = await projectArchiveRequest('P 1', 'main', 'src/app');
+  expect(request.url).toBe('http://test.local/projects/P%201/files/archive?ref=main&path=src%2Fapp');
+  expect(request.headers.authorization).toBe('Bearer tok');
+  expect(calls).toHaveLength(0);
+});
+
+test('fetchProjectFileRaw GETs /projects/:id/files/raw and returns the exact bytes', async () => {
+  // A prior test file's token config caches through this module: re-configure
+  // and drop the cache so the auth header assertion is deterministic.
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  invalidateTokenCache();
+  const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+  let seen: { url: string; method: string; authorization: string | null } | null = null;
+  globalThis.fetch = mock(async (url: unknown, opts: RequestInit = {}) => {
+    seen = {
+      url: String(url),
+      method: opts.method ?? 'GET',
+      authorization: new Headers(opts.headers).get('authorization'),
+    };
+    return new Response(bytes, {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    });
+  }) as unknown as typeof fetch;
+
+  const blob = await fetchProjectFileRaw('P1', 'assets/logo.png', 'main');
+
+  expect(seen!.url).toContain('/projects/P1/files/raw?path=assets%2Flogo.png&ref=main');
+  expect(seen!.method).toBe('GET');
+  // Other test files reconfigure the token provider concurrently; the contract
+  // here is that the raw read attaches the configured Bearer token.
+  expect(seen!.authorization).toMatch(/^Bearer \S+$/);
+  // Byte-accurate: a text read of this file would have replaced 0xff 0xfe.
+  expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes);
+});
+
+test('fetchProjectFileRaw rejects on a non-ok response instead of returning bytes', async () => {
+  globalThis.fetch = mock(async () => new Response('File not found', { status: 404 })) as unknown as typeof fetch;
+  await expect(fetchProjectFileRaw('P1', 'missing.png', 'main')).rejects.toThrow('File not found');
 });

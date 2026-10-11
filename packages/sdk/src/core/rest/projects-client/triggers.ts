@@ -11,7 +11,7 @@ import { unwrap } from './shared';
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor';
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
 
 /**
  * How the platform runs a `type: monitor` trigger's `run` command:
@@ -41,6 +41,29 @@ export interface TriggerSessionAccess {
   mode: 'private' | 'project' | 'members';
   memberIds: string[];
   groupIds: string[];
+}
+
+/** Subscription state of a `type: event` trigger. */
+export interface ProjectTriggerEvent {
+  /** The connector (profile) the event happens on. */
+  connector: string;
+  /** Declared `account` label; null = the connector's default shared account. */
+  account?: string | null;
+  /** Identity (or label) of the shared account actually feeding the trigger; null when none. */
+  connected_as?: string | null;
+  /** Provider event type id, e.g. `GITHUB_PULL_REQUEST_EVENT`. */
+  type: string;
+  config: Record<string, unknown>;
+  /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+  source?: string | null;
+  /** @deprecated Same value as `source`. */
+  provider: string | null;
+  /** Provider app slug (e.g. `github`). Null when unresolved. */
+  app: string | null;
+  /** `pending` = declared but no subscription yet. */
+  status: 'active' | 'needs_connection' | 'error' | 'pending';
+  error: string | null;
+  last_event_at: string | null;
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */
@@ -81,6 +104,8 @@ export interface ProjectTrigger {
    * monitor can never fail silently. Null when the monitor declares none.
    */
   expect_event_within_seconds: number | null;
+  /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
+  event: ProjectTriggerEvent | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
@@ -115,6 +140,9 @@ export interface ProjectTrigger {
   last_error?: string | null;
   /** ISO time of the last fire attempt or run outcome. */
   last_attempt_at?: string | null;
+  /** ISO time an enabled cron trigger runs next: the slot the scheduler
+   *  claims, jitter included. Null for a webhook trigger, and from an older API. */
+  next_fire_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }
@@ -175,6 +203,16 @@ export interface CreateProjectTriggerInput {
   interval?: string;
   /** For type='monitor'. Silence watchdog as a duration literal; floor 5m. */
   expect_event_within?: string;
+  /** Required for type='event'. Connector slug the event happens on. */
+  connector?: string;
+  /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
+  event_account?: string | null;
+  /** For type='event'. Event source adapter id such as `composio`; omit for the connector's provider. */
+  event_source?: string | null;
+  /** Required for type='event'. The adapter's event type id from {@link listProjectTriggerEventTypes}. */
+  event?: string;
+  /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
+  event_config?: Record<string, unknown>;
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -218,6 +256,16 @@ export interface UpdateProjectTriggerInput {
   interval?: string | null;
   /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
   expect_event_within?: string | null;
+  /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
+  connector?: string;
+  /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */
+  event_account?: string | null;
+  /** For type='event'. Event source adapter id; null clears it to the connector's provider. Changing `connector` clears it unless sent. */
+  event_source?: string | null;
+  /** For type='event'. The adapter's event type id. */
+  event?: string;
+  /** For type='event'. Replaces the provider event config. */
+  event_config?: Record<string, unknown>;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
@@ -300,4 +348,95 @@ export async function fireProjectTrigger(projectId: string, slug: string) {
       {},
     ),
   );
+}
+
+/** One app event a connector can trigger on. */
+export interface ProjectTriggerEventType {
+  type: string;
+  name: string;
+  description: string;
+  app: string;
+  /** How the provider delivers it; null when unknown. */
+  delivery: 'poll' | 'push' | null;
+  /** JSON Schema of the `event_config` this event accepts. */
+  config_schema: Record<string, unknown>;
+  /** JSON Schema of the `event.data` a prompt template reads. Null when unpublished. */
+  payload_schema: Record<string, unknown> | null;
+}
+
+export interface ProjectTriggerEventTypes {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
+  provider: string;
+  app: string;
+  event_types: ProjectTriggerEventType[];
+}
+
+/**
+ * The app events a connector, or an app with no connector, can trigger on.
+ * Throws 404 for an unknown connector (`app_not_found` for an app with no
+ * events), 400 for an unknown `source`, and 409 `event_source_unavailable`
+ * when no event source serves it.
+ */
+export async function listProjectTriggerEventTypes(
+  projectId: string,
+  params: { connector: string } | { app: string; source?: string },
+) {
+  const query =
+    'connector' in params
+      ? `connector=${encodeURIComponent(params.connector)}`
+      : `app=${encodeURIComponent(params.app)}${params.source ? `&source=${encodeURIComponent(params.source)}` : ''}`;
+  return unwrap(
+    await backendApi.get<ProjectTriggerEventTypes>(`/projects/${projectId}/triggers/event-types?${query}`),
+  );
+}
+
+/** One shared account of a connector: the only kind that can feed an event trigger. */
+export interface ProjectTriggerEventAccount {
+  /** The account's label; unique per connector. This is the trigger's `account`. */
+  label: string;
+  /** Identity the account was authorized as; null when unknown. */
+  connected_as: string | null;
+  /** The connector's default shared account: used when a trigger names no `account`. */
+  is_default: boolean;
+  /** Authorization finished; a trigger can run on it. */
+  connected: boolean;
+}
+
+/** A connector (profile) of an app, with its shared accounts. */
+export interface ProjectTriggerEventConnector {
+  slug: string;
+  name: string;
+  accounts: ProjectTriggerEventAccount[];
+}
+
+/** An app that can trigger events, with the project's state for it. */
+export interface ProjectTriggerEventApp {
+  /** Event source adapter id, such as `composio`. The trigger's `event_source`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
+  provider: string;
+  /** Provider app slug. */
+  app: string;
+  name: string;
+  logo: string | null;
+  event_count: number;
+  /** Slug of the project's connector for this app; null until one is added. */
+  connector: string | null;
+  /** The project has an active shared account for this app. An event trigger runs on it. */
+  connected: boolean;
+  /** Every connector (profile) of this app with its shared accounts. */
+  connectors?: ProjectTriggerEventConnector[];
+  /** Slug to give a new connector for this app (never a reserved or taken one). */
+  new_connector_slug?: string;
+}
+
+export interface ProjectTriggerEventApps {
+  apps: ProjectTriggerEventApp[];
+}
+
+/** Apps with at least one event type, with connector and connection state for this project. */
+export async function listProjectTriggerEventApps(projectId: string) {
+  return unwrap(await backendApi.get<ProjectTriggerEventApps>(`/projects/${projectId}/triggers/event-apps`));
 }

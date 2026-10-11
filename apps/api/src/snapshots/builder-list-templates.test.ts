@@ -16,7 +16,7 @@
  * resolution, returning the healthy subset.
  */
 import { describe, expect, mock, test } from 'bun:test';
-import { listSandboxTemplates, type SandboxTemplateView } from './builder';
+import { listSandboxTemplates } from './builder';
 import * as realSnapshotProviders from './providers';
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────

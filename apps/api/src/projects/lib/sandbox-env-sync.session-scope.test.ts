@@ -5,7 +5,7 @@
 //
 // Harness copied from `sandbox-env-sync.instance-scope.test.ts` (the db double
 // ignores WHERE, so the session filter must hold in code, which this asserts).
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
