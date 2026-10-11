@@ -78,12 +78,12 @@ export interface SessionControlStreamOptions {
    * `'v2'`: the session negotiated the session log. While any subscriber asks for it, a
    * connection with the runtime channel adds `schema=v2`, and a switch either way reconnects at
    * once at the same cursors.
-   * - Until P4.4 (the API relay) is on dev, the API ignores `schema`: the runtime channel keeps
-   *   the v1 frames, and a live turn streams through them as before.
-   * - With P4.4 and P4.3b (kortixd) on dev, the runtime channel carries `log.*` frames in place
-   *   of the `message.*` transcript frames, plus every non-transcript frame (`session.*`,
-   *   `permission.*`, `question.*`, `todo.*`, ...); a streaming `log.message` put precedes the
+   * - The daemon side is complete (P4.3b): kortixd's `schema=v2` stream carries `log.*` frames in
+   *   place of the `message.*` transcript frames, plus every non-transcript frame (`session.*`,
+   *   `permission.*`, `question.*`, `todo.*`, ...), and a streaming `log.message` put precedes the
    *   first `log.block.delta` of a message.
+   * - The API relay (P4.4) is the remaining prerequisite: until it is on dev the API ignores
+   *   `schema`, the runtime channel keeps the v1 frames, and a live turn streams through them.
    */
   schema?: 'v2';
   /**

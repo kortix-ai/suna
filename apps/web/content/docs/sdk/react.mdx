@@ -278,8 +278,8 @@ A session reads the log only when all of these are true. Otherwise it reads v1, 
 
 An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
 
-- Today the API ignores `schema`. The stream keeps the v1 frames, and a turn in progress streams through them as before.
-- Once the API relays the session log, the stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
+- The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
+- The API does not relay `schema` yet; that is the remaining step. Until it does, the stream keeps the v1 frames, and a turn in progress streams through them as before.
 
 A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
 

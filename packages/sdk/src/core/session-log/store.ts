@@ -15,8 +15,8 @@
  *    an older put cannot revive it.
  *  - `log.block.delta`: text appended to a text or reasoning block, until the next put of
  *    that message replaces the whole record. A delta for a message or block the store does
- *    not hold is dropped, with no placeholder: with P4.3b (kortixd) a streaming put precedes
- *    the first delta of a message; before it the journal puts a message at turn end only.
+ *    not hold is dropped, with no placeholder: kortixd (P4.3b) puts a streaming record before
+ *    the first delta of a message.
  *  - `log.thread`: the thread head replaces the one held.
  *  - `log.state`: an older `generation` (a zombie box) is ignored; the session fields merge.
  *  - A page carries no revs: a page message never replaces a message the stream delivered,

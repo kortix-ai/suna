@@ -8,8 +8,8 @@
  * Rows come in v1 order (`time.created`, then id), as `toV1` returns a thread.
  *
  * The v1 store still holds what the session log does not carry yet: an optimistic send, and,
- * until P4.4 relays `schema=v2` (the v1 frames keep arriving until then), the turn that is
- * streaming. Those rows
+ * until the API relays `schema=v2` (P4.4, the remaining prerequisite; the v1 frames keep
+ * arriving until then), the turn that is streaming. Those rows
  * are merged in, by message id: a session-log message replaces the v1 row of the same id,
  * a tombstoned id stays out, and every other v1 row goes where the v1 store orders it
  * (`time.created`, then id; a row with no time goes last).
