@@ -432,7 +432,8 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
   const summary = sum ? (Array.isArray(sum.parts) ? sum.parts : []).flatMap((p) => (isObj(p) && p.type === 'text' && typeof p.text === 'string' ? [p.text] : [])).join('') : null;
   const lost: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
   const ids = blockIds(parts);
-  const blocks = parts.map((p, i) => blockOf(p, ids[i], marker, summary, c, lost));
+  // blockIds returns one id per part.
+  const blocks = parts.map((p, i) => blockOf(p, ids[i]!, marker, summary, c, lost));
   // An aborted reply stays in context only with something the model sees: an empty one would replay as an empty turn.
   const visible = blocks.some((b) => b.type === 'text' || b.type === 'attachment' || b.type === 'tool_call' || (b.type === 'harness' && b.model_visible));
   const inContext = !superseded && role !== 'system' && (marker ? status === 'complete' : !err || (aborted && visible));
@@ -560,7 +561,7 @@ export function fromV1(v1: V1Transcript, options: FromV1Options = {}): SessionLo
     });
   }
   threads.sort((a, b) => (a.parent_thread_id === null ? -1 : b.parent_thread_id === null ? 1 : rowsIndex(a) - rowsIndex(b)));
-  const lastUser = threads[0].messages.filter((m) => m.role === 'user' && m.kind === 'turn').at(-1);
+  const lastUser = threads[0]?.messages.filter((m) => m.role === 'user' && m.kind === 'turn').at(-1);
   const partial = c.counts.tool_input + c.counts.cut_point + c.counts.attachment > 0;
   return {
     ...V, session_id: v1.session_id, title: null, created_at: sessionCreated,
