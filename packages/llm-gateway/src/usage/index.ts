@@ -7,4 +7,9 @@ export type { CostBreakdown, TokenUsage } from './pricing';
 export { IncrementalSseScanner } from './sse-scanner';
 export type { SseErrorFrame } from './sse-scanner';
 
-export { chunkOutputChars, estimateOutputTokens, estimatePromptTokens } from './estimate';
+export {
+  chunkOutputChars,
+  estimateCachedPromptTokens,
+  estimateOutputTokens,
+  estimatePromptTokens,
+} from './estimate';

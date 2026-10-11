@@ -131,6 +131,42 @@ afterEach(async () => {
 });
 
 describe('loadProjectConfig characterization', () => {
+  test('imported agents: every registered agent is listed, a disabled one with enabled: false, attributed to its declaring file', async () => {
+    // The reported shape: a root manifest that declares no `agents:` of its own
+    // and imports a domain file that does — one enabled, one disabled agent.
+    await push(
+      {
+        'kortix.yaml': `# Synthetic root manifest
+kortix_version: 2
+imports:
+  - domains/kortix.yaml
+opencode:
+  config_dir: .kortix/opencode
+`,
+        'domains/kortix.yaml': `agents:
+  builder:
+    connectors: all
+  observer:
+    enabled: false
+    connectors: all
+`,
+      },
+      'declare agents through an imported domain file',
+    );
+
+    const config = await loadProjectConfig(project);
+
+    expect(config.agent_discovery).toBe('declarative');
+    // Every registered agent is listed — the disabled one carries `enabled: false`
+    // instead of vanishing (launch surfaces filter it at their own layer).
+    expect(config.agents.map((agent) => [agent.name, agent.enabled, agent.path])).toEqual([
+      ['builder', true, 'domains/kortix.yaml#agents.builder'],
+      ['observer', false, 'domains/kortix.yaml#agents.observer'],
+    ]);
+    // The scope mirror still resolves from the declaring block.
+    expect(config.agents[1]?.scope?.connectors).toBe('all');
+  });
+
   test('pins the manifest, signals and opencode.jsonc fields of an imported manifest', async () => {
     const config = await loadProjectConfig(project);
 
@@ -229,5 +265,44 @@ describe('loadProjectConfig characterization', () => {
         description: null,
       },
     ]);
+  });
+
+  // The skill-create route serializes every frontmatter string as a
+  // double-quoted YAML scalar (the one single-line form valid for any text),
+  // so a description may carry quotes, colons and backslashes. The summary
+  // parser must read that scalar back to its text, or the catalog shows the
+  // escapes.
+  test('reads a quoted frontmatter scalar with escapes back to its text', async () => {
+    await push(
+      {
+        'skills/quoted/SKILL.md': `---
+name: "Quoted \\"Skill\\""
+description: "Runs deploys: say \\"go\\""
+---
+`,
+      },
+      'add the quoted skill',
+    );
+    const config = await loadProjectConfig(project);
+
+    const skill = config.skills.find((s) => s.path === 'skills/quoted/SKILL.md');
+    expect(skill?.name).toBe('Quoted "Skill"');
+    expect(skill?.description).toBe('Runs deploys: say "go"');
+  });
+
+  // A plain scalar (the writer emits one when the text needs no quoting) may
+  // end in a quote character; the reader must not eat it as a closing quote.
+  test('reads a plain scalar that ends in a quote back intact', async () => {
+    await push(
+      {
+        'skills/plain/SKILL.md': '---\nname: Deploy "v1"\ndescription: Covers the don\'t path\n---\n',
+      },
+      'add the plain skill',
+    );
+    const config = await loadProjectConfig(project);
+
+    const skill = config.skills.find((s) => s.path === 'skills/plain/SKILL.md');
+    expect(skill?.name).toBe('Deploy "v1"');
+    expect(skill?.description).toBe("Covers the don't path");
   });
 });

@@ -58,11 +58,54 @@ const TIERS: Record<FreshnessTier, { staleTime: number }> = {
   directory: { staleTime: 10_000 },
 };
 
+/**
+ * The fail-safe refetch for a query that settled as error WITHOUT data on a
+ * still-mounted page.
+ *
+ * One transient failure (the API answered 5xx once, a network blip, the auth
+ * session not published yet) used to park such an entry forever: nothing
+ * refetches a settled error while the page stays mounted, and every
+ * `enabled:` gate derived from the same entry stays shut — the page showed its
+ * loading/empty state until a manual reload (reported 2026-10-04 on the Models
+ * page and project settings, whose reads are gated on the shared project
+ * detail entry).
+ *
+ * While the entry has no data and is in error, TanStack calls this on every
+ * observer update and re-fires the fetch on the returned delay — 2 s, then
+ * doubling to a 30 s ceiling. The engine only schedules the interval while the
+ * query is enabled and observed: a gated query (`enabled: false`) fires
+ * nothing, its gate re-opens when the entry it derives from heals, and the
+ * first success clears the interval (data arrives ⇒ `false`). A pending or a
+ * stale-data entry polls nothing, so healthy behavior is unchanged.
+ *
+ * The structural parameter is the part of TanStack's `Query` this decision
+ * reads; the engine passes the full object, which is assignable to it.
+ */
+const ERROR_SELF_HEAL_BASE_MS = 2_000;
+const ERROR_SELF_HEAL_CAP_MS = 30_000;
+
+function errorSelfHealRefetchInterval(query: {
+  state: { status: string; data?: unknown; errorUpdateCount: number };
+}): number | false {
+  const { status, data, errorUpdateCount } = query.state;
+  if (status !== 'error' || data !== undefined) return false;
+  return Math.min(
+    ERROR_SELF_HEAL_BASE_MS * 2 ** Math.max(0, errorUpdateCount - 1),
+    ERROR_SELF_HEAL_CAP_MS,
+  );
+}
+
 export function contract(tier: FreshnessTier) {
   return {
     staleTime: TIERS[tier].staleTime,
     gcTime: GC_TIME,
     refetchOnMount: true as const,
+    /**
+     * A settled error with no data retried with capped backoff — see
+     * `errorSelfHealRefetchInterval`. `directory` overrides with its
+     * unconditional poll below, which already re-fires an errored entry.
+     */
+    refetchInterval: errorSelfHealRefetchInterval,
     ...(tier === 'directory'
       ? {
           refetchInterval: 10_000,

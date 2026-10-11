@@ -3,15 +3,17 @@ import {
   getTier,
   getTierEntitlements,
   getVisibleTiers,
-  tierHasEntitlement,
 } from '../billing/services/tiers';
+
+const tierHasEntitlement = (tier: string, key: keyof ReturnType<typeof getTierEntitlements>) =>
+  getTierEntitlements(tier)[key] === true;
 
 // Locks in the plan-gating contract for the enterprise surfaces: SAML SSO,
 // SCIM, groups + custom roles (`rbac`), and audit access. Only the
 // sales-assigned `enterprise` tier unlocks them; every self-serve / legacy
 // tier is gated (rbac re-gated 2026-07-09 — it was briefly open on every
 // tier). The IAM route guard (requireEntitlement) and the /scim/v2
-// data-plane middleware both key off tierHasEntitlement, so these
+// data-plane middleware both resolve these per-plan gates, so these
 // invariants ARE the access-control policy. Reads/revokes/deletes stay
 // ungated route-side so downgraded accounts can unwind what they have.
 describe('tier entitlements (enterprise gating)', () => {

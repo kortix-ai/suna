@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { posix, resolve, sep } from 'node:path';
 
 export type AppSourceSpec =
@@ -20,7 +20,7 @@ export type AppSourceSpec =
       kind: 'dockerfile';
       dockerfile?: string;
       command: string[];
-      port: number;
+      port?: number;
       readinessPath?: string;
       restartLimit?: number;
     }
@@ -28,7 +28,7 @@ export type AppSourceSpec =
       kind: 'oci_image';
       image: string;
       command?: string[];
-      port: number;
+      port?: number;
       readinessPath?: string;
       restartLimit?: number;
     };
@@ -104,7 +104,11 @@ async function loadDockerfile(sourceDir: string, requested = 'Dockerfile'): Prom
   const absoluteRoot = resolve(sourceDir);
   const absolutePath = resolve(absoluteRoot, path);
   if (!isWithin(absoluteRoot, absolutePath)) throw new Error('dockerfile escapes the source directory');
-  const contents = await readFile(absolutePath, 'utf8');
+  // The lexical check above does not see symlinks: resolve both and compare again.
+  const realRoot = await realpath(absoluteRoot);
+  const realPath = await realpath(absolutePath);
+  if (!isWithin(realRoot, realPath)) throw new Error('dockerfile escapes the source directory');
+  const contents = await readFile(realPath, 'utf8');
   if (!contents.trim()) throw new Error('Dockerfile is empty');
   if (Buffer.byteLength(contents) > 1024 * 1024) throw new Error('Dockerfile exceeds 1 MiB');
   return { path, contents };
@@ -205,7 +209,8 @@ export async function normalizeAppBuild(
         runtimeSpec: {
           command: command(source.command),
           workdir: finalDockerfileWorkdir(loaded.contents),
-          target_port: targetPort(source.port),
+          // No port: a worker-only release; the supervisor runs the process and serves nothing.
+          target_port: source.port === undefined ? 0 : targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),
         },
@@ -225,7 +230,8 @@ export async function normalizeAppBuild(
         dockerfile: `FROM ${source.image}`,
         runtimeSpec: {
           command: appCommand,
-          target_port: targetPort(source.port),
+          // No port: a worker-only release; the supervisor runs the process and serves nothing.
+          target_port: source.port === undefined ? 0 : targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),
         },

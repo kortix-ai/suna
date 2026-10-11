@@ -48,20 +48,34 @@ The same four phases as `../dev-us-east-2/README.md`, with these names:
 | copy | `us-west-2` → `us-east-2` | `us-west-2` → `eu-west-2` |
 | web root | `../dev-web-us-east-2` | `../staging-web-eu-west-2` |
 | live web record | `dev` | `staging-fe-ecs` |
+| audit archive to copy (Phase 4, "Data") | 622 objects, copied 2026-10-09 | none: `kortix-staging-audit-archive` was empty on 2026-10-09 |
 
-Staging's switch PR also needs three changes dev does not:
+Staging differs from dev in two ways:
 
-1. The Worker has no eu-west-2 slot. Add `'eu-west-2': env.BACKEND_EU_WEST_2`
-   (and the gateway twin) to `worker.mjs`, then set `ACTIVE_BACKEND =
-   "eu-west-2"`. Deploy Staging writes the Worker's bindings itself
-   (`deploy-staging.yml`, the `ACTIVE_BACKEND` binding list), so change them
-   there too.
-2. Deploy Staging writes `kortix-staging-env` on every run. The deploy role may
-   write it in us-west-2 only
-   (`infra/terraform/security-baseline/iam-gha-ecs-deploy.tf`). Grant
-   eu-west-2 before the workflow targets it.
-3. Start staging only after dev has run on us-east-2 for 3 days without an
-   incident.
+1. **Deploy Staging runs from the `staging` branch** and rewrites the Worker
+   bindings on every run (`deploy-staging.yml`, the `ACTIVE_BACKEND` binding
+   list). The switch is permanent only once it is on `staging`; a manual
+   Worker change alone is reverted by the next staging release.
+2. **The staging database allows 120 connections.** One API task holds up to 8
+   (`DB_POOL_MAX` 4 + audit 2 + leader 1 + broadcast 1). The old stack's 6
+   tasks plus a 6-task new stack and a rolling deploy exceed the limit, so
+   apply this root with `TF_VAR_api_task_count=2` while `../staging` runs.
+
+Order:
+
+1. Apply with `api_task_count=2`, roll the current staging images with
+   `ecs-deploy.sh staging-euw2`, verify on the origin hostnames.
+2. Merge the switch code into `dev` (Worker `eu-west-2` slot, Deploy Staging
+   targets `staging-euw2`, IAM for the `kortix-staging-euw2-*` roles and the
+   eu-west-2 `kortix-staging-env` write).
+3. Switch by hand: `--workers on` for the eu-west-2 copy and roll the new API;
+   point the staging Worker's `BACKEND_ECS_FARGATE` binding at
+   `https://staging-api-euw2.kortix.com` (gateway: `gateway-staging-euw2`);
+   scale `kortix-staging`, `kortix-staging-gateway` and `kortix-staging-web`
+   (us-west-2) to 0.
+4. Promote `dev` to `staging` (release gate, needs approval). Deploy Staging
+   then applies these roots at `api_task_count` 6 and writes the `eu-west-2`
+   binding.
 
 > ⚠️ `terraform apply` here creates real, billable AWS resources (VPC, NAT,
 > ALB × 2, Fargate). It does not touch anything in `../staging`.

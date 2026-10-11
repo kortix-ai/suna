@@ -38,7 +38,7 @@ import { BottomSheetModal, BottomSheetView, BottomSheetScrollView, BottomSheetTe
 // touchable on Android (and RN's own on iOS) for correct gesture arbitration
 // inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
 const BottomSheetTouchable = GestureHandlerPressable;
-import { useThemeColors } from '@/lib/theme-colors';
+import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -1613,7 +1613,7 @@ export function ProjectDetailPage({
                         }}>
                         Description
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.description}
                       </SelectableMarkdownText>
                     </View>
@@ -1633,7 +1633,7 @@ export function ProjectDetailPage({
                         }}>
                         Verification condition
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.verification_condition}
                       </SelectableMarkdownText>
                     </View>
@@ -1669,7 +1669,7 @@ export function ProjectDetailPage({
                           Input needed
                         </RNText>
                       </View>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.blocking_question}
                       </SelectableMarkdownText>
                     </View>
@@ -1697,7 +1697,7 @@ export function ProjectDetailPage({
                         }}>
                         Result
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.result}
                       </SelectableMarkdownText>
                       {!!selectedTask.verification_summary && (
@@ -1721,7 +1721,7 @@ export function ProjectDetailPage({
                             }}>
                             Verification
                           </RNText>
-                          <SelectableMarkdownText isDark={isDark}>
+                          <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                             {selectedTask.verification_summary}
                           </SelectableMarkdownText>
                         </View>

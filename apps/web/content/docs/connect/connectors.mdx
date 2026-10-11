@@ -58,28 +58,33 @@ Each account's `owner_type` decides who may run a call as it:
 Multiple connectors can reference the same provider app. Use separate
 connectors when one app needs different policies.
 
-### Add an account
+### Install a connector
 
-Open the connector in **Customize → Connectors**. The **Accounts** tab lists
-every account you can use or manage in one list. Each card shows who can use
-the account: **Only you**, **Everyone in project**, or the groups and people it
-is shared with.
+1. Open **Customize → Connectors**.
+2. Find the app on the **All** tab.
+3. Click **Install** on its card and choose who the account is for:
+   - **Only you** — only you can use it, in your private sessions.
+   - **Everyone in the project** — every project member's sessions can use it.
+4. Sign in to the app when its window opens. An app that uses an API key asks for the key instead.
 
-Select **Add account**, name the account, and choose **Who can use it**:
+Kortix opens the connector's page when the install finishes.
 
-- **Only you** — a private account. Any member can add one.
-- **Everyone in the project** — a shared account.
-- **Specific people or groups** — a shared account, narrowed to the people,
-  groups, and agents you pick.
+A member who cannot manage the project's connections sees one **Install** button. It installs a private account.
 
-The two shared choices need `project.connector.connections.manage`. For
-**Specific people or groups**, Kortix writes the grants before you authorize
-the account, so the account never holds a credential while it is open to the
-whole project. An account name must be new: a name that an account of the same
-owner already uses is refused.
+When the catalog lists an MCP server for an app, **Install** uses it. To use another surface, such as the REST API, open the app's page and pick it under **Ways to connect**.
+
+### Manage a connector
+
+Each connector has its own page with three tabs. **Tools** and **Settings** show only to someone who can change the project's connectors.
+
+- **Accounts** — the logins this connector can run as. **Add account** asks only who the account is for. To limit a shared account to specific people or groups, use **Share** on its row.
+- **Tools** — which tools the agent may call, and which need approval.
+- **Settings** — the connection details, and **Remove connector**.
+
+Installing an app that is already in the project adds an account to the existing connector. It does not create a second connector.
 
 When an agent needs an account, it posts a **Connect** card in the chat. The
-card opens the same dialog, with the name the agent suggests already filled in
+card opens a dialog, with the name the agent suggests already filled in
 and the audience it asked for preselected. Kortix creates a new account, never
 re-authorizes an existing one, and tells the agent the new account's name so it
 can run calls as that account.
@@ -651,12 +656,6 @@ the call envelope without `data`, plus `saved_to`, `bytes`, and `shape`: the
 outline of `data` (keys, array lengths, and every `pageInfo`). The exit code is
 unchanged.
 
-The `kortix-connectors` MCP tool `call` does the same without a flag. A result
-larger than 16 KB is saved under
-`/workspace/.kortix/state/connector-results/` and the tool returns
-`{ saved_to, bytes, shape, preview, hint }`, with a ~2 KB preview. That
-directory ignores itself in git. A smaller result is returned inline.
-
 ### Attach files
 
 A call never carries file bytes in its arguments. Stage the file, then put its
@@ -709,6 +708,91 @@ The MCP server offers the same flow: `call` takes `attachment_files` (and an
 optional `attachment_path`), and `upload_attachment` returns a `ref`. The SDK
 equivalent is `connectors.uploadAttachment(bytes, { filename, contentType,
 connector })`, which returns `ref`.
+
+### Call results
+
+`POST /connectors/projects/{projectId}/call` answers one JSON object. These
+fields are the same for every binding (OpenAPI, HTTP, MCP, GraphQL, Composio,
+Pipedream, computers):
+
+| Field | On | Value |
+| --- | --- | --- |
+| `data` | 200 | The raw upstream answer, unchanged. |
+| `output` | 200 | The payload without the binding's envelope: Composio `data.result`, MCP `result.structuredContent ?? result.content`, GraphQL `data.data`. Absent when it equals `data` (OpenAPI, HTTP, Postman, channel, Pipedream and computer calls), so the body carries the payload once: read `output ?? data`. The SDK fills it in. |
+| `binding` | 200, 500, 429, 503 | The binding that ran the call: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, `pipedream_proxy`, `postman`, `tunnel`. `null` on an error before the action resolved. |
+| `upstream_status` | 200, 500, 429, 503 | The upstream HTTP status. `null` when no upstream answered (a timeout, a refused request, a computer). Composio and Pipedream report a provider failure inside a 200, so Kortix sets `502` for it (`400` for a rejected Linear query, `429` for a rate limit). |
+| `upstream_error` | 200 | Present when the upstream reported a failure inside a 2xx answer: an MCP tool result with `isError: true` or a JSON-RPC error, or GraphQL `errors` with no data. The call still counts as run: `ok` stays `true`. |
+| `retry_after_seconds` | 429, 503 | The upstream's `Retry-After`, in seconds, when it sent one. The response also carries the `Retry-After` header. |
+
+The HTTP status of a failed call:
+
+- An upstream `429` answers `429`. An upstream `503` answers `503`. Wait
+  `retry_after_seconds` (or back off) and call again.
+- Every other upstream failure answers `500` with the cause in `reason`. The
+  gateway never answers `502` or `504`: Cloudflare replaces those bodies.
+- An upstream answer larger than 64 MiB answers `500` with
+  `reason: "upstream_response_too_large: …"`. Kortix stops reading at the
+  limit. Ask for a smaller page or a filter.
+- An upstream that does not answer within the deadline answers `500` with
+  `reason: "upstream_timeout: …"`. The deadline is 60 seconds
+  (`KORTIX_CONNECTOR_CALL_TIMEOUT_MS` on a self-hosted API). Set a client
+  timeout above it, so the gateway always answers first.
+
+A connector call is not idempotent. Kortix does not deduplicate a repeated
+call. After `upstream_timeout` or a client-side abort, the call may have run
+upstream: check its effect before you repeat a write (a sent email, a created
+record).
+
+### Typed calls from code
+
+`kortix connectors types` writes a TypeScript declaration file for every
+action you can call. Each action gets its argument type from its input schema
+and its result type from its output schema. The result type describes the
+call's `output` field.
+
+```sh
+kortix connectors types --out src/kortix-connectors.d.ts
+kortix connectors types --connector linear,github --out src/kortix-connectors.d.ts
+```
+
+Include the file in your `tsconfig.json`. Then call through `callAction`:
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const connectors = createKortix({ backendUrl, getToken }).project(projectId).connectors;
+const result = await connectors.callAction('linear', 'list_issues', { team: 'CORE' });
+if (result.ok) console.log(result.output?.issues.length);
+```
+
+The connector handle reads the same file, and `run` returns the typed output
+itself or throws a typed error (see [Connectors from code](/docs/sdk/connectors#errors)):
+
+```ts
+const issues = await createKortix({ backendUrl, getToken })
+  .project(projectId)
+  .connector('linear')
+  .run('list_issues', { team: 'CORE' });
+```
+
+`callAction(slug, action, args, options)` sends the same request as
+`call('<slug>.<action>', args, options)` and returns the same result. Only
+the types differ: a missing or unknown argument is a compile error, and
+`output` has the generated type. An action that is not in the file accepts
+any object and returns `output: unknown`.
+
+- OpenAPI, HTTP, MCP and GraphQL connectors publish an output schema when
+  their source declares one. A GraphQL result is typed as an object.
+- Managed connectors (Composio, Pipedream) publish no output schema. Their
+  result is `unknown`. The CLI names them after it writes the file.
+- Each `$defs` entry becomes one named type (`KortixConnectorDef<n>_<name>`),
+  so a recursive schema stays finite. A schema that cannot compile (a union
+  that contains itself) or whose types pass 256 KB for one action becomes
+  `unknown`.
+- Re-run the command after you add a connector or it syncs a new version.
+- The catalog returns output schemas only on request:
+  `GET /connectors/projects/{projectId}/catalog?include_output_schemas=true`
+  adds `outputSchema` to each action (`null` when none is stored).
 
 ### When a call is denied
 

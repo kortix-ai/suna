@@ -5,7 +5,7 @@
  * Interactive: run `pnpm worktree` for a menu, or `pnpm worktree create` for a
  * guided wizard. Non-interactive (CI/scripts):
  *
- *   pnpm worktree create --name <feat> [--branch b] [--from main] [--db] [--no-start] [--yes]
+ *   pnpm worktree create --name <feat> [--branch b] [--from dev] [--db] [--no-start] [--yes]
  *   pnpm worktree start <feat> [--billing] [--stripe]
  *   pnpm worktree stop|status <feat>
  *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
@@ -193,7 +193,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
   ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
   ${pc.cyan('nuke --all')} ${pc.dim('[--older-than 3d] [--idle 2d] [--include-dirty] [--dry-run] [--yes]')}   ${pc.dim('bulk: skips running stacks + dirty trees')}
-  ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
+  ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base dev --draft --web]')}
   ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
@@ -221,7 +221,7 @@ function dbLabel(mode: DbMode): string {
   return mode === 'isolated' ? 'isolated Supabase' : 'shared primary Supabase';
 }
 
-function currentBranch(): string { return sh(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'main'; }
+function currentBranch(): string { return sh(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'dev'; }
 function recentBranches(limit = 12): string[] {
   return sh(['git', 'for-each-ref', `--count=${limit}`, '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads'])
     .stdout.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -255,14 +255,14 @@ async function promptCreate(): Promise<Args | null> {
   if (cancelled(name)) return null;
   const cur = currentBranch();
   const seen = new Set<string>();
-  const ordered = ['main', cur, ...recentBranches(12)].filter((b) => b && !seen.has(b) && (seen.add(b), true));
+  const ordered = ['dev', cur, ...recentBranches(12)].filter((b) => b && !seen.has(b) && (seen.add(b), true));
   const OTHER = ' other';
   const sel = await clack.select({
     message: 'Base branch to fork from',
-    initialValue: 'main',
+    initialValue: 'dev',
     maxItems: 8,
     options: [
-      ...ordered.map((b) => ({ value: b, label: b === 'main' ? `${b} ${pc.dim('(default)')}` : b === cur ? `${b} ${pc.dim('(current)')}` : b })),
+      ...ordered.map((b) => ({ value: b, label: b === 'dev' ? `${b} ${pc.dim('(default)')}` : b === cur ? `${b} ${pc.dim('(current)')}` : b })),
       { value: OTHER, label: pc.dim('✎ type a branch name…') },
     ],
   });
@@ -366,9 +366,9 @@ async function cmdCreate(a: Args) {
   const root = repoRoot();
   const wtPath = defaultWorktreePath(root, name);
   const branch = (typeof a.flags.branch === 'string' && a.flags.branch) || name;
-  // `main` (the default) resolves to a freshly fetched origin/main, never the
+  // `dev` (the default) resolves to a freshly fetched origin/dev, never the
   // primary checkout's possibly stale local main.
-  const from = freshBase(root, (typeof a.flags.from === 'string' && a.flags.from) || 'main');
+  const from = freshBase(root, (typeof a.flags.from === 'string' && a.flags.from) || 'dev');
 
   if (!branchExists(root, branch)) {
     const conflict = branchConflict(root, branch);
@@ -944,7 +944,7 @@ async function cmdPr(a: Args) {
   if (!e) die(`unknown worktree "${name}" — create it first`);
   if (!existsSync(e.path)) die(`worktree dir missing (${e.path})`);
   const { path, branch } = e;
-  const base = (typeof a.flags.base === 'string' && a.flags.base) || 'main';
+  const base = (typeof a.flags.base === 'string' && a.flags.base) || 'dev';
 
   const ahead = sh(['git', '-C', path, 'rev-list', '--count', `${base}..${branch}`]).stdout.trim();
   if (!ahead || ahead === '0') die(`"${branch}" has no commits ahead of ${base} — commit something first`);

@@ -9,6 +9,7 @@ import type { PushDeviceTokenStore } from './device-tokens';
 export const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 export const EXPO_PUSH_BATCH_SIZE = 100;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
+const POST_TIMEOUT_MS = 10_000;
 
 export interface ExpoPushMessage {
   to: string;
@@ -65,9 +66,20 @@ async function postBatch(
   if (opts.accessToken) headers.authorization = `Bearer ${opts.accessToken}`;
   let res: Response;
   try {
-    res = await doFetch(opts.endpoint, { method: 'POST', headers, body: JSON.stringify(batch) });
+    res = await doFetch(opts.endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(batch),
+      signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+    });
   } catch (err) {
-    return { kind: 'retryable', reason: err instanceof Error ? err.message : String(err) };
+    const reason = err instanceof Error ? err.message : String(err);
+    // A timeout is ambiguous: Expo may have accepted the batch. A second send
+    // would push every device twice, so a timeout is a failure, not a retry.
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      return { kind: 'failed', reason: `timed out: ${reason}` };
+    }
+    return { kind: 'retryable', reason };
   }
   const text = await res.text().catch(() => '');
   if (res.status >= 500) return { kind: 'retryable', reason: `HTTP ${res.status}` };

@@ -67,6 +67,22 @@ export function rootRowsOnly(rows: readonly ProjectSession[]): ProjectSession[] 
   return rows.filter((row) => sessionParentId(row) === null);
 }
 
+/**
+ * One row per `session_id`, the first kept, order unchanged. Lists built from
+ * several queries (the drawer's Sessions, Shared and Automated) can hold one
+ * session twice: each query refreshes on its own schedule, and a session
+ * whose starter changed sits in a stale page and a fresh one at once. Two rows
+ * with one key make React drop or duplicate rows.
+ */
+export function uniqueSessions(rows: readonly ProjectSession[]): ProjectSession[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.session_id)) return false;
+    seen.add(row.session_id);
+    return true;
+  });
+}
+
 /** Visible children of a root row: `child_count`, 0 when absent. */
 export function childCountOf(session: ProjectSession): number {
   const count = session.child_count;
@@ -160,18 +176,22 @@ export type DrawerItem =
 /**
  * The drawer's one flat list: per section a header, then its root rows, each
  * expanded parent followed by its children block. A child never appears as a
- * root row (`rootRowsOnly`), so no child renders without its parent.
+ * root row (`rootRowsOnly`), so no child renders without its parent. A session
+ * in two sections' caches renders once, in the first (`uniqueSessions`).
  */
 export function buildDrawerItems(
   sections: readonly DrawerSectionInput[],
   isExpanded: (session: ProjectSession) => boolean,
 ): DrawerItem[] {
   const items: DrawerItem[] = [];
+  const shown = new Set<string>();
   for (const section of sections) {
     if (section.hidden) continue;
     items.push({ kind: 'header', section: section.id, title: section.title, open: section.open });
     if (!section.open) continue;
     for (const session of rootRowsOnly(section.rows)) {
+      if (shown.has(session.session_id)) continue;
+      shown.add(session.session_id);
       items.push({ kind: 'root', section: section.id, session });
       if (childCountOf(session) > 0 && isExpanded(session)) {
         items.push({ kind: 'children', section: section.id, session });

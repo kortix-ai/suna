@@ -18,11 +18,11 @@ import { DELETE_WORKSPACE_CONSEQUENCES, DELETE_WORKSPACE_REASSURANCE } from './g
  * behavior each claim rests on.
  */
 describe('Delete workspace copy', () => {
-  test('lists every category of loss the archive actually causes', () => {
-    // Sessions, automation, integrations, access. Each maps to a traced
-    // consequence of `status: 'archived'` — the header comment cites the file
-    // and line for all four.
-    expect(DELETE_WORKSPACE_CONSEQUENCES).toHaveLength(4);
+  test('lists every category of loss the delete actually causes', () => {
+    // Sessions, automation, integrations, the managed repo, access. Each maps
+    // to a traced consequence of deleting the workspace — the header comment
+    // cites the file and line for all five.
+    expect(DELETE_WORKSPACE_CONSEQUENCES).toHaveLength(5);
   });
 
   test('names sessions and their contents, not just "sessions"', () => {
@@ -57,14 +57,28 @@ describe('Delete workspace copy', () => {
   /**
    * The single most important assertion in this file.
    *
-   * `archiveProject()` never sends `?purge=true`, so the Git repository is NOT
-   * deleted — managed or user-connected. A dialog that says "permanent" and
-   * then says nothing about the repo is read as "my code is gone too". That is
-   * both false and the thing a user panics about first, so the reassurance is
-   * not optional polish; dropping it makes the dialog misleading.
+   * Deleting the workspace deletes the Kortix-managed repository with it
+   * (`deleteManagedProjectRepo` runs on every project delete). A dialog that
+   * says "permanent" while staying silent about the repo is read as "my code
+   * is safe" — false for a managed repo, and the opposite of what a user
+   * needs to know before confirming.
    */
-  test('reassures that the Git repository survives', () => {
-    expect(DELETE_WORKSPACE_REASSURANCE).toContain('Git repository');
+  test('warns that the managed git repository goes with the workspace', () => {
+    const line = DELETE_WORKSPACE_CONSEQUENCES.find((c) => c.includes('repository'));
+    expect(line).toBeDefined();
+    expect(line).toContain('Kortix-managed');
+    expect(line).toContain('commit');
+  });
+
+  /**
+   * The connected-repo boundary. `deleteManagedProjectRepo` deletes only the
+   * Kortix-managed upstream; a repository the user connected themselves is
+   * never touched. "Permanent" plus silence about that reads as "my code is
+   * gone", which is false for a connected repo and the thing a user panics
+   * about first, so the reassurance is not optional polish.
+   */
+  test('reassures that user-connected repositories survive', () => {
+    expect(DELETE_WORKSPACE_REASSURANCE).toContain('connected yourself');
     expect(DELETE_WORKSPACE_REASSURANCE).toContain('not deleted');
   });
 

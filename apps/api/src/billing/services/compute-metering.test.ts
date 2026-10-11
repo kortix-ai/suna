@@ -44,6 +44,7 @@ mock.module('./wallet-debits', () => ({
     input: { description: string } & Record<string, unknown>,
   ) => {
     settleCalls.push(input);
+    if (settleError) throw settleError;
     return { amount: input.amount, balance: 0, overdraft: false, transactionId: 'tx_test', replayed: false };
   },
 }));
@@ -86,6 +87,13 @@ mock.module('../repositories/compute-sessions', () => ({
   },
 }));
 
+/** Whether the ledger holds the debit key after a failed settle. */
+let ledgerHasKey = false;
+let settleError: Error | null = null;
+mock.module('../repositories/ledger-keys', () => ({
+  ledgerRequestKeyExists: async () => ledgerHasKey,
+}));
+
 mock.module('../../shared/db', () => ({
   db: new Proxy(
     {},
@@ -113,6 +121,8 @@ beforeEach(() => {
   staleRows = [];
   claimResult = false;
   settleCalls = [];
+  ledgerHasKey = false;
+  settleError = null;
 });
 
 /** An active sandbox row the tick would settle this pass, 10 minutes unbilled. */
@@ -164,6 +174,32 @@ describe('the partial-billing tick', () => {
 
     expect(settleCalls).toHaveLength(1);
     expect(settleCalls[0]!.description).toBe('Sandbox compute · 2vCPU/4GB/20GB · 600s');
+  });
+});
+
+describe('a failed compute settlement', () => {
+  // 10 minutes of 2 vCPU / 4 GB / 20 GB: 600 s * ($0.201312 / 3600 s) = $0.03355.
+  test('releases the window when the ledger holds no debit under the key', async () => {
+    staleRows = [staleRow('sess-123')];
+    claimResult = true;
+    settleError = new Error('connection terminated');
+    ledgerHasKey = false;
+
+    await tickRunningComputeCharges();
+
+    expect(storageCalls).toContain('releaseComputeWindow');
+  });
+
+  test('keeps the window when the debit committed and only the response was lost', async () => {
+    staleRows = [staleRow('sess-123')];
+    claimResult = true;
+    settleError = new Error('connection terminated');
+    ledgerHasKey = true;
+
+    await tickRunningComputeCharges();
+
+    expect(settleCalls).toHaveLength(1);
+    expect(storageCalls).not.toContain('releaseComputeWindow');
   });
 });
 

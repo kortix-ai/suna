@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
+import { DEFAULT_MANAGED_MODEL_IDS, PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { chooseDefaultModel } from '../llm-gateway/resolution/choose-default-model';
 
-const MANAGED = DEFAULT_MANAGED_MODEL_IDS[0]!; // a real bare managed id
+const PAID_MANAGED = DEFAULT_MANAGED_MODEL_IDS.find((id) => id !== PLATFORM_DEFAULT_MODEL_ID)!;
 const BYOK = 'anthropic/claude-sonnet-4-6'; // a non-managed wire model
 
 describe('chooseDefaultModel — precedence (agent > project > account)', () => {
@@ -47,22 +47,37 @@ describe('chooseDefaultModel — precedence (agent > project > account)', () => 
 });
 
 describe('chooseDefaultModel — free tier', () => {
-  test('drops a managed default → undefined (gateway falls back to free)', () => {
+  // KRTX-1067: the platform default is the ONE managed model every tier may
+  // use, so a free account keeps it; every other managed model still drops.
+  test('keeps the platform default', () => {
     expect(
       chooseDefaultModel({
-        accountDefault: MANAGED,
+        accountDefault: PLATFORM_DEFAULT_MODEL_ID,
         agentDefaults: {},
         freeModelsOnly: true,
+        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
+      }),
+    ).toBe(PLATFORM_DEFAULT_MODEL_ID);
+  });
+
+  test('drops a non-default managed default → undefined (gateway falls back to free)', () => {
+    expect(
+      chooseDefaultModel({
+        accountDefault: PAID_MANAGED,
+        agentDefaults: {},
+        freeModelsOnly: true,
+        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });
 
-  test('drops a kortix/-prefixed managed default → undefined', () => {
+  test('drops a kortix/-prefixed non-default managed default → undefined', () => {
     expect(
       chooseDefaultModel({
-        accountDefault: `kortix/${MANAGED}`,
+        accountDefault: `kortix/${PAID_MANAGED}`,
         agentDefaults: {},
         freeModelsOnly: true,
+        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });

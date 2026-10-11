@@ -18,6 +18,7 @@ import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
+import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
@@ -45,6 +46,8 @@ export function registerSessionRuntimeRoutes(): void {
         query: z.object({
           wait_ms: z.string().optional(),
           repository_mode: z.enum(['previous']).optional(),
+          keep_stopped: z.enum(['1']).optional(),
+          intent_age_ms: z.string().optional(),
         }),
       },
       responses: {
@@ -64,6 +67,9 @@ export function registerSessionRuntimeRoutes(): void {
       // never be faster than this prologue. Instrumented for the same reason
       // provisioning is: without per-step marks, "start is slow" is unactionable.
       const stl = new ProvisionTimeline(sessionId, 'session-start');
+      // Before the prologue: a user Stop that settles while auth and the gates
+      // below run must still win over this request.
+      const receivedAt = new Date();
       const loaded = await loadProjectForUser(c, projectId, 'session');
       stl.mark('project-loaded');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -158,6 +164,9 @@ export function registerSessionRuntimeRoutes(): void {
         projectId,
         sessionId,
         waitMs,
+        keepStopped: c.req.query('keep_stopped') === '1',
+        wakeIntentAt: openIntentAt(receivedAt, c.req.query('intent_age_ms')),
+        signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
       // THE RUNTIME IS UP — mirror what is already in it, once.
@@ -201,10 +210,26 @@ export function registerSessionRuntimeRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: z.object({
+                // Persistent machines only: discard the disk and boot a fresh box
+                // from the current image (the session's branch is restored).
+                reset_machine: z.boolean().optional(),
+                // With reset_machine: reset even when the chat cannot be saved
+                // first. Without it such a reset is refused (409
+                // reset_state_not_preserved) and nothing is deleted.
+                discard_state: z.boolean().optional(),
+              }),
+            },
+          },
+        },
       },
       responses: {
         202: json(z.any(), 'OK'),
-        ...errors(400, 403, 404, 503),
+        ...errors(400, 403, 404, 409, 502, 503),
       },
     }),
     async (c) => {
@@ -231,11 +256,14 @@ export function registerSessionRuntimeRoutes(): void {
           403,
         );
       }
+      const body = await readJsonObject(c);
       const result = await restartSession({
         loaded,
         session: visible.row,
         projectId,
         sessionId,
+        resetMachine: body.reset_machine === true,
+        discardState: body.discard_state === true,
       });
       return c.json(result.body, result.status as any);
     },
@@ -375,4 +403,13 @@ export function registerSessionRuntimeRoutes(): void {
       return c.json(await readSessionTurnState(sessionId));
     },
   );
+}
+
+/** A client's open can be older than its request: the tab may have opened the
+ *  session long before this poll (`intent_age_ms`, the client's own elapsed time,
+ *  so no clock is compared across machines). Bounded to a day. */
+function openIntentAt(receivedAt: Date, intentAgeMs: string | undefined): Date {
+  const age = Number(intentAgeMs);
+  if (!Number.isFinite(age) || age <= 0) return receivedAt;
+  return new Date(receivedAt.getTime() - Math.min(age, 24 * 60 * 60 * 1000));
 }

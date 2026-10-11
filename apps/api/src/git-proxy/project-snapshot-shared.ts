@@ -40,8 +40,6 @@ export interface ProjectSnapshotMarker {
   commit_sha: string;
 }
 
-export type ProjectSnapshotStatus = 'queued' | 'building' | 'ready' | 'failed';
-
 export interface ReadyProjectSnapshot {
   snapshotId: string;
   projectId: string;

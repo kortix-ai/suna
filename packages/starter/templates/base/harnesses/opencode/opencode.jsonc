@@ -16,6 +16,6 @@
   // keeps one extra level available while staying bounded. Raise it only
   // if you actually need deeper nesting — each level multiplies token cost.
   "subagent_depth": 2
-  // Local tools in `tools/` and plugins in `plugins/` are auto-discovered.
-  // Install optional tools/plugins through the Kortix marketplace.
+  // Plugins in `plugins/` are auto-discovered. Tools are harness-neutral:
+  // declare them under `tools:` in kortix.yaml and every harness loads them.
 }

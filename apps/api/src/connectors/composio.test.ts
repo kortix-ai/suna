@@ -536,6 +536,61 @@ test('executeComposio treats invalid Linear GraphQL as caller error, not provide
   expect(result.data).toMatchObject({ error: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED' });
 });
 
+test('executeComposio reports a provider rate limit inside Composio\'s error text as upstream 429', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'hubspot', name: 'HubSpot', isNoAuth: true },
+    execute: async () => ({ data: {}, error: 'HubSpot returned 429: rate limit exceeded', logId: 'log-limited' }),
+  });
+  const result = await executeComposio({
+    projectId: 'project-1', connectorSlug: 'hubspot', connectionId: 'connection-1',
+    sessionId: 'persisted-session', toolkit: 'hubspot', toolSlug: 'HUBSPOT_LIST_CONTACTS',
+    args: {}, connectedAccountId: null, runtime: fakeRuntime({ resumed }),
+  });
+  expect(result).toMatchObject({ ok: false, status: 429 });
+});
+
+test('executeComposio turns Composio\'s own 429 into upstream 429 with its Retry-After', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'hubspot', name: 'HubSpot', isNoAuth: true },
+    execute: async () => {
+      throw Object.assign(new Error('429 Too Many Requests'), {
+        status: 429,
+        headers: new Headers({ 'retry-after': '7' }),
+      });
+    },
+  });
+  const result = await executeComposio({
+    projectId: 'project-1', connectorSlug: 'hubspot', connectionId: 'connection-1',
+    sessionId: 'persisted-session', toolkit: 'hubspot', toolSlug: 'HUBSPOT_LIST_CONTACTS',
+    args: {}, connectedAccountId: null, runtime: fakeRuntime({ resumed }),
+  });
+  expect(result).toEqual({
+    ok: false,
+    status: 429,
+    data: 'composio_rate_limited: 429 Too Many Requests',
+    retryAfterSeconds: 7,
+  });
+});
+
+test('executeComposio rethrows any other Composio failure', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'hubspot', name: 'HubSpot', isNoAuth: true },
+    execute: async () => {
+      throw Object.assign(new Error('500 Internal'), { status: 500 });
+    },
+  });
+  await expect(
+    executeComposio({
+      projectId: 'project-1', connectorSlug: 'hubspot', connectionId: 'connection-1',
+      sessionId: 'persisted-session', toolkit: 'hubspot', toolSlug: 'HUBSPOT_LIST_CONTACTS',
+      args: {}, connectedAccountId: null, runtime: fakeRuntime({ resumed }),
+    }),
+  ).rejects.toThrow('500 Internal');
+});
+
 test('executeComposio supports no-auth direct tools without an account id', async () => {
   const resumed = session({
     id: 'persisted-session',
@@ -837,6 +892,10 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
     // Which account ran it, so the transcript can answer "whose mailbox sent
     // that" — carried from the resolved GatewayConnector (gateway.ts).
     account: { connection_id: 'connection-1', label: 'Gmail default', owner_type: 'project' },
+    // The additive contract: `output` is the payload without Composio's envelope.
+    binding: 'composio',
+    output: { sent: true },
+    upstreamStatus: 200,
   });
   expect(executions[0]).toEqual({
     composioInput: {

@@ -64,6 +64,15 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  *     carries the state. Prod, 24 h to 2026-09-29: ~40 such 503s a day on the
  *     data-path GET routes alone, each one the client's reconnect hydrate
  *     racing a park (KRTX-397).
+ *   - `daemon` 503 on a GET where the daemon itself answered 503 — the box's
+ *     own daemon answered `runtime_not_ready` while its opencode runtime
+ *     restarts behind a live box, and the proxy passed it through on purpose
+ *     (no retry; the client re-polls, the box recovers within seconds). The
+ *     passthrough carries the attribution (forward/retry.ts), so the hop plus
+ *     the upstream status tell this designed answer apart from every other
+ *     503. Prod, 26 h to 2026-10-09: 8 such 503s, each inside a multi-route
+ *     boot-window burst that recovered within seconds (KRTX-397
+ *     reoccurrence).
  *   - long-poll/SSE event-stream reads (/global/event, /session/status,
  *     /session/:id/message) timing out at ~30 s (504), or the boot window
  *     answering 502/503.
@@ -71,9 +80,12 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  *     answering 502/503/504 before services are ready.
  *
  * Everything else stays logged: a 502/503 the proxy dialled for
- * (`daemon`/`provider_ingress`/`upstream_port` hop, or no hop header at all),
- * any mutation, and a FAILED health probe. The wire response is untouched —
- * suppression is about the log line only, and the span is still emitted.
+ * (`provider_ingress`/`upstream_port` hop, or no hop header at all — including
+ * the daemon's 503s that carry no boot-phase signature), the give-up 502 (it
+ * logs at its internal 502 with the honest `upstream_status` — the edge
+ * rewrite to 503 happens after this line), any mutation, and a FAILED health
+ * probe. The wire response is untouched — suppression is about the log line
+ * only, and the span is still emitted.
  */
 export function shouldSuppressRequestLog(input: {
   method: string;
@@ -82,10 +94,19 @@ export function shouldSuppressRequestLog(input: {
   durationMs: number;
   /** Value of the `X-Kortix-Proxy-Hop` response header when the proxy set one. */
   proxyHop: string | null;
+  /** Status the failing hop itself returned, from `X-Kortix-Upstream-Status`. */
+  upstreamStatus: number | null;
 }): boolean {
-  const { method, path, status, durationMs, proxyHop } = input;
+  const { method, path, status, durationMs, proxyHop, upstreamStatus } = input;
   if (method !== 'GET') return false;
   if (status === 503 && proxyHop === 'control_plane') return true;
+  // The daemon's own boot-phase answer: a 503 the proxy passed through
+  // BECAUSE the daemon named `runtime_not_ready` — see sandbox-proxy/forward/
+  // retry.ts. The upstream status must be the daemon's own 503: a give-up
+  // logs at its 502 with that status in `X-Kortix-Upstream-Status`, and that
+  // outage signal stays logged. So does an unattributed 503 and one without
+  // an upstream status (every attempt threw — the port never answered).
+  if (status === 503 && proxyHop === 'daemon' && upstreamStatus === 503) return true;
   const isSandboxProxyPath = path.includes('/v1/p/');
   const isProxyLongPoll =
     isSandboxProxyPath &&

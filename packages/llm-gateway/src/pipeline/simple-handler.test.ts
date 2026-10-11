@@ -474,6 +474,49 @@ describe('simple gateway pipeline', () => {
     expect(traces).toHaveLength(1);
   });
 
+  test('a non-stream 200 with no usage object settles an estimate, not zero tokens', async () => {
+    const usage: UsageEvent[] = [];
+    const body = JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'z'.repeat(800) } }] });
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => new Response(body, { headers: { 'content-type': 'application/json' } }),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    );
+    expect(await response.text()).toBe(body);
+    expect(usage).toHaveLength(1);
+    // 800 output chars / 4 = 200 tokens; 4,000 prompt chars / 4 + framing >= 1,000 tokens.
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 200 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
+  test('a non-stream 200 whose body read fails settles the prompt estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const broken = new Response(
+      new ReadableStream<Uint8Array>({ start: (controller) => controller.error(new Error('connection reset')) }),
+      { headers: { 'content-type': 'application/json' } },
+    );
+    await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => broken,
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    ).catch(() => undefined);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
   // An error frame before any output served nothing: the client gets the
   // provider's status as an HTTP error, which OpenCode can retry or compact on.
   test.each([

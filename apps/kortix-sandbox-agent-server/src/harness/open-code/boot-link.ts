@@ -1,4 +1,4 @@
-import { bootConfigRoot, pointBootLink, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { bootConfigRoot, pointBootLink, readBootLinkTarget } from '@/services/config-provider/boot-config'
 import { logger } from '@/lib/log/logger'
 
 /**

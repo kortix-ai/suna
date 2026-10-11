@@ -106,6 +106,20 @@ describe('session-token-health', () => {
     expect(sessionTokenPresumedDead()).toBe(true);
   });
 
+  // KRTX-1564: the refusal now NAMES the dead row (`project token <id> is
+  // revoked`). The breaker must keep classifying the named form — a
+  // message-shape change is not a change in terminality.
+  test('trips on the named revoked-token refusal', () => {
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(
+        401,
+        `{"error":true,"message":"project token 00000000-0000-4000-8000-${String(i).padStart(12, '0')} is revoked","status":401,"code":"session_token_revoked"}`,
+      );
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(true);
+  });
+
   test('a merely invalid or expired PAT refusal never trips it', () => {
     for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD + 5; i++) {
       noteControlPlaneResponse(401, 'PAT expired');

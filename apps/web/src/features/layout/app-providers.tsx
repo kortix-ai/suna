@@ -5,6 +5,7 @@ import { SIDEBAR_MAX_WIDTH_PX } from '@/components/ui/sidebar-width';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
 import { isBillingEnabled } from '@/lib/config';
+import { sweepRetiredDeviceCaches } from '@/lib/device-caches';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
@@ -110,11 +111,13 @@ export function AppProviders({
   // session hook seeds it from the account/agent defaults the gateway resolves),
   // so the old per-sandbox /kortix/preferences/model round-trip is gone.
 
-  // One-time sweep on app load: reclaim localStorage left over from older builds
-  // that never evicted their per-sandbox caches. Ongoing growth is bounded by
-  // each cache's prune-on-write; this just heals existing bloat up front.
+  // One-time sweep on app load: reclaim storage left over from older builds,
+  // after the first paint. Ongoing growth is bounded by each cache's
+  // prune-on-write; this heals existing bloat, including the retired session
+  // caches (`device-caches.ts`).
   React.useEffect(() => {
     pruneAllRegisteredCaches();
+    sweepRetiredDeviceCaches();
   }, []);
 
   const content = (

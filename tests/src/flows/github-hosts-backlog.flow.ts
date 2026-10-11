@@ -122,6 +122,19 @@ flow(
       // The spec's defining assertion: the no-install path surfaces an install_url.
       if (r.statusCode === 409) r.body().exists("$.install_url");
     });
+    await ctx.step("an unknown or retired marketplace project id → 400 before any GitHub call", async () => {
+      // A fresh team with no install would otherwise answer 409: the 400 proves
+      // the catalog gate runs before anything is created upstream.
+      const team = await ctx.fixtures.team();
+      const name = ctx.fixtures.name("repo-src").replace(/[^a-zA-Z0-9._-]/g, "-");
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/create-repo", {
+        name,
+        private: true,
+        account_id: team.id,
+        source_item_id: "kortix-projects:seo-department",
+      });
+      r.status(400).body().has("$.error", 'Unknown or non-cloneable project item "kortix-projects:seo-department"');
+    });
   },
 );
 
@@ -211,10 +224,8 @@ flow(
       const items = r.json<any>().items as any[];
       const mine = items.find((t) => t.token_id === tokenId);
       // The minted token is present and the list never re-exposes the secret.
-      r.body().exists("$.items");
-      if (mine && "secret_key" in mine) {
-        throw new Error("cli-token list must not return secret_key");
-      }
+      if (!mine) throw new Error(`cli-token list must include the minted token ${tokenId}`);
+      if ("secret_key" in mine) throw new Error("cli-token list must not return secret_key");
     });
     await ctx.step("NONMEMBER cannot mint → 404 (project not loadable)", async () => {
       const r = await ctx.client

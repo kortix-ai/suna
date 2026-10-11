@@ -46,7 +46,7 @@ let dbWrites: Array<{ op: string; payload?: unknown }> = [];
 
 function makeChain(op: string): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) chain[m] = () => chain;
+  for (const m of ['from', 'where', 'orderBy', 'limit', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) chain[m] = () => chain;
   chain.values = (payload: unknown) => {
     dbWrites.push({ op: `${op}.values`, payload });
     return chain;

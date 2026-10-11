@@ -197,3 +197,23 @@ describe('free tier monthly credit rotation', () => {
     expect(walletResets).toHaveLength(outcome === 'processed' ? 1 : 0);
   });
 });
+
+describe('free tier rotation batches', () => {
+  test('walks the due accounts in batches by account id until a short batch', async () => {
+    const full = Array.from({ length: 500 }, (_, i) =>
+      createMockCreditAccount({ accountId: `acc_${String(i).padStart(4, '0')}`, tier: 'free', nextCreditGrant: null }),
+    );
+    const tail = [createMockCreditAccount({ accountId: 'acc_9999', tier: 'free', nextCreditGrant: null })];
+    const cursors: Array<string | undefined> = [];
+    mockRegistry.getFreeAccountsDueForRotation = (async (after?: string) => {
+      cursors.push(after);
+      return after ? tail : full;
+    }) as never;
+
+    const result = await processFreeTierCreditRotation(new Date('2026-10-01T00:00:00Z'));
+
+    expect(cursors).toEqual([undefined, 'acc_0499']);
+    expect(result.processed).toBe(501);
+    expect(result.errors).toEqual([]);
+  });
+});

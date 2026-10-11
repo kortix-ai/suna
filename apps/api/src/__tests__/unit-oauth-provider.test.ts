@@ -20,6 +20,8 @@ const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url');
 // Real scrypt hashing needs API_KEY_SECRET (scripts/test.env provides it).
 const { hashSecretKey } = await import('../shared/crypto');
 
+const DEACTIVATED_ID = '00000000-0000-4000-a000-000000000203';
+
 const clients: Record<string, Record<string, unknown>> = {
   [CONFIDENTIAL_ID]: {
     clientId: CONFIDENTIAL_ID,
@@ -29,6 +31,15 @@ const clients: Record<string, Record<string, unknown>> = {
     redirectUris: ['https://client.example/callback'],
     scopes: ['profile', 'kortix'],
     active: true,
+  },
+  [DEACTIVATED_ID]: {
+    clientId: DEACTIVATED_ID,
+    name: 'Switched-off App',
+    clientType: 'confidential',
+    clientSecretHash: hashSecretKey('unused'),
+    redirectUris: ['https://off.example/callback'],
+    scopes: ['profile'],
+    active: false,
   },
   [PUBLIC_ID]: {
     clientId: PUBLIC_ID,
@@ -48,12 +59,19 @@ let refreshTokens: Array<Record<string, unknown>> = [];
 let log: FakeDbLog;
 
 const fake = createFakeDb({
-  select: (table) => {
+  select: (table, { join }) => {
     if (table === oauthClients) return requestedClientId in clients ? [clients[requestedClientId]] : [];
     if (table === oauthAuthorizationCodes) return codes.filter((c) => c.clientId === requestedClientId);
     // The real queries filter by id / hash / revoked_at themselves; the fake
     // returns the table and the assertions read the rows back directly.
-    if (table === oauthAccessTokens) return accessTokens;
+    // `validateOAuthAccessToken` inner-joins oauth_clients; the join carries
+    // `clientActive`, which the token table itself does not store.
+    if (table === oauthAccessTokens) {
+      if (join === oauthClients) {
+        return accessTokens.map((t) => ({ ...t, clientActive: Boolean(clients[String(t.clientId)]?.active) }));
+      }
+      return accessTokens;
+    }
     if (table === oauthRefreshTokens) return refreshTokens.filter((t) => !t.revokedAt);
     return [];
   },
@@ -344,5 +362,26 @@ describe('discovery + userinfo', () => {
     const res = await createApp().request('/v1/oauth/userinfo', { headers: { Authorization: 'Bearer kortix_oat_x' } });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ sub: USER_ID, user_id: USER_ID, account_id: ACCOUNT_ID, email: 'oauth@example.test' });
+  });
+
+  test('an access token whose client is deactivated is rejected on /userinfo with 401 OAuth client is inactive', async () => {
+    accessTokens = [{ id: 'at-2', tokenHash: 'h', clientId: DEACTIVATED_ID, userId: USER_ID, accountId: ACCOUNT_ID, scopes: ['profile'], expiresAt: new Date(Date.now() + 60_000) }];
+    const res = await createApp().request('/v1/oauth/userinfo', { headers: { Authorization: 'Bearer kortix_oat_deactivated' } });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'OAuth client is inactive' });
+  });
+
+  test('userinfo keeps its own 401 messages for expired and unknown tokens', async () => {
+    accessTokens = [
+      { id: 'at-3', tokenHash: 'h', clientId: CONFIDENTIAL_ID, userId: USER_ID, accountId: ACCOUNT_ID, scopes: ['profile'], expiresAt: new Date(Date.now() - 60_000) },
+    ];
+    const expired = await createApp().request('/v1/oauth/userinfo', { headers: { Authorization: 'Bearer kortix_oat_expired' } });
+    expect(expired.status).toBe(401);
+    expect(await expired.json()).toEqual({ error: 'Access token expired' });
+
+    accessTokens = [];
+    const unknown = await createApp().request('/v1/oauth/userinfo', { headers: { Authorization: 'Bearer kortix_oat_unknown' } });
+    expect(unknown.status).toBe(401);
+    expect(await unknown.json()).toEqual({ error: 'Invalid access token' });
   });
 });

@@ -63,3 +63,24 @@ describe('harness-neutral runtime rules (F2)', () => {
     ).toEqual([]);
   });
 });
+
+describe('raw fetches to the Kortix backend', () => {
+  test('a fetch built from the backend URL is rejected, directly or through a const', () => {
+    expect(
+      scanPlanted('a.ts', 'export const f = (b: string) => fetch(`${b.replace(/\\/+$/, "")}/p/config`);\n'),
+    ).toEqual([]);
+    expect(scanPlanted('b.ts', 'export const f = (backendUrl: string) => fetch(`${backendUrl}/p/config`);\n')).toEqual([
+      'host-kortix-network ${}/p/config',
+    ]);
+    expect(scanPlanted('c.ts', 'export const f = () => fetch(`${getEnv().BACKEND_URL}/anything`);\n')).toEqual([
+      'host-kortix-network ${}/anything',
+    ]);
+    expect(
+      scanPlanted('d.ts', 'export async function f(backendUrl: string) { const url = `${backendUrl}/x`; return fetch(url); }\n'),
+    ).toEqual(['host-kortix-network ${}/x']);
+  });
+
+  test('same-origin and third-party fetches pass', () => {
+    expect(scanPlanted('ok.ts', "export const f = () => fetch('/api/thing');\nexport const g = () => fetch(`${origin}/api/x`);\n")).toEqual([]);
+  });
+});

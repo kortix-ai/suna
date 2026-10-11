@@ -9,7 +9,12 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 
 import { catalogErrorCopy } from './catalog-error';
-import { CATALOG_CARD_HEIGHT_CLASSNAME, GRID_CLASSNAME } from './catalog-grid-tokens';
+import {
+  CATALOG_CARD_HEIGHT_CLASSNAME,
+  DENSE_GRID_CLASSNAME,
+  DENSE_GRID_CONTAINER_CLASSNAME,
+  GRID_CLASSNAME,
+} from './catalog-grid-tokens';
 
 export interface CatalogGridProps {
   isLoading: boolean;
@@ -25,6 +30,8 @@ export interface CatalogGridProps {
    *  own "nothing here" invitation should say. */
   empty: ReactNode;
   children: ReactNode;
+  /** The All tab's tighter grid (`DENSE_GRID_CLASSNAME`) for `plain` cards. */
+  dense?: boolean;
 }
 
 // Layout tokens live in `./catalog-grid-tokens` so this module exports only
@@ -90,6 +97,7 @@ export function CatalogGrid({
   isEmpty,
   empty,
   children,
+  dense = false,
 }: CatalogGridProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (isLoading) {
@@ -120,5 +128,11 @@ export function CatalogGrid({
     return <>{empty}</>;
   }
 
+  if (dense)
+    return (
+      <div className={DENSE_GRID_CONTAINER_CLASSNAME}>
+        <div className={DENSE_GRID_CLASSNAME}>{children}</div>
+      </div>
+    );
   return <div className={GRID_CLASSNAME}>{children}</div>;
 }

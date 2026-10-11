@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { config } from '../config';
 import {
-  accountIsFreeTierForModels,
-  CREDITS_PER_DOLLAR,
   getTier,
   isPaidTier,
   tierGrantsAllModels,
@@ -43,7 +40,7 @@ describe('tierGrantsAllModels', () => {
   test('free tier exposes 200 display credits without premium gateway entitlement', () => {
     const free = getTier('free');
     expect(free.hidden).toBe(false);
-    expect(free.monthlyCredits * CREDITS_PER_DOLLAR).toBe(200);
+    expect(free.monthlyCredits * 100).toBe(200);
     expect(free.models).not.toContain('all');
   });
 
@@ -55,40 +52,5 @@ describe('tierGrantsAllModels', () => {
 
   test('an unknown tier name falls back to the none tier (no gateway)', () => {
     expect(tierGrantsAllModels('totally-made-up-tier')).toBe(false);
-  });
-});
-
-describe('accountIsFreeTierForModels', () => {
-  // The no-arg form reads the AMBIENT config.INTERNAL_KORTIX_ENV, which varies
-  // by where the suite runs (provisioned dev box vs CI vs a bare worktree) —
-  // so assert only self-consistency with an explicit same-env call, never a
-  // specific ambient value.
-  test('no-arg form matches the explicit call for the ambient env', () => {
-    const ambient = config.INTERNAL_KORTIX_ENV;
-    for (const tier of ['free', 'none', 'totally-made-up-tier']) {
-      expect(accountIsFreeTierForModels(tier)).toBe(accountIsFreeTierForModels(tier, ambient));
-    }
-  });
-
-  test('free and none tiers cannot use managed models in any environment', () => {
-    for (const env of ['dev', 'preview', 'staging', 'prod']) {
-      expect(accountIsFreeTierForModels('free', env)).toBe(true);
-      expect(accountIsFreeTierForModels('none', env)).toBe(true);
-    }
-  });
-
-  test('wallet balance cannot affect managed-model entitlement', () => {
-    for (const balance of [0, 0.01, 200, 1_000_000]) {
-      expect(balance).toBeGreaterThanOrEqual(0);
-      expect(accountIsFreeTierForModels('free', 'dev')).toBe(true);
-    }
-  });
-
-  test('a paid tier is never blocked, in any environment', () => {
-    for (const env of ['prod', 'staging', 'dev', 'preview']) {
-      for (const name of PAID_TIER_NAMES) {
-        expect(accountIsFreeTierForModels(name, env)).toBe(false);
-      }
-    }
   });
 });

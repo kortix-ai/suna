@@ -1,12 +1,12 @@
 <!--
-  Every change to `main`, `staging` or `prod` goes through a pull request (SOC 2 CC8.1).
+  Every change to `dev`, `staging` or `prod` goes through a pull request (SOC 2 CC8.1).
   Procedure: CONTRIBUTING.md and the `contributing` skill (.agents/skills/contributing).
 
-  - A pull request into `main` runs no CI. Run `pnpm test` and the changed behaviour on
+  - A pull request into `dev` runs no CI. Run `pnpm test` and the changed behaviour on
     your local stack before you open it; list the commands below. Add `test` or
     `preview` only for one explicit CI run.
   - `prod` needs an approving review and the `full suite + quality gates` check.
-    `main` / `staging` need the pull request only. The author owns what was verified.
+    `dev` / `staging` need the pull request only. The author owns what was verified.
   - This repo is public. Use synthetic data only, in text, screenshots, and video.
 -->
 
@@ -22,7 +22,7 @@ Closes #
   Required. Record the change with agent-browser on your local stack
   (`agent-browser record start output/pr/demo.mp4 http://localhost:<web port>/<route> --cursor`).
   Keep the line below. Run from the repo root:
-    gh pr create --base main --body-file output/pr/body.md --attach ./output/pr/demo.mp4
+    gh pr create --base dev --body-file output/pr/body.md --attach ./output/pr/demo.mp4
   gh uploads the file and replaces the path with a video player.
   No user-visible surface: record the terminal or the rendered result, or state why a
   video adds nothing.

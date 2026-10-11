@@ -1,20 +1,21 @@
 name: Tests
 
-# The local suite: six lanes (core, browser-1..4, packages) on Blacksmith
-# runners. Each lane is the unchanged root command `pnpm test -- <args>`.
+# The local suite: ten lanes (core, browser-1..8, packages) on GitHub-hosted
+# runners (free on this public repo). Each lane is the unchanged root command
+# `pnpm test -- <args>`.
 #
 # It runs when ANY of these holds:
-#   1. a daily `schedule` on `main`        — safety-net trunk signal
+#   1. a daily `schedule` on `dev`        — safety-net trunk signal
 #   2. a pull request into `staging`       — the release candidate
 #   3. someone adds the `test` label       — one explicit run on that PR
 #   4. a `workflow_dispatch`               — manual
 #
-# Nothing else runs it. A pull request into `main` runs no lane unless a person
+# Nothing else runs it. A pull request into `dev` runs no lane unless a person
 # adds `test`; that runs the suite ONCE, at the head SHA of that moment. A later
 # push does not re-run it: re-add the label. The developer's box is the
-# pre-merge gate (`pnpm test`). No run blocks a merge into `main`.
+# pre-merge gate (`pnpm test`). No run blocks a merge into `dev`.
 #
-# A push to `main` does NOT run it (since 2026-10-03: Actions minutes). The
+# A push to `dev` does NOT run it (since 2026-10-03: Actions minutes). The
 # per-merge gate is the local attestation plus the pre-push hook. The schedule
 # only catches drift the attestation missed.
 #
@@ -23,15 +24,15 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main, staging]
+    branches: [dev, staging]
     types: [opened, reopened, synchronize, ready_for_review, labeled]
   schedule:
     # Off the top of the hour: GitHub drops congested top-of-hour crons.
-    - cron: '41 5 * * *' # 05:41 UTC daily, runs on main HEAD
+    - cron: '41 5 * * *' # 05:41 UTC daily, runs on dev HEAD
   workflow_dispatch:
 
 # A pull request cancels its superseded run: only its newest commit matters.
-# A scheduled or manual run on `main` QUEUES instead, so it always ends with a
+# A scheduled or manual run on `dev` QUEUES instead, so it always ends with a
 # verdict.
 #
 # A labelled run has its own group: a later push (whose lanes skip) must not
@@ -47,17 +48,18 @@ jobs:
   lane:
     name: ${{ matrix.lane }} lane
     # A release pull request runs on every update except a label change. Into
-    # `main`, only the act of adding `test` runs it.
+    # `dev`, only the act of adding `test` runs it.
     if: >-
       github.event_name != 'pull_request'
       || (github.base_ref == 'staging' && github.event.action != 'labeled')
       || (github.event.action == 'labeled' && github.event.label.name == 'test')
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
-    # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
-    # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
-    # hang detector: on 2026-09-21 `@kortix/cli` hung and the lane burned the
-    # full 60 min before `trunk-report` could say `main` was red.
-    timeout-minutes: 20
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    # 40, not 20 and not 60. On free 4 vCPU runners the lanes run ~3x their
+    # Blacksmith time: core 15.4 min, browser-1 17.7 min (run 37812339796),
+    # so 40 is ~2x the slowest measured lane. The cap is a hang detector: on
+    # 2026-09-21 `@kortix/cli` hung and the lane burned the full 60 min before
+    # `trunk-report` could say `dev` was red.
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -65,24 +67,38 @@ jobs:
           - lane: core
             mode: core
             args: ""
-          # Four browser shards since 2026-09-18. Measured on Blacksmith L:
-          # the suite went 10m19s (run 35384964452, N=2) -> 8m17s (run
-          # 35388565759, N=4); the browser long pole dropped 619s -> 416s.
-          # `packages` (8m01s) is now the binding lane, so a fifth browser
-          # shard cannot move the total. `--browser-shard` is Playwright's
-          # native `--shard`, which splits by test count, not by duration.
+          # Eight browser shards, one Playwright worker each, since 2026-10-08.
+          # The lanes moved from Blacksmith 8 vCPU / 32 GB to free GitHub-hosted
+          # 4 vCPU / 16 GB runners. Four shards x two workers ran ~3x slower
+          # there (browser-1 17.7 min vs 6.1), a 180 s journey timed out, and
+          # one runner died mid-lane (run 37812339796). Half the tests per
+          # runner and one worker keep each test near its old CPU budget.
+          # `--browser-shard` is Playwright's native `--shard`, which splits by
+          # test count, not by duration.
           - lane: browser-1
             mode: browser
-            args: --browser-only --browser-shard=1/4
+            args: --browser-only --browser-shard=1/8
           - lane: browser-2
             mode: browser
-            args: --browser-only --browser-shard=2/4
+            args: --browser-only --browser-shard=2/8
           - lane: browser-3
             mode: browser
-            args: --browser-only --browser-shard=3/4
+            args: --browser-only --browser-shard=3/8
           - lane: browser-4
             mode: browser
-            args: --browser-only --browser-shard=4/4
+            args: --browser-only --browser-shard=4/8
+          - lane: browser-5
+            mode: browser
+            args: --browser-only --browser-shard=5/8
+          - lane: browser-6
+            mode: browser
+            args: --browser-only --browser-shard=6/8
+          - lane: browser-7
+            mode: browser
+            args: --browser-only --browser-shard=7/8
+          - lane: browser-8
+            mode: browser
+            args: --browser-only --browser-shard=8/8
           - lane: packages
             mode: packages
             args: --packages-only
@@ -110,6 +126,13 @@ jobs:
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
+      - name: Install ripgrep
+        # The sandbox agent's glob/grep tools (kortix-sandbox-agent-server)
+        # shell out to rg. The sandbox image ships it; GitHub's runner image
+        # does not (Blacksmith's did, which hid this until 2026-10-08).
+        # Core runs the package tests too (package-quality), so not only packages.
+        if: matrix.mode != 'browser'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ripgrep
       - name: Restore Chromium
         # The core and packages lanes also run apps/web's layout test that launches Chromium.
         if: matrix.mode == 'browser' || matrix.mode == 'packages' || matrix.mode == 'core'
@@ -135,7 +158,7 @@ jobs:
         # 2. Remove by PUBLISHED PORT — catches a stack another checkout left.
         # 3. WAIT for the kernel to release the port. Removing a container does
         #    not free its binding instantly. On run 35630898515 (browser-1,
-        #    main @ 3c67a5e0b6) steps 1 and 2 both ran clean, `docker ps`
+        #    dev @ 3c67a5e0b6) steps 1 and 2 both ran clean, `docker ps`
         #    matched nothing, 54322 then bound fine — and 54324 still refused.
         #    Nothing was left to delete; the binding simply had not been given
         #    back yet.
@@ -196,6 +219,12 @@ jobs:
           if [[ "$TEST_LANE" == "packages" ]]; then
             export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
           fi
+          # One Playwright worker per browser shard on a 4 vCPU / 16 GB
+          # runner (see the matrix). Browser lanes only: the core lane's unit
+          # tests assert the default of two.
+          if [[ "$TEST_LANE" == browser-* ]]; then
+            export E2E_BROWSER_WORKERS=1
+          fi
           echo "[ci] lane=$TEST_LANE sha=$TEST_SHA command=pnpm test -- $TEST_ARGS"
           # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose
           if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi
@@ -239,7 +268,7 @@ jobs:
     # run is cancelled: a manual cancel, or a queued run that a newer
     # one replaced before it started.
     if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: write # commit comment
@@ -262,7 +291,7 @@ jobs:
           # Merges land faster than the suite and queued runs supersede each
           # other, so the red commit is often not the culprit. Name every
           # commit since the last green scheduled run: those are the suspects.
-          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=main&event=schedule&status=success&per_page=1" \
+          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&event=schedule&status=success&per_page=1" \
             --jq '.workflow_runs[0].head_sha // empty' || true)"
           suspects=""
           if [ -n "$green" ]; then
@@ -271,7 +300,7 @@ jobs:
           fi
 
           {
-            echo "## \`main\` @ \`${SHA:0:8}\`: failure"
+            echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
             echo "Full local suite (\`core\`, \`browser-1..4\`, \`packages\`)."
             if [ -n "$failed" ]; then
@@ -283,7 +312,7 @@ jobs:
           # Built line by line: every line of this script must stay indented
           # inside the YAML block scalar, so no embedded multi-line literal.
           {
-            echo "\`main\` is red at this commit."
+            echo "\`dev\` is red at this commit."
             echo
             echo "Failing lanes: \`${failed:-see the run}\`"
             echo
@@ -295,23 +324,27 @@ jobs:
               echo "$suspects"
               echo
             fi
-            echo "The author whose commit broke it fixes forward. If \`main\` is still"
+            echo "The author whose commit broke it fixes forward. If \`dev\` is still"
             echo "red 1 hour after this comment, anyone may revert the culprit PR."
             echo
             echo "This is the scheduled trunk suite (\`tests.yml\`). It did not"
-            echo "block the merge — \`main\` is the dev trunk. Reproduce locally with"
+            echo "block the merge — \`dev\` is the dev trunk. Reproduce locally with"
             echo "\`pnpm test -- --full\`, or one lane at a time:"
             echo
             echo '```'
             echo "pnpm test                                        # core"
             echo "pnpm test -- --packages-only                     # packages"
-            echo "pnpm test -- --browser-only --browser-shard=1/4  # browser-1"
-            echo "pnpm test -- --browser-only --browser-shard=2/4  # browser-2"
-            echo "pnpm test -- --browser-only --browser-shard=3/4  # browser-3"
-            echo "pnpm test -- --browser-only --browser-shard=4/4  # browser-4"
+            echo "pnpm test -- --browser-only --browser-shard=1/8  # browser-1"
+            echo "pnpm test -- --browser-only --browser-shard=2/8  # browser-2"
+            echo "pnpm test -- --browser-only --browser-shard=3/8  # browser-3"
+            echo "pnpm test -- --browser-only --browser-shard=4/8  # browser-4"
+            echo "pnpm test -- --browser-only --browser-shard=5/8  # browser-5"
+            echo "pnpm test -- --browser-only --browser-shard=6/8  # browser-6"
+            echo "pnpm test -- --browser-only --browser-shard=7/8  # browser-7"
+            echo "pnpm test -- --browser-only --browser-shard=8/8  # browser-8"
             echo '```'
           } > /tmp/trunk-verdict.md
 
           gh api "repos/$REPO/commits/$SHA/comments" -F body=@/tmp/trunk-verdict.md --jq '.html_url'
-          echo "::error::main is red at $SHA (lanes: ${failed:-unknown})"
+          echo "::error::dev is red at $SHA (lanes: ${failed:-unknown})"
           exit 1

@@ -216,7 +216,8 @@ async function apiGet(
 
 // Where a human reply in the thread goes. The API binds a thread to the
 // session that posts in it; every send path reports the result, so the agent
-// always knows whether a reply will come back here.
+// always knows whether a reply can come back here. In a channel, only a reply
+// that @mentions the bot comes back; in a DM, every reply does.
 type ThreadBinding = Record<string, unknown> & { bound?: unknown; reason?: unknown };
 
 const BINDING_HINTS: Record<string, string> = {
@@ -229,7 +230,7 @@ const BINDING_HINTS: Record<string, string> = {
   workspace_unknown: 'The project has no Slack install on record, so the thread was not bound. Replies will start a new session.',
   bind_failed: 'The bind was not written; replies will start a new session. Run `slack bind-thread --channel <channel> --thread <thread_ts>` once.',
   not_reported:
-    'The API did not report a binding (older API). Run `slack bind-thread --channel <channel> --thread <thread_ts>` to make sure replies come back here.',
+    'The API did not report a binding (older API). Run `slack bind-thread --channel <channel> --thread <thread_ts>` to make sure mention replies come back here.',
   top_level_file:
     'A top-level file post has no thread to bind. If you expect a reply, post a text message with `slack send --channel` instead.',
 };
@@ -678,7 +679,7 @@ Turn commands (use these when answering a Slack message):
 
 Commands:
   send         (--channel, [--text|--text-file], [--blocks|--blocks-file], [--thread], [--file])
-               # binds the thread to this session: replies come back here (see thread_binding)
+               # binds the thread to this session: @mention replies (any DM reply) come back here (see thread_binding)
   edit         (--channel, --ts, --text|--text-file|--blocks|--blocks-file)
   delete       (--channel, --ts)
   react        (--channel, --ts, --emoji)

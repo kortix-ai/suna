@@ -28,7 +28,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useCallback } from 'react';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
@@ -188,6 +188,14 @@ export function FileContentRenderer({
     onMarkdownPreviewChange,
     onStatusChange,
   });
+  const bytesOnly = !!source.bytesOnly;
+  const saveThroughSource = useCallback(
+    (file: File) =>
+      source.save
+        ? source.save(filePath, file)
+        : source.upload(file, filePath.substring(0, filePath.lastIndexOf('/')) || undefined),
+    [source, filePath],
+  );
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
@@ -354,11 +362,13 @@ export function FileContentRenderer({
           )}
 
           {/* XLSX / XLS preview */}
-          {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
+          {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (!bytesOnly || blobUrl) && (
             <Suspense fallback={<RendererFallback />}>
               <XlsxRenderer
                 key={`xlsx-${filePath}-${contentRevision}-${reloadKey}`}
-                filePath={filePath}
+                // A bytes-only source hands the workbook over as a blob URL;
+                // the renderer reads a sandbox path only for a session.
+                filePath={bytesOnly ? blobUrl! : filePath}
                 fileName={fileName}
                 className="h-full"
                 showDownload={false}
@@ -367,7 +377,7 @@ export function FileContentRenderer({
           )}
 
           {/* SQLite database viewer */}
-          {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
+          {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (!bytesOnly || rawBlob) && (
             <Suspense fallback={<RendererFallback />}>
               <SqliteRenderer
                 key={`sqlite-${filePath}-${contentRevision}-${reloadKey}`}
@@ -375,6 +385,7 @@ export function FileContentRenderer({
                 fileName={fileName}
                 className="h-full"
                 readOnly={readOnly}
+                {...(bytesOnly ? { bytes: rawBlob, onSave: saveThroughSource } : {})}
               />
             </Suspense>
           )}

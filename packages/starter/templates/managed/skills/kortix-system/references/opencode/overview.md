@@ -51,7 +51,7 @@ Agents and skills sit at the repo root.
 | Agents        | `agents/<name>.md` (`agents.<name>.file` in `kortix.yaml`)                                  |
 | Skills        | `skills/<name>/SKILL.md`                                                                    |
 | Commands      | `harnesses/opencode/commands/<name>.md`                                                     |
-| Custom tools  | `harnesses/opencode/tools/<file>.ts`                                                        |
+| Custom tools  | a module declared in `kortix.yaml` `tools:` (every harness, `../kortix/tools.md`); `harnesses/opencode/tools/<file>.ts` is OpenCode-only |
 | Plugins       | `harnesses/opencode/plugins/<file>.ts` (+ `harnesses/opencode/package.json` for npm deps)   |
 | MCP servers   | `harnesses/opencode/opencode.jsonc` → `mcp` key                                             |
 

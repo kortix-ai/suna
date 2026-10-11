@@ -37,6 +37,7 @@ import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
 import { Download } from '@/features/icon/icons/download';
+import { ownClicks } from './own-clicks';
 
 interface DriveGridItemProps {
   node: FileNode;
@@ -302,7 +303,7 @@ function FolderCard({
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={isRenaming ? undefined : onClick}
+          onClick={isRenaming ? undefined : ownClicks(onClick)}
           className={cn(
             'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border transition-colors select-none',
             isCut && 'opacity-40',
@@ -419,8 +420,8 @@ function FileCard({
           draggable={!isRenaming}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onClick={isRenaming ? undefined : onClick}
-          onDoubleClick={isRenaming ? undefined : onDoubleClick}
+          onClick={isRenaming ? undefined : ownClicks(onClick)}
+          onDoubleClick={isRenaming ? undefined : ownClicks(onDoubleClick)}
           className={cn(
             'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border select-none',
             isCut && 'opacity-40',

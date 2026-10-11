@@ -8,6 +8,7 @@ export const EXTERNAL_CAPABILITIES = new Set<Capability>([
   "managedGitPush",
   "stripe",
   "funded",
+  "projectSnapshots",
 ]);
 export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = "local-flow-runner-internal-service-key";
 
@@ -75,10 +76,13 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
     KE2E_CAP_MANAGED_GIT: "0",
     KE2E_CAP_MANAGED_GIT_PUSH: "0",
     KE2E_CAP_FUNDED: "0",
+    KE2E_CAP_PROJECT_SNAPSHOTS: "0",
     KE2E_DEFAULT_FLOW_ATTEMPTS: "1",
     KE2E_API_WORKERS: String(localWorkerCount()),
     KE2E_SANDBOX_WORKERS: "1",
     KE2E_TEARDOWN_WORKERS: String(Math.min(8, localWorkerCount())),
+    // The local API sends email to this Mailpit (core/local-stack.ts EMAIL_URL).
+    ...(supabase.MAILPIT_URL ? { KE2E_MAILPIT_URL: supabase.MAILPIT_URL } : {}),
   };
 }
 

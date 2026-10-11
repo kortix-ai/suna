@@ -9,12 +9,32 @@ import {
 
 // The whole contract in one table: who wrote the text × how it is shown.
 const TABLE: [MarkdownTrust, MarkdownVariant, MarkdownPolicy][] = [
-  ['trusted', 'message', { rawHtml: true, remoteImages: 'load', setupLinks: false }],
-  ['trusted', 'document', { rawHtml: false, remoteImages: 'load', setupLinks: false }],
-  ['agent', 'message', { rawHtml: true, remoteImages: 'load', setupLinks: true }],
-  ['agent', 'document', { rawHtml: false, remoteImages: 'load', setupLinks: true }],
-  ['untrusted', 'message', { rawHtml: true, remoteImages: 'click-to-load', setupLinks: false }],
-  ['untrusted', 'document', { rawHtml: false, remoteImages: 'click-to-load', setupLinks: false }],
+  [
+    'trusted',
+    'message',
+    { rawHtml: true, remoteImages: 'load', setupLinks: false, fileLinks: false },
+  ],
+  [
+    'trusted',
+    'document',
+    { rawHtml: false, remoteImages: 'load', setupLinks: false, fileLinks: false },
+  ],
+  ['agent', 'message', { rawHtml: true, remoteImages: 'load', setupLinks: true, fileLinks: true }],
+  [
+    'agent',
+    'document',
+    { rawHtml: false, remoteImages: 'load', setupLinks: true, fileLinks: false },
+  ],
+  [
+    'untrusted',
+    'message',
+    { rawHtml: true, remoteImages: 'click-to-load', setupLinks: false, fileLinks: false },
+  ],
+  [
+    'untrusted',
+    'document',
+    { rawHtml: false, remoteImages: 'click-to-load', setupLinks: false, fileLinks: false },
+  ],
 ];
 
 describe('markdownPolicy', () => {

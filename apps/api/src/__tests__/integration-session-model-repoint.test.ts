@@ -36,6 +36,7 @@ const managedModel = (id: string) => ({
 mock.module('../llm-gateway/models/served-managed-models', () => ({
   SERVED_MANAGED_MODELS: [managedModel('deepseek-v4.1-flash'), managedModel('glm-5.3-flash')],
   platformDefaultModelId: () => 'glm-5.3-flash',
+  isPlatformDefaultModelId: (id: string) => id === 'glm-5.3-flash',
 }));
 
 let projectDefaultModel: string | null = 'glm-5.3-flash';

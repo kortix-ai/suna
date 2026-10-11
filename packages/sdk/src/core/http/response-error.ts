@@ -116,14 +116,20 @@ export async function handleErrorResponse<T>(
       : data?.code || data?.error_code || data?.detail?.error_code || response.status.toString(),
   });
   if (response.status === 402) error = parseBillingError(error);
-  if (
-    response.status === 403 &&
-    data?.code === 'account_mfa_required' &&
-    typeof window !== 'undefined' &&
-    typeof window.dispatchEvent === 'function'
-  ) {
+  // Two coded 403s a person can act on. MFA: a step-up on this page. SSO only:
+  // the account requires sign-in through its IdP, so the host signs out and
+  // offers single sign-on.
+  const remedyEvent =
+    response.status !== 403
+      ? null
+      : data?.code === 'account_mfa_required'
+        ? 'kortix:mfa-required'
+        : data?.code === 'sso_required'
+          ? 'kortix:sso-required'
+          : null;
+  if (remedyEvent && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     try {
-      window.dispatchEvent(new CustomEvent('kortix:mfa-required'));
+      window.dispatchEvent(new CustomEvent(remedyEvent));
     } catch {}
   }
   if (response.status === 431) {

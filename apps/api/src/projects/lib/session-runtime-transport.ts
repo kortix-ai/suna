@@ -200,6 +200,39 @@ export async function fetchRuntimeMessages(
   }
 }
 
+export type RuntimeHealthFetch =
+  | { ok: true; health: Record<string, unknown> }
+  | { ok: false; reason: string };
+
+/** Budget for one `/kortix/health` read. The daemon answers it from memory. */
+export const RUNTIME_HEALTH_TIMEOUT_MS = 5_000;
+
+/**
+ * Read the daemon's `GET /kortix/health` document once (status, harness
+ * readiness, capabilities). The session stream pushes it, so a client never
+ * probes the box itself.
+ */
+export async function fetchRuntimeHealth(
+  target: DaemonCallTarget,
+  signal?: AbortSignal,
+): Promise<RuntimeHealthFetch> {
+  try {
+    const endpoint = await daemonEndpoint(target);
+    if (!endpoint) return { ok: false, reason: 'no_service_key' };
+    const timeout = AbortSignal.timeout(RUNTIME_HEALTH_TIMEOUT_MS);
+    const response = await fetch(`${endpoint.url}/kortix/health`, {
+      headers: { ...endpoint.headers, Accept: 'application/json' },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
+    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    // A 503 with a JSON body is a real answer ("starting"); only no body is not.
+    if (!body || typeof body !== 'object') return { ok: false, reason: `daemon_${response.status}` };
+    return { ok: true, health: body };
+  } catch (error) {
+    return { ok: false, reason: reasonOf(error) };
+  }
+}
+
 export type RuntimeStreamOpen =
   | { ok: true; body: ReadableStream<Uint8Array>; epoch: string | null }
   | { ok: false; reason: string; status: number | null };
@@ -242,6 +275,11 @@ export async function openRuntimeEventStream(
   options.signal.addEventListener('abort', onCallerAbort, { once: true });
   connectTimeout.addEventListener('abort', onConnectTimeout, { once: true });
 
+  // The caller-abort link must outlive this function on success: the live body
+  // is bound to `connectGuard.signal`, so removing the listener here would
+  // detach it and leave a read blocked on a silent daemon with nothing to end
+  // it. It is removed only when the attach FAILS.
+  let attached = false;
   try {
     const response = await fetchRuntimeApi(target.externalId, url, {
       headers: {
@@ -271,6 +309,7 @@ export async function openRuntimeEventStream(
         status: response.status,
       };
     }
+    attached = true;
     return {
       ok: true,
       body: response.body,
@@ -279,7 +318,7 @@ export async function openRuntimeEventStream(
   } catch (error) {
     return { ok: false, reason: reasonOf(error), status: null };
   } finally {
-    options.signal.removeEventListener('abort', onCallerAbort);
+    if (!attached) options.signal.removeEventListener('abort', onCallerAbort);
     connectTimeout.removeEventListener('abort', onConnectTimeout);
   }
 }
@@ -304,10 +343,17 @@ export interface SseFrame {
  */
 export async function* parseSseFrames(
   body: ReadableStream<Uint8Array>,
+  /** Ends the read at once when aborted, even while no frame arrives. */
+  signal?: AbortSignal,
 ): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // A quiet box sends a frame every 15 s at most. Without this, a caller that
+  // hangs up keeps the upstream body open until that frame arrives.
+  const stop = () => void reader.cancel().catch(() => {});
+  signal?.addEventListener('abort', stop, { once: true });
+  if (signal?.aborted) stop();
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -324,6 +370,7 @@ export async function* parseSseFrames(
       }
     }
   } finally {
+    signal?.removeEventListener('abort', stop);
     reader.releaseLock();
     await body.cancel().catch(() => {});
   }

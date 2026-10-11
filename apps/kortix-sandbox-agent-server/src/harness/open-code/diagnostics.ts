@@ -24,6 +24,7 @@ import {
   opencodeSessionInFlight,
 } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
+import { opencodeSupportsSteer, runningOpencodeVersion } from './turns'
 
 import type { OpenCodeBootState } from './boot-state'
 
@@ -126,14 +127,26 @@ async function readOpenCodeHealth(
   // callers ask: the reload gate, which must not restart the runtime out from
   // under a running turn, and the control plane's reaper, which repairs turn
   // authority a lost relay left behind.
-  const turn =
-    query.turn !== undefined
-      ? await observeRequestedTurn(
-          opencode.getInternalUrl(),
-          process.env.KORTIX_WORKSPACE || '/workspace',
-          resolveTurnObservationIdentity(query.turn.sessionId, query.turn.messageId, readOpenCodeSessionPin()),
-        )
-      : undefined
+  //
+  // Never before the boot path opens the workspace gate. The turn read is a
+  // directory-scoped request, so it builds OpenCode's Instance, and an Instance
+  // built then reads the composed config written at the early spawn: the
+  // governance the box was created with, not the release the boot path is
+  // about to serve. The boot path's reload sees no answered probe and skips the
+  // restart, so the box runs its creation-day agents while reporting the
+  // release. Measured on a persistent machine's wake: the API's reload gate
+  // asked for the turn 0.2 s before the boot link moved. Before the gate opens
+  // no turn can be running, and "could not tell" is what the gate retries on.
+  const turn: OpencodeDeliveryObservation | undefined =
+    query.turn === undefined
+      ? undefined
+      : bootState.workspaceReady === false
+        ? { inFlight: null, end: null }
+        : await observeRequestedTurn(
+            opencode.getInternalUrl(),
+            process.env.KORTIX_WORKSPACE || '/workspace',
+            resolveTurnObservationIdentity(query.turn.sessionId, query.turn.messageId, readOpenCodeSessionPin()),
+          )
 
   return {
     harness: {
@@ -238,7 +251,11 @@ export function createOpenCodeDiagnosticsService(
 ): HarnessDiagnosticsService {
   return {
     // Every session feature the pi harness answers 501 for is native here.
-    capabilities: [...RUNTIME_CAPABILITIES],
+    // Steering needs OpenCode 1.18.15 or later; an unknown version does not list it.
+    capabilities: async () => {
+      const steer = opencodeSupportsSteer(await runningOpencodeVersion())
+      return RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer' || steer === true)
+    },
     catalogSnapshot: catalogSnapshotForHealth,
     health: (context, query) => readOpenCodeHealth(context, opencode, query),
     report: (context, tail) => readOpenCodeDiagnosticReport(opencode, home, context, tail),

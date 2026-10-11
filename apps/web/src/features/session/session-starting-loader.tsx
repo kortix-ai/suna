@@ -7,6 +7,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
+import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -50,7 +51,17 @@ interface Step {
 type BootStepVariant = 'stepper' | 'compact';
 type StartFailure = SessionStartResult['failure'];
 
-/** Keep a provider failure visible while `/start` waits for its retry clock. */
+/**
+ * The longest retry clock worth counting down. The server's cooldown is 2, 5
+ * or 10 minutes (`RUNTIME_START_RETRY_BACKOFF_MS`); a clock further away comes
+ * from a skewed or unset `now`, and it rendered as tens of millions of minutes.
+ */
+const MAX_COUNTDOWN_SECONDS = 60 * 60;
+
+/**
+ * Keep the server's retry visible while `/start` waits for its retry clock.
+ * The server re-attempts on its own, so this is a waiting state, not an error.
+ */
 export function sessionWakeStatusNote(input: {
   reason?: string | null;
   failure?: StartFailure;
@@ -61,15 +72,16 @@ export function sessionWakeStatusNote(input: {
   const attempts = Math.max(1, input.failure.evidence?.attempts ?? 1);
   const nextAttempt = attempts + 1;
   const retryAt = Date.parse(input.failure.evidence?.next_retry_at ?? '');
-  if (!Number.isFinite(retryAt)) {
-    return `Computer did not start. Retrying automatically (attempt ${nextAttempt}).`;
-  }
   const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
-  if (seconds === 0) return `Computer did not start. Retrying automatically now (attempt ${nextAttempt}).`;
+  if (!Number.isFinite(seconds) || seconds > MAX_COUNTDOWN_SECONDS) {
+    return `Still starting your computer. Trying again automatically (attempt ${nextAttempt}).`;
+  }
+  if (seconds === 0) return `Still starting your computer. Trying again now (attempt ${nextAttempt}).`;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
-  const duration = minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
-  return `Computer did not start. Retrying automatically in ${duration} (attempt ${nextAttempt}).`;
+  // One unit: a line break never falls between the minutes and the seconds.
+  const duration = minutes > 0 ? `${minutes}m\u00a0${remainder}s` : `${remainder}s`;
+  return `Still starting your computer. Trying again in ${duration} (attempt ${nextAttempt}).`;
 }
 
 /** Copy is deliberately parallel, so stage changes read as one continuous task. */
@@ -133,6 +145,22 @@ function useRestartedBootClock(restart: {
     wasPending.current = restart.isPending;
   }, [restart.isPending, restart.errorMessage]);
   return clockStart;
+}
+
+/**
+ * Whether the stuck-boot restart offer may render. Restart is the session
+ * owner's or a project manager's; the server answers anyone else 403
+ * (`can_manage_lifecycle`, the same verdict every session menu follows). A
+ * member who can open the session still gets the loader, just without the
+ * escape hatch. An absent row cannot deny yet: a fresh session's row arrives
+ * with the boot that wedged.
+ */
+export function canOfferBootRestart(
+  session: { can_manage_lifecycle?: boolean } | undefined,
+  projectId?: string,
+  sessionId?: string,
+): boolean {
+  return Boolean(projectId && sessionId) && session?.can_manage_lifecycle !== false;
 }
 
 /** The stalled-boot escape hatch, shared by the loader and instant session shell. */
@@ -282,13 +310,14 @@ export function SessionStartingLoader({
     return () => clearTimeout(timeout);
   }, [delayMs]);
 
+  const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
   const slow = now - clockStart >= SLOW_AFTER_MS;
   const stuck = now - clockStart >= STUCK_AFTER_MS;
-  const canRestart = !!projectId && !!sessionId;
+  const canRestart = canOfferBootRestart(session, projectId, sessionId);
 
   return (
     <QuietProgressLoader
@@ -326,12 +355,13 @@ export function SessionConnectingBanner({
   failure?: StartFailure;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
-  const canRestart = !!projectId && !!sessionId;
+  const canRestart = canOfferBootRestart(session, projectId, sessionId);
   const steps = useLocalizedUiCatalog(STEPS);
   const step = steps[Math.min(active, steps.length - 1)];
 

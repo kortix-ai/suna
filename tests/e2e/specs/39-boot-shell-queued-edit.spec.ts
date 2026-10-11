@@ -179,6 +179,15 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
         });
         return;
       }
+      // Since #9260 queue state arrives on the control stream, and the SDK
+      // polls `GET .../prompts` only while that stream is down. Keep it down,
+      // so the stale inbox read in "Submit saves the words" comes from the poll.
+      // Since #9312 the session page shares one connection for control and
+      // runtime frames, and that URL has no `channels` parameter: abort every one.
+      if (path === `/v1/projects/${project.id}/sessions/${sessionId}/events`) {
+        await route.abort();
+        return;
+      }
       // The computer stays in boot for the whole journey.
       if (path === `/v1/projects/${project.id}/sessions/${sessionId}/start`) {
         await route.fulfill({

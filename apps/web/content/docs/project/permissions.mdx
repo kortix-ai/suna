@@ -135,6 +135,23 @@ The App's **Access** dialog lists the agents with access, read from
 `kortix.yaml`. The Apps page appears only when the project has the
 [Apps](/docs/feature-flags/apps) feature flag on.
 
+## Apps that hold data
+
+A server App with a [volume](/docs/feature-flags/apps#volumes) holds data that
+outlives every release. One permission guards the powers that reach past the
+App's own code:
+
+| Permission | Allows |
+|---|---|
+| `project.app.admin` | Run a command in an App machine (`exec`), restore a volume to a snapshot, and destroy a volume. Implies `project.app.write` |
+
+Every role that holds `project.app.write` holds `project.app.admin`: in the
+built-in roles, that is Manager. `project.app.read` lists Apps, their
+machines, volumes, and snapshots, and mints a sign-in token.
+`project.app.write` creates, changes, labels, and deletes Apps.
+`project.app.deploy` deploys, rolls back, starts and stops Apps, acts on
+machines, scales, and creates, extends, snapshots, and forks volumes.
+
 ## Changing agents and triggers
 
 `kortix.yaml` shapes what agents may do, so whoever lands a change on the

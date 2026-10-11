@@ -4,8 +4,9 @@
  * Project-sessions on Daytona model:
  *   - A sandbox lives in `kortix.session_sandboxes`.
  *   - A user can hit the sandbox if they're a member of the account that owns
- *     it (account_members.account_id == session_sandboxes.account_id), or if
- *     they're a platform admin.
+ *     it (account_members.account_id == session_sandboxes.account_id) AND may
+ *     read the sandbox's project (`project.read`), or if they're a platform
+ *     admin. An agent service account reaches only its own project's boxes.
  *
  * The legacy sandbox-members / scope / role machinery has been removed along
  * with the rest of the /instances surface.
@@ -21,14 +22,19 @@ import {
   resolveShareSubject,
 } from '../connectors/share';
 import { authorize } from '../iam';
-import { actorForUser } from '../iam/actor';
+import { actorForServiceAccount, actorForUser } from '../iam/actor';
 import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
+import { setBounded } from './bounded-cache';
+import { registerPrincipalScopedMemo } from './principal-scoped-memos';
 import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// One entry per (sandbox, user) the proxy was asked about, denials included, so a
+// caller who sends random sandbox ids must not grow it without bound.
+const PREVIEW_CONTEXT_MAX = 20_000;
 
 // ─── Session-visibility gate for the daemon/opencode port ────────────────────
 // canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
@@ -122,6 +128,8 @@ async function readSandboxSessionAccess(
     .limit(1);
 
   let allowed = true;
+  // Per-call, never module state: the write and the store both sit after awaits.
+  let refusal: SessionAccessRefusal | null = null;
   if (row) {
     const [subject, grantsBySession, managerVerdict] = await Promise.all([
       subjectRead,
@@ -135,7 +143,7 @@ async function readSandboxSessionAccess(
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
     ]);
     const grants = grantsBySession.get(input.sessionId) ?? [];
-    lastRefusalContext = {
+    refusal = {
       sessionId: input.sessionId,
       projectId: input.projectId,
       visibility: row.visibility,
@@ -177,7 +185,7 @@ async function readSandboxSessionAccess(
     }
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
-  if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);
+  if (!allowed && refusal) refusalContexts.set(key, refusal);
   return allowed;
 }
 
@@ -215,7 +223,6 @@ export interface SessionAccessRefusal {
   boundCredentialSessionId: string | null;
 }
 
-let lastRefusalContext: SessionAccessRefusal | null = null;
 const refusalContexts = new Map<string, SessionAccessRefusal>();
 const REFUSAL_CONTEXT_MAX = 500;
 
@@ -362,9 +369,12 @@ async function isAccountMember(userId: string, accountId: string): Promise<boole
  * transcript. A disabled SA is refused: a revoked/deleted agent identity must
  * not keep reading a session's transcript.
  */
-async function isAccountServiceAccount(userId: string, accountId: string): Promise<boolean> {
+async function accountServiceAccount(
+  userId: string,
+  accountId: string,
+): Promise<{ projectId: string | null } | null> {
   const [row] = await db
-    .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+    .select({ projectId: serviceAccounts.projectId })
     .from(serviceAccounts)
     .where(
       and(
@@ -374,7 +384,30 @@ async function isAccountServiceAccount(userId: string, accountId: string): Promi
       ),
     )
     .limit(1);
-  return !!row;
+  return row ?? null;
+}
+
+/**
+ * Account membership is not project access: a guest of project Q is an account
+ * member with no role on project P, and REST refuses them every P route
+ * (`project.read`, `loadVisibleSession`). The proxy reaches the same box, so it
+ * asks the same question. The account check above has already passed, so the
+ * MFA step-up is not asked again (`aal2`), exactly as `memberMayReadProject`.
+ *
+ * An AGENT service account (`projectId` set) reaches only its own project's
+ * boxes. A manual service account goes through IAM like any principal.
+ */
+async function mayReadSandboxProject(
+  userId: string,
+  ref: SandboxRef,
+  serviceAccount: { projectId: string | null } | null,
+): Promise<boolean> {
+  const obj = { type: 'project' as const, id: ref.projectId };
+  if (serviceAccount?.projectId) return serviceAccount.projectId === ref.projectId;
+  const actor = serviceAccount
+    ? actorForServiceAccount(userId, ref.accountId)
+    : actorForUser(userId, ref.accountId, { mfaAal: 'aal2' });
+  return (await authorize(actor, 'project.read', obj)).allowed;
 }
 
 type SandboxRef = { sandboxId: string; accountId: string; projectId: string };
@@ -418,12 +451,13 @@ async function computeEntry(
     };
   }
 
-  const member =
-    platformAdmin ||
-    (await memberRead) ||
-    (await isAccountServiceAccount(userId, ref.accountId));
-  if (!member) {
-    return { allowed: false, payload: null, expiresAt };
+  if (!platformAdmin) {
+    const human = await memberRead;
+    const serviceAccount = human ? null : await accountServiceAccount(userId, ref.accountId);
+    if (!human && !serviceAccount) return { allowed: false, payload: null, expiresAt };
+    if (!(await mayReadSandboxProject(userId, ref, serviceAccount))) {
+      return { allowed: false, payload: null, expiresAt };
+    }
   }
 
   return {
@@ -461,7 +495,7 @@ async function getOrCompute(
     .then((fresh) => {
       // An invalidation during the check removed this entry: the verdict goes
       // to the callers already waiting on it and is not cached.
-      if (previewContextInFlight.get(key) === pending) previewContextCache.set(key, fresh);
+      if (previewContextInFlight.get(key) === pending) setBounded(previewContextCache, key, fresh, PREVIEW_CONTEXT_MAX);
       return fresh;
     })
     .finally(() => {
@@ -518,3 +552,10 @@ export function invalidatePreviewCacheForUser(userId: string): void {
     }
   }
 }
+
+// A removed or demoted member must lose the proxy at once, not at the end of the
+// 5-minute TTL. `invalidateIamCacheForUser` (called on every membership and role
+// change) reaches this cache through the same registry the IAM memos use.
+registerPrincipalScopedMemo({
+  invalidateByPrefix: (prefix) => invalidatePreviewCacheForUser(prefix.slice(0, -1)),
+});

@@ -7,7 +7,7 @@
  * for every file.
  */
 
-import type { FilePreviewType } from '@/components/files/FilePreviewRenderers';
+import type { FilePreviewType } from '@/lib/files/preview-type';
 
 const KB = 1024;
 const MB = 1024 * KB;

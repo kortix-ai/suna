@@ -17,6 +17,7 @@ let peerFinishes = true;
 mock.module('./build-claim', () => ({
   claimSnapshotBuild: async () => !peerHolds,
   releaseSnapshotBuild: async () => {},
+  holdSnapshotBuild: () => () => {},
   waitForSnapshotBuildRelease: async () => {
     if (!peerFinishes) return;
     peerHolds = false;

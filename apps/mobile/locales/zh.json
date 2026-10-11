@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "单击电子邮件中的链接以验证您的帐户，然后登录。",
     "browseAsGuest": "以访客身份浏览",
     "signOutFailed": "无法退出登录，请检查网络连接后重试。",
-    "signingOut": "正在退出登录…"
+    "signingOut": "正在退出登录…",
+    "mfa": {
+      "title": "验证你的身份",
+      "enterCode": "请输入身份验证器应用中的 6 位验证码。",
+      "codeLabel": "6 位验证码",
+      "verify": "验证",
+      "verifying": "正在验证…",
+      "invalidCode": "该验证码无效。请检查身份验证器应用后重试。",
+      "verifyFailed": "无法验证该验证码。请检查网络连接后重试。"
+    }
   },
   "onboarding": {
     "welcome": "看看Kortix能做什么",

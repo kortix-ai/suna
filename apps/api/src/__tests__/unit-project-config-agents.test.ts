@@ -29,7 +29,7 @@ describe('project config agent discovery', () => {
     ]);
   });
 
-  test('agents: becomes the launchable server-side roster', () => {
+  test('agents: lists every registered agent, a disabled one with enabled: false', () => {
     const loaded: LoadedAgents = {
       errors: [],
       specs: [
@@ -92,6 +92,17 @@ describe('project config agent discovery', () => {
         model: null,
         source: 'kortix.yaml',
         enabled: true,
+        sandbox: null,
+        scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [], apps: [] },
+      },
+      {
+        name: 'disabled',
+        path: 'kortix.yaml#agents.disabled',
+        description: null,
+        mode: null,
+        model: null,
+        source: 'kortix.yaml',
+        enabled: false,
         sandbox: null,
         scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [], apps: [] },
       },

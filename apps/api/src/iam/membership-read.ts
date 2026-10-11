@@ -78,6 +78,15 @@ export function userAccountMemberRow(userId: string, accountId: string) {
     .limit(1);
 }
 
+/** `{ accountRole }` when the user is in the account. */
+export function accountMemberRoleRow(accountId: string, userId: string) {
+  return db
+    .select({ accountRole: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .limit(1);
+}
+
 /** `{ accountId }` when the user is in the account. */
 export function userAccountMembershipRow(userId: string, accountId: string) {
   return db

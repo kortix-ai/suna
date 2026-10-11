@@ -41,9 +41,15 @@ describe('staging secret synchronization', () => {
     expect(readStatement).not.toContain('secretsmanager:CreateSecret');
     expect(writeStatement).toContain('secretsmanager:PutSecretValue');
     expect(writeStatement).toContain('secretsmanager:CreateSecret');
-    expect(writeStatement).toContain(
-      'Resource = "arn:aws:secretsmanager:us-west-2:${local.account_id}:secret:kortix-staging-env-*"',
+    // Staging runs in eu-west-2 (environments/staging-eu-west-2); the
+    // us-west-2 grant stays until the old stack is destroyed.
+    const writeResources = writeStatement.slice(0, writeStatement.indexOf('},'));
+    expect(writeResources).toContain(
+      '"arn:aws:secretsmanager:eu-west-2:${local.account_id}:secret:kortix-staging-env-*"',
     );
+    expect(writeResources.match(/arn:aws:secretsmanager:[^"]+/g)?.every((arn) =>
+      arn.endsWith(':secret:kortix-staging-env-*'),
+    )).toBe(true);
   });
 
   it('preserves the existing staging bundle and uses dev only for first creation', () => {

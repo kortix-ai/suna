@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { auditWebhookFailureSummary } from './audit-webhook-privacy';
+import { entitlementLookupFailure } from './audit-webhooks';
 
 describe('audit webhook failure privacy', () => {
   test('fingerprints receiver response bodies without retaining their content', () => {
@@ -20,5 +21,20 @@ describe('audit webhook failure privacy', () => {
       expect(summary).not.toContain('example.test');
       expect(summary).not.toContain('secret');
     }
+  });
+});
+
+describe('entitlement lookup failure', () => {
+  test('retries with backoff instead of dead-lettering on the first error', () => {
+    const update = entitlementLookupFailure(1, 'pool timeout', 1_000_000);
+    expect(update.status).toBe('retry');
+    expect(update.attempts).toBe(1);
+    expect(update.nextAttemptAt.getTime()).toBeGreaterThan(1_000_000);
+    expect(update.lastError).toBe('entitlement lookup failed: pool timeout');
+    expect(update.lockedBy).toBeNull();
+  });
+
+  test('dead-letters at the attempt cap', () => {
+    expect(entitlementLookupFailure(8, 'pool timeout').status).toBe('dead_letter');
   });
 });

@@ -29,10 +29,11 @@
  *                Kortix API. The viewer's own IAM role is still the ceiling.
  */
 import { createHmac, timingSafeEqual } from 'crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
-import { groupIdsOfUser } from '../iam/group-read';
+import { groupIdsOfUser, groupsForMemberRows } from '../iam/group-read';
+import { accountMemberRoleRow } from '../iam/membership-read';
 import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
 import { validateOAuthAccessToken } from '../oauth/access-token';
 /*
@@ -80,12 +81,28 @@ export function appViewerSecret(appId: string): string {
     .digest('hex');
 }
 
+/**
+ * The identity variables every App runtime gets. `KORTIX_APP_ACCOUNT_ID` names
+ * the App's account: `createKortixAppGuard` reads group names on its sign-in
+ * path in that account only, because names are unique only within one.
+ */
+export function appRuntimeIdentityEnv(app: { appId: string; accountId: string }): Record<string, string> {
+  return { [APP_VIEWER_SECRET_ENV]: appViewerSecret(app.appId), KORTIX_APP_ACCOUNT_ID: app.accountId };
+}
+
 export interface AppViewerContext {
   v: 1;
   appId: string;
   userId: string;
   email: string | null;
+  name?: string | null;
+  picture?: string | null;
   groupIds: string[];
+  /** Names of the same groups, unique within the account. */
+  groups?: string[];
+  /** The viewer's account role. */
+  role?: string | null;
+  projectId?: string | null;
   accountId: string;
   /** The App's access mode when this request was authorized. */
   accessMode: string;
@@ -113,7 +130,12 @@ export function encodeAppViewerContext(
     appId: input.appId,
     userId: input.userId,
     email: input.email,
+    name: input.name ?? null,
+    picture: input.picture ?? null,
     groupIds: input.groupIds,
+    groups: input.groups ?? [],
+    role: input.role ?? null,
+    projectId: input.projectId ?? null,
     accountId: input.accountId,
     accessMode: input.accessMode,
     iat,
@@ -156,9 +178,27 @@ export function verifyAppViewerContext(
 // the App DISPLAYS or which group grant it applies — never whether the gate let
 // the viewer in, which is re-checked from the cookie on every request.
 
-interface ViewerIdentity {
+export interface ViewerIdentity {
   email: string | null;
+  /** Display name from the auth profile (`full_name`, then `name`). */
+  name?: string | null;
+  /** Profile picture URL. */
+  picture?: string | null;
+  /** Group ids. Scoped to the account when one is given, else every account. */
   groupIds: string[];
+  /** Group names in the account. Only with an account. */
+  groups?: string[];
+  /** Account role. Only with an account. */
+  role?: string | null;
+}
+
+async function readProfile(userId: string): Promise<{ name: string | null; picture: string | null }> {
+  const rows = (await db.execute(sql`
+    SELECT coalesce(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name') AS name,
+           u.raw_user_meta_data->>'avatar_url' AS picture
+    FROM auth.users u WHERE u.id = ${userId}::uuid
+  `)) as unknown as Array<{ name: string | null; picture: string | null }>;
+  return { name: rows[0]?.name || null, picture: rows[0]?.picture || null };
 }
 
 const IDENTITY_TTL_MS = 60_000;
@@ -170,25 +210,44 @@ export function resetAppViewerCaches(): void {
   tokenCache.clear();
 }
 
-export async function resolveAppViewerIdentity(userId: string): Promise<ViewerIdentity> {
-  const hit = identityCache.get(userId);
+/**
+ * Who the viewer is, for the signed header, `/_kortix/viewer` and backend
+ * tokens. With `accountId` (every gate call site) the groups are that
+ * account's, by id and name, and the role is the account role: an App never
+ * learns about the viewer's memberships elsewhere. Every lookup degrades to
+ * empty rather than failing the request.
+ */
+export async function resolveAppViewerIdentity(userId: string, accountId?: string): Promise<ViewerIdentity> {
+  const key = `${userId}|${accountId ?? ''}`;
+  const hit = identityCache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.value;
-  const [emails, groups] = await Promise.all([
+  const [emails, profile, groupRows, roleRows] = await Promise.all([
     lookupEmailsByUserIds([userId]).catch(() => new Map<string, string | null>()),
-    groupIdsOfUser(userId)
-      .catch(() => [] as { groupId: string }[]),
+    readProfile(userId).catch(() => ({ name: null, picture: null })),
+    (accountId ? groupsForMemberRows(accountId, userId) : groupIdsOfUser(userId)).catch(
+      () => [] as Array<{ groupId: string; name?: string }>,
+    ),
+    accountId ? accountMemberRoleRow(accountId, userId).catch(() => []) : Promise.resolve([]),
   ]);
   const value: ViewerIdentity = {
     email: emails.get(userId) ?? null,
-    groupIds: groups.map((g) => g.groupId),
+    name: profile.name,
+    picture: profile.picture,
+    groupIds: groupRows.map((g) => g.groupId),
+    ...(accountId
+      ? {
+          groups: groupRows.map((g) => ('name' in g ? g.name : undefined)).filter((n): n is string => !!n),
+          role: roleRows[0]?.accountRole ?? null,
+        }
+      : {}),
   };
   if (identityCache.size >= IDENTITY_MAX) {
-    for (const key of identityCache.keys()) {
-      identityCache.delete(key);
+    for (const cached of identityCache.keys()) {
+      identityCache.delete(cached);
       if (identityCache.size < IDENTITY_MAX * 0.9) break;
     }
   }
-  identityCache.set(userId, { value, expiresAt: Date.now() + IDENTITY_TTL_MS });
+  identityCache.set(key, { value, expiresAt: Date.now() + IDENTITY_TTL_MS });
   return value;
 }
 

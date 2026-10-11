@@ -38,6 +38,8 @@ export function appUpstreamHeaders(
   for (const name of [
     'host', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
     'te', 'trailer', 'transfer-encoding', 'upgrade',
+    // A Kortix credential header, never the App's own.
+    'x-kortix-token',
     EDGE_HOST_HEADER, EDGE_TIMESTAMP_HEADER, EDGE_SIGNATURE_HEADER,
     // Deleted unconditionally, THEN set from what the gate resolved: a client
     // must never be able to hand the App an identity of its own choosing.
@@ -54,6 +56,7 @@ export function appUpstreamHeaders(
   if (/^bearer\s/i.test(authorization) && isKortixToken(authorization.slice(7).trim())) {
     headers.delete('authorization');
   }
+  if (isKortixToken((headers.get('x-api-key') ?? '').trim())) headers.delete('x-api-key');
   // Kortix cookies are the gate's, not the App's: the App access cookie and the
   // preview session cookie. Every other cookie is the App's own.
   const cookie = withoutKortixCookies(headers.get('cookie'));
@@ -81,10 +84,22 @@ function withoutFrameAncestors(value: string): string[] {
     .filter((directive) => directive && !/^frame-ancestors(?:\s|$)/i.test(directive));
 }
 
+/**
+ * Set by the API, never by an App: this response is the same for every viewer
+ * of the App host, so the apps-router Worker may keep it in its edge cache.
+ */
+export const APP_EDGE_CACHEABLE_HEADER = 'x-kortix-edge-cacheable';
+
 /** Preserve App security policy while allowing the Kortix preview browser to frame it. */
 export function appPublicResponseHeaders(upstreamHeaders: Headers): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');
+  // An App's own headers never mark a response shareable at the edge.
+  headers.delete(APP_EDGE_CACHEABLE_HEADER);
+  // The API origin hostnames are Cloudflare-proxied, and Cloudflare keys its
+  // cache on the API host and path, not the App host. Only the apps-router
+  // Worker decides edge caching, keyed on the App host.
+  headers.set('cloudflare-cdn-cache-control', 'no-store');
 
   const enforced = withoutFrameAncestors(headers.get('content-security-policy') || '');
   headers.set('content-security-policy', [...enforced, appFrameAncestors()].join('; '));

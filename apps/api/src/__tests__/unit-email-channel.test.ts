@@ -108,7 +108,7 @@ beforeEach(() => {
   createCalls = [];
   setEmailSessionLifecycleForTest({
     resolveProjectAutomationActor: async () => 'user-1',
-    continueSession: async (input) => {
+    deliverFollowUp: async (input) => {
       continueCalls.push({
         sessionId: input.sessionId,
         text: input.text,
@@ -361,7 +361,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls[0].postCreate[1].text).toContain('Need help');
     expectConnectorEmailPrompt(createCalls[0].postCreate[1].text);
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe('inb-1');
-    expect(createCalls[0].extraEnvVars.KORTIX_CONNECTORS_MCP_ENABLED).toBe('1');
+    expect(createCalls[0].extraEnvVars.KORTIX_CONNECTORS_MCP_ENABLED).toBeUndefined();
     expect(createCalls[0].body.connector_bindings).toEqual({
       email: { connection_id: 'connection-email-1' },
     });
@@ -448,7 +448,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
-    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_CONNECTORS_MCP_ENABLED: '1' });
+    expect(continueCalls[0].opencodeEnv).toBeUndefined();
   });
 
   test('known thread routes a new email into the existing session', async () => {
@@ -476,7 +476,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
-    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_CONNECTORS_MCP_ENABLED: '1' });
+    expect(continueCalls[0].opencodeEnv).toBeUndefined();
     expect(continueCalls[0].text).toContain('Customer <customer@example.com>');
     expectConnectorEmailPrompt(continueCalls[0].text);
   });

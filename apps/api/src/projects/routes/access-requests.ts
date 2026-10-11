@@ -18,6 +18,15 @@ import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/user-identity';
 import { readJsonObject } from '../../shared/http-body';
+import { enforceRateLimit } from '../../middleware/rate-limit';
+import { TokenBucketRateLimiter } from '../../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
+
+// replica-local, like every limiter in middleware/rate-limit.ts. Each new
+// request emails every manager, so cap new requests per requester and per project.
+const accessRequestUserLimiter = new TokenBucketRateLimiter('project_access_request_user');
+const accessRequestProjectLimiter = new TokenBucketRateLimiter('project_access_request_project');
+const HOUR_MS = 60 * 60_000;
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -104,6 +113,19 @@ export function registerAccessRequestsRoutes(): void {
 
     if (existing) {
       return c.json({ status: 'pending', request: serializeProjectAccessRequest(existing) });
+    }
+
+    for (const [limiter, key, limit] of [
+      [accessRequestUserLimiter, userId, 10],
+      [accessRequestProjectLimiter, projectId, 30],
+    ] as const) {
+      const denied = await enforceRateLimit(c, limiter, key, { limit, windowMs: HOUR_MS }, {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'project_access_request',
+        resourceId: projectId,
+        metadata: { limiter: limiter === accessRequestUserLimiter ? 'user' : 'project' },
+      });
+      if (denied) return denied;
     }
 
     const [created] = await db

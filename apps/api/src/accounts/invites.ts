@@ -20,6 +20,7 @@ import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assi
 import { trustedEmailForUser } from '../iam/email-trust';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
+import { withAccountSeatLock } from './seat-lock';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -40,6 +41,9 @@ const InviteDescribeSchema = z
     inviter_email: z.string().nullable(),
     created_at: z.string().nullable(),
     expires_at: z.string().nullable(),
+    /** Projects the invite grants on accept, for the invited caller only;
+     *  empty for anyone else and for a plain workspace invite (KRTX-1731). */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
   })
   .openapi('InviteDescribe');
 const InviteAcceptSchema = z
@@ -131,6 +135,40 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
     role,
     expires_at: expiresAt,
   };
+}
+
+/**
+ * The projects each invite grants on accept, named. A grant counts only when
+ * its project still exists in the invite's own account: a deleted project
+ * drops out instead of showing a blank row.
+ */
+async function invitedProjects(
+  invites: ReadonlyArray<{ inviteId: string; accountId: string; bootstrapGrants: unknown[] | null }>,
+): Promise<Map<string, Array<{ project_id: string; name: string; role: string }>>> {
+  const grantsByInvite = new Map(
+    invites.map((invite) => [
+      invite.inviteId,
+      (invite.bootstrapGrants ?? []).map(validateBootstrapGrant).filter((g): g is ValidatedGrant => g !== null),
+    ]),
+  );
+  const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
+  const projectNames = new Map<string, string>();
+  if (projectIds.length > 0) {
+    const projectRows = await db
+      .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
+      .from(projects)
+      .where(inArray(projects.projectId, projectIds));
+    for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
+  }
+  return new Map(
+    invites.map((invite) => [
+      invite.inviteId,
+      (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
+        const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
+        return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
+      }),
+    ]),
+  );
 }
 
 // A `{ group_id }` bootstrap entry: a SCIM Group membership pushed for this user
@@ -261,23 +299,7 @@ accountInvitesRouter.openapi(
       )
       .orderBy(accountInvitations.createdAt);
 
-    const grantsByInvite = new Map(
-      rows.map(({ invite }) => [
-        invite.inviteId,
-        (invite.bootstrapGrants ?? [])
-          .map(validateBootstrapGrant)
-          .filter((g): g is ValidatedGrant => g !== null),
-      ]),
-    );
-    const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
-    const projectNames = new Map<string, string>();
-    if (projectIds.length > 0) {
-      const projectRows = await db
-        .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
-        .from(projects)
-        .where(inArray(projects.projectId, projectIds));
-      for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
-    }
+    const projectsByInvite = await invitedProjects(rows.map(({ invite }) => invite));
 
     const inviters = new Map<string, string | null>();
     for (const { invite } of rows) {
@@ -295,12 +317,7 @@ accountInvitesRouter.openapi(
         inviter_email: invite.invitedBy ? (inviters.get(invite.invitedBy) ?? null) : null,
         created_at: invite.createdAt.toISOString(),
         expires_at: invite.expiresAt.toISOString(),
-        // A grant only counts when its project still exists in the invite's
-        // own account; a deleted project drops out instead of showing a blank row.
-        projects: (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
-          const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
-          return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
-        }),
+        projects: projectsByInvite.get(invite.inviteId) ?? [],
       })),
     });
   },
@@ -351,6 +368,7 @@ accountInvitesRouter.openapi(
       inviter_email: null,
       created_at: null,
       expires_at: null,
+      projects: [],
     });
   }
 
@@ -361,6 +379,7 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   const inviterEmail = await lookupAuthEmail(invite.invitedBy);
+  const projectsByInvite = await invitedProjects([invite]);
 
   return c.json({
     invite_id: invite.inviteId,
@@ -374,6 +393,7 @@ accountInvitesRouter.openapi(
     accepted_at: invite.acceptedAt?.toISOString() ?? null,
     email_matches_caller: true,
     expired,
+    projects: projectsByInvite.get(invite.inviteId) ?? [],
   });
   },
 );
@@ -430,44 +450,52 @@ accountInvitesRouter.openapi(
   // written. Only blocks a NEW member: a re-entering existing member must
   // still pass to heal grants below.
   const existingMembership = await getMembership(userId, invite.accountId);
-  if (!existingMembership) {
-    const { trialSeatLimitBlocksNewMember } = await import(
-      '../billing/services/seat-management'
-    );
-    const seatBlock = await trialSeatLimitBlocksNewMember(invite.accountId);
-    if (seatBlock) {
-      return c.json(
-        {
-          error: `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`,
-          code: 'trial_seat_limit_reached',
-          limit: seatBlock.limit,
-          members: seatBlock.members,
-        },
-        403,
-      );
-    }
+  // An accepted invite only heals grants for a CURRENT member. After removal or
+  // leave it must not re-create the membership: the owner sends a new invite.
+  if (alreadyAccepted && !existingMembership) {
+    return c.json({ error: 'This invite was already used. Ask the owner to send a new one.' }, 410);
   }
-
-  // Ensure account membership: IDENTITY first, then the ROLE.
-  // `onConflictDoNothing` on the (user, account) primary key keeps the identity
-  // half idempotent whether this is a first accept or a re-entry; `assignRole`
-  // is idempotent on the assignment identity for the same reason.
+  // Seat check and identity insert run under one per-account lock, so concurrent
+  // accepts cannot all pass the check. `onConflictDoNothing` on the (user,
+  // account) primary key keeps the identity half idempotent on re-entry.
   //
-  // `SYSTEM_ACTOR`: the writer is the INVITEE, who by definition holds no
+  // `SYSTEM_ACTOR` below: the writer is the INVITEE, who by definition holds no
   // permission in this account yet — the invitation is the authorization.
-  await db
-    .insert(accountMemberships)
-    .values({ userId, accountId: invite.accountId })
-    .onConflictDoNothing({
-      target: [accountMemberships.userId, accountMemberships.accountId],
-    });
-  await assignRole(SYSTEM_ACTOR, invite.accountId, {
-    principal: { type: 'user', id: userId },
-    roleKey: invite.initialRole,
-    scope: { type: 'account' },
-    source: 'invite',
-    exclusive: true,
+  const seatBlock = await withAccountSeatLock(invite.accountId, async () => {
+    if (!existingMembership) {
+      const { trialSeatLimitBlocksNewMember } = await import('../billing/services/seat-management');
+      const block = await trialSeatLimitBlocksNewMember(invite.accountId);
+      if (block) return block;
+    }
+    await db
+      .insert(accountMemberships)
+      .values({ userId, accountId: invite.accountId })
+      .onConflictDoNothing({
+        target: [accountMemberships.userId, accountMemberships.accountId],
+      });
+    return null;
   });
+  if (seatBlock) {
+    return c.json(
+      {
+        error: `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`,
+        code: 'trial_seat_limit_reached',
+        limit: seatBlock.limit,
+        members: seatBlock.members,
+      },
+      403,
+    );
+  }
+  // Re-entry of a current member never rewrites their role (an admin demotion sticks).
+  if (!alreadyAccepted) {
+    await assignRole(SYSTEM_ACTOR, invite.accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: invite.initialRole,
+      scope: { type: 'account' },
+      source: 'invite',
+      exclusive: true,
+    });
+  }
 
   // Stamp accepted_at on first accept. The isNull guard makes concurrent
   // accepts collapse to a single write without us caring who won — both

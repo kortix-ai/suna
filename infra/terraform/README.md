@@ -12,14 +12,14 @@ table is the source of truth for which root it drives.
 
 | Root | Applied by | Trigger | Region | OIDC role |
 | --- | --- | --- | --- | --- |
-| `environments/dev` | `deploy-dev.yml` -> `terraform-dev-api` | push to `main` touching `environments/dev{,-web}/**`, `modules/**`, or either workflow | `us-west-2` | `kortix-gha-tf-apply-dev` |
+| `environments/dev` | `deploy-dev.yml` -> `terraform-dev-api` | push to `dev` touching `environments/dev{,-web}/**`, `modules/**`, or either workflow | `us-west-2` | `kortix-gha-tf-apply-dev` |
 | `environments/dev-web` | `deploy-dev.yml` -> `terraform-dev` | same trigger, applied after `environments/dev` | `us-west-2` | `kortix-gha-tf-apply-dev` |
 | `environments/staging` | `deploy-staging.yml` -> `terraform-staging` | every staging deploy | `us-west-2` | `kortix-gha-tf-apply-staging` |
 | `environments/staging-web` | `deploy-staging.yml` -> `terraform-staging-web` | every staging deploy | `us-west-2` | `kortix-gha-tf-apply-staging` |
 | `environments/prod` | `deploy-prod.yml` -> `terraform-prod-api` | every production release | `eu-west-2` | `kortix-gha-tf-apply-prod` |
 | `environments/prod-web` | `deploy-prod.yml` -> `terraform-prod` | every production release, after `environments/prod` | `eu-west-2` | `kortix-gha-tf-apply-prod` |
-| `compliance-monitoring` | `terraform-apply-global.yml` | push to `main` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
-| `security-baseline` | `terraform-apply-global.yml` | push to `main` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
+| `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
+| `security-baseline` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
 | `environments/prod-us-east-2-shadow` | `deploy-prod-us-east-2-shadow.yml` | release | `us-east-2` | `kortix-gha-prod-use2-terraform` |
 
 Every root above, applied or not, is planned nightly by the `drift detection`
@@ -90,10 +90,10 @@ the environments must exist. Give each one a deployment-branch restriction too:
 
 | Environment | Deployment branch | Used by |
 | --- | --- | --- |
-| `dev` | `main` | `deploy-dev.yml` |
+| `dev` | `dev` | `deploy-dev.yml` |
 | `staging` | `staging` | `deploy-staging.yml` |
 | `prod` | `prod` | `deploy-prod.yml` |
-| `infra-global` | `main` | `terraform-apply-global.yml` |
+| `infra-global` | `dev` | `terraform-apply-global.yml` |
 
 The branch restriction is defence in depth, not the primary control.
 `terraform-apply.yml` takes a required `trusted_branch` input and refuses to

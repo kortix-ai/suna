@@ -200,11 +200,60 @@ describe('secretDeliveryBlockedReason', () => {
   });
 
   test('a declarative config with zero agents is ambiguous, so it reports null', () => {
-    // `resolveConfigAgents` only reaches 'declarative' with an empty list when the
-    // manifest FAILED to parse (specs empty, errors present) or every agent is
-    // disabled. Neither proves the absence of a grant, and warning on a manifest
-    // we could not read is worse than not warning at all.
+    // `resolveConfigAgents` only reaches 'declarative' with an empty list when
+    // the manifest FAILED to parse (specs empty, errors present). Disabled
+    // agents stay listed with `enabled: false` and are skipped below, so an
+    // all-disabled manifest is the certain `no_agent_grant`, not this null.
     expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', declarative([]))).toBeNull();
+  });
+
+  test('a disabled registered agent does not make a secret deliverable', () => {
+    // The summary lists disabled agents (enabled: false); only an agent a
+    // session could launch makes "granted somewhere" certain. Before the
+    // listing carried disabled agents at all, this state was unreachable —
+    // the filter here keeps the answer byte-identical.
+    const config: SecretAgentGrantConfig = {
+      agent_discovery: 'declarative',
+      agents: [
+        {
+          name: 'off',
+          path: 'kortix.yaml#agents.off',
+          description: null,
+          mode: null,
+          source: 'kortix.yaml',
+          enabled: false,
+          scope: { env: ['BOUNDARY_TEST'], connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        },
+        {
+          name: 'on',
+          path: 'kortix.yaml#agents.on',
+          description: null,
+          mode: null,
+          source: 'kortix.yaml',
+          enabled: true,
+          scope: { env: ['OTHER_KEY'], connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        },
+      ],
+    };
+    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', config)).toBe('no_agent_grant');
+  });
+
+  test('an all-disabled manifest is certain: no launchable agent may receive the secret', () => {
+    const config: SecretAgentGrantConfig = {
+      agent_discovery: 'declarative',
+      agents: [
+        {
+          name: 'off',
+          path: 'kortix.yaml#agents.off',
+          description: null,
+          mode: null,
+          source: 'kortix.yaml',
+          enabled: false,
+          scope: { env: 'all', connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        },
+      ],
+    };
+    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', config)).toBe('no_agent_grant');
   });
 
   test('broker secrets take the same rule as egress', () => {

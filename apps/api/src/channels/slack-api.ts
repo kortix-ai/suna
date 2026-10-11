@@ -120,6 +120,11 @@ async function slackApiCall(
   return last;
 }
 
+/** files.info: the file and the conversations it is shared in. */
+export async function getFileInfo(token: string, fileId: string): Promise<SlackApiResult> {
+  return slackApiCall(token, 'files.info', { file: fileId });
+}
+
 // Posts a plain message. Returns the message ts (needed to delete it later).
 export async function postMessage(
   token: string,
@@ -411,26 +416,6 @@ export async function startStream(
   } catch (err) {
     console.warn('[slack-api] chat.startStream error', err);
     return null;
-  }
-}
-
-// Returns ok:false with the Slack error so callers can recover — the critical
-// case is `message_not_streaming`: Slack auto-completed the stream after an
-// inactivity window, and every further append silently vanishes unless the
-// caller falls back to chat.update on the (now plain) message.
-export async function appendStream(
-  token: string,
-  channel: string,
-  ts: string,
-  chunks: StreamChunk[],
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const r = await slackApiCall(token, 'chat.appendStream', { channel, ts, chunks });
-    if (!r.ok) console.warn('[slack-api] chat.appendStream failed', { error: r.error });
-    return { ok: r.ok, error: r.error };
-  } catch (err) {
-    console.warn('[slack-api] chat.appendStream error', err);
-    return { ok: false, error: (err as Error).message };
   }
 }
 

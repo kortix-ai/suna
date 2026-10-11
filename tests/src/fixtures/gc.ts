@@ -378,7 +378,7 @@ async function reclaimUser(
       // (shared/resolve-account.ts) and ignores a body `account_id`, but
       // `deleteAccountImmediately` now sweeps the sandboxes of EVERY account
       // the caller owns, so a per-account loop would just repeat the same work.
-      await client.del("/v1/billing/account/delete-immediately");
+      await client.del("/v1/account/delete-immediately");
     } catch (err) {
       summary.errors++;
       log.warn(`  account delete skipped for ${u.email}: ${errText(err)}`);

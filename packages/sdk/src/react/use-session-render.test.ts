@@ -347,11 +347,16 @@ describe('useRuntimeMessages({ ignoreStreamedText: true }) — panel consumers',
 
 describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () => {
   test('a burst of deltas renders the leading change at once and the latest rows once at the interval edge', async () => {
+    // A 1 s window, not 50 ms: the leading-edge count is a wall-clock claim
+    // (no flush may fire between the dispatch and the synchronous assert), and
+    // under concurrent lanes the dispatch stretch has crossed 50 ms. The
+    // throttle contract is "at most once per throttleMs" — any window is a
+    // valid instance; this one keeps the margins far above scheduling noise.
     const { streamingMessageId, streamingPartId } = seedTranscript();
     let transcriptRenders = 0;
     let liveText = '';
     function Transcript({ session }: { session: Parameters<typeof useSessionMessages>[0] }) {
-      const messages = useSessionMessages(session, { throttleMs: 50 });
+      const messages = useSessionMessages(session, { throttleMs: 1000 });
       transcriptRenders++;
       liveText = (messages[messages.length - 1]?.parts[0] as TextPart | undefined)?.text ?? '';
       return null;
@@ -376,7 +381,7 @@ describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () 
     expect(liveText).toBe(`${base} tok`);
 
     await act(async () => {
-      await Bun.sleep(80);
+      await Bun.sleep(1100);
     });
     expect(transcriptRenders - before).toBe(2);
     expect(liveText).toBe(`${base}${' tok'.repeat(STREAMED_DELTAS)}`);
