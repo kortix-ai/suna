@@ -9,6 +9,8 @@
  * `@tauri-apps/api`.
  */
 
+import type { CaptureLayer } from '@kortix/sdk';
+
 export const DESKTOP_UA_TOKEN = 'KortixDesktop';
 
 /**
@@ -410,7 +412,7 @@ export const desktopComputerRequestGrants = (input: { restartAgent?: boolean } =
    so one install records into a project with Capture on. These wrappers
    return null in a browser and on a desktop build without Capture. */
 
-export type DesktopCaptureLayer = 'screen' | 'actions' | 'audio';
+export type DesktopCaptureLayer = CaptureLayer;
 
 export interface DesktopCaptureStatus {
   /** False when this build has no engine or it cannot run here; `error` says why. */

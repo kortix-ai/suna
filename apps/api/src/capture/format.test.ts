@@ -189,6 +189,16 @@ describe('policy and status', () => {
     expect(PolicySchema.safeParse({ privacy: { excluded_domains: ['not a domain'] } }).success).toBe(false);
   });
 
+  test('the policy accepts and refuses exactly what the editors do (one rule, @kortix/sdk/capture-rules)', () => {
+    const ok = PolicySchema.parse({
+      privacy: { excluded_domains: ['example.com:8080', 'example.com.'], excluded_bundle_ids: ['proton pass.exe'] },
+    });
+    expect(ok.privacy.excluded_domains).toEqual(['example.com']);
+    expect(ok.privacy.excluded_bundle_ids).toEqual(['proton pass.exe']);
+    expect(PolicySchema.safeParse({ privacy: { excluded_bundle_ids: ['--frontmost'] } }).success).toBe(false);
+    expect(PolicySchema.safeParse({ retention: { local_hours: 24 * 365 + 1, remote_days: 1 } }).success).toBe(false);
+  });
+
   test('a device is offline when its status is older than 120 s', () => {
     expect(liveState({ recording: 'recording', reportedAtMs: 1_000 }, 100_000)).toBe('recording');
     expect(liveState({ recording: 'recording', reportedAtMs: 1_000 }, 121_001)).toBe('offline');

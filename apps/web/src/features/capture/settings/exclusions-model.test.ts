@@ -10,8 +10,6 @@ import {
   exclusionLists,
   fromEngine,
   fromPolicy,
-  normalizeAppId,
-  normalizeDomain,
 } from './exclusions-model';
 
 const DATA: DesktopCaptureExclusions = {
@@ -191,20 +189,4 @@ describe('applyExclusion (the optimistic update)', () => {
     const next = applyExclusion(DATA, { kind: 'domain', id: 'payroll.example', on: true });
     expect(next.excluded_domains).toHaveLength(1);
   });
-});
-
-test('normalizeDomain: what a person types or pastes becomes a domain, or null', () => {
-  expect(normalizeDomain('https://www.Example.co.uk/login?x=1')).toBe('example.co.uk');
-  expect(normalizeDomain(' mail.example.com:443 ')).toBe('mail.example.com');
-  expect(normalizeDomain('localhost')).toBeNull();
-  expect(normalizeDomain('two words')).toBeNull();
-  expect(normalizeDomain('')).toBeNull();
-});
-
-test('normalizeAppId: a bundle id or program name, or null', () => {
-  expect(normalizeAppId(' com.apple.keychainaccess ')).toBe('com.apple.keychainaccess');
-  expect(normalizeAppId('1password.exe')).toBe('1password.exe');
-  expect(normalizeAppId('two words')).toBeNull();
-  expect(normalizeAppId('')).toBeNull();
-  expect(normalizeAppId('a/b')).toBeNull();
 });

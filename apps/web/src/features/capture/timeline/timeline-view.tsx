@@ -1,12 +1,13 @@
 'use client';
 
-import type {
-  CaptureDevice,
-  CaptureDisplay,
-  CaptureFrame,
-  CaptureSearchHit,
-  CaptureTimeline,
-  CaptureTimelineItems,
+import {
+  CAPTURE_LAYERS,
+  type CaptureDevice,
+  type CaptureDisplay,
+  type CaptureFrame,
+  type CaptureSearchHit,
+  type CaptureTimeline,
+  type CaptureTimelineItems,
 } from '@kortix/sdk';
 import {
   useCaptureChunkMedia,
@@ -726,7 +727,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               aria-label={t('layers')}
               className="bg-muted flex items-center gap-0.5 rounded-md p-0.5"
             >
-              {(['screen', 'actions', 'audio'] as const).map((layer) => (
+              {CAPTURE_LAYERS.map((layer) => (
                 <Toggle
                   key={layer}
                   size="sm"

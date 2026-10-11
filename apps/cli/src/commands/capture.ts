@@ -8,7 +8,7 @@
  * (a private session); logged in as a user, it is you. Never another member.
  * The data is personal: read what the task needs, no more.
  */
-import { getMyCaptureFrame, getMyCaptureTimeline, searchMyCapture, type CaptureSearchKind } from '@kortix/sdk';
+import { CAPTURE_LAYERS, getMyCaptureFrame, getMyCaptureTimeline, searchMyCapture, type CaptureSearchKind } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectAuth, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -46,7 +46,7 @@ Examples:
   kortix capture frame 01a10306-0000-7000-8000-000000000000 --json
 `;
 
-const KINDS: CaptureSearchKind[] = ['screen', 'actions', 'audio'];
+const KINDS: readonly CaptureSearchKind[] = CAPTURE_LAYERS;
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))} min`;
 
 export async function runCapture(argv: string[]): Promise<number> {

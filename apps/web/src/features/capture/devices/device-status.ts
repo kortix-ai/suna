@@ -4,12 +4,12 @@
  * brand status table: green records, orange needs a person (a missing
  * permission, a pause), no hue is idle (offline, not recording, unknown).
  */
-import type { CaptureDevice } from '@kortix/sdk';
+import type { CaptureDevice, CaptureLayer } from '@kortix/sdk';
 
 export type DeviceTone = 'green' | 'orange' | 'none';
 export type DeviceStatusKey =
   'recording' | 'paused' | 'permission' | 'notRecording' | 'offline' | 'unknown';
-export type DeviceLayer = 'screen' | 'actions' | 'audio';
+export type DeviceLayer = CaptureLayer;
 
 export interface DeviceStatusView {
   key: DeviceStatusKey;

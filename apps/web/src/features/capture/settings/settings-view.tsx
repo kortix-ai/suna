@@ -1,6 +1,11 @@
 'use client';
 
-import type { CapturePolicy, CapturePolicyRecord } from '@kortix/sdk';
+import {
+  CAPTURE_LAYERS,
+  CAPTURE_RETENTION_LIMITS,
+  type CapturePolicy,
+  type CapturePolicyRecord,
+} from '@kortix/sdk';
 import { useCapturePolicy, useSetCaptureEnabled, useSetCapturePolicy } from '@kortix/sdk/react';
 import { notFound, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useId, useState, type ReactNode } from 'react';
@@ -173,7 +178,7 @@ function PolicyForm({
 
       <TabsContent value="recording" className="space-y-8 pt-6">
         <Group title={t('layersTitle')}>
-          {(['screen', 'actions', 'audio'] as const).map((layer) => (
+          {CAPTURE_LAYERS.map((layer) => (
             <SwitchRow
               key={layer}
               title={t(`layer.${layer}`)}
@@ -224,10 +229,12 @@ function PolicyForm({
               id="capture-local-hours"
               type="number"
               min={0}
-              max={8760}
+              max={CAPTURE_RETENTION_LIMITS.localHours}
               value={draft.retention.local_hours}
               onChange={(event) =>
-                patch('retention', { local_hours: whole(event.target.value, 8760) })
+                patch('retention', {
+                  local_hours: whole(event.target.value, CAPTURE_RETENTION_LIMITS.localHours),
+                })
               }
             />
             <FieldDescription>{t('localHoursHint')}</FieldDescription>
@@ -238,10 +245,12 @@ function PolicyForm({
               id="capture-remote-days"
               type="number"
               min={0}
-              max={3650}
+              max={CAPTURE_RETENTION_LIMITS.remoteDays}
               value={draft.retention.remote_days}
               onChange={(event) =>
-                patch('retention', { remote_days: whole(event.target.value, 3650) })
+                patch('retention', {
+                  remote_days: whole(event.target.value, CAPTURE_RETENTION_LIMITS.remoteDays),
+                })
               }
             />
             <FieldDescription>{t('remoteDaysHint')}</FieldDescription>

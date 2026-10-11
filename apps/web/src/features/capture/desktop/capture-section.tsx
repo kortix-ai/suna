@@ -1,5 +1,6 @@
 'use client';
 
+import { CAPTURE_LAYERS } from '@kortix/sdk';
 import {
   CursorClickIcon,
   DotsThreeIcon,
@@ -43,7 +44,7 @@ import {
   StatusDot,
   type StatusTone,
 } from './capture-rows';
-import { CAPTURE_LAYERS, activeLayers, capturePhase, type CapturePhase } from './capture-state';
+import { activeLayers, capturePhase, type CapturePhase } from './capture-state';
 import {
   captureRoutes,
   useCaptureOrganization,

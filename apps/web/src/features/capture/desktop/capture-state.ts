@@ -1,3 +1,5 @@
+import { CAPTURE_LAYERS } from '@kortix/sdk';
+
 import type { DesktopCaptureLayer, DesktopCaptureStatus } from '@/lib/desktop';
 
 /**
@@ -18,7 +20,6 @@ export type CapturePhase =
   | 'recording';
 
 export type CaptureGrant = 'screen' | 'accessibility' | 'inputMonitoring' | 'microphone';
-export const CAPTURE_LAYERS: readonly DesktopCaptureLayer[] = ['screen', 'actions', 'audio'];
 
 /**
  * The macOS grants the switched-on layers need and macOS has not given:

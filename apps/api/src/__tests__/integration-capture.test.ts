@@ -198,7 +198,7 @@ describe('multiple displays', () => {
     expect(chunks.filter((c) => c.kind === 'chunk').map((c) => c.display_id).sort()).toEqual([1, 1, 2, 2]);
     expect(displaysOf(chunks).map((d) => d.name)).toEqual(['Built-in Display', 'External Display']);
     const perDisplay = day.expected.frames / 2;
-    const frames = (runs: Array<{ frames: unknown }>) => runs.reduce((n, r) => n + Number(r.frames), 0);
+    const frames = (runs: Array<Record<string, unknown>>) => runs.reduce((n, r) => n + Number(r.frames), 0);
     expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId))).toBe(perDisplay);
     expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId, 2))).toBe(perDisplay);
     expect((await timelineFocus(ACCOUNT, MEMBER, span, dual!.deviceId)).map((f) => f.display_id)).toEqual([1]);

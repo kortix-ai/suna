@@ -9,6 +9,9 @@
     "ApiError",
     "AuthError",
     "BillingError",
+    "CAPTURE_EXCLUSION_GROUPS",
+    "CAPTURE_LAYERS",
+    "CAPTURE_RETENTION_LIMITS",
     "CONNECTION_FAULT_GRACE_MS",
     "CONNECTOR_POLL_FIRST_DELAY_MS",
     "CONNECTOR_POLL_INTERVAL_MS",
@@ -832,6 +835,8 @@
     "nextConnectorPollDelay",
     "normalizeActivityToolName",
     "normalizeAppPathname",
+    "normalizeCaptureAppId",
+    "normalizeCaptureDomain",
     "normalizeExternalInput",
     "normalizeName",
     "normalizeToolName",
@@ -2672,6 +2677,9 @@
     "parseRuntimeErrorPayload"
   ],
   "./platform-client": [
+    "CAPTURE_EXCLUSION_GROUPS",
+    "CAPTURE_LAYERS",
+    "CAPTURE_RETENTION_LIMITS",
     "CONNECTOR_POLL_FIRST_DELAY_MS",
     "CONNECTOR_POLL_INTERVAL_MS",
     "CONNECTOR_POLL_WINDOW_MS",
@@ -2746,6 +2754,8 @@
     "listSandboxes",
     "markInstanceError",
     "nextConnectorPollDelay",
+    "normalizeCaptureAppId",
+    "normalizeCaptureDomain",
     "openStressTestStream",
     "reactivateSandbox",
     "recordPlatformLogout",
@@ -2944,6 +2954,13 @@
     "wireIdClock",
     "wireIdClockAt",
     "wireIdClockDelta"
+  ],
+  "./capture-rules": [
+    "CAPTURE_EXCLUSION_GROUPS",
+    "CAPTURE_LAYERS",
+    "CAPTURE_RETENTION_LIMITS",
+    "normalizeCaptureAppId",
+    "normalizeCaptureDomain"
   ],
   "./turns": [
     "CONTEXT_TOOLS",

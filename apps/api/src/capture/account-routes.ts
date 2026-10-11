@@ -20,6 +20,7 @@
  */
 import { createRoute, type OpenAPIHono, z } from '@hono/zod-openapi';
 import * as C from '@kortix/api-contract';
+import { CAPTURE_LAYERS } from '@kortix/sdk/capture-rules';
 import type { Context } from 'hono';
 import { accountsRouter } from '../accounts/core/app';
 import { ACCOUNT_ACTIONS } from '../iam/actions';
@@ -248,8 +249,8 @@ async function searchResponse(c: Ctx, access: Access, query: SearchQuery) {
     const from = query.from ? new Date(query.from) : new Date(0);
     const to = query.to ? new Date(query.to) : new Date(Date.now() + 86_400_000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return refuse(c, 400, 'capture_bad_window', 'from/to must be ISO instants');
-    const kinds = new Set((query.kinds ?? 'screen,actions,audio').split(',').map((k) => k.trim())) as Set<SearchKind>;
-    if (!(['screen', 'actions', 'audio'] as const).some((k) => kinds.has(k))) {
+    const kinds = new Set((query.kinds ?? CAPTURE_LAYERS.join(',')).split(',').map((k) => k.trim())) as Set<SearchKind>;
+    if (!CAPTURE_LAYERS.some((k) => kinds.has(k))) {
       return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');
     }
     const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), 100);

@@ -1,4 +1,8 @@
-import type { CaptureExclusionGroup, CapturePolicy } from '@kortix/sdk';
+import {
+  CAPTURE_EXCLUSION_GROUPS,
+  type CaptureExclusionGroup,
+  type CapturePolicy,
+} from '@kortix/sdk';
 
 import type { DesktopCaptureExclusion, DesktopCaptureExclusions } from '@/lib/desktop';
 
@@ -11,13 +15,6 @@ import type { DesktopCaptureExclusion, DesktopCaptureExclusions } from '@/lib/de
 export type ExclusionTab = 'apps' | 'websites';
 export type ExclusionChange = DesktopCaptureExclusion;
 type Privacy = CapturePolicy['privacy'];
-
-/** The device's built-in categories, in display order (the engine's `exclusion_groups()`). */
-export const EXCLUSION_GROUPS: readonly CaptureExclusionGroup[] = [
-  'password_managers',
-  'messaging',
-  'banking',
-];
 
 /** One app or website row: `id` is the bundle id or the domain. `locked`: set by the organization. */
 export interface ExclusionRow {
@@ -84,7 +81,7 @@ export function fromPolicy(
   label: (id: CaptureExclusionGroup) => { name: string; description: string },
 ): ExclusionsView {
   return {
-    groups: EXCLUSION_GROUPS.map((id) => ({
+    groups: CAPTURE_EXCLUSION_GROUPS.map((id) => ({
       id,
       ...label(id),
       apps: null,
@@ -191,25 +188,4 @@ export function applyToPrivacy(privacy: Privacy, input: ExclusionChange): Privac
     case 'private-browsing':
       return { ...privacy, exclude_private_browsing: input.on };
   }
-}
-
-/** A domain from what a person types or pastes (scheme, path, port and `www.` go); null when it is not one. */
-export function normalizeDomain(input: string): string | null {
-  let host = input.trim().toLowerCase();
-  if (!host) return null;
-  try {
-    host = new URL(host.includes('://') ? host : `https://${host}`).hostname;
-  } catch {
-    return null;
-  }
-  host = host.replace(/^www\./, '').replace(/\.$/, '');
-  return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host)
-    ? host
-    : null;
-}
-
-/** A macOS bundle id or a Windows/Linux program name (`1password.exe`); null otherwise. */
-export function normalizeAppId(input: string): string | null {
-  const id = input.trim();
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/.test(id) ? id : null;
 }

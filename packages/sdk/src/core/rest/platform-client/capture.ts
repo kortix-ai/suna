@@ -22,6 +22,9 @@
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from '../projects-client/shared';
+import type { CaptureExclusionGroup, CaptureLayer } from '../../capture/rules';
+
+export * from '../../capture/rules';
 
 /** What a device is doing now. `offline` = no status for over 120 s. Open for new states. */
 export type CaptureLiveState =
@@ -33,8 +36,6 @@ export type CaptureLiveState =
   | 'unknown'
   | (string & {});
 
-/** A built-in exclusion category of the Kortix Capture device. */
-export type CaptureExclusionGroup = 'password_managers' | 'messaging' | 'banking';
 
 /** The operator's capture policy, as devices read it from `policy.json`. */
 export interface CapturePolicy {
@@ -243,7 +244,7 @@ export interface CaptureDays {
   days: CaptureDay[];
 }
 
-export type CaptureSearchKind = 'screen' | 'actions' | 'audio';
+export type CaptureSearchKind = CaptureLayer;
 
 export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day' | 'displayId'> {
   /** Web-search syntax: words, "a phrase", -exclude. */

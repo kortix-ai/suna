@@ -1,6 +1,12 @@
 'use client';
 
 import {
+  CAPTURE_EXCLUSION_GROUPS,
+  normalizeCaptureAppId,
+  normalizeCaptureDomain,
+  type CaptureExclusionGroup,
+} from '@kortix/sdk';
+import {
   AppWindowIcon,
   BankIcon,
   ChatCircleIcon,
@@ -26,10 +32,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { CaptureRowSection } from '../desktop/capture-rows';
 import {
-  EXCLUSION_GROUPS,
   exclusionLists,
-  normalizeAppId,
-  normalizeDomain,
   type ExclusionChange,
   type ExclusionRow,
   type ExclusionTab,
@@ -72,7 +75,11 @@ export function ExclusionsEditor({
   const lists = exclusionLists(view, tab, query);
   const apps = tab === 'apps';
   const kind = apps ? 'app' : 'domain';
-  const addable = apps ? (mode === 'org' ? normalizeAppId(query) : null) : normalizeDomain(query);
+  const addable = apps
+    ? mode === 'org'
+      ? normalizeCaptureAppId(query)
+      : null
+    : normalizeCaptureDomain(query);
   const canAdd = addable && !(apps ? view.apps : view.domains).some((row) => row.id === addable);
   const add = () => {
     if (!canAdd) return;
@@ -80,8 +87,8 @@ export function ExclusionsEditor({
     setQuery('');
   };
   const setBy = t('setByOrg', { org });
-  const known = (id: string): id is (typeof EXCLUSION_GROUPS)[number] =>
-    (EXCLUSION_GROUPS as readonly string[]).includes(id);
+  const known = (id: string): id is CaptureExclusionGroup =>
+    (CAPTURE_EXCLUSION_GROUPS as readonly string[]).includes(id);
   const searchLabel = apps
     ? mode === 'org'
       ? t('searchOrAddApp')
