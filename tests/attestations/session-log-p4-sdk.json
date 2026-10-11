@@ -1,5 +1,5 @@
 {
-  "source_hash": "474ca30638860913e17786d17522c7075de441992995c0ff2d082beba0668ed8",
+  "source_hash": "6eec3f18ec5465e1861e290be92dad421e23bfa0e2e9e361188d8cae7de2c98f",
   "diff_files": [
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/content/docs/sdk/reference.mdx",
@@ -7,9 +7,11 @@
     "packages/sdk/README.md",
     "packages/sdk/src/browser/stores/sync-store-session-log.test.ts",
     "packages/sdk/src/browser/stores/sync-store.ts",
+    "packages/sdk/src/contract-drift.test.ts",
     "packages/sdk/src/core/session-log/guard.test.ts",
     "packages/sdk/src/core/session-log/guard.ts",
-    "packages/sdk/src/core/session-log/session-log.fixture.json",
+    "packages/sdk/src/core/session-log/saved-log.test.ts",
+    "packages/sdk/src/core/session-log/saved-log.ts",
     "packages/sdk/src/core/session-log/source.test.ts",
     "packages/sdk/src/core/session-log/source.ts",
     "packages/sdk/src/core/session-log/store.test.ts",
@@ -18,21 +20,28 @@
     "packages/sdk/src/core/session-log/v1-view.ts",
     "packages/sdk/src/core/session-log/v1.test.ts",
     "packages/sdk/src/core/session-log/v1.ts",
+    "packages/sdk/src/core/session-sync/copy-store-types.ts",
+    "packages/sdk/src/core/session-sync/saved-copy-store.ts",
+    "packages/sdk/src/core/session/control-stream.test.ts",
+    "packages/sdk/src/core/session/control-stream.ts",
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
     "packages/sdk/src/react/opencode.ts",
     "packages/sdk/src/react/session-transcript-subscription.ts",
+    "packages/sdk/src/react/use-opencode-events/handle-event.test.ts",
+    "packages/sdk/src/react/use-opencode-events/handle-event.ts",
+    "packages/sdk/src/react/use-opencode-events/index.ts",
     "packages/sdk/src/react/use-session-log.test.ts",
     "packages/sdk/src/react/use-session-log.ts",
     "packages/sdk/src/react/use-session.ts"
   ],
-  "diff_hash": "4bf60a3ff5333446595f12e0a257e975a28fbef2aae081f17d424a68c14a6fc0",
-  "head": "b8207d41e07ca57b0df1be9d01f5f028ccde6abf",
+  "diff_hash": "ec599c17b105807f58364797687540366b9b836c61233a25ad28aefe899a4c37",
+  "head": "3b3a72ed9b7bed7dcdf824f003e629595b00a246",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T19:48:38.630Z"
+  "at": "2026-10-11T20:48:34.424Z"
 }
