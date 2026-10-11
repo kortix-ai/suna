@@ -1,0 +1,116 @@
+{
+  "next_prompts": {
+    "ses_ede7a7748ffeXTyzbpKmHVNslA": "Anything else?"
+  },
+  "views": {
+    "ses_ede7a7748ffeXTyzbpKmHVNslA": [
+      {
+        "role": "summary",
+        "text": "SUMMARY-L: created hello.txt (hi); read it with an image; `false` exited 1; missing.txt is absent; todos recorded; big.txt printed."
+      },
+      {
+        "role": "user",
+        "text": [
+          "[Assistant]: Todos recorded.\n\n[User]: Show big.txt\n\n[Assistant tool call]: bash({\"command\":\"cat big.txt\"})\n[Tool result]: line 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0002 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0003 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0004 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0005 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0006 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0007 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0008 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0009 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0010 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0011 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0012 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0013 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0014 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0015 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0016 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0017 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0018 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline 0019 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[truncated]"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "big.txt is large."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "List the files"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv16t3bm31",
+            "name": "bash",
+            "input": {
+              "command": "ls"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv16t3bm31",
+        "content": "big.txt\nhello.txt\n\nCommand exited with code 0.",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "Found big.txt and hello.txt."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Spawn a helper to list the files"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv16t3kd34",
+            "name": "task",
+            "input": {
+              "description": "list files",
+              "prompt": "List the files in the workspace",
+              "subagent_type": "general"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv16t3kd34",
+        "content": "{\"error\":{\"type\":\"unknown\",\"message\":\"Unknown tool: task\"},\"content\":[],\"structured\":{}}",
+        "is_error": true
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The task tool is not available here."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "What is in hello.txt? Answer in one word."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "hi"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ]
+  }
+}
