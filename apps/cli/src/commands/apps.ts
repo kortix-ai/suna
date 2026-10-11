@@ -15,6 +15,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
+import { addAppBlocks } from './apps-launch-yaml.ts';
 import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
 import { connectCommand, deployOrder, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
 import {
@@ -466,13 +467,12 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   if (!template) return fail(`no template "${templateName}"; there is ${Object.keys(APP_TEMPLATES).join(', ')}`);
   const slug = slugFrom(slugFlag ?? template.name);
   const path = resolve(process.cwd(), 'kortix.yaml');
-  const doc = existsSync(path) ? parseDocument(readFileSync(path, 'utf8')) : parseDocument('kortix_version: 2\n');
-  if (!doc.has('apps')) doc.set('apps', doc.createNode({}));
+  const text = existsSync(path) ? readFileSync(path, 'utf8') : 'kortix_version: 2\n';
+  const doc = parseDocument(text);
   const blocks = template.blocks(slug);
   const taken = Object.keys(blocks).filter((name) => doc.hasIn(['apps', name]));
   if (taken.length > 0) return fail(`kortix.yaml already has apps.${taken.join(', apps.')}; pick another --name`);
-  for (const [name, block] of Object.entries(blocks)) doc.setIn(['apps', name], doc.createNode(block));
-  writeFileSync(path, String(doc));
+  writeFileSync(path, addAppBlocks(text, blocks));
   if (!json) process.stdout.write(`\n  ${status.ok(`added ${Object.keys(blocks).map((name) => `apps.${name}`).join(', ')} to kortix.yaml`)}\n`);
   if (!noDeploy) {
     for (const name of template.deployOrder(slug)) {
