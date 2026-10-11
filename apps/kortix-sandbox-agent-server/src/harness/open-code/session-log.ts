@@ -126,7 +126,12 @@ function takeBytes(file: J, sidecar: (path: string) => Resolved | null): Resolve
   if (marker?.offloaded && typeof marker.sidecar === 'string') return sidecar(marker.sidecar)
   if (isOffloadPlaceholder(url)) return null
   const comma = url.indexOf(',')
-  const bytes = url.slice(0, comma).endsWith(';base64') ? Buffer.from(url.slice(comma + 1), 'base64') : Buffer.from(decodeURIComponent(url.slice(comma + 1)))
+  let bytes: Buffer
+  try {
+    bytes = url.slice(0, comma).endsWith(';base64') ? Buffer.from(url.slice(comma + 1), 'base64') : Buffer.from(decodeURIComponent(url.slice(comma + 1)))
+  } catch {
+    return null // a malformed url: unresolved, as the mirror holds it
+  }
   const digest = sha256(bytes)
   return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
 }
@@ -225,13 +230,20 @@ export function openCodeSessionLogStatePath(): string {
   return join(resolveKortixRuntimeStateDirectory(), 'opencode-session-log.json')
 }
 
+/**
+ * The persisted seq map, or `{}` (a first boot, or a lost or corrupt file:
+ * seqs are issued again from 1 until P6 seeds them from the API's cursors).
+ */
 function readSeqs(path: string): SeqState {
+  if (!existsSync(path)) return {}
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { version?: number; threads?: SeqState }
-    return parsed.version === 1 && parsed.threads && typeof parsed.threads === 'object' ? parsed.threads : {}
+    if (parsed.version === 1 && parsed.threads && typeof parsed.threads === 'object') return parsed.threads
   } catch {
-    return {}
+    // reported below
   }
+  logger.warn('[session-log] the OpenCode seq map does not parse; seqs restart at 1', { path })
+  return {}
 }
 
 function writeSeqs(path: string, threads: SeqState): void {

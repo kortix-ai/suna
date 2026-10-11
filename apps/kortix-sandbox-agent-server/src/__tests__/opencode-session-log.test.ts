@@ -12,7 +12,7 @@
  */
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -209,6 +209,25 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     expect(again.messages).toEqual([])
   })
 
+  test('a malformed data url is an unresolved attachment, never a failed export', () => {
+    const store = structuredClone(after)
+    const part = store.parts.find((p) => JSON.parse(p.data).type === 'file')!
+    part.data = JSON.stringify({ ...JSON.parse(part.data), url: 'data:image/png,%E0%A4%A' })
+    const image = all(exported(store).log).flatMap((m) => m.blocks).find((b) => b.id === part.id)
+    expect(image).toEqual({ type: 'attachment', id: part.id, mime: 'image/png', name: 'dot.png' })
+  })
+
+  test('a corrupt seq file restarts the seqs at 1', async () => {
+    const dbPath = join(dir, 'opencode.db')
+    const statePath = join(dir, 'opencode-session-log.json')
+    writeStore(dbPath, before)
+    writeFileSync(statePath, '{not json')
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
+    const first = await port.changes([])
+    expect(first.messages.filter((m) => m.message.thread_id === ROOT)[0]!.message.seq).toBe(1)
+    expect(JSON.parse(readFileSync(statePath, 'utf8'))).toMatchObject({ version: 1 })
+  })
+
   test('native_hash is stable with no change and moves when a part changes', () => {
     const first = exported(after).hashes
     expect(exported(after).hashes).toEqual(first)
@@ -266,7 +285,8 @@ describe('OpenCode session-log journal wiring', () => {
     writeStore(dbPath, before)
     writeOpenCodeSessionPin(ROOT)
     // The port `startOpenCodeSessionLog` builds, on a test path: the production
-    // one reads OpenCode's home (`homedir()`), which a test cannot redirect.
+    // one reads `OPENCODE_HOME` (`paths.ts`), bound to `homedir()` when the
+    // module loads, and the hermetic test env does not point HOME at a test dir.
     const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: readOpenCodeSessionPin })
     expect(startSessionLogJournal(port, { generation: 0 })).not.toBeNull()
     expect(await flushSessionLogJournal()).toBe(true)
