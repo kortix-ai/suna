@@ -75,7 +75,7 @@ describe('GET /v1/setup/status docker probe', () => {
     probe.mode = 'hang-first';
     probe.blockMs = 1500;
 
-    const hung = app.request('/v1/setup/status'); // its probe never settles
+    void app.request('/v1/setup/status'); // its probe never settles
 
     const started = performance.now();
     const res = await app.request('/v1/setup/status');
