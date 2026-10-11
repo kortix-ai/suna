@@ -197,7 +197,7 @@ kortix apps deploy --manifest-app storefront
 
 When the manifest declares exactly one App, bare `kortix apps deploy` selects
 it. CLI flags override manifest fields. A deploy with `--manifest-app` writes
-the block's `resources`, `idle_timeout_seconds`, `always_on` and `labels` to
+the block's `resources`, `idle_timeout_seconds`, `always_on`, `labels` and `display` to
 the App and sends the release config (`processes`, `http_service`,
 `services`, `mounts`, `vm`, `deploy`). `kortix validate` refuses the same
 config the API refuses.
@@ -253,6 +253,7 @@ apps:
 | `env` | Server Apps: non-secret runtime key/value pairs. |
 | `secrets` | Server Apps: runtime environment key to project secret **identifier** mapping. |
 | `labels` | Free-form tags (for example `backend`). They group and filter Apps; no behavior depends on them. |
+| `display` | Where Kortix shows the App; presentation only. `listed` (default `true`: a card in the Apps grid), `preview` (`live`, the default, frames the App on its card; `none` shows an icon), `parent` (another App of the file: this App is a tab in its detail, not a card). Absent = the defaults. |
 | `processes` | Process group name → shell command (`""` runs the image's own command). Default: one group, `app`. |
 | `http_service` | The primary service: `internal_port`, `access` (`public`, `app`, `admins`), `auto_stop_machines` (`off`, `stop`, `suspend`), `auto_start_machines`, `min_machines_running`, `processes`, `checks`. `port` is the shorthand for `internal_port`. |
 | `services` | More HTTP services, each `{ name, internal_port, access, processes }`, on `<App host>--<name>`. |

@@ -306,3 +306,36 @@ export function appMountFor(config: AppReleaseConfig, group: string): AppMount |
 export function appServicesFor(config: AppReleaseConfig, group: string): AppService[] {
   return config.services.filter((service) => service.processes.includes(group));
 }
+
+/**
+ * Where Kortix shows an App (`kortix.yaml` `apps.<name>.display`). Presentation
+ * only: nothing about how the App runs or who may open it changes.
+ */
+export interface AppDisplay {
+  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  listed?: boolean;
+  /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
+  preview?: 'live' | 'none';
+  /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
+  parent?: string;
+}
+
+const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent']);
+const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** What is wrong with an authored `display` block of the App `slug`. Paths are relative to the block. */
+export function appDisplayIssues(display: unknown, slug: string): AppConfigIssue[] {
+  if (typeof display !== 'object' || display === null || Array.isArray(display)) return [{ path: '', message: 'must be an object.' }];
+  const issues: AppConfigIssue[] = [];
+  const value = display as Record<string, unknown>;
+  for (const key of Object.keys(value)) {
+    if (!DISPLAY_KEYS.has(key)) issues.push({ path: key, message: 'is not a display field (listed, preview, parent).' });
+  }
+  if (value.listed !== undefined && typeof value.listed !== 'boolean') issues.push({ path: 'listed', message: 'must be true or false.' });
+  if (value.preview !== undefined && value.preview !== 'live' && value.preview !== 'none') issues.push({ path: 'preview', message: 'must be live or none.' });
+  if (value.parent !== undefined) {
+    if (typeof value.parent !== 'string' || !APP_SLUG.test(value.parent)) issues.push({ path: 'parent', message: 'must be an App slug.' });
+    else if (value.parent === slug) issues.push({ path: 'parent', message: 'an App cannot be its own parent.' });
+  }
+  return issues;
+}

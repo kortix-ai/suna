@@ -6,7 +6,7 @@
  */
 import { z } from '@hono/zod-openapi';
 import { appDeployments, appRuntimes, appVolumes, apps } from '@kortix/db';
-import type { AppReleaseConfig } from '@kortix/shared/app-config';
+import type { AppDisplay, AppReleaseConfig } from '@kortix/shared/app-config';
 import { and, count, inArray, isNull, notInArray, sql, sum } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -119,6 +119,8 @@ function serializeApp(
     used_by: links.usedBy,
     /** Free-form labels (e.g. `backend`); they group and filter, nothing more. */
     labels: row.labels,
+    /** Where Kortix shows the App: `{ listed?, preview?: live | none, parent? }`. Presentation only. */
+    display: row.display as AppDisplay,
     /** Machines per process group; a group not listed runs one. */
     scale: row.scale as Record<string, number>,
     /** The services of the active release: each with its URL (null when the host label would be too long). */

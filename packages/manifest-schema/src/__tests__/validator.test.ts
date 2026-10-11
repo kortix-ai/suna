@@ -951,4 +951,26 @@ describe('apps: the Fly model (processes, services, mounts, vm, deploy, labels)'
     expect(issues('  db:\n    mounts: { source: data }')).toEqual(['apps.db.mounts: must be a list of objects.']);
     expect(issues('  site:\n    type: static\n    mounts: [{ source: data, destination: /etc }]')).toEqual([]);
   });
+  test('display: where Kortix shows the App; a parent must be another App of the file', () => {
+    expect(issues(`  db:
+    type: static
+    display: { preview: none }
+  db-dashboard:
+    type: static
+    display: { parent: db }
+  worker:
+    type: static
+    display: { listed: false }`)).toEqual([]);
+    expect(issues(`  db:
+    type: static
+    display: { parent: db, preview: icon, hidden: true }
+  dash:
+    type: static
+    display: { parent: nope }`)).toEqual([
+      'apps.db.display.hidden: is not a display field (listed, preview, parent).',
+      'apps.db.display.preview: must be live or none.',
+      'apps.db.display.parent: an App cannot be its own parent.',
+      'apps.dash.display.parent: names no App in this file.',
+    ]);
+  });
 });

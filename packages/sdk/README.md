@@ -442,6 +442,7 @@ const [data] = await apps.volumes.list(api.app_id);
 const snap = await apps.volumes.snapshot(api.app_id, data.volume_id);
 await apps.volumes.restore(api.app_id, data.volume_id, snap.snapshot_id);  // project.app.admin
 await apps.update(site.app_id, { uses: ['api'], labels: ['frontend'] });    // the site may mint api tokens and bind to it
+await apps.update(api.app_id, { display: { preview: 'none' } });           // its Apps-tab card shows an icon, not a live thumbnail
 ```
 
 `@kortix/sdk/react` adds `useAppMachines`, `useAppVolumes`, and `useAppVolumeSnapshots`.

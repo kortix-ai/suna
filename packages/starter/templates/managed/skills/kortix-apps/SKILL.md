@@ -76,6 +76,7 @@ apps:
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]
+    display: { preview: none }     # where Kortix shows it: listed, preview (live | none), parent (a tab of another App)
     processes: { app: "", worker: "node worker.js" }   # "" = the image's command
     vm: [{ cpu: 1, memory_gb: 2 }, { cpu: 1, memory_gb: 1, processes: [worker] }]
     mounts:
@@ -210,8 +211,9 @@ Every session downloads the whole repository, so keep it small. Create
 1. **Model the domain.** Tables, fields, relations, and the 5–10 actions
    people take. Write it down in `memory/<app>.md` first.
 2. **Backend App.** `kortix apps launch --template convex --name db`, then
-   connect, discover and push as references/convex.md shows (the admin key
-   comes from `kortix apps exec`).
+   connect, discover and push as references/convex.md shows (`launch` stores
+   the admin key as the project secret `DB_ADMIN_KEY`; the dashboard is the
+   Dashboard tab of `db`).
 3. **Schema + sign-in.** `convex/schema.ts` with an index for every filter,
    `convex/auth.config.ts` and `convex/lib/auth.ts` from references/sign-in.md.
    Store `me.userId` as owner/author ids. Use Kortix roles

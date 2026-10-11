@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { appMountFor, appReleaseConfigIssues, appServicesFor, appVmFor, resolveAppReleaseConfig } from './app-config';
+import { appDisplayIssues, appMountFor, appReleaseConfigIssues, appServicesFor, appVmFor, resolveAppReleaseConfig } from './app-config';
 
 describe('resolveAppReleaseConfig', () => {
   test('the old shorthands map onto Fly fields: port, command, readiness_path, always_on, resources', () => {
@@ -73,5 +73,20 @@ describe('appReleaseConfigIssues', () => {
   test('a worker-only App (no service) is valid; VM bounds hold', () => {
     expect(paths({ processes: { worker: 'run' } })).toEqual([]);
     expect(paths({ port: 1, vm: { cpu: 64 } })).toEqual(['vm[0].cpu']);
+  });
+});
+
+describe('appDisplayIssues', () => {
+  test('accepts every field and an empty object', () => {
+    expect(appDisplayIssues({}, 'crm-data-dashboard')).toEqual([]);
+    expect(appDisplayIssues({ listed: false, preview: 'none', parent: 'crm-data' }, 'crm-data-dashboard')).toEqual([]);
+  });
+
+  test('refuses an unknown key, wrong types, a parent that is the App itself', () => {
+    expect(appDisplayIssues({ hidden: true }, 'a').map((issue) => issue.path)).toEqual(['hidden']);
+    expect(appDisplayIssues({ listed: 'no', preview: 'icon', parent: 'Not A Slug' }, 'a').map((issue) => issue.path))
+      .toEqual(['listed', 'preview', 'parent']);
+    expect(appDisplayIssues({ parent: 'a' }, 'a').map((issue) => issue.path)).toEqual(['parent']);
+    expect(appDisplayIssues([], 'a').map((issue) => issue.path)).toEqual(['']);
   });
 });

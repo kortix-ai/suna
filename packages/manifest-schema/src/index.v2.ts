@@ -1,4 +1,4 @@
-import type { AppReleaseConfigInput } from '@kortix/shared/app-config';
+import type { AppDisplay, AppReleaseConfigInput } from '@kortix/shared/app-config';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -285,6 +285,8 @@ export interface AppBlockV2 {
   deploy?: AppReleaseConfigInput['deploy'];
   /** Free-form labels (e.g. `backend`). */
   labels?: string[];
+  /** Where Kortix shows the App: `{ listed, preview: live | none, parent }`. */
+  display?: AppDisplay;
 }
 
 /**

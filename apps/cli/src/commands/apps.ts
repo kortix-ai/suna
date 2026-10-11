@@ -1,6 +1,6 @@
 import { appReleaseInputFromBlock } from '@kortix/manifest-schema';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { APP_TEMPLATES, appTemplate } from '@kortix/shared/app-templates';
+import { APP_TEMPLATES, appTemplate, type AppTemplateSecret } from '@kortix/shared/app-templates';
 import { parseDocument } from 'yaml';
 import { resolve } from 'node:path';
 import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
@@ -364,6 +364,16 @@ function runModeRows(app: App): string {
   return `  ${C.dim}${pad('runs', 14)}${C.reset}${value}\n`;
 }
 
+/** Where Kortix shows the App, when not the defaults (`kortix.yaml` `display`). */
+function displaySummary(app: App): string | null {
+  const display = app.display ?? {};
+  const parts = [
+    display.parent ? `tab in ${display.parent}` : display.listed === false ? 'not in the Apps grid' : null,
+    display.preview === 'none' ? 'icon card' : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}
+
 /** The facts `show`, `create` and `set` print about an App. */
 function appLines(app: App): string {
   const row = (label: string, value: string | null | undefined) =>
@@ -373,6 +383,7 @@ function appLines(app: App): string {
     row('capabilities', app.capabilities?.join(', ')) +
     row('uses', app.uses?.length ? app.uses.join(', ') : 'none') +
     row('used by', app.used_by?.length ? app.used_by.join(', ') : null) +
+    row('shown', displaySummary(app)) +
     row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`) +
     runModeRows(app)
   );
@@ -485,9 +496,16 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   writeFileSync(path, addAppBlocks(text, blocks));
   if (!json) process.stdout.write(`\n  ${status.ok(`added ${Object.keys(blocks).map((name) => `apps.${name}`).join(', ')} to kortix.yaml`)}\n`);
   if (!noDeploy) {
+    const secrets = template.secrets?.(slug) ?? [];
+    const ctx = secrets.length > 0 ? await context(options) : null;
+    if (secrets.length > 0 && !ctx) return 1;
     for (const name of template.deployOrder(slug)) {
       const code = await deployCommand(['--manifest-app', name, ...(provider ? ['--provider', provider] : [])], options, json);
       if (code !== 0) return code;
+      for (const secret of secrets.filter((entry) => entry.app === name)) {
+        const failed = await ensureTemplateSecret(ctx!, secret, json);
+        if (failed) return fail(failed);
+      }
     }
   }
   if (json) emitJson({ template: template.name, apps: Object.keys(blocks), next_steps: template.nextSteps(slug) });
@@ -495,6 +513,28 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
     process.stdout.write(`\n  Next:\n${template.nextSteps(slug).map((line) => `    ${line}\n`).join('')}\n`);
   }
   return 0;
+}
+
+/**
+ * Create a template's project secret from the last line its command prints on
+ * the App's machine. A secret that already holds a value is kept. The value is
+ * never printed. Returns an error message, or null.
+ */
+async function ensureTemplateSecret(ctx: Ctx, secret: AppTemplateSecret, json: boolean): Promise<string | null> {
+  return scoped(ctx, async () => {
+    const existing = await ctx.secrets.list();
+    if (existing.items.some((item) => item.identifier === secret.name && item.configured)) {
+      if (!json) process.stdout.write(`  ${status.ok(`kept the project secret ${secret.name}`)}\n`);
+      return null;
+    }
+    const app = await resolveApp(ctx.apps, secret.app);
+    const result = await ctx.apps.exec(app.app_id, { command: secret.command });
+    const value = result.stdout.split('\n').map((line) => line.trim()).filter(Boolean).pop();
+    if (result.exit_code !== 0 || !value) return `could not create the project secret ${secret.name}: \`${secret.command.join(' ')}\` on ${secret.app} exited ${result.exit_code}`;
+    await ctx.secrets.upsert({ name: secret.name, value });
+    if (!json) process.stdout.write(`  ${status.ok(`created the project secret ${secret.name}`)}\n`);
+    return null;
+  });
 }
 
 async function deployCommand(
@@ -569,9 +609,12 @@ async function deployOne(
       app = await ctx.apps.get(app.app_id);
     }
 
-    if (manifestBlock?.labels && JSON.stringify(manifestBlock.labels) !== JSON.stringify(app.labels ?? [])) {
-      app = await ctx.apps.update(app.app_id, { labels: manifestBlock.labels });
-    }
+    // kortix.yaml owns labels (when listed) and display (absent = the defaults).
+    const sync = {
+      ...(manifestBlock?.labels && JSON.stringify(manifestBlock.labels) !== JSON.stringify(app.labels ?? []) ? { labels: manifestBlock.labels } : {}),
+      ...(manifestBlock && JSON.stringify(manifestBlock.display ?? {}) !== JSON.stringify(app.display ?? {}) ? { display: manifestBlock.display ?? {} } : {}),
+    };
+    if (Object.keys(sync).length > 0) app = await ctx.apps.update(app.app_id, sync);
     const releaseConfig = appReleaseInputFromBlock(manifestBlock);
 
     let cleanup: (() => Promise<void>) | undefined;

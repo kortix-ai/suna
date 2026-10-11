@@ -5,13 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (display)
+- `AppDisplay` (`listed`, `preview`: `live` | `none`, `parent`): where Kortix
+  shows an App. `App.display` reads it; `UpdateAppInput.display` replaces it
+  whole (`{}` restores the defaults). Presentation only. Additive: a server
+  that predates it omits the field.
+
 ### Removed
 - Apps have no monthly budget. `App.monthly_budget_usd`,
   `CreateAppInput.monthly_budget_usd` and `UpdateAppInput.monthly_budget_usd`
   are gone: account credits pay for App compute, and the billing `402` is the
   only cost gate. A server that still sends the field is ignored; a client
-  that still sends it gets `200` and the server ignores it. Read
-  `App.estimated_monthly_usd` for the machine's 24/7 monthly cost.
+  that still sends it gets `200` and the server ignores it.
 - The unreleased `convex` App kind is gone before any release carried it
   (0.13.53, the last published version, has none of these names): `AppKind`,
   `App.kind`, `App.instance` and the `AppInstance*` types, `AppSnapshot*`,

@@ -4374,6 +4374,8 @@ export const apps = kortixSchema.table(
     labels: text('labels').array().default(sql`'{}'::text[]`).notNull(),
     /** Machines per process group (`fly scale count`). An absent group runs one machine. */
     scale: jsonb('scale').default({}).notNull(),
+    /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
+    display: jsonb('display').default({}).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

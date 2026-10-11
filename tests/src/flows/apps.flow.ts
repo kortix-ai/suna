@@ -179,6 +179,19 @@ flow(
         .has("$.uses", []);
     });
 
+    await ctx.step("display says where Kortix shows the App: patched whole, read back, {} restores the defaults, an unknown key is refused", async () => {
+      const params = { ...projectParams, appId };
+      (await owner.get("/v1/projects/:projectId/apps/:appId", { params })).status(200).body().has("$.display", {});
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { display: { parent: "crm-data", preview: "none", listed: false } }, { params }))
+        .status(200).body().has("$.display", { parent: "crm-data", preview: "none", listed: false });
+      (await owner.get("/v1/projects/:projectId/apps/:appId", { params }))
+        .status(200).body().has("$.display", { parent: "crm-data", preview: "none", listed: false });
+      for (const bad of [{ hidden: true }, { preview: "icon" }, { parent: "Not A Slug" }]) {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { display: bad }, { params })).status(400);
+      }
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { display: {} }, { params })).status(200).body().has("$.display", {});
+    });
+
     await ctx.step(
       "cross-project principal cannot inspect the App",
       async () => {

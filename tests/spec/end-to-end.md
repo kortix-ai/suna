@@ -1203,6 +1203,10 @@ return the stable public URL and active deployment pointer; every App carries
 1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
 `monthly_budget_usd`, and a create or patch that still sends one (an older
 client) succeeds and ignores it; a patch switches `always_on` both ways;
+a new App reads `display: {}`, a patch of `display` (`listed`, `preview`
+`live | none`, `parent` slug) replaces it whole and reads back, `{}` restores
+the defaults, and an unknown key, a preview other than `live`/`none` or a
+malformed parent is `400`;
 `warnings: []` on every create and patch. A new App has `labels: []`,
 `services: []` and the capabilities `deployments`, `rollback`, `preview`,
 `member_tokens`, and no `kind` or `instance`. Patch updates mutable policy; delete is soft and removes the App

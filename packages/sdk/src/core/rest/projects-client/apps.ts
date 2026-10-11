@@ -208,6 +208,8 @@ export interface App {
   auth?: AppAuth;
   /** Free-form labels (e.g. `backend`): they group and filter, nothing more. Optional for wire compatibility. */
   labels?: string[];
+  /** Where Kortix shows the App. Optional for wire compatibility; absent means the defaults. */
+  display?: AppDisplay;
   /** Machines per process group; a group not listed runs one. Optional for wire compatibility. */
   scale?: Record<string, number>;
   /** The active release's services and their URLs. Optional for wire compatibility. */
@@ -220,6 +222,19 @@ export interface App {
   config?: AppReleaseConfig | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Where Kortix shows an App (`kortix.yaml` `apps.<name>.display`). Presentation
+ * only: how the App runs and who may open it do not change.
+ */
+export interface AppDisplay {
+  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  listed?: boolean;
+  /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
+  preview?: 'live' | 'none';
+  /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
+  parent?: string;
 }
 
 export interface CreateAppInput {
@@ -246,6 +261,8 @@ export interface UpdateAppInput {
   uses?: string[];
   /** Replaces the App's labels (each `^[a-z0-9][a-z0-9-]{0,30}$`, at most 10). */
   labels?: string[];
+  /** Replaces where Kortix shows the App. `{}` restores the defaults. */
+  display?: AppDisplay;
 }
 
 /**

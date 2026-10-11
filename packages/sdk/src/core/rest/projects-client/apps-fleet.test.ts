@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
-import type { App, AppReleaseConfig, AppServiceSummary, CreateAppDeploymentInput, UpdateAppInput } from './apps';
+import type { App, AppDisplay, AppReleaseConfig, AppServiceSummary, CreateAppDeploymentInput, UpdateAppInput } from './apps';
 import {
   createAppVolume,
   createAppVolumeSnapshot,
@@ -117,4 +117,11 @@ test('the App and its inputs carry the Fly model: labels, scale, services, machi
   };
   expect([labels, scale, services, config, updateLabels]).toEqual([true, true, true, true, true]);
   expect(deployConfig.config?.mounts?.[0]?.destination).toBe('/data');
+});
+
+test('the App and its update input carry display: listed, preview (live | none), parent', () => {
+  const display: Equal<App['display'], AppDisplay | undefined> = true;
+  const updateDisplay: Equal<UpdateAppInput['display'], AppDisplay | undefined> = true;
+  const tab: AppDisplay = { parent: 'crm-data', preview: 'none', listed: false };
+  expect([display, updateDisplay, tab.parent]).toEqual([true, true, 'crm-data']);
 });
