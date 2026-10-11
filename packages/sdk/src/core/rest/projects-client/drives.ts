@@ -7,6 +7,7 @@ import { ApiError, backendApi } from '../../http/api-client';
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
 import { unwrap } from './shared';
+import { stripTrailingSlashes } from '../../../platform/strings';
 
 export type FolderLevel = 'read' | 'write' | 'manage';
 export type FolderAccess = 'none' | FolderLevel;
@@ -203,7 +204,7 @@ export async function listDriveFolder(driveId: string, path = '/'): Promise<{ en
  * link cannot open it directly: use {@link downloadDriveFile} for that.
  */
 export function getDriveFileUrl(driveId: string, path: string, options?: { download?: boolean }): string {
-  const base = platformConfig().backendUrl.replace(/\/+$/, '');
+  const base = stripTrailingSlashes(platformConfig().backendUrl);
   const query: Record<string, string> = { path };
   if (options?.download) query.download = '1';
   return `${base}${drivePath(driveId)}/files/content?${new URLSearchParams(query)}`;

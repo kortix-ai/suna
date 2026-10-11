@@ -9,6 +9,7 @@ import { createShellCapability } from './shell';
 export function createEnabledCapabilityRegistry(
   config: TunnelConfig,
   findDesktopDriver: () => string | null = findCuaDriverBinary,
+  desktop: { onPermissionMissing?: () => void } = {},
 ): CapabilityRegistry {
   const registry = new CapabilityRegistry();
   const enabled = new Set(config.enabledCapabilities ?? ['filesystem', 'shell', 'desktop']);
@@ -18,7 +19,7 @@ export function createEnabledCapabilityRegistry(
   // local driver. The server must see the real handler surface, not the user's
   // desired capability list.
   if (enabled.has('desktop') && findDesktopDriver()) {
-    registry.register(createDesktopCapability());
+    registry.register(createDesktopCapability(desktop));
   }
   return registry;
 }

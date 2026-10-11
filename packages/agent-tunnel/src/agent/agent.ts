@@ -13,7 +13,7 @@ import {
 } from './access';
 import { agentTunnelHome } from './service-paths';
 import { machineDisplayName, machineId } from './device-auth';
-import { capabilityForMethod } from '../shared/permissions';
+import { capabilityForMethod, normalizeDesktopCall } from '../shared/permissions';
 import { TunnelErrorCode } from '../shared/types';
 import { agentTunnelVersion } from './version';
 import { c } from './terminal';
@@ -493,7 +493,9 @@ export class TunnelAgent {
   }
 
   private async handleRpcRequest(request: JsonRpcRequest): Promise<void> {
-    const { id, method, params = {} } = request;
+    // An older API may still send `desktop.cua.<tool>`: serve it as `desktop.cua.call`.
+    const { method, params } = normalizeDesktopCall(request.method, request.params ?? {});
+    const { id } = request;
 
     const permissionId = params.permissionId as string | undefined;
     const permission = this.permissionGuard.getPermissionForMethod(permissionId, method);
@@ -522,7 +524,9 @@ export class TunnelAgent {
       this.sendSignedResult(id, result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.sendSignedError(id, -32003, message);
+      const code = (err as { code?: unknown } | null)?.code;
+      // Only a JSON-RPC server code is binding; an exit status or errno is not.
+      this.sendSignedError(id, typeof code === 'number' && code <= -32000 && code >= -32099 ? code : -32003, message);
     }
   }
 
