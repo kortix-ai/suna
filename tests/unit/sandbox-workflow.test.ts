@@ -38,6 +38,8 @@ describe('native test-lane workflow', () => {
     // Never job-wide: the core lane's runner unit tests assert the default.
     expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
     expect(testWorkflow).toContain('args: --packages-only');
+    // Package quality runs once per CI run, in the `packages` lane.
+    expect(testWorkflow).toMatch(/- lane: core\n\s+mode: core\n\s+args: --no-packages\n/);
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     // Every run is a full run now, so the packages guard keys off the lane

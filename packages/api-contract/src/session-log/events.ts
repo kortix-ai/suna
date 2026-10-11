@@ -7,13 +7,15 @@
  * The v2 stream has its own sequence and epoch (`kortix.hello` names them). The daemon
  * derives every frame from the records its journal sends to the API (`wire.ts`): the same
  * message ids, block ids, `seq`, thread ids and `rev`, so a client merges the stream with
- * the saved pages by keeping the highest `rev` of each message.
+ * the saved pages by keeping the highest `rev` of each message. While a turn runs, a
+ * `log.message` put with `status: 'streaming'` precedes the first delta of a message (the
+ * API never stores it); a later put with a higher `rev` replaces it.
  *
  * | Frame | Payload | When |
  * | --- | --- | --- |
  * | `log.state` | `SessionLogStateEventSchema` | the session fields changed (journal start, turn end) |
  * | `log.thread` | `SessionLogThreadUpsertSchema` | a thread is new or changed |
- * | `log.message` | `SessionLogMessageEventSchema` | the journal collected a new revision of a message (`{ rev, message }`), or its tombstone (`{ message_id, rev }`, the journal's own form) |
+ * | `log.message` | `SessionLogMessageEventSchema` | the journal collected a new revision of a message (`{ rev, message }`), or its tombstone (`{ message_id, rev }`, the journal's own form); or a live put of the running turn |
  * | `log.block.delta` | `SessionLogBlockDeltaEventSchema` | the harness streamed text into a text or reasoning block |
  *
  * In one collection the order is `log.state`, then `log.thread`, then `log.message`.

@@ -11,7 +11,7 @@ import { egressShimPort } from '@/services/egress-shim'
 import { logger } from '@/lib/log/logger'
 import { slowRequestLogger } from './slow-request'
 import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/services/runtime-assets/runtime-assets'
-import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
 import { createToolsRouter } from '@/routes/kortix/tools'
 import { createHarnessControlRouter } from '@/routes/kortix/harness-control'
@@ -288,7 +288,7 @@ export function startProxy(
   // a watched session from EVER converging.
   registerAgentSwapBlocker(
     'sse-subscriber',
-    () => agentSwapRequiresUnattendedBox() && kortixEventBus().subscriberCount > 0,
+    () => agentSwapRequiresUnattendedBox() && kortixEventBus().subscriberCount + sessionLogEventBus().subscriberCount > 0,
   )
   // A swap must not exit this process while a config convergence is mid-verify
   // (fetch → download → candidate spawn → proven check → promotion). This
