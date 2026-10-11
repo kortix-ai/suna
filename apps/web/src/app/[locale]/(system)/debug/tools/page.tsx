@@ -1083,9 +1083,21 @@ const FOLD_PARTS = [
 
 const FOLD_MESSAGES: MessageWithParts[] = [
   {
-    info: { id: 'm_fold', role: 'assistant' },
+    info: {
+      id: 'm_fold',
+      sessionID: 'ses_dbg',
+      role: 'assistant',
+      time: { created: 1_000, completed: 3_400 },
+      modelID: 'debug-model',
+      providerID: 'debug-provider',
+      mode: 'debug',
+      agent: 'debug',
+      path: { cwd: '/workspace', root: '/workspace' },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
     parts: FOLD_PARTS,
-  } as any,
+  },
 ];
 
 // ---------------------------------------------------------------------------
