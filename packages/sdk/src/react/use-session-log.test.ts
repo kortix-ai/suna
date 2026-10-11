@@ -178,6 +178,46 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined.filter((j) => j.options.schema !== 'v2').every((j) => j.closed)).toBe(true);
   });
 
+  test('a kortix.resync on the v2 connection re-reads the page once, with no duplicate messages', async () => {
+    let calls = 0;
+    mount({ loader: async () => { calls++; return v1Page(); } });
+    await flush();
+    expect(calls).toBe(1);
+    const v2 = joined.at(-1)!.options;
+    expect(v2.schema).toBe('v2');
+    act(() => v2.onRuntimeResync());
+    await flush();
+    expect(calls).toBe(2);
+    await flush();
+    expect(calls).toBe(2);
+    const ids = useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]!.map((m) => m.message_id);
+    expect(ids).toEqual(log.threads[0]!.messages.map((m) => m.message_id));
+  });
+
+  test('a reconnect and a turn end together while a retry is in flight start one request', async () => {
+    let calls = 0;
+    let release: (value: unknown) => void = () => {};
+    const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
+    mount({
+      loader: () => {
+        calls++;
+        if (calls === 1) return Promise.reject(new Error('404'));
+        return new Promise((_, reject) => { release = () => reject(new Error('404')); });
+      },
+    });
+    await flush();
+    const watch = joined[0]!.options;
+    act(() => watch.onControl(turn('t1')));
+    act(() => watch.onConnectionChange(false));
+    act(() => watch.onConnectionChange(true));
+    act(() => watch.onControl(turn('t2')));
+    await flush();
+    expect(calls).toBe(2);
+    await act(async () => release(undefined));
+    await flush();
+    expect(calls).toBe(2);
+  });
+
   test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
     const bad = v1Page();
     (bad.messages[0] as Record<string, unknown>).seq = 'x';

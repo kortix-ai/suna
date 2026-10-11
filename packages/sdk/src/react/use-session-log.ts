@@ -62,10 +62,13 @@ const pageThreadIsV1 = (page: SessionLogPage) => isV1Thread(page.threads.find((t
  *  1. the device's saved v2 copy paints first;
  *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
  *  3. when that thread is a `fromV1` thread, the session stream switches to `schema=v2`
- *     (`log.*` frames in place of the `message.*` ones) and the page is read again after each
- *     reconnect, since a new v2 connection replays nothing.
- * A 404, an invalid page, or a thread `fromV1` did not build (pi writes native records, which
- * render lossy through `toV1`) leaves the session on v1: no session log, no `schema=v2`.
+ *     (`log.*` frames in place of the `message.*` ones) at the same runtime cursor; the page is
+ *     read again after each reconnect and on a `kortix.resync` (a v2 log on another epoch
+ *     replays nothing for the old cursor).
+ * A thread `fromV1` did not build (pi writes native records, which render lossy through
+ * `toV1`) leaves the session on v1: no session log, no `schema=v2`. A 404 (a new session whose
+ * journal has not posted yet) or an invalid page leaves it on v1 too, and is retried at the next
+ * turn end and after a stream reconnect, one request at a time.
  * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again. The flag
  * is read only when this SDK has a page loader.
  */
@@ -139,7 +142,9 @@ export function useSessionLogSync(
       if (stopped) return;
       if (page && pageThreadIsV1(page)) {
         setRefusedKey(null);
-        join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()) });
+        // A v2 connection resumes at the v1 cursor; a server on another epoch answers
+        // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
+        join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()), onRuntimeResync: () => void load() });
         return;
       }
       store().dropSessionLog(sessionId);
