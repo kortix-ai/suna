@@ -2,6 +2,8 @@
 
 import type {
   CaptureDevice,
+  CaptureDisplay,
+  CaptureFrame,
   CaptureSearchHit,
   CaptureTimeline,
   CaptureTimelineItems,
@@ -54,6 +56,15 @@ import {
 import { indexAtOrBefore, localTimeZone } from '../capture-time';
 import { deviceStatus } from '../devices/device-status';
 import { DeviceActionsMenu, StatusDot, useStatusText } from '../devices/device-status-ui';
+import {
+  activeDisplayAt,
+  coveredAt,
+  liveState,
+  recordedSince,
+  type FocusSpan,
+  type ScreenItem,
+} from './display-model';
+import { AllDisplaysStage, DisplayStrip, displayLabel } from './display-stage';
 import { FrameStage } from './frame-stage';
 import { JumpPopover } from './jump-popover';
 import { MomentPanel } from './moment-panel';
@@ -198,9 +209,14 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     lastSeen.current = bounds.last;
   }, [bounds, scrubber]);
   const [playing, setPlaying] = useState(false);
+  // Live: the playhead follows the newest indexed moment until the person moves it.
+  const [live, setLive] = useState(!urlAt);
   const interact = useCallback(() => {
     follow.current = false;
+    setLive(false);
   }, []);
+  // Which display the stage shows: the active one (follows focus), all side by side, or one pinned.
+  const [pick, setPick] = useState<'active' | 'all' | number>('active');
 
   // ── Runs for the visible window and a margin ──────────────────────────────
   const [range, setRange] = useState<[number, number]>([0, 0]);
@@ -217,18 +233,43 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     }
     setRange([from, to]);
   }
-  const timeline = useLatest<CaptureTimeline>(
-    useCaptureTimeline(
-      accountId,
-      range[1] > range[0]
-        ? {
-            from: new Date(range[0]).toISOString(),
-            to: new Date(range[1]).toISOString(),
-            userId,
-            deviceId,
-          }
-        : null,
-    ).data,
+  const timelineQuery = useCaptureTimeline(
+    accountId,
+    range[1] > range[0]
+      ? {
+          from: new Date(range[0]).toISOString(),
+          to: new Date(range[1]).toISOString(),
+          userId,
+          deviceId,
+          // A pinned display: its runs on the Apps track. Otherwise the focused display's.
+          displayId: typeof pick === 'number' ? pick : undefined,
+        }
+      : null,
+  );
+  const timeline = useLatest<CaptureTimeline>(timelineQuery.data);
+  const displays = useMemo<CaptureDisplay[]>(() => timeline?.displays ?? [], [timeline]);
+  const multi = displays.length > 1;
+  const focus = useMemo<FocusSpan[]>(
+    () =>
+      (timeline?.focus ?? [])
+        .filter((f) => f.device_id === deviceId)
+        .map((f) => ({
+          display_id: f.display_id,
+          s: Date.parse(f.start_at),
+          e: Date.parse(f.end_at),
+        })),
+    [timeline, deviceId],
+  );
+  const screenItems = useMemo<ScreenItem[]>(
+    () =>
+      (timeline?.chunks ?? [])
+        .filter((c) => c.kind === 'chunk' && c.device_id === deviceId)
+        .map((c) => ({
+          display_id: c.display_id ?? null,
+          s: Date.parse(c.start_at),
+          e: Date.parse(c.end_at),
+        })),
+    [timeline, deviceId],
   );
   const runs = useMemo<TrackRun[]>(
     () =>
@@ -254,35 +295,61 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
 
   // ── Frames, actions and transcript around the playhead ────────────────────
   const anchor = Math.floor(view.T / ITEMS_ALIGN) * ITEMS_ALIGN;
-  const items = useLatest<CaptureTimelineItems>(
-    useCaptureTimelineItems(
-      accountId,
-      bounds
-        ? {
-            from: new Date(anchor - ITEMS_BEFORE).toISOString(),
-            to: new Date(anchor + ITEMS_AFTER).toISOString(),
-            userId,
-            deviceId,
-          }
-        : null,
-    ).data,
+  const itemsQuery = useCaptureTimelineItems(
+    accountId,
+    bounds
+      ? {
+          from: new Date(anchor - ITEMS_BEFORE).toISOString(),
+          to: new Date(anchor + ITEMS_AFTER).toISOString(),
+          userId,
+          deviceId,
+          // Every display's frames, so the stage can follow focus and show all displays.
+          displayId: multi ? 'all' : undefined,
+        }
+      : null,
   );
-  const frames = useMemo(
+  const items = useLatest<CaptureTimelineItems>(itemsQuery.data);
+  const allFrames = useMemo(
     () => (items?.frames ?? []).filter((f) => !f.inactive && f.device_id === deviceId),
     [items, deviceId],
   );
+  const framesOf = useCallback(
+    (displayId: number | null): CaptureFrame[] =>
+      multi ? allFrames.filter((f) => f.display_id === displayId) : allFrames,
+    [allFrames, multi],
+  );
+  // The focused display's frames until the shown display is known (the pad needs frames first).
+  const focusedFrames = useMemo(
+    () => (multi ? allFrames.filter((f) => f.focused !== false) : allFrames),
+    [allFrames, multi],
+  );
   // The capture interval: the median gap between frames, at least 2 s (the run end pad).
   const pad = useMemo(() => {
-    const gaps = frames
+    const gaps = focusedFrames
       .slice(1)
-      .map((f, i) => Date.parse(f.ts) - Date.parse(frames[i]!.ts))
+      .map((f, i) => Date.parse(f.ts) - Date.parse(focusedFrames[i]!.ts))
       .filter((g) => g > 0)
       .sort((x, y) => x - y);
     return Math.min(30_000, Math.max(2_000, gaps[Math.floor(gaps.length / 2)] ?? 2_000));
-  }, [frames]);
+  }, [focusedFrames]);
+  // The display on the stage: the pinned one, else the one holding focus at the playhead.
+  const activeDisplay = multi
+    ? (activeDisplayAt(focus, view.T, pad) ??
+      focusedFrames[indexAtOrBefore(focusedFrames, view.T)]?.display_id ??
+      displays.find((d) => d.main)?.id ??
+      displays[0]!.id)
+    : null;
+  const shownDisplay = typeof pick === 'number' ? pick : activeDisplay;
+  const frames = useMemo(() => framesOf(shownDisplay), [framesOf, shownDisplay]);
   const frameIdx = indexAtOrBefore(frames, view.T);
   const frame = frameIdx >= 0 ? frames[frameIdx]! : null;
-  const offFrame = !frame || view.T - Date.parse(frame.ts) > pad * 1.5;
+  // Recorded when the playhead sits in a screen item of that display: a still screen writes
+  // no new frames, so the last frame at or before the playhead is what was on screen.
+  // A still display writes a keep-alive frame every 30 s: the last frame holds until then.
+  const covered =
+    coveredAt(screenItems, view.T, multi ? shownDisplay : null) ||
+    recordedSince(frame ? Date.parse(frame.ts) : null, view.T);
+  const offFrame = !frame || !covered;
   const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
   const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
   // While the next chunk's URL loads, the stage keeps the last frame it showed: no blank flash mid-scrub.
@@ -379,14 +446,33 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
       setPlaying(false);
       scrubber.panTo(at, true);
     },
-    [scrubber, interact],
+    [scrubber, interact, setPlaying],
   );
   const goLive = useCallback(() => {
     if (!bounds) return;
     follow.current = true;
+    setLive(true);
     setPlaying(false);
     scrubber.panTo(bounds.last);
-  }, [bounds, scrubber]);
+  }, [bounds, scrubber, setPlaying]);
+  // In Live, read the newest items every 10 s; the playhead advances when they land.
+  const refetchDays = days.refetch;
+  const refetchTimeline = timelineQuery.refetch;
+  const refetchItems = itemsQuery.refetch;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const poll = setInterval(() => {
+      void refetchDays();
+      void refetchTimeline();
+      void refetchItems();
+    }, 10_000);
+    const tick = setInterval(() => setNow(Date.now()), 1_000);
+    return () => {
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+  }, [live, refetchDays, refetchTimeline, refetchItems]);
   // Previous / next recorded day: the end of the one before, the start of the one after.
   const dayJump = (dir: -1 | 1) => {
     const T = scrubber.get().T;
@@ -496,10 +582,48 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     return () => clearTimeout(id);
   }, [view.T, bounds, urlAt, playing, pathname, router, search]);
 
-  const pickHit = (hit: CaptureSearchHit) => jumpTo(Date.parse(hit.ts));
+  // A hit opens on the display it was found on: the active view when that display had focus, else pinned.
+  const pickHit = (hit: CaptureSearchHit) => {
+    const at = Date.parse(hit.ts);
+    jumpTo(at);
+    if (multi && hit.display_id != null)
+      setPick(activeDisplayAt(focus, at, pad) === hit.display_id ? 'active' : hit.display_id);
+  };
+  // Per display when the device reports its displays: that display's last frame and its newest indexed item.
+  const reported = (
+    (device.live.status as { displays?: Array<{ id?: unknown; lastFrameMs?: unknown }> } | null)
+      ?.displays ?? []
+  ).find((d) => d.id === shownDisplay);
+  const shownItemsEnd = screenItems
+    .filter((item) => !multi || item.display_id === shownDisplay)
+    .reduce<number | null>((last, item) => (last === null || item.e > last ? item.e : last), null);
+  const liveInfo = live
+    ? liveState({
+        status: status.key,
+        lastFrameMs:
+          typeof reported?.lastFrameMs === 'number' ? reported.lastFrameMs : status.lastFrameMs,
+        newestIndexedMs: shownItemsEnd ?? bounds?.last ?? null,
+        now,
+      })
+    : null;
+  // Live and the device still records: the newest indexed frame, labelled as behind, never "no recording".
+  const uploading = liveInfo?.kind === 'uploading';
+  const behindSeconds =
+    liveInfo && Number.isFinite(liveInfo.behindMs)
+      ? Math.round((liveInfo.behindMs ?? 0) / 1000)
+      : null;
+  const liveLabel = !uploading
+    ? null
+    : behindSeconds === null
+      ? t('liveState.uploadingFirst')
+      : behindSeconds < 120
+        ? t('liveState.uploadingSeconds', { n: behindSeconds })
+        : t('liveState.uploadingMinutes', { n: Math.round(behindSeconds / 60) });
+  const stageDimmed = offFrame && !uploading;
+  const shownDisplayInfo = multi ? (displays.find((d) => d.id === shownDisplay) ?? null) : null;
   const gap = gapAt(runs, view.T, pad);
   const runUnder = runs.find((r) => r.s <= view.T && view.T <= r.e + pad) ?? null;
-  const metaApp = offFrame ? null : (frame?.app ?? runUnder?.app ?? null);
+  const metaApp = stageDimmed ? null : (frame?.app ?? runUnder?.app ?? null);
   const noData = days.isSuccess && dayList.length === 0;
   const legend = useMemo(() => {
     const seen = new Map<string, TrackRun>();
@@ -580,6 +704,27 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               deviceId={deviceId}
               onPick={pickHit}
             />
+            {multi ? (
+              <Select
+                value={String(pick)}
+                onValueChange={(value) =>
+                  setPick(value === 'active' || value === 'all' ? value : Number(value))
+                }
+              >
+                <SelectTrigger size="sm" aria-label={t('display.picker')} className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">{t('display.active')}</SelectItem>
+                  <SelectItem value="all">{t('display.all')}</SelectItem>
+                  {displays.map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>
+                      {displayLabel(d, displays, t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
             <div
               role="group"
               aria-label={t('layers')}
@@ -628,27 +773,42 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
           className="flex min-w-0 grow-999 basis-xl flex-col gap-3"
         >
           <div className="bg-muted relative flex aspect-16/10 max-h-[calc(100svh-24rem)] min-h-48 w-full overflow-hidden rounded-md border">
-            {layers.screen ? (
+            {layers.screen && pick === 'all' && multi ? (
+              <AllDisplaysStage
+                accountId={accountId}
+                userId={userId}
+                displays={displays}
+                activeId={activeDisplay}
+                frameOf={(id) => framesOf(id)[indexAtOrBefore(framesOf(id), view.T)] ?? null}
+                recorded={(id) => coveredAt(screenItems, view.T, id)}
+                onPick={(id) => setPick(id)}
+              />
+            ) : layers.screen ? (
               <FrameStage
                 src={display.src}
                 seconds={display.seconds}
                 label={t('frame.label', { app: metaApp ?? t('unknownApp') })}
-                dimmed={offFrame}
-                failedLabel={offFrame || noData ? null : t('frame.failed')}
+                dimmed={stageDimmed}
+                failedLabel={stageDimmed || noData ? null : t('frame.failed')}
               >
                 {noData ? (
                   <StageNotice
                     title={t('empty.noDataTitle', { device: name })}
                     body={statusText(status)}
                   />
-                ) : video?.encrypted && !offFrame ? (
+                ) : !frame && liveLabel ? (
+                  <StageNotice title={liveLabel} />
+                ) : video?.encrypted && !stageDimmed ? (
                   <StageNotice title={t('frame.encrypted')} />
-                ) : bounds && offFrame ? (
+                ) : bounds && stageDimmed ? (
                   <StageNotice
-                    title={gap ? t('track.gap', { shortcut: `${MOD_KEY()}←` }) : t('frame.none')}
+                    title={
+                      gap && !live ? t('track.gap', { shortcut: `${MOD_KEY()}←` }) : t('frame.none')
+                    }
+                    body={live ? statusText(status) : undefined}
                   />
                 ) : null}
-                {bounds && !offFrame ? (
+                {bounds && !stageDimmed ? (
                   <div className="absolute bottom-3 left-3 z-10 flex flex-wrap gap-2">
                     <span className="bg-foreground text-background rounded-sm px-2 py-0.5 font-mono text-xs tabular-nums">
                       {time}
@@ -665,7 +825,23 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                         {metaApp}
                       </span>
                     ) : null}
+                    {liveLabel ? (
+                      <span
+                        className="bg-popover text-muted-foreground rounded-sm border px-2 py-0.5 text-xs"
+                        aria-live="polite"
+                      >
+                        {liveLabel}
+                      </span>
+                    ) : null}
                   </div>
+                ) : null}
+                {shownDisplayInfo ? (
+                  <span className="bg-popover text-foreground absolute top-3 left-3 z-10 rounded-sm border px-2 py-0.5 text-xs">
+                    {displayLabel(shownDisplayInfo, displays, t)}
+                    {pick === 'active' ? (
+                      <span className="text-muted-foreground"> · {t('display.activeBadge')}</span>
+                    ) : null}
+                  </span>
                 ) : null}
               </FrameStage>
             ) : (
@@ -803,6 +979,20 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
             </div>
           </div>
 
+          {multi ? (
+            <DisplayStrip
+              displays={displays}
+              items={screenItems}
+              focus={focus}
+              T={view.T}
+              spp={view.spp}
+              width={trackW}
+              shownId={shownDisplay}
+              label={(d) => displayLabel(d, displays, t)}
+              short={(i) => t('display.unnamed', { n: i + 1 })}
+              title={t('display.strip')}
+            />
+          ) : null}
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             {legend.map((app) => (
               <span key={app} className="flex items-center gap-1.5">
@@ -822,8 +1012,8 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
           className="min-w-0 grow basis-sm xl:max-w-md"
           at={view.T}
           app={metaApp}
-          title={offFrame ? null : (frame?.title ?? runUnder?.title ?? null)}
-          url={offFrame ? null : (frame?.url ?? runUnder?.url ?? null)}
+          title={stageDimmed ? null : (frame?.title ?? runUnder?.title ?? null)}
+          url={stageDimmed ? null : (frame?.url ?? runUnder?.url ?? null)}
           actions={
             layers.actions ? (items?.actions ?? []).filter((x) => x.device_id === deviceId) : []
           }

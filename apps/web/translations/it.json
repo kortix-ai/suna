@@ -20627,6 +20627,21 @@
       },
       "live": "Live",
       "liveHint": "Vai al fotogramma più recente (L)",
+      "liveState": {
+        "uploadingFirst": "Live · caricamento della prima registrazione",
+        "uploadingSeconds": "Live · caricamento, {n} s indietro",
+        "uploadingMinutes": "Live · caricamento, {n} min indietro"
+      },
+      "display": {
+        "picker": "Schermo",
+        "active": "Schermo attivo",
+        "all": "Tutti gli schermi",
+        "main": "Principale",
+        "unnamed": "Schermo {n}",
+        "activeBadge": "Attivo",
+        "strip": "Schermi",
+        "show": "Mostra {name}"
+      },
       "player": "Player",
       "screenHidden": "Livello schermo nascosto. Azioni e passaggi restano visibili.",
       "play": "Riproduci (Spazio)",

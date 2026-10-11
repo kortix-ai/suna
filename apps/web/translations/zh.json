@@ -20627,6 +20627,21 @@
       },
       "live": "实时",
       "liveHint": "跳到最新一帧 (L)",
+      "liveState": {
+        "uploadingFirst": "直播 · 正在上传第一段录制",
+        "uploadingSeconds": "直播 · 正在上传，落后 {n} 秒",
+        "uploadingMinutes": "直播 · 正在上传，落后 {n} 分钟"
+      },
+      "display": {
+        "picker": "显示器",
+        "active": "活动显示器",
+        "all": "所有显示器",
+        "main": "主显示器",
+        "unnamed": "显示器 {n}",
+        "activeBadge": "活动",
+        "strip": "显示器",
+        "show": "显示 {name}"
+      },
       "player": "播放器",
       "screenHidden": "屏幕层已隐藏。操作和步骤仍会显示。",
       "play": "播放 (空格键)",

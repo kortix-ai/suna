@@ -20627,6 +20627,21 @@
       },
       "live": "ライブ",
       "liveHint": "最新のフレームへ移動 (L)",
+      "liveState": {
+        "uploadingFirst": "ライブ · 最初の記録をアップロード中",
+        "uploadingSeconds": "ライブ · アップロード中、{n} 秒遅れ",
+        "uploadingMinutes": "ライブ · アップロード中、{n} 分遅れ"
+      },
+      "display": {
+        "picker": "ディスプレイ",
+        "active": "アクティブなディスプレイ",
+        "all": "すべてのディスプレイ",
+        "main": "メイン",
+        "unnamed": "ディスプレイ {n}",
+        "activeBadge": "アクティブ",
+        "strip": "ディスプレイ",
+        "show": "{name} を表示"
+      },
       "player": "プレーヤー",
       "screenHidden": "画面レイヤーは非表示です。アクションとステップは引き続き表示されます。",
       "play": "再生 (スペース)",

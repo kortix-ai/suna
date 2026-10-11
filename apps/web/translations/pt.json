@@ -20627,6 +20627,21 @@
       },
       "live": "Ao vivo",
       "liveHint": "Ir para o quadro mais recente (L)",
+      "liveState": {
+        "uploadingFirst": "Ao vivo · enviando a primeira gravação",
+        "uploadingSeconds": "Ao vivo · enviando, {n} s de atraso",
+        "uploadingMinutes": "Ao vivo · enviando, {n} min de atraso"
+      },
+      "display": {
+        "picker": "Tela",
+        "active": "Tela ativa",
+        "all": "Todas as telas",
+        "main": "Principal",
+        "unnamed": "Tela {n}",
+        "activeBadge": "Ativa",
+        "strip": "Telas",
+        "show": "Mostrar {name}"
+      },
       "player": "Player",
       "screenHidden": "Camada de tela oculta. Ações e etapas continuam visíveis.",
       "play": "Reproduzir (Espaço)",

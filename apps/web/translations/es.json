@@ -20627,6 +20627,21 @@
       },
       "live": "En vivo",
       "liveHint": "Ir al fotograma más reciente (L)",
+      "liveState": {
+        "uploadingFirst": "En directo · subiendo la primera grabación",
+        "uploadingSeconds": "En directo · subiendo, {n} s de retraso",
+        "uploadingMinutes": "En directo · subiendo, {n} min de retraso"
+      },
+      "display": {
+        "picker": "Pantalla",
+        "active": "Pantalla activa",
+        "all": "Todas las pantallas",
+        "main": "Principal",
+        "unnamed": "Pantalla {n}",
+        "activeBadge": "Activa",
+        "strip": "Pantallas",
+        "show": "Mostrar {name}"
+      },
       "player": "Reproductor",
       "screenHidden": "Capa de pantalla oculta. Las acciones y los pasos siguen visibles.",
       "play": "Reproducir (Espacio)",

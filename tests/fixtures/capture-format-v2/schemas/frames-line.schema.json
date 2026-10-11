@@ -137,10 +137,8 @@
           ]
         },
         "id": {
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": "integer",
+          "description": "The display; absent before multi-display."
         },
         "name": {
           "type": [
@@ -149,10 +147,16 @@
           ]
         },
         "main": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "focused": {
-          "type": "boolean",
+          "type": [
+            "boolean",
+            "null"
+          ],
           "description": "This display held the focused window when the frame was taken."
         }
       }

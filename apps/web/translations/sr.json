@@ -20627,6 +20627,21 @@
       },
       "live": "Уживо",
       "liveHint": "Иди на најновији кадар (L)",
+      "liveState": {
+        "uploadingFirst": "Uživo · otpremanje prvog snimka",
+        "uploadingSeconds": "Uživo · otpremanje, {n} s kašnjenja",
+        "uploadingMinutes": "Uživo · otpremanje, {n} min kašnjenja"
+      },
+      "display": {
+        "picker": "Ekran",
+        "active": "Aktivni ekran",
+        "all": "Svi ekrani",
+        "main": "Glavni",
+        "unnamed": "Ekran {n}",
+        "activeBadge": "Aktivan",
+        "strip": "Ekrani",
+        "show": "Prikaži {name}"
+      },
       "player": "Плејер",
       "screenHidden": "Слој екрана је сакривен. Радње и кораци се и даље приказују.",
       "play": "Пусти (размак)",

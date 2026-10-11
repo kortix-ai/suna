@@ -20627,6 +20627,21 @@
       },
       "live": "Live",
       "liveHint": "Go to the newest frame (L)",
+      "liveState": {
+        "uploadingFirst": "Live · uploading the first recording",
+        "uploadingSeconds": "Live · uploading, {n} s behind",
+        "uploadingMinutes": "Live · uploading, {n} min behind"
+      },
+      "display": {
+        "picker": "Display",
+        "active": "Active display",
+        "all": "All displays",
+        "main": "Main",
+        "unnamed": "Display {n}",
+        "activeBadge": "Active",
+        "strip": "Displays",
+        "show": "Show {name}"
+      },
       "player": "Player",
       "screenHidden": "Screen layer hidden. Actions and steps still show.",
       "play": "Play (Space)",

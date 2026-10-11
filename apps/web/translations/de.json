@@ -20627,6 +20627,21 @@
       },
       "live": "Live",
       "liveHint": "Zum neuesten Bild springen (L)",
+      "liveState": {
+        "uploadingFirst": "Live · erste Aufnahme wird hochgeladen",
+        "uploadingSeconds": "Live · wird hochgeladen, {n} s zurück",
+        "uploadingMinutes": "Live · wird hochgeladen, {n} Min. zurück"
+      },
+      "display": {
+        "picker": "Bildschirm",
+        "active": "Aktiver Bildschirm",
+        "all": "Alle Bildschirme",
+        "main": "Haupt",
+        "unnamed": "Bildschirm {n}",
+        "activeBadge": "Aktiv",
+        "strip": "Bildschirme",
+        "show": "{name} zeigen"
+      },
       "player": "Player",
       "screenHidden": "Bildschirmebene ausgeblendet. Aktionen und Schritte bleiben sichtbar.",
       "play": "Abspielen (Leertaste)",

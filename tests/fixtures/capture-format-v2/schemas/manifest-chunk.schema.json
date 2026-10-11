@@ -95,7 +95,7 @@
     },
     "display": {
       "type": "object",
-      "description": "The display this item recorded. A multi-display device writes one item per display. Absent on older devices.",
+      "description": "The one display this chunk recorded (one chunk per display). Absent on chunks written before multi-display: one unnamed display.",
       "required": [
         "id",
         "x",
@@ -126,10 +126,16 @@
           "type": "number"
         },
         "scale": {
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "main": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       }
     }

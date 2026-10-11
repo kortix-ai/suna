@@ -108,10 +108,10 @@
     },
     "displays": {
       "type": "array",
-      "description": "The displays connected now.",
+      "description": "Every connected display at the last capture, the focused one first.",
       "items": {
         "type": "object",
-        "description": "One physical display. Points, in the global desktop space (top-left origin).",
+        "description": "A connected display: id (CGDirectDisplayID on macOS, HMONITOR on Windows, RandR monitor index on Linux), name, bounds in points (global coordinates, top-left origin), backing scale, and whether it is the main display.",
         "required": [
           "id",
           "x",
@@ -142,10 +142,16 @@
             "type": "number"
           },
           "scale": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "main": {
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         }
       }

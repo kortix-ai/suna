@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { CaptureDevice } from '@kortix/sdk';
 import {
   appColor,
   dayWindow,
@@ -52,7 +53,7 @@ describe('capture time', () => {
 });
 
 describe('device status', () => {
-  const device = (state: string, status: Record<string, unknown> | null) =>
+  const device = (state: string, status: Record<string, unknown> | null): CaptureDevice =>
     ({
       device_id: 'd1',
       user_id: 'u1',
@@ -61,11 +62,12 @@ describe('device status', () => {
       os_version: '15',
       arch: 'arm64',
       app_version: '0.3.0',
+      displays: [],
       live: { state, status, reported_at: '2026-10-03T10:00:00.000Z' },
       last_credentials_at: null,
       revoked_at: null,
       created_at: '2026-10-01T10:00:00.000Z',
-    }) as const;
+    }) as CaptureDevice;
 
   test('recording is green with its layers, queue and last frame', () => {
     const view = deviceStatus(

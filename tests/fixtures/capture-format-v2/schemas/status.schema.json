@@ -130,6 +130,40 @@
     "reportedAtMs": {
       "type": "integer",
       "minimum": 0
+    },
+    "displays": {
+      "type": "array",
+      "description": "Every connected display, the focused one first, with the time of its last frame (a static display writes a keep-alive frame every 30 s).",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "lastFrameMs"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "main": {
+            "type": "boolean"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "lastFrameMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      }
     }
   }
 }

@@ -20627,6 +20627,21 @@
       },
       "live": "En direct",
       "liveHint": "Aller à l’image la plus récente (L)",
+      "liveState": {
+        "uploadingFirst": "En direct · envoi du premier enregistrement",
+        "uploadingSeconds": "En direct · envoi en cours, {n} s de retard",
+        "uploadingMinutes": "En direct · envoi en cours, {n} min de retard"
+      },
+      "display": {
+        "picker": "Écran",
+        "active": "Écran actif",
+        "all": "Tous les écrans",
+        "main": "Principal",
+        "unnamed": "Écran {n}",
+        "activeBadge": "Actif",
+        "strip": "Écrans",
+        "show": "Afficher {name}"
+      },
       "player": "Lecteur",
       "screenHidden": "Couche écran masquée. Les actions et les étapes restent visibles.",
       "play": "Lecture (Espace)",
