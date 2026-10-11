@@ -301,7 +301,7 @@ export function createConnectionsRouter() {
         );
       }
       const result = await changeComputerAccess(c.req.param('tunnelId'), ownerClause, change);
-      if (!result.ok) return c.json({ error: result.message, kind: result.kind }, result.status);
+      if (!result.ok) return c.json({ error: result.message, code: result.kind }, result.status);
       return c.json(result.access);
     },
   );

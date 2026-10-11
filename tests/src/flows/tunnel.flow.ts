@@ -89,7 +89,7 @@ flow(
       (await owner.get("/v1/tunnel/connections/:tunnelId", params)).status(200).body().has("$.access", null);
       (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "sometimes" }, params)).status(400);
       const offline = await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, params);
-      offline.status(409).body().has("$.kind", "computer_offline");
+      offline.status(409).body().has("$.code", "computer_offline");
       assert.match(offline.json<any>().error, /npx @kortix\/agent-tunnel@latest access/);
       (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, { params: { tunnelId: MISSING_UUID } })).status(404);
     });

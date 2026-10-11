@@ -1715,6 +1715,7 @@
     "useSetAdminBootModes",
     "useSetAdminProviderDistribution",
     "useSetAdminProviderFallback",
+    "useSetComputerAccess",
     "useSetGatewayBudget",
     "useSetTicketMilestone",
     "useShareFolder",

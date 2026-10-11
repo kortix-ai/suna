@@ -952,8 +952,8 @@ describe('the owner changes access through Kortix (POST /tunnel/connections/:id/
     await db.update(tunnelConnections).set({ status: 'offline', relayOwnerId: null }).where(eq(tunnelConnections.tunnelId, laptop));
     const res = await post(ALICE, { mode: 'off' });
     expect(res.status).toBe(409);
-    const body = (await res.json()) as { kind: string; error: string };
-    expect(body.kind).toBe('computer_offline');
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe('computer_offline');
     expect(body.error).toContain('npx @kortix/agent-tunnel@latest access');
   });
 
@@ -962,7 +962,7 @@ describe('the owner changes access through Kortix (POST /tunnel/connections/:id/
     relayed.length = 0;
     const res = await post(ALICE, { mode: 'off' });
     expect(res.status).toBe(409);
-    expect(((await res.json()) as { kind: string }).kind).toBe('agent_update_required');
+    expect(((await res.json()) as { code: string }).code).toBe('agent_update_required');
     expect(relayed).toEqual([]);
   });
 
@@ -993,7 +993,7 @@ describe('the owner changes access through Kortix (POST /tunnel/connections/:id/
     };
     const res = await post(ALICE, { mode: 'always' });
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ kind: 'computer_access_unconfirmed', error: 'The owner declined on the computer.' });
+    expect(await res.json()).toEqual({ code: 'computer_access_unconfirmed', error: 'The owner declined on the computer.' });
   });
 
   test('the RPC route and the computer connector never reach tunnel.access.set', async () => {
