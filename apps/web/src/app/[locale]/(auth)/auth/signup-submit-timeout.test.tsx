@@ -4,7 +4,6 @@
 // a call queued behind the hung one). While a submit is in flight, further
 // clicks must not fire a second request.
 import { afterEach, expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import messages from '../../../../../translations/en.json';
@@ -68,12 +67,6 @@ async function renderPage() {
   });
   if (!root) throw new Error('Auth page did not render');
   return root;
-}
-
-async function continueWithEmail(root: NonNullable<ReturnType<typeof create>>, address: string) {
-  const email = root.root.findByProps({ autoComplete: 'email' });
-  await act(async () => email.props.onChange({ target: { value: address } }));
-  await act(async () => root.root.findByType('form').props.onSubmit({ preventDefault() {} }));
 }
 
 afterEach(() => {

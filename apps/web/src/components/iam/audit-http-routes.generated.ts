@@ -758,6 +758,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|tunnel|connections|:tunnelId",
   "GET|v1|tunnel|connections|:tunnelId",
   "PATCH|v1|tunnel|connections|:tunnelId",
+  "POST|v1|tunnel|connections|:tunnelId|access",
   "POST|v1|tunnel|connections|:tunnelId|rotate-token",
   "POST|v1|tunnel|device-auth",
   "POST|v1|tunnel|device-auth|:code|approve",

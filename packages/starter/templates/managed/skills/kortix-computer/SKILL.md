@@ -112,7 +112,8 @@ Treat these as real outcomes; do not retry blind:
   held back for 10 minutes. Ask them to allow it from the Kortix menu-bar icon
   or the "Your computer" menu, then continue when they say so.
 - `computer_access_off` — the owner turned access off on the computer. Tell
-  them; only they can turn it back on ("Your computer" → Access). Do not retry.
+  them; only they can turn it back on ("Your computer" → Access in Kortix, or
+  `npx @kortix/agent-tunnel@latest access ask` on that computer). Do not retry.
 - `computer_offline` — the machine is paired but not connected. Ask the human
   to wake it or resume access in the Kortix desktop app.
 - `computer_unpaired` — the account's machine was disconnected. The human must

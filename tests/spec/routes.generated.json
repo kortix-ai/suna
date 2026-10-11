@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 788,
+  "count": 789,
   "routes": [
     {
       "method": "GET",
@@ -3025,6 +3025,10 @@
     {
       "method": "PATCH",
       "path": "/v1/tunnel/connections/:tunnelId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/connections/:tunnelId/access"
     },
     {
       "method": "POST",

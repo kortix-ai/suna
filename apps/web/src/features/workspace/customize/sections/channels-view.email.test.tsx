@@ -12,6 +12,8 @@ mock.module('@kortix/sdk/react', () => ({
   useVisibleAgents: () => [],
   useRuntimeProviders: disconnected,
   modelKeyToWire: ({ providerID, modelID }: { providerID: string; modelID: string }) => `${providerID}/${modelID}`,
+  flattenModels: () => [],
+  modelProviderMode: () => 'gateway' as const,
 }));
 mock.module('@/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: canWrite }),
@@ -51,7 +53,6 @@ mock.module('@/features/workspace/customize/sections/connectors-view', () => ({
 mock.module('@/features/session/model-selector', () => ({ ModelSelector: () => null }));
 mock.module('@/features/session/session-chat-input', () => ({
   AgentSelector: () => null,
-  flattenModels: () => [],
 }));
 
 const { ChannelsSection } = await import('./view/channels-view');

@@ -54,6 +54,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Changed MFA requirement': 'text23ffb018d2a2',
   'Changed account member role': 'text9ad1905ba13a',
   'Changed admin session access': 'text0814e13d671d',
+  'Changed computer access': 'text8aaa8aa54664',
   'Changed group role on project': 'text84b78c923b6a',
   'Changed member role': 'text3e820fc2d91f',
   'Changed project member role': 'text2b99e2a42352',
