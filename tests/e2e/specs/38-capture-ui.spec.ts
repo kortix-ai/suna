@@ -43,7 +43,7 @@ async function anon<T>(
 }
 
 test.describe("38 — Capture UI", () => {
-  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search), overview, workflows and settings", async ({
+  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search) and Organization settings", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -233,49 +233,21 @@ test.describe("38 — Capture UI", () => {
       ).toHaveCount(0);
       await expect(page).toHaveURL(/at=/);
 
-      // Overview and Workflows read the intelligence contract; nothing is clustered yet.
-      const overviewRead = page.waitForResponse(
-        (r) =>
-          r.url().includes(`/v1/accounts/${accountId}/capture/overview`) &&
-          r.request().method() === "GET",
-      );
+      // Organization settings (capture.manage): turning audio off on the Recording tab writes the policy and reads back.
       await page
-        .getByRole("navigation", { name: "Kortix Capture" })
-        .getByRole("link", { name: "Overview" })
+        .getByRole("link", { name: "Organization settings", exact: true })
         .click();
-      expect((await overviewRead).status()).toBe(200);
-      await expect(
-        page.getByRole("heading", { name: "Overview" }),
-      ).toBeVisible();
-      await expect(page.getByText("Hours recorded")).toBeVisible();
-      await page
-        .getByRole("navigation", { name: "Kortix Capture" })
-        .getByRole("link", { name: "Workflows" })
-        .click();
-      await expect(
-        page.getByRole("heading", { name: "Workflows" }),
-      ).toBeVisible({
-        timeout: 30_000,
-      });
-      // No Ask in Kortix Capture: agents read it through the Kortix MCP server.
-      await expect(
-        page
-          .getByRole("navigation", { name: "Kortix Capture" })
-          .getByRole("link", { name: "Ask" }),
-      ).toHaveCount(0);
-
-      // Settings (Capture admins): turning audio off writes the policy and reads back.
-      await page.getByRole("link", { name: "Settings", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(`/capture/${accountId}/settings`),
       );
+      await page.getByRole("tab", { name: "Recording", exact: true }).click();
       await page.getByRole("switch", { name: "Audio" }).click();
       const put = page.waitForResponse(
         (r) =>
           r.url().endsWith(`/v1/accounts/${accountId}/capture/policy`) &&
           r.request().method() === "PUT",
       );
-      await page.getByRole("button", { name: "Save policy" }).click();
+      await page.getByRole("button", { name: "Save changes" }).click();
       expect((await put).status()).toBe(200);
       const policy = await api<{ policy: { layers: { audio: boolean } } }>(
         session.access_token,
