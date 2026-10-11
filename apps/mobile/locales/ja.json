@@ -1200,13 +1200,15 @@
     "showMoreSubsessionsLabel_other": "{{title}} のサブセッションをさらに{{count}}件表示"
   },
   "genui": {
-    "pick": "おすすめ",
-    "source": "出典: {{source}}",
-    "showData": "データを表示",
-    "hideData": "データを非表示",
-    "openMap": "地図を開く",
+    "chartTapHint": "タップして値を表示",
     "map": "地図",
-    "mapUnavailable": "地図を表示できません"
+    "mapUnavailable": "地図を表示できません",
+    "openImage": "画像を開く",
+    "openMap": "地図を開く",
+    "pick": "おすすめ",
+    "pieFocus": "{{label}}は合計の{{percent}}%",
+    "pieOfTotal": "{{total}}のうち{{value}}",
+    "showData": "データを表示"
   },
   "updateRequired": {
     "title": "アップデートが必要です",

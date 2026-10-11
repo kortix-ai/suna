@@ -1,6 +1,7 @@
 /**
- * The interactive map, full screen: MapLibre in a WebView inside a Dialog. A Dialog, not a bottom
- * sheet, so no pan-to-dismiss competes with panning the map (design.md §8). Mounted only while open.
+ * The map: MapLibre in a WebView. `MapWebView` draws it, inline in the transcript as a still picture or
+ * interactive. `MapSheet` is the interactive map full screen, in a Dialog, not a bottom sheet, so no
+ * pan-to-dismiss competes with panning the map (design.md §8). The sheet is mounted only while open.
  */
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
@@ -60,11 +61,11 @@ function loadBundle() {
   return bundle;
 }
 
-export type MapSheetData = Omit<MapDocumentInput, 'script' | 'css' | 'background' | 'routeColor'>;
+export type MapSheetData = Omit<MapDocumentInput, 'script' | 'css' | 'background' | 'routeColor' | 'pin' | 'interactive'>;
 
-export function MapSheet({ title, data, onClose }: { title: string; data: MapSheetData; onClose: () => void }) {
+/** The map page in a WebView, in theme colors. Still (`interactive={false}`): no pan, zoom, or popups. */
+export function MapWebView({ data, interactive = true }: { data: MapSheetData; interactive?: boolean }) {
   const { t } = useTranslation();
-  const { width, height } = useWindowDimensions();
   const { colorScheme } = useColorScheme();
   const theme = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const [html, setHtml] = useState<string | null>(null);
@@ -80,8 +81,10 @@ export function MapSheet({ title, data, onClose }: { title: string; data: MapShe
             ...data,
             script,
             css,
+            interactive,
             background: withAlpha(theme.popover, 1),
             routeColor: withAlpha(theme.foreground, 0.7),
+            pin: { surface: withAlpha(theme.background, 1), ink: withAlpha(theme.foreground, 1), border: withAlpha(theme.border, 1), shadow: withAlpha(theme.foreground, 0.18) },
           }),
         );
       },
@@ -90,8 +93,38 @@ export function MapSheet({ title, data, onClose }: { title: string; data: MapShe
     return () => {
       alive = false;
     };
-  }, [data, theme]);
+  }, [data, theme, interactive]);
 
+  if (!html) {
+    return (
+      <View className="flex-1 items-center justify-center">
+        {failed ? <Text variant="muted">{t('genui.mapUnavailable', 'Map unavailable')}</Text> : <KortixLoader />}
+      </View>
+    );
+  }
+  return (
+    <WebView
+      source={{ html, baseUrl: '' }}
+      originWhitelist={ORIGIN_WHITELIST}
+      onShouldStartLoadWithRequest={guardNavigation}
+      onOpenWindow={openWindow}
+      javaScriptEnabled
+      cacheEnabled={false}
+      incognito
+      bounces={false}
+      scrollEnabled={interactive}
+      overScrollMode="never"
+      textZoom={100}
+      automaticallyAdjustContentInsets={false}
+      contentInsetAdjustmentBehavior="never"
+      style={{ flex: 1, backgroundColor: 'transparent' }}
+    />
+  );
+}
+
+export function MapSheet({ title, data, onClose }: { title: string; data: MapSheetData; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { width, height } = useWindowDimensions();
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
       {/* MermaidBlock's fullscreen geometry: the window less a 16pt edge, 90% tall. */}
@@ -106,27 +139,7 @@ export function MapSheet({ title, data, onClose }: { title: string; data: MapShe
             </Button>
           </DialogClose>
         </View>
-        {html ? (
-          <WebView
-            source={{ html, baseUrl: '' }}
-            originWhitelist={ORIGIN_WHITELIST}
-            onShouldStartLoadWithRequest={guardNavigation}
-            onOpenWindow={openWindow}
-            javaScriptEnabled
-            cacheEnabled={false}
-            incognito
-            bounces={false}
-            overScrollMode="never"
-            textZoom={100}
-            automaticallyAdjustContentInsets={false}
-            contentInsetAdjustmentBehavior="never"
-            style={{ flex: 1, backgroundColor: 'transparent' }}
-          />
-        ) : (
-          <View className="flex-1 items-center justify-center">
-            {failed ? <Text variant="muted">{t('genui.mapUnavailable', 'Map unavailable')}</Text> : <KortixLoader />}
-          </View>
-        )}
+        <MapWebView data={data} />
       </DialogContent>
     </Dialog>
   );

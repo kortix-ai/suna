@@ -157,6 +157,81 @@ describe('parse + validate', () => {
     expect(result.issues.filter((issue) => issue.code === 'too-many-nodes')).toHaveLength(1);
     expect(elapsed).toBeLessThan(50);
   });
+
+  test('an invalid optional argument drops only itself: a chart with a long unit still renders', () => {
+    // A real reply: the unit "million arrivals" is over the 12-character cap. The chart must survive it.
+    const { root, issues } = parseGenui(
+      'root = Stack([chart])\nchart = BarChart(["France", "Spain"], [s], "UN Tourism 2024", "million arrivals")\ns = Series("Arrivals", [102, 93.7])',
+    );
+    const chart = (root?.props.children as { type: string; props: Record<string, unknown> }[])[0]!;
+    expect(chart.type).toBe('BarChart');
+    expect(chart.props.unit).toBeUndefined();
+    expect(chart.props.source).toBe('UN Tourism 2024');
+    expect(issues.map((i) => `${i.code}:${i.component}`)).toEqual(['schema:BarChart']);
+    // A required argument that fails still drops the component.
+    const bad = parseGenui('root = Stack([c, ok])\nc = Callout("info", "' + 'x'.repeat(401) + '")\nok = Badge("fine")');
+    expect((bad.root?.props.children as { type: string }[]).map((n) => n.type)).toEqual(['Badge']);
+  });
+
+  test('Card takes optional rating, review count, and price after its badges', () => {
+    const { root, issues } = parseGenui(
+      'root = Stack([c])\nc = Card("The Taj Mahal Palace", "Iconic heritage luxury.", "Colaba, South Mumbai", null, "https://example.com/taj", [b], 4.7, 33899, "From ₹24,000 a night")\nb = Badge("Luxury")',
+    );
+    expect(issues).toEqual([]);
+    const card = (root?.props.children as { props: Record<string, unknown> }[])[0]!;
+    expect([card.props.rating, card.props.reviews, card.props.price]).toEqual([4.7, 33899, 'From ₹24,000 a night']);
+    // A rating outside 0 to 5 drops only itself (an optional argument), the card stays.
+    const off = parseGenui('root = Stack([c])\nc = Card("A", "B", null, null, null, [], 9)');
+    const kept = (off.root?.props.children as { type: string; props: Record<string, unknown> }[])[0]!;
+    expect([kept.type, kept.props.rating]).toEqual(['Card', undefined]);
+  });
+
+  test('Marker takes an optional value, the short figure shown on its map label', () => {
+    const { root, issues } = parseGenui(
+      'root = Stack([m])\nm = Map([a], "OpenStreetMap Nominatim")\na = Marker(18.92, 72.83, "The Taj Mahal Palace", "Colaba", "★ 4.7")',
+    );
+    expect(issues).toEqual([]);
+    const marker = ((root?.props.children as { props: { markers: { props: Record<string, unknown> }[] } }[])[0]!).props.markers[0]!;
+    expect(marker.props.value).toBe('★ 4.7');
+  });
+
+  test('Marker takes an optional link and photo for its popup; an unsafe one drops only itself', () => {
+    const { root, issues } = parseGenui(
+      'root = Stack([m])\nm = Map([a, b], "OpenStreetMap Nominatim")\na = Marker(18.92, 72.83, "The Taj Mahal Palace", "Apollo Bunder, Colaba", "★ 4.7", "https://example.com/taj", "https://example.com/taj.jpg")\nb = Marker(18.93, 72.82, "The Oberoi", null, null, "javascript:alert(1)")',
+    );
+    const markers = ((root?.props.children as { props: { markers: { props: Record<string, unknown> }[] } }[])[0]!).props.markers;
+    expect([markers[0]!.props.href, markers[0]!.props.image]).toEqual(['https://example.com/taj', 'https://example.com/taj.jpg']);
+    expect(markers[1]!.props.href).toBeUndefined();
+    expect(issues.map((i) => i.code)).toEqual(['url']);
+  });
+
+  test('Stack takes an optional layout, list or grid, for a list of Cards', () => {
+    const grid = parseGenui('root = Stack([a, b], "col", "grid")\na = Card("A")\nb = Card("B")');
+    expect(grid.issues).toEqual([]);
+    expect(grid.root!.props.layout).toBe('grid');
+    expect(parseGenui('root = Stack([a, b], null, "list")\na = Card("A")\nb = Card("B")').root!.props.layout).toBe('list');
+    // An unknown layout drops only itself: the cards still render.
+    const bad = parseGenui('root = Stack([a, b], "col", "masonry")\na = Card("A")\nb = Card("B")');
+    expect(bad.root!.props.layout).toBeUndefined();
+    expect((bad.root!.props.children as unknown[]).length).toBe(2);
+  });
+  test('Marker takes an optional phone and kind for its place card', () => {
+    const { root, issues } = parseGenui(
+      'root = Stack([m])\nm = Map([a], "OpenStreetMap Nominatim")\na = Marker(19.04, 72.82, "Taj Lands End", "Bandstand, Bandra West", "★ 4.6", "https://example.com/tle", null, "+91 22 6668 1234", "Hotel")',
+    );
+    expect(issues).toEqual([]);
+    const marker = ((root?.props.children as { props: { markers: { props: Record<string, unknown> }[] } }[])[0]!).props.markers[0]!;
+    expect([marker.props.phone, marker.props.kind]).toEqual(['+91 22 6668 1234', 'Hotel']);
+  });
+
+  test('PieChart takes an optional fourth argument, the layout variant', () => {
+    const slices = 'a = Slice("A", 3)\nb = Slice("B", 1)';
+    const ok = parseGenui(`root = Stack([p])\np = PieChart([a, b], "src", "USD", "treemap")\n${slices}`);
+    expect(ok.issues).toEqual([]);
+    expect((ok.root?.props.children as { props: Record<string, unknown> }[])[0]!.props.variant).toBe('treemap');
+    const bad = parseGenui(`root = Stack([p])\np = PieChart([a, b], "src", "USD", "spiral")\n${slices}`);
+    expect(bad.issues.map((i) => `${i.code}:${i.component}`)).toContain('schema:PieChart');
+  });
 });
 
 type Tree = { id: string; type: string; props: Record<string, unknown> };

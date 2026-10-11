@@ -11,8 +11,8 @@ import en from '../../../../translations/en.json';
 import type { GenuiNode } from '../sdk';
 import { GenuiMapView } from './map';
 import { canvasOptions, paintRgb } from './map-canvas';
-import { mapBounds, routeCoordinates } from './map-geo';
-import { GenuiPending } from './pending';
+import { mapBounds, mapStyles, pinValue, routeCoordinates, telLink } from './map-geo';
+import { GenuiPending, MAP_BOX, MAP_FIGURE_HEIGHT } from './pending';
 
 /** The first block inside `root = Stack([...])`. */
 const node = (code: string) => (parseGenui(code).root!.props.children as GenuiNode[])[0]!;
@@ -28,12 +28,15 @@ afterEach(() => {
 });
 
 describe('genui map', () => {
-  test('without a configured style, renders each place as an OpenStreetMap link, its description, and the source', () => {
+  test('without a configured style, renders each place as a row: name, description, and Directions (no coordinates, no Copy)', () => {
     const html = render(undefined);
-    expect(html).toContain('href="https://www.openstreetmap.org/?mlat=48.86&amp;mlon=2.36#map=15/48.86/2.36"');
-    expect(html).toMatch(/>B<\/a>/);
+    expect(html).toMatch(/<a href="https:\/\/www.google.com\/maps\/dir\/\?api=1&amp;destination=48.86,2.36"[^>]*>Directions<\/a>/);
+    expect(html).toMatch(/>B<\/span>/);
+    expect(html).not.toContain('48.8600, 2.3600');
+    expect(html).not.toMatch(/>Copy</);
     expect(html).toContain('Second');
-    expect(html).toContain('Source: places tool');
+    // No visible source line: the source lives only in the figure's screen-reader label.
+    expect(html).not.toContain('<figcaption');
     expect(html).toContain('aria-label="Map with 2 places: A, B. Source: places tool"');
     expect(html).not.toContain('min-h-[');
   });
@@ -61,19 +64,18 @@ describe('genui map', () => {
     expect(routeCoordinates('not a route')).toBeUndefined();
   });
 
-  test('with a style, the pending block and the settled figure are one height, and only the map box has a border', () => {
+  test('with a style, the map is the whole card: the MAP_BOX well the pending block reserves, no place rows under it', () => {
     process.env[STYLE_ENV] = 'https://tiles.example.test/style.json';
     const settled = render('https://tiles.example.test/style.json');
-    const figureHeight = settled.match(/<figure[^>]*class="[^"]*(min-h-\[\d+px\])/)?.[1];
-    expect(figureHeight).toBe('min-h-[304px]');
     expect(settled).toMatch(/<figure[^>]*class="(?![^"]*\bborder\b)[^"]*"/);
-    expect(settled).toContain('h-[280px]');
-    // One line, full text on hover: a wrapped caption would grow past the reserved height.
-    expect(settled).toMatch(/<figcaption[^>]*class="[^"]*\btruncate\b[^"]*"[^>]*title="Source: places tool"[^>]*>Source: places tool<\/figcaption>/);
+    // The well is MAP_BOX, the box the pending block reserves (its height lives in pending.tsx).
+    const boxHeight = MAP_BOX.match(/h-\[\d+px\]/)![0];
+    expect(settled).toContain(`${boxHeight} w-full overflow-hidden bg-card rounded-md border-0`);
+    // The pins carry the names; the rows and their Directions buttons show only with the map off.
+    expect(settled).not.toMatch(/>Directions<\/a>/);
 
     const pending = renderToStaticMarkup(<>{GenuiPending({ id: 'm', type: 'Map', props: {}, partial: true })}</>);
-    expect(pending).toContain(figureHeight!);
-    expect(pending).toMatch(/class="[^"]*\bh-\[280px\][^"]*\bborder\b/);
+    expect(pending).toContain(boxHeight);
   });
 
   test('with a style, a streaming map holds the reserved box until its block settles, whatever its markers', () => {
@@ -85,14 +87,14 @@ describe('genui map', () => {
         <GenuiMapView node={streamed} props={streamed.props} renderChild={() => null} streaming styleUrl="https://tiles.example.test/style.json" />,
       );
       // The pending block: same figure height, the spinner, no canvas and no place list yet.
-      expect(html).toContain('min-h-[304px]');
+      expect(html).toContain(MAP_FIGURE_HEIGHT);
       expect(html).toContain('aria-busy="true"');
       expect(html).not.toContain('<figcaption');
     }
   });
 
-  test('without a style, a pending map waits invisibly, like text: the place list has no fixed height to reserve', () => {
-    delete process.env[STYLE_ENV];
+  test('with the map switched off, a pending map waits invisibly, like text: the place rows have no fixed height to reserve', () => {
+    process.env[STYLE_ENV] = 'off';
     expect(renderToStaticMarkup(<>{GenuiPending({ id: 'm', type: 'Map', props: {}, partial: true })}</>)).toBe('');
   });
 
@@ -123,5 +125,27 @@ describe('genui map', () => {
     };
     expect(paintRgb(context as never, ['oklch(0.66 0.17 53)', 'rgb(31, 31, 31)'])).toBe('rgb(31, 31, 31)');
     expect(paintRgb(context as never, ['', 'not a color'])).toBe('gray');
+  });
+
+  test('the basemap defaults to OpenFreeMap; the env overrides it, and off switches the map off', () => {
+    delete process.env[STYLE_ENV];
+    expect(mapStyles()).toEqual({ light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' });
+    expect(renderToStaticMarkup(<>{GenuiPending({ id: 'm', type: 'Map', props: {}, partial: true })}</>)).toContain(MAP_BOX.match(/h-\[\d+px\]/)![0]);
+    process.env[STYLE_ENV] = 'https://tiles.example.test/style.json';
+    expect(mapStyles()?.light).toBe('https://tiles.example.test/style.json');
+    process.env[STYLE_ENV] = 'off';
+    expect(mapStyles()).toBeNull();
+  });
+
+  test('Call dials the digits of a written phone number; nothing to dial gives no link', () => {
+    expect(telLink('+91 22 6668 1234')).toBe('tel:+912266681234');
+    expect(telLink('(030) 123-4567')).toBe('tel:0301234567');
+    expect(telLink('call us')).toBeNull();
+    expect(telLink(undefined)).toBeNull();
+  });
+
+  test('a pin shows a value only when it is a figure; a category word keeps the plain dot', () => {
+    for (const figure of ['★ 4.7', '₹24,000', '1.2M', '$199 a night']) expect(pinValue(figure)).toBe(figure);
+    for (const word of ['Luxury', 'Boutique', '', undefined]) expect(pinValue(word)).toBeUndefined();
   });
 });

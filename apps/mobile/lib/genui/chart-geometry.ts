@@ -77,29 +77,57 @@ export function linePath(values: number[], width: number, height: number, max: n
     .join(' ');
 }
 
-/** Donut slices as SVG paths centered on (r, r). A single non-zero slice draws a full ring. */
-export function pieArcs(values: number[], radius: number, inner: number): { path: string; index: number }[] {
+/**
+ * Pie, donut, ring or half-ring slices as SVG paths centered on (r, r). Angles run clockwise from 12
+ * o'clock: `start` -π/2 with `span` π is a gauge from 9 o'clock over the top to 3. `inner` 0 is a full pie.
+ * A single non-zero slice of a full circle draws a whole ring.
+ */
+export function pieArcs(
+  values: number[],
+  radius: number,
+  inner: number,
+  start = 0,
+  span = Math.PI * 2,
+): { path: string; index: number }[] {
   const clean = values.map((v) => Math.max(0, finite(v)));
   const total = clean.reduce((sum, v) => sum + v, 0);
   if (total === 0) return [];
   const point = (angle: number, r: number) => [radius + r * Math.sin(angle), radius - r * Math.cos(angle)] as const;
   const arcs: { path: string; index: number }[] = [];
-  let start = 0;
+  let from = start;
   clean.forEach((value, index) => {
     if (value === 0) return;
     // A full circle cannot be one arc command: stop just short of 2π.
-    const sweep = Math.min((value / total) * Math.PI * 2, Math.PI * 2 - 1e-4);
-    const end = start + sweep;
+    const sweep = Math.min((value / total) * span, Math.PI * 2 - 1e-4);
+    const end = from + sweep;
     const large = sweep > Math.PI ? 1 : 0;
-    const [x0, y0] = point(start, radius);
+    const [x0, y0] = point(from, radius);
     const [x1, y1] = point(end, radius);
     const [x2, y2] = point(end, inner);
-    const [x3, y3] = point(start, inner);
+    const [x3, y3] = point(from, inner);
     arcs.push({
       index,
       path: `M${x0.toFixed(2)},${y0.toFixed(2)} A${radius},${radius} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)} L${x2.toFixed(2)},${y2.toFixed(2)} A${inner},${inner} 0 ${large} 0 ${x3.toFixed(2)},${y3.toFixed(2)} Z`,
     });
-    start = end;
+    from = end;
   });
   return arcs;
+}
+
+export type PieVariant = 'donut' | 'focus' | 'ring' | 'treemap' | 'gauge' | 'stack';
+const PIE_VARIANTS: readonly PieVariant[] = ['donut', 'focus', 'ring', 'treemap', 'gauge', 'stack'];
+
+/** The model's layout when it names a known one; else a gauge for two slices (used against left), a donut otherwise. */
+export function pieVariant(variant: unknown, slices: number): PieVariant {
+  return PIE_VARIANTS.includes(variant as PieVariant) ? (variant as PieVariant) : slices === 2 ? 'gauge' : 'donut';
+}
+
+/**
+ * The category a tap at `x` (plot coordinates) lands on. Bars: the group under the finger. Lines: the
+ * nearest point. Taps outside the plot clamp to the first or last category.
+ */
+export function pickIndex(x: number, width: number, count: number, line: boolean): number {
+  if (count <= 1 || width <= 0) return 0;
+  const raw = line ? Math.round((x / width) * (count - 1)) : Math.floor(x / (width / count));
+  return Math.min(count - 1, Math.max(0, raw));
 }

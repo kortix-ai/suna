@@ -1200,13 +1200,15 @@
     "showMoreSubsessionsLabel_other": "Mostrar mais {{count}} subsessões de {{title}}"
   },
   "genui": {
-    "pick": "Recomendado",
-    "source": "Fonte: {{source}}",
-    "showData": "Mostrar dados",
-    "hideData": "Ocultar dados",
-    "openMap": "Abrir mapa",
+    "chartTapHint": "Toque para ver um valor",
     "map": "Mapa",
-    "mapUnavailable": "Mapa indisponível"
+    "mapUnavailable": "Mapa indisponível",
+    "openImage": "Abrir imagem",
+    "openMap": "Abrir mapa",
+    "pick": "Recomendado",
+    "pieFocus": "{{label}} é {{percent}}% do total",
+    "pieOfTotal": "{{value}} de {{total}}",
+    "showData": "Mostrar dados"
   },
   "updateRequired": {
     "title": "Atualização necessária",

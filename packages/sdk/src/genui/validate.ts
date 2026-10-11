@@ -1,4 +1,5 @@
 import type { ElementNode } from '@openuidev/lang-core';
+import type { z } from 'zod/v4';
 
 import { GENUI_MAX_DEPTH, GENUI_MAX_NODES, GENUI_SPECS } from './catalog';
 import type { GenuiIssue, GenuiNode } from './types';
@@ -126,7 +127,8 @@ export function sanitizeTree(
     }
 
     if (!partial) {
-      const result = (options.streaming ? spec.streaming : spec.strict).safeParse(props);
+      const schema = options.streaming ? spec.streaming : spec.strict;
+      let result = schema.safeParse(props);
       if (!result.success) {
         const first = result.error.issues[0];
         issues.push({
@@ -135,7 +137,14 @@ export function sanitizeTree(
           statementId,
           message: `${typeName}.${first?.path.join('.') ?? ''}: ${first?.message ?? 'invalid'}`,
         });
-        return subtrees;
+        // An invalid optional argument (a unit over its cap, a malformed hint) drops only itself, like an
+        // unsafe optional URL: the component keeps its data. A failing required argument still drops the node.
+        const shape = (schema as z.ZodObject<Record<string, z.ZodType>>).shape;
+        const failed = new Set(result.error.issues.map((issue) => String(issue.path[0])));
+        if (![...failed].every((key) => shape[key]?.safeParse(undefined).success)) return subtrees;
+        for (const key of failed) delete props[key];
+        result = schema.safeParse(props);
+        if (!result.success) return subtrees;
       }
     }
 

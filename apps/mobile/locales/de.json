@@ -1200,13 +1200,15 @@
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
   },
   "genui": {
-    "pick": "Empfehlung",
-    "source": "Quelle: {{source}}",
-    "showData": "Daten anzeigen",
-    "hideData": "Daten ausblenden",
-    "openMap": "Karte öffnen",
+    "chartTapHint": "Tippen, um einen Wert zu lesen",
     "map": "Karte",
-    "mapUnavailable": "Karte nicht verfügbar"
+    "mapUnavailable": "Karte nicht verfügbar",
+    "openImage": "Bild öffnen",
+    "openMap": "Karte öffnen",
+    "pick": "Empfehlung",
+    "pieFocus": "{{label}} macht {{percent}} % der Summe aus",
+    "pieOfTotal": "{{value}} von {{total}}",
+    "showData": "Daten anzeigen"
   },
   "updateRequired": {
     "title": "Update erforderlich",

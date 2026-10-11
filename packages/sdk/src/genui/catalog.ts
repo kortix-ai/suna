@@ -324,8 +324,17 @@ component({
 
 component({
   name: 'PieChart',
-  description: 'Shares of a whole, 2 to 6 slices. source names where the data came from',
-  fields: { slices: { accepts: ['Slice'], min: 2, max: 6 }, source: text(200), unit: optText(12) },
+  description:
+    'Shares of a whole, 2 to 6 slices. source names where the data came from. variant picks the layout: ' +
+    'donut: the total and every share (default). focus: the answer is about the first slice. ' +
+    'ring: one share dominates and is the headline. treemap: 4 to 6 slices, sizes matter more than the total. ' +
+    'gauge: 2 or 3 slices, like used against left. stack: a receipt, exact values to read',
+  fields: {
+    slices: { accepts: ['Slice'], min: 2, max: 6 },
+    source: text(200),
+    unit: optText(12),
+    variant: z.enum(['donut', 'focus', 'ring', 'treemap', 'gauge', 'stack']).optional(),
+  },
   toMarkdown: (p) => {
     const slices = nodes(p.slices);
     const total = slices.reduce((sum, s) => sum + (Number(s.props.value) || 0), 0);
@@ -346,16 +355,25 @@ component({
 
 component({
   name: 'Marker',
-  description: 'One place on a Map. Coordinates only from tool results or files',
+  description:
+    'One place on a Map. Coordinates only from tool results or files. description is its address or a short note. ' +
+    'value is the short figure in its map pin: a rating, a price, a population. href is its own page, image its photo, ' +
+    'phone its phone number, kind what it is (Hotel, Cafe, Museum)',
   block: false,
   fields: {
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
     label: text(60),
     description: optText(200),
+    value: optText(24),
+    href: url().optional(),
+    image: url().optional(),
+    phone: optText(30),
+    kind: optText(30),
   },
+  urls: { href: 'optional', image: 'optional' },
   toMarkdown: (p) =>
-    `**${p.label}**${p.description ? ` — ${p.description}` : ''} ([map](${osmLink(p.lat, p.lng)}))`,
+    `**${p.label}**${p.value ? ` (${p.value})` : ''}${p.description ? ` — ${p.description}` : ''} ([map](${osmLink(p.lat, p.lng)}))`,
 });
 
 component({
@@ -378,7 +396,9 @@ component({
 
 component({
   name: 'Card',
-  description: 'One item: a hotel, product, or person. body is plain text',
+  description:
+    'One item: a hotel, product, place, or person. body is plain text. subtitle is a short location or kind line. ' +
+    'rating is 0 to 5, reviews is how many, price is a short text. 2 or more Cards in a Stack show as a grid or a list (see Stack)',
   fields: {
     title: text(80),
     body: optText(600),
@@ -386,12 +406,17 @@ component({
     image: url().optional(),
     href: url().optional(),
     badges: { accepts: ['Badge'], min: 0, max: 4, optional: true },
+    rating: z.number().min(0).max(5).optional(),
+    reviews: z.number().int().nonnegative().optional(),
+    price: optText(40),
   },
   urls: { image: 'optional', href: 'optional' },
   toMarkdown: (p, child) =>
     [
       `### ${p.title}`,
+      p.rating != null ? `★ ${p.rating}${p.reviews != null ? ` (${formatNumber(p.reviews)})` : ''}` : '',
       p.subtitle ? `*${p.subtitle}*` : '',
+      p.price ? String(p.price) : '',
       p.body ?? '',
       joinChildren(p.badges, child, ' '),
       p.image ? `![${p.title}](${p.image})` : '',
@@ -443,11 +468,14 @@ component({
 
 component({
   name: 'Stack',
-  description: 'Layout. root is always a Stack. children: 1 to 12 blocks. direction: col (default) or row',
+  description:
+    'Layout. root is always a Stack. children: 1 to 12 blocks. direction: col (default) or row. ' +
+    'layout, for 2 or more Cards: grid (big images) or list (small thumbnails); empty lets the app choose from the images',
   container: true,
   fields: {
     children: { accepts: GENUI_BLOCKS, min: 1, max: 12, lazy: true },
     direction: z.enum(['col', 'row']).optional(),
+    layout: z.enum(['list', 'grid']).optional(),
   },
   toMarkdown: (p, child) => joinChildren(p.children, child),
 });

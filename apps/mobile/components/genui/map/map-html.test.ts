@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import { mapDocument, scriptJson, type MapDocumentInput } from './map-html';
+import { mapDocument, pinValue, scriptJson, type MapDocumentInput } from './map-html';
+
+const PIN = { surface: 'white', ink: 'black', border: 'gray', shadow: 'gray' };
 
 type Camera = Record<string, unknown> & { bounds?: { points: number[][] } };
 
 /** Runs the page's own script against a recording stand-in for maplibregl, the way the WebView would. */
 function runPage(input: Partial<MapDocumentInput>) {
-  const html = mapDocument({ script: '', css: '', styleUrl: 's', markers: [], background: 'white', routeColor: 'black', ...input });
+  const html = mapDocument({ script: '', css: '', styleUrl: 's', markers: [], background: 'white', routeColor: 'black', pin: PIN, ...input });
   const page = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
-  const seen = { camera: null as Camera | null, markers: [] as number[][], popups: [] as string[][], layers: [] as unknown[] };
+  const seen = { camera: null as Camera | null, markers: [] as number[][], popups: [] as string[][], layers: [] as unknown[], pins: [] as string[][], controls: 0 };
   let onLoad = () => {};
   const element = () => {
     const el = { className: '', textContent: '', children: [] as { textContent: string }[] };
@@ -25,7 +27,9 @@ function runPage(input: Partial<MapDocumentInput>) {
       constructor(camera: Camera) {
         seen.camera = camera;
       }
-      addControl() {}
+      addControl() {
+        seen.controls++;
+      }
       on(_event: string, handler: () => void) {
         onLoad = handler;
       }
@@ -42,6 +46,10 @@ function runPage(input: Partial<MapDocumentInput>) {
       }
     },
     Marker: class {
+      constructor(options?: { element?: ReturnType<typeof element> }) {
+        const pin = options?.element;
+        if (pin) seen.pins.push(pin.children.map((c) => `${(c as unknown as { className: string }).className}:${c.textContent}`));
+      }
       setLngLat(point: number[]) {
         seen.markers.push(point);
         return this;
@@ -82,6 +90,7 @@ describe('map document', () => {
       route: [[48.85, 2.35], [48.86, 2.36]],
       background: 'rgb(255,255,255)',
       routeColor: 'rgba(0,0,0,0.7)',
+      pin: PIN,
     });
     expect(html).toContain('"lngLat":[2.35,48.85]');
     expect(html).toContain('"route":[[2.35,48.85],[2.36,48.86]]');
@@ -92,7 +101,7 @@ describe('map document', () => {
   });
 
   test('a script asset containing </script> cannot break out', () => {
-    const html = mapDocument({ script: 'x="</script>"', css: '', styleUrl: 's', markers: [], background: 'white', routeColor: 'black' });
+    const html = mapDocument({ script: 'x="</script>"', css: '', styleUrl: 's', markers: [], background: 'white', routeColor: 'black', pin: PIN });
     expect(html.match(/<\/script>/g)?.length).toBe(2);
   });
 
@@ -127,15 +136,43 @@ describe('map document', () => {
       route: [[37.77, -122.42], [-122.4, 37.7], [37.8, -122.41], [37.79, 181], [Number.NaN, 1]],
       background: 'white',
       routeColor: 'black',
+      pin: PIN,
     });
     expect(html).toContain('"route":[[-122.42,37.77],[-122.41,37.8]]');
   });
 
   test('a route with fewer than 2 valid points is omitted: no line, and the frame holds only the places', () => {
     const markers = [{ lat: 37.77, lng: -122.42, label: 'A' }];
-    expect(mapDocument({ script: '', css: '', styleUrl: 's', markers, route: [[-122.4, 37.7], [37.8, -122.41]], background: 'white', routeColor: 'black' })).toContain('"route":[]');
+    expect(mapDocument({ script: '', css: '', styleUrl: 's', markers, route: [[-122.4, 37.7], [37.8, -122.41]], background: 'white', routeColor: 'black', pin: PIN })).toContain('"route":[]');
     const seen = runPage({ markers, route: [[-122.4, 37.7], [-122.5, 37.6]] });
     expect(seen.camera).toMatchObject({ center: [-122.42, 37.77], zoom: 14 });
     expect(seen.layers).toEqual([]);
+  });
+
+  test("a pin is web's MapPin: the figure in a bubble when it has a digit, else a dot; the place name under it", () => {
+    const seen = runPage({
+      markers: [
+        { lat: 1, lng: 1, label: 'Taj', value: '★ 4.7' },
+        { lat: 2, lng: 2, label: 'Oberoi', value: 'Luxury' },
+        { lat: 3, lng: 3, label: 'Trident' },
+      ],
+    });
+    expect(seen.pins).toEqual([
+      ['kx-bubble:★ 4.7', 'kx-name:Taj'],
+      ['kx-dot:', 'kx-name:Oberoi'],
+      ['kx-dot:', 'kx-name:Trident'],
+    ]);
+    expect(pinValue('$120')).toBe('$120');
+    expect(pinValue('Luxury')).toBeUndefined();
+  });
+
+  test('the inline map is a still picture: no pan or zoom, no controls, no popups; the full-screen one has all three', () => {
+    const markers = [{ lat: 48.85, lng: 2.35, label: 'Louvre', description: 'Museum' }];
+    const still = runPage({ markers, interactive: false });
+    expect(still.camera).toMatchObject({ interactive: false });
+    expect([still.controls, still.popups.length]).toEqual([0, 0]);
+    const live = runPage({ markers });
+    expect(live.camera).toMatchObject({ interactive: true });
+    expect([live.controls, live.popups.length]).toEqual([1, 1]);
   });
 });

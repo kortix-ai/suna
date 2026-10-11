@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { axisMax, barPath, barRects, linePath, pieArcs } from './chart-geometry';
+import { axisMax, barPath, barRects, linePath, pieArcs, pieVariant, pickIndex } from './chart-geometry';
 
 describe('chart geometry', () => {
   test('axis max is the largest value and never 0', () => {
@@ -59,5 +59,32 @@ describe('chart geometry', () => {
     expect(pieArcs([1, 0, 1], 50, 30).map((a) => a.index)).toEqual([0, 2]);
     expect(pieArcs([0, 0], 50, 30)).toEqual([]);
     expect(pieArcs([5], 50, 30)[0]!.path.startsWith('M50.00,0.00')).toBe(true);
+  });
+
+  test('a half-ring gauge starts at 9 o\'clock and ends at 3 o\'clock', () => {
+    const arcs = pieArcs([1, 1], 50, 30, -Math.PI / 2, Math.PI);
+    expect(arcs[0]!.path.startsWith('M0.00,50.00')).toBe(true);
+    // The second slice ends at the right edge, on the center line.
+    expect(arcs[1]!.path).toContain('100.00,50.00');
+  });
+
+  test('the pie variant is the model\'s when known; otherwise two slices are a gauge and more a donut', () => {
+    expect(pieVariant('treemap', 4)).toBe('treemap');
+    expect(pieVariant(undefined, 2)).toBe('gauge');
+    expect(pieVariant(undefined, 4)).toBe('donut');
+    expect(pieVariant('spiral', 3)).toBe('donut');
+  });
+});
+
+describe('pickIndex', () => {
+  test('a tap picks the bar group under the finger, or the nearest line point; outside the plot clamps', () => {
+    expect(pickIndex(10, 300, 3, false)).toBe(0);
+    expect(pickIndex(150, 300, 3, false)).toBe(1);
+    expect(pickIndex(299, 300, 3, false)).toBe(2);
+    expect(pickIndex(70, 300, 3, true)).toBe(0);
+    expect(pickIndex(80, 300, 3, true)).toBe(1);
+    expect(pickIndex(-20, 300, 3, true)).toBe(0);
+    expect(pickIndex(400, 300, 3, false)).toBe(2);
+    expect(pickIndex(100, 300, 1, false)).toBe(0);
   });
 });

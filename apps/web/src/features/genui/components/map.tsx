@@ -3,14 +3,17 @@
 /**
  * The generative UI Map. `index.tsx` loads this module through `lazy()`.
  *
- * Without `NEXT_PUBLIC_GENUI_MAP_STYLE_URL` it is a place list: each place
- * links to OpenStreetMap. mapcn's default basemap (CARTO) needs an enterprise
- * license for commercial use, so the canvas draws only on a style we configure.
+ * The figure is a card: the mapcn map (MapLibre on the `mapStyles()` basemap),
+ * each pin a bubble with its value and its name under it; a pin's popup is
+ * the place card (photo, name, value · kind, Directions, Website, Call). With the map switched off (`NEXT_PUBLIC_GENUI_MAP_STYLE_URL=off`)
+ * the card is one row per place with Directions instead.
+ *
+ * mapcn's default basemap (CARTO) needs an enterprise license for commercial use,
+ * so the canvas draws only on a style we configure (OpenFreeMap by default).
  * With a style, `map-canvas.tsx` (MapLibre GL, ~600 KB) loads on demand, so the
  * place list never downloads it.
  *
- * HEIGHT: the canvas figure is `MAP_FIGURE_HEIGHT` (arithmetic in `pending.tsx`),
- * the same box the pending block reserves. The place list reserves nothing.
+ * HEIGHT: the map well is `MAP_BOX` (280px), the box the pending block reserves.
  *
  * STREAMING: with a style, the map holds the pending box until its block settles
  * (its fence closes). The prompt writes `Map([a, b])` before its markers, so a
@@ -20,18 +23,17 @@
 
 // eslint-disable-next-line no-restricted-imports -- screen-reader text for the figure; this module is reached only through lazy()
 import { genuiA11yText } from '@kortix/sdk/genui';
-import { MapPinIcon } from '@phosphor-icons/react';
 import { lazy, Suspense } from 'react';
 
-import { MarkdownLink } from '@/components/markdown/unified-markdown';
+import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 import type { GenuiComponentProps, GenuiNode } from '../sdk';
 import { kids } from './layout';
-import { inRange, osmLink, routeCoordinates, type MapPlace } from './map-geo';
-import { GenuiPending, MAP_BOX, MAP_FIGURE_HEIGHT } from './pending';
+import { directionsLink, inRange, mapStyles, routeCoordinates, type MapPlace } from './map-geo';
+import { GenuiPending, MAP_BOX } from './pending';
 
 const MapCanvas = lazy(() => import('./map-canvas'));
 
@@ -45,23 +47,40 @@ function places(markers: GenuiNode[]): MapPlace[] {
             lng: m.props.lng as number,
             label: String(m.props.label),
             description: m.props.description ? String(m.props.description) : undefined,
+            value: m.props.value ? String(m.props.value) : undefined,
+            href: m.props.href ? String(m.props.href) : undefined,
+            image: m.props.image ? String(m.props.image) : undefined,
+            phone: m.props.phone ? String(m.props.phone) : undefined,
+            kind: m.props.kind ? String(m.props.kind) : undefined,
           },
         ]
       : [],
   );
 }
 
+function PlaceRow({ place }: { place: MapPlace }) {
+  const t = useTranslations('genui');
+  return (
+    <li className="flex items-center justify-between gap-4 px-3 py-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-foreground text-sm font-medium text-balance">{place.label}</span>
+        {place.description ? <span className="text-muted-foreground text-sm text-pretty">{place.description}</span> : null}
+      </div>
+      <Button size="sm" className="shrink-0" asChild>
+        <a href={directionsLink(place.lat, place.lng)} target="_blank" rel="noopener noreferrer">
+          {t('directions')}
+        </a>
+      </Button>
+    </li>
+  );
+}
+
+/** Paper Map 16: a card. The map well sits on top when tiles are configured; each place is a row under it. */
 function PlaceList({ places }: { places: MapPlace[] }) {
   return (
-    <ul className="flex flex-col gap-2 text-sm">
+    <ul className="divide-border flex flex-col divide-y">
       {places.map((place) => (
-        <li key={place.id} className="flex gap-2">
-          <MapPinIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
-          <div className="min-w-0">
-            <MarkdownLink href={osmLink(place.lat, place.lng)}>{place.label}</MarkdownLink>
-            {place.description ? <p className="text-muted-foreground text-pretty">{place.description}</p> : null}
-          </div>
-        </li>
+        <PlaceRow key={place.id} place={place} />
       ))}
     </ul>
   );
@@ -74,43 +93,38 @@ export function GenuiMapView({
   styleUrl,
   styleUrlDark,
 }: GenuiComponentProps & { styleUrl: string | undefined; styleUrlDark?: string }) {
-  const t = useTranslations('genui');
   if (styleUrl && streaming) return <>{GenuiPending(node)}</>;
   const all = places(kids(props.markers));
-  const source = t('source', { source: String(props.source) });
   const label = genuiA11yText(node) ?? undefined;
 
-  if (!styleUrl || all.length === 0) {
-    return (
-      <figure className="flex flex-col gap-2" aria-label={label}>
-        <PlaceList places={all} />
-        <figcaption className="text-muted-foreground text-xs text-pretty">{source}</figcaption>
-      </figure>
-    );
-  }
-
+  const canvas = Boolean(styleUrl) && all.length > 0;
   return (
-    <figure className={cn(MAP_FIGURE_HEIGHT, 'flex flex-col gap-2')} aria-label={label}>
-      <div className={MAP_BOX}>
-        <Suspense
-          fallback={
-            <div className="flex h-full items-center justify-center">
-              <Loading />
-            </div>
-          }
-        >
-          <MapCanvas
-            places={all}
-            route={routeCoordinates(props.route)}
-            zoom={typeof props.zoom === 'number' ? props.zoom : undefined}
-            styles={{ light: styleUrl, dark: styleUrlDark || styleUrl }}
-          />
-        </Suspense>
+    <figure className="flex flex-col gap-2" aria-label={label}>
+      <div className={cn('border-border rounded-xl border', canvas && 'p-0 overflow-hidden ')}>
+        {canvas ? (
+          // The well keeps MAP_BOX's 280px, the box the pending block reserves.
+          <div className={cn(MAP_BOX, 'bg-card rounded-md border-0')}>
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <Loading />
+                </div>
+              }
+            >
+              <MapCanvas
+                places={all}
+                route={routeCoordinates(props.route)}
+                zoom={typeof props.zoom === 'number' ? props.zoom : undefined}
+                styles={{ light: styleUrl!, dark: styleUrlDark || styleUrl! }}
+              />
+            </Suspense>
+          </div>
+        ) : (
+          // The map switched off: the places as rows, each with Directions. With a map, the pins carry their
+          // names and values and a pin's popup is the place card, so no list sits under it.
+          <PlaceList places={all} />
+        )}
       </div>
-      {/* One line, full text on hover: a wrapped caption would grow past MAP_FIGURE_HEIGHT. */}
-      <figcaption className="text-muted-foreground truncate text-xs" title={source}>
-        {source}
-      </figcaption>
     </figure>
   );
 }
@@ -119,8 +133,8 @@ export default function GenuiMap(props: GenuiComponentProps) {
   return (
     <GenuiMapView
       {...props}
-      styleUrl={process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL || undefined}
-      styleUrlDark={process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL_DARK || undefined}
+      styleUrl={mapStyles()?.light}
+      styleUrlDark={mapStyles()?.dark}
     />
   );
 }
