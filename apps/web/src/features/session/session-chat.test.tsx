@@ -460,9 +460,195 @@ describe('SessionChat moved turn sections', () => {
     ];
     try {
       const markup = renderChat();
-      // ActivityBurst renders only through the turn's segmented steps section.
-      expect(markup).toContain('group/burst');
+      // The settled turn folds its burst behind the "Worked" row (KRTX-2113);
+      // the row renders only through the turn's segmented steps section.
+      expect(markup).toContain('group/work');
+      expect(markup).toContain('>Worked</span>');
+      expect(markup).not.toContain('group/burst');
     } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  // KRTX-2113: a settled turn folds its work into one "Worked for" row; the
+  // `show` deliverable and the final message stay visible below it.
+  const foldTurn = (userId: string) => [
+    userFixture(userId, 'build the synthetic report'),
+    {
+      info: {
+        id: `${userId}-assistant`,
+        role: 'assistant',
+        parentID: userId,
+        agent: 'build',
+        time: { created: 1_000, completed: 135_000 },
+      },
+      parts: [
+        {
+          id: `${userId}-bash`,
+          type: 'tool',
+          callID: `${userId}-call-bash`,
+          tool: 'bash',
+          state: { status: 'completed', input: { command: 'echo synthetic' }, output: 'synthetic' },
+        },
+        { id: `${userId}-interim`, type: 'text', text: 'Let me check the synthetic config.' },
+        {
+          id: `${userId}-bash-2`,
+          type: 'tool',
+          callID: `${userId}-call-bash-2`,
+          tool: 'bash',
+          state: { status: 'completed', input: { command: 'echo again' }, output: 'again' },
+        },
+        {
+          id: `${userId}-show`,
+          type: 'tool',
+          callID: `${userId}-call-show`,
+          tool: 'show',
+          state: {
+            status: 'completed',
+            input: { type: 'text', title: 'Synthetic Deliverable', content: 'deliverable body' },
+            output: '',
+            metadata: {},
+          },
+        },
+        { id: `${userId}-final`, type: 'text', text: 'Here is the synthetic final answer.' },
+      ],
+    },
+  ];
+
+  test('a settled turn shows the Worked row, the hoisted show card and the final text', () => {
+    fixtureMessages = foldTurn('user-fold');
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('Worked for 2m 14s');
+      expect(markup).toContain('Synthetic Deliverable');
+      expect(markup).toContain('Here is the synthetic final answer.');
+      expect(markup).not.toContain('Let me check the synthetic config.');
+      expect(markup).not.toContain('group/burst');
+      // Order: row → deliverable → final text.
+      const row = markup.indexOf('Worked for 2m 14s');
+      const card = markup.indexOf('Synthetic Deliverable');
+      const final = markup.indexOf('Here is the synthetic final answer.');
+      expect(row).toBeLessThan(card);
+      expect(card).toBeLessThan(final);
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  const plumbingTurn = (userId: string, parts: unknown[]) => [
+    userFixture(userId, 'answer from memory'),
+    {
+      info: {
+        id: `${userId}-assistant`,
+        role: 'assistant',
+        parentID: userId,
+        agent: 'build',
+        time: { created: 1_000, completed: 5_000 },
+      },
+      parts,
+    },
+  ];
+  const prune = (id: string) => ({
+    id,
+    type: 'tool',
+    callID: `call-${id}`,
+    tool: 'prune',
+    state: { status: 'completed', input: {}, output: 'ok' },
+  });
+
+  test('a trailing plumbing-only burst does not hide the final text', () => {
+    fixtureMessages = plumbingTurn('user-plumbing', [
+      {
+        id: 'plumbing-bash',
+        type: 'tool',
+        callID: 'call-plumbing-bash',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'echo seen' }, output: 'seen' },
+      },
+      { id: 'plumbing-final', type: 'text', text: 'Synthetic answer after plumbing.' },
+      prune('plumbing-prune'),
+    ]);
+    try {
+      const markup = renderChat();
+      // The trailing burst renders no row, so it cannot end the turn: the
+      // text before it is still the final text.
+      expect(markup).toContain('Worked for 4s');
+      expect(markup).toContain('Synthetic answer after plumbing.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a turn whose only work is a plumbing burst renders no Worked row', () => {
+    fixtureMessages = plumbingTurn('user-plumbing-only', [
+      {
+        id: 'plumbing-only-show',
+        type: 'tool',
+        callID: 'call-plumbing-only-show',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          input: { type: 'text', title: 'Plumbing Deliverable', content: 'body' },
+          output: '',
+          metadata: {},
+        },
+      },
+      prune('plumbing-only-prune'),
+      { id: 'plumbing-only-final', type: 'text', text: 'Synthetic answer from memory.' },
+    ]);
+    try {
+      const markup = renderChat();
+      expect(markup).not.toContain('>Worked');
+      expect(markup).toContain('Plumbing Deliverable');
+      expect(markup).toContain('Synthetic answer from memory.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a settled turn with no work (a card and text) renders no Worked row', () => {
+    fixtureMessages = plumbingTurn('user-no-work', [
+      {
+        id: 'no-work-show',
+        type: 'tool',
+        callID: 'call-no-work-show',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          input: { type: 'text', title: 'Lone Deliverable', content: 'body' },
+          output: '',
+          metadata: {},
+        },
+      },
+      { id: 'no-work-final', type: 'text', text: 'Synthetic note under the card.' },
+    ]);
+    try {
+      const markup = renderChat();
+      expect(markup).not.toContain('>Worked');
+      // The wrapper stays (forced open, row hidden) so the card never remounts at settle.
+      expect(markup).toContain('group/work');
+      expect(markup).toContain('class="select-none hidden"');
+      expect(markup).toContain('Lone Deliverable');
+      expect(markup).toContain('Synthetic note under the card.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a working turn streams every step as today, with no Worked row', () => {
+    fixtureMessages = foldTurn('user-fixture');
+    busy = true;
+    try {
+      const markup = renderChat();
+      // Streaming text paints through ThrottledMarkdown, which is empty under
+      // SSR, so the live view is pinned by its burst rows instead.
+      expect(markup).toContain('group/burst');
+      expect(markup).toContain('echo synthetic');
+      expect(markup).toContain('echo again');
+      expect(markup).toContain('Synthetic Deliverable');
+      expect(markup).not.toContain('Worked for');
+    } finally {
+      busy = false;
       fixtureMessages = baseFixtureMessages;
     }
   });

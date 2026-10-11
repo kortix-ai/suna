@@ -60,6 +60,25 @@ export function burstIsRunning(
   });
 }
 
+/**
+ * The rows a burst renders. Empty means the burst renders nothing at all
+ * (plumbing only, or blank reasoning) — the turn's "Worked for" fold reads
+ * this too, so it never counts such a burst as work.
+ */
+export function burstSteps(parts: ReadonlyArray<Part>) {
+  const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
+  // An answered question owns its row's disclosure (`AnsweredQuestionStep`
+  // binds trigger + content to the step's own `Disclosure`), so it can never
+  // share a group row with siblings — `groupSteps` buckets `question` into
+  // the `ask` family, and two disclosures in one step means one is silently
+  // dropped. Split such a group back into individual part rows.
+  return merged.flatMap((step) =>
+    step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
+      ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
+      : [step],
+  );
+}
+
 export function burstFailureCount(parts: ReadonlyArray<Part>): number {
   return burstSummary(parts).failed;
 }
@@ -141,19 +160,7 @@ function ActivityBurstImpl({
     setOpen(autoExpand && running);
   }, [running, autoExpand]);
 
-  const steps = useMemo(() => {
-    const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
-    // An answered question owns its row's disclosure (`AnsweredQuestionStep`
-    // binds trigger + content to the step's own `Disclosure`), so it can never
-    // share a group row with siblings — `groupSteps` buckets `question` into
-    // the `ask` family, and two disclosures in one step means one is silently
-    // dropped. Split such a group back into individual part rows.
-    return merged.flatMap((step) =>
-      step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
-        ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
-        : [step],
-    );
-  }, [parts]);
+  const steps = useMemo(() => burstSteps(parts), [parts]);
   const summary = useMemo(() => burstSummary(parts), [parts]);
   // The summary goes through unchanged: `burstSummaryLabel` already ignores
   // failures while running, so the "no failure count mid-flight" rule lives in

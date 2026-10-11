@@ -15,7 +15,7 @@ import { isQuestionTool } from '../session-activity-groups';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useTranslations } from '@/i18n/use-translations';
-import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, toolKind } from '@kortix/sdk';
+import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, splitTurnWork, toolKind } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CheckCircleIcon as CheckCircle,
@@ -30,7 +30,8 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from '../message-parsing';
-import { ActivityBurst } from '../turn/activity-burst';
+import { ActivityBurst, burstSteps } from '../turn/activity-burst';
+import { TurnWorkAccordion } from '../turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
 import { compactionTurnInfo, type CompactionTurnInfo } from '../turn/compaction-state';
 import { ExpandableOutput } from '../turn/expandable-output';
@@ -1640,13 +1641,45 @@ function TurnToolBlocks(
     model: TurnModelState;
     segments: TurnSegments;
     conversationDensity: ConversationDensity;
+    /** False keeps today's flat render (inline text-and-questions mode). */
+    fold: boolean;
+    durationMs: number | null;
   },
 ) {
   const {
     turn, sessionId, permissions, onPermissionReply, disableToolNavigation,
-    model, segments, conversationDensity,
+    model, segments, conversationDensity, fold, durationMs,
   } = props;
   const { working, hasSteps, hasReasoning } = model;
+  // KRTX-2113: a settled turn folds its work behind one "Worked for" row and
+  // keeps the `show` deliverables and the final text below it. Segments that
+  // render nothing (a hidden tool, a plumbing-only burst) are dropped first,
+  // so they can neither be the only "work" nor stand between the final text
+  // and the end of the turn.
+  // Settled turns only: while working the split is null anyway, and the
+  // filter re-runs `burstSteps` on every SSE frame.
+  const split = useMemo(
+    () => (fold && !working ? splitTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
+    [fold, segments, working],
+  );
+  const renderSegment = (segment: TurnSegments[number]) => {
+    const key = turnSegmentKey(segment);
+    if (key === null) return null;
+    return (
+      <TurnSegment
+        key={key}
+        segment={segment}
+        isTrailing={segment === segments[segments.length - 1]}
+        working={working}
+        hasSteps={hasSteps}
+        sessionId={sessionId}
+        permissions={permissions}
+        onPermissionReply={onPermissionReply}
+        disableNavigation={disableToolNavigation}
+        conversationDensity={conversationDensity}
+      />
+    );
+  };
   return (
     <>
     {/* ── Assistant parts content ──
@@ -1675,24 +1708,22 @@ function TurnToolBlocks(
       // See `TurnLiveContext`.
       <TurnLiveContext.Provider value={working}>
         <div className="space-y-3">
-          {segments.map((segment, index) => {
-            const key = turnSegmentKey(segment);
-            if (key === null) return null;
-            return (
-              <TurnSegment
-                key={key}
-                segment={segment}
-                isTrailing={index === segments.length - 1}
-                working={working}
-                hasSteps={hasSteps}
-                sessionId={sessionId}
-                permissions={permissions}
-                onPermissionReply={onPermissionReply}
-                disableNavigation={disableToolNavigation}
-                conversationDensity={conversationDensity}
-              />
-            );
-          })}
+          {/* While working, every segment streams inside the accordion (row
+              hidden, forced open), so settling folds it in place. A settled
+              turn with no work (only deliverables and text) keeps the same
+              wrapper, still forced open with its row hidden, so nothing in it
+              remounts. Settling still remounts one thing, by design: the
+              final text and the hoisted cards move out of the accordion into
+              the slots below. */}
+          {fold ? (
+            <TurnWorkAccordion working={working || !split} durationMs={durationMs}>
+              {(split?.work ?? segments).map(renderSegment)}
+            </TurnWorkAccordion>
+          ) : (
+            segments.map(renderSegment)
+          )}
+          {split?.hoisted.map(renderSegment)}
+          {split?.final.map(renderSegment)}
         </div>
       </TurnLiveContext.Provider>
     )}
@@ -1713,6 +1744,11 @@ function turnSegmentKey(segment: TurnSegments[number]): string | null {
     return visible.length > 0 ? visible[0].id : null;
   }
   return segment.part.id;
+}
+
+function segmentRendersSomething(segment: TurnSegments[number]): boolean {
+  if (segment.kind === 'burst') return burstSteps(segment.parts).length > 0;
+  return turnSegmentKey(segment) !== null;
 }
 
 function TurnSegment({
@@ -2219,7 +2255,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
-      <TurnToolBlocks {...props} model={model} segments={segments} conversationDensity={conversationDensity} />
+      <TurnToolBlocks
+        {...props}
+        model={model}
+        segments={segments}
+        conversationDensity={conversationDensity}
+        fold={!answered.shouldUseInlineContent}
+        durationMs={meta.turnDurationMs}
+      />
       <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
       <TurnFooter {...props} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
     </div>

@@ -22,6 +22,7 @@ import {
   isTextPart,
   isToolPart,
   shouldShowToolPart,
+  splitTurnWork,
   toToolView,
   unwrapError,
   type CompactionTurnInfo,
@@ -29,9 +30,11 @@ import {
   type Segment,
   type TextPart,
   type ToolPart,
+  type TurnWorkSplit,
   type WorkingTurnResolution,
 } from '@kortix/sdk';
 
+import { burstView } from './activity';
 import { connectorHandoffCallIds } from './connector-handoff';
 
 /** The turn fields these rules read. Structural, so mobile and SDK turns both fit. */
@@ -249,6 +252,26 @@ export function lastTextPartId(segments: ReadonlyArray<Segment>): string | undef
     if (segment.kind === 'text') return segment.part.id;
   }
   return undefined;
+}
+
+// ─── Settled-turn fold (KRTX-2113) ───────────────────────────────────────────
+
+/** False when `SessionTurn` draws nothing for the segment (a plumbing-only burst, a hidden tool, blank text). */
+function segmentRendersSomething(segment: Segment): boolean {
+  if (segment.kind === 'burst') return !burstView(segment.parts, false).hidden;
+  if (segment.kind === 'standalone') return shouldShowToolPart(segment.part);
+  return !!segment.part.text?.trim();
+}
+
+/**
+ * The SDK's `splitTurnWork` over the segments that draw something, so the
+ * "Worked for" row never opens onto nothing and an invisible segment never
+ * stands between the final text and the end of the turn. `null` = render as
+ * today (working, or no work to fold).
+ */
+export function turnWorkSplit(segments: ReadonlyArray<Segment>, working: boolean): TurnWorkSplit<Segment> | null {
+  if (working) return null;
+  return splitTurnWork(segments.filter(segmentRendersSomething), { working });
 }
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
