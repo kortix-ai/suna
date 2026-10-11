@@ -254,6 +254,35 @@ A streaming turn changes the transcript about every 16 ms. To keep the rest of t
 
 More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#custom-transcript-rendering).
 
+### Read the session log
+
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks. `useSessionLogThread(session, threadId?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
+
+```tsx
+import { useSession, useSessionLogThread } from '@kortix/sdk/react';
+
+function Thread({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId, { subscribeMessages: false });
+  const root = useSessionLogThread(session);
+  if (!root) return null; // the session reads v1: render useSessionMessages(session)
+  return <ol>{root.messages.map((m) => <li key={m.message_id}>{m.role}: {m.blocks.length} blocks</li>)}</ol>;
+}
+```
+
+A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return `null`.
+
+1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
+2. The project flag `session_log` is `true`.
+3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
+4. The session's thread was converted from v1 (OpenCode). A pi session reads v1.
+
+An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
+
+- The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
+- The API does not relay `schema` yet; that is the remaining step. Until it does, the stream keeps the v1 frames, and a turn in progress streams through them as before.
+
+A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+
 ## Hooks
 
 Most hooks below are React Query hooks. Unless the row names another return value, a hook returns the query result (`data`, `isLoading`, `error`, …) plus the mutations the row names. A write refreshes the matching reads.

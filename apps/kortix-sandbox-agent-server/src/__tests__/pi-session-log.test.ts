@@ -107,11 +107,12 @@ function fixture(): PiSessionSnapshot {
       v1('msg_k', 'assistant', [{ type: 'tool', tool: 'task', callID: 'msg_k-p0', state: { status: 'completed', input: {}, output: '', time: { start: 1, end: 2 } } }]),
     ] as never,
     children: [{
-      id: CHILD, title: 'Write the note', agentName: 'general', createdAt: ts(50), agentMessages: childMessages as never, messageIds: ['msg_c1', 'msg_c2', null, 'msg_c3'], seqs: [1, 2, 3, 4],
+      id: CHILD, title: 'Write the note', agentName: 'general', createdAt: ts(50), agentMessages: childMessages as never, messageIds: ['msg_c1', 'msg_c2', null, 'msg_c3'], seqs: [1, 2, 3, 4], nextSeq: 5, reply: null,
       transcript: [v1('msg_c2', 'assistant', [{ type: 'tool', tool: 'write', callID: 'msg_c2-p0', state: { status: 'completed', input: {}, output: 'Wrote sub.txt', time: { start: 1, end: 2 } } }])] as never,
       busy: false,
     }],
     busy: false,
+    reply: null,
     agent: 'build',
     model: { provider: 'kortix', model: 'answer-model' },
   }
@@ -265,6 +266,21 @@ describe('the seq rule: monotonic per thread, never reused', () => {
     const next = await port.changes([cursor(ROOT), cursor(CHILD)])
     expect(next.tombstones).toEqual(['msg_c3'])
     expect(next.messages.map((m) => [m.message.message_id, m.message.seq])).toEqual([['msg_c4', 5]])
+  })
+
+  test('live (P4.3b): a stored message has its record seq; the reply pi streams gets the next entry; a child reply gets nextSeq', async () => {
+    const s = fixture()
+    const port = createPiSessionLogPort(() => s)
+    const records = new Map(piSessionLog(s).log.threads.flatMap((t) => t.messages).map((m) => [m.message_id, m]))
+    for (const id of ['msg_a', 'msg_e']) expect(port.live(ROOT, id)).toEqual({ seq: records.get(id)!.seq, created_at: records.get(id)!.created_at })
+    expect(port.live(CHILD, 'msg_c3')).toEqual({ seq: 4, created_at: records.get('msg_c3')!.created_at })
+    // Not stored and not streaming: a prompt pi has not appended yet.
+    expect(port.live(ROOT, 'msg_new')).toBeNull()
+    s.reply = { id: 'msg_new', timestamp: ts(60) }
+    expect(port.live(ROOT, 'msg_new')).toEqual({ seq: s.entries.length + 1, created_at: new Date(ts(60)).toISOString() })
+    s.children[0]!.reply = { id: 'msg_c5', timestamp: ts(61) }
+    expect(port.live(CHILD, 'msg_c5')).toEqual({ seq: 5, created_at: new Date(ts(61)).toISOString() })
+    expect(port.live('ses_unknown', 'msg_new')).toBeNull()
   })
 })
 

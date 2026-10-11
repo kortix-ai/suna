@@ -105,8 +105,10 @@ export function ensureFrame(key: string, url: string, attributes: { title: strin
     notify();
   });
   entries.set(key, entry);
-  place(entry);
+  // `src` before the first insert: a frame inserted without one loads
+  // about:blank and fires `load`, which would mark the App loaded before it is.
   frame.src = url;
+  place(entry);
   notify();
 }
 
@@ -159,12 +161,12 @@ function subscribe(listener: () => void) {
 }
 
 /** The frame's load status, or null before it exists. */
+export function frameStatus(key: string): FrameStatus | null {
+  return entries.get(key)?.status ?? null;
+}
+
 export function useFrameStatus(key: string): FrameStatus | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => entries.get(key)?.status ?? null,
-    () => null,
-  );
+  return useSyncExternalStore(subscribe, () => frameStatus(key), () => null);
 }
 
 /** The key of an App's frame: one per release, so a deploy shows the new one. */
