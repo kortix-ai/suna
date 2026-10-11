@@ -1,7 +1,7 @@
 /**
  * Kortix Capture's leader-only loops (capture/workers.ts holds the ticks):
  *   capture-index-reader   every KORTIX_CAPTURE_INDEX_POLL_SECONDS: each active device's index and status
- *   capture-maintenance    every 5 min: close quiet ranges, partitions, retention, prune grants and jobs
+ *   capture-maintenance    every 5 min: partitions, retention, prune grants and jobs
  *   capture-events-reader  only with KORTIX_CAPTURE_SQS_QUEUE_URL: long-polls the bucket's manifest events
  * A failing tick waits at least 30 s, so a missing permission or a store outage never spins.
  */

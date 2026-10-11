@@ -259,7 +259,7 @@ export function snippet(text: string | null, q: string): string {
 /** Newest first; one screen hit per (chunk, window title), so a still screen is one hit, not 15. */
 export async function searchTimeline(
   accountId: string,
-  /** null = every member of the account (Capture admins and viewers, Ask). */
+  /** null = every member of the account (people with capture.read_all). */
   userId: string | null,
   opts: { q: string; from: Date; to: Date; kinds: Set<SearchKind>; app?: string; deviceId?: string; limit: number },
 ) {

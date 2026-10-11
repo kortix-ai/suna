@@ -222,7 +222,7 @@ export interface ActionRow {
 
 const pct = (v: unknown) => (typeof v === 'number' && v <= 1 ? `${Math.round(v * 100)}%` : String(v));
 
-/** A one-line, human-readable action, as the range pipelines and search read it. */
+/** A one-line, human-readable action, as search and the timeline read it. */
 export function describeAction(kind: string, args: Record<string, unknown>): string {
   switch (kind) {
     case 'click':

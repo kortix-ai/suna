@@ -162,7 +162,7 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
-  // The durable job queue (Kortix Capture ingest, pipelines, exports): every replica runs jobs.
+  // The durable job queue (Kortix Capture ingest): every replica runs jobs.
   startJobWorker();
   // Keep the shared Teams bot token warm so the first message after a deploy
   // does not wait on login.microsoftonline.com before its live card is posted.

@@ -2,7 +2,7 @@
 
 A worktree's API reads and writes Kortix Capture objects in its own Supabase
 Storage (bucket `kortix-capture`, created by migration). That covers device
-sign-in, ingestion, the timeline, search, policy and ranges. Supabase Storage
+sign-in, ingestion, the timeline, search and the policy. Supabase Storage
 has no STS, so `POST /v1/capture/credentials` answers `503
 capture_credentials_unavailable`. To issue real per-device credentials
 locally, run MinIO, which implements STS AssumeRole with a session policy.

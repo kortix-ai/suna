@@ -405,7 +405,7 @@ export async function setCapturePolicy(accountId: string, policy: CapturePolicy)
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 
-/** Activity runs, indexed items and ranges of one person for a day or a time span. */
+/** Activity runs and indexed items of one person for a day or a time span. */
 export async function getCaptureTimeline(accountId: string, query: CaptureWindowQuery = {}) {
   return unwrap(
     await backendApi.get<CaptureTimeline>(`${base(accountId)}/timeline${captureQuery(windowParams(query))}`),
