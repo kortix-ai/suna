@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { run, sh, which } from './exec';
 import { repoRoot } from './git';
+import { supabaseCli } from './supabase-cli';
 
 export interface Dep { name: string; bin: string; check: () => boolean; installMac: string; installLinux: string; needed: 'always' | 'database' | 'isolated-db' | 'tunnel'; }
 
@@ -17,7 +18,7 @@ export const DEPS: Dep[] = [
     installMac: 'brew install node@22', installLinux: 'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs' },
   { name: 'pnpm', bin: 'pnpm', check: () => !!which('pnpm'), needed: 'always',
     installMac: 'corepack enable && corepack install', installLinux: 'corepack enable && corepack install' },
-  { name: 'supabase', bin: 'supabase', check: () => !!which('supabase'), needed: 'database',
+  { name: 'supabase', bin: 'supabase', check: () => !!supabaseCli().bin, needed: 'database',
     installMac: 'brew install supabase/tap/supabase', installLinux: 'see https://supabase.com/docs/guides/cli (brew or release tarball)' },
   { name: 'psql', bin: 'psql', check: () => !!which('psql'), needed: 'isolated-db',
     installMac: 'brew install libpq && brew link --force libpq', installLinux: 'sudo apt-get install -y postgresql-client' },
@@ -41,38 +42,14 @@ export function checkDeps(opts: { database?: boolean; isolatedDatabase?: boolean
     .map((d) => ({ dep: d, ok: d.check() }));
 }
 
-/** The `supabase` CLI version the root package.json pins, or null. */
-export function pinnedSupabaseVersion(root: string): string | null {
-  try {
-    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
-    return pkg.devDependencies?.supabase ?? pkg.dependencies?.supabase ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Pure: the warning for a `supabase` on PATH that is not the repo's pin, or
- * null. Two CLI versions start different service images against the SAME
- * local project: a newer storage-api migrates the storage schema forward, and
- * the pinned one that `pnpm test` runs then fails every upload with 42P10.
- */
-export function supabaseVersionWarning(installed: string | null, pinned: string | null): string | null {
-  if (!installed || !pinned || installed === pinned) return null;
-  return `supabase CLI ${installed} on PATH, but the repo pins ${pinned} (\`pnpm test\` runs the pin). ` +
-    `Mixing them against one local project breaks storage uploads (42P10). ` +
-    `Put the pin first: export PATH="$PWD/node_modules/.bin:$PATH"`;
-}
-
 export async function ensureDeps(opts: { database?: boolean; isolatedDatabase?: boolean; tunnel?: boolean; install?: boolean } = {}): Promise<boolean> {
   let allOk = true;
-  if (opts.database && which('supabase')) {
-    const installed = sh(['supabase', '--version']).stdout.trim() || null;
-    const warning = supabaseVersionWarning(installed, pinnedSupabaseVersion(repoRootSafe()));
-    if (warning) console.log(`  ! ${warning}`);
+  if (opts.database) {
+    const { refusal } = supabaseCli();
+    if (refusal) { console.log(`  ✗ ${refusal}`); allOk = false; }
   }
   for (const { dep, ok } of checkDeps(opts)) {
-    if (ok) { console.log(`  ✓ ${dep.name}`); continue; }
+    if (ok) { console.log(`  ✓ ${dep.name}${dep.name === 'supabase' ? ` (${supabaseCli().bin})` : ''}`); continue; }
     const optional = dep.needed === 'tunnel';
     const fail = () => { if (!optional) allOk = false; };
     console.log(`  ${optional ? '!' : '✗'} ${dep.name} — missing${optional ? ' (optional — cloud sandboxes only)' : ''}`);
