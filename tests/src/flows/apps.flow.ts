@@ -7,6 +7,7 @@
  */
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
+import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
 import { setFeatureAsOperator } from "../fixtures/feature-flags";
 import { withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
@@ -797,6 +798,7 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
+    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -1135,6 +1137,7 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
+    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 300_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",

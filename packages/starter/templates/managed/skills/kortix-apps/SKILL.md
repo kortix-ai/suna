@@ -169,7 +169,8 @@ references/sign-in.md.
 
 Every machine knows where its App answers: `KORTIX_APP_URL`,
 `KORTIX_SERVICE_URL_<NAME>`, `KORTIX_APP_SLUG`, `KORTIX_MACHINE_ID`,
-`KORTIX_PROCESS_GROUP`.
+`KORTIX_PROCESS_GROUP`, and where each App it `uses` answers:
+`KORTIX_USES_URL_<SLUG>` (a server calls a used App there; bindings.md).
 
 ## Internal apps: a backend App + a static UI
 

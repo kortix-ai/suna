@@ -9,6 +9,8 @@ import type { FlowContext } from "../core/types";
 
 export async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
   const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
+  // A dropped connection must fail the next query, not crash the runner.
+  db.on("error", () => {});
   await db.connect();
   try {
     return await run(db);

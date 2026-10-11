@@ -7,7 +7,6 @@ import {
   primeTakenWarmSession,
   recordSessionNavigation,
   revalidateHeldWarmSession,
-  takeWarmSession,
   takeWarmSessionEntry,
   useWarmSessionStore,
   warmSessionFitsSend,
@@ -161,7 +160,7 @@ describe('createWarmSession', () => {
     // The tab already took warm-2. The server ignores exclusions, so a create
     // asked to exclude warm-1 still gets warm-2 back.
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-2' }) }));
-    takeWarmSession(P, { replenish: false });
+    takeWarmSessionEntry(P, { replenish: false });
     const calls: Array<string | undefined> = [];
     const create = mock(async (_projectId: string, excludeSessionId?: string) => {
       calls.push(excludeSessionId);
@@ -179,25 +178,25 @@ describe('createWarmSession', () => {
   });
 });
 
-describe('takeWarmSession', () => {
+describe('takeWarmSessionEntry', () => {
   test('returns the held session id with no network call', async () => {
     await createWarmSession(P, client());
-    expect(takeWarmSession(P, { replenish: false })).toBe(WARM);
+    expect(takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null).toBe(WARM);
   });
 
   test('returns null when nothing is held', () => {
-    expect(takeWarmSession(P, { replenish: false })).toBeNull();
+    expect(takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null).toBeNull();
   });
 
   test('hands the session out exactly once', async () => {
     await createWarmSession(P, client());
-    expect(takeWarmSession(P, { replenish: false })).toBe(WARM);
-    expect(takeWarmSession(P, { replenish: false })).toBeNull();
+    expect(takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null).toBe(WARM);
+    expect(takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null).toBeNull();
   });
 
   test('a send that does not fit ABANDONS the session instead of keeping it', async () => {
     await createWarmSession(P, client());
-    expect(takeWarmSession(P, { create: { agent_name: 'reviewer' }, replenish: false })).toBeNull();
+    expect(takeWarmSessionEntry(P, { create: { agent_name: 'reviewer' }, replenish: false })?.sessionId ?? null).toBeNull();
     // Consumed: the user changed their mind, so it will not fit the next send
     // either. It is hidden from the sidebar and reaped like any other idle box.
     expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
@@ -207,7 +206,7 @@ describe('takeWarmSession', () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
     const create = mock(async () => warm({ sessionId: 'warm-2' }));
 
-    expect(takeWarmSession(P, { isPresent: PRESENT, client: { create } })).toBe('warm-1');
+    expect(takeWarmSessionEntry(P, { isPresent: PRESENT, client: { create } })?.sessionId ?? null).toBe('warm-1');
     await Promise.resolve();
     await Promise.resolve();
 
@@ -219,7 +218,7 @@ describe('takeWarmSession', () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
     const create = mock(async () => warm({ sessionId: 'warm-2' }));
 
-    expect(takeWarmSession(P, { isPresent: AWAY, client: { create } })).toBe('warm-1');
+    expect(takeWarmSessionEntry(P, { isPresent: AWAY, client: { create } })?.sessionId ?? null).toBe('warm-1');
     await Promise.resolve();
 
     expect(create).not.toHaveBeenCalled();
@@ -230,7 +229,7 @@ describe('takeWarmSession', () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
     const create = mock(async () => warm({ sessionId: 'warm-2' }));
 
-    expect(takeWarmSession(P, { replenish: false, isPresent: PRESENT, client: { create } })).toBe(
+    expect(takeWarmSessionEntry(P, { replenish: false, isPresent: PRESENT, client: { create } })?.sessionId ?? null).toBe(
       'warm-1',
     );
     await Promise.resolve();
@@ -244,14 +243,14 @@ describe('takeWarmSession', () => {
       'proj-2',
       client({ create: async () => warm({ sessionId: 'warm-b' }) }),
     );
-    expect(takeWarmSession(P, { replenish: false })).toBe('warm-a');
+    expect(takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null).toBe('warm-a');
     expect(useWarmSessionStore.getState().ready['proj-2']?.sessionId).toBe('warm-b');
   });
 
   // --- JAY-596 / T20: "New Session" must never hand back the session the
   // user just left. ---------------------------------------------------------
   //
-  // Root cause: the replenish this file fires from `takeWarmSession` used to
+  // Root cause: the replenish a take here fires used to
   // hit the server with NO memory of which session it just handed out. The
   // server's own warm marker only drops on the first prompt, seconds later, so
   // the replenish could — and did — get the JUST-TAKEN session back with
@@ -269,7 +268,7 @@ describe('takeWarmSession', () => {
       return warm({ sessionId: 'warm-2' });
     });
 
-    expect(takeWarmSession(P, { isPresent: PRESENT, client: { create } })).toBe('warm-1');
+    expect(takeWarmSessionEntry(P, { isPresent: PRESENT, client: { create } })?.sessionId ?? null).toBe('warm-1');
     await Promise.resolve();
     await Promise.resolve();
 
@@ -279,7 +278,7 @@ describe('takeWarmSession', () => {
 
   test('the store refuses to file an already-taken id as ready', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
-    takeWarmSession(P, { replenish: false });
+    takeWarmSessionEntry(P, { replenish: false });
     expect(useWarmSessionStore.getState().takenSessionIds['warm-1']).toBe(true);
 
     const accepted = useWarmSessionStore.getState().settleCreate(P, warm({ sessionId: 'warm-1' }));
@@ -296,7 +295,7 @@ describe('takeWarmSession', () => {
       return warm({ sessionId: 'warm-1' }); // always echoes the taken id
     });
 
-    expect(takeWarmSession(P, { isPresent: PRESENT, client: { create } })).toBe('warm-1');
+    expect(takeWarmSessionEntry(P, { isPresent: PRESENT, client: { create } })?.sessionId ?? null).toBe('warm-1');
     // Let the initial replenish AND its one retry both settle.
     await Promise.resolve();
     await Promise.resolve();
@@ -318,7 +317,7 @@ describe('takeWarmSession', () => {
     const client: WarmSessionClient = { create: async () => warm({ sessionId: W }) };
 
     await createWarmSession(P, client);
-    const taken = takeWarmSession(P, { isPresent: PRESENT, client });
+    const taken = takeWarmSessionEntry(P, { isPresent: PRESENT, client })?.sessionId ?? null;
     expect(taken).toBe(W);
 
     await Promise.resolve();
@@ -327,7 +326,7 @@ describe('takeWarmSession', () => {
     await Promise.resolve();
 
     expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
-    expect(takeWarmSession(P, { replenish: false })).toBeNull();
+    expect(takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null).toBeNull();
   });
 });
 
@@ -418,7 +417,7 @@ describe('cross-tab taken registry', () => {
 
   test('the in-tab echo retry also carries the refused id as excludeSessionId', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
-    takeWarmSession(P, { replenish: false, registry: registryOf() });
+    takeWarmSessionEntry(P, { replenish: false, registry: registryOf() });
 
     const calls: Array<string | undefined> = [];
     const create = mock(async (_projectId: string, excludeSessionId?: string) => {
@@ -477,7 +476,7 @@ describe('recordSessionNavigation', () => {
 
     expect(dropped).toBe(P);
     expect(registry.ids.has('warm-1')).toBe(true);
-    expect(takeWarmSession(P, { replenish: false, registry })).toBeNull();
+    expect(takeWarmSessionEntry(P, { replenish: false, registry })?.sessionId ?? null).toBeNull();
   });
 
   test('every visited session id is published — a session this browser opened is never a warm candidate', async () => {
@@ -583,7 +582,7 @@ describe('revalidateHeldWarmSession', () => {
     });
     // The user sends while the revalidation fetch is in flight: the take
     // consumes the entry first.
-    expect(takeWarmSession(P, { replenish: false, registry })).toBe('warm-1');
+    expect(takeWarmSessionEntry(P, { replenish: false, registry })?.sessionId ?? null).toBe('warm-1');
 
     const dropped = await pending;
     expect(dropped).toBe(false);
@@ -610,11 +609,11 @@ describe('revalidateHeldWarmSession', () => {
     // While the fetch is in flight the user takes warm-1 and the replenish
     // files warm-2: the hold was replaced, not merely consumed.
     expect(
-      takeWarmSession(P, {
+      takeWarmSessionEntry(P, {
         isPresent: PRESENT,
         registry,
         client: { create: async () => warm({ sessionId: 'warm-2' }) },
-      }),
+      })?.sessionId ?? null,
     ).toBe('warm-1');
     await Promise.resolve();
     await Promise.resolve();
@@ -629,19 +628,12 @@ describe('revalidateHeldWarmSession', () => {
 
 // --- JAY-599 / T21: the sessions-list optimistic seed needs the full server
 // row, not just the id. -----------------------------------------------------
-describe('takeWarmSessionEntry', () => {
+describe('takeWarmSessionEntry — the full entry, not just the id', () => {
   test('returns the full entry, including the server row', async () => {
     await createWarmSession(P, client());
     const entry = takeWarmSessionEntry(P, { replenish: false });
     expect(entry?.sessionId).toBe(WARM);
     expect(entry?.session.session_id).toBe(WARM);
-  });
-
-  test('takeWarmSession is exactly this, narrowed to the id — same consumption, same null cases', async () => {
-    await createWarmSession(P, client());
-    // Same underlying store state; `takeWarmSession` must not double-consume.
-    expect(takeWarmSession(P, { replenish: false })).toBe(WARM);
-    expect(takeWarmSessionEntry(P, { replenish: false })).toBeNull();
   });
 
   test('a send that does not fit still returns null, and still abandons the session', async () => {
