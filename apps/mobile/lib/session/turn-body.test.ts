@@ -25,6 +25,8 @@ import {
   turnErrorText,
   turnHasSteps,
   turnResponse,
+  turnWorkSplit,
+  workParts,
   withoutReasoning,
   type TurnBodyTurn,
 } from './turn-body';
@@ -289,6 +291,52 @@ describe('lastTextPartId', () => {
       ] as never),
     ).toBe(b.id);
     expect(lastTextPartId([{ kind: 'burst', parts: [] }] as never)).toBeUndefined();
+  });
+});
+
+describe('turnWorkSplit (KRTX-2113, web TurnToolBlocks fold)', () => {
+  const shownFile = () => tool('show', { input: { path: '/workspace/report.pdf' } });
+
+  test('working: null, the stream renders as today', () => {
+    expect(turnWorkSplit(segmentTurn([tool('read'), text('Done.')]), true)).toBeNull();
+  });
+
+  test('settled: work folds, the deliverable is hoisted, the final text stays', () => {
+    const interim = text('Let me check.');
+    const read = tool('read');
+    const shown = shownFile();
+    const final = text('Here it is.');
+    const split = turnWorkSplit(segmentTurn([interim, read, shown, final]), false);
+    expect(split?.work.map((s) => s.kind)).toEqual(['text', 'burst']);
+    expect(split?.hoisted.map((s) => (s.kind === 'standalone' ? s.part.id : null))).toEqual([shown.id]);
+    expect(split?.final.map((s) => (s.kind === 'text' ? s.part.id : null))).toEqual([final.id]);
+  });
+
+  test('settled with no work (text, or deliverable + text): null', () => {
+    expect(turnWorkSplit(segmentTurn([text('Hi.')]), false)).toBeNull();
+    expect(turnWorkSplit(segmentTurn([shownFile(), text('Done.')]), false)).toBeNull();
+  });
+
+  test('work made only of interim text is no work: the sheet would open empty and hide that text', () => {
+    // Mobile drops text from the sheet (`workParts`), so text-only work renders as today.
+    expect(turnWorkSplit(segmentTurn([text('Checking.'), text('Done.')]), false)).toBeNull();
+    expect(turnWorkSplit(segmentTurn([text('Here it is.'), shownFile(), text('Done.')]), false)).toBeNull();
+  });
+
+  test('a burst that renders nothing is no work and does not block the final text', () => {
+    // A thought-only burst has no step: `burstView(...).hidden`, so ActivityBurst draws nothing.
+    const invisible = { kind: 'burst' as const, parts: [reasoning('hmm')] };
+    expect(turnWorkSplit([invisible, ...segmentTurn([text('Done.')])], false)).toBeNull();
+    const final = text('Done.');
+    const split = turnWorkSplit([...segmentTurn([tool('read'), final]), invisible], false);
+    expect(split?.work.map((s) => s.kind)).toEqual(['burst']);
+    expect(split?.final.map((s) => (s.kind === 'text' ? s.part.id : null))).toEqual([final.id]);
+  });
+
+  test('a turn that ends on a tool has no final text: everything is work', () => {
+    const split = turnWorkSplit(segmentTurn([text('Trying.'), tool('bash')]), false);
+    expect(split?.work).toHaveLength(2);
+    expect(split?.final).toEqual([]);
   });
 });
 
@@ -618,5 +666,20 @@ describe('turnBodyLayout (KRTX-1678: one render tree for the whole stream)', () 
 
   test('no assistant message yet → no segments list', () => {
     expect(turnBodyLayout({ ...base, hasAssistantContent: false, working: true, hasSteps: false }).segments).toBe(false);
+  });
+});
+
+describe('workParts (KRTX-2113: the "Worked for" row opens these in the activity sheet)', () => {
+  test('every burst and standalone call of the work, in order; interim text is dropped', () => {
+    const read = tool('read');
+    const task = tool('task');
+    const bash = tool('bash');
+    const work = [
+      { kind: 'burst', parts: [read] },
+      { kind: 'text', part: text('Checking the config') },
+      { kind: 'standalone', part: task },
+      { kind: 'burst', parts: [bash] },
+    ] as never;
+    expect(workParts(work).map((part) => part.id)).toEqual([read.id, task.id, bash.id]);
   });
 });

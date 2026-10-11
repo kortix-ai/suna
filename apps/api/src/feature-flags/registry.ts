@@ -414,6 +414,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'booted with the flag stays ephemeral if the flag is turned off, because its ' +
       'state already lives on the volume.',
   },
+  {
+    key: 'session_log',
+    name: 'Session log v2',
+    description:
+      'Read a session through the v2 session log instead of the v1 transcript. Off by default and not offered in Settings: Kortix enables it per project. Prod rollout: internal projects first, then 10% of projects, then every project. It becomes the default in the release that ships v2 to everyone and is deleted in the next release.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    // Internal-only (2026-10-11): not offered in Settings.
+    // A Kortix operator enables it per project.
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Nothing reads the flag yet: the v2 session-log read ' +
+      'path (P4.2) and the SDK v2 negotiation (P4.5, v2 only when health lists ' +
+      '`session.log.v2` and the flag is on) will resolve it per project.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

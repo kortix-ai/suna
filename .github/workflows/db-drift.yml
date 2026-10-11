@@ -170,6 +170,14 @@ jobs:
           npm_config_engine_strict: "false"
       - if: steps.gate.outputs.skip != 'true'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      # Migrations merged to dev and not yet released are not on prod. Build the
+      # canonical database only from migrations prod's ledger records as applied
+      # (this checkout is throwaway), so a failure means "recorded applied, object
+      # absent" and not "released later".
+      - name: Drop migrations prod has not applied (read-only ledger read)
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: packages/db
+        run: bun scripts/prune-unapplied-migrations.ts --live "$LIVE_DB_URL"
       - name: Build canonical from migrations + assert prod is a superset
         if: steps.gate.outputs.skip != 'true'
         env:

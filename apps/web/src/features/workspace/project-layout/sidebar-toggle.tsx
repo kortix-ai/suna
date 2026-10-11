@@ -6,6 +6,7 @@ import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import {
   sidebarOpenerLabel,
+  sidebarPanelVisible,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,7 @@ export function SidebarToggle({
       <Button
         type="button"
         aria-label={label}
+        aria-expanded={sidebarPanelVisible(sidebar)}
         variant="ghost"
         size="icon"
         onClick={() => sidebar.toggleSidebar()}

@@ -776,6 +776,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Viewed managed Git status': 'text3394d3b58f4d',
   'Viewed marketplace item': 'text24c56a94ea25',
   'Viewed marketplace item file': 'textd4c38f66e4af',
+  'Viewed mobile release policy': 'text91dc861375bc',
   'Viewed model access': 'text33eec0459cbf',
   'Viewed model defaults': 'text481ad7b3c1a2',
   'Viewed model picker': 'text5a7430fc2ce9',

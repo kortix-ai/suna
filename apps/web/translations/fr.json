@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes éphémères",
           "description": "Une session arrêtée garde ses fichiers et sa conversation sur un volume et libère sa machine. La réveiller démarre une nouvelle machine avec l’image la plus récente. Les processus en cours ne survivent pas à un arrêt."
+        },
+        "session_log": {
+          "name": "Journal de session v2",
+          "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
         }
       }
     },
@@ -19527,7 +19531,8 @@
       "textac6d9b76a141": "Monté",
       "text8d54763edcd8": "Non monté",
       "textffeb0c99532f": "Instantanés conservés {value0} jours",
-      "text6f52b07880a0": "Prendre un instantané"
+      "text6f52b07880a0": "Prendre un instantané",
+      "text91dc861375bc": "Politique de version mobile consultée"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

@@ -2,6 +2,7 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
+import { openKortixWebSocket } from './kortix-socket.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';
@@ -115,7 +116,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
         ws.data.ready = false;
         let upstream: WebSocket;
         try {
-          upstream = new WebSocket(ws.data.upstreamUrl);
+          upstream = openKortixWebSocket(ws.data.upstreamUrl);
         } catch {
           try {
             ws.close(1011, 'upstream connect failed');

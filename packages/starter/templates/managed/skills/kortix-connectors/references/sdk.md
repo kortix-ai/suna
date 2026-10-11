@@ -167,7 +167,7 @@ for (const message of listed.data?.messages ?? []) {
 
 The call is the same as above. Only `createKortix` changes, and the
 credential decides which accounts the call reaches. The public docs page is
-`/docs/sdk/connectors`.
+`/docs/connect/connectors#call-connectors-from-code`.
 
 **App, browser.** Set the App to `kortix apps access <app> --viewer api`.
 The gate answers `/_kortix/api/v1/*` on the App's own origin, so no CORS rule

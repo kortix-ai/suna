@@ -69,6 +69,7 @@ import { registerConfigReleaseRoutes } from '../config-releases/routes';
 import { registerPublicSharesRoutes } from './routes/public-shares';
 import { registerSessionDrivesRoutes } from './routes/session-drives';
 import { registerSessionDriveSyncRoutes } from './routes/session-drive-sync';
+import { registerSessionLogRoutes } from './routes/session-log';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
 import { registerSessionWatchRoutes } from './routes/session-watch';
@@ -152,6 +153,7 @@ export function registerAllProjectRoutes(): void {
   registerPublicSharesRoutes();
   registerSessionDrivesRoutes();
   registerSessionDriveSyncRoutes();
+  registerSessionLogRoutes();
   registerSessionRuntimeRoutes();
   registerSessionPresenceRoutes();
   registerSessionWatchRoutes();
