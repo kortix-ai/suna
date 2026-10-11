@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
+import { openKortixWebSocket } from '../api/kortix-socket.ts';
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 
@@ -27,7 +27,7 @@ describe('Kortix PTY WebSocket', () => {
       },
     });
 
-    const websocket = openKortixPtyWebSocket(
+    const websocket = openKortixWebSocket(
       `ws://127.0.0.1:${server.port}/kortix/pty/test/connect`,
     );
     await new Promise<void>((resolve, reject) => {
