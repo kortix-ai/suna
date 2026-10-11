@@ -66,7 +66,7 @@ route, the body, the credential, the retries and the dead-token breaker.
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4, P2.5)
+## Session log (P2.4, P2.5, P2.6)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
@@ -74,7 +74,9 @@ patch since one `ExportCursor` per thread; `restore(log)` writes a session log
 into the native store before the harness starts and returns the cursors of what
 it wrote; `fingerprint()` digests the native store for the boot reconcile;
 `capabilities` is the adapter's `AdapterCapabilities`. pi implements it
-(`pi/session-log.ts`, P2.5); OpenCode does in P2.6.
+(`pi/session-log.ts`, P2.5), and OpenCode (`open-code/session-log.ts`, P2.6).
+Both rebuild the whole log on each read and diff it against the cursors with
+`logChanges` (`shared/session-log-journal.ts`).
 
 The pi boot starts the journal once the runtime is ready and a session is
 bound, before the first turn, with generation 0: nothing mints a session
@@ -93,9 +95,31 @@ file part pi never received is a harness block (`kind: 'undelivered_file'`,
 `model_visible: false`), never an attachment: the model never saw it, so a
 restore must not present it.
 
+The OpenCode export reads `opencode.db` through `OpencodeDb.storeSnapshot()`
+(every session, message, part and todo row, one WAL snapshot), assembles the
+v1 rows as OpenCode's HTTP serves them, drops attachment bytes as the API's
+mirror does, and converts them with `fromV1`: one mapping with the API's
+capture (P2.7) and backfill (P3.1). Its records equal `fromV1` of the mirror
+rows except in the fields only the daemon knows: `seq`, `producer`
+(`opencode`), attachment `ref`/`bytes`/`sha256`, and the session's title,
+`created_at`, todos, `restore_grade: 'native'` and harness history (the list
+is in the header of `open-code/session-log.ts`). `seq` is issued once per
+message in OpenCode's message order and persisted in
+`$KORTIX_RUNTIME_STATE_DIR/opencode-session-log.json`, so a restart keeps
+every seq and a revert never hands a deleted message's seq to the next one;
+the deleted messages reach the journal as tombstones. `startSessionRuntime`
+starts the journal (generation 0) before the event loop and the first prompt;
+the service's host `lifecycle.stop()` stops it before OpenCode stops, and a
+restart (`this.stop()` inside the native lifecycle) leaves it running.
+
 Known limits of the pi export:
 - A dump written before P2.5 has no header; pi makes a fresh one on load, so `created_at` is the restart time for a session that spans the upgrade.
 - The journal does not start on a box with `repoMaterializationError` (the boot returns before it): turns run through the proxy on such a box are not journaled.
+
+Known limits of the OpenCode export:
+- OpenCode 1.18.23's compaction part has no `tail_start_id` on a live box, so the compaction block's `first_kept_message_id` is `null` (what OpenCode stored; a restore into another harness counts it as a missing cut point).
+- A daemon restart sends every message again in its first batch: nothing gives the journal its cursors before P6.
+- A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until P6 seeds seqs from the API's cursors.
 
 Debug: `KORTIX_SESSION_LOG_DUMP_DIR=<dir>` (off by default) makes the journal
 write each batch body as JSON to `<dir>` and acknowledge it at once, instead of
