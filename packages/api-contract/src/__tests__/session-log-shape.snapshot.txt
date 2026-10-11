@@ -111,6 +111,13 @@ SessionLogAckSchema = {
   rev: number(int)(min0)
 }
 
+SessionLogBlockDeltaEventSchema = {
+  thread_id: string(min1)
+  message_id: string(min1)
+  block_id: string(min1)
+  delta: string
+}
+
 SessionLogBlockSchema = union(
   | TextBlockSchema
   | ReasoningBlockSchema
@@ -144,6 +151,15 @@ SessionLogManifestSchema = {
     content_hash: string(min1)
   })
 }
+
+SessionLogMessageEventSchema = union(
+  | SessionLogPutSchema
+  | {
+    message_id: string(min1)
+    rev: number(int)(min0)
+    deleted: literal(true)
+  }
+)
 
 SessionLogMessageSchema = {
   schema: literal("kortix.session/2")
@@ -246,6 +262,11 @@ SessionLogSessionPatchSchema = {
     permissions: array(PendingSchema)
   } | absent
   ext: ExtSchema | absent | absent
+}
+
+SessionLogStateEventSchema = {
+  generation: number(int)(min0)
+  session: SessionLogSessionPatchSchema
 }
 
 SessionLogThreadSchema = {

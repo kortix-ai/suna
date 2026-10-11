@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path'
 import {
   AdapterCapabilitiesSchema,
   fromV1,
+  SESSION_LOG_EVENTS,
   SessionLogJournalRequestSchema,
   upcast,
   type ExportCursor,
@@ -32,6 +33,7 @@ import { readOpenCodeSessionPin, writeOpenCodeSessionPin } from '@/harness/open-
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { testOpenCodeConfig } from './helpers/open-code-harness'
 import fixture from './fixtures/opencode-session-log.json'
 
@@ -302,6 +304,48 @@ describe('OpenCode session-log journal wiring', () => {
     const maxRoot = Math.max(...first!.puts.filter((p) => p.message.thread_id === ROOT).map((p) => p.message.seq))
     expect(second.puts.map((p) => p.message.seq)).toEqual([maxRoot + 1, maxRoot + 2])
     expect(readFileSync(join(dir, 'state', 'opencode-session-log.json'), 'utf8')).toContain(ROOT)
+  })
+
+  test('the v2 stream: state and threads first, every journaled revision as log.message, the revert as tombstones, text deltas under the stored block id', async () => {
+    resetKortixEventBusForTests()
+    const frames: KortixEvent[] = []
+    sessionLogEventBus().subscribe((event) => void frames.push(event), {})
+    const dbPath = join(dir, 'opencode.db')
+    writeStore(dbPath, before)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath: join(dir, 's.json') })
+    const journal = startSessionLogJournal(port, { generation: 0 })!
+    expect(await flushSessionLogJournal()).toBe(true)
+    const first = dumped()[0]!
+    for (const frame of frames) expect(SESSION_LOG_EVENTS[frame.type as keyof typeof SESSION_LOG_EVENTS].safeParse(frame.payload).success).toBe(true)
+    // The journal start collected the store at rest: one state, one frame per thread, one per put, in that order.
+    expect(frames.map((f) => f.type)).toEqual(['log.state', 'log.thread', 'log.thread', ...first.puts.map(() => 'log.message')])
+    expect(frames[0]!.payload).toEqual({ generation: 0, session: first.session })
+    expect(frames.slice(1, 3).map((f) => f.payload)).toEqual(first.threads)
+    // Same ids, seqs and revs as the batch the API receives.
+    expect(frames.slice(3).map((f) => f.payload)).toEqual(first.puts)
+    expect(frames.slice(3).map((f) => f.session)).toEqual(first.puts.map((p) => p.message.thread_id))
+
+    // A delta as OpenCode streams it names the part row: the block id is the id the record stores.
+    const part = before.parts.find((p) => p.session_id === ROOT && (JSON.parse(p.data) as { type: string }).type === 'text')!
+    const bus = kortixEventBus()
+    bus.publish('message.part.delta', { sessionID: ROOT, messageID: part.message_id, partID: part.id, field: 'text', delta: 'more' }, ROOT)
+    bus.publish('message.part.delta', { sessionID: ROOT, messageID: part.message_id, partID: part.id, field: 'metadata', delta: 'x' }, ROOT)
+    bus.publish('message.part.updated', { sessionID: ROOT, part: { id: part.id } }, ROOT)
+    const delta = frames.slice(3 + first.puts.length)
+    expect(delta.map((f) => [f.type, f.payload])).toEqual([['log.block.delta', { thread_id: ROOT, message_id: part.message_id, block_id: part.id, delta: 'more' }]])
+    const stored = first.puts.find((p) => p.message.message_id === part.message_id)!.message
+    expect(stored.blocks.filter((b) => b.type === 'text').map((b) => b.id)).toContain(part.id)
+
+    writeStore(dbPath, after)
+    const seen = frames.length
+    expect(await flushSessionLogJournal()).toBe(true)
+    const second = dumped()[1]!
+    const revert = frames.slice(seen).map((f) => f.payload as Record<string, unknown>)
+    expect(revert.filter((p) => p.deleted)).toEqual(second.tombstones.map((t) => ({ ...t, deleted: true })))
+    expect(revert.filter((p) => 'message' in p)).toEqual(second.puts)
+    await journal.stop(0)
+    bus.publish('message.part.delta', { sessionID: ROOT, messageID: part.message_id, partID: part.id, field: 'text', delta: 'late' }, ROOT)
+    expect(frames.at(-1)!.payload).not.toMatchObject({ delta: 'late' })
   })
 
   test('without a control plane the boot start journals nothing', () => {
