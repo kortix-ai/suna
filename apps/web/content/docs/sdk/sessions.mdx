@@ -349,9 +349,10 @@ if (!runtimeSupports(health?.capabilities, 'session.compact')) hideCompactButton
 | `session.attach` | Attach the harness's own terminal client |
 | `session.config` | A runtime config document a client reads and patches |
 | `session.steer` | A prompt read by the running turn at its next step |
+| `session.log.v2` | The runtime event stream serves the session log as `log.*` frames (`?schema=v2`) |
 
-- OpenCode lists all 11. It lists `session.steer` only on OpenCode 1.18.15 or later.
-- pi lists `session.subagents`, `session.compact`, `session.commands` and `session.steer`.
+- OpenCode lists all 12. It lists `session.steer` only on OpenCode 1.18.15 or later.
+- pi lists `session.subagents`, `session.compact`, `session.commands`, `session.steer` and `session.log.v2`.
 - A route for an unlisted feature answers `501 feature_not_supported`.
 - `runtimeSupports` returns `true` before a health answer arrives, and for a runtime that lists no `session.*` capability.
 

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The machines and volumes of an App (the Fly.io model), in the App detail's
+ * The machines and volumes of an App, in the App detail's
  * bottom panel next to its releases. A machine runs one process group of the
  * live release; a volume outlives every release. Clients branch on
  * capabilities: `machines`, `scale`, `volumes`, `snapshots`.

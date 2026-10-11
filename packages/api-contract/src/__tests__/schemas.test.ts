@@ -149,6 +149,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       notification_center: false,
       drives: false,
       ephemeral_sandboxes: false,
+      session_log: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -753,6 +754,7 @@ describe('envelopes', () => {
       'notification_center',
       'drives',
       'ephemeral_sandboxes',
+      'session_log',
     ]);
   });
 

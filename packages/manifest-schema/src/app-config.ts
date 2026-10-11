@@ -1,6 +1,6 @@
 /**
- * An `apps.<name>` block as the release config a deploy sends (the Fly.io
- * model, `@kortix/shared/app-config`). The CLI and the validator share it, so
+ * An `apps.<name>` block as the release config a deploy sends
+ * (`@kortix/shared/app-config`). The CLI and the validator share it, so
  * `kortix validate` refuses exactly what the API would.
  *
  * The block's `command` is the image's argv and travels with the source; only

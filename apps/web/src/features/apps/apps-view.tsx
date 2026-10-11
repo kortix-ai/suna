@@ -17,7 +17,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { appCan, appStatus } from './app-shared';
+import { appCan, appStatus, gridApps } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -172,14 +172,14 @@ export function AppsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : apps.data?.length ? (
+          ) : apps.data && gridApps(apps.data).length ? (
             /* A gallery grid, sized by the space it has rather than by the
                window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
             <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
-              {apps.data.map((app) => (
+              {gridApps(apps.data).map((app) => (
                 <AppCard
                   key={app.app_id}
                   projectId={projectId}
@@ -265,8 +265,10 @@ function AppsEmptyState() {
 
 function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // The session URL is minted only for an App with capability `preview`.
-  const preview = appCan(app, 'preview');
+  // The session URL is minted only for an App with capability `preview`, and
+  // only when the card frames it (`display.preview: none` shows an icon).
+  const thumbnail = app.display?.preview !== 'none';
+  const preview = appCan(app, 'preview') && thumbnail;
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
@@ -297,13 +299,19 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
-          <AppPreview
-            key={app.active_deployment_id ?? app.app_id}
-            app={app}
-            url={access.session.data?.url ?? null}
-            accessError={!canAccess || access.session.isError}
-            interactive={false}
-          />
+          {thumbnail ? (
+            <AppPreview
+              key={app.active_deployment_id ?? app.app_id}
+              app={app}
+              url={access.session.data?.url ?? null}
+              accessError={!canAccess || access.session.isError}
+              interactive={false}
+            />
+          ) : (
+            <div className={cn(PREVIEW_TILE_ASPECT, 'bg-muted/20 text-muted-foreground flex items-center justify-center')} data-testid="app-preview-icon">
+              <HardDrivesIcon className="size-8" aria-hidden />
+            </div>
+          )}
         </div>
 
         {/* The caption: the App's name and whether it is up. One line. No padding of its own — it is page

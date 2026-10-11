@@ -29,7 +29,7 @@ import { AppPreview } from './app-preview';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
 import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
-import { localizedAppCopy, appCan, appCommand, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { localizedAppCopy, appCan, appCommand, appHost, appStatus, appTabLabel, childApps, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -78,6 +78,13 @@ export function AppDetailModal({
   const [overlay, setOverlay] = useState<
     'access' | 'delete' | 'connect' | null
   >(null);
+  // Apps shown as tabs of this one (`display.parent`): a backend's dashboard.
+  // An App that hides its own thumbnail opens on its first tab.
+  const children = childApps(apps.data ?? [], app);
+  const [view, setView] = useState(() =>
+    app.display?.preview === 'none' && children[0] ? children[0].app_id : app.app_id,
+  );
+  const viewedChild = children.find((child) => child.app_id === view) ?? null;
   const latest = deployments.data?.[0];
   const status = appStatus(app, tI18nComplete);
   const notice = deployNotice(latest, tI18nComplete);
@@ -149,6 +156,16 @@ export function AppDetailModal({
                   running case needs a screen-reader-only label — but rendering
                   it unconditionally alongside the visible one made every
                   non-running state read its status out twice. */}
+              {children.length ? (
+                <Tabs value={view} onValueChange={setView} className="shrink-0">
+                  <TabsListCompact>
+                    <TabsTriggerCompact value={app.app_id}>{app.name}</TabsTriggerCompact>
+                    {children.map((child) => (
+                      <TabsTriggerCompact key={child.app_id} value={child.app_id}>{appTabLabel(child, app)}</TabsTriggerCompact>
+                    ))}
+                  </TabsListCompact>
+                </Tabs>
+              ) : null}
               {status.live ? (
                 <span className="sr-only">{status.label}</span>
               ) : (
@@ -317,7 +334,9 @@ export function AppDetailModal({
           </header>
 
           <div className="relative min-h-0 flex-1">
-            {preview ? (
+            {viewedChild ? (
+              <AppTabView key={viewedChild.app_id} projectId={projectId} app={viewedChild} />
+            ) : preview ? (
               <AppPreview
                 key={app.active_deployment_id ?? app.app_id}
                 app={app}
@@ -582,5 +601,20 @@ function DeploymentLog({ projectId, deployment }: { projectId: string; deploymen
         <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text80c652c4eeec')}</p>
       )}
     </div>
+  );
+}
+
+/** Another App shown as a tab of this one (`display.parent`), framed with its own access session. */
+function AppTabView({ projectId, app }: { projectId: string; app: App }) {
+  const canAccess = app.viewer_can_access !== false;
+  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess && appCan(app, 'preview') });
+  return (
+    <AppPreview
+      app={app}
+      url={access.session.data?.url ?? null}
+      accessError={!canAccess || access.session.isError}
+      interactive
+      className="absolute inset-0 size-full"
+    />
   );
 }

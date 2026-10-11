@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Privremeni sandbox-ovi",
           "description": "Zaustavljena sesija čuva datoteke i razgovor na volumenu i oslobađa svoj računar. Buđenje pokreće novi računar sa najnovijom slikom. Pokrenuti procesi ne preživljavaju zaustavljanje."
+        },
+        "session_log": {
+          "name": "Log sesije v2",
+          "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
         }
       }
     },

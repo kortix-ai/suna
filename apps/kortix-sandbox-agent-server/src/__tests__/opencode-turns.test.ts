@@ -335,6 +335,8 @@ describe('steering on OpenCode (R10)', () => {
       const old = await capabilities()
       expect(old).not.toContain('session.steer')
       expect(old).toContain('session.rewind')
+      // The daemon serves the v2 stream whatever the OpenCode version.
+      expect(old).toContain('session.log.v2')
       version = null
       configureRuntimeState({ opencode: lifecycle } as never)
       expect(await capabilities()).not.toContain('session.steer')

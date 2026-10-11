@@ -353,10 +353,10 @@ and the alternative. `read_skill` with
 </mcp-client>
 
 <apps>
-## Kortix Apps — sites, servers and backends (the Fly.io model)
+## Kortix Apps — sites, servers and backends
 
 An **App** is a project-scoped thing with one stable Kortix URL. Kortix runs it
-on the Fly.io model:
+as releases, machines and volumes:
 
 - A **release** (`vN`) is immutable: an artifact plus its resolved config. A
   failed release never replaces the live one. A rollback is a new release from
@@ -406,7 +406,7 @@ kortix apps access storefront --mode restricted --members <member-id> --groups <
 ```
 
 For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`
-(the App's `fly.toml`: `processes`, `http_service`, `services`, `mounts`, `vm`,
+(the App's release config: `processes`, `http_service`, `services`, `mounts`, `vm`,
 `deploy`, `labels`), then run `kortix apps deploy --manifest-app <name>`, or a
 bare `kortix apps deploy` for every block. The manifest stores non-secret
 environment values and maps runtime environment keys to **project secret
