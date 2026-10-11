@@ -1,0 +1,26 @@
+{
+  "source_hash": "2511a48b4e6ce56afc10f9f86a65eeb7421bb37d7164f2c6a10bc82e3ff5bb79",
+  "diff_files": [
+    "packages/api-contract/src/__tests__/fixtures/session-log/claude-code.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/codex.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/golden.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/golden21.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/opencode-v2.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/opencode.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/pi.expected-view.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/recorded-requests.json",
+    "packages/api-contract/src/__tests__/session-log-model-view.test.ts",
+    "packages/api-contract/src/sandbox-layout.ts",
+    "packages/api-contract/src/session-log/index.ts",
+    "packages/api-contract/src/session-log/model-view.ts"
+  ],
+  "diff_hash": "9978ddf56712caf5d14c51bbf7f28ec1a3011126249383fbcf4caf069e21e8f4",
+  "head": "e3c8179f9990cbf64e8f998c0f2ed6c6e0c3f1d4",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T12:19:10.265Z"
+}
