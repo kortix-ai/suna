@@ -18,7 +18,14 @@ import { captureHref } from './use-capture-area';
  * (`capture.manage`) and the way into the Capture area. Capture is off until
  * an admin turns it on here.
  */
-export function CaptureAccountCard({ accountId }: { accountId: string }) {
+export function CaptureAccountCard({
+  accountId,
+  showOpen = true,
+}: {
+  accountId: string;
+  /** Off inside Capture itself, where the link would point at the page you are on. */
+  showOpen?: boolean;
+}) {
   const t = useTranslations('capture.account');
   const workspace = useCaptureWorkspace(accountId);
   const setEnabled = useSetCaptureEnabled(accountId);
@@ -33,7 +40,7 @@ export function CaptureAccountCard({ accountId }: { accountId: string }) {
         <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
       ) : (
         <span className="flex shrink-0 items-center gap-3">
-          {enabled ? (
+          {enabled && showOpen ? (
             <Button asChild variant="outline" size="sm">
               <Link href={captureHref(accountId, 'devices')}>{t('open')}</Link>
             </Button>

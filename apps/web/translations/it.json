@@ -20820,12 +20820,6 @@
       "saveFailed": "Impossibile salvare le impostazioni",
       "loadFailed": "Impossibile caricare le impostazioni.",
       "tryAgain": "Riprova",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "Kortix Capture per {name}",
-      "switchHint": "Disattivandolo, la registrazione si ferma su ogni computer di questa organizzazione e Kortix Capture viene nascosto ai membri.",
-      "switchedOn": "Kortix Capture è attivo",
-      "switchedOff": "Kortix Capture è disattivato",
-      "switchFailed": "Impossibile modificare Kortix Capture",
       "accessTitle": "Chi vede le registrazioni",
       "accessBody": "Ogni membro vede i propri dispositivi e la propria cronologia. Proprietari e amministratori vedono anche quelli di tutti (capture.read_all) e gestiscono Capture (capture.manage). Per dare questo accesso a un'altra persona, usa un ruolo personalizzato in Account → Ruoli. Ogni visualizzazione di un altro membro finisce nel registro di audit."
     },

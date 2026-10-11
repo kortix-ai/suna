@@ -20820,12 +20820,6 @@
       "saveFailed": "設定を保存できませんでした",
       "loadFailed": "設定を読み込めませんでした。",
       "tryAgain": "再試行",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "{name} の Kortix Capture",
-      "switchHint": "オフにすると、この組織のすべてのコンピューターで記録が止まり、メンバーには Kortix Capture が表示されなくなります。",
-      "switchedOn": "Kortix Capture をオンにしました",
-      "switchedOff": "Kortix Capture をオフにしました",
-      "switchFailed": "Kortix Capture を変更できませんでした",
       "accessTitle": "録画を閲覧できるユーザー",
       "accessBody": "各メンバーは自分のデバイスとタイムラインを閲覧できます。オーナーと管理者は全員分も閲覧でき (capture.read_all)、Capture を管理できます (capture.manage)。このアクセス権をほかの人に付与するには、[アカウント] → [ロール] でカスタムロールを使います。ほかのメンバーの閲覧はすべて監査ログに記録されます。"
     },

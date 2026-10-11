@@ -20820,12 +20820,6 @@
       "saveFailed": "无法保存设置",
       "loadFailed": "无法加载设置。",
       "tryAgain": "重试",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "{name} 的 Kortix Capture",
-      "switchHint": "关闭后，此组织所有电脑都会停止录制，成员将看不到 Kortix Capture。",
-      "switchedOn": "Kortix Capture 已开启",
-      "switchedOff": "Kortix Capture 已关闭",
-      "switchFailed": "无法更改 Kortix Capture",
       "accessTitle": "谁能查看录制内容",
       "accessBody": "每位成员都能查看自己的设备和时间线。所有者和管理员还能查看所有人的内容 (capture.read_all) 并管理 Capture (capture.manage)。如需将此权限授予他人，请在“账户 → 角色”中使用自定义角色。每次查看其他成员的内容都会记入审计日志。"
     },

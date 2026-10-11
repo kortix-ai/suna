@@ -20820,12 +20820,6 @@
       "saveFailed": "Die Einstellungen konnten nicht gespeichert werden",
       "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
       "tryAgain": "Erneut versuchen",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "Kortix Capture für {name}",
-      "switchHint": "Aus stoppt die Aufnahme auf jedem Computer dieser Organisation und blendet Kortix Capture für Mitglieder aus.",
-      "switchedOn": "Kortix Capture ist an",
-      "switchedOff": "Kortix Capture ist aus",
-      "switchFailed": "Kortix Capture konnte nicht geändert werden",
       "accessTitle": "Wer Aufzeichnungen sieht",
       "accessBody": "Jedes Mitglied sieht seine eigenen Geräte und seine Zeitleiste. Inhaber und Admins sehen zusätzlich die aller anderen (capture.read_all) und verwalten Capture (capture.manage). Vergib diesen Zugriff an andere über eine eigene Rolle unter Konto → Rollen. Jede Ansicht eines anderen Mitglieds landet im Audit-Log."
     },

@@ -20820,12 +20820,6 @@
       "saveFailed": "Could not save the settings",
       "loadFailed": "Could not load the settings.",
       "tryAgain": "Try again",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "Kortix Capture for {name}",
-      "switchHint": "Off stops recording on every computer of this organization and hides Kortix Capture from members.",
-      "switchedOn": "Kortix Capture is on",
-      "switchedOff": "Kortix Capture is off",
-      "switchFailed": "Could not change Kortix Capture",
       "accessTitle": "Who sees recordings",
       "accessBody": "Every member sees their own devices and timeline. Owners and admins also see everyone's (capture.read_all) and manage Capture (capture.manage). To give someone else that access, use a custom role under Account → Roles. Every view of another member goes into the audit log."
     },

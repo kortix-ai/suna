@@ -6,7 +6,7 @@ import {
   type CapturePolicy,
   type CapturePolicyRecord,
 } from '@kortix/sdk';
-import { useCapturePolicy, useSetCaptureEnabled, useSetCapturePolicy } from '@kortix/sdk/react';
+import { useCapturePolicy, useSetCapturePolicy } from '@kortix/sdk/react';
 import { notFound, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useId, useState, type ReactNode } from 'react';
 
@@ -24,6 +24,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { relativeTime } from '@/lib/relative-time';
+import { CaptureAccountCard } from '../area/capture-account-card';
 import { CapturePage } from '../area/capture-area-shell';
 import { useCaptureArea } from '../area/use-capture-area';
 import { ExclusionsEditor } from './exclusions-editor';
@@ -143,6 +144,7 @@ function PolicyForm({
   onTab: (tab: string) => void;
 }) {
   const t = useTranslations('capture.settings');
+  const tAccount = useTranslations('capture.account');
   const tGroup = useTranslations('capture.settings.exclusions.group');
   const locale = useLocale();
   const save = useSetCapturePolicy(accountId);
@@ -169,7 +171,9 @@ function PolicyForm({
       </TabsList>
 
       <TabsContent value="general" className="space-y-8 pt-6">
-        <SwitchSection accountId={accountId} />
+        <Group title={tAccount('title')}>
+          <CaptureAccountCard accountId={accountId} showOpen={false} />
+        </Group>
         <section className="space-y-2">
           <Label>{t('accessTitle')}</Label>
           <p className="text-muted-foreground text-sm text-pretty">{t('accessBody')}</p>
@@ -299,28 +303,5 @@ function PolicyForm({
         </p>
       )}
     </Tabs>
-  );
-}
-
-/** The account switch: Kortix Capture on or off for the whole organization. Applies at once. */
-function SwitchSection({ accountId }: { accountId: string }) {
-  const t = useTranslations('capture.settings');
-  const area = useCaptureArea(accountId);
-  const setEnabled = useSetCaptureEnabled(accountId);
-  return (
-    <Group title={t('switchTitle')}>
-      <SwitchRow
-        title={t('switchLabel', { name: area.accountName })}
-        description={t('switchHint')}
-        checked={area.enabled}
-        disabled={setEnabled.isPending}
-        onChange={(on) =>
-          setEnabled.mutate(on, {
-            onSuccess: () => successToast(on ? t('switchedOn') : t('switchedOff')),
-            onError: () => errorToast(t('switchFailed')),
-          })
-        }
-      />
-    </Group>
   );
 }

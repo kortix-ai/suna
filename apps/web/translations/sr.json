@@ -20820,12 +20820,6 @@
       "saveFailed": "Podešavanja nije moguće sačuvati",
       "loadFailed": "Podešavanja nije moguće učitati.",
       "tryAgain": "Покушај поново",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "Kortix Capture за {name}",
-      "switchHint": "Isključivanje zaustavlja snimanje na svakom računaru ove organizacije i sakriva Kortix Capture od članova.",
-      "switchedOn": "Kortix Capture је укључен",
-      "switchedOff": "Kortix Capture је искључен",
-      "switchFailed": "Промена Kortix Capture није успела",
       "accessTitle": "Ко види снимке",
       "accessBody": "Сваки члан види своје уређаје и своју временску линију. Власници и админи виде и туђе (capture.read_all) и управљају Capture-ом (capture.manage). Да бисте овај приступ дали неком другом, користите прилагођену улогу у Налог → Улоге. Свако гледање другог члана улази у дневник ревизије."
     },

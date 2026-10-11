@@ -20820,12 +20820,6 @@
       "saveFailed": "Não foi possível salvar as configurações",
       "loadFailed": "Não foi possível carregar as configurações.",
       "tryAgain": "Tentar novamente",
-      "switchTitle": "Kortix Capture",
-      "switchLabel": "Kortix Capture para {name}",
-      "switchHint": "Desligado, a gravação para em todos os computadores desta organização e o Kortix Capture fica oculto para os membros.",
-      "switchedOn": "Kortix Capture está ativo",
-      "switchedOff": "Kortix Capture está desativado",
-      "switchFailed": "Não foi possível alterar o Kortix Capture",
       "accessTitle": "Quem vê as gravações",
       "accessBody": "Cada membro vê os próprios dispositivos e a própria linha do tempo. Proprietários e administradores também veem os de todos (capture.read_all) e gerenciam o Capture (capture.manage). Para dar esse acesso a outra pessoa, use uma função personalizada em Conta → Funções. Cada visualização de outro membro vai para o log de auditoria."
     },
