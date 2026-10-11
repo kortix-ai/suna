@@ -112,7 +112,7 @@ test('only the service role reads the tables: RLS on, no policy, no anon/authent
              has_table_privilege('authenticated', ${qualified}, 'SELECT,INSERT,UPDATE,DELETE') AS authenticated
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'kortix' AND c.relname = ${table}`);
-    expect({ table, ...state }).toEqual({ table, rls: true, policies: 0, anon: false, authenticated: false });
+    expect({ table, ...state } as Row).toEqual({ table, rls: true, policies: 0, anon: false, authenticated: false });
   }
 });
 
