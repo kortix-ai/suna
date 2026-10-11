@@ -99,7 +99,7 @@ describe('the CLI-owned service', () => {
     expect(capture.bundleIdOf('/Applications/Kortix.app/Contents/MacOS/Kortix', () => { throw new Error('no plist'); })).toBe(null);
   });
 
-  test('the service the app installed before the CLI owned it is removed once', () => {
+  test('the service the app installed before the CLI owned it is removed at every start, so an old copy cannot bring it back', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-legacy-home-'));
     const lib = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-legacy-lib-'));
     const label = `ai.kortix.desktop.capture.${capture.sha8(path.resolve(lib))}`;
@@ -113,6 +113,11 @@ describe('the CLI-owned service', () => {
     expect(fs.existsSync(plist)).toBe(false);
     expect(capture.removeLegacyService({ library: lib, platform: 'darwin', home, uid: 501, run })).toBe(false);
     expect(calls).toHaveLength(1);
+    // An older copy of the app, opened later, installs it again: the next start removes it again.
+    fs.writeFileSync(plist, '<plist/>');
+    expect(capture.removeLegacyService({ library: lib, platform: 'darwin', home, uid: 501, run })).toBe(true);
+    expect(calls).toEqual([`launchctl bootout gui/501/${label}`, `launchctl bootout gui/501/${label}`]);
+    expect(fs.existsSync(plist)).toBe(false);
   });
 
   test('the shim runs the engine as its child, passes its exit code on, and forwards SIGTERM', async () => {

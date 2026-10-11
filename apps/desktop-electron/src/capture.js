@@ -275,29 +275,25 @@ function bundleIdOf(execPath, read = readBundleId) {
 /**
  * Removes the service this app installed before the engine's CLI owned it:
  * `ai.kortix.desktop.capture.<sha8(library)>` started `/bin/sh`, so macOS
- * named it "sh". Runs once per library (a marker in the library); true when it ran.
+ * named it "sh". True when it removed one.
  */
 function removeLegacyService({ library, platform = process.platform, home = os.homedir(), uid = process.getuid?.(), run }) {
-  const marker = path.join(library, 'legacy-service-removed');
-  if (fs.existsSync(marker)) return false;
+  // Checked at every start, not once: an older copy of the app, opened later, installs it again.
   const label = `ai.kortix.desktop.capture.${sha8(path.resolve(library))}`;
-  if (platform === 'darwin') {
-    const plist = path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
-    if (fs.existsSync(plist)) {
-      run('launchctl', ['bootout', `gui/${uid}/${label}`]);
-      fs.rmSync(plist, { force: true });
-    }
-  } else if (platform === 'linux') {
-    const unit = path.join(home, '.config', 'systemd', 'user', `${label}.service`);
-    if (fs.existsSync(unit)) {
-      run('systemctl', ['--user', 'disable', '--now', `${label}.service`]);
-      fs.rmSync(unit, { force: true });
-    }
-  } else if (platform === 'win32') {
-    run('schtasks.exe', ['/Delete', '/TN', label, '/F']);
+  const file =
+    platform === 'darwin'
+      ? path.join(home, 'Library', 'LaunchAgents', `${label}.plist`)
+      : platform === 'linux'
+        ? path.join(home, '.config', 'systemd', 'user', `${label}.service`)
+        : null;
+  if (platform === 'win32') {
+    // A Scheduled Task has no file to check: delete it; a missing task exits non-zero.
+    return run('schtasks.exe', ['/Delete', '/TN', label, '/F'])?.status === 0;
   }
-  fs.mkdirSync(library, { recursive: true });
-  fs.writeFileSync(marker, '');
+  if (!file || !fs.existsSync(file)) return false;
+  if (platform === 'darwin') run('launchctl', ['bootout', `gui/${uid}/${label}`]);
+  else run('systemctl', ['--user', 'disable', '--now', `${label}.service`]);
+  fs.rmSync(file, { force: true });
   return true;
 }
 
