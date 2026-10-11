@@ -19486,6 +19486,7 @@
       "text55dd1dcbbed0": "Fichier de drive supprimé depuis une session",
       "text5d1ac5e7432c": "Fichiers partagés",
       "text991f9b694b39": "fichiers dossiers drive partagé entreprise mon dossier accès partager",
+      "text8aaa8aa54664": "Accès à l'ordinateur modifié",
       "textdad6d4c4e992": "Exigez un membre connecté dans chaque requête que cette App traite",
       "text959f67f7ce9c": "Appelez l'App en HTTP avec le jeton",
       "text022ba4cb6981": "Scripts, services et vos propres serveurs. Envoyez un jeton de membre en bearer à l'API HTTP de l'App.",
@@ -20235,10 +20236,11 @@
         "desktop": "Un agent veut utiliser votre écran et votre clavier",
         "other": "Un agent veut utiliser cet ordinateur"
       },
-      "requestHint": "Répondez ici ou dans la fenêtre affichée sur cet ordinateur.",
-      "allowHour": "Autoriser 1 heure",
-      "allowDay": "Autoriser 24 heures",
-      "deny": "Refuser"
+      "requestHint": "Autorisez-le dans l'invite sur cet ordinateur, ou refusez-le ici.",
+      "deny": "Refuser",
+      "offlineHint": "Cet ordinateur est hors ligne. Modifiez l'accès sur l'ordinateur : dans la barre des menus Kortix, ou avec npx @kortix/agent-tunnel access.",
+      "updateHint": "Mettez à jour Kortix sur cet ordinateur pour modifier l'accès d'ici.",
+      "confirmOnComputer": "Confirmez dans l'invite sur cet ordinateur…"
     },
     "unpairDescription": "Retire cet ordinateur de Kortix et de chaque projet. Il ne se connecte plus tant que vous ne le reconnectez pas.",
     "notConnected": "Non connecté",

@@ -19497,6 +19497,7 @@
       "text55dd1dcbbed0": "Deleted a drive file from a session",
       "text5d1ac5e7432c": "Shared files",
       "text991f9b694b39": "files folders drive shared company my folder access share",
+      "text8aaa8aa54664": "Changed computer access",
       "textdad6d4c4e992": "Require a signed-in member in every request this App serves",
       "text959f67f7ce9c": "Call the App over HTTP with the token",
       "text022ba4cb6981": "Scripts, services and your own servers. Send a member token as a bearer to the App's HTTP API.",
@@ -20235,10 +20236,11 @@
         "desktop": "An agent wants to use your screen and keyboard",
         "other": "An agent wants to use this computer"
       },
-      "requestHint": "Answer here or in the prompt on this computer.",
-      "allowHour": "Allow for 1 hour",
-      "allowDay": "Allow for 24 hours",
-      "deny": "Deny"
+      "requestHint": "Allow it in the prompt on this computer, or deny it here.",
+      "deny": "Deny",
+      "offlineHint": "This computer is offline. Change access on it: the Kortix menu bar, or npx @kortix/agent-tunnel access.",
+      "updateHint": "Update Kortix on this computer to change access from here.",
+      "confirmOnComputer": "Confirm in the prompt on this computer…"
     },
     "unpairDescription": "Removes this computer from Kortix and from every project. It stops connecting until you connect it again.",
     "notConnected": "Not connected",

@@ -19486,6 +19486,7 @@
       "text55dd1dcbbed0": "File del drive eliminato da una sessione",
       "text5d1ac5e7432c": "File condivisi",
       "text991f9b694b39": "file cartelle drive condiviso azienda mia cartella accesso condividi",
+      "text8aaa8aa54664": "Accesso al computer modificato",
       "textdad6d4c4e992": "Richiedi un membro autenticato in ogni richiesta servita da questa App",
       "text959f67f7ce9c": "Chiama l'App via HTTP con il token",
       "text022ba4cb6981": "Script, servizi e i tuoi server. Invia un token membro come bearer all'API HTTP dell'App.",
@@ -20235,10 +20236,11 @@
         "desktop": "Un agente vuole usare il tuo schermo e la tua tastiera",
         "other": "Un agente vuole usare questo computer"
       },
-      "requestHint": "Rispondi qui o nella richiesta su questo computer.",
-      "allowHour": "Consenti per 1 ora",
-      "allowDay": "Consenti per 24 ore",
-      "deny": "Nega"
+      "requestHint": "Consentilo nella richiesta su questo computer oppure rifiutalo qui.",
+      "deny": "Nega",
+      "offlineHint": "Questo computer è offline. Modifica l'accesso direttamente lì: dalla barra dei menu di Kortix o con npx @kortix/agent-tunnel access.",
+      "updateHint": "Aggiorna Kortix su questo computer per modificare l'accesso da qui.",
+      "confirmOnComputer": "Conferma nella richiesta su questo computer…"
     },
     "unpairDescription": "Rimuove questo computer da Kortix e da ogni progetto. Smette di collegarsi finché non lo ricolleghi.",
     "notConnected": "Non connesso",

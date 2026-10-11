@@ -19486,6 +19486,7 @@
       "text55dd1dcbbed0": "从会话删除了云盘文件",
       "text5d1ac5e7432c": "共享文件",
       "text991f9b694b39": "文件 文件夹 云盘 共享 公司 我的文件夹 访问 分享",
+      "text8aaa8aa54664": "已更改电脑访问权限",
       "textdad6d4c4e992": "在此 App 处理的每个请求中要求已登录成员",
       "text959f67f7ce9c": "使用令牌通过 HTTP 调用 App",
       "text022ba4cb6981": "脚本、服务和你自己的服务器。将成员令牌作为 Bearer 发送到 App 的 HTTP API。",
@@ -20235,10 +20236,11 @@
         "desktop": "有智能体想使用你的屏幕和键盘",
         "other": "有智能体想使用这台电脑"
       },
-      "requestHint": "在这里回答，或在这台电脑的提示中回答。",
-      "allowHour": "允许 1 小时",
-      "allowDay": "允许 24 小时",
-      "deny": "拒绝"
+      "requestHint": "请在这台电脑上的提示中允许，或在此处拒绝。",
+      "deny": "拒绝",
+      "offlineHint": "这台电脑处于离线状态。请在电脑上更改访问权限：Kortix 菜单栏，或运行 npx @kortix/agent-tunnel access。",
+      "updateHint": "请在这台电脑上更新 Kortix，才能在此处更改访问权限。",
+      "confirmOnComputer": "请在这台电脑上的提示中确认…"
     },
     "unpairDescription": "从 Kortix 和所有项目中移除这台电脑。在你重新连接之前，它不会再连接。",
     "notConnected": "未连接",
