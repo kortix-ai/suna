@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 779,
+  "count": 780,
   "routes": [
     {
       "method": "GET",
@@ -1021,6 +1021,10 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clients/mobile"
     },
     {
       "method": "POST",

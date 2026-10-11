@@ -289,6 +289,13 @@ const envSchema = z.object({
   // (see openapi/index.ts filterSpecPaths); this flag lets a hardened self-host
   // deployment turn the whole docs/spec surface OFF so no route shapes publish.
   OPENAPI_PUBLIC_DOCS: optBoolTrue,
+  // Mobile release policy, served by GET /v1/clients/mobile. A mobile build older
+  // than MOBILE_MIN_VERSION (`major.minor.patch`) shows a blocking "update
+  // required" screen. Unset: no gate. The store URLs are the update button's
+  // targets; unset: the screen has no button.
+  MOBILE_MIN_VERSION: optStr,
+  MOBILE_STORE_URL_IOS: optUrl(''),
+  MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a
   // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
   // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
@@ -1207,6 +1214,9 @@ export const config = {
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
+  MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
+  MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
+  MOBILE_STORE_URL_ANDROID: env.MOBILE_STORE_URL_ANDROID,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
   KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 

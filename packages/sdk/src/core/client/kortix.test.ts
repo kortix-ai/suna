@@ -641,6 +641,12 @@ test('kortix.connectStatus hits the top-level connect-status endpoint (not proje
   expect(last().url).toContain('/connectors/connect-status');
 });
 
+test('kortix.mobileClientPolicy hits the public clients endpoint', async () => {
+  await kortix.mobileClientPolicy();
+  expect(last().url).toContain('/v1/clients/mobile');
+  expect(last().method).toBe('GET');
+});
+
 test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {
   await kortix.project('PID123').updateExperimentalFeature('marketplace', true);
   expect(last().url).toContain('/projects/PID123/experimental');

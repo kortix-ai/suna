@@ -57,6 +57,7 @@ import { useThemeStore } from '@/stores/theme-store';
 import { useBootStore } from '@/stores/boot-store';
 import { SPLASH_SAFETY_TIMEOUT_MS, shouldHideSplash } from '@/lib/boot/splash-gate';
 import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
+import { UpdateRequiredGate } from '@/components/updates/UpdateRequiredGate';
 import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
 import { applyPersistedQueryDefaults } from '@/lib/query/persisted-queries';
 import { queryCachePersistence } from '@/lib/query/query-cache';
@@ -593,6 +594,8 @@ export default function RootLayout() {
                             <OfflineBanner />
                             <SessionEndedDialog />
                             <PushNotificationsBridge />
+                            {/* Last: covers the navigator when this build is below the API's minimum version. */}
+                            <UpdateRequiredGate />
                           </ThemeProvider>
                         </BottomSheetModalProvider>
                         {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}

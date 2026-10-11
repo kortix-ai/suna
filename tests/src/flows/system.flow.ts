@@ -54,6 +54,28 @@ flow("SYS-7", { domain: "system", tags: ["smoke"], routes: ["POST /v1/system/dem
   });
 });
 
+// SYS-10 — the mobile app reads its release policy BEFORE login, so the route is public.
+// The values are operator settings (null when unset), so the flow asserts the shape on any target.
+flow("SYS-10", { domain: "system", tags: ["smoke"], routes: ["GET /v1/clients/mobile"] }, async (ctx) => {
+  const fields = ["minimum_version", "store_url_ios", "store_url_android"];
+  const assertPolicy = (body: Record<string, unknown>) => {
+    if (Object.keys(body).sort().join() !== [...fields].sort().join()) throw new Error(`unexpected keys: ${Object.keys(body)}`);
+    for (const f of fields) if (body[f] !== null && typeof body[f] !== "string") throw new Error(`${f} is neither string nor null`);
+  };
+  let anon: Record<string, unknown> = {};
+  await ctx.step("GET /v1/clients/mobile without Authorization → 200, each field a string or null", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/clients/mobile");
+    r.status(200);
+    anon = r.json();
+    assertPolicy(anon);
+  });
+  await ctx.step("an authenticated caller gets the same body", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/clients/mobile");
+    r.status(200);
+    if (JSON.stringify(r.json()) !== JSON.stringify(anon)) throw new Error("policy differs by caller");
+  });
+});
+
 flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.json", "GET /v1/docs"] }, async (ctx) => {
   await ctx.step("GET /v1/openapi.json (public) → 200 OpenAPI 3.1 spec", async () => {
     const r = await ctx.client.get("/v1/openapi.json");
