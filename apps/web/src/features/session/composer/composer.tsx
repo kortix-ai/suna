@@ -7,6 +7,7 @@ import { isImageFile } from '@/lib/utils/file-utils';
 import type {
   Agent,
   Command,
+  FlatModel,
   MessageWithParts,
   ProviderListResponse,
   UsePromptAttachmentsResult,
@@ -41,7 +42,6 @@ import {
   modelRejectingAttachedImages,
 } from '../model-availability';
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
-import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import type { ServedModelNotice } from '../turn/served-model';
 import { useModelConnectionGate } from '../use-model-connection-gate';

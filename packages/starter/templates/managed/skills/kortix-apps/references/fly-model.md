@@ -47,6 +47,7 @@ Every machine gets this environment, besides the release's `env` and `secrets`:
 | `KORTIX_APP_SLUG` | the App's slug |
 | `KORTIX_APP_URL` | the App's URL (its `http` service) |
 | `KORTIX_SERVICE_URL_<NAME>` | the URL of every other HTTP service (`-` → `_`) |
+| `KORTIX_USES_URL_<SLUG>` | the URL of every App this App `uses` (`-` → `_`): a server calls it there |
 | `KORTIX_MACHINE_ID` | the machine id (stable across releases) |
 | `KORTIX_PROCESS_GROUP` | the machine's group |
 | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS` | verify the App's Kortix sign-in tokens (sign-in.md) |
