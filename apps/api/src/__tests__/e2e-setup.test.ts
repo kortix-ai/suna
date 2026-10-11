@@ -26,7 +26,11 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('child_process', () => ({
   ...childProcess,
-  spawnSync: () => ({ status: 0 }),
+  // The docker probe in the /status route awaits execFile; fake it so the
+  // tests never shell out to a real docker daemon.
+  execFile: (_file: string, _args: string[], _opts: unknown, cb: (err: Error | null) => void) => {
+    queueMicrotask(() => cb(null));
+  },
 }));
 
 const { setupApp } = await import('../setup');

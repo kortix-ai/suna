@@ -152,6 +152,7 @@ export {
   appDeployments,
   appImages,
   appRuntimes,
+  appVolumes,
   appSiteFiles,
   appSiteBlobs,
   appDeploymentEvents,

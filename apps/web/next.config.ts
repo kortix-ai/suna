@@ -529,7 +529,7 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects/:id/customize/:tab',
         permanent: false,
       },
-      // Backends became Apps of kind `convex` (2026-10-09), and a migrated
+      // Backends became Apps (2026-10-09), and a migrated
       // App keeps its backend's id. The retired Backends pages and the
       // Customize tab land on the Apps page, the one with an id opening that App.
       ...['/projects/:id/backends', '/projects/:id/customize/backends'].flatMap((retired) => [

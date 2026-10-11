@@ -349,14 +349,14 @@ test('BillingError and RequestTooLargeError are ApiErrors, so one instanceof che
 
 test('parseBillingError keeps the source error code, body and response on the BillingError', () => {
   const response = new Response(null, { status: 402 });
-  const body = { error: 'Budget exceeded', code: 'app_budget_exceeded', balance: 0 };
-  const source = new ApiError('Budget exceeded', { status: 402, code: 'app_budget_exceeded', details: body, data: body, response });
+  const body = { error: 'Account unfunded', code: 'app_account_unfunded', balance: 0 };
+  const source = new ApiError('Account unfunded', { status: 402, code: 'app_account_unfunded', details: body, data: body, response });
   const billing = parseBillingError(source) as BillingError;
   expect(billing).toBeInstanceOf(BillingError);
-  expect(billing.code).toBe('app_budget_exceeded');
+  expect(billing.code).toBe('app_account_unfunded');
   expect(billing.details).toEqual(body);
   expect(billing.response).toBe(response);
-  expect(billing.message).toBe('Budget exceeded');
+  expect(billing.message).toBe('Account unfunded');
 });
 
 // ── isAuthFailure ────────────────────────────────────────────────────────────

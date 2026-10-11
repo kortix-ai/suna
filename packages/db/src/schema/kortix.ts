@@ -4276,8 +4276,8 @@ export const sandboxComputeSessions = kortixSchema.table(
       'sandbox_compute_sessions_workload_type_check',
       // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
       // `project_monitor_boxes.box_id`; it needs no dedicated join column.
-      // 'backend' = the machine of an App of kind `convex`. Its `sandbox_id` IS
-      // `app_convex_instances.app_id` (the App id).
+      // 'backend' is retired (the convex App machine): the API no longer
+      // writes it; the CHECK keeps old rows valid until a contract migration.
       sql`${table.workloadType} IN ('session', 'app', 'monitor', 'backend')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
@@ -4316,11 +4316,7 @@ export const apps = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 63 }).notNull(),
     name: text('name').notNull(),
-    /**
-     * What the App runs, fixed at create. `web`: a site or server built from
-     * a deployment (static files or a runtime sandbox). `convex`: a self-hosted
-     * Convex backend in its own machine (`app_convex_instances`).
-     */
+    /** Unused; dropped by a contract migration after the next prod release. The API neither reads nor writes it. */
     kind: varchar('kind', { length: 16 }).default('web').notNull(),
     routeKey: varchar('route_key', { length: 20 }).notNull().unique(),
     accessMode: varchar('access_mode', { length: 16 }).default('private').notNull(),
@@ -4355,18 +4351,19 @@ export const apps = kortixSchema.table(
       .default('identity')
       .notNull(),
     /**
-     * The monthly compute cap of an on-demand `web` App: it stops at the cap.
-     * Ignored (and reported as null) for an always-on, static or `convex` App,
-     * whose cost is fixed by its size (apps/api/src/apps/budget.ts appHasBudget).
+     * Unused: Apps have no monthly budget (account credits pay for App
+     * compute). Kept until a contract migration drops it, so an API task that
+     * still reads it during a rolling deploy never meets a missing column.
      */
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
-    /**
-     * true: a person set `monthly_budget_usd`. false: it is the default ($5).
-     * Informational: nothing derives a budget from the size any more.
-     */
+    /** Unused, like `monthlyBudgetUsd`; dropped by the same contract migration. */
     monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
+    /** Free-form labels (e.g. `backend`). They group and filter Apps; nothing derives behavior from them. */
+    labels: text('labels').array().default(sql`'{}'::text[]`).notNull(),
+    /** Machines per process group (`fly scale count`). An absent group runs one machine. */
+    scale: jsonb('scale').default({}).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4443,10 +4440,9 @@ export const appLinks = kortixSchema.table(
 );
 
 /**
- * The machine of an App of kind `convex`: one self-hosted Convex backend in a
- * persistent Platinum machine, one row per App. Name, size, budget and
- * deletion live on the App row. `status = 'deleted'`: the App is deleted and
- * the stopped machine is kept until `metadata.purgeAfter`.
+ * Unused; dropped by a contract migration after the next prod release. The
+ * retired `convex` App kind kept one machine row per App here. The API neither
+ * reads nor writes this table.
  */
 export const appConvexInstances = kortixSchema.table(
   'app_convex_instances',
@@ -4547,7 +4543,7 @@ export const appDeployments = kortixSchema.table(
     appId: uuid('app_id')
       .notNull()
       .references(() => apps.appId, { onDelete: 'cascade' }),
-    /** Null for a `convex` deployment: the CLI deploys the functions and records it; Kortix stores no source. */
+    /** Null for a historic `convex` deployment record (no source); the API writes none now. */
     artifactId: uuid('artifact_id').references(() => appArtifacts.artifactId, { onDelete: 'restrict' }),
     version: integer('version').notNull(),
     status: varchar('status', { length: 20 }).default('queued').notNull(),
@@ -4557,6 +4553,12 @@ export const appDeployments = kortixSchema.table(
     providerBuildId: text('provider_build_id'),
     runtimeSpec: jsonb('runtime_spec').default({}).notNull(),
     buildSpec: jsonb('build_spec').default({}).notNull(),
+    /** The resolved release config (`@kortix/shared/app-config` AppReleaseConfig). Null on a release from before it. */
+    config: jsonb('config'),
+    /** The deploy strategy this release ran with: rolling, immediate, bluegreen or canary. */
+    strategy: varchar('strategy', { length: 16 }),
+    /** The release command's outcome: null (none), running, succeeded or failed. */
+    releaseCommandStatus: varchar('release_command_status', { length: 16 }),
     runtimeVersion: text('runtime_version').notNull(),
     errorCode: text('error_code'),
     error: text('error'),
@@ -4668,6 +4670,50 @@ export const appSiteBlobs = kortixSchema.table(
 );
 
 /** Provider sandbox executing one deployment. */
+/**
+ * A persistent volume of an App (Fly volumes, on Platinum volumes). It outlives
+ * every machine: a release swap detaches it from the old instance and attaches
+ * it to the new one. At most one instance mounts it read-write at a time
+ * (`attached_runtime_id` is that lock).
+ */
+export const appVolumes = kortixSchema.table(
+  'app_volumes',
+  {
+    volumeId: uuid('volume_id').defaultRandom().primaryKey().notNull(),
+    appId: uuid('app_id')
+      .notNull()
+      .references(() => apps.appId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    /** The mount `source`: one per machine, so several volumes of a scaled group share it. */
+    name: varchar('name', { length: 30 }).notNull(),
+    processGroup: varchar('process_group', { length: 32 }).default('app').notNull(),
+    /** The machine this volume belongs to (Fly pins a volume to one machine). */
+    machineId: uuid('machine_id'),
+    sizeGb: integer('size_gb').notNull(),
+    provider: varchar('provider', { length: 32 }).default('platinum').notNull(),
+    /** The provider's volume name. */
+    externalId: text('external_id').notNull(),
+    status: varchar('status', { length: 16 }).default('creating').notNull(),
+    attachedRuntimeId: uuid('attached_runtime_id'),
+    snapshotRetentionDays: integer('snapshot_retention_days').default(5).notNull(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    check('app_volumes_status_check', sql`${table.status} IN ('creating', 'ready', 'destroying', 'destroyed', 'error')`),
+    check('app_volumes_size_check', sql`${table.sizeGb} BETWEEN 1 AND 100`),
+    check('app_volumes_retention_check', sql`${table.snapshotRetentionDays} BETWEEN 1 AND 60`),
+    index('app_volumes_app_idx').on(table.appId, table.name),
+    uniqueIndex('app_volumes_external_unique').on(table.provider, table.externalId),
+    uniqueIndex('app_volumes_machine_live_unique')
+      .on(table.machineId)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.machineId} IS NOT NULL`),
+  ],
+);
+
 export const appRuntimes = kortixSchema.table(
   'app_runtimes',
   {
@@ -4682,6 +4728,15 @@ export const appRuntimes = kortixSchema.table(
     controlPort: integer('control_port').default(7331).notNull(),
     ingressPort: integer('ingress_port').default(8080).notNull(),
     controlTokenHash: text('control_token_hash').notNull(),
+    /**
+     * The Fly machine id: stable across instances. Each release swap is a new row
+     * (a new instance, its own box) with the same machine id. Null on a row from
+     * before machines: the runtime id stands in.
+     */
+    machineId: uuid('machine_id'),
+    processGroup: varchar('process_group', { length: 32 }).default('app').notNull(),
+    /** The volume this instance mounts (single writer: app_volumes.attached_runtime_id). */
+    volumeId: uuid('volume_id'),
     idleDeadlineAt: timestamp('idle_deadline_at', { withTimezone: true }),
     activityLeaseUntil: timestamp('activity_lease_until', { withTimezone: true }),
     wakeLeaseOwner: text('wake_lease_owner'),
@@ -4700,8 +4755,10 @@ export const appRuntimes = kortixSchema.table(
     ),
     index('app_runtimes_deployment_idx').on(table.deploymentId, table.createdAt),
     index('app_runtimes_external_idx').on(table.provider, table.externalId),
-    uniqueIndex('app_runtimes_one_live_per_deployment')
-      .on(table.deploymentId)
+    // One live instance per machine of a release (a release runs many machines).
+    // A row from before machines has no machine id: its runtime id stands in.
+    uniqueIndex('app_runtimes_one_live_per_machine')
+      .on(table.deploymentId, sql`coalesce(${table.machineId}, ${table.runtimeId})`)
       .where(sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping')`),
   ],
 );

@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
-import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAppComputeAllowed } from './limits';
-import { AppHostingProvider } from './hosting';
+import { AppHostingProvider, instanceMachine } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
 import { logger } from '../lib/logger';
+import { releaseConfigOf, servingGroups } from './release-config';
 const WAKE_LEASE_MS = 2 * 60_000;
 
 /**
@@ -18,7 +19,12 @@ const WAKE_LEASE_MS = 2 * 60_000;
  * runtime. The App row is never cached: an access change, a rollback and a
  * delete take effect on the next request on every replica.
  */
-export async function loadPublicAppState(routeKey: string) {
+/**
+ * The App behind a host and the machine that serves it. `service`: the host's
+ * service; its process groups choose the machine. `service` is null when the
+ * active release has no such service.
+ */
+export async function loadPublicAppState(routeKey: string, serviceName = 'http') {
   const [loaded] = await db
     .select({ app: apps, projectMetadata: projects.metadata, active: appDeployments })
     .from(apps)
@@ -36,32 +42,70 @@ export async function loadPublicAppState(routeKey: string) {
       .orderBy(desc(appDeployments.createdAt))
       .limit(1);
   }
-  const [runtime] = deployment?.status === 'ready' && deployment.hostingType !== 'static'
-    ? await db.select().from(appRuntimes)
-        .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
-        .orderBy(desc(appRuntimes.createdAt)).limit(1)
-    : [];
+  const releaseConfig = deployment && deployment.hostingType !== 'static' ? releaseConfigOf(deployment, app) : null;
+  const service = releaseConfig?.services.find((entry) => entry.name === serviceName) ?? null;
+  const groups = service ? service.processes : releaseConfig ? servingGroups(releaseConfig) : [];
+  const runtime = deployment && releaseServes(deployment, app.activeDeploymentId) && deployment.hostingType !== 'static'
+    && (service || serviceName === 'http')
+    ? await pickServingInstance(deployment, groups)
+    : null;
   return {
     app,
     deployment: deployment ?? null,
     runtime: runtime ?? null,
+    service,
     /** A governed agent is judged as itself (§2.5); there is no off switch. */
     agentPrincipal: true,
   };
 }
 
-export async function loadPublicApp(routeKey: string) {
-  const state = await loadPublicAppState(routeKey);
+/**
+ * Does this release take traffic? A ready one, and the active one while a
+ * rolling release is still replacing machines (traffic moves with its first
+ * healthy machine).
+ */
+export function releaseServes(
+  deployment: Pick<typeof appDeployments.$inferSelect, 'deploymentId' | 'status'>,
+  activeDeploymentId: string | null,
+): boolean {
+  return deployment.status === 'ready'
+    || (deployment.status === 'checking' && deployment.deploymentId === activeDeploymentId);
+}
+
+/**
+ * The instance a request goes to: one of the release's machines in the group
+ * that serves the App's host. A running one first, the least recently used
+ * of those (requests spread over the machines); else a stopped one to wake.
+ */
+async function pickServingInstance(deployment: typeof appDeployments.$inferSelect, groups: string[]) {
+  const [runtime] = await db.select().from(appRuntimes)
+    .where(and(
+      eq(appRuntimes.deploymentId, deployment.deploymentId),
+      inArray(appRuntimes.processGroup, groups),
+      notInArray(appRuntimes.status, ['deleted', 'error']),
+    ))
+    .orderBy(
+      sql`case ${appRuntimes.status} when 'running' then 0 when 'starting' then 1 when 'provisioning' then 1 else 2 end`,
+      sql`${appRuntimes.lastRequestAt} asc nulls first`,
+      desc(appRuntimes.createdAt),
+    )
+    .limit(1);
+  return runtime ?? null;
+}
+
+export async function loadPublicApp(routeKey: string, service = 'http') {
+  const state = await loadPublicAppState(routeKey, service);
   if (
     !state?.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
-    state.deployment.status !== 'ready' ||
+    !releaseServes(state.deployment, state.app.activeDeploymentId) ||
     !state.runtime
   ) return null;
   return {
     app: state.app,
     deployment: state.deployment,
     runtime: state.runtime,
+    service: state.service,
     agentPrincipal: state.agentPrincipal,
   };
 }
@@ -105,7 +149,7 @@ export function appRuntimeNeedsWake(
   return Boolean(runtime.idleDeadlineAt && runtime.idleDeadlineAt.getTime() <= now.getTime());
 }
 
-type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
+type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal' | 'service'>;
 type Runtime = LoadedApp['runtime'];
 type App = LoadedApp['app'];
 
@@ -148,11 +192,7 @@ async function publishWake(app: App, loaded: LoadedApp, leased: Runtime, owner: 
   if (!running) throw new Error('App wake lease was lost after provider start');
   await startComputeSession({
     sandboxId: running.runtimeId, accountId: running.accountId, provider,
-    spec: {
-      ...hosting.effectiveMachine(provider, {
-        cpuCores: app.cpuCores, memoryGb: app.memoryGb, diskGb: app.diskGb,
-      }), gpuCount: 0,
-    },
+    spec: { ...hosting.effectiveMachine(provider, instanceMachine(running, app)), gpuCount: 0 },
     workloadType: 'app', appRuntimeId: running.runtimeId,
     metadata: { appId: app.appId, deploymentId: loaded.deployment.deploymentId },
   });
@@ -178,8 +218,7 @@ export async function ensureAppRuntimeRunning(
   if (loaded.runtime.status === 'deleted') {
     throw new Error('App runtime cannot wake from deleted');
   }
-  // Account entitlement, account App-concurrency, then this App's own monthly
-  // budget. The runtime being woken is excluded from the concurrency count —
+  // Account entitlement, then account App-concurrency. The runtime being woken is excluded from the concurrency count —
   // it already holds its own live row, and counting it would stop an account at
   // exactly the cap from waking the very App it owns.
   await assertAppComputeAllowed(app, { excludeRuntimeId: loaded.runtime.runtimeId });
