@@ -17,8 +17,15 @@
 
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import { workedForLabel } from '@kortix/sdk';
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
+
+/**
+ * True inside a "Worked for" row the reader has opened. The row already
+ * summarises the turn, so each burst under it drops its own "Completed N
+ * steps" line and shows its steps directly (`ActivityBurst`).
+ */
+export const WorkFoldContext = createContext(false);
 
 export function TurnWorkAccordion({
   working,
@@ -33,6 +40,10 @@ export function TurnWorkAccordion({
   // Mounted settled (history) → closed from the first render, no animation.
   const [open, setOpen] = useState(working);
   const userToggled = useRef(false);
+  // Latched on the reader's first open, never reset. Flattening on settle
+  // instead would pop every burst open inside the 200ms fold; un-flattening on
+  // close would collapse them inside the exiting copy.
+  const [flat, setFlat] = useState(false);
   // Follow `working` until the reader takes control. This MUST be a layout
   // effect — neither a render-phase adjustment nor a passive effect.
   //
@@ -57,6 +68,7 @@ export function TurnWorkAccordion({
       open={working || open}
       onOpenChange={(next) => {
         userToggled.current = true;
+        if (next) setFlat(true);
         setOpen(next);
       }}
       className="group/work"
@@ -68,7 +80,9 @@ export function TurnWorkAccordion({
           fold clips its own height animation. */}
       <DisclosureContent className={working ? 'overflow-visible' : undefined}>
         {/* `mt-3` is the gap under the row; a hidden row opens no gap. */}
-        <div className={working ? 'space-y-3' : 'mt-3 space-y-3'}>{children}</div>
+        <WorkFoldContext.Provider value={flat && !working}>
+          <div className={working ? 'space-y-3' : 'mt-3 space-y-3'}>{children}</div>
+        </WorkFoldContext.Provider>
       </DisclosureContent>
     </Disclosure>
   );
