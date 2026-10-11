@@ -33,5 +33,11 @@ describe('feature flag translations', () => {
       );
       expect(missing).toEqual([]);
     });
+
+    test(`${locale} holds no strings for a flag the registry no longer defines`, () => {
+      const flags = JSON.parse(readFileSync(join(dir, locale), 'utf8'))?.settings?.featureFlags?.flags ?? {};
+      const registered = new Set<string>(FEATURE_FLAG_KEYS);
+      expect(Object.keys(flags).filter((key) => !registered.has(key))).toEqual([]);
+    });
   }
 });

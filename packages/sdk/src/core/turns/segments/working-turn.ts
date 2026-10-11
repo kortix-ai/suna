@@ -1,3 +1,4 @@
+import type { SessionPrompt } from '../../rest/projects-client/sessions';
 import { showTurnBusyIndicator } from './turn-busy-visibility';
 
 /**
@@ -129,6 +130,39 @@ export function turnIsConfirmedActive(input: {
   pendingDelivery: boolean;
 }): boolean {
   return input.isTurnWorking && !input.pendingDelivery && input.activeTurnId === input.turnId;
+}
+
+/**
+ * Does this turn's bubble read as queued (muted text, a Sending or Queued line)?
+ *
+ * Only while something runs ahead of it. The inbox holding the row is not that
+ * fact: every send goes through the inbox, an idle one too. The turn NEXT IN
+ * LINE (the working turn, or, while no turn is working yet, the oldest
+ * unanswered one: a new session's first prompt) has nothing ahead of it, and
+ * reads as sent while the inbox delivers it. The server's own `waiting` (a live
+ * turn, an older prompt, or a Stop hold) and `failed` keep the queued look on
+ * any turn.
+ */
+export function turnRendersQueued(input: {
+  turnId: string;
+  /** `resolveWorkingTurn` for the transcript. */
+  resolution: WorkingTurnResolution;
+  /** The session is working (the composer shows Stop). */
+  sessionWorking: boolean;
+  /** `turnIsConfirmedActive` for this turn. */
+  confirmedActive: boolean;
+  /** The inbox row this turn renders, while the server still holds it. */
+  inboxPrompt?: Pick<SessionPrompt, 'state' | 'reason'> | null;
+}): boolean {
+  if (input.confirmedActive) return false;
+  const { workingTurnId, pendingTurnIds } = input.resolution;
+  const nextInLine =
+    input.sessionWorking &&
+    (workingTurnId === null ? pendingTurnIds[0] : workingTurnId) === input.turnId;
+  if (nextInLine) {
+    return input.inboxPrompt?.state === 'waiting' || input.inboxPrompt?.state === 'failed';
+  }
+  return pendingTurnIds.includes(input.turnId) || !!input.inboxPrompt;
 }
 
 /**

@@ -2,6 +2,7 @@
  * Platform API client — sandbox update + version/changelog API.
  */
 
+import { sendChecked } from '../../http/transport';
 import type { SandboxInfo } from './types';
 import { getPlatformUrl } from './shared';
 
@@ -141,10 +142,7 @@ export async function getSandboxUpdateStatus(
  */
 export async function getLatestSandboxVersion(channel?: VersionChannel): Promise<SandboxVersionInfo> {
   const params = channel ? `?channel=${channel}` : '';
-  const res = await fetch(`${getPlatformUrl()}/platform/sandbox/version/latest${params}`, {
-    headers: { 'Accept': 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Version check failed: ${res.status}`);
+  const res = await sendChecked(`${getPlatformUrl()}/platform/sandbox/version/latest${params}`, { headers: { Accept: 'application/json' } }, {}, 'Version check failed');
   const latest = await res.json() as SandboxVersionInfo & { title?: string };
 
   try {
@@ -163,10 +161,7 @@ export async function getLatestSandboxVersion(channel?: VersionChannel): Promise
  */
 export async function getFullChangelog(channel?: 'stable' | 'dev' | 'all'): Promise<ChangelogEntry[]> {
   const params = channel ? `?channel=${channel}` : '';
-  const res = await fetch(`${getPlatformUrl()}/platform/sandbox/version/changelog${params}`, {
-    headers: { 'Accept': 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Changelog fetch failed: ${res.status}`);
+  const res = await sendChecked(`${getPlatformUrl()}/platform/sandbox/version/changelog${params}`, { headers: { Accept: 'application/json' } }, {}, 'Changelog fetch failed');
   const data = await res.json();
   return data.changelog;
 }
@@ -175,10 +170,7 @@ export async function getFullChangelog(channel?: 'stable' | 'dev' | 'all'): Prom
  * Get all available versions (both stable and dev).
  */
 export async function getAllVersions(): Promise<AllVersionsResponse> {
-  const res = await fetch(`${getPlatformUrl()}/platform/sandbox/version/all`, {
-    headers: { 'Accept': 'application/json' },
-  });
-  if (!res.ok) throw new Error(`All versions fetch failed: ${res.status}`);
+  const res = await sendChecked(`${getPlatformUrl()}/platform/sandbox/version/all`, { headers: { Accept: 'application/json' } }, {}, 'All versions fetch failed');
   return res.json();
 }
 

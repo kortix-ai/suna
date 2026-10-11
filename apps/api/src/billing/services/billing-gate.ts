@@ -11,7 +11,6 @@ import {
 } from './billing-state';
 import { ensureFreeTierAccountReady } from './free-tier';
 import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
-import { wallet } from '../wallet';
 import { debitAndCheckAutoTopup } from './wallet-debits';
 
 type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';

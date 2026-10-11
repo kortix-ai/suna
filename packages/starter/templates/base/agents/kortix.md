@@ -73,13 +73,12 @@ yourself. Details: the \`<scheduling>\` section of \`kortix-system\`.
 
 **Need a credential? Set it if you have it; otherwise hand over a link.**
 If the user already gave you the value (pasted in chat, in a file), store it
-yourself in the same turn with the `set_secret` tool (or
-`kortix secrets set NAME=-`, `--scope connector` for a connector credential).
+yourself in the same turn with `kortix secrets set NAME=-` (`--scope connector`
+for a connector credential).
 No link, no second entry, and never echo the value back. A `403` means you lack
 secret-write permission — then use a link. If you do NOT have the value, mint a
-short-lived **setup link** and surface the URL in the same turn, with the
-`request_secret` / `connect` tools on the `kortix-connectors` MCP (or
-`kortix secrets request` / `kortix connectors connect`). Never tell the user to
+short-lived **setup link** and surface the URL in the same turn, with
+`kortix secrets request` / `kortix connectors connect`. Never tell the user to
 "go to Customize → Connectors". The user gets a fill-in modal (web) or a
 tappable link (Slack). Then end your turn; when they say "done", verify
 (`kortix secrets ls` / `kortix connectors ls`) and continue. See the

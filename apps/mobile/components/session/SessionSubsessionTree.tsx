@@ -79,7 +79,7 @@ export function subsessionCountLabel(count: number): string {
  */
 export function SubsessionCountBadge({ count }: { count: number }) {
   if (!showSubsessionCountBadge(count)) return null;
-  // Same shape as the drawer's Review count pill (`ReviewCountPill`): rounded-sm
+  // Same shape as the drawer's Review count pill (`CountPill`): rounded-sm
   // tag, neutral fill — blue there means "needs you", this is only a count.
   return (
     <View

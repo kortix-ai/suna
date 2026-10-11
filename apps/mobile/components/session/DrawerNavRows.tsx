@@ -16,9 +16,9 @@ import { cn } from '@/lib/utils/index';
 const LEADING_SLOT_CLASS = 'w-5 shrink-0 items-center';
 
 /**
- * One trailing column for the drawer's top rows: the switcher caret and
- * Review's count pill centre on the same vertical line. 28pt holds a
- * two-digit count; "99+" widens it by ~5pt.
+ * One trailing column for the drawer's top rows: the switcher caret and the
+ * Review and Notifications count pills centre on the same vertical line. 28pt
+ * holds a two-digit count; "99+" widens it by ~5pt.
  */
 const TRAILING_SLOT_CLASS = 'min-w-7 shrink-0 items-center';
 
@@ -32,9 +32,9 @@ export function NavPill({
   icon: AppIcon;
   label: string;
   onPress: () => void;
-  /** A trailing count pill (Review). */
+  /** A trailing count pill (Review, Notifications). */
   trailing?: React.ReactNode;
-  /** Overrides `label` for a screen reader (Review speaks its pending count). */
+  /** Overrides `label` for a screen reader (Review and Notifications speak their count). */
   accessibilityLabel?: string;
 }) {
   return (
@@ -54,8 +54,12 @@ export function NavPill({
   );
 }
 
-/** Review's trailing count pill — the "needs-you" blue (`SessionStatusMark`), not web's amber. */
-export function ReviewCountPill({ count }: { count: number }) {
+/**
+ * A nav pill's trailing count (Review's pending items, Notifications' unread
+ * rows) — the "needs-you" blue (`SessionStatusMark`), not web's amber.
+ * Hidden at 0, "99+" above 99.
+ */
+export function CountPill({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <View className="rounded-sm bg-kortix-blue/15 px-1.5 py-0.5">

@@ -110,7 +110,12 @@ describe('external directory updates', () => {
 
   test('does not introduce polling for other freshness tiers', () => {
     for (const tier of ['live', 'config', 'inventory', 'volatile'] as const) {
-      expect(contract(tier)).not.toHaveProperty('refetchInterval');
+      // No unconditional polling: a healthy entry must never get a periodic
+      // refetch (that is the directory tier's job, and the source of the page
+      // churn this pin exists to prevent). The only refetchInterval member is
+      // the error fail-safe, a FUNCTION — it schedules nothing for a healthy
+      // entry, which `contract-error-self-heal.test.ts` pins per state.
+      expect(typeof contract(tier).refetchInterval).toBe('function');
       expect(contract(tier)).not.toHaveProperty('refetchOnWindowFocus');
     }
   });

@@ -179,3 +179,76 @@ describe('the guards fail closed', () => {
     expect((await guard.requireGroup(req, [])).viewer).toBeUndefined();
   });
 });
+
+describe('the whole member, on both paths', () => {
+  test('the gate path carries name, group names and role', async () => {
+    const guard = createKortixAppGuard({ secret: SECRET, backendUrl: 'https://api.example/v1' });
+    const viewer = await guard.viewer(
+      gatedRequest(await signedHeader({ ...BASE, groupIds: ['g-fin'], groups: ['Finance'], name: 'Ada', role: 'admin' })),
+    );
+    expect(viewer).toMatchObject({ name: 'Ada', groups: ['Finance'], groupIds: ['g-fin'], role: 'admin' });
+  });
+
+  test('requireGroup accepts a group name as well as an id', async () => {
+    const guard = createKortixAppGuard({ secret: SECRET, backendUrl: 'https://api.example/v1' });
+    const req = gatedRequest(await signedHeader({ ...BASE, groupIds: ['g-fin'], groups: ['Finance'] }));
+    expect((await guard.requireGroup(req, ['Finance'])).viewer?.userId).toBe('u1');
+    expect((await guard.requireGroup(req, ['Legal'])).viewer).toBeUndefined();
+  });
+
+  test("the sign-in path reads group names from the App's own account", async () => {
+    const urls: string[] = [];
+    const guard = createKortixAppGuard({
+      backendUrl: 'https://api.example/v1',
+      accountId: 'acc-app',
+      auth: { viewer: async () => ({ userId: 'u1', email: 'a@b.test', token: 't', accounts: [{ account_id: 'acc-own' }, { account_id: 'acc-app' }] }), signInUrl: () => '/signin' } as never,
+      fetch: async (input) => { urls.push(String(input)); return Response.json({ groups: [{ group_id: 'g-fin', name: 'Finance' }] }); },
+    });
+    const viewer = await guard.viewer(new Request('https://app.example/'));
+    expect(viewer).toMatchObject({ accountId: 'acc-app', groupIds: ['g-fin'], groups: ['Finance'] });
+    expect(urls).toEqual(['https://api.example/v1/accounts/acc-app/iam/members/u1/groups']);
+    expect((await guard.requireGroup(new Request('https://app.example/'), ['Finance'])).viewer?.userId).toBe('u1');
+  });
+});
+
+describe('a same-named group in another account never matches', () => {
+  // Group names are unique only within one account. Anyone can create a
+  // "Finance" group in an account of their own and sign in to a public App.
+  const outsider = (accountId?: string) => {
+    let fetched = 0;
+    const guard = createKortixAppGuard({
+      backendUrl: 'https://api.example/v1',
+      ...(accountId ? { accountId } : {}),
+      auth: { viewer: async () => ({ userId: 'u-out', email: 'out@b.test', token: 't', accounts: [{ account_id: 'acc-attacker' }] }), signInUrl: () => '/signin' } as never,
+      fetch: async () => { fetched += 1; return Response.json({ groups: [{ group_id: 'g-attacker-fin', name: 'Finance' }] }); },
+    });
+    return { guard, fetched: () => fetched };
+  };
+
+  test("with the App's account known: a viewer outside it gets no groups and a 404", async () => {
+    const { guard, fetched } = outsider('acc-app');
+    const viewer = await guard.viewer(new Request('https://app.example/'));
+    expect(viewer).toMatchObject({ accountId: 'acc-attacker', groups: [], groupIds: [] });
+    expect((await guard.requireGroup(new Request('https://app.example/'), ['Finance'])).response?.status).toBe(404);
+    expect(fetched()).toBe(0);
+  });
+
+  test("with the App's account unknown: names are not trusted, ids still match", async () => {
+    const { guard } = outsider();
+    expect((await guard.viewer(new Request('https://app.example/')))?.groups).toEqual([]);
+    expect((await guard.requireGroup(new Request('https://app.example/'), ['Finance'])).response?.status).toBe(404);
+    expect((await guard.requireGroup(new Request('https://app.example/'), ['g-attacker-fin'])).viewer?.userId).toBe('u-out');
+  });
+
+  test('KORTIX_APP_ACCOUNT_ID names the App account when the option is absent', async () => {
+    const before = process.env.KORTIX_APP_ACCOUNT_ID;
+    process.env.KORTIX_APP_ACCOUNT_ID = 'acc-app';
+    try {
+      const { guard } = outsider();
+      expect((await guard.requireGroup(new Request('https://app.example/'), ['g-attacker-fin'])).response?.status).toBe(404);
+    } finally {
+      if (before === undefined) delete process.env.KORTIX_APP_ACCOUNT_ID;
+      else process.env.KORTIX_APP_ACCOUNT_ID = before;
+    }
+  });
+});

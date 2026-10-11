@@ -42,7 +42,7 @@ import { manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSessi
 
 
 
-import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
+import { isReservedSandboxEnvName } from './sandbox-env-names';
 import { deriveKortixApiRoot, proxyGitUrl } from './serializers';
 
 export { proxyGitUrl };
@@ -65,8 +65,6 @@ import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
 
-
-export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
 
 /** Re-derive persisted channel env so every cold reprovision restores it. */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
@@ -405,17 +403,6 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   return {
     ...runtimeSecrets.env,
-    // Fleet default for the `kortix-connectors` OpenCode MCP server. Set here
-    // rather than in the daemon so it is one operator switch
-    // (CONNECTORS_MCP_ENABLED) instead of a rebuilt sandbox image.
-    //
-    // Written BEFORE channelEnv on purpose: the email channel sets this same
-    // variable from durable session metadata (session-channel-env.ts), and it
-    // must stay authoritative. Spreading it after means switching the fleet
-    // default OFF cannot strip the MCP face from an email session that depends
-    // on it — the operator switch withdraws the default, never a channel's
-    // explicit contract.
-    ...(config.CONNECTORS_MCP_ENABLED ? { KORTIX_CONNECTORS_MCP_ENABLED: '1' } : {}),
     ...channelEnv,
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),

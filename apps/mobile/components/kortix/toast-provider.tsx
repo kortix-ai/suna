@@ -38,14 +38,14 @@ export type { ToastAction, ToastOptions, ToastType } from '@/lib/ui/toast-model'
 
 type ShowToast = (message: string, options?: ToastOptions) => string;
 
-export interface ToastPromiseMessages<T> {
+interface ToastPromiseMessages<T> {
   loading: string;
   success: string | ((data: T) => string);
   /** Omit to show no error toast (the promise still rejects), like web's `loadingToast`. */
   error?: string | ((error: unknown) => string);
 }
 
-export interface ToastApi {
+interface ToastApi {
   success: ShowToast;
   error: ShowToast;
   info: ShowToast;

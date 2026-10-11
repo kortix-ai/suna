@@ -200,10 +200,6 @@ function boundConnectionAnswersTo(
   );
 }
 
-export function mayUseLegacyDefaultConnection(hasAnyDurableBinding: boolean): boolean {
-  return !hasAnyDurableBinding;
-}
-
 // Canonicalization lives in shared/ so pure IAM code can use it without
 // inheriting this module's database dependency. Imported for local use and
 // re-exported so existing importers are unaffected.
@@ -1242,18 +1238,6 @@ export async function resolveProjectDefaultConnectorConnectionOutcome(input: {
       ownerType: chosen.ownerType,
     },
   };
-}
-
-/** `resolveProjectDefaultConnectorConnectionOutcome`, collapsed to the pre-existing
- *  `T | null` shape for the many callers that only ever asked "did this resolve" —
- *  `ambiguous` collapses to `null` here exactly like "nothing reachable" did
- *  before this rule existed; a caller that must tell them apart uses the
- *  outcome-returning sibling above directly. */
-export async function resolveProjectDefaultConnectorConnection(
-  input: Parameters<typeof resolveProjectDefaultConnectorConnectionOutcome>[0],
-): Promise<ResolvedSessionConnectorConnection | null> {
-  const outcome = await resolveProjectDefaultConnectorConnectionOutcome(input);
-  return outcome.kind === 'ok' ? outcome.connection : null;
 }
 
 /**

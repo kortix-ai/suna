@@ -407,7 +407,27 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     totalCount: sessions.length,
     visibleCount: visibleSessions.length,
     serverFiltered: labelFilters.length > 0,
+    scanning: sessionsQuery.isScanning,
+    hasMore: sessionsQuery.hasNextPage,
   });
+
+  const loadMoreButton = (
+    <div className="flex justify-center pb-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={sessionsQuery.isFetchingNextPage}
+        onClick={() => sessionsQuery.fetchNextPage()}
+      >
+        {/* A failed page keeps the rows above it; the button is the retry. */}
+        {sessionsQuery.isFetchingNextPage
+          ? tSidebar('loadingMore')
+          : sessionsQuery.isFetchNextPageError
+            ? tSidebar('retry')
+            : tSidebar('loadMoreSessions')}
+      </Button>
+    </div>
+  );
 
   // Selection must never outlive its own visibility: narrowing the filter after
   // selecting would otherwise leave "N selected" counting off-screen rows, and
@@ -716,6 +736,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
+          ) : listState === 'more' ? (
+            // No row the viewer can see on the pages read so far, and more
+            // pages exist (KRTX-1727): offer them, never "No sessions yet".
+            <div className="pt-6">{loadMoreButton}</div>
           ) : listState === 'empty' && !searching && startedBy === 'all' ? (
             <SessionsEmptyState className="flex-1 pb-24" />
           ) : grouped.sections.length === 0 || listState === 'empty' ? (
@@ -771,23 +795,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                         {section.sessions.map((session) => renderRow(session, true))}
                       </SessionsSection>
                     ))}
-                    {sessionsQuery.hasNextPage && (
-                      <div className="flex justify-center pb-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={sessionsQuery.isFetchingNextPage}
-                          onClick={() => sessionsQuery.fetchNextPage()}
-                        >
-                          {/* A failed page keeps the rows above it; the button is the retry. */}
-                          {sessionsQuery.isFetchingNextPage
-                            ? tSidebar('loadingMore')
-                            : sessionsQuery.isFetchNextPageError
-                              ? tSidebar('retry')
-                              : tSidebar('loadMoreSessions')}
-                        </Button>
-                      </div>
-                    )}
+                    {sessionsQuery.hasNextPage && loadMoreButton}
                   </div>
                 </FadedScrollArea>
               </div>

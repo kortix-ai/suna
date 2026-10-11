@@ -21,8 +21,10 @@ import {
   type ConnectorAuth,
   type FetchImpl,
   executeCall,
+  mcpJsonRpcError,
   paramHintsFromSchema,
 } from './call';
+import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 /**
  * Connector gateway — the chokepoint every tool call goes through. Resolves the
  * connector + action, resolves the credential SERVER-SIDE, runs the call,
@@ -178,7 +180,10 @@ export interface GatewayDeps {
     slug: string,
     selector: unknown,
   ): Promise<GatewayConnector | null | 'not_computer'>;
-  loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
+  /** `providerType` — the loaded connector's provider, when the caller has it
+   *  in hand (the call path does), so the store skips its duplicate read of
+   *  the `connectors` row. */
+  loadAction(connectorId: string, relPath: string, providerType: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
    * set = that member's own. Receives the loaded connector so the resolver can
@@ -333,6 +338,8 @@ export interface GatewayDeps {
   }): Promise<ComputerCallOutcome>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
+  /** Upstream deadline per call. Default: KORTIX_CONNECTOR_CALL_TIMEOUT_MS (60 s). */
+  callTimeoutMs?: number;
 }
 
 /** Result of a `computer` connector call (gateway maps it onto a CallResult). */
@@ -340,17 +347,22 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+      /** `computer_unpaired` | `computer_owner_left` (its owner left the account) |
+       *  `computer_offline` | `computer_capability_not_approved`,
        *  an access refusal on the machine (`computer_access_pending` |
-       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  `computer_access_denied` | `computer_access_off`),
+       *  `computer_desktop_permission_missing` (macOS has not given Kortix
+       *  Accessibility or Screen Recording), or `error` for a
        *  failure on the machine or in the relay. */
       kind:
         | 'computer_unpaired'
+        | 'computer_owner_left'
         | 'computer_offline'
         | 'computer_capability_not_approved'
         | 'computer_access_pending'
         | 'computer_access_denied'
         | 'computer_access_off'
+        | 'computer_desktop_permission_missing'
         | 'error';
       message: string;
     };
@@ -384,8 +396,23 @@ export interface CallResultAccount {
   owner_type: string;
 }
 
+/** The kind of binding that ran a call: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, … */
+export type CallBinding = ActionBinding['kind'];
+
 export type CallResult =
-  | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
+  | {
+      status: 'ok';
+      data: unknown;
+      risk: Risk;
+      account?: CallResultAccount;
+      binding: CallBinding;
+      /** The payload without the binding's envelope (see `callOutput`). */
+      output: unknown;
+      /** The upstream HTTP status. Null when no HTTP upstream answered (a computer). */
+      upstreamStatus: number | null;
+      /** A failure the upstream reported inside a 2xx answer (MCP `isError`, GraphQL `errors`). */
+      upstreamError?: string;
+    }
   /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
   | { status: 'denied'; reason: string; message?: string }
   | {
@@ -407,7 +434,86 @@ export type CallResult =
       /** Agent instruction for the asynchronous handoff. */
       approvalInstructions?: string | null;
     }
-  | { status: 'error'; reason: string };
+  | {
+      status: 'error';
+      reason: string;
+      /** Set once the action resolved. */
+      binding?: CallBinding;
+      /** The upstream HTTP status when an upstream answered. */
+      upstreamStatus?: number;
+      /** The upstream's Retry-After, in seconds, when it sent one. */
+      retryAfterSeconds?: number;
+    };
+
+/**
+ * The largest upstream answer a call reads. The body is held as text, parsed,
+ * and serialized again into the `/call` response, so the API holds several
+ * copies of it at once.
+ */
+const MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+/** Reason prefix of a call that hit the upstream deadline. */
+export const UPSTREAM_TIMEOUT = 'upstream_timeout';
+
+/**
+ * The upstream deadline: below Cloudflare's 100 s proxy timeout, so the
+ * caller always gets the gateway's answer. A client timeout must exceed it.
+ */
+function callTimeoutMs(deps: GatewayDeps): number {
+  return deps.callTimeoutMs ?? configuredTimeoutMs('KORTIX_CONNECTOR_CALL_TIMEOUT_MS', 60_000, 1_000);
+}
+
+function isTimeout(error: unknown): boolean {
+  // Ours (withTimeout) and the fetch abort (AbortSignal.timeout) share the name.
+  return (error as { name?: unknown } | null)?.name === 'TimeoutError';
+}
+
+/**
+ * The payload of a successful call without its binding's envelope:
+ *   - composio: `data.result`;
+ *   - mcp: `result.structuredContent ?? result.content`;
+ *   - graphql: `data.data`;
+ *   - every other binding: `data` itself.
+ * `upstreamError` names a failure the upstream reported inside a 2xx answer:
+ * an MCP JSON-RPC error or `isError` tool result, or GraphQL `errors` with no
+ * data. `data` keeps the raw answer either way.
+ */
+export function callOutput(
+  binding: CallBinding,
+  data: unknown,
+  secret?: string | null,
+): { output: unknown; upstreamError?: string } {
+  const body = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  if (binding === 'composio') return { output: body ? (body.result ?? null) : data };
+  if (binding === 'mcp') {
+    const rpcError = mcpJsonRpcError(data, secret);
+    if (rpcError) return { output: null, upstreamError: `JSON-RPC ${rpcError}` };
+    const result = body?.result && typeof body.result === 'object' ? (body.result as Record<string, unknown>) : null;
+    if (!result) return { output: data };
+    const output = result.structuredContent ?? result.content ?? null;
+    if (result.isError !== true) return { output };
+    const text = Array.isArray(result.content)
+      ? result.content
+          .map((item) => (item && typeof item === 'object' ? (item as { text?: unknown }).text : null))
+          .filter((t): t is string => typeof t === 'string')
+          .join('\n')
+      : '';
+    return { output, upstreamError: (text || 'MCP tool returned isError').slice(0, 2000) };
+  }
+  if (binding === 'graphql') {
+    const output = body ? (body.data ?? null) : data;
+    const errors = Array.isArray(body?.errors) ? (body.errors as unknown[]) : [];
+    const noData =
+      output == null ||
+      (typeof output === 'object' && Object.values(output as Record<string, unknown>).every((v) => v == null));
+    if (errors.length === 0 || !noData) return { output };
+    const messages = errors
+      .map((e) => (e && typeof e === 'object' ? (e as { message?: unknown }).message : null))
+      .filter((m): m is string => typeof m === 'string');
+    return { output, upstreamError: (messages.join('; ') || 'GraphQL errors').slice(0, 2000) };
+  }
+  return { output: data };
+}
 
 const MAX_APPROVAL_CONTEXT = 4_000;
 const CARD_POST_BUDGET_MS = 5_000;
@@ -666,7 +772,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason };
   }
 
-  const action = await deps.loadAction(connector.connectorId, input.actionPath);
+  const action = await deps.loadAction(connector.connectorId, input.actionPath, connector.provider);
   if (!action) {
     await audit(deps, input, connector, 'denied', null, {
       reason: 'action_not_found',
@@ -1016,11 +1122,18 @@ async function runConnectorAction(
       return await runComputerCall(deps, input, connector, action, executionArgs, fullPath);
     }
 
+    // One deadline for the upstream request. The race answers the caller;
+    // the signal also closes the socket of an http-family request.
+    const deadline = callTimeoutMs(deps);
+    const signal = AbortSignal.timeout(deadline);
+    const withDeadline = <T>(work: Promise<T>) => withTimeout(work, deadline, UPSTREAM_TIMEOUT);
     let result: ExecResult;
     if (connector.provider === 'pipedream') {
-      result = await runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs);
+      result = await withDeadline(
+        runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs),
+      );
     } else if (connector.provider === 'composio') {
-      result = await runComposioAction(deps, input, connector, action.binding, executionArgs);
+      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs));
     } else {
       let providerArgs =
         connector.provider === 'channel'
@@ -1066,17 +1179,20 @@ async function runConnectorAction(
           claim.files,
         );
       }
-      result = await executeCall({
-        binding: action.binding,
-        baseUrl: connector.baseUrl,
-        auth: connector.auth,
-        headers: connector.headers,
-        secret: executionSecret,
-        args: providerArgs,
-        paramHints: paramHintsFromSchema(action.inputSchema),
-        appAuthorization: await appAuthorizationForCall(deps, input, connector, action.binding),
-        fetchImpl: deps.fetchImpl,
-      });
+      const appAuthorization = await appAuthorizationForCall(deps, input, connector, action.binding);
+      result = await withDeadline(
+        executeCall({
+          binding: action.binding,
+          baseUrl: connector.baseUrl,
+          auth: connector.auth,
+          headers: connector.headers,
+          secret: executionSecret,
+          args: providerArgs,
+          paramHints: paramHintsFromSchema(action.inputSchema),
+          appAuthorization,
+          fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
+        }),
+      );
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
@@ -1100,15 +1216,15 @@ async function runConnectorAction(
       const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
       if (misfire) {
         const undone = misfire.undo
-          ? await executeCall({
+          ? await withDeadline(executeCall({
               binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
               baseUrl: connector.baseUrl,
               auth: connector.auth,
               headers: connector.headers,
               secret: executionSecret,
               args: misfire.undo.args,
-              fetchImpl: deps.fetchImpl,
-            })
+              fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+            }))
               .then((undo) => mapChannelEnvelope(undo).ok)
               .catch(() => false)
           : false;
@@ -1137,7 +1253,15 @@ async function runConnectorAction(
       });
       const named = await withSlackAuthorNames(deps, input, connector, executionSecret, result.data);
       const data = await withSlackThreadBinding(deps, input, connector, executionArgs, named);
-      return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+      return {
+        status: 'ok',
+        data,
+        risk: action.risk,
+        account: gatewayConnectorAccount(connector),
+        binding: action.binding.kind,
+        upstreamStatus: result.status,
+        ...callOutput(action.binding.kind, data, executionSecret),
+      };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
@@ -1157,19 +1281,28 @@ async function runConnectorAction(
     const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
     if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
     else logger.warn(message);
-    return { status: 'error', reason };
+    return {
+      status: 'error',
+      reason,
+      binding: action.binding.kind,
+      upstreamStatus: result.status,
+      ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds }),
+    };
   } catch (e) {
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
         ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
         .catch(() => {});
     }
-    const reason = (e as Error).message + fallbackHint(connector, action.binding);
+    const reason = isTimeout(e)
+      ? `${UPSTREAM_TIMEOUT}: ${fullPath} did not answer within ${callTimeoutMs(deps) / 1000} s. ` +
+        'The call may still have run upstream: check its effect before you repeat a write.'
+      : (e as Error).message + fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
     });
     logger.warn(`[connector] ${fullPath} threw: ${reason.slice(0, 500)}`);
-    return { status: 'error', reason };
+    return { status: 'error', reason, binding: action.binding.kind };
   }
 }
 
@@ -1205,17 +1338,25 @@ async function runComputerCall(
     await audit(deps, input, connector, 'ok', action.risk, {
       method: action.binding.method,
     });
-    return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+    return {
+      status: 'ok',
+      data: outcome.data,
+      risk: action.risk,
+      account: gatewayConnectorAccount(connector),
+      binding: 'tunnel',
+      output: outcome.data,
+      upstreamStatus: null,
+    };
   }
   await audit(deps, input, connector, 'error', action.risk, {
     reason: outcome.kind,
     message: outcome.message.slice(0, 500),
   });
   if (outcome.kind !== 'error') {
-    return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
+    return { status: 'error', reason: `${outcome.kind}: ${outcome.message}`, binding: 'tunnel' };
   }
   logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
-  return { status: 'error', reason: outcome.message };
+  return { status: 'error', reason: outcome.message, binding: 'tunnel' };
 }
 
 /** A Pipedream action or proxy call on the connected account `secret`. */

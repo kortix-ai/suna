@@ -148,7 +148,7 @@ describe('deploy-prod: the release record is not gated on npm', () => {
     // Guards the reader itself: a `needs:` written as a block sequence, or a
     // job this reader cannot see, would silently make every assertion below
     // vacuous.
-    expect(jobs.size).toBe(32);
+    expect(jobs.size).toBe(31);
     expect(jobs.has('github-release')).toBe(true);
     for (const job of NPM_PUBLISH_JOBS) expect(jobs.has(job)).toBe(true);
     expect(workflow).not.toMatch(/^ {4}needs:\s*$/m);
@@ -190,7 +190,6 @@ describe('deploy-prod: the release record is not gated on npm', () => {
   });
 
   it.each([
-    'verify-schema',
     'sync-main-version',
     'sync-staging-version',
     'announce',

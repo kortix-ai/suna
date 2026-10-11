@@ -50,7 +50,7 @@ const {
 const { sessionLlmPolicyForTier } = await import(
   '../shared/account-limits'
 );
-const { getPlanRecord, listPlanRecords, PLAN_CATALOG, PLAN_FAMILIES, resolvePlanRecord } =
+const { getPlanRecord, PLAN_CATALOG, resolvePlanRecord } =
   await import('../billing/services/plan-catalog');
 
 /** The multiplier `tierMultiplier` applied, recovered from the emitted policy. */
@@ -137,7 +137,7 @@ for (const key of TIER_KEYS) {
     });
 
     test('family is one of the three public families; compute multiplier is 1.0', () => {
-      expect(PLAN_FAMILIES).toContain(record.family);
+      expect(['free', 'team', 'enterprise']).toContain(record.family);
       expect(record.compute.rateMultiplier).toBe(1.0);
     });
   });
@@ -145,7 +145,7 @@ for (const key of TIER_KEYS) {
 
 describe('rank is a strict ladder', () => {
   test('ranks are unique and dense from 0', () => {
-    const ranks = listPlanRecords().map((r) => r.rank);
+    const ranks = Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank).map((r) => r.rank);
     expect(ranks).toEqual(ranks.map((_, i) => i));
   });
 
@@ -183,7 +183,7 @@ describe('rank is a strict ladder', () => {
   });
 
   test('rank ascends with monthly price above free (enterprise excepted)', () => {
-    const ladder = listPlanRecords().filter((r) => r.key !== 'none' && r.key !== 'enterprise');
+    const ladder = Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank).filter((r) => r.key !== 'none' && r.key !== 'enterprise');
     for (let i = 1; i < ladder.length; i++) {
       const prev = ladder[i - 1] as { price: { amountUsd: number } };
       const curr = ladder[i] as { price: { amountUsd: number } };

@@ -12,6 +12,7 @@ import { handleOpenInKortixAction } from './message-action';
 import type { TeamsActivity } from './types';
 import { MANAGED_TEAMS_INBOUND, scopeProjectTeamsActivity, type TeamsInbound } from './inbound';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { runWebhookWork } from '../webhook-work';
 
 async function processActivity(
   c: Context,
@@ -76,9 +77,9 @@ async function processActivity(
   // order and holds the next one until this response arrives; the dispatch
   // below can wait 10–20 s on a sandbox start or resume, and that wait used to
   // delay the NEXT message's live card by the same amount.
-  void handleTeamsActivity(activity, inbound).catch((err) => {
-    console.error('[teams-webhook] dispatch failed', err);
-  });
+  // No ack wait: that hold is the delay described above. The work is still
+  // registered with the shutdown drain, and a failure releases its dedup claims.
+  void runWebhookWork('teams-webhook', () => handleTeamsActivity(activity, inbound), { ackWaitMs: 0 });
 
   return c.body(null, 200);
 }

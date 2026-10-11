@@ -6,6 +6,7 @@
  * loads none of them.
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { escapeLike } from '../shared/sql-like';
 import type { AdminAccountsListQuery } from './accounts-query';
 import type { AdminProjectsListQuery } from './projects-query';
 
@@ -202,11 +203,12 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
 
   const conds: any[] = [];
   if (search) {
+    const term = `%${escapeLike(search)}%`;
     conds.push(
       or(
-        ilike(projects.name, `%${search}%`),
-        ilike(accounts.name, `%${search}%`),
-        accountHasMemberEmailLikeSql(qualifiedColumn(projects.accountId), '%' + search + '%'),
+        ilike(projects.name, term),
+        ilike(accounts.name, term),
+        accountHasMemberEmailLikeSql(qualifiedColumn(projects.accountId), term),
       ),
     );
   }

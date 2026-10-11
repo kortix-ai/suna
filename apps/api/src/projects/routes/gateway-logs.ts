@@ -35,6 +35,7 @@ const LIST_COLUMNS = {
   billingMode: gatewayRequestLogs.billingMode,
   actorUserId: gatewayRequestLogs.actorUserId,
   keyId: gatewayRequestLogs.keyId,
+  sessionId: gatewayRequestLogs.sessionId,
 };
 
 function serializeLogRow(r: Record<string, any>) {
@@ -78,6 +79,7 @@ function serializeLogRow(r: Record<string, any>) {
     billing_mode: r.billingMode,
     actor_user_id: r.actorUserId,
     key_id: r.keyId,
+    session_id: r.sessionId ?? null,
   };
 }
 

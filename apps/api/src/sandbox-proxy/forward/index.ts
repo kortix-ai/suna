@@ -3,7 +3,6 @@
 export {
   bindSandboxRequestContext,
   isProxiedBaseReset,
-  type PreviewProxyAccess,
 } from './access';
 export { forwardToSandbox } from './forward-to-sandbox';
 export { forwardsClientEncoding } from './upstream';

@@ -14,7 +14,7 @@
  * `TRANSCRIPT_INCOMPLETE_LINE` right under the title.
  */
 import type { MessageWithParts, Part, TextPart } from '@/lib/session/types';
-import { parseUserMessageText } from '@/lib/session/user-message';
+import { parseUserMessageText, userMessageCopyText } from '@/lib/session/user-message';
 
 /** The share sheet's practical ceiling: messaging apps choke far above this. */
 export const TRANSCRIPT_MAX_CHARS = 100_000;
@@ -51,7 +51,9 @@ function messageLines(message: MessageWithParts): string[] {
     // A user message's text parts are one prompt: parse them together, as the
     // thread does, so `<file>` bodies and system blocks never leak out.
     const raw = message.parts.map(visibleText).filter((t): t is string => t !== null).join('\n');
-    const shown = parseUserMessageText(raw).text.trim();
+    const parsed = parseUserMessageText(raw);
+    // A paste is the user's words: its text goes in, as Copy writes it.
+    const shown = userMessageCopyText(parsed.text, parsed.pasted).trim();
     return shown ? [shown] : [];
   }
   const lines: string[] = [];

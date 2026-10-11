@@ -8,11 +8,11 @@ name: Promote to Production
 #      ephemeral `release/vX.Y.Z` branch, stamping `VERSION` + `RELEASE_NOTES.md`,
 #   3. opens a PR into the protected `prod` branch.
 #
-# No tag, no GitHub Release, no image retag, no deploy, and `main` is untouched.
+# No tag, no GitHub Release, no image retag, no deploy, and `dev` is untouched.
 # A second person reviews and MERGES the PR — that merge is the ONLY thing that
 # advances `prod`, and its push event triggers deploy-prod.yml, which is what
 # actually creates the tag `vX.Y.Z`, cuts the Release, and deploys. So a version
-# only ever comes into existence when code lands on `prod`. `main` (dev) stays
+# only ever comes into existence when code lands on `prod`. `dev` (dev) stays
 # push-friendly; staging is the pre-prod source of truth.
 #
 # The release branch does a `merge -s ours origin/prod` so `prod` is always an
@@ -62,7 +62,7 @@ permissions:
 jobs:
   open-release-pr:
     name: Open review-gated release PR
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
         uses: actions/checkout@v7
@@ -153,18 +153,33 @@ jobs:
           #      - "Open review-gated release PR" — a PRIOR promote attempt's own
           #        check (the current run is already excluded via run_id, but an
           #        earlier failed attempt would otherwise self-block the retry).
+          # FAIL CLOSED. A failed `gh api` call, or a commit with zero check-runs,
+          # must never read as green. The three staging manifest publishes are
+          # REQUIRED by name and must be `success` (a skip does not count): they
+          # prove the immutable images exist.
           check_green() {
-            local sha="$1" label="$2"
-            local not_green
-            not_green="$(RID="$RUN_ID" gh api "repos/${REPOSITORY}/commits/${sha}/check-runs?per_page=100" --paginate \
-              --jq '[ .check_runs[]
-                      | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
+            local sha="$1" label="$2" raw latest not_green name
+            if ! raw="$(RID="$RUN_ID" gh api "repos/${REPOSITORY}/commits/${sha}/check-runs?per_page=100" --paginate \
+              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)')"; then
+              echo "::error::Refusing to promote — cannot read the check-runs of ${label} ${sha} (gh api failed)."
+              exit 1
+            fi
+            latest="$(jq -s 'group_by(.name) | map(max_by(.started_at // ""))' <<<"$raw")"
+            if [ "$(jq 'length' <<<"$latest")" = "0" ]; then
+              echo "::error::Refusing to promote — ${label} ${sha} has no check-runs. Build Staging Artifacts has not run on it."
+              exit 1
+            fi
+            for name in "Publish API manifest (staging)" "Publish gateway manifest (staging)" "Publish frontend manifest (staging)"; do
+              if ! jq -e --arg n "$name" 'any(.[]; .name == $n and .conclusion == "success")' <<<"$latest" >/dev/null; then
+                echo "::error::Refusing to promote — required check '${name}' is missing or not successful on ${label} ${sha}."
+                exit 1
+              fi
+            done
+            not_green="$(FAST="$FAST" jq -r '.[]
                       | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not)
-                      | select(if env.FAST == "true" then (.name | startswith("Build ")) else true end) ]
-                    | group_by(.name) | map(max_by(.started_at // ""))
-                    | .[]
-                    | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
-                    | "\(.name): \(.status)/\(.conclusion)"' || true)"
+                      | select(if env.FAST == "true" then (.name | startswith("Build ")) else true end)
+                      | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
+                      | "\(.name): \(.status)/\(.conclusion)"' <<<"$latest")"
             if [ -n "$not_green" ]; then
               echo "::error::Refusing to promote — ${label} ${sha} is not all-green:"
               echo "$not_green"

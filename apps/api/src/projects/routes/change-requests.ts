@@ -35,7 +35,7 @@ import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../li
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
-import { continueSession } from '../session-lifecycle';
+import { deliverThroughQueue } from '../session-lifecycle';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -612,10 +612,11 @@ export function registerChangeRequestsRoutes(): void {
       }
 
       // Persist first — the ask must survive even if delivery can't reach the agent.
+      const at = new Date().toISOString();
       const row = await recordRequestedChange(crId, projectId, {
         text: feedback,
         by: loaded.userId,
-        at: new Date().toISOString(),
+        at,
       });
       if (!row) return c.json({ error: 'Change request not found' }, 404);
 
@@ -623,17 +624,17 @@ export function registerChangeRequestsRoutes(): void {
       // sandbox boot can take seconds, so we never block the response on it).
       const willDeliver = Boolean(cr.originSessionId);
       if (cr.originSessionId) {
-        void continueSession({
+        void deliverThroughQueue({
           source: 'ui',
+          idempotencyKey: `change-request:${crId}:${at}`,
           sessionId: cr.originSessionId,
           text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
           userId: loaded.userId,
         })
           .then((outcome) => {
-            // The response already told the user willDeliver=true and nothing
-            // retries this — a non-delivered outcome (incl. 'pending') means the
-            // feedback silently never reached the agent. Make it loud.
-            if (outcome !== 'delivered') {
+            // `queued` is durable and retried by the queue. Anything else means
+            // the feedback never reaches the agent. Make it loud.
+            if (outcome !== 'delivered' && outcome !== 'queued') {
               console.error('[change-requests] request-changes prompt not delivered', {
                 crId,
                 sessionId: cr.originSessionId,
@@ -702,6 +703,7 @@ export function registerChangeRequestsRoutes(): void {
           additions: diff.additions,
           deletions: diff.deletions,
           patch: diff.patch,
+          patch_truncated: diff.patch_truncated,
         });
       } catch (error) {
         return c.json(

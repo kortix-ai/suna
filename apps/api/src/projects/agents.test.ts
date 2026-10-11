@@ -35,9 +35,7 @@ mock.module('./git', () => ({
 const { loadProjectAgents } = await import('./agents');
 const {
   DEFAULT_AGENT_SENTINEL,
-  manifestHashForAgent,
   resolveGovernedAgentGrant,
-  requiredConnectorsForAgent,
   repositoryAccessFromLoadedAgents,
 } =
   await import('./agents');
@@ -146,8 +144,6 @@ describe('connectors_required — v2 agent required-connector declaration', () =
     const loaded = await loadProjectAgents(fakeProject());
     expect(loaded.errors).toEqual([]);
     expect(loaded.specs.find((s) => s.name === 'support')?.connectorsRequired).toEqual(['gmail']);
-    expect(requiredConnectorsForAgent('support', loaded)).toEqual(['gmail']);
-    expect(requiredConnectorsForAgent(DEFAULT_AGENT_SENTINEL, loaded)).toEqual(['gmail']);
   });
 
   test('normalizes the deprecated input alias to the canonical field', async () => {
@@ -217,26 +213,7 @@ describe('connectors_required — v2 agent required-connector declaration', () =
       ].join('\n'),
     };
     const loaded = await loadProjectAgents(fakeProject());
-    expect(requiredConnectorsForAgent('support', loaded)).toEqual([]);
-  });
-
-  test('changes the agent manifest hash', async () => {
-    manifestFile = {
-      path: 'kortix.yaml',
-      content: [
-        'kortix_version: 2',
-        'default_agent: support',
-        'agents:',
-        '  support:',
-        '    connectors: [gmail]',
-        '',
-      ].join('\n'),
-    };
-    const withoutRequired = await loadProjectAgents(fakeProject());
-    const base = withoutRequired.specs[0]!;
-    expect(
-      manifestHashForAgent({ ...base, connectorsRequired: ['gmail'] }),
-    ).not.toBe(manifestHashForAgent(base));
+    expect(loaded.specs.find((s) => s.name === 'support')?.connectorsRequired ?? []).toEqual([]);
   });
 });
 

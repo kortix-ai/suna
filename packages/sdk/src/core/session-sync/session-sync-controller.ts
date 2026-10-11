@@ -368,6 +368,8 @@ export class SessionSyncController {
   private olderRequest: Promise<void> | undefined;
   private livenessTimer: unknown;
   private livenessBusy = false;
+  /** The session stream is up (R5.3): its ring replays what a drop missed. */
+  private streamReliable = false;
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
@@ -455,6 +457,16 @@ export class SessionSyncController {
    * state it already has. `watchIdle` keeps a visible session on a slower
    * verification cadence when the working signal itself was missed.
    */
+  /**
+   * The session stream (`GET .../events`) is connected. Its box-side ring
+   * replays any frame a reconnect missed, and a runtime resync re-reads the
+   * tail, so the liveness and verification reads stop while it holds. The
+   * turn-end read stays: it is one read per turn, not a poll.
+   */
+  setStreamReliable(reliable: boolean): void {
+    this.streamReliable = reliable;
+  }
+
   setBusy(isBusy: boolean, watchIdle = false): void {
     const turnEnded = this.livenessBusy && !isBusy;
     this.livenessBusy = isBusy;
@@ -797,7 +809,7 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.tailUnavailable) return;
+    if (this.destroyed || this.tailUnavailable || this.streamReliable) return;
     const nowMs = this.scheduler.now();
     const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
     // `noteActivity` proves frames are ARRIVING, not that none were lost. A

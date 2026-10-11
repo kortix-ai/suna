@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, rm, stat } from 'node:fs/promises';
-import { posix, resolve, sep } from 'node:path';
+import { mkdir, readdir, readlink, realpath, rm, stat } from 'node:fs/promises';
+import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import * as tar from 'tar';
 import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 
@@ -231,6 +231,47 @@ function isWithin(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(prefix);
 }
 
+/**
+ * Where a symlink points on this host. A dangling link resolves through its
+ * deepest existing ancestor: `x -> e/missing`, with `e` escaping, still escapes.
+ */
+async function linkTarget(link: string): Promise<string> {
+  try {
+    return await realpath(link);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const lexical = resolve(dirname(link), await readlink(link));
+  for (let ancestor = dirname(lexical); ; ancestor = dirname(ancestor)) {
+    const real = await realpath(ancestor).catch(() => null);
+    if (real !== null) return join(real, relative(ancestor, lexical));
+    if (ancestor === dirname(ancestor)) return lexical;
+  }
+}
+
+/**
+ * Every symlink under `root` resolves inside it. `validateArchiveEntry` checks
+ * each link target lexically, and archive order can chain links that each pass
+ * that check (`e -> d/l/..` before `d/l -> ..`) yet resolve outside the root.
+ * This one check covers every consumer of the extracted tree: static publish,
+ * the Dockerfile read and the build-context copy.
+ */
+export async function assertArchiveLinksContained(root: string): Promise<void> {
+  const realRoot = await realpath(root);
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      if (!entry.isSymbolicLink()) continue;
+      const target = await linkTarget(path).catch(() => null);
+      if (target === null || !isWithin(realRoot, target)) {
+        throw new Error(`archive link ${relative(root, path)} escapes the build context`);
+      }
+    }
+  };
+  await walk(root);
+}
+
 export async function extractAppArchive(
   archivePath: string,
   destination: string,
@@ -259,21 +300,10 @@ export async function extractAppArchive(
         return true;
       },
     });
+    await assertArchiveLinksContained(root);
     return inspection;
   } catch (error) {
     await rm(root, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
-}
-
-export async function sha256File(path: string): Promise<{ sha256: string; sizeBytes: number }> {
-  const hash = createHash('sha256');
-  let sizeBytes = 0;
-  for await (const chunk of createReadStream(path)) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    sizeBytes += bytes.byteLength;
-    if (sizeBytes > MAX_ARCHIVE_BYTES) throw new Error(`App artifact exceeds ${MAX_ARCHIVE_BYTES} bytes`);
-    hash.update(bytes);
-  }
-  return { sha256: hash.digest('hex'), sizeBytes };
 }

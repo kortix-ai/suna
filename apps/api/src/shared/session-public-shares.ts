@@ -9,6 +9,7 @@ import {
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from './db';
+import { qualifiedColumn } from './sql-qualified-column';
 import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
 
@@ -463,6 +464,7 @@ export async function resolvePublicShare(
       externalId: sessionSandboxes.externalId,
       sandboxStatus: sessionSandboxes.status,
       sessionMetadata: projectSessions.metadata,
+      projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessionPublicShares.projectId)})`,
     })
     .from(projectSessionPublicShares)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
@@ -480,6 +482,11 @@ export async function resolvePublicShare(
   // its saved transcript. Its links must end with it, even one the delete path
   // failed to revoke.
   if (typeof (row.sessionMetadata as Record<string, unknown> | null)?.deletedAt === 'string') {
+    return { ok: false as const, status: 410, error: 'Share link revoked' };
+  }
+  // The same for a deleted workspace (KRTX-1714): the delete archives the
+  // project, and the revoke route answers 404 after it.
+  if (row.projectStatus === 'archived') {
     return { ok: false as const, status: 410, error: 'Share link revoked' };
   }
   // Fail closed for links created before personal-connection sharing was

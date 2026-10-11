@@ -27,8 +27,20 @@ import { useProjectSelectorData } from '@/features/workspace/project-selector/us
  */
 function withCurrentQuery(path: string): string {
   if (typeof window === 'undefined') return path;
-  const { search } = window.location;
-  return search && search !== '?' ? `${path}${search}` : path;
+  const params = new URLSearchParams(window.location.search);
+  // The door's own input, never carried on: `?accountId=` opens the account hub.
+  params.delete(REQUESTED_ACCOUNT_PARAM);
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
+}
+
+/** `/projects/start?account=<id>`: the account an account switch or an invite
+ *  accept asked for (KRTX-1731). */
+const REQUESTED_ACCOUNT_PARAM = 'account';
+
+function requestedAccountId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get(REQUESTED_ACCOUNT_PARAM) || null;
 }
 
 /**
@@ -69,6 +81,7 @@ export default function ProjectStartPage() {
         sections: data.sections,
         inviteCount: data.invites.length,
         rememberedProjectId: readLastProjectId(user?.id),
+        requestedAccountId: requestedAccountId(),
       });
       if (decision.kind === 'open') {
         // Heal the persisted selection: every account-scoped surface after this
@@ -77,6 +90,8 @@ export default function ProjectStartPage() {
         writeLastProjectId(user?.id, decision.projectId);
         decided.current = withCurrentQuery(`/projects/${decision.projectId}`);
       } else {
+        // An account switch that lands on the selector keeps the account chosen.
+        if (decision.accountId) setSelectedAccountId(decision.accountId);
         decided.current = withCurrentQuery('/projects');
       }
     }

@@ -27,7 +27,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { track } from '@/lib/track';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
@@ -380,7 +380,7 @@ export function AppPreview({
             src={previewUrl}
             title={name}
             className="h-full w-full border-0"
-            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+            sandbox={framePolicy('app', previewUrl).sandbox}
             onLoad={() => {
               // A load is positive evidence the app is up, which overrides a
               // `hasError` an earlier verdict set — otherwise the error card

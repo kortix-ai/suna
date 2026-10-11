@@ -217,6 +217,19 @@ The template runs Express on port 5000. After building, deploy the static output
 
 Keep API paths and environment assumptions explicit so local verification works before any deployment step.
 
+**On Kortix (when `kortix apps ls` exits `0`):** deploy with the `kortix-apps`
+system skill (`kortix system-skills get kortix-apps`), only after the user asks
+to publish.
+
+- Static-only app: `npm run build`, then
+  `kortix apps deploy dist/public --type static --spa`. No machine, no
+  compute cost.
+- App with the Express backend: a server App. Add a Dockerfile that builds
+  the app, then deploy with `--type dockerfile --on-demand
+  --command '["node","dist/index.cjs"]' --port 5000`. In-memory storage is lost whenever the App stops (an on-demand
+  App stops after 5 idle minutes) and on every new deployment. Say so before
+  you publish.
+
 ## Config File Guidance
 
 - Do NOT modify the Vite setup (`server/vite.ts` and `vite.config.ts`) unless absolutely necessary. It is already configured to serve the frontend and backend on the same port and handles all the necessary setup for you. Don't add a proxy to the Vite server. All the aliases are already set up for you to import.

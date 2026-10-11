@@ -128,7 +128,7 @@ async function confirmLastProject(input: {
 export default function StartScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isAuthenticated, isLoading: authLoading, signOut } = useAuthContext();
+  const { user, isAuthenticated, mfaRequired, isLoading: authLoading, signOut } = useAuthContext();
   const userId = user?.id ?? null;
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
   const [signingOut, setSigningOut] = React.useState(false);
@@ -149,6 +149,12 @@ export default function StartScreen() {
     if (!isAuthenticated) {
       log.log('🚀 → /auth (not authenticated)');
       router.replace('/auth');
+      return;
+    }
+    // A session that owes a TOTP code reaches nothing else, no fetch included.
+    if (mfaRequired) {
+      log.log('🚀 → /auth/mfa (TOTP code required)');
+      router.replace('/auth/mfa');
       return;
     }
     // The last project is stored per user: wait for the user id.
@@ -243,7 +249,7 @@ export default function StartScreen() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [authLoading, isAuthenticated, userId, attempt, queryClient, router]);
+  }, [authLoading, isAuthenticated, mfaRequired, userId, attempt, queryClient, router]);
 
   const handleSignOut = React.useCallback(async () => {
     if (signingOut) return;

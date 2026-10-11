@@ -1,3 +1,4 @@
+import { appNameKey } from './connect-direct-twins';
 import {
   groupIntoSections,
   sectionKeysForEntry,
@@ -141,9 +142,7 @@ function normalizeItem(value: unknown): ConnectorCatalogItem | null {
   };
 }
 
-function authTemplate(
-  surface: Record<string, unknown>,
-): ConnectorTemplate['auth'] | undefined {
+function authTemplate(surface: Record<string, unknown>): ConnectorTemplate['auth'] | undefined {
   const auth = surface.auth as Record<string, unknown> | undefined;
   if (!auth || auth.status === 'none' || auth.status === 'optional') return undefined;
   if (auth.status !== 'required') return undefined;
@@ -155,8 +154,7 @@ function authTemplate(
       : [];
     for (const use of uses) {
       const mechanics = (use as Record<string, unknown>)?.mechanics as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (!mechanics) continue;
       const scheme = nullableString(mechanics.scheme)?.toLowerCase();
       const headerName = nullableString(mechanics.headerName);
@@ -304,6 +302,58 @@ function boundedCount(value: number | undefined, fallback: number, max: number):
   return value && value > 0 ? Math.min(Math.floor(value), max) : fallback;
 }
 
+/** How many apps (domains) a set of records covers: what a list of it shows. */
+function appCount(items: ConnectorCatalogItem[]): number {
+  return new Set(items.map((item) => item.domain)).size;
+}
+
+/** The surface an app's card stands for: MCP first, as Install picks it. */
+const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
+  mcp: 0,
+  openapi: 1,
+  graphql: 2,
+  cli: 3,
+};
+
+/**
+ * One record per app (domain), at the position of the app's first record, and
+ * represented by its best surface.
+ */
+function onePerApp(items: ConnectorCatalogItem[]): ConnectorCatalogItem[] {
+  const order: string[] = [];
+  const best = new Map<string, ConnectorCatalogItem>();
+  for (const item of items) {
+    const current = best.get(item.domain);
+    if (!current) {
+      order.push(item.domain);
+      best.set(item.domain, item);
+    } else if (SURFACE_RANK[item.kind] < SURFACE_RANK[current.kind]) {
+      best.set(item.domain, item);
+    }
+  }
+  return order.map((domain) => best.get(domain)!);
+}
+
+/**
+ * Search results by how well the NAME matches: exact, then prefix, then the
+ * domain, then any other field. Stable inside each tier, so the index order
+ * (popularity) breaks ties.
+ */
+function rankByName(items: ConnectorCatalogItem[], query: string): ConnectorCatalogItem[] {
+  const tier = (item: ConnectorCatalogItem) => {
+    const name = item.name.toLowerCase();
+    if (name === query) return 0;
+    if (name.startsWith(query)) return 1;
+    if (item.domain.toLowerCase().startsWith(query)) return 2;
+    if (name.includes(query)) return 3;
+    return 4;
+  };
+  return items
+    .map((item, index) => ({ item, index, rank: tier(item) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.item);
+}
+
 export function createConnectorCatalog(options: CatalogOptions = {}) {
   const fetchImpl = options.fetch ?? fetch;
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
@@ -418,12 +468,17 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
               .some((value) => String(value).toLowerCase().includes(query)),
           )
         : items;
-      const filtered = category
+      const scoped = category
         ? sortByPicks(
             category,
             searched.filter((item) => sectionKeysForEntry(item.categories).has(category)),
           )
-        : searched;
+        : query
+          ? rankByName(searched, query)
+          : searched;
+      // The feed has one record per surface (MCP, OpenAPI, CLI). A card is an
+      // app: its page lists every surface, so a list shows each app once.
+      const filtered = onePerApp(scoped);
       const parsedOffset = Number.parseInt(input.cursor ?? '0', 10);
       const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
       const limit = Math.min(
@@ -456,8 +511,8 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       const groups = groupIntoSections(items, (item) => item.categories);
       // The feed publishes one record per surface (`stripe-com`,
       // `stripe-com-openapi`, `stripe-com-cli`). A card resolves every surface
-      // for its domain, so a slice shows one card per domain. `total` still
-      // counts every record, because that is what "View all" lists.
+      // for its domain, so a slice shows one card per domain. `total` counts
+      // apps (domains), because \"View all\" (`list`) shows each app once.
       const onePerDomain = (candidates: ConnectorCatalogItem[]) => {
         const seen = new Set<string>();
         const distinct: ConnectorCatalogItem[] = [];
@@ -479,15 +534,48 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         sections: groups.slice(0, maxCategories).map((group) => ({
           key: group.category,
           label: sectionTitle(group.category),
-          total: group.items.length,
+          total: appCount(group.items),
           items: onePerDomain(sortByPicks(group.category, group.items)),
         })),
         categories: groups.map((group) => ({
           key: group.category,
           label: sectionTitle(group.category),
-          count: group.items.length,
+          count: appCount(group.items),
         })),
       };
+    },
+
+    /**
+     * Icon lookups across the whole index, keyed by domain and by app name.
+     * A connector that stores no icon shows the icon of the domain that owns
+     * the host it calls, else the icon of the app it is named after
+     * (`connector-icon.ts`). Keys are lower case; the first record wins.
+     */
+    async icons(): Promise<{ byDomain: Map<string, string>; byName: Map<string, string> }> {
+      const byDomain = new Map<string, string>();
+      const byName = new Map<string, string>();
+      for (const item of await loadIndex()) {
+        if (!item.icon) continue;
+        const domain = item.domain.toLowerCase();
+        const name = item.name.toLowerCase();
+        if (!byDomain.has(domain)) byDomain.set(domain, item.icon);
+        if (!byName.has(name)) byName.set(name, item.icon);
+      }
+      return { byDomain, byName };
+    },
+
+    /**
+     * Each app's catalogue id by its join key (`appNameKey`), its MCP surface
+     * first. Managed listings use it to name the same app's API/MCP entry.
+     */
+    async directIds(): Promise<Map<string, string>> {
+      const best = new Map<string, ConnectorCatalogItem>();
+      for (const item of await loadIndex()) {
+        const key = appNameKey(item.name);
+        const current = best.get(key);
+        if (!current || SURFACE_RANK[item.kind] < SURFACE_RANK[current.kind]) best.set(key, item);
+      }
+      return new Map([...best].map(([key, item]) => [key, item.id]));
     },
 
     async detail(id: string): Promise<ConnectorCatalogDetail> {
@@ -508,3 +596,5 @@ const catalog = createConnectorCatalog();
 export const listConnectorCatalog = catalog.list;
 export const connectorCatalogSections = catalog.sections;
 export const getConnectorCatalogDetail = catalog.detail;
+export const connectorCatalogIcons = catalog.icons;
+export const connectorCatalogDirectIds = catalog.directIds;

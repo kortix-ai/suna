@@ -13,7 +13,10 @@ import { slowRequestLogger } from './slow-request'
 import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/services/runtime-assets/runtime-assets'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
+import { createToolsRouter } from '@/routes/kortix/tools'
 import { createHarnessControlRouter } from '@/routes/kortix/harness-control'
+import { createDriveSyncRouter } from '@/routes/kortix/drive-sync'
+import { startDriveSyncFromEnv } from '@/services/drive-sync/drive-sync'
 import { createRuntimeProxyRouter } from '@/routes/proxy/runtime-proxy'
 import { createGitRouter } from '@/routes/kortix/git'
 import { createPortProxyRouter } from '@/routes/proxy/port-proxy'
@@ -135,6 +138,11 @@ export function buildDaemonApp(
   const envRpcRouter = createEnvRpcRouter(cfg)
   kortixRouter.route('/env-rpc', envRpcRouter)
   kortixRouter.route('/env-rpc/', envRpcRouter)
+  // Hosted tools for a harness outside this process (OpenCode's bridge plugin).
+  kortixRouter.route('/tools', createToolsRouter(cfg))
+
+  // Kortix Drive off Platinum: the API's pre-stop request for the final push.
+  kortixRouter.route('/drive-sync', createDriveSyncRouter(cfg))
 
   // Terminate daemon-owned paths before the OpenCode SPA catch-all.
   kortixRouter.all('*', (c) => c.json({ error: UNKNOWN_DAEMON_ROUTE_ERROR }, 404))
@@ -231,6 +239,8 @@ export function startProxy(
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
   let currentCfg = cfg
+  // Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): copy the session's drives in and keep them in sync.
+  startDriveSyncFromEnv(cfg)
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `runtime`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)

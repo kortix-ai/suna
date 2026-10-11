@@ -919,17 +919,39 @@
   }
 }
 
-/* Streaming text is NOT animated.
+/* Streamed words fade in as they mount (see components/markdown/stream-words.ts).
  *
- * This used to run `blur-fade-in` (blur 8px -> 3px -> 0) on the last child of a
- * streaming block. `filter: blur()` promotes the element to its own layer and
- * re-rasterises it every frame, and during a stream the last child changes on
- * every token append — so the animation restarted continuously over live text.
- * On refresh it read as the whole reply arriving blurred and then sharpening.
- *
- * Text that is being read as it arrives must be legible the instant it lands.
- * If a reveal is ever wanted here it has to be opacity-only: no filter, no
- * transform, nothing that forces a repaint of glyphs mid-stream. */
+ * Opacity only. This used to run `blur-fade-in` (blur 8px -> 3px -> 0) on the
+ * last child of a streaming block: `filter: blur()` re-rasterises glyphs every
+ * frame, and the last child changed on every token, so the animation restarted
+ * continuously over live text. Here each word is its own node that React keeps
+ * once mounted, so a word fades exactly once and nothing already on screen is
+ * touched. No filter, no transform, no layout. It is a comprehension fade, not
+ * movement, so it stays under reduced motion. */
+@keyframes kx-stream-word-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* In-out, not out: an ease-out fade reaches ~60% opacity in its first quarter,
+ * so each word still lands as a pop. A symmetric ramp lets it emerge, and
+ * with ~3 words starting per 40 ms the trailing edge of the reply is a soft
+ * gradient rather than a hard line. `backwards` holds a word at opacity 0
+ * through its stagger delay (see `StreamWord`); without it the word would
+ * flash at full opacity first. */
+.kortix-markdown .kx-stream-word {
+  animation: kx-stream-word-in var(--duration-slow) var(--ease-in-out) backwards;
+}
+
+/* A block's chrome (a bullet, a code card, a table's frame, a rule) has no
+ * words of its own to fade, so it would pop in under words that fade. While
+ * the message streams it fades in once, on mount, with the same curve. Only
+ * elements that mount mid-stream run it: the class leaving at the end of the
+ * turn replays nothing. */
+.kortix-markdown.streaming-active :is(li, figure, hr, blockquote, .kx-md-table) {
+  animation: kx-stream-word-in var(--duration-slow) var(--ease-in-out);
+}
 
 /* Pulse heartbeat animation for reasoning section Kortix icon */
 @keyframes pulse-heartbeat {

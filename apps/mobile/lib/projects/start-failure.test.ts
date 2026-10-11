@@ -5,9 +5,12 @@ import { classifyStartFailure, startFailureCopy } from './start-failure';
 const apiError = (status: number) => Object.assign(new Error(`Request failed (${status})`), { status });
 
 describe('classifyStartFailure', () => {
-  test('401 and 403 mean the session is no longer accepted', () => {
+  test('only 401 means the session is no longer accepted', () => {
     expect(classifyStartFailure(apiError(401))).toBe('session');
-    expect(classifyStartFailure(apiError(403))).toBe('session');
+  });
+
+  test('403 is a denied request, not an ended login: the user stays signed in', () => {
+    expect(classifyStartFailure(apiError(403))).toBe('server');
   });
 
   test('a request that never got a response is unreachable', () => {

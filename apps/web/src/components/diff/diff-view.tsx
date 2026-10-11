@@ -20,6 +20,22 @@ export type DiffLayout = 'unified' | 'split';
 export type DiffIndicators = 'classic' | 'bars' | 'none';
 export type InlineHighlight = 'word-alt' | 'word' | 'char' | 'none';
 
+/**
+ * Pierre renders a one-sided diff — a new file (only `+` lines) or a deleted
+ * one (only `−` lines) — as a single column in BOTH layouts: it excludes the
+ * empty side when it parsed the file as `new`/`deleted`, which it reads from
+ * the `new file mode` / `deleted file mode` header line. A change set of new
+ * files then shows the same rendering in stacked and side-by-side, and the
+ * layout toggle does nothing on it. Dropping that header line keeps every
+ * hunk byte-identical but makes Pierre parse the file as a change, so split
+ * gets its empty counterpart column (the GitHub layout); unified renders
+ * identically either way. Only a real git metadata line matches — content
+ * lines start with `+`, `-` or a space, never at column 0.
+ */
+export function splitablePatch(patch: string): string {
+  return patch.replace(/^(?:new|deleted) file mode .*\n?/gm, '');
+}
+
 interface DiffViewCommonProps {
   layout?: DiffLayout;
   /** Hide the per-file header rendered by Pierre's chrome. */
@@ -53,7 +69,9 @@ export function DiffView(props: PatchProps | FilesProps) {
   const themeType = resolvedTheme === 'dark' ? 'dark' : 'light';
 
   const patch = useMemo(() => {
-    if ('patch' in props) return props.patch;
+    // `createTwoFilesPatch` writes no `new file mode` / `deleted file mode`
+    // line, so only the patch path can be one-sided.
+    if ('patch' in props) return splitablePatch(props.patch);
     return createTwoFilesPatch(
       props.before.name,
       props.after.name,

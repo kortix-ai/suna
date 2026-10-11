@@ -176,7 +176,7 @@ describe.skipIf(!dockerAvailable)(
 
     afterAll(() => {
       if (!containerStarted) return;
-      Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+      Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
     });
 
     test('rewrites both bare policies and preserves their shape; a second apply is a no-op', () => {

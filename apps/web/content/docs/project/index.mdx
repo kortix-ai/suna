@@ -50,6 +50,22 @@ Older projects may still run `kortix.toml` (`kortix_version: 1`). Kortix
 reads both formats. See [legacy TOML](/docs/project/legacy-toml) for the
 migration path.
 
+## Deleting a project
+
+Delete a project with **Delete project** under **Danger zone** in its
+settings, or with `kortix projects rm`. From that moment, nothing can act for
+the project:
+
+| Way in | After the delete |
+|---|---|
+| LLM gateway keys (`kgw_…`) | Refused with `401`. |
+| Public share links | Answer `410`. |
+| Apps | Not served. |
+| New sessions | Refused: `404`, `code: "project_archived"`. |
+| Slack and Teams | Reply "This Kortix workspace was deleted…" and start nothing. |
+| Email inboxes | Reply once to the first email of a thread: "This address is not accepting email right now. No one will answer this message." The next reply in that thread within 30 days gets nothing, and email that fails sender authentication never gets a reply. |
+| Existing sessions | Take no new message: not from a chat thread, a trigger, or a prompt queued before the delete. |
+
 ## In this section
 
 <CardGroup>

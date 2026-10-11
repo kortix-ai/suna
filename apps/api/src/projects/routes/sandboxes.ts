@@ -234,9 +234,6 @@ export function invalidateSandboxHealth(projectId: string): void {
   sandboxHealthMemo.invalidate(projectId);
 }
 
-// Exported for unit coverage of the wall-clock degradation contract.
-export { SANDBOX_HEALTH_BUDGET_MS, SANDBOX_HEALTH_DEGRADED, SANDBOX_HEALTH_TTL_MS, buildSandboxHealth };
-
 export function registerSandboxesRoutes(): void {
   // ─── Sandbox templates ─────────────────────────────────────────────────────
   // One platform-default image, optionally extended by `sandbox: templates:` entries

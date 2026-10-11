@@ -29,16 +29,16 @@ export function worktreeAddArgs(root: string, wtPath: string, branch: string, fr
 }
 
 /**
- * The ref a new branch forks from. `main` means the tip of `origin/main`,
- * fetched now: the primary checkout's local `main` is rarely pulled, and a
+ * The ref a new branch forks from. `dev` means the tip of `origin/dev`,
+ * fetched now: the primary checkout's local `dev` is rarely pulled, and a
  * branch cut from it starts hundreds of commits behind and carries files
- * `main` has deleted. Any other base is kept as given. Offline, the fetch
- * fails and the last fetched `origin/main` is used.
+ * `dev` has deleted. Any other base is kept as given. Offline, the fetch
+ * fails and the last fetched `origin/dev` is used.
  */
 export function freshBase(root: string, from: string): string {
-  if (from !== 'main') return from;
-  sh(['git', '-C', root, 'fetch', '--quiet', 'origin', 'main']);
-  return remoteBranchExists(root, 'main') ? 'origin/main' : 'main';
+  if (from !== 'dev') return from;
+  sh(['git', '-C', root, 'fetch', '--quiet', 'origin', 'dev']);
+  return remoteBranchExists(root, 'dev') ? 'origin/dev' : 'dev';
 }
 
 /**

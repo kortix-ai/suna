@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   REDACTED,
   approvalPreviewReviewable,
-  buildArgsPreview,
   buildArgsPreviewDetails,
   isSecretKey,
   summarizeArgsPreview,
 } from './args-preview';
+
+const buildArgsPreview = (args: unknown) => buildArgsPreviewDetails(args).preview;
 
 describe('isSecretKey', () => {
   test('redacts credential-shaped keys across naming styles', () => {

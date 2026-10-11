@@ -26,23 +26,26 @@ export function DesktopCardImage() {
   );
 }
 
-/** iOS App Store screenshots 01-03, exported from the Paper file at 640w. */
 const MOBILE_SHOTS = [
-  '/images/mobile-app/store-01.webp',
-  '/images/mobile-app/store-02.webp',
-  '/images/mobile-app/store-03.webp',
+  '/images/mobile-app/app-1.png',
+  '/images/mobile-app/app-2.png',
+  '/images/mobile-app/app-3.png',
 ];
 
 /**
  * Three phones in the same 16:10 box the desktop poster occupies, so both cards'
  * headers are the same height and their first row seams line up.
  *
- * Each phone is HEIGHT-bound (`h-full w-auto` against the 1284x2778 ratio), not
- * width-bound. At a third of the card's width a width-bound phone computes
- * taller than the slot and clips mid-screenshot. Height-bound shows every phone
- * whole.
+ * Each phone is HEIGHT-bound (`h-full w-auto` against the 1080x2337 ratio), not
+ * width-bound. Width-bound was the first attempt and it was wrong: at a third of
+ * the card's width each phone computes taller than the slot, so the bottoms
+ * clipped at an arbitrary point mid-screenshot. That reads as a mistake rather
+ * than a crop. Height-bound shows every phone whole, which also matches the
+ * desktop card — that poster is shown complete too.
  *
- * Borders, never shadows.
+ * Borders, never shadows. The `MobileSurface` treatment in `hero-surfaces.tsx`
+ * frames these same shots with `shadow-md`; that part is deliberately not
+ * carried over.
  */
 export function MobileCardImage() {
   return (
@@ -51,7 +54,7 @@ export function MobileCardImage() {
         <div
           key={src}
           className={cn(
-            'border-border bg-background relative aspect-[1284/2778] h-full w-auto',
+            'border-border bg-background relative aspect-[1080/2337] h-full w-auto',
             'overflow-hidden rounded-md border',
             // The middle phone lifts, the outer two drop. Enough to read as a
             // deliberate arrangement, not enough to look scattered.

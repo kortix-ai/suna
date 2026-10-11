@@ -55,12 +55,44 @@ export const TUNNEL_FORWARD_CHANNEL = 'kortix_tunnel_rpc_forward';
  */
 export const LIFECYCLE_COMMAND_SETTLED_CHANNEL = 'kortix_lifecycle_command_settled';
 
+/**
+ * A fourth channel: "a lifecycle command is queued, due at this epoch ms". A
+ * database trigger (migration 20261006135526223) sends it for every writer.
+ * The drain worker schedules itself for that moment; see
+ * `onLifecycleCommandDue`.
+ */
+export const LIFECYCLE_COMMAND_DUE_CHANNEL = 'kortix_lifecycle_command_due';
+
+/**
+ * A fifth channel: "this session's prompt inbox changed". A database trigger
+ * (migration 20261006151556632) sends it for every writer of a
+ * `continue_session` row, so the payload is one session id. The control
+ * reconciler re-reads that session's queue now; see `onSessionPromptsChanged`.
+ */
+export const SESSION_PROMPTS_CHANGED_CHANNEL = 'kortix_session_prompts_changed';
+
+/**
+ * A sixth channel: "this session's box or title changed". Database triggers
+ * (migration 20261007140000000) send it for every writer of a client-visible
+ * `session_sandboxes` field (status, external id, live turns, wake fields) and
+ * of the session title. The payload is one session id. The control reconciler
+ * re-reads that session now, and `/events` streams waiting for a box wake; see
+ * `onSessionChanged` and `waitForSessionChange`.
+ */
+export const SESSION_CHANGED_CHANNEL = 'kortix_session_changed';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
 let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
+let commandDueHandler: ((dueAtMs: number) => void) | null = null;
+let promptsChangedHandler: ((sessionId: string) => void) | null = null;
+// replica-local: subscribers in this process; the NOTIFY reaches every replica.
+const sessionChangedHandlers = new Set<(sessionId: string) => void>();
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+const LISTEN_RETRY_MS = 60_000;
 
 // replica-local: a waiter waits in this process; the NOTIFY reaches every replica.
 const settleWaiters = new Map<string, Set<() => void>>();
@@ -92,6 +124,79 @@ export function waitForLifecycleCommandSettle(commandId: string, ms: number): { 
 
 function wakeSettleWaiters(commandId: string): void {
   for (const wake of settleWaiters.get(commandId) ?? []) wake();
+}
+
+/** The drain worker registers on start. Kept across stop/start of the LISTEN. */
+export function onLifecycleCommandDue(handler: ((dueAtMs: number) => void) | null): void {
+  commandDueHandler = handler;
+}
+
+function deliverCommandDue(payload: string): void {
+  const dueAtMs = Number(payload);
+  if (!Number.isFinite(dueAtMs)) return;
+  try {
+    commandDueHandler?.(dueAtMs);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
+/** The control reconciler registers once, at import. Kept across stop/start. */
+export function onSessionPromptsChanged(handler: ((sessionId: string) => void) | null): void {
+  promptsChangedHandler = handler;
+}
+
+function deliverPromptsChanged(payload: string): void {
+  // The payload is a session id and nothing else.
+  if (!isUuid(payload)) return;
+  try {
+    promptsChangedHandler?.(payload);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
+/** Subscribe to `kortix_session_changed`. Returns the unsubscribe. Kept across stop/start. */
+export function onSessionChanged(handler: (sessionId: string) => void): () => void {
+  sessionChangedHandlers.add(handler);
+  return () => {
+    sessionChangedHandlers.delete(handler);
+  };
+}
+
+/**
+ * Resolves when `sessionId` changes (any replica's write), after `ms`, or when
+ * `signal` aborts, whichever is first. Without the LISTEN it is a plain timer,
+ * so a caller passes its pre-NOTIFY poll interval then.
+ */
+export function waitForSessionChange(sessionId: string, ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      unsubscribe();
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const unsubscribe = onSessionChanged((changed) => {
+      if (changed === sessionId) finish();
+    });
+    const timer = setTimeout(finish, Math.max(0, ms));
+    (timer as unknown as { unref?: () => void }).unref?.();
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
+function deliverSessionChanged(payload: string): void {
+  // The payload is a session id and nothing else.
+  if (!isUuid(payload)) return;
+  for (const handler of [...sessionChangedHandlers]) {
+    try {
+      handler(payload);
+    } catch {
+      // A subscriber must not take the listener down.
+    }
+  }
 }
 
 /** The forwarder registers once, at import. Kept across stop/start. */
@@ -166,6 +271,9 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       }
     });
     await sql.listen(LIFECYCLE_COMMAND_SETTLED_CHANNEL, wakeSettleWaiters);
+    await sql.listen(LIFECYCLE_COMMAND_DUE_CHANNEL, deliverCommandDue);
+    await sql.listen(SESSION_PROMPTS_CHANGED_CHANNEL, deliverPromptsChanged);
+    await sql.listen(SESSION_CHANGED_CHANNEL, deliverSessionChanged);
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -174,7 +282,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}`,
     );
     return true;
   } catch (error) {
@@ -184,11 +292,19 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       '[config-releases] base-move broadcast unavailable; the desired-release memo falls back to its TTL:',
       error instanceof Error ? error.message : String(error),
     );
+    // Try again later. Until then every subscriber runs at its pre-NOTIFY rate.
+    retryTimer ??= setTimeout(() => {
+      retryTimer = null;
+      void startConfigBaseMoveBroadcast();
+    }, LISTEN_RETRY_MS);
+    retryTimer.unref?.();
     return false;
   }
 }
 
 export async function stopConfigBaseMoveBroadcast(): Promise<void> {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
   const sql = listener;
   listener = null;
   publish = null;

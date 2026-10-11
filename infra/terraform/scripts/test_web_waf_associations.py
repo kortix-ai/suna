@@ -5,7 +5,13 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-WEB_ENVIRONMENTS = ("dev-web", "staging-web", "prod-web")
+WEB_ENVIRONMENTS = (
+    "dev-web",
+    "dev-web-us-east-2",
+    "staging-web",
+    "staging-web-eu-west-2",
+    "prod-web",
+)
 
 
 class WebWafAssociationTests(unittest.TestCase):
@@ -38,7 +44,9 @@ class WebWafAssociationTests(unittest.TestCase):
         self.assertIn(
             '["kortix-dev-web-alb", "kortix-staging-web-alb"]', config
         )
-        self.assertIn('alb.name != "kortix-prod-web-alb"', config)
+        self.assertIn(
+            '["kortix-prod-web-alb", "kortix-staging-euw2-web-alb"]', config
+        )
 
     def test_common_rules_exclude_only_registered_oauth_loopback_authorize_requests(self):
         config = (

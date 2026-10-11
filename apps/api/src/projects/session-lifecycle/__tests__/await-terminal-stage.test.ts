@@ -108,4 +108,35 @@ describe('awaitTerminalStage — session-start long-poll loop', () => {
     });
     expect(r.stage).toBe('provisioning'); // keeps the last good payload
   });
+
+  test('stops resolving once the caller aborts (05#8: no work for a closed tab)', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const r = await awaitTerminalStage(
+      mk('provisioning'),
+      async () => {
+        calls++;
+        if (calls === 2) controller.abort();
+        return mk('provisioning');
+      },
+      { waitMs: 15_000, now: stepNow(200), sleepFn: noSleep, signal: controller.signal },
+    );
+    expect(calls).toBe(2);
+    expect(r.stage).toBe('provisioning');
+  });
+
+  test('an already-aborted caller never calls resolve', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let calls = 0;
+    await awaitTerminalStage(
+      mk('provisioning'),
+      async () => {
+        calls++;
+        return mk('ready', false);
+      },
+      { waitMs: 15_000, now: stepNow(200), sleepFn: noSleep, signal: controller.signal },
+    );
+    expect(calls).toBe(0);
+  });
 });

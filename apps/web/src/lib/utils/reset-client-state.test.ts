@@ -17,12 +17,11 @@ import * as idb from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-li
 /**
  * `resetClientState()` must SETTLE even when its IndexedDB purge never does.
  *
- * That is not a hypothetical: `openDB()` in
- * `packages/sdk/src/browser/cache/idb-sync-cache.ts` registers
- * `onupgradeneeded`/`onsuccess`/`onerror` and no `onblocked` (`grep -c` returns
- * 0, as it does for `onversionchange`), so an `indexedDB.open` needing a version
- * upgrade while a stale tab holds the older version fires neither `success` nor
- * `error`. `DB_VERSION` has been bumped twice in this repo.
+ * That was not a hypothetical: before database version 4, `openDB()` in
+ * `packages/sdk/src/browser/cache/idb-sync-cache.ts` had no `onblocked`, so an
+ * `indexedDB.open` needing a version upgrade while a stale tab held the older
+ * version fired neither `success` nor `error`. Version 4 rejects on `blocked`;
+ * this test pins the bound that stays as the defense.
  *
  * Two callers depend on this settling, and BOTH would fail visibly:
  *   - `runSignOut` awaits it before `leave()` — the user could not sign out;

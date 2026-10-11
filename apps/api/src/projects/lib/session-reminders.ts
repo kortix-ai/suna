@@ -17,6 +17,7 @@ import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 import { and, asc, count, eq, isNotNull, sql } from 'drizzle-orm';
+import { REMINDER_ID_PREFIX } from '../../notifications/push-payload';
 import { db } from '../../shared/db';
 import {
   nextTriggerScheduleSlot,
@@ -129,7 +130,7 @@ export function parseReminderDraft(body: Record<string, unknown>, now: Date): Re
 }
 
 export function newReminderId(): string {
-  return `reminder.${randomBytes(6).toString('hex')}`;
+  return `${REMINDER_ID_PREFIX}${randomBytes(6).toString('hex')}`;
 }
 
 /** The trigger spec the scheduler stores and fires for one reminder. */

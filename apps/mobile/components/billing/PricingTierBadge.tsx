@@ -12,28 +12,18 @@ import { THEME } from '@/lib/utils/theme';
 interface PricingTierBadgeProps {
   /** The plan family label: 'Free', 'Team' or 'Enterprise'. */
   planName: string;
-  /** Size variant - matches frontend: xxs, xs, sm, md, lg, xl */
-  size?: 'xxs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 }
 
-const sizeConfig = {
-  xxs: { height: 12 },
-  xs: { height: 14 },
-  sm: { height: 16 },
-  md: { height: 20 },
-  lg: { height: 24 }, // Matches frontend lg size
-  xl: { height: 32 }, // Larger size for billing status page
-};
-
 /**
- * A full-radius light grey pill with dark text in both themes. The text size
- * is derived from `height` instead of a Text variant — one badge renders at
- * 12–32pt.
+ * A full-radius light grey pill with dark text in both themes, 20pt tall
+ * (the `md` size was the only size a caller used).
  */
-function PlanNameBadge({ planName, height }: { planName: string; height: number }) {
+export function PricingTierBadge({ planName }: PricingTierBadgeProps) {
+  const name = planName.trim();
+  const height = 20;
   return (
     <View
-      accessibilityLabel={planName}
+      accessibilityLabel={name}
       style={{
         height,
         borderRadius: height / 2,
@@ -51,13 +41,8 @@ function PlanNameBadge({ planName, height }: { planName: string; height: number 
           lineHeight: height,
           color: THEME.light.foreground,
         }}>
-        {planName}
+        {name}
       </Text>
     </View>
   );
-}
-
-export function PricingTierBadge({ planName, size = 'lg' }: PricingTierBadgeProps) {
-  if (!planName?.trim()) return null;
-  return <PlanNameBadge planName={planName.trim()} height={sizeConfig[size].height} />;
 }

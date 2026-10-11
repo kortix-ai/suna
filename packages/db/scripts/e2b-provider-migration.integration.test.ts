@@ -134,7 +134,7 @@ describe.skipIf(!dockerAvailable)('E2B provider-set migration — real PostgreSQ
   }, 30_000);
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('upgrades historical managed rows without weakening runtime identity', async () => {

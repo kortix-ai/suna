@@ -42,12 +42,11 @@ export {
   legacyReadWorkspaceFromLoadedAgents,
   projectRequiresDeclaredAgents,
   repositoryAccessFromLoadedAgents,
-  requiredConnectorsForAgent,
   resolveAgentGrant,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
   type AgentNotDeclaredError,
   type GovernedAgentGrantResult,
 } from './agents/grants';
-export { agentSpecToTomlEntry, applyAgentScope, manifestHashForAgent } from './agents/crud';
+export { applyAgentScope } from './agents/crud';
 export type { AgentParseError, AgentSpec, GrantSet, LoadedAgents } from './agents/types';

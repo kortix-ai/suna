@@ -2,7 +2,7 @@
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import type { SessionStatus, Todo } from '../core/runtime/runtime-types';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -59,6 +59,12 @@ const IDLE_STATUS = { type: 'idle' } as SessionStatus;
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
+  /**
+   * The session stream is connected (R5.3): no liveness or verify reads.
+   * Omit it when this hook does not watch the stream; another hook on the same
+   * session then decides.
+   */
+  streamConnected?: boolean;
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
@@ -161,9 +167,6 @@ export function livenessBusy(input: {
   return sessionSyncBusy(input) || input.serverHoldsTurn === true;
 }
 
-// `useLayoutEffect` warns during a server render, where it cannot run anyway.
-const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
-
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
   const {
     kortixSessionScope,
@@ -245,18 +248,22 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirror === undefined ? 'read' : mirror === null ? 'null' : 'envelope'
   }${savedChild ? '|child' : ''}`;
   const [mirrorAbsentFor, setMirrorAbsentFor] = useState<string | null>(null);
-  // A LAYOUT effect, so the copy kept on this device paints before the browser
-  // does: the first frame of an open shows the transcript, not placeholder rows.
-  useIsomorphicLayoutEffect(() => {
+  // A passive effect: the device's copy is read asynchronously (IndexedDB on
+  // web, AsyncStorage on mobile) and paints one task after the first frame.
+  // A layout effect over a synchronous localStorage read parsed up to 300 KB
+  // before the browser painted anything.
+  useEffect(() => {
     if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
+    // An EMPTY runtime read is not the thread: it is lost box state, so the
+    // saved copy still paints over it.
     // An earlier SAVED copy is not a live read. The host's copy arrives in a
     // later run (`mirror` goes from null to the envelope) and reconciles
     // into it; returning here kept a reload on the device's older copy until
     // the computer woke.
     const overSavedCopy = hasOnlyCacheSourcedMessages(sessionId);
-    if (sessionId in useSyncStore.getState().messages && !overSavedCopy) return;
+    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0 && !overSavedCopy) return;
     const abort = new AbortController();
     const scope = parseKortixSessionScope(kortixSessionScope);
     // A sub-agent keeps nothing on the device: the scope's slot is the
@@ -273,7 +280,6 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           envelope,
           runtimeSessionId: sessionId,
           hasMessages: replaceable ? false : (state.messages[sessionId]?.length ?? 0) > 0,
-          hasLoadedTranscript: replaceable ? false : sessionId in state.messages,
         })
       ) {
         return false;
@@ -285,9 +291,8 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       return true;
     };
 
-    // 1. The saved copy this device kept from the last open. Synchronous on
-    //    web, so it paints in this very commit. Not read again over a saved
-    //    copy already on screen: that one is this copy or newer.
+    // 1. The saved copy this device kept from the last open. Not read again
+    //    over a saved copy already on screen: that one is this copy or newer.
     let local: SessionTranscriptSyncEnvelope | null = null;
     const applyLocal = (envelope: SessionTranscriptSyncEnvelope | null) => {
       if (abort.signal.aborted || !envelope) return;
@@ -472,16 +477,27 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // poll's switch are the same rule instead of two.
   const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
-  // What the saved-copy paint came to. `painted` and "a read already landed"
-  // are read off the store; only a refused or empty answer needs its own slot.
+  // What the saved-copy paint came to. `painted` is read off the store; only
+  // a refused or empty answer needs its own slot. A landed runtime read with
+  // no messages is NOT an answer: it is lost box state, and the saved copy may
+  // still paint over it (the paint effect's gate), so it stays `loading`.
   const mirrorState: 'idle' | 'loading' | 'painted' | 'absent' =
     !canQueryRuntimeSession(sessionId) || !kortixSessionScope
       ? 'idle'
       : messages.length > 0
         ? 'painted'
-        : !isLoading || mirrorAbsentFor === mirrorKey
+        : mirrorAbsentFor === mirrorKey
           ? 'absent'
           : 'loading';
+
+  // The controller is shared by every hook on this session. Only a hook that
+  // passes `streamConnected` speaks for the stream; one that omits it (an
+  // export dialog) must not switch the verification poll back on.
+  useEffect(() => {
+    if (options.streamConnected === undefined) return;
+    controller.setStreamReliable(options.streamConnected);
+    return () => controller.setStreamReliable(false);
+  }, [controller, options.streamConnected]);
 
   useEffect(() => {
     // No runtime session to read (`''` under `useSession({ chatEngine: false })`):

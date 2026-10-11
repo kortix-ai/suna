@@ -15,10 +15,6 @@ const projectHomeSource = readFileSync(
   join(import.meta.dir, '../workspace/project-layout/project-home.tsx'),
   'utf8',
 );
-const setupChecklistSource = readFileSync(
-  join(import.meta.dir, '../workspace/project-layout/home/setup-checklist.tsx'),
-  'utf8',
-);
 const projectPendingSource = readFileSync(
   join(import.meta.dir, '../../components/projects/project-pending-screen.tsx'),
   'utf8',
@@ -87,13 +83,5 @@ describe('session navigation loading boundaries', () => {
     expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');
-
-    // The setup checklist DOES read project access — it is how the "Invite
-    // your team" step knows it is done. The rule the boundary cares about is
-    // unchanged and now lives there: that read is `enabled`-gated, so it
-    // cannot be in flight on a first paint, and it gates no rendering. The
-    // checklist paints its rows from the IAM probe alone.
-    expect(setupChecklistSource).toContain("enabled: wants('team')");
-    expect(setupChecklistSource).toContain('const live = hidden === false;');
   });
 });

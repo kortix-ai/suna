@@ -16,7 +16,7 @@ import { accountMembers, accountSecretGrants, accountSecretResources, accounts, 
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
-  coolDownAccountSecret, encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
+  clearAccountSecretCooldown, coolDownAccountSecret, encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
   resolveProjectSharedProviderSecrets,
 } from '../secrets/account-resource';
 import { mayUseProviderKeys, providerEnvVarOf } from '../secrets/provider-key-selection';
@@ -325,5 +325,47 @@ describe('resolveProjectSharedProviderSecrets: the ChatGPT accounts an unconfigu
     });
     expect(rested.coolingDown).toBe(true);
     expect(rested.retryAfterSeconds).toBeGreaterThan(414_000);
+  });
+
+  // A user can reset ChatGPT usage before the hinted reset (2026-10-06: the
+  // project stayed on paid fallback for days). Every limit schedules a re-try
+  // 15 minutes out; the first resolve after it lifts the rest so real traffic
+  // re-tries the account. A second limit rests it again, 15 more minutes.
+  test('15 minutes after a usage limit, the next resolve lifts the rest once; another limit rests it again', async () => {
+    await seedCodex('reset-early');
+    const id = codex['reset-early']!;
+    const one = () => resolveProjectSharedProviderSecrets({
+      accountId, projectId, userId: READER, grantUserId: null, providerId: 'codex', name: CODEX, ids: [id],
+    });
+    const row = async () => (await db.select({ until: accountSecretResources.cooldownUntil, probe: accountSecretResources.cooldownProbeAt })
+      .from(accountSecretResources).where(eq(accountSecretResources.secretId, id)))[0]!;
+
+    await coolDownAccountSecret(id, accountId, 414_374);
+    expect(Math.abs((await row()).probe!.getTime() - (Date.now() + 15 * 60_000))).toBeLessThan(15_000);
+    expect((await one()).coolingDown).toBe(true);
+
+    await db.update(accountSecretResources).set({ cooldownProbeAt: new Date(Date.now() - 1_000) })
+      .where(eq(accountSecretResources.secretId, id));
+    const lifted = await one();
+    expect(lifted.coolingDown).toBe(false);
+    expect(labels(lifted.secrets)).toEqual(['reset-early']);
+    const after = await row();
+    expect(after.until).toBeNull();
+    expect(Math.abs(after.probe!.getTime() - (Date.now() + 15 * 60_000))).toBeLessThan(15_000);
+
+    await coolDownAccountSecret(id, accountId, 414_374);
+    expect((await one()).coolingDown).toBe(true);
+  });
+
+  test('clearing a cooldown makes the account usable at once', async () => {
+    await seedCodex('owner-retry');
+    const id = codex['owner-retry']!;
+    await coolDownAccountSecret(id, accountId, 414_374);
+    expect(await clearAccountSecretCooldown(id, accountId)).toBe(true);
+    const result = await resolveProjectSharedProviderSecrets({
+      accountId, projectId, userId: READER, grantUserId: null, providerId: 'codex', name: CODEX, ids: [id],
+    });
+    expect(labels(result.secrets)).toEqual(['owner-retry']);
+    expect(await clearAccountSecretCooldown('00000000-0000-0000-0000-000000000000', accountId)).toBe(false);
   });
 });

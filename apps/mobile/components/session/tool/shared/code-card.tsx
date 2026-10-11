@@ -131,11 +131,14 @@ export function ToolCode({ code, language }: { code: string; language: string })
   );
 }
 
-/** Markdown in a tool body (web `text-sm` + `MD_FLUSH_CLASSES` + `UnifiedMarkdown`). */
-export function ToolMarkdown({ content, isStreaming = false }: { content: string; isStreaming?: boolean }) {
+/**
+ * Markdown in a tool body (web `text-sm` + `MD_FLUSH_CLASSES` + `UnifiedMarkdown`).
+ * `surface`: the card fill behind it, for its tables.
+ */
+export function ToolMarkdown({ content, isStreaming = false, surface }: { content: string; isStreaming?: boolean; surface?: string }) {
   const { colorScheme } = useColorScheme();
   return (
-    <SelectableMarkdownText isDark={colorScheme === 'dark'} isStreaming={isStreaming}>
+    <SelectableMarkdownText isDark={colorScheme === 'dark'} isStreaming={isStreaming} surface={surface}>
       {content}
     </SelectableMarkdownText>
   );
@@ -203,12 +206,13 @@ export function MarkdownFrontmatterCard({ data }: { data: Record<string, Frontma
 }
 
 export function ToolMarkdownCard({ code }: { code: string }) {
+  const frame = useToolCardFrame();
   if (!code) return null;
   const { frontmatter, body } = parseFrontmatter(code);
   return (
     <PayloadCard copyText={code}>
       {frontmatter ? <MarkdownFrontmatterCard data={frontmatter} /> : null}
-      <ToolMarkdown content={body} />
+      <ToolMarkdown content={body} surface={frame?.backgroundColor} />
     </PayloadCard>
   );
 }

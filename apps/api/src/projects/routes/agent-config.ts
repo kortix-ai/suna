@@ -84,6 +84,16 @@ const GrantSetSchema = z.union([
   z.array(z.string().min(1).max(200)).max(500),
 ]);
 
+// `agents.<name>.tools` (`AgentToolsV2`): all/none, an allowlist, an
+// exclude list, or the earlier name → boolean map. validateManifest checks the names.
+const AgentToolsSchema = z.union([
+  z.literal('all'),
+  z.literal('none'),
+  z.array(z.string().min(1).max(200)).max(500),
+  z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+  z.record(z.string(), z.boolean()),
+]);
+
 // The KORTIX layer — governance only (spec §2.2 redirect). No model, no
 // description, no behavior: those all moved into `opencode` (defined in
 // ../lib/compile-agent-config alongside its canonical KNOWN_BEHAVIOR_KEYS —
@@ -92,7 +102,7 @@ const GrantSetSchema = z.union([
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
-    tools: z.record(z.string(), z.boolean()).optional(),
+    tools: AgentToolsSchema.optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
     connectors: GrantSetSchema.optional(),
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),

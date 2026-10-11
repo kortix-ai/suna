@@ -220,12 +220,8 @@ export function ProjectHomeWelcomeBody({
         </div>
 
         {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
-            have the chat input there & that's it"). The "Get started" setup
-            checklist (`ProjectHomeSections`) and the "Start with" starter
-            prompts (`StarterPromptBand`) both used to fill this slot; both
-            components still exist for hosts that want them, and the setup
-            steps stay reachable from Customize. `onPickSuggestion` stays on
-            the props so those hosts keep their contract. */}
+            have the chat input there & that's it"). The setup steps stay
+            reachable from Customize. */}
       </div>
     </div>
   );

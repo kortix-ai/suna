@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -12,7 +12,12 @@ import {
   createSavedCopyStore,
   setSavedCopyStore,
 } from '../core/session-sync/saved-copy-store';
-import { useSessionSync } from './use-session-sync';
+
+// A browser has a `window`; the hook picks its effect kinds at load. Loaded
+// after this line, so the commit-phase test below sees what a browser runs.
+const hadWindow = 'window' in globalThis;
+if (!hadWindow) (globalThis as { window?: unknown }).window = globalThis;
+const { useSessionSync } = await import('./use-session-sync');
 
 /**
  * The saved copy the server sent at the LAST open is kept on the device, so
@@ -25,6 +30,10 @@ import { useSessionSync } from './use-session-sync';
 const originalFetch = globalThis.fetch;
 let root: ReactTestRenderer | undefined;
 const touched: string[] = [];
+
+afterAll(() => {
+  if (!hadWindow) delete (globalThis as { window?: unknown }).window;
+});
 
 afterEach(async () => {
   if (root) await act(async () => root?.unmount());
@@ -116,14 +125,56 @@ async function seeded(rootId: string, count: number): Promise<SavedCopyStore & {
   return Object.assign(store, { storage });
 }
 
-test('the local copy paints in the first frame, before the server answers', async () => {
-  await seeded('ses_local_first', 2);
+test('the local copy paints before the server answers', async () => {
+  // The web keeps saved copies in IndexedDB, so the read is asynchronous: the
+  // copy paints one task after the first frame, not inside it.
+  const store = await seeded('ses_local_first', 2);
+  const { storage } = store;
+  const sync = { ...storage };
+  storage.getItem = async (key) => sync.getItem(key);
   heldFetch();
 
   const hook = await mount('ses_local_first', offline);
+  await settle();
 
   expect(hook.value().messages).toHaveLength(2);
   expect(hook.value().mirrorState).toBe('painted');
+});
+
+test('the saved copy is never read during the commit, so no parse delays the first frame', async () => {
+  const store = await seeded('ses_local_commit', 2);
+  const { storage } = store;
+  const read = storage.getItem;
+  let reads = 0;
+  storage.getItem = (key) => {
+    reads += 1;
+    return read(key);
+  };
+  heldFetch();
+  touched.push('ses_local_commit');
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  let readsInCommit = -1;
+  let value!: ReturnType<typeof useSessionSync>;
+  function Probe() {
+    value = useSessionSync('ses_local_commit', offline);
+    return null;
+  }
+  // A parent's layout effect runs after every child's: it sees what the
+  // child's layout effects did in this commit.
+  function Parent() {
+    React.useLayoutEffect(() => {
+      readsInCommit = reads;
+    }, []);
+    return React.createElement(Probe);
+  }
+  await act(async () => {
+    root = create(React.createElement(Parent));
+  });
+  await settle();
+
+  expect(readsInCommit).toBe(0);
+  expect(reads).toBeGreaterThan(0);
+  expect(value.messages).toHaveLength(2);
 });
 
 test("the server's newer copy reconciles into the local one and is kept for the next open", async () => {

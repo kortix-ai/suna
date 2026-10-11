@@ -6,6 +6,7 @@ import {
   RequestTooLargeError,
   featureDisabledKey,
   formatBillingErrorForUI,
+  isAuthFailure,
   isBillingError,
   isFeatureDisabledError,
   parseBillingError,
@@ -348,12 +349,29 @@ test('BillingError and RequestTooLargeError are ApiErrors, so one instanceof che
 
 test('parseBillingError keeps the source error code, body and response on the BillingError', () => {
   const response = new Response(null, { status: 402 });
-  const body = { error: 'Budget exceeded', code: 'app_budget_exceeded', balance: 0 };
-  const source = new ApiError('Budget exceeded', { status: 402, code: 'app_budget_exceeded', details: body, data: body, response });
+  const body = { error: 'Account unfunded', code: 'app_account_unfunded', balance: 0 };
+  const source = new ApiError('Account unfunded', { status: 402, code: 'app_account_unfunded', details: body, data: body, response });
   const billing = parseBillingError(source) as BillingError;
   expect(billing).toBeInstanceOf(BillingError);
-  expect(billing.code).toBe('app_budget_exceeded');
+  expect(billing.code).toBe('app_account_unfunded');
   expect(billing.details).toEqual(body);
   expect(billing.response).toBe(response);
-  expect(billing.message).toBe('Budget exceeded');
+  expect(billing.message).toBe('Account unfunded');
+});
+
+// ── isAuthFailure ────────────────────────────────────────────────────────────
+
+test('isAuthFailure is true for a 401 or 403 status and for AuthError, by status not by message', () => {
+  expect(isAuthFailure(new ApiError('x', { status: 401 }))).toBe(true);
+  expect(isAuthFailure(new ApiError('x', { status: 403 }))).toBe(true);
+  expect(isAuthFailure(new AuthError())).toBe(true);
+  // Duck-typed: a second copy of the class (dual package) or a host error with `.status`.
+  expect(isAuthFailure(Object.assign(new Error('x'), { status: 401 }))).toBe(true);
+});
+
+test('isAuthFailure is false when 401 or 403 only appears in the text', () => {
+  expect(isAuthFailure(new ApiError('GET /sessions/4017 failed', { status: 500 }))).toBe(false);
+  expect(isAuthFailure(new Error('port 4030 refused'))).toBe(false);
+  expect(isAuthFailure(new Error('Unauthorized'))).toBe(false);
+  expect(isAuthFailure(null)).toBe(false);
 });

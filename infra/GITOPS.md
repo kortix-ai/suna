@@ -116,7 +116,7 @@ remain compatible with the selected application version.
 Run the workflow with:
 
 ```bash
-gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
+gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref dev \
   -f version=vX.Y.Z \
   -f reason="<incident>" \
   -f confirm="ROLLBACK PROD"

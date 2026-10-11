@@ -23,3 +23,21 @@ export function failureShownByTurn(failure: PersistedFailure, turns: Turn[]): bo
   const text = persistedFailureText(failure.error);
   return Boolean(text) && turns.some((turn) => getTurnError(turn) === text);
 }
+
+/**
+ * Did a later turn replace a ledger failure that is not in the transcript? An
+ * edit rewinds the failed message and sends a new one, and the ledger still
+ * lists the old failure, so the row stayed under the new turn. A failure with
+ * no transcript turn sent after it (an admission rejection) still shows.
+ */
+export function failureSupersededByTurn(
+  failure: PersistedFailure & { ended_at?: string | null },
+  turns: Turn[],
+): boolean {
+  const endedMs = failure.ended_at ? Date.parse(failure.ended_at) : Number.NaN;
+  if (!Number.isFinite(endedMs)) return false;
+  return turns.some((turn) => {
+    const created = turn.userMessage.info.time?.created;
+    return typeof created === 'number' && created > endedMs;
+  });
+}

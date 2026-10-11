@@ -67,9 +67,10 @@ export async function repairLegacyInlineAttachments(input: {
   loadPendingFirst: () => Promise<LegacyPendingFirstPrompt | null>;
   readMessage: (messageId: string) => Promise<LegacyRuntimeMessage | null>;
   materialize: (parts: PromptPartWire[], key: string) => Promise<PromptPartWire[]>;
-  updatePart: (input: { messageId: string; partId: string; text: string }) => Promise<void>;
+  /** `unsupported`: the runtime edits no parts (pi answers 501). */
+  updatePart: (input: { messageId: string; partId: string; text: string }) => Promise<void | 'updated' | 'unsupported'>;
   markRepaired: () => Promise<void>;
-}): Promise<{ repaired: number }> {
+}): Promise<{ repaired: number; unsupported?: true }> {
   const pending = await input.loadPendingFirst();
   if (!pending) {
     await input.markRepaired();
@@ -167,11 +168,18 @@ export async function repairLegacyInlineAttachments(input: {
   });
   for (const replacement of replacements) {
     if (replacement.alreadyRepaired) continue;
-    await input.updatePart({
+    const updated = await input.updatePart({
       messageId: message.info.id,
       partId: replacement.partId,
       text: replacement.text,
     });
+    // A runtime that edits no parts never hands the model a non-native file
+    // inline (pi sends images only), so there is nothing to repair there.
+    // Marked, so the next delivery does not try again.
+    if (updated === 'unsupported') {
+      await input.markRepaired();
+      return { repaired: 0, unsupported: true };
+    }
   }
   await input.markRepaired();
   return { repaired: candidates.length };

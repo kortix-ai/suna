@@ -39,7 +39,7 @@ env:
   # Credentials are NOT here: a workflow-level env cannot read AWS. Every job
   # that talks to staging reads them first thing through .github/actions/aws-env
   # (the "Read staging credentials" step), from kortix-staging-env,
-  # kortix-staging-web-env, and kortix-ci-env. Notes on the less obvious ones:
+  # kortix-staging-euw2-web-env, and kortix-ci-env. Notes on the less obvious ones:
   # - VERCEL_AUTOMATION_BYPASS_SECRET: staging is behind Vercel SSO deployment
   #   protection; the browser lane must send x-vercel-protection-bypass
   #   (playwright.config) or every authenticated page 302s to vercel.com/sso-api.
@@ -61,16 +61,16 @@ jobs:
   # release: the shards still run, and the next run sweeps again.
   sweep-before:
     name: sweep stale test accounts
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     timeout-minutes: 15
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -90,17 +90,17 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -136,7 +136,7 @@ jobs:
     # failed, or was cancelled by its own cap — its result must never gate the
     # release (see the note on sweep-before).
     if: ${{ !cancelled() }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -209,9 +209,9 @@ jobs:
       KE2E_SANDBOX_WORKERS: '1'
       KE2E_TIMEOUT_ATTEMPTS: '2'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -231,7 +231,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
@@ -262,13 +262,13 @@ jobs:
           }
           echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
           echo "Expected deployed staging SHA: $source_sha (from $origin)"
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -314,7 +314,7 @@ jobs:
             exit 1
           fi
           echo "No secret-shaped values found."
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         # Cancellation can leave raw Playwright traces before reporter scrubbing.
         if: ${{ always() && steps.artifact-secrets.outcome == 'success' }}
         with:
@@ -330,7 +330,7 @@ jobs:
     name: deployed browser shard
     needs: sweep-before
     if: ${{ !cancelled() }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -350,9 +350,9 @@ jobs:
       # not "skipped" — the strict-skip reporter stays strict. See #6584.
       E2E_EXCLUDE_TAGS: '@quarantine'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -372,7 +372,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
@@ -403,13 +403,13 @@ jobs:
           }
           echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
           echo "Expected deployed staging SHA: $source_sha (from $origin)"
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -448,7 +448,7 @@ jobs:
             exit 1
           fi
           echo "No secret-shaped values found."
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         # Cancellation can leave raw Playwright traces before reporter scrubbing.
         if: ${{ always() && steps.artifact-secrets.outcome == 'success' }}
         with:
@@ -466,16 +466,16 @@ jobs:
     name: sweep this run's test accounts
     needs: [api, browser]
     if: always()
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     timeout-minutes: 15
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -495,17 +495,17 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -530,7 +530,7 @@ jobs:
     name: full suite + quality gates
     needs: [api, browser]
     if: always()
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require every deployed shard to pass

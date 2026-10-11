@@ -8,13 +8,16 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { TurnPermissionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { projectsApp } from '../lib/app';
+import { askNotificationContext } from '../lib/notification-recipients';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 
 // POST /v1/projects/:projectId/turn-permission
 // Sandbox-to-apps/api relay for a harness permission request, from OpenCode
 // and pi alike (apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts `relayPermission`).
-// It only notifies: the session creator's devices get one "needs your
-// approval" push per request id. It never answers the permission — the user
+// It only notifies: one "needs your approval" notification per request id, to
+// the person who prompted the running turn and the session's watchers
+// (KRTX-1742), or, with the project's notification_center flag off, to the
+// session creator's phones. It never answers the permission — the user
 // approves in the session UI, over the harness's own API. Session resolution
 // matches POST /turn-question (routes/turn-questions.ts), but only a sandbox
 // credential may call it.
@@ -90,7 +93,11 @@ export function registerTurnPermissionsRoutes(): void {
       }
 
       const [session] = await db
-        .select({ sessionId: projectSessions.sessionId })
+        .select({
+          sessionId: projectSessions.sessionId,
+          origin: projectSessions.origin,
+          metadata: projectSessions.metadata,
+        })
         .from(projectSessions)
         .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
         .limit(1);
@@ -106,8 +113,17 @@ export function registerTurnPermissionsRoutes(): void {
         return c.json({ error: `request_id exceeds ${MAX_REQUEST_ID_CHARS} characters` }, 400);
       }
 
-      // Fire-and-forget, one push per request id (notifications/permission-push.ts).
-      const notified = permissionPushGate.notify({ sessionId, projectId, requestId });
+      // One notification per request id across replicas; it is not awaited
+      // (notifications/permission-push.ts). It reaches the person who prompted
+      // the running turn and the session's (or the trigger's) watchers. The
+      // notifier resolves this context only when the flag is on.
+      const notified = await permissionPushGate.notify({
+        sessionId,
+        projectId,
+        requestId,
+        context: () =>
+          askNotificationContext({ sessionId, projectId, accountId, metadata: session.metadata, origin: session.origin }),
+      });
       return c.json({ ok: true, notified });
     },
   );

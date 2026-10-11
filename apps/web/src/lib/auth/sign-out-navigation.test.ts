@@ -132,10 +132,12 @@ describe('the one sign-out leaves on a document load', () => {
   test('performSignOut hands `leave` a window.location.assign', () => {
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
+      'export async function performSignOut(',
       '\n}\n',
     );
-    expect(body).toContain('window.location.assign(destination)');
+    expect(body).toContain('window.location.assign(target === SIGN_OUT_DESTINATION ? destination : target)');
+    // The one destination: `/auth`, or `/auth?returnUrl=<same-origin path>`.
+    expect(body).toContain('const destination = signOutDestination(options?.returnUrl);');
   });
 
   test('neither the wiring nor the sequence holds a router at all', () => {
@@ -183,12 +185,11 @@ describe('the server half of the sign-out', () => {
 });
 
 describe('nothing on an identity change can wait forever', () => {
-  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` `openDB()` registers
-  // `onupgradeneeded`/`onsuccess`/`onerror` and NO `onblocked`, and the file has
-  // no `onversionchange` either. A version upgrade blocked by a tab still
-  // holding the old version settles neither `success` nor `error`, and
-  // `dbPromise` is memoized so every later caller parks behind it. That is not
-  // hypothetical: `DB_VERSION` has been bumped twice in this repo's history.
+  // Before database version 4, `openDB()` in
+  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` had no `onblocked`. A
+  // version upgrade blocked by a tab still holding the old version settled
+  // neither `success` nor `error`, and the memoized open parked every later
+  // caller. Version 4 rejects on `blocked`; the bound stays as the defense.
   //
   // Unbounded, that single promise could (a) stop a user signing out at all,
   // and (b) park the whole app on its loading frame at SIGN-IN, because
@@ -325,12 +326,12 @@ describe('the signed-out route guards do not race the exit', () => {
     // now stands down for them.
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
+      'export async function performSignOut(',
       '\n}\n',
     );
     expect(body).toContain('} finally {');
     expect(body).toContain('if (!left) {');
-    expect(body).toContain('window.location.assign(SIGN_OUT_DESTINATION);');
+    expect(body).toContain('window.location.assign(destination);');
   });
 });
 
@@ -376,7 +377,7 @@ describe('a sign-out that the server refuses still signs the user out', () => {
     // session is the exact bounce-back-in symptom the step exists to prevent.
     const fallback = slice(wiring, '  } finally {', '\n}\n');
     const expire = fallback.indexOf('expireSupabaseAuthCookie();');
-    const leave = fallback.indexOf('window.location.assign(SIGN_OUT_DESTINATION);');
+    const leave = fallback.indexOf('window.location.assign(destination);');
 
     expect(expire).toBeGreaterThan(-1);
     expect(leave).toBeGreaterThan(expire);

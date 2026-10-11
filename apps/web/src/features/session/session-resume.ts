@@ -1,3 +1,5 @@
+import { wakeProgressFingerprint } from '@kortix/sdk';
+
 /**
  * Resume-decision helpers for the session view.
  *
@@ -138,4 +140,45 @@ export function isWakeClassFailure(input: WakeFailureInput): boolean {
     stopReason === 'runtime_wake_failed' ||
     stopReason === 'runtime_boot_failed'
   );
+}
+
+/** A wake metadata clock, or null when the row does not carry it. */
+function wakeClock(sandbox: ResumableSandboxLike | null | undefined, key: string): string | null {
+  const value = sandbox?.metadata?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Everything observable about a wake, as the escalation ladder's progress
+ * fingerprint. Any change is progress.
+ *
+ * `runtimeWakeProgressAt` is the server's heartbeat. A cold restore runs
+ * inside the provider's `start()` (Platinum: 100–546 s measured) and the box
+ * reads `stopped` the whole time, so without it a healthy restore looked
+ * silent: the ladder retried and restarted it at 75 s, and the page showed
+ * the "stopped" error card at 90 s.
+ */
+export function sessionWakeProgress(input: {
+  stage: string | null | undefined;
+  reason: string | null | undefined;
+  sandbox: ResumableSandboxLike | null | undefined;
+  runtimeSessionId?: string | null;
+  runtimeConnectionStatus?: string | null;
+  runtimeHealthy?: boolean;
+  runtimeVersion?: string | null;
+  runtimeProbeError?: string | null;
+}): string {
+  return wakeProgressFingerprint([
+    input.stage,
+    input.reason,
+    input.sandbox?.status,
+    wakeClock(input.sandbox, 'stopReason'),
+    wakeClock(input.sandbox, 'runtimeWakeStartedAt'),
+    wakeClock(input.sandbox, 'runtimeWakeProgressAt'),
+    input.runtimeSessionId,
+    input.runtimeConnectionStatus,
+    input.runtimeHealthy,
+    input.runtimeVersion,
+    input.runtimeProbeError,
+  ]);
 }

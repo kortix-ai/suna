@@ -14,7 +14,7 @@ terraform apply
 
 The stack owns `https://dev.kortix.com`. The Deploy Dev workflow also updates
 this CNAME before it verifies the deployed frontend. Vercel is disabled for the
-`main` branch.
+`dev` branch.
 
 The remote state owns the existing `dev.kortix.com` Cloudflare record at
 `module.dns[0].cloudflare_record.this[\"dev\"]`. The cutover imported record

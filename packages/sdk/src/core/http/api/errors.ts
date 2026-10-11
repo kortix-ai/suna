@@ -5,7 +5,7 @@
  * `BillingError` (HTTP 402) and `RequestTooLargeError` (HTTP 431) are
  * subclasses, so `err instanceof ApiError` covers them all and `.status` /
  * `.code` read the same way on each. A 402 body carries a machine `code`
- * (e.g. `app_budget_exceeded`) and fields such as `billing_state` and
+ * (e.g. `app_account_unfunded`) and fields such as `billing_state` and
  * `balance`; `BillingError.code` is that code and `BillingError.detail` the
  * body.
  */
@@ -259,6 +259,18 @@ export function parseBillingError(error: any): Error {
  */
 export function isBillingError(error: any): boolean {
   return error instanceof BillingError;
+}
+
+/**
+ * Did the server (or the missing token) refuse this caller's credential?
+ * Decides on `status` (401, 403) or `AuthError`, never on message text: an id or
+ * URL that contains "401" is not an auth failure. Duck-typed on `status` so an
+ * error from a second copy of this class (dual package) still counts.
+ */
+export function isAuthFailure(error: unknown): boolean {
+  if (error instanceof AuthError) return true;
+  const status = (error as { status?: unknown } | null | undefined)?.status;
+  return status === 401 || status === 403;
 }
 
 // ============================================================================

@@ -1,6 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { platinumJson, platinumJsonResponse, isPlatinumConfigured } from '../../shared/platinum';
-import { normalizeExistingProviderState } from './state';
 import type { BuildLogTap } from './index';
 import { shortLivedObservation } from '../observation-cache';
 import { classifyPlatinumPollError, isTerminalPollError, retryAfterMsFromError } from './platinum-poll-classify';

@@ -34,7 +34,6 @@ const TARGET = {
   repoUrl: '/tmp/repo.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
-  projectMetadata: {},
   baseRef: 'main',
   agentName: 'kortix',
   sessionMetadata: {},
@@ -77,7 +76,6 @@ function pod(bus: ReturnType<typeof fakeBus>, resolves: () => string) {
     runningReleaseId: () => RELEASE_BEFORE_THE_PUSH,
     probeRunningRelease: async () => RELEASE_BEFORE_THE_PUSH,
     converge: async () => 'converged',
-    releasesEnabled: () => true,
     now: () => Date.now(),
   });
   return { cache, invalidate, deps, resolveCalls: () => resolveCalls };
@@ -115,7 +113,6 @@ describe('a base move invalidates the desired release in EVERY api process', () 
       runningReleaseId: () => RELEASE_BEFORE_THE_PUSH,
       probeRunningRelease: async () => RELEASE_BEFORE_THE_PUSH,
       converge: async () => 'converged',
-      releasesEnabled: () => true,
       now: () => Date.now(),
     };
     expect((await convergeBeforeTurnStart(SESSION, deps)).decision).toBe('current');

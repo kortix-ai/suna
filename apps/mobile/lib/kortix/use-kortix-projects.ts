@@ -1,11 +1,25 @@
 /**
  * Kortix Projects hooks — ported from apps/web/src/hooks/kortix/use-kortix-projects.ts
  *
- * Fetches from kortix-master's /kortix/projects API through the sandbox URL.
+ * Reads kortix-master's /kortix/projects and /kortix/tasks through `@kortix/sdk`
+ * (`runtime/kortix-master.ts`). That client is @deprecated: kortixd answers
+ * every /kortix/projects and /kortix/tasks route with 404 `unknown kortix
+ * route`, so ProjectDetailPage shows its error state on every current sandbox.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAuthToken } from '@/api/config';
+import {
+  approveTask,
+  createTask,
+  deleteKortixProject,
+  deleteTask,
+  getKortixProject,
+  listKortixProjectSessions,
+  listTasks,
+  patchKortixProject,
+  startTask,
+  updateTask,
+} from '@kortix/sdk';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,46 +110,6 @@ export interface KortixTask {
   updated_at: string;
 }
 
-export interface KortixAgent {
-  id: string;
-  project_id: string;
-  session_id: string;
-  parent_session_id: string;
-  agent_type: string;
-  description: string;
-  status: 'running' | 'completed' | 'failed' | 'stopped';
-  result: string | null;
-  verification_summary: string | null;
-  blocking_question: string | null;
-  owner_session_id: string | null;
-  owner_agent: string | null;
-  requested_by_session_id?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-// ── Fetch helper ─────────────────────────────────────────────────────────────
-
-async function kortixFetch<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const token = await getAuthToken();
-  const url = `${sandboxUrl.replace(/\/+$/, '')}${path}`;
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Kortix API ${res.status}: ${text.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
 // ── Query keys ───────────────────────────────────────────────────────────────
 
 export const kortixKeys = {
@@ -144,60 +118,14 @@ export const kortixKeys = {
   projectSessions: (url: string, id: string) =>
     ['kortix', 'projects', url, id, 'sessions'] as const,
   tasks: (url: string, projectId: string) => ['kortix', 'tasks', url, projectId] as const,
-  agents: (url: string, projectId: string) => ['kortix', 'agents', url, projectId] as const,
-  connectors: (url: string) => ['kortix', 'connectors', url] as const,
 };
 
-// ── Connector types & hooks ──────────────────────────────────────────────────
-
-export interface KortixConnector {
-  id: string;
-  name: string;
-  description: string | null;
-  source: string | null;
-  pipedream_slug: string | null;
-  env_keys: string[] | null;
-  notes: string | null;
-  auto_generated: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export function useKortixConnectors(sandboxUrl: string | undefined) {
-  return useQuery<KortixConnector[]>({
-    queryKey: kortixKeys.connectors(sandboxUrl || ''),
-    queryFn: async () => {
-      const data = await kortixFetch<{ connectors?: KortixConnector[] } | KortixConnector[]>(
-        sandboxUrl!,
-        '/kortix/connectors',
-      );
-      if (Array.isArray(data)) return data;
-      return data.connectors ?? [];
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 30_000,
-    retry: 2,
-  });
-}
-
 // ── Project hooks ────────────────────────────────────────────────────────────
-
-export function useKortixProjects(sandboxUrl: string | undefined) {
-  return useQuery<KortixProject[]>({
-    queryKey: kortixKeys.projects(sandboxUrl || ''),
-    queryFn: () => kortixFetch<KortixProject[]>(sandboxUrl!, '/kortix/projects'),
-    enabled: !!sandboxUrl,
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-    retry: 2,
-  });
-}
 
 export function useKortixProject(sandboxUrl: string | undefined, id: string) {
   return useQuery<KortixProject>({
     queryKey: kortixKeys.project(sandboxUrl || '', id),
-    queryFn: () =>
-      kortixFetch<KortixProject>(sandboxUrl!, `/kortix/projects/${encodeURIComponent(id)}`),
+    queryFn: () => getKortixProject(sandboxUrl!, id) as Promise<KortixProject>,
     enabled: !!sandboxUrl && !!id,
     staleTime: 15_000,
     retry: 2,
@@ -207,8 +135,7 @@ export function useKortixProject(sandboxUrl: string | undefined, id: string) {
 export function useKortixProjectSessions(sandboxUrl: string | undefined, projectId: string) {
   return useQuery<any[]>({
     queryKey: kortixKeys.projectSessions(sandboxUrl || '', projectId),
-    queryFn: () =>
-      kortixFetch<any[]>(sandboxUrl!, `/kortix/projects/${encodeURIComponent(projectId)}/sessions`),
+    queryFn: () => listKortixProjectSessions(sandboxUrl!, projectId),
     enabled: !!sandboxUrl && !!projectId,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
@@ -217,11 +144,10 @@ export function useKortixProjectSessions(sandboxUrl: string | undefined, project
 }
 
 export function useKortixTasks(sandboxUrl: string | undefined, projectId: string | undefined) {
-  const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
   return useQuery<KortixTask[]>({
     queryKey: kortixKeys.tasks(sandboxUrl || '', projectId || ''),
     queryFn: async () => {
-      const rows = await kortixFetch<any[]>(sandboxUrl!, `/kortix/tasks${qs}`);
+      const rows = await listTasks(sandboxUrl!, { projectId });
       return Array.isArray(rows) ? rows.map(normalizeTask) : [];
     },
     enabled: !!sandboxUrl && !!projectId,
@@ -230,45 +156,13 @@ export function useKortixTasks(sandboxUrl: string | undefined, projectId: string
   });
 }
 
-/** Fetch a single task by ID (ported from web 26cf37f). */
-export function useKortixTask(sandboxUrl: string | undefined, id: string | undefined) {
-  return useQuery<KortixTask>({
-    queryKey: ['kortix', 'tasks', sandboxUrl || '', 'detail', id || ''],
-    queryFn: async () => {
-      const raw = await kortixFetch<any>(sandboxUrl!, `/kortix/tasks/${encodeURIComponent(id!)}`);
-      return normalizeTask(raw);
-    },
-    enabled: !!sandboxUrl && !!id,
-    refetchInterval: 5000,
-    retry: 2,
-  });
-}
-
-export function useKortixAgents(sandboxUrl: string | undefined, projectId: string | undefined) {
-  const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-  return useQuery<KortixAgent[]>({
-    queryKey: kortixKeys.agents(sandboxUrl || '', projectId || ''),
-    queryFn: async () => {
-      try {
-        return await kortixFetch<KortixAgent[]>(sandboxUrl!, `/kortix/agents${qs}`);
-      } catch {
-        return [];
-      }
-    },
-    enabled: !!sandboxUrl && !!projectId,
-    refetchInterval: 5000,
-  });
-}
 // ── Mutation hooks ───────────────────────────────────────────────────────────
 
 export function useUpdateProject(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string; name?: string; description?: string }) =>
-      kortixFetch<KortixProject>(sandboxUrl!, `/kortix/projects/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      }),
+      patchKortixProject(sandboxUrl!, id, data),
     onSuccess: (_, vars) => {
       if (sandboxUrl) {
         qc.invalidateQueries({ queryKey: kortixKeys.project(sandboxUrl, vars.id) });
@@ -281,14 +175,7 @@ export function useUpdateProject(sandboxUrl: string | undefined) {
 export function useDeleteProject(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      kortixFetch<{ deleted: boolean; name: string; path: string }>(
-        sandboxUrl!,
-        `/kortix/projects/${encodeURIComponent(id)}`,
-        {
-          method: 'DELETE',
-        }
-      ),
+    mutationFn: (id: string) => deleteKortixProject(sandboxUrl!, id),
     onSuccess: () => {
       if (sandboxUrl) {
         qc.invalidateQueries({ queryKey: kortixKeys.projects(sandboxUrl) });
@@ -309,10 +196,7 @@ export function useCreateKortixTask(sandboxUrl: string | undefined) {
       verification_condition?: string;
       status?: KortixTaskStatus;
     }) => {
-      const raw = await kortixFetch<any>(sandboxUrl!, `/kortix/tasks`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
+      const raw = await createTask(sandboxUrl!, data);
       return normalizeTask(raw);
     },
     onSuccess: () => {
@@ -327,10 +211,7 @@ export function useUpdateKortixTask(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: { id: string } & Partial<KortixTask>) => {
-      const raw = await kortixFetch<any>(sandboxUrl!, `/kortix/tasks/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      });
+      const raw = await updateTask(sandboxUrl!, id, data);
       return normalizeTask(raw);
     },
     onSuccess: () => {
@@ -346,23 +227,8 @@ export function useUpdateKortixTask(sandboxUrl: string | undefined) {
 export function useStartKortixTask(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      session_id,
-      agent,
-    }: {
-      id: string;
-      session_id?: string;
-      agent?: string;
-    }) => {
-      const raw = await kortixFetch<any>(
-        sandboxUrl!,
-        `/kortix/tasks/${encodeURIComponent(id)}/start`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ session_id, agent }),
-        }
-      );
+    mutationFn: async ({ id }: { id: string }) => {
+      const raw = await startTask(sandboxUrl!, id);
       return normalizeTask(raw);
     },
     onSuccess: () => {
@@ -378,13 +244,7 @@ export function useApproveKortixTask(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const raw = await kortixFetch<any>(
-        sandboxUrl!,
-        `/kortix/tasks/${encodeURIComponent(id)}/approve`,
-        {
-          method: 'POST',
-        }
-      );
+      const raw = await approveTask(sandboxUrl!, id);
       return normalizeTask(raw);
     },
     onSuccess: () => {
@@ -398,10 +258,7 @@ export function useApproveKortixTask(sandboxUrl: string | undefined) {
 export function useDeleteKortixTask(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      kortixFetch<{ deleted: boolean }>(sandboxUrl!, `/kortix/tasks/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+    mutationFn: (id: string) => deleteTask(sandboxUrl!, id),
     onSuccess: () => {
       if (sandboxUrl) {
         qc.invalidateQueries({ queryKey: ['kortix', 'tasks', sandboxUrl] });

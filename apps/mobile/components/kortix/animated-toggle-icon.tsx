@@ -19,7 +19,7 @@ import Reanimated, {
 import { XIcon, type AppIcon } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 
-export interface AnimatedToggleIconProps {
+interface AnimatedToggleIconProps {
   /** True → rotates/fades to the close icon. */
   open: boolean;
   /** Base icon color. */

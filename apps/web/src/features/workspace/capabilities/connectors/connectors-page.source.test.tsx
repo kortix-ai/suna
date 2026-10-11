@@ -57,15 +57,18 @@ mock.module('@/features/workspace/customize/use-configure-thread', () => ({
   useConfigureThread: () => ({}),
   newConfigPrompt: () => '',
 }));
+// Spread the real module: the Install path (`install/install.ts`) imports its
+// draft builders from here too.
+const connectionForm =
+  await import('@/features/workspace/customize/sections/connector-connection-form');
 mock.module('@/features/workspace/customize/sections/connector-connection-form', () => ({
+  ...connectionForm,
   connectorConnectionQueryKeys: () => [],
   connectorSetupStatus: () => 'connected',
 }));
 for (const [path, name] of [
   ['@/components/projects/policies-panel', 'PoliciesPanel'],
   ['@/features/tunnel/computer-connect', 'ComputerConnectModal'],
-  ['@/features/workspace/capabilities/connectors/add/discover-add-flow', 'DiscoverAddFlow'],
-  ['@/features/workspace/capabilities/connectors/add/easy-connect-add-flow', 'EasyConnectAddFlow'],
 ])
   mock.module(path, () => ({ [name]: () => null }));
 const wrapper = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
@@ -75,8 +78,16 @@ for (const [path, names] of [
     ['Modal', 'ModalBody', 'ModalContent', 'ModalDescription', 'ModalHeader', 'ModalTitle'],
   ],
   [
-    '@/components/ui/sheet',
-    ['Sheet', 'SheetBody', 'SheetContent', 'SheetDescription', 'SheetHeader', 'SheetTitle'],
+    '@/components/ui/split-sheet',
+    [
+      'SplitSheet',
+      'SplitSheetBody',
+      'SplitSheetContent',
+      'SplitSheetDescription',
+      'SplitSheetHeader',
+      'SplitSheetMain',
+      'SplitSheetTitle',
+    ],
   ],
 ] as const)
   mock.module(path, () => Object.fromEntries(names.map((name) => [name, wrapper])));
@@ -127,28 +138,22 @@ async function mount(params = '', enabled = true, provider = true) {
   };
 }
 
-test('rendered source control mutates URL and selects actual catalog queries in both directions', async () => {
-  const view = await mount('scope=all&keep=yes');
+// One catalogue, no Managed / API·MCP toggle: browsing reads the managed
+// catalogue, and a search also asks the API/MCP one (`merge-search.test.ts`).
+const sourceControls = (view: Awaited<ReturnType<typeof mount>>) =>
+  view.root.root.findAll(
+    (node) =>
+      (node.props.value === 'managed' || node.props.value === 'direct') &&
+      typeof node.props.onValueChange === 'function',
+  );
+
+test('browsing reads the managed catalogue and offers no source toggle', async () => {
+  const view = await mount('scope=all&source=direct');
   try {
     expect(view.root.root.findByType('output').children).toEqual(['easy-connect']);
     expect(requests).toContain('managed');
     expect(requests).not.toContain('direct');
-    const tabs = () =>
-      view.root.root.findAll(
-        (node) => node.props.value === 'managed' && typeof node.props.onValueChange === 'function',
-      )[0];
-    await act(async () => tabs().props.onValueChange('direct'));
-    await view.settle();
-    expect(replacements.at(-1)).toBe('/projects/synthetic/connectors?keep=yes&source=direct');
-    expect(view.root.root.findByType('output').children).toEqual(['discover']);
-    expect(requests).toContain('direct');
-    const directTabs = view.root.root.findAll(
-      (node) => node.props.value === 'direct' && typeof node.props.onValueChange === 'function',
-    )[0];
-    await act(async () => directTabs.props.onValueChange('managed'));
-    await view.settle();
-    expect(replacements.at(-1)).toBe('/projects/synthetic/connectors?keep=yes');
-    expect(view.root.root.findByType('output').children).toEqual(['easy-connect']);
+    expect(sourceControls(view)).toHaveLength(0);
   } finally {
     await view.close();
   }
@@ -170,20 +175,13 @@ test('flag off ignores a direct deep link and offers no direct source control', 
   }
 });
 
-test('absent managed provider suppresses catalog requests but direct selection still opens direct catalog', async () => {
+test('with no managed provider, the API/MCP catalogue is the whole catalogue', async () => {
   const view = await mount('', true, false);
   try {
-    expect(view.root.root.findAllByType('output')).toHaveLength(0);
-    expect(requests).toEqual([]);
-    const tabs = view.root.root.findAll(
-      (node) => node.props.value === 'managed' && typeof node.props.onValueChange === 'function',
-    )[0];
-    await act(async () => tabs.props.onValueChange('direct'));
-    await view.settle();
-    expect(replacements.at(-1)).toBe('/projects/synthetic/connectors?source=direct');
     expect(view.root.root.findByType('output').children).toEqual(['discover']);
     expect(requests).toContain('direct');
     expect(requests).not.toContain('managed');
+    expect(sourceControls(view)).toHaveLength(0);
   } finally {
     await view.close();
   }

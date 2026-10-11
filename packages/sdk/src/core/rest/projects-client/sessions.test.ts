@@ -1,6 +1,8 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import { type SavedCopyStore, setSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
+import { onSessionStopped } from '../../http/session-stopped';
 import type {
   CreateProjectSessionInput,
   ProjectSession,
@@ -24,6 +26,7 @@ import {
   deleteSessionPrompt,
   editSessionPrompt,
   ensureWarmProjectSession,
+  interruptSessionPrompt,
   findActiveTranscriptShare,
   getProjectSession,
   getProjectSessionConfigState,
@@ -37,6 +40,7 @@ import {
   getSessionTranscriptSync,
   getSessionTurn,
   getSessionModelUsage,
+  getSessionWatch,
   holdSessionPrompts,
   listProjectSessions,
   listProjectSessionsPage,
@@ -53,6 +57,7 @@ import {
   setProjectSessionModel,
   setProjectSessionScope,
   setProjectSessionSharing,
+  setSessionWatch,
   stopProjectSession,
   updateProjectSession,
 } from './sessions';
@@ -773,6 +778,25 @@ test('deleteProjectSession DELETEs the session', async () => {
   expect(last().method).toBe('DELETE');
 });
 
+test("deleteProjectSession drops the session's saved copy on this device", async () => {
+  const removed: string[] = [];
+  setSavedCopyStore({
+    remove: async (projectId: string, sessionId: string) => void removed.push(`${projectId}/${sessionId}`),
+  } as unknown as SavedCopyStore);
+  try {
+    nextResponse = { status: 200, body: { ok: true } };
+    await deleteProjectSession('P1', 'S1');
+    expect(removed).toEqual(['P1/S1']);
+
+    // A refused delete keeps the copy: the session still exists.
+    nextResponse = { status: 403, body: { error: 'forbidden' } };
+    await expect(deleteProjectSession('P1', 'S2')).rejects.toThrow();
+    expect(removed).toEqual(['P1/S1']);
+  } finally {
+    setSavedCopyStore(null);
+  }
+});
+
 test('restartProjectSession POSTs to /restart', async () => {
   nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'provisioning' } };
   const result = await restartProjectSession('P1', 'S1');
@@ -1186,6 +1210,21 @@ test('stopProjectSession POSTs to /stop', async () => {
   expect(result.status).toBe('stopped');
 });
 
+test('stopProjectSession tells the open session hook, but only when the stop succeeded (05#1)', async () => {
+  const heard: string[] = [];
+  const off = onSessionStopped((id) => heard.push(id));
+  try {
+    nextResponse = { status: 409, body: { error: 'Session is not running' } };
+    await stopProjectSession('P1', 'S-fail').catch(() => {});
+    expect(heard).toEqual([]);
+    nextResponse = { status: 200, body: { ok: true, session_id: 'S-ok', status: 'stopped' } };
+    await stopProjectSession('P1', 'S-ok');
+    expect(heard).toEqual(['S-ok']);
+  } finally {
+    off();
+  }
+});
+
 test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
@@ -1324,6 +1363,60 @@ test('createSessionPrompt preserves explicit queue placement on the wire', async
     });
     expect(last().body).toMatchObject({ placement });
   }
+});
+
+test('createSessionPrompt sends the delivery mode with the placement it implies', async () => {
+  // An API built before steering reads only `placement`, so the derived
+  // placement keeps its meaning there: `interrupt` paints in the transcript,
+  // `steer` and `queue` wait in the composer list (a steer row is a plain
+  // Queue List row on an older API).
+  const cases = [
+    ['steer', 'composer'],
+    ['queue', 'composer'],
+    ['interrupt', 'transcript'],
+  ] as const;
+  for (const [delivery, placement] of cases) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `delivery-${delivery}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'look at the logs too' }],
+      delivery,
+    });
+    expect(last().body).toMatchObject({ delivery, placement });
+  }
+});
+
+test('createSessionPrompt keeps an explicit placement beside the delivery mode', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'explicit',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'x' }],
+    placement: 'composer',
+    delivery: 'steer',
+  });
+  expect(last().body).toMatchObject({ delivery: 'steer', placement: 'composer' });
+});
+
+test('createSessionPrompt sends no delivery field when the caller names none', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'plain',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'x' }],
+  });
+  expect(last().body).not.toHaveProperty('delivery');
+  expect(last().body).not.toHaveProperty('placement');
 });
 
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
@@ -1470,6 +1563,35 @@ test('editSessionPrompt PATCHes the row text in place and returns the row', asyn
   expect(last().body).toEqual({ text: 'say hello' });
   expect(result.text).toBe('say hello');
   expect(result.message_id).toBe('msg_a');
+});
+
+test('interruptSessionPrompt PATCHes the row to interrupt delivery and returns the row', async () => {
+  // "Stop and send": a row still waiting in the queue becomes Quick Queue. The
+  // running turn ends after its running tool, then this row runs.
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      placement: 'transcript',
+      delivery: 'interrupt',
+      steer_fallback: null,
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'stop and do this',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+    },
+  };
+  const result = await interruptSessionPrompt('P1', 'S1', 'cmd-1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ delivery: 'interrupt' });
+  expect(result.delivery).toBe('interrupt');
+  expect(result.placement).toBe('transcript');
 });
 
 test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {
@@ -1724,4 +1846,38 @@ test('resolvePublicShareUrl falls back to public_token last', () => {
   expect(resolvePublicShareUrl(share({ public_token: 'tok_123' }), 'https://api.example.com')).toBe(
     'https://api.example.com/tok_123',
   );
+});
+
+// KRTX-1742: who is notified about a session. `watching` is false after the
+// caller muted it, even for its creator.
+describe('session watch', () => {
+  test('getSessionWatch GETs /watch and never raises an error toast', async () => {
+    nextResponse = { status: 200, body: { watching: true } };
+    expect(await getSessionWatch('P1', 'S1')).toEqual({ watching: true });
+    expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/sessions/S1/watch', method: 'GET' });
+    const onError = mock(() => {});
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+    try {
+      nextResponse = { status: 500, body: { error: 'boom' } };
+      await expect(getSessionWatch('P1', 'S1')).rejects.toBeTruthy();
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    }
+  });
+
+  test('setSessionWatch PUTs { watching } and returns the stored value', async () => {
+    nextResponse = { status: 200, body: { watching: false } };
+    expect(await setSessionWatch('P1', 'S1', false)).toEqual({ watching: false });
+    expect(last()).toEqual({
+      url: 'http://test.local/projects/P1/sessions/S1/watch',
+      method: 'PUT',
+      body: { watching: false },
+    });
+  });
+
+  test('setSessionWatch rejects on a 403 (an agent token cannot watch)', async () => {
+    nextResponse = { status: 403, body: { error: 'Human login required' } };
+    await expect(setSessionWatch('P1', 'S1', true)).rejects.toBeTruthy();
+  });
 });

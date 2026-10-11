@@ -143,7 +143,8 @@ test('projects link --host authenticates with the named host key, not the sessio
   // session-scoped token, which production 403s as cross-project.
   expect(linkGet?.authorization).toBe(`Bearer ${HOST_TOKEN}`);
   expect(run.code).toBe(0);
-  expect(run.stderr).not.toContain('403');
+  // A word-bounded 403: the stub's random port (e.g. 40403) is printed too.
+  expect(run.stderr).not.toMatch(/\b403\b/);
 
   const link = JSON.parse(readFileSync(join(tmp, '.kortix', 'link.json'), 'utf8'));
   expect(link.project_id).toBe(TARGET_PROJECT_ID);
