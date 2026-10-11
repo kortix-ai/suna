@@ -115,7 +115,9 @@ export function useSessionLogSync(
     const load = async (): Promise<SessionLogPage | null> => {
       const page = await fetchFirstSessionLogPage(loader, projectId, sessionId, controller.signal);
       if (stopped) return null;
-      if (page) {
+      // Only a page this session reads (a `fromV1` thread) goes in the store and the device copy:
+      // a pi page would replace the v1 copy with one nothing paints.
+      if (page && pageThreadIsV1(page)) {
         store().applySessionLogPage(sessionId, page);
         void copies?.write(projectId, sessionId, page);
       }

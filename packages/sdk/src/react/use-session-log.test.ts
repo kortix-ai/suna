@@ -136,6 +136,18 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined).toEqual([]);
   });
 
+  test('a pi page touches no device copy: no v2 copy is written and the v1 copy stays', async () => {
+    const data = new Map<string, string>();
+    const store = createSavedCopyStore({ storage: { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }, userId: 'u1' });
+    setSavedCopyStore(store);
+    const v1Copy = { available: true, source: 'mirror', runtime_session_id: 'ses_a', captured_at: '2026-10-11T11:00:00Z', messages: [{ info: { id: 'msg_1', role: 'user' }, parts: [] }] };
+    await store.write(PROJECT, SESSION, v1Copy as never);
+    mount({ loader: async () => page() });
+    await flush();
+    expect(await savedSessionLogCopies(store)!.read(PROJECT, SESSION)).toBeNull();
+    expect(store.read(PROJECT, SESSION)).not.toBeNull();
+  });
+
   test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
     const bad = v1Page();
     (bad.messages[0] as Record<string, unknown>).seq = 'x';
