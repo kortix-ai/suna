@@ -133,6 +133,10 @@ function mainFixture(): V1Transcript {
 
     // A row whose info.sessionID differs from the runtime session it was captured under.
     user(R, 'msg_r12', T0 + 24_000, (m) => [text(R, m, 'prt_r12a', 'mismatch')], { sessionID: 'ses_other' }),
+    // Aborted with nothing the model sees (step parts only): out of context, not an empty replayed turn.
+    assistant(R, 'msg_r15', T0 + 24_500, 'msg_r12', (m) => [stepStart(R, m, 'prt_r15a'), stepFinish(R, m, 'prt_r15b')], {
+      error: { name: 'MessageAbortedError', data: { message: 'Aborted' } }, finish: undefined, time: { created: T0 + 24_500 },
+    }),
     // Clock skew: the summary row sorts before its compaction marker.
     user(R, 'msg_r14', T0 + 25_000, (m) => [{ ...base(R, m, 'prt_r14a'), type: 'compaction', auto: true, tail_start_id: 'msg_r12' }]),
     assistant(R, 'msg_r13', T0 + 24_999, 'msg_r14', (m) => [text(R, m, 'prt_r13a', 'Skewed summary.')], { summary: true, mode: 'compaction', agent: 'compaction' }),
@@ -157,6 +161,8 @@ function piFixture(): V1Transcript {
     assistant(S, 'msg_p02', T0 + 100, 'msg_p01', (m) => [
       { ...text(S, m, `${m}-p0`, 'reading') },
       { ...base(S, m, `${m}-p1`), type: 'tool', callID: `${m}-p1`, tool: 'read', state: { status: 'completed', input: { path: 'a' }, output: 'x', title: 'a', metadata: {}, time: { start: T0 + 110, end: T0 + 120 } } },
+      { ...base(S, m, `${m}-p2`), type: 'tool', callID: `${m}-p2`, tool: 'find', state: { status: 'completed', input: { pattern: '*.ts' }, output: 'a.ts', title: '*.ts', metadata: {}, time: { start: T0 + 121, end: T0 + 122 } } },
+      { ...base(S, m, `${m}-p3`), type: 'tool', callID: `${m}-p3`, tool: 'powershell', state: { status: 'completed', input: { command: 'dir' }, output: 'a.ts', title: 'dir', metadata: {}, time: { start: T0 + 123, end: T0 + 124 } } },
     ]),
     user(S, 'msg_p03', T0 + 200, (m) => [{ ...base(S, m, `${m}-p0`), type: 'compaction', auto: true }]),
     assistant(S, 'msg_p04', T0 + 201, 'msg_p03', (m) => [text(S, m, `${m}-p0`, 'pi summary')], { summary: true }),
@@ -244,7 +250,11 @@ describe('fromV1 / toV1 round trip', () => {
   test('fromV1 does not mutate its input', () => {
     const x = mainFixture();
     const before = json(x);
-    fromV1(x);
+    const log = fromV1(x);
+    expect(json(x)).toStrictEqual(before);
+    // Output does not alias input: changing a harness block's data or a tool input leaves the rows alone.
+    ((block(message(log, 'msg_r01'), 'prt_r01f') as { data: { name: string } }).data).name = 'changed';
+    ((block(message(log, 'msg_r02'), 'prt_r02d') as ToolCallBlock).input as { command: string }).command = 'changed';
     expect(json(x)).toStrictEqual(before);
   });
 });
@@ -291,12 +301,32 @@ describe('fromV1 mapping', () => {
     expect(message(log, 'msg_r11').blocks.map((b) => b.id)).toEqual(['prt_dup', 'prt_dup#3', 'prt_dup#2', 'prt_r11d', '#4', '#5']);
   });
 
+  test('mapped v2 fields carry the v1 values', () => {
+    const m01 = message(log, 'msg_r01');
+    const m02 = message(log, 'msg_r02');
+    expect(block(m01, 'prt_r01a')).toEqual({ type: 'text', id: 'prt_r01a', text: 'look at this', ext: expect.anything() });
+    expect(block(m02, 'prt_r02c')).toMatchObject({ type: 'text', text: 'Here is the answer.' });
+    expect(block(m02, 'prt_r02b')).toMatchObject({ type: 'reasoning', text: 'thinking' });
+    expect(m01).toMatchObject({ role: 'user', created_at: new Date(T0 + 10_000).toISOString(), completed_at: new Date(T0 + 10_000).toISOString(), agent: 'build', usage: null, finish: null });
+    expect(m02).toMatchObject({ role: 'assistant', created_at: new Date(T0 + 11_000).toISOString(), completed_at: new Date(T0 + 11_500).toISOString() });
+    expect(block(m02, 'prt_r02d')).toMatchObject({
+      call_id: 'call_prt_r02d', name: 'bash', started_at: new Date(T0 + 11_010).toISOString(), ended_at: new Date(T0 + 11_020).toISOString(),
+    });
+    expect(block(m02, 'prt_r02f')).toMatchObject({ started_at: new Date(T0 + 11_050).toISOString(), ended_at: new Date(T0 + 11_060).toISOString() });
+    expect(message(log, 'msg_r11')).toMatchObject({ status: 'complete', finish: null, error: null }); // 'content-filter' is not a v2 finish
+    expect(message(log, 'msg_c02')).toMatchObject({ thread_id: CHILD, reply_to: 'msg_c01', agent: 'general', seq: 2 });
+    expect(message(log, 'msg_c01')).toMatchObject({ thread_id: CHILD, model: { provider: 'prov', model: 'model-a' }, seq: 1 });
+    expect(log.created_at).toBe(new Date(T0).toISOString());
+    expect(log.threads[2]).toMatchObject({ created_at: new Date(T0 + 11_080).toISOString(), agent: 'general' });
+  });
+
   test('blocks by part type', () => {
     const m01 = message(log, 'msg_r01');
     expect(m01.blocks.map((b) => [b.type, b.type === 'harness' ? b.kind : ''])).toEqual([
       ['text', ''], ['attachment', ''], ['harness', 'file'], ['text', ''], ['harness', 'text'], ['harness', 'agent'], ['harness', 'subtask'],
     ]);
-    expect(block(m01, 'prt_r01b')).toMatchObject({ type: 'attachment', mime: 'image/png', name: 'shot.png', ref: '', bytes: 0 });
+    // F13: unresolved, so no ref and no bytes; the v1 url stays.
+    expect(block(m01, 'prt_r01b')).toEqual({ type: 'attachment', id: 'prt_r01b', mime: 'image/png', name: 'shot.png', url: 'kortix-attachment://p/s/att1', ext: expect.anything() });
     expect(block(m01, 'prt_r01d')).toMatchObject({ type: 'text', synthetic: true });
     expect(block(m01, 'prt_r01g')).toMatchObject({ model_visible: true });
     expect(m01.model).toEqual({ provider: 'prov', model: 'model-a', variant: 'high' });
@@ -315,20 +345,24 @@ describe('fromV1 mapping', () => {
     const call = (id: string) => block(m02, id) as ToolCallBlock;
     expect(call('prt_r02d')).toMatchObject({ kind: 'shell', status: 'complete', input: { command: 'ls' }, title: 'ls', result: { content: [{ type: 'text', text: 'a\nb' }], is_error: false, exit_code: 0 } });
     expect(call('prt_r02e').result).toMatchObject({
-      content: [{ type: 'text', text: 'Image read' }, { type: 'attachment', ref: '', mime: 'image/png' }],
+      content: [{ type: 'text', text: 'Image read' }, { type: 'attachment', mime: 'image/png', url: 'kortix-attachment://p/s/att2' }],
       model_content: [{ type: 'text', text: '[Old tool result content cleared]' }],
       cleared_at: new Date(T0 + 30_000).toISOString(),
     });
     expect(call('prt_r02f')).toMatchObject({ kind: 'edit', status: 'error', result: { is_error: true, content: [{ type: 'text', text: 'no such file' }], error: { message: 'no such file' } } });
     expect(call('prt_r02g')).toMatchObject({ kind: 'task', status: 'complete' });
     expect(call('prt_r02h')).toMatchObject({ kind: 'shell', input: null, result: { content: [], is_error: false } });
-    expect(call('prt_r02i')).toMatchObject({ kind: 'other', name: 'linear_create_issue', input: null, status: 'error', result: { content: [], is_error: true } });
+    expect(call('prt_r02i')).toMatchObject({ kind: 'mcp', name: 'linear_create_issue', input: null, status: 'error', result: { content: [], is_error: true } });
+    const pi = fromV1(piFixture(), { harness: 'pi' });
+    expect(message(pi, 'msg_p02').blocks.map((b) => (b.type === 'tool_call' ? b.kind : b.type))).toEqual(['text', 'read', 'glob', 'shell']);
   });
 
   test('open calls at rest are closed by the closure rule', () => {
     const closed = { status: 'error', result: { is_error: true, synthetic: true, error: { code: 'interrupted' }, content: [{ type: 'text', text: '[Tool execution was interrupted]' }] } };
     const m03 = message(log, 'msg_r03');
-    expect(m03).toMatchObject({ status: 'aborted', in_context: true, finish: 'aborted', error: { code: 'MessageAbortedError', message: 'Aborted' } });
+    // error.code is the daemon's TurnErrorCode when the row has one ('aborted'), else the v1 class name.
+    expect(m03).toMatchObject({ status: 'aborted', in_context: true, finish: 'aborted', error: { code: 'aborted', message: 'Aborted' } });
+    expect(message(log, 'msg_r15')).toMatchObject({ status: 'aborted', in_context: false, hidden_reason: 'aborted', error: { code: 'MessageAbortedError' } });
     expect(block(m03, 'prt_r03b')).toMatchObject(closed);
     expect(block(m03, 'prt_r03c')).toMatchObject(closed);
     expect(message(log, 'msg_r05')).toMatchObject({ status: 'interrupted', in_context: true, completed_at: null });
@@ -339,7 +373,7 @@ describe('fromV1 mapping', () => {
   });
 
   test('a failed attempt is out of context', () => {
-    expect(message(log, 'msg_r04')).toMatchObject({ status: 'error', in_context: false, hidden_reason: 'failed_attempt', finish: 'error', error: { code: 'APIError', message: 'rate limited' } });
+    expect(message(log, 'msg_r04')).toMatchObject({ status: 'error', in_context: false, hidden_reason: 'failed_attempt', finish: 'error', error: { code: 'rate_limit', message: 'rate limited' } });
   });
 
   test('compaction + summary become one compaction message', () => {
@@ -350,13 +384,47 @@ describe('fromV1 mapping', () => {
     expect(message(log, 'msg_r08').blocks[0]).toMatchObject({ first_kept_message_id: null, trigger: 'overflow', summary: 'Second summary.' });
     expect(message(log, 'msg_r14').blocks[0]).toMatchObject({ summary: 'Skewed summary.', first_kept_message_id: 'msg_r12' });
     expect(messages(log).some((m) => m.message_id === 'msg_r13')).toBe(false);
-    expect(message(log, 'msg_r10')).toMatchObject({ status: 'interrupted', in_context: false, hidden_reason: 'aborted', blocks: [{ summary: null, trigger: 'manual' }] });
+    expect(message(log, 'msg_r10')).toMatchObject({ status: 'interrupted', in_context: false, blocks: [{ summary: null, trigger: 'manual' }] });
+    expect(message(log, 'msg_r10').hidden_reason).toBeUndefined(); // nobody stopped it, nothing failed
   });
 
   test('a resolver fills attachment refs and lowers the attachment count', () => {
     const resolved = fromV1(mainFixture(), { resolveAttachment: (p) => (p.url ? { ref: `blob:${p.id}`, bytes: 42, sha256: 'f'.repeat(64) } : null) });
     expect(resolved.grade_counts).toEqual({ tool_input: 2, cut_point: 1, attachment: 0 });
-    expect(block(message(resolved, 'msg_r01'), 'prt_r01b')).toMatchObject({ ref: 'blob:prt_r01b', bytes: 42, sha256: 'f'.repeat(64) });
+    expect(block(message(resolved, 'msg_r01'), 'prt_r01b')).toMatchObject({ ref: 'blob:prt_r01b', bytes: 42, sha256: 'f'.repeat(64), url: 'kortix-attachment://p/s/att1' });
+  });
+});
+
+describe('a mirror without a usable root keeps its conversation in context', () => {
+  const inContext = (log: SessionLog) => log.threads[0].messages.map((m) => [m.message_id, m.in_context, m.hidden_reason]);
+  const expected = [['msg_p01', true, undefined], ['msg_p02', true, undefined], ['msg_p03', true, undefined]];
+  test('root_id null: the latest row\'s runtime session is the root thread', () => {
+    const log = fromV1({ ...piFixture(), root_id: null });
+    expect(log.threads[0].thread_id).toBe('ses_pi00000000000000000001');
+    expect(inContext(log)).toEqual(expected);
+    expect(toV1(log).root_id).toBeNull();
+  });
+  test('rows without a runtime session id: the null group is the root thread', () => {
+    const x = { ...piFixture(), rows: piFixture().rows.map((r) => ({ ...r, runtime_session_id: null })) };
+    expect(inContext(fromV1(x))).toEqual(expected);
+    expect(fromV1({ ...x, root_id: null }).threads[0].thread_id).toBe('sess-synthetic-pi');
+    expect(inContext(fromV1({ ...x, root_id: null }))).toEqual(expected);
+  });
+  test('a stale root (a re-pin before the first capture) falls back to the latest row, an older root stays superseded', () => {
+    const old = user(OLD, 'msg_old', T0 - 1_000, (m) => [text(OLD, m, 'prt_old', 'before the re-pin')]);
+    const x = { ...piFixture(), root_id: 'ses_fresh00000000000000001', rows: [old, ...piFixture().rows] };
+    const log = fromV1(x);
+    expect(inContext(log)).toEqual([['msg_old', false, 'superseded'], ...expected]);
+    expect(toV1(json(log)).root_id).toBe('ses_fresh00000000000000001');
+    expectExact(x, roundTrip(x));
+  });
+  test('a runtime session id of \'\' is never a child (a substring match on it would name every call)', () => {
+    const x = mainFixture();
+    x.rows.push(user('', 'msg_empty', T0 + 30_000, (m) => [text('', m, 'prt_empty', 'x')]));
+    const log = fromV1(x);
+    expect(log.threads.some((t) => t.thread_id === '')).toBe(false);
+    expect(message(log, 'msg_empty')).toMatchObject({ thread_id: ROOT, in_context: false, hidden_reason: 'superseded' });
+    expectExact(x, roundTrip(x));
   });
 });
 
@@ -367,16 +435,48 @@ describe('toV1 on native v2 records', () => {
       const log = JSON.parse(readFileSync(join(FIXTURE_DIR, name), 'utf8')) as SessionLog;
       const out = toV1(log);
       const ids = new Set(out.rows.map((r) => r.info.id));
-      for (const m of messages(log)) expect(ids.has(m.message_id)).toBe(true);
+      for (const m of messages(log)) expect(ids.has(m.message_id)).toBe(m.role !== 'system' && m.kind !== 'context');
       for (const r of out.rows) {
         expect(['user', 'assistant']).toContain(r.info.role);
         expect(Array.isArray(r.parts)).toBe(true);
       }
     });
   }
+
+  test('pi.v2.json: no user row for a system or context message', () => {
+    const log = JSON.parse(readFileSync(join(FIXTURE_DIR, 'pi.v2.json'), 'utf8')) as SessionLog;
+    const hidden = messages(log).filter((m) => m.kind === 'context' || m.role === 'system').map((m) => m.message_id);
+    expect(hidden.length).toBeGreaterThan(0);
+    expect(toV1(log).rows.filter((r) => hidden.includes(r.info.id))).toEqual([]);
+  });
+
+  test('a native harness block from an opencode/pi adapter is not passed through as a v1 part', () => {
+    const log = json(fromV1(piFixture(), { harness: 'pi' }));
+    const m = log.threads[0].messages[1];
+    m.producer = { harness: 'pi', harness_version: '1.0.3', adapter_version: '1' };
+    m.blocks.push({ type: 'harness', id: 'h1', harness: 'pi', kind: 'custom', data: { anything: true }, model_visible: false });
+    const row = toV1(log).rows.find((r) => r.info.id === m.message_id)!;
+    expect(row.parts.some((p) => (p as { anything?: boolean }).anything)).toBe(false);
+  });
+
+  test('toV1 does not alias its input', () => {
+    const log = fromV1(mainFixture());
+    const out = toV1(log);
+    (out.rows.find((r) => r.info.id === 'msg_r01')!.parts[5] as { name: string }).name = 'changed';
+    expect(((block(message(log, 'msg_r01'), 'prt_r01f') as { data: { name: string } }).data).name).toBe('build');
+  });
 });
 
 describe('validators added with the converter', () => {
+  test('an attachment has ref and bytes, or neither (F13)', () => {
+    const msg = json(message(fromV1(mainFixture()), 'msg_r12'));
+    const att = { type: 'attachment', id: 'a0', mime: 'image/png' };
+    expect(SessionLogMessageSchema.safeParse({ ...msg, blocks: [att] }).success).toBe(true);
+    expect(SessionLogMessageSchema.safeParse({ ...msg, blocks: [{ ...att, ref: 'blob:x', bytes: 3 }] }).success).toBe(true);
+    expect(SessionLogMessageSchema.safeParse({ ...msg, blocks: [{ ...att, ref: 'blob:x' }] }).success).toBe(false);
+    expect(SessionLogMessageSchema.safeParse({ ...msg, blocks: [{ ...att, bytes: 3 }] }).success).toBe(false);
+  });
+
   test('a text block with ref and no bytes is rejected', () => {
     const msg = {
       ...json(message(fromV1(mainFixture()), 'msg_r12')),
