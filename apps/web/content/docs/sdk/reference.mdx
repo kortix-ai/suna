@@ -1373,6 +1373,45 @@ exported: read them from the record, for example `SessionLogMessage['usage']`.
 `AdapterCapabilities`, `CapabilityFeatures` and `ExportCursor` are not exported
 either: they are daemon-side adapter state with no client consumer.
 
+### Reading a session's log (React)
+
+`@kortix/sdk/react` reads the session log of a session that `useSession` owns:
+
+```tsx
+import { useSession, useSessionLog, useSessionLogThread } from '@kortix/sdk/react';
+
+function Transcript({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId, { subscribeMessages: false });
+  const log = useSessionLog(session); // SessionLog | null
+  const root = useSessionLogThread(session); // the root thread; pass a thread id for a sub-agent
+  if (!root) return null; // this session reads v1: use useSessionMessages
+  return <ol>{root.messages.map((m) => <li key={m.message_id}>{m.role}: {m.blocks.length} blocks</li>)}</ol>;
+}
+```
+
+| Hook | Returns |
+| --- | --- |
+| `useSessionLog(session)` | The whole `SessionLog`: every thread with its messages by `seq`. `null` while the session reads v1 |
+| `useSessionLogThread(session, threadId?)` | One `SessionLogThread`: the root thread, or the thread `threadId` names. `null` while the session reads v1 or for an unknown thread |
+
+Both are read-only and start no request; `useSession` loads the log. A session
+reads the log (v2) only when all three hold, and reads v1 otherwise:
+
+1. the runtime's `/kortix/health` lists `session.log.v2` (an absent list does not count);
+2. the project flag `session_log` is exactly `true`;
+3. this SDK can load the log from the API.
+
+An SDK older than its API, or an API older than its SDK, therefore reads v1. Today
+the API does not serve the log yet, so every session reads v1 and both hooks
+return `null`.
+
+The v1 hooks do not change. `useSessionMessages`, `useSession().messages` and
+`classifyTurn` return the same `{ info, parts }` rows for a v2 session: each
+message converts with `toV1`, the conversion the API's v1 projection uses. A
+log message replaces the v1 row of the same id, a deleted message stays out, and
+a row the log does not carry yet (the turn that is streaming, an optimistic send)
+stays in its place. A row keeps its identity while its message is unchanged.
+
 ## Distribution
 
 ```sh
