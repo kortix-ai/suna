@@ -1,0 +1,23 @@
+{
+  "source_hash": "da8624c6fdebd2ae47202fb5099d4896ca38afb1f1b3636948f9d5e3b883b48c",
+  "diff_files": [
+    "apps/web/content/docs/sdk/reference.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/README.md",
+    "packages/sdk/src/core/session-log/index.ts",
+    "packages/sdk/src/core/session-log/types.test.ts",
+    "packages/sdk/src/core/session-log/types.ts",
+    "packages/sdk/src/index.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "d6369a5b4efefa1b27d6608bb7962685e7d02df49836da67ccf25bbeb192b0e7",
+  "head": "ace1fdf675381c42913dfa67f800dfb5bb426f39",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T14:43:23.364Z"
+}
