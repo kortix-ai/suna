@@ -1,5 +1,5 @@
 {
-  "source_hash": "2511a48b4e6ce56afc10f9f86a65eeb7421bb37d7164f2c6a10bc82e3ff5bb79",
+  "source_hash": "bae966b00145fe8655bb47b037284bb8ba235580fa4af321c2eda0f586e050e4",
   "diff_files": [
     "packages/api-contract/src/__tests__/fixtures/session-log/claude-code.expected-view.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/codex.expected-view.json",
@@ -14,13 +14,13 @@
     "packages/api-contract/src/session-log/index.ts",
     "packages/api-contract/src/session-log/model-view.ts"
   ],
-  "diff_hash": "9978ddf56712caf5d14c51bbf7f28ec1a3011126249383fbcf4caf069e21e8f4",
-  "head": "e3c8179f9990cbf64e8f998c0f2ed6c6e0c3f1d4",
+  "diff_hash": "5f8020bb11fe4b35e13ac08ad69d0931cbd780b12aaca18140d889d42b0a785b",
+  "head": "65d14351d59b16720f7c273d42a7087843f08a25",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T12:19:10.265Z"
+  "at": "2026-10-11T13:27:18.894Z"
 }
