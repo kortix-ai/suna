@@ -91,6 +91,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
+import { useSessionLogSync } from './use-session-log';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -1415,6 +1416,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
+  // 5a. The session log (v2) when negotiated; until then a no-op and the
+  // transcript below stays the only source (`use-session-log.ts`).
+  useSessionLogSync(projectId, sessionId, { enabled: transcriptHistoryEnabled });
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,

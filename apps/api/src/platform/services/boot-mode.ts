@@ -125,13 +125,14 @@ function parseRule(v: unknown, dflt: BootModeRule | null): BootModeRule | null {
 
 /**
  * The policy in effect before anyone saved one: Volumes off for everyone, and
- * `volume` (with fallback) for an organization once it is turned on.
+ * `standard` boot even once an organization turns Volumes on. Stateless
+ * (`volume`) boot is its own per-organization opt-in.
  */
 export function defaultBootModePolicy(_envArtifactsSet = false): BootModePolicy {
   return {
     volumes: { enabled: false, percent: 0, orgs: {} },
     killSwitch: false,
-    default: { mode: 'volume', standardFallback: true },
+    default: { mode: 'standard', standardFallback: true },
     orgs: {},
     fallback: { volumeAttempts: DEFAULT_FALLBACK_ATTEMPTS, artifactsAttempts: DEFAULT_FALLBACK_ATTEMPTS },
     artifacts: null,

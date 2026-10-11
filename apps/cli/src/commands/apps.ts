@@ -498,9 +498,14 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   // The files the Apps build from (a Dockerfile, a start script). One that exists is the user's: kept.
   for (const [file, content] of Object.entries(template.files?.(slug) ?? {})) {
     const target = resolve(process.cwd(), file);
-    if (existsSync(target)) continue;
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content);
+    // `wx` creates only: no check-then-write window in which a user's file could be replaced.
+    try {
+      writeFileSync(target, content, { flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw error;
+    }
     if (!json) process.stdout.write(`  ${status.ok(`wrote ${file}`)}\n`);
   }
   if (!noDeploy) {

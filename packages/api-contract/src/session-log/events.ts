@@ -19,6 +19,11 @@
  * | `log.block.delta` | `SessionLogBlockDeltaEventSchema` | the harness streamed text into a text or reasoning block |
  *
  * In one collection the order is `log.state`, then `log.thread`, then `log.message`.
+ *
+ * The API session stream (`GET /v1/projects/:p/sessions/:s/events?schema=v2`, P4.4) carries these
+ * frames in place of the v1 transcript frames (`V1_TRANSCRIPT_EVENTS`, `live.ts`). It relays them
+ * from a daemon that lists `session.log.v2`; for an older daemon the API converts the v1 frames
+ * (`liveMessageFromV1`, block id = part id, seq = `v1Seqs`), and `log.thread` is never sent.
  */
 import { z } from 'zod';
 import { SessionLogPutSchema, SessionLogSessionPatchSchema, SessionLogThreadUpsertSchema, SessionLogTombstoneSchema } from './wire';
