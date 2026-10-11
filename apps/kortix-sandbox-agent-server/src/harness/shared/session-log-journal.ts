@@ -37,6 +37,7 @@ import {
   SessionLogJournalConflictSchema,
   SessionLogJournalResponseSchema,
   type ExportCursor,
+  type SessionLog,
   type SessionLogJournalRequest,
   type SessionLogMessage,
   type SessionLogSessionPatch,
@@ -47,7 +48,7 @@ import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
-import type { SessionLogPort } from '../contract/session-log'
+import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
@@ -346,6 +347,41 @@ export class SessionLogJournal {
         resolve()
       }
     })
+  }
+}
+
+/**
+ * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi,
+ * OpenCode): every message after its thread's cursor or with a new native hash, every id a
+ * cursor holds that the log no longer has (a tombstone), every thread (the journal drops an
+ * unchanged one), and the session fields when their JSON differs from `previousSessionJson`.
+ */
+export function logChanges(
+  log: SessionLog,
+  hashes: ReadonlyMap<string, string>,
+  cursors: readonly ExportCursor[],
+  previousSessionJson: string | null,
+): { changes: SessionLogChanges; sessionJson: string } {
+  const byThread = new Map(cursors.map((c) => [c.thread_id, c]))
+  const messages: ExportedMessage[] = []
+  for (const thread of log.threads) {
+    const cursor = byThread.get(thread.thread_id)
+    for (const message of thread.messages) {
+      const native_hash = hashes.get(message.message_id)!
+      if (!cursor || message.seq > cursor.last_seq || cursor.native_hashes[message.message_id] !== native_hash) messages.push({ message, native_hash })
+    }
+  }
+  const tombstones = cursors.flatMap((c) => Object.keys(c.native_hashes).filter((id) => !hashes.has(id)))
+  const { threads, ...session } = log
+  const sessionJson = JSON.stringify(session)
+  return {
+    changes: {
+      messages,
+      tombstones,
+      threads: threads.map(({ messages: _messages, ...thread }) => thread),
+      ...(sessionJson !== previousSessionJson ? { session } : {}),
+    },
+    sessionJson,
   }
 }
 
