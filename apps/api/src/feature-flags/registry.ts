@@ -422,10 +422,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
-    // Internal-only while it rolls out (P4.1 of the Session Log Plan): not
-    // offered in Settings; a Kortix operator turns it on per project with
-    // PUT /v1/admin/api/projects/:id/features. It is a DATED state: the
-    // entry is deleted in the release after the one that makes v2 the default.
+    // Internal-only (2026-10-11): not offered in Settings.
+    // A Kortix operator enables it per project.
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
