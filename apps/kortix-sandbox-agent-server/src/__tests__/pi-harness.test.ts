@@ -11,7 +11,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,8 +30,9 @@ import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import { logger } from '@/lib/log/logger'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
-import { piSessionLog } from '@/harness/pi/session-log'
-import { upcast as upcastSessionLog } from '@kortix/api-contract/session-log'
+import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
+import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
 import {
@@ -323,6 +324,7 @@ describe('pi harness', () => {
     expect(before.capabilities).toContain('session.subagents')
     expect(before.capabilities).toContain('session.compact')
     expect(before.capabilities).toContain('session.commands')
+    expect(before.capabilities).toContain('session.log.v2')
     expect(before.capabilities).not.toContain('session.rewind')
     expect(before.capabilities).not.toContain('session.attach')
     expect(before.runtimeReady).toBe(false)
@@ -3187,5 +3189,65 @@ describe('pi session-log export (P2.5)', () => {
     const restarted = await boot({ workspace, script: [], env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') } })
     const again = piSessionLog(restarted.service.runtime()!.sessionLogSnapshot()!)
     expect(again.hashes).toEqual(hashes)
+  })
+})
+
+describe('pi session log on the v2 stream (P4.3)', () => {
+  const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_SESSION_LOG_DUMP_DIR'] as const
+  let saved: Record<string, string | undefined> = {}
+  let dump: string
+  beforeEach(() => {
+    resetSessionLogJournalForTests()
+    saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]))
+    dump = mkdtempSync(join(tmpdir(), 'pi-log-dump-'))
+    Object.assign(process.env, { KORTIX_PROJECT_ID: 'proj-pi-test', KORTIX_SESSION_ID: 'sess-pi-test', KORTIX_TOKEN: TOKEN, KORTIX_API_URL: 'http://127.0.0.1:9', KORTIX_SESSION_LOG_DUMP_DIR: dump })
+  })
+  afterEach(() => {
+    resetSessionLogJournalForTests()
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]
+      else process.env[key] = saved[key]
+    }
+    rmSync(dump, { recursive: true, force: true })
+  })
+
+  test('two turns: state and thread first, text deltas under the block ids the records store, then the turn as log.message', async () => {
+    const r = await boot({ script: [{ text: 'First answer here.' }, { text: 'Second answer here.' }] })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    for (const text of ['first question', 'second question']) {
+      expect((await prompt(r, root, { parts: [{ type: 'text', text }] })).status).toBe(204)
+      await waitFor(() => rt.idle())
+      expect(await flushSessionLogJournal()).toBe(true)
+    }
+    const raw = await readSse(stream, (t) => t.includes('Second answer here.') && t.split('event: log.message').length > 4)
+    const frames = raw.split('\n\n').filter((f) => f.startsWith('event: log.')).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any })
+    for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
+    expect(frames.map((f) => f.seq)).toEqual(frames.map((_, i) => i + 1))
+    // The journal start: the session and its root thread, before any turn streams.
+    expect(frames.slice(0, 2).map((f) => f.type)).toEqual(['log.state', 'log.thread'])
+    expect(frames[1]!.payload.thread_id).toBe(root)
+
+    const messages = frames.filter((f) => f.type === 'log.message').map((f) => f.payload.message as SessionLogMessage)
+    const answers = messages.filter((m) => m.role === 'assistant' && m.kind === 'turn')
+    expect(answers).toHaveLength(2)
+    for (const [i, answer] of answers.entries()) {
+      const block = answer.blocks.find((b) => b.type === 'text') as { id: string; text: string }
+      const deltas = frames.filter((f) => f.type === 'log.block.delta' && f.payload.block_id === block.id)
+      // The fake model streams each answer in two chunks; each lands under the record's own ids.
+      expect(deltas.length).toBe(2)
+      for (const d of deltas) expect(d.payload).toMatchObject({ thread_id: root, message_id: answer.message_id })
+      expect(deltas.map((d) => d.payload.delta).join('')).toBe(block.text)
+      expect(block.text).toBe(['First answer here.', 'Second answer here.'][i]!)
+      // Deltas stream before the turn end's record.
+      const recordSeq = frames.find((f) => f.type === 'log.message' && f.payload.message?.message_id === answer.message_id)!.seq
+      expect(Math.max(...deltas.map((d) => d.seq))).toBeLessThan(recordSeq)
+    }
+    // Every record on the stream is in a batch the journal wrote, at the same rev.
+    const batches = readdirSync(dump).map((f) => JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> })
+    const puts = new Map(batches.flatMap((b) => b.puts).map((p) => [`${p.message.message_id}@${p.rev}`, p.message]))
+    for (const f of frames.filter((x) => x.type === 'log.message')) expect(puts.get(`${f.payload.message.message_id}@${f.payload.rev}`)).toEqual(f.payload.message)
   })
 })

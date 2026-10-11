@@ -206,12 +206,24 @@ export class KortixEventBus {
 // SSE; the turn observer and boot marks publish into it directly.
 
 let bus: KortixEventBus | null = null
+let logBus: KortixEventBus | null = null
 
 export function kortixEventBus(): KortixEventBus {
   if (!bus) bus = new KortixEventBus()
   return bus
 }
 
+/**
+ * The session log's own bus: the `log.*` frames of `/events?schema=v2`. A
+ * second sequence, so the v1 stream keeps its dense seqs with no gap where a
+ * `log.*` frame would sit.
+ */
+export function sessionLogEventBus(): KortixEventBus {
+  if (!logBus) logBus = new KortixEventBus()
+  return logBus
+}
+
 export function resetKortixEventBusForTests(): void {
   bus = null
+  logBus = null
 }
