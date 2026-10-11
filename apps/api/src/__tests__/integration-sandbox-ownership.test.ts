@@ -23,11 +23,7 @@ const original = {
 };
 const stops: string[] = [];
 let fleet: Record<string, unknown>[] = [];
-// `hostname: '127.0.0.1'` — a sandbox without a hosts entry for `localhost`
-// (getaddrinfo ENOTFOUND) cannot fetch the server's default `localhost`
-// origin; the literal loopback resolves everywhere.
 const server = Bun.serve({
-  hostname: '127.0.0.1',
   port: 0,
   fetch(request) {
     const url = new URL(request.url);
