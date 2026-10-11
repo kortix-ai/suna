@@ -4,6 +4,7 @@
   "session_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
   "title": "Create hello.txt containing hi",
   "created_at": "2026-10-09T16:09:47.015Z",
+  "restore_grade": "native",
   "harness": {
     "current": "codex",
     "history": [
@@ -64,10 +65,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
             }
           ],
@@ -133,6 +136,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
             }
           ],
@@ -200,6 +204,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Create hello.txt containing hi"
             }
           ],
@@ -271,6 +276,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "I'll create the file.",
               "ext": {
                 "codex": {
@@ -283,6 +289,7 @@
             },
             {
               "type": "tool_call",
+              "id": "b1",
               "call_id": "call_mv15vaqk3",
               "name": "exec_command",
               "kind": "shell",
@@ -376,6 +383,7 @@
           "blocks": [
             {
               "type": "reasoning",
+              "id": "b0",
               "text": "The file exists now.",
               "summary": [
                 "The file exists now."
@@ -405,6 +413,7 @@
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "Done.",
               "ext": {
                 "codex": {
@@ -456,6 +465,7 @@
           "blocks": [
             {
               "type": "attachment",
+              "id": "b0",
               "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
               "mime": "image/png",
               "bytes": 70,
@@ -476,6 +486,7 @@
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "Read hello.txt and look at this image"
             }
           ],
@@ -550,6 +561,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv15vav29",
               "name": "exec_command",
               "kind": "shell",
@@ -634,6 +646,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv15vaxpc",
               "name": "view_image",
               "kind": "read",
@@ -719,6 +732,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "It says hi. The image is a single pixel.",
               "ext": {
                 "codex": {
@@ -783,6 +797,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Run the command `false` and report the result."
             }
           ],
@@ -854,6 +869,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv15vb0jh",
               "name": "exec_command",
               "kind": "shell",
@@ -942,6 +958,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The command failed with exit code 1.",
               "ext": {
                 "codex": {
@@ -1008,6 +1025,7 @@
           "blocks": [
             {
               "type": "compaction",
+              "id": "b0",
               "summary": "SUMMARY-G: the user created hello.txt containing hi and checked an image.",
               "first_kept_message_id": null,
               "layout": [
@@ -1378,6 +1396,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Continue after the summary and say Ready."
             }
           ],
@@ -1449,6 +1468,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Ready.",
               "ext": {
                 "codex": {
@@ -1509,6 +1529,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<model_switch>\nThe user was previously using a different model. Please continue the conversation according to the following instructions:\n\nYou are a coding agent running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.\n\nYour capabilities:\n\n- Receive user prompts and other context provided by the harness, such as files in the workspace.\n- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n- Emit function calls to run terminal commands and apply patches. Depending on how this specific run is configured, you can request that these function calls be escalated to the user for approval before running. More on this in the \"Sandbox and approvals\" section.\n\nWithin this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).\n\n# How you work\n\n## Personality\n\nYour default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.\n\n# AGENTS.md spec\n- Repos often contain AGENTS.md files. These files can appear anywhere within the repository.\n- These files are a way for humans to give you (the agent) instructions or tips for working within the container.\n- Some examples might be: coding conventions, info about how code is organized, or instructions for how to run or test code.\n- Instructions in AGENTS.md files:\n    - The scope of an AGENTS.md file is the entire directory tree rooted at the folder that contains it.\n    - For every file you touch in the final patch, you must obey instructions in any AGENTS.md file whose scope includes that file.\n    - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.\n    - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.\n    - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.\n- The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.\n\n## Responsiveness\n\n### Preamble messages\n\nBefore making tool calls, send a brief preamble to the user explaining what you\u2019re about to do. When sending preamble messages, follow these principles and examples:\n\n- **Logically group related actions**: if you\u2019re about to run several related commands, describe them together in one preamble rather than sending a separate note for each.\n- **Keep it concise**: be no more than 1-2 sentences, focused on immediate, tangible next steps. (8\u201312 words for quick updates).\n- **Build on prior context**: if this is not your first tool call, use the preamble message to connect the dots with what\u2019s been done so far and create a sense of momentum and clarity for the user to understand your next actions.\n- **Keep your tone light, friendly and curious**: add small touches of personality in preambles feel collaborative and engaging.\n- **Exception**: Avoid adding a preamble for every trivial read (e.g., `cat` a single file) unless it\u2019s part of a larger grouped action.\n\n**Examples:**\n\n- \u201cI\u2019ve explored the repo; now checking the API route definitions.\u201d\n- \u201cNext, I\u2019ll patch the config and update the related tests.\u201d\n- \u201cI\u2019m about to scaffold the CLI commands and helper functions.\u201d\n- \u201cOk cool, so I\u2019ve wrapped my head around the repo. Now digging into the API routes.\u201d\n- \u201cConfig\u2019s looking tidy. Next up is patching helpers to keep things in sync.\u201d\n- \u201cFinished poking at the DB gateway. I will now chase down error handling.\u201d\n- \u201cAlright, build pipeline order is interesting. Checking how it reports failures.\u201d\n- \u201cSpotted a clever caching util; now hunting where it gets used.\u201d\n\n## Task execution\n\nYou are a coding agent. Please keep going until the query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability, using the tools available to you, before coming back to the user. Do NOT guess or make up an answer.\n\nYou MUST adhere to the following criteria when solving queries:\n\n- Working on the repo(s) in the current environment is allowed, even if they are proprietary.\n- Analyzing code for vulnerabilities is allowed.\n- Showing user code and tool call details is allowed.\n- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {\"command\":[\"apply_patch\",\"*** Begin Patch\\\\n*** Update File: path/to/file.py\\\\n@@ def example():\\\\n- pass\\\\n+ return 123\\\\n*** End Patch\"]}\n\nIf completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:\n\n- Fix the problem at the root cause rather than applying surface-level patches, when possible.\n- Avoid unneeded complexity in your solution.\n- Do not attempt to fix unrelated bugs or broken tests. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n- Update documentation as necessary.\n- Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.\n- Use `git log` and `git blame` to search the history of the codebase if additional context is required.\n- NEVER add copyright or license headers unless specifically requested.\n- Do not waste tokens by re-reading files after calling `apply_patch` on them. The tool call will fail if it didn't work. The same goes for making folders, deleting folders, etc.\n- Do not `git commit` your changes or create new git branches unless explicitly requested.\n- Do not add inline comments within code unless explicitly requested.\n- Do not use one-letter variable names unless explicitly requested.\n- NEVER output inline citations like \"\u3010F:README.md\u2020L5-L14\u3011\" in your outputs. The CLI is not able to render these so they will just be broken in the UI. Instead, if you output valid filepaths, users will be able to click on them to open the files in their editor.\n\n## Validating your work\n\nIf the codebase has tests or the ability to build or run, consider using them to verify that your work is complete. \n\nWhen testing, your philosophy should be to start as specific as possible to the code you changed so that you can catch issues efficiently, then make your way to broader tests as you build confidence. If there's no test for the code you changed, and if the adjacent patterns in the codebases show that there's a logical place for you to add a test, you may do so. However, do not add tests to codebases with no tests.\n\nSimilarly, once you're confident in correctness, you can suggest or use formatting commands to ensure that your code is well formatted. If there are issues you can iterate up to 3 times to get formatting right, but if you still can't manage it's better to save the user time and present them a correct solution where you call out the formatting in your final message. If the codebase does not have a formatter configured, do not add one.\n\nFor all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n\nBe mindful of whether to run validation commands proactively. In the absence of behavioral guidance:\n\n- When running in the non-interactive approval mode **never**, proactively run tests, lint and do whatever you need to ensure you've completed the task.\n- When working in interactive approval modes like **untrusted**, or **on-request**, hold off on running tests or lint commands until the user is ready for you to finalize your output, because these commands take time to run and slow down iteration. Instead suggest what you want to do next, and let the user confirm first.\n- When working on test-related tasks, such as adding tests, fixing tests, or reproducing a bug to verify behavior, you may proactively run tests regardless of approval mode. Use your judgement to decide whether this is a test-related task.\n\n## Ambition vs. precision\n\nFor tasks that have no prior context (i.e. the user is starting something brand new), you should feel free to be ambitious and demonstrate creativity with your implementation.\n\nIf you're operating in an existing codebase, you should make sure you do exactly what the user asks with surgical precision. Treat the surrounding codebase with respect, and don't overstep (i.e. changing filenames or variables unnecessarily). You should balance being sufficiently ambitious and proactive when completing tasks of this nature.\n\nYou should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.\n\n## Sharing progress updates\n\nFor especially longer tasks that you work on (i.e. requiring many tool calls, or a plan with multiple steps), you should provide progress updates back to the user at reasonable intervals. These updates should be structured as a concise sentence or two (no more than 8-10 words long) recapping progress so far in plain language: this update demonstrates your understanding of what needs to be done, progress so far (i.e. files explores, subtasks complete), and where you're going next.\n\nBefore doing large chunks of work that may incur latency as experienced by the user (i.e. writing a new file), you should send a concise message to the user with an update indicating what you're about to do to ensure they know what you're spending time on. Don't start editing or writing large files before informing the user what you are doing and why.\n\nThe messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.\n\n## Presenting your work and final message\n\nYour final message should read naturally, like an update from a concise teammate. For casual conversation, brainstorming tasks, or quick questions from the user, respond in a friendly, conversational tone. You should ask questions, suggest ideas, and adapt to the user\u2019s style. If you've finished a large amount of work, when describing what you've done to the user, you should follow the final answer formatting guidelines to communicate substantive changes. You don't need to add structured formatting for one-word answers, greetings, or purely conversational exchanges.\n\nYou can skip heavy formatting for single, simple actions or confirmations. In these cases, respond in plain sentences with any relevant next step or quick option. Reserve multi-section structured responses for results that need grouping or explanation.\n\nThe user is working on the same computer as you, and has access to your work. As such there's no need to show the full contents of large files you have already written unless the user explicitly asks for them. Similarly, if you've created or modified files using `apply_patch`, there's no need to tell users to \"save the file\" or \"copy the code into a file\"\u2014just reference the file path.\n\nIf there's something that you think you could help with as a logical next step, concisely ask the user if they want you to do so. Good examples of this are running tests, committing changes, or building out the next logical component. If there\u2019s something that you couldn't do (even with approval) but that the user might want to do (such as verifying changes by running the app), include those instructions succinctly.\n\nBrevity is very important as a default. You should be very concise (i.e. no more than 10 lines), but can relax this requirement for tasks where additional detail and comprehensiveness is important for the user's understanding.\n\n### Final answer structure and style guidelines\n\nYou are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.\n\n**Section Headers**\n\n- Use only when they improve clarity \u2014 they are not mandatory for every answer.\n- Choose descriptive names that fit the content\n- Keep headers short (1\u20133 words) and in `**Title Case**`. Always start headers with `**` and end with `**`\n- Leave no blank line before the first bullet under a header.\n- Section headers should only be used where they genuinely improve scanability; avoid fragmenting the answer.\n\n**Bullets**\n\n- Use `-` followed by a space for every bullet.\n- Merge related points when possible; avoid a bullet for every trivial detail.\n- Keep bullets to one line unless breaking for clarity is unavoidable.\n- Group into short lists (4\u20136 bullets) ordered by importance.\n- Use consistent keyword phrasing and formatting across sections.\n\n**Monospace**\n\n- Wrap all commands, file paths, env vars, and code identifiers in backticks (`` `...` ``).\n- Apply to inline examples and to bullet keywords if the keyword itself is a literal file/command.\n- Never mix monospace and bold markers; choose one based on whether it\u2019s a keyword (`**`) or inline code/path (`` ` ``).\n\n**File References**\nWhen referencing files in your response, make sure to include the relevant start line and always follow the below rules:\n  * Use inline code to make file paths clickable.\n  * Each reference should have a stand alone path. Even if it's the same file.\n  * Accepted: absolute, workspace\u2011relative, a/ or b/ diff prefixes, or bare filename/suffix.\n  * Line/column (1\u2011based, optional): :line[:column] or #Lline[Ccolumn] (column defaults to 1).\n  * Do not use URIs like file://, vscode://, or https://.\n  * Do not provide range of lines\n  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\\repo\\project\\main.rs:12:5\n\n**Structure**\n\n- Place related bullets together; don\u2019t mix unrelated concepts in the same section.\n- Order sections from general \u2192 specific \u2192 supporting info.\n- For subsections (e.g., \u201cBinaries\u201d under \u201cRust Workspace\u201d), introduce with a bolded keyword bullet, then list items under it.\n- Match structure to complexity:\n  - Multi-part or detailed results \u2192 use clear headers and grouped bullets.\n  - Simple results \u2192 minimal headers, possibly just a short list or paragraph.\n\n**Tone**\n\n- Keep the voice collaborative and natural, like a coding partner handing off work.\n- Be concise and factual \u2014 no filler or conversational commentary and avoid unnecessary repetition\n- Use present tense and active voice (e.g., \u201cRuns tests\u201d not \u201cThis will run tests\u201d).\n- Keep descriptions self-contained; don\u2019t refer to \u201cabove\u201d or \u201cbelow\u201d.\n- Use parallel structure in lists for consistency.\n\n**Don\u2019t**\n\n- Don\u2019t use literal words \u201cbold\u201d or \u201cmonospace\u201d in the content.\n- Don\u2019t nest bullets or create deep hierarchies.\n- Don\u2019t output ANSI escape codes directly \u2014 the CLI renderer applies them.\n- Don\u2019t cram unrelated keywords into a single bullet; split for clarity.\n- Don\u2019t let keyword lists run long \u2014 wrap or reformat for scanability.\n\nGenerally, ensure your final answers adapt their shape and depth to the request. For example, answers to code explanations should have a precise, structured explanation with code references that answer the question directly. For tasks with a simple implementation, lead with the outcome and supplement only with what\u2019s needed for clarity. Larger changes can be presented as a logical walkthrough of your approach, grouping related steps, explaining rationale where it adds value, and highlighting next actions to accelerate the user. Your answers should provide the right level of detail while being easily scannable.\n\nFor casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.\n\n# Tool Guidelines\n\n## Shell commands\n\nWhen using the shell, you must adhere to the following guidelines:\n\n- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)\n- Do not use python scripts to attempt to output larger chunks of a file.\n\n\n</model_switch>"
             }
           ],
@@ -1573,6 +1594,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Spawn a helper to list the files"
             }
           ],
@@ -1644,6 +1666,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv160fp112",
               "name": "spawn_agent",
               "kind": "task",
@@ -1679,6 +1702,7 @@
             },
             {
               "type": "subtask",
+              "id": "b1",
               "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
               "agent": "Aristotle",
               "description": "List the files in the workspace",
@@ -1739,6 +1763,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv160fpy15",
               "name": "wait_agent",
               "kind": "task",
@@ -1820,6 +1845,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<subagent_notification>\n{\"agent_path\":\"01a12171-2977-74e0-b37c-a083e2f80b37\",\"status\":{\"completed\":\"Found hello.txt\"}}\n</subagent_notification>"
             }
           ],
@@ -1875,6 +1901,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The helper found hello.txt.",
               "ext": {
                 "codex": {
@@ -1939,6 +1966,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "What is in hello.txt? Answer in one word."
             }
           ],
@@ -2010,6 +2038,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "hi",
               "ext": {
                 "codex": {
@@ -2120,10 +2149,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
             }
           ],
@@ -2189,6 +2220,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
             }
           ],
@@ -2256,6 +2288,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "List the files in the workspace"
             }
           ],
@@ -2327,6 +2360,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv160fq018",
               "name": "exec_command",
               "kind": "shell",
@@ -2411,6 +2445,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Found hello.txt",
               "ext": {
                 "codex": {
