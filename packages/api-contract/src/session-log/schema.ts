@@ -199,6 +199,10 @@ export const SessionLogMessageSchema = z
     message.blocks.forEach((block, i) => {
       if (seen.has(block.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', i, 'id'], message: `block id ${block.id} repeats in message ${message.message_id}` });
       seen.add(block.id);
+      // F3: a text stored by reference states the full text's size.
+      if (block.type === 'text' && block.ref !== undefined && block.bytes === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', i, 'bytes'], message: `text block ${block.id} has ref and no bytes` });
+      }
     });
     // Closure rule (ToolCallBlock, C2): a thread at rest holds no in-context tool call that is open.
     // An exporter closes an interrupted call with `{ is_error: true, synthetic: true }`.

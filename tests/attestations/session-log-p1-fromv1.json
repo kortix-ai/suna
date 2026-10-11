@@ -1,0 +1,18 @@
+{
+  "source_hash": "39fc4fc6f4fde31f541918d44ae7bb658a5627338e57ce396434ec58f52299d7",
+  "diff_files": [
+    "packages/api-contract/src/__tests__/session-log-v1.test.ts",
+    "packages/api-contract/src/session-log/index.ts",
+    "packages/api-contract/src/session-log/schema.ts",
+    "packages/api-contract/src/session-log/v1.ts"
+  ],
+  "diff_hash": "19dae614f43f16816f30a3ce79c7e0f3969f9196e89acd37ce77500f577ea44f",
+  "head": "7ba5fa619a5f6a21a8e71942b04bbea2bbfa0086",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T00:24:40.714Z"
+}
