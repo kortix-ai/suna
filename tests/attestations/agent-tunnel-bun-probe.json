@@ -1,0 +1,27 @@
+{
+  "source_hash": "57ebc3e6353e145fac7767e944536092d647b6c0604cd03db8eb723b52d5990a",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-11T115135Z-open-every-bun-websocket-to-a-kortix-host-with-an-explicit-u.md",
+    "apps/cli/src/__tests__/kortix-socket.test.ts",
+    "apps/cli/src/__tests__/opencode-proxy.test.ts",
+    "apps/cli/src/__tests__/pty-socket.test.ts",
+    "apps/cli/src/api/kortix-socket.ts",
+    "apps/cli/src/api/pty-socket.ts",
+    "apps/cli/src/api/sdk.ts",
+    "apps/cli/src/commands/sessions-shell.ts",
+    "packages/agent-tunnel/src/agent/agent.ts",
+    "packages/agent-tunnel/src/agent/credential-probe.ts",
+    "packages/agent-tunnel/src/agent/service-lifecycle.test.ts",
+    "packages/shared/src/sandbox-runtime-artifact.ts"
+  ],
+  "diff_hash": "bbd26d85d5a607f10998e66690da59d843aae1fca7d8b5f7dae569ee8c6f4d66",
+  "head": "64f7ba62fe9c3da887da93f61485181779ec6a44",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T16:06:30.245Z"
+}
