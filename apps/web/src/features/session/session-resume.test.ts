@@ -1,3 +1,4 @@
+import { advanceWakeEscalation, initialWakeEscalationState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -6,6 +7,7 @@ import {
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
   isWakeClassFailure,
+  sessionWakeProgress,
 } from './session-resume';
 
 describe('isSandboxResumable', () => {
@@ -282,5 +284,53 @@ describe('isWakeClassFailure', () => {
 
   test('a session with no sandbox row at all is not a wake', () => {
     expect(isWakeClassFailure({ stage: 'failed', reason: null, sandbox: null })).toBe(false);
+  });
+});
+
+describe('sessionWakeProgress', () => {
+  // A cold Platinum restore runs inside the provider's start(), measured at
+  // 100–546 s. The box reads `stopped` throughout; the only signal is the
+  // server's `runtimeWakeProgressAt` heartbeat, refreshed every 30 s.
+  const restoringAt = (atMs: number) =>
+    sessionWakeProgress({
+      stage: 'starting',
+      reason: 'runtime_waking',
+      sandbox: {
+        status: 'stopped',
+        external_id: 'sbx_1',
+        metadata: {
+          runtimeWakeStartedAt: new Date(0).toISOString(),
+          runtimeWakeProgressAt: new Date(Math.floor(atMs / 30_000) * 30_000).toISOString(),
+        },
+      },
+    });
+
+  function ladderOver(progressAt: (atMs: number) => string) {
+    let state = initialWakeEscalationState();
+    const dispatched: string[] = [];
+    for (let nowMs = 0; nowMs <= 546_000; nowMs += 1_000) {
+      state = advanceWakeEscalation(state, {
+        nowMs,
+        waking: true,
+        runtimeReachable: false,
+        progress: progressAt(nowMs),
+        serverGaveUp: false,
+      });
+      if (state.dispatch !== 'none') dispatched.push(`${state.dispatch}@${nowMs / 1_000}s`);
+    }
+    return { dispatched, maxSilentMs: state.msSinceProgress };
+  }
+
+  test('a healthy 546 s restore never retries or restarts the session', () => {
+    expect(ladderOver(restoringAt)).toEqual({ dispatched: [], maxSilentMs: 6_000 });
+  });
+
+  test('a wake with no heartbeat still escalates after the silence window', () => {
+    expect(ladderOver(() => restoringAt(0)).dispatched[0]).toBe('retry-start@75s');
+  });
+
+  test('the restore heartbeat keeps the auto-resume window open', () => {
+    expect(restoringAt(30_000)).not.toBe(restoringAt(0));
+    expect(restoringAt(59_000)).toBe(restoringAt(30_000));
   });
 });

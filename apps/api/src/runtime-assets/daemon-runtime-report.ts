@@ -1,3 +1,4 @@
+import { isRecord } from '@kortix/shared/guards';
 /**
  * The health `runtime` block, as the API reads it.
  *
@@ -73,10 +74,6 @@ function str(value: unknown): string | null {
 
 function num(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**

@@ -14,7 +14,7 @@ import {
   configReleaseNoticePath,
   renderConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '@/services/config-release/notice'
+} from '@/services/config-provider/notice'
 import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 
 const COMMIT = '1234567890abcdef1234567890abcdef12345678'

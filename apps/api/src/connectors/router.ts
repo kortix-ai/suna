@@ -38,16 +38,13 @@ export { FEATURE_NOT_SUPPORTED_CODE } from './routes/shared';
 
 export type {
   AdminConnectorView,
-  CatalogAccount,
   CatalogConnector,
   ConnectorPrincipal,
   ConnectorRouterDeps,
   CrudOutcome,
   DefaultMode,
-  ListCatalogOptions,
   ProjectPoliciesViewResponse,
   ProjectPolicyView,
-  SyncResult,
 } from './router-contract';
 
 export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {

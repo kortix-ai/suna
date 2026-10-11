@@ -46,6 +46,18 @@ describe('show action toolbars', () => {
     });
   }
 
+  test('service toolbar non-compact icon buttons carry accessible names', () => {
+    const html = render(<ServicePreviewActions preview={preview} />);
+    // An icon-only button has an accessible name on every caller, not only
+    // when a caller passes a styling className (ServicePreviewActions passes
+    // none).
+    expect(html).toContain('aria-label="Refresh"');
+    expect(html).toContain('aria-label="Open private preview"');
+    // The secondary icon keeps its size without deriving it from the
+    // className prop.
+    expect(html).toContain('size-4.5');
+  });
+
   test('file panel hides Preview; service navigation disables both open actions', () => {
     expect(render(<ShowFileActions path="/workspace/report.pdf" inPanel />)).not.toContain(
       'Preview</button>',

@@ -16,11 +16,15 @@ export type AppStatus = 'Not deployed' | 'Running' | 'Suspended';
 /**
  * Three states, the same three web's App cards show: never deployed,
  * deployed and running, deployed and stopped. Anything else (`viewer_can_access`,
- * budgets) is not a runtime state and stays off this row.
+ * budgets) is not a runtime state and stays off this row. A static App has
+ * no runtime and serves whatever `desired_state` says, so deployed = Running.
  */
-export function appStatus(app: Pick<App, 'active_deployment_id' | 'desired_state'>): AppStatus {
+export function appStatus(
+  app: Pick<App, 'active_deployment_id' | 'desired_state' | 'hosting_type'>,
+): AppStatus {
   const deployed = Boolean(app.active_deployment_id);
-  return !deployed ? 'Not deployed' : app.desired_state === 'running' ? 'Running' : 'Suspended';
+  if (!deployed) return 'Not deployed';
+  return app.desired_state === 'running' || app.hosting_type === 'static' ? 'Running' : 'Suspended';
 }
 
 /** The viewer may see this App in the list but not open it (`viewer_can_access === false`). */

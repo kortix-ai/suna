@@ -215,11 +215,17 @@ export async function loadProjectAgentGovernance(projectId: string): Promise<Pro
   }
   const config = await loadProjectConfig(gitProject, files);
   return {
-    agents: config.agents.map((a) => ({
-      name: a.name,
-      description: a.description ?? null,
-      mode: a.mode ?? null,
-    })),
+    // Launchable agents only: the config summary lists every registered agent
+    // (a disabled one with `enabled: false`, for the project's own management
+    // surfaces), but a channel picker must not offer — and the binding check
+    // must not accept — an agent no session can launch.
+    agents: config.agents
+      .filter((a) => a.enabled !== false)
+      .map((a) => ({
+        name: a.name,
+        description: a.description ?? null,
+        mode: a.mode ?? null,
+      })),
     declared: config.agent_discovery === 'declarative',
   };
 }
@@ -291,14 +297,4 @@ export async function getChannelBindingById(
     .limit(1);
   if (!row?.projectId) return null;
   return row as ChannelBindingRow;
-}
-
-/**
- * A model id is shaped like a usable ref if it's a non-empty `provider/model`
- * pair (or `kortix/<id>`). Shape only — real servability is enforced separately
- * via `isModelServableForAccount` against the account's tier + connected keys.
- */
-export function isValidModelId(s: string): boolean {
-  const slash = s.indexOf('/');
-  return slash > 0 && slash < s.length - 1 && !/\s/.test(s);
 }

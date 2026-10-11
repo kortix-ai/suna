@@ -22,7 +22,7 @@ import {
   DetailRow,
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
-import { MFA_VERIFIED_EVENT } from '@/features/auth/mfa-step-up';
+import { armPendingMfaAction, clearPendingMfaAction } from '@/features/auth/mfa-pending-action';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { ChatIdentityPreview } from '@kortix/sdk';
 
@@ -89,6 +89,9 @@ export function ChatIdentityConnect({
     };
   }, [isLoading, user, token, preview]);
 
+  // Leaving the page drops its armed step-up action.
+  useEffect(() => clearPendingMfaAction, []);
+
   useEffect(() => {
     if (isLoading) return;
     if (!user) {
@@ -122,7 +125,7 @@ export function ChatIdentityConnect({
       // (mfa-step-up.tsx). Once the code verifies, connect again without a
       // second click.
       if ((err as { code?: string }).code === 'account_mfa_required') {
-        window.addEventListener(MFA_VERIFIED_EVENT, () => void connect(), { once: true });
+        armPendingMfaAction(() => void connect());
       }
     }
   }

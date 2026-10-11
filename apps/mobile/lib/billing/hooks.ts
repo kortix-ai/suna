@@ -5,33 +5,10 @@
  */
 
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import {
-  billingApi,
-  accountStateSelectors,
-  type AccountState,
-  type CreateCheckoutSessionRequest,
-  type CreateCheckoutSessionResponse,
-  type ScheduleDowngradeRequest,
-  type ScheduleDowngradeResponse,
-  type CancelScheduledChangeResponse,
-  type CreatePortalSessionRequest,
-  type CreatePortalSessionResponse,
-  type CancelSubscriptionRequest,
-  type PurchaseCreditsRequest,
-} from './api';
+import { cancelScheduledChange, getAccountState } from '@kortix/sdk';
+import { accountStateSelectors, type AccountState } from './api';
 
-// Re-export types for convenience
-export type {
-  AccountState,
-  CreateCheckoutSessionRequest,
-  CreateCheckoutSessionResponse,
-  ScheduleDowngradeRequest,
-  ScheduleDowngradeResponse,
-  CancelScheduledChangeResponse,
-  CreatePortalSessionRequest,
-  CreatePortalSessionResponse,
-  CancelSubscriptionRequest,
-};
+export type { AccountState };
 
 // Re-export selectors
 export { accountStateSelectors };
@@ -61,10 +38,8 @@ export function invalidateAccountState(
 
 // Don't retry on auth errors (401/403)
 const shouldRetry = (failureCount: number, error: Error) => {
-  const message = error.message || '';
-  if (message.includes('401') || message.includes('403') || message.includes('authentication')) {
-    return false;
-  }
+  const status = (error as { status?: unknown }).status;
+  if (status === 401 || status === 403) return false;
   return failureCount < 2;
 };
 
@@ -95,7 +70,11 @@ export function useAccountState(options?: UseAccountStateOptions) {
 
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
-    queryFn: () => billingApi.getAccountState(false, accountId),
+    // The SDK answers a 401 or a billing-disabled deployment with a default "no plan" state.
+    // ponytail: mobile's AccountState still declares subscription.is_trial /
+    // trial_status / trial_ends_at, which the API does not send; adopt the SDK's
+    // AccountState type when those readers are cleaned up.
+    queryFn: () => getAccountState({ accountId }) as unknown as Promise<AccountState>,
     enabled,
     staleTime: options?.staleTime ?? 1000 * 60 * 10, // 10 minutes
     gcTime: 1000 * 60 * 15, // 15 minutes
@@ -110,65 +89,11 @@ export function useAccountState(options?: UseAccountStateOptions) {
 // MUTATION HOOKS - All invalidate account state after success
 // =============================================================================
 
-export function useCreateCheckoutSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (request: CreateCheckoutSessionRequest) =>
-      billingApi.createCheckoutSession(request),
-    onSuccess: (data) => {
-      if (data.status === 'upgraded' || data.status === 'updated') {
-        invalidateAccountState(queryClient);
-      }
-      return data;
-    },
-  });
-}
-
-export function useCancelSubscription() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
-export function useCreatePortalSession() {
-  return useMutation({
-    mutationFn: (params: CreatePortalSessionRequest) => billingApi.createPortalSession(params),
-  });
-}
-
-export function useScheduleDowngrade() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
 export function useCancelScheduledChange() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => billingApi.cancelScheduledChange(),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
-export function useReactivateSubscription() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => billingApi.reactivateSubscription(),
+    mutationFn: () => cancelScheduledChange(),
     onSuccess: () => {
       invalidateAccountState(queryClient);
     },
@@ -415,73 +340,6 @@ export function useScheduledChanges(options?: { enabled?: boolean }) {
     error: null,
     refetch: async () => {},
   };
-}
-
-// =============================================================================
-// ADDITIONAL MUTATION HOOKS - Matching frontend
-// =============================================================================
-
-export function usePurchaseCredits() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request),
-    onSuccess: (data) => {
-      // Will redirect to checkout - invalidation happens on return via backend
-      if (data.checkout_url) {
-        // In mobile, handled by checkout functions
-      }
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
-export function useSyncSubscription() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => billingApi.syncSubscription(),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
-// =============================================================================
-// USAGE HISTORY & TRANSACTIONS
-// =============================================================================
-
-export function useUsageHistory(days = 30) {
-  return useQuery({
-    queryKey: [...accountStateKeys.all, 'usage-history', days],
-    queryFn: () => billingApi.getUsageHistory(days),
-    staleTime: 1000 * 60 * 10, // 10 minutes
-  });
-}
-
-export function useTransactions(limit = 50, offset = 0) {
-  return useQuery({
-    queryKey: [...accountStateKeys.all, 'transactions', limit, offset],
-    queryFn: () => billingApi.getTransactions(limit, offset),
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-}
-
-// =============================================================================
-// STREAMING VARIANT
-// =============================================================================
-
-export function useAccountStateWithStreaming(isStreaming: boolean = false) {
-  return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(),
-    queryFn: () => billingApi.getAccountState(),
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 15,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchInterval: isStreaming ? 2 * 60 * 1000 : false, // 2 minutes if streaming
-    refetchIntervalInBackground: false,
-  });
 }
 
 // =============================================================================

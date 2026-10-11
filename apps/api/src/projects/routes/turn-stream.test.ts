@@ -14,7 +14,6 @@
  * (the repo's `--isolate` runner guarantees that).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -30,6 +29,7 @@ let sandboxRow: Record<string, unknown> | null = null;
 let ownedRow: Record<string, unknown> | null = null;
 let sessionRow: Record<string, unknown> | null = null;
 let updateRows: Array<{ sessionId: string }> = [];
+const updateSets: Array<Record<string, unknown>> = [];
 let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = {
   row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
   userId: USER_ID,
@@ -58,6 +58,12 @@ let abandonResult = true;
 let adoptResult = 'adopted';
 let causeResult = 'attached';
 const order: string[] = [];
+let completionQueue: Array<typeof completionResult> = [];
+const completedMessageIds: Array<string | undefined> = [];
+const confirmed: string[] = [];
+const steerLookups: string[] = [];
+let steerTargets: Record<string, string> = {};
+let confirmOutcome: 'confirmed' | 'pending_delivery' | 'no_prompt' = 'confirmed';
 
 const databaseMock = {
   select: (projection: Record<string, unknown> = {}) => ({
@@ -75,9 +81,12 @@ const databaseMock = {
     }),
   }),
   update: (_table: unknown) => ({
-    set: (_values: Record<string, unknown>) => ({
-      where: () => ({ returning: async () => updateRows }),
-    }),
+    set: (values: Record<string, unknown>) => {
+      updateSets.push(values);
+      return {
+        where: () => ({ returning: async () => updateRows }),
+      };
+    },
   }),
 };
 
@@ -122,9 +131,21 @@ mock.module('../sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
   adoptRuntimeSandboxTurn: async () => adoptResult,
-  completeSandboxTurn: async () => {
+  completeSandboxTurn: async (_sessionId: string, _status: string, identity?: { messageId?: string }) => {
     order.push('complete');
-    return completionResult;
+    completedMessageIds.push(identity?.messageId);
+    return completionQueue.shift() ?? completionResult;
+  },
+}));
+
+mock.module('../session-lifecycle/consumption', () => ({
+  confirmInboxPromptConsumed: async (_sessionId: string, messageId: string) => {
+    confirmed.push(messageId);
+    return confirmOutcome;
+  },
+  steerTargetAtTurnEnd: async (_sessionId: string, messageId: string) => {
+    steerLookups.push(messageId);
+    return steerTargets[messageId] ?? null;
   },
 }));
 
@@ -161,6 +182,22 @@ mock.module('../lib/session-transcript-capture', () => ({
 
 mock.module('../sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
 
+// R7.4: the turn end refreshes the projection the session list follows.
+let projectionRefreshes: Array<{ target: Record<string, unknown>; options: unknown }> = [];
+let projectionOutcome: Record<string, unknown> = { refreshed: false, reason: 'not_modified' };
+let releaseProjection: (() => void) | null = null;
+mock.module('../lib/session-runtime-projection-refresh', () => ({
+  refreshRuntimeProjection: async (target: Record<string, unknown>, options: unknown) => {
+    projectionRefreshes.push({ target, options });
+    if (releaseProjection === null) return projectionOutcome;
+    await new Promise<void>((resolve) => {
+      releaseProjection = resolve;
+    });
+    order.push('projection');
+    return projectionOutcome;
+  },
+}));
+
 mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
@@ -176,10 +213,27 @@ mock.module('../lib/trigger-run-outcome', () => ({
   },
 }));
 
+const notified: Array<Record<string, unknown>> = [];
+// The real notifier resolves the context thunk only for a flag-on project
+// (notifications/session-push.ts); this stand-in always resolves it.
 mock.module('../../notifications/session-push', () => ({
   turnEndPushType: () => pushType,
-  notifySessionEvent: async () => {
+  notifySessionEvent: async (
+    event: Record<string, unknown>,
+    options: { context?: () => Promise<Record<string, unknown>> } = {},
+  ) => {
     order.push('notify');
+    notified.push({ ...event, ...(options.context ? await options.context() : {}) });
+  },
+}));
+
+// KRTX-1742: the turn end hands the notifier a thunk that resolves who
+// prompted the turn.
+const contextLookups: Array<{ session: Record<string, unknown>; turnMessageId: string | null }> = [];
+mock.module('../lib/notification-recipients', () => ({
+  turnEndNotificationContext: async (session: Record<string, unknown>, turnMessageId: string | null) => {
+    contextLookups.push({ session, turnMessageId });
+    return { prompterUserId: 'user-prompter', originClass: 'attended', isChild: false };
   },
 }));
 
@@ -221,6 +275,7 @@ beforeEach(() => {
   ownedRow = { sessionId: SESSION_ID, metadata: {} };
   sessionRow = session();
   updateRows = [{ sessionId: SESSION_ID }];
+  updateSets.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   loadProjectCalls.length = 0;
   capabilityCalls.length = 0;
@@ -236,7 +291,15 @@ beforeEach(() => {
   adoptResult = 'adopted';
   causeResult = 'attached';
   order.length = 0;
+  notified.length = 0;
+  contextLookups.length = 0;
   triggerRunEnds.length = 0;
+  completionQueue = [];
+  completedMessageIds.length = 0;
+  confirmed.length = 0;
+  steerLookups.length = 0;
+  steerTargets = {};
+  confirmOutcome = 'confirmed';
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -305,6 +368,31 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     const response = await post({ session_id: SESSION_ID, kind: 'turn_begin' });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'turn_begin requires a sandbox token' });
+  });
+
+  // The durable root pin is daemon-reported state about the caller's OWN
+  // session. A project member without the session's sandbox credential is
+  // refused before any validation, and no UPDATE reaches the database.
+  test('runtime_session requires a sandbox token and writes nothing', async () => {
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'runtime_session',
+      runtime_session_id: 'oc_member_chosen',
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
+    expect(updateSets).toEqual([]);
+  });
+
+  test('the pre-W3 runtime_session alias hits the same wall', async () => {
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'opencode_session',
+      opencode_session_id: 'oc_member_chosen',
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
+    expect(updateSets).toEqual([]);
   });
 
   test('a sandbox credential not scoped to the project is refused', async () => {
@@ -471,27 +559,33 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
   });
 
   test('runtime_session requires the id, then reports whether a row was updated', async () => {
-    const missing = await post({ session_id: SESSION_ID, kind: 'runtime_session' });
+    const missing = await post({ session_id: SESSION_ID, kind: 'runtime_session' }, sandboxCtx);
     expect(missing.status).toBe(400);
     expect(await missing.json()).toEqual({ error: 'runtime_session_id is required' });
 
     updateRows = [];
-    const response = await post({
-      session_id: SESSION_ID,
-      kind: 'runtime_session',
-      runtime_session_id: ' oc_root ',
-    });
+    const response = await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'runtime_session',
+        runtime_session_id: ' oc_root ',
+      },
+      sandboxCtx,
+    );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false });
   });
 
   test('a pre-W3 daemon pins with kind opencode_session and opencode_session_id', async () => {
     updateRows = [];
-    const response = await post({
-      session_id: SESSION_ID,
-      kind: 'opencode_session',
-      opencode_session_id: 'oc_root',
-    });
+    const response = await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'opencode_session',
+        opencode_session_id: 'oc_root',
+      },
+      sandboxCtx,
+    );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false });
   });
@@ -618,6 +712,50 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(order).toEqual(['complete', 'mirror', 'notify', 'relayEnd']);
   });
 
+  // KRTX-1742: the person who prompted the ended turn is told, not only the
+  // creator. The turn end names its message; projects/ resolves the prompter
+  // and the origin class, and the event carries them to the notifier.
+  test('a closed turn end hands the notifier its message id, prompter, origin class and error', async () => {
+    sessionRow = { ...session({ source: 'ui' }), origin: 'user' };
+    pushType = 'error';
+    await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'turn_end',
+        status: 'error',
+        turn_message_id: 'msg_turn',
+        error_name: 'APIError',
+        error_message: 'Payment Required: Insufficient credits.',
+      },
+      sandboxCtx,
+    );
+    expect(contextLookups).toEqual([
+      {
+        session: { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { source: 'ui' }, origin: 'user' },
+        turnMessageId: 'msg_turn',
+      },
+    ]);
+    expect(notified).toEqual([
+      {
+        type: 'error',
+        sessionId: SESSION_ID,
+        projectId: PROJECT_ID,
+        turnMessageId: 'msg_turn',
+        errorMessage: 'Payment Required: Insufficient credits.',
+        prompterUserId: 'user-prompter',
+        originClass: 'attended',
+        isChild: false,
+      },
+    ]);
+  });
+
+  test('an end that earns no notification resolves no prompter', async () => {
+    pushType = null;
+    await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
+    expect(contextLookups).toEqual([]);
+    expect(notified).toEqual([]);
+  });
+
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {
     sessionRow = session({ title_source: 'first prompt' });
     promotedId = 'prompt-9';
@@ -690,5 +828,82 @@ describe('POST /v1/projects/:projectId/turn-stream — content relay (step / ans
       reason: 'invalid_form',
       error: 'the form needs at least one field with an id and a label',
     });
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — steering (R10)', () => {
+  test('steer_read requires a sandbox token and a message id', async () => {
+    const denied = await post({ session_id: SESSION_ID, kind: 'steer_read', turn_message_id: 'msg_s' });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: 'steer_read requires a sandbox token' });
+    const missing = await post({ session_id: SESSION_ID, kind: 'steer_read' }, sandboxCtx);
+    expect(missing.status).toBe(400);
+    expect(confirmed).toEqual([]);
+  });
+
+  test('steer_read confirms the steered row consumed', async () => {
+    const response = await post({ session_id: SESSION_ID, kind: 'steer_read', turn_message_id: 'msg_s' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, outcome: 'confirmed' });
+    expect(confirmed).toEqual(['msg_s']);
+    expect(capabilityCalls).toEqual([]);
+  });
+
+  test('an end that names a steered message closes the turn the steer went into', async () => {
+    steerTargets = { msg_s: 'msg_turn' };
+    completionQueue = [{ outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 }];
+    const response = await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_s' }, sandboxCtx);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      turn_completion: { outcome: 'closed', closed_turn_count: 1 },
+    });
+    expect(completedMessageIds).toEqual(['msg_s', 'msg_turn']);
+    expect(steerLookups).toEqual(['msg_s']);
+  });
+
+  test('an end that closed its own turn reads no steer row', async () => {
+    await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
+    expect(completedMessageIds).toEqual(['msg_turn']);
+    expect(steerLookups).toEqual([]);
+  });
+
+  test('a mismatched end that names no steer row stays a mismatch', async () => {
+    completionResult = { outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 };
+    const response = await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_other' }, sandboxCtx);
+    expect(await response.json()).toMatchObject({ ok: false, turn_completion: { outcome: 'identity_mismatch' } });
+    expect(completedMessageIds).toEqual(['msg_other']);
+    expect(steerLookups).toEqual(['msg_other']);
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — the session list at turn end (R7.4)', () => {
+  beforeEach(() => {
+    projectionRefreshes = [];
+    projectionOutcome = { refreshed: false, reason: 'not_modified' };
+    releaseProjection = null;
+  });
+
+  test('the turn end forces a projection refresh as the session creator, and is answered only after it', async () => {
+    let answered = false;
+    releaseProjection = () => {};
+    const pending = Promise.resolve(post({ session_id: SESSION_ID, kind: 'end' })).then((response) => {
+      answered = true;
+      return response;
+    });
+    for (let i = 0; i < 50 && projectionRefreshes.length === 0; i++) await Bun.sleep(2);
+    expect(projectionRefreshes).toEqual([
+      { target: { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, userId: USER_ID }, options: { force: true } },
+    ]);
+    await Bun.sleep(20);
+    // The daemon re-sends an unanswered turn end: no answer while the refresh runs.
+    expect(answered).toBe(false);
+    releaseProjection!();
+    expect((await pending).status).toBe(200);
+  });
+
+  test('a session with no creator to sign the read refreshes nothing, and the turn end is still answered', async () => {
+    sessionRow = session({}, null);
+    expect((await post({ session_id: SESSION_ID, kind: 'end' })).status).toBe(200);
+    expect(projectionRefreshes).toEqual([]);
   });
 });

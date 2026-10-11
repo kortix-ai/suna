@@ -36,6 +36,7 @@ flow(
       "PATCH /v1/tunnel/connections/:tunnelId",
       "DELETE /v1/tunnel/connections/:tunnelId",
       "POST /v1/tunnel/connections/:tunnelId/rotate-token",
+      "POST /v1/tunnel/connections/:tunnelId/access",
       "GET /v1/projects/:projectId/connections",
     ],
     serial: true,
@@ -80,6 +81,17 @@ flow(
       (await owner.patch("/v1/tunnel/connections/:tunnelId", { name: ctx.fixtures.name("renamed") }, params)).status(200);
       (await owner.patch("/v1/tunnel/connections/:tunnelId", { name: "  " }, params)).status(400);
       (await owner.post("/v1/tunnel/connections/:tunnelId/rotate-token", {}, params)).status(200).body().exists("$.setupToken");
+    });
+
+    await ctx.step("OWNER changes access through Kortix: a bad change → 400; an offline machine → 409 computer_offline", async () => {
+      const params = { params: { tunnelId: machine.tunnelId } };
+      // No agent has reported yet: the machine shows no access state.
+      (await owner.get("/v1/tunnel/connections/:tunnelId", params)).status(200).body().has("$.access", null);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "sometimes" }, params)).status(400);
+      const offline = await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, params);
+      offline.status(409).body().has("$.code", "computer_offline");
+      assert.match(offline.json<any>().error, /npx @kortix\/agent-tunnel@latest access/);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, { params: { tunnelId: MISSING_UUID } })).status(404);
     });
 
     await ctx.step("unknown machine → 404", async () => {

@@ -25,8 +25,8 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
 
 /**
  * Enqueue a durable "deliver this follow-up into the session" command —
- * drained by the leader's scheduler tick, retried with backoff, dead-lettered
- * after 5 attempts. Survives the enqueueing pod dying, unlike a detached
+ * drained by the 1 s lifecycle worker on every replica (and by targeted kicks),
+ * retried with backoff, dead-lettered after 5 attempts. Survives the enqueueing pod dying, unlike a detached
  * promise. `availableAt` in the future = a scheduled grace window.
  */
 export interface EnqueueContinueSessionCommandInput {
@@ -51,6 +51,8 @@ export interface EnqueueContinueSessionCommandInput {
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
+  /** See `QueuedContinueSessionPayload.delivery`. Pass the derived `placement` with it. */
+  delivery?: QueuedContinueSessionPayload['delivery'];
   /** Enqueue HELD — see `enqueueReleasingHold`. Pass `availableAt` with it. */
   held?: boolean;
   parts?: PromptPartWire[];
@@ -60,6 +62,8 @@ export interface EnqueueContinueSessionCommandInput {
   bindTurnIdentity?: boolean;
   authorSessionId?: string | null;
   noReply?: boolean;
+  opencodeEnv?: Record<string, string | null>;
+  directFollowUp?: boolean;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -78,10 +82,13 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
     ...(input.placement ? { placement: input.placement } : {}),
+    ...(input.delivery ? { delivery: input.delivery } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
     ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
     ...(input.noReply ? { noReply: true } : {}),
+    ...(input.opencodeEnv ? { opencodeEnv: input.opencodeEnv } : {}),
+    ...(input.directFollowUp ? { directFollowUp: true } : {}),
   };
   return {
     commandType: 'continue_session',

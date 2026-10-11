@@ -3,7 +3,7 @@
 // the list / bulk delete the push sender uses.
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { pushDeviceTokens } from '@kortix/db';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { createPushDeviceTokenStore } from './device-tokens';
 
@@ -117,6 +117,43 @@ withDb('push device token store', () => {
     await store.upsert({ token: foreign, userId: userB, platform: 'ios', provider: 'expo' });
 
     expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([token, second].sort());
+  });
+
+  // KRTX-1722: a phone signed out from Settings > Security, or by "sign out
+  // other devices" in GoTrue, kept getting lock-screen pushes.
+  test('listByUser skips a token whose sign-in ended, and keeps one registered without a sign-in', async () => {
+    const live = crypto.randomUUID();
+    const ended = crypto.randomUUID();
+    await db.execute(sql`
+      insert into auth.users (id, email, instance_id, aud, role)
+      values (${userA}::uuid, ${`push-${userA}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`);
+    try {
+      await db.execute(sql`
+        insert into auth.sessions (id, user_id) values (${live}::uuid, ${userA}::uuid), (${ended}::uuid, ${userA}::uuid)`);
+      const onLive = `${token}-live`;
+      const onEnded = `${token}-ended`;
+      const legacy = `${token}-legacy`;
+      await store.upsert({ token: onLive, userId: userA, platform: 'ios', provider: 'expo', authSessionId: live });
+      await store.upsert({ token: onEnded, userId: userA, platform: 'ios', provider: 'expo', authSessionId: ended });
+      await store.upsert({ token: legacy, userId: userA, platform: 'android', provider: 'expo' });
+      expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([legacy, onEnded, onLive].sort());
+
+      await db.execute(sql`delete from auth.sessions where id = ${ended}::uuid`);
+      expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([legacy, onLive].sort());
+    } finally {
+      await db.execute(sql`delete from auth.users where id = ${userA}::uuid`);
+    }
+  });
+
+  test('a re-registration records the sign-in it came from', async () => {
+    const first = crypto.randomUUID();
+    const second = crypto.randomUUID();
+    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo', authSessionId: first });
+    expect(await rowOf(token)).toMatchObject({ authSessionId: first });
+    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo', authSessionId: second });
+    expect(await rowOf(token)).toMatchObject({ authSessionId: second });
+    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo' });
+    expect(await rowOf(token)).toMatchObject({ authSessionId: null });
   });
 
   test('deleteTokens removes the listed tokens regardless of owner and ignores unknown ones', async () => {

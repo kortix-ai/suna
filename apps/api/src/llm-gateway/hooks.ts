@@ -24,12 +24,10 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
-import { checkBudget, releaseBudgetReservation } from './budgets';
+import { type BudgetCrossing, checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
-import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
-import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
@@ -142,12 +140,28 @@ function logGatewayBudgetWarnings(
   }
 }
 
+/**
+ * Email the budget's managers at 80% and 100% (KRTX-1718). Fire-and-forget,
+ * and lazy: no request waits on it, and the alert module (IAM, email) stays
+ * out of the request path's import graph.
+ */
+function alertBudgetCrossings(principal: AuthedPrincipal, crossings: BudgetCrossing[] | undefined): void {
+  const projectId = principal.projectId;
+  if (!crossings?.length || !projectId) return;
+  void import('./budget-alerts')
+    .then((alerts) => alerts.alertBudgetCrossings(projectId, crossings))
+    .catch((err: unknown) =>
+      logger.warn('[gateway] budget alert failed', { projectId, error: err instanceof Error ? err.message : String(err) }),
+    );
+}
+
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
 export class GatewayBudgetExceededError extends Error {}
 
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
-  const { exceeded, message, warnings } = await checkBudget(principal);
+  const { exceeded, message, warnings, crossings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
+  alertBudgetCrossings(principal, crossings);
   if (exceeded) throw new GatewayBudgetExceededError(message ?? 'Budget exceeded');
 }
 
@@ -188,8 +202,9 @@ export async function authorizeRequest(
       };
     }
   }
-  const { exceeded, message, warnings } = await checkBudget(principal);
+  const { exceeded, message, warnings, crossings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
+  alertBudgetCrossings(principal, crossings);
   if (exceeded) {
     // A legacy gateway can have a hold here. It refunds the hold when it sees
     // this denial's principal.
@@ -205,17 +220,26 @@ export async function authorizeRequest(
 }
 
 /**
- * Apply the LLM wallet gate only to accounts that can spend wallet credits on
- * Kortix-managed models. Free-tier wallets fund sandbox compute only.
+ * Apply the LLM wallet gate to every request that can spend wallet credits on
+ * Kortix-managed models.
+ *
+ * An account without the managed-models entitlement (BYOK-only, whether by
+ * tier, trial, or operator override) settles its own keys and ChatGPT
+ * subscription at billingMode 'none' — nothing for this gate to fund — so the
+ * legacy non-deferred auth call (no model resolved yet) skips it. The one
+ * exception is the platform default: the ONE managed model every tier may use
+ * (KRTX-1067), which settles as credits. The deferred gateway path calls this
+ * only for a Kortix-billed request it already resolved (`creditsRequest`), so
+ * the floor applies there for every account — without it a drained free
+ * wallet ran platform-default turns with no admission hold and the settle
+ * (which never enforces a floor) drove the balance negative.
  */
 export async function assertLlmBillingActive(
   accountId: string,
+  opts?: { creditsRequest?: boolean },
 ): Promise<{ holdUsd?: number } | void> {
-  // Accounts without the managed-models entitlement (BYOK-only, whether by
-  // tier, trial, or operator override) never spend wallet credits on managed
-  // inference — their wallets fund sandbox compute only, so skip the LLM gate.
   if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    if (!(await accountMayUseManagedModels(accountId))) return;
+    if (!(await accountMayUseManagedModels(accountId)) && !opts?.creditsRequest) return;
   }
   return assertBillingActive(accountId);
 }

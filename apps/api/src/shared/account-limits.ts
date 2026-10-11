@@ -3,7 +3,7 @@ import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
 import { activeTrialSeatLimit } from '../billing/services/resolve-billing';
 import { getPlanRecord } from '../billing/services/plan-catalog';
-import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Managed cloud is paid-only: new accounts resolve to tier 'none' and must

@@ -168,6 +168,12 @@ describe('golden SQL: turn authority statements', () => {
     expect(executed).toMatchSnapshot();
   });
 
+  test('clearSandboxTurn only past the deadline re-reads it in the same statement', async () => {
+    executeResults = [[{ ...OWNER, cleared: true }]];
+    await clearSandboxTurn('sb-1', 'turn-token', undefined, 'failed', REAPER_CAUSE, true);
+    expect(executed).toMatchSnapshot();
+  });
+
   test('renewActiveSandboxTurn renews the deadline of the exact token', async () => {
     executeResults = [[{ renewed: true }]];
     await renewActiveSandboxTurn('sb-1', 'turn-token');

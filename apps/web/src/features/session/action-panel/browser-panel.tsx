@@ -19,7 +19,7 @@ import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
 import { useTranslations } from '@/i18n/use-translations';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import {
   buildWebProxyUrl,
@@ -452,7 +452,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
                 : tI18nComplete('text8d0218f233bb', { value0: port })
             }
             className="h-full w-full border-0"
-            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+            sandbox={framePolicy('app', previewUrl).sandbox}
             onLoad={handleLoad}
             onError={handleError}
           />

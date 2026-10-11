@@ -6,10 +6,12 @@ import { extendSandboxDeadline } from '../sandbox-deadline';
 import { promptRetryGraceMs } from '../sandbox-deadline-policy';
 import { db } from '../../shared/db';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
+import { commandTriggerSlug, raiseTriggerAlert } from '../lib/trigger-alerts';
 import { inboxOrderBy } from './inbox-order';
 import { transitionSession } from './status-transitions';
 import { type CommandLease, logLeaseLost, ownedByLease } from './command-lease';
 import { withNextDeliveryAttempt } from './prompt-payload';
+import { notHeldSql, stopPausedOnDeliverySql } from './delivery-state';
 
 /**
  * Put a claimed row back WITHOUT counting the claim as an attempt.
@@ -134,6 +136,8 @@ export async function requeueForAdmission(
   lease: CommandLease,
   reason: InboxAdmissionReason,
   availableAt: Date,
+  /** Extra result keys the refusal carries — the boundary-wait window. */
+  resultPatch?: Record<string, unknown>,
 ): Promise<boolean> {
   const rows = await db
     .update(sessionLifecycleCommands)
@@ -144,7 +148,7 @@ export async function requeueForAdmission(
       lockedUntil: null,
       attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
       result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
-        || ${JSON.stringify({ admission_reason: reason })}::jsonb
+        || ${JSON.stringify({ admission_reason: reason, ...(resultPatch ?? {}) })}::jsonb
         || jsonb_build_object('admission_refusals',
              COALESCE((${sessionLifecycleCommands.result}->>'admission_refusals')::int, 0) + 1)`,
       payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
@@ -153,6 +157,25 @@ export async function requeueForAdmission(
     .where(ownedByLease(lease))
     .returning({ commandId: sessionLifecycleCommands.commandId });
   return appliedUnderLease(lease, 'requeueForAdmission', rows);
+}
+
+/**
+ * A `steer` row that cannot steer becomes a Queue List row for good (R10):
+ * `payload.delivery = 'queue'` and the reason in `payload.steerFallback`. The
+ * predicate on `delivery` writes it once. The claim is kept; the caller
+ * admits or requeues the row as a queue row.
+ */
+export async function recordSteerFallback(
+  lease: CommandLease,
+  reason: 'unsupported' | 'not_prompter' | 'turn_ended',
+): Promise<void> {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ delivery: 'queue', steerFallback: reason })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(and(ownedByLease(lease), sql`${sessionLifecycleCommands.payload}->>'delivery' = 'steer'`));
 }
 
 /**
@@ -179,7 +202,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
         eq(sessionLifecycleCommands.sessionId, sessionId),
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         eq(sessionLifecycleCommands.status, 'queued'),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        notHeldSql,
         sql`(${sessionLifecycleCommands.result} ? 'admission_reason' OR ${sessionLifecycleCommands.availableAt} <= now())`,
       ),
     )
@@ -284,7 +307,7 @@ export async function markCommandForwarded(
   lease: CommandLease,
   sessionId: string,
   wireMessageId: string,
-  opts?: { noReply?: boolean },
+  opts?: { noReply?: boolean; steeredIntoMessageId?: string },
 ): Promise<boolean> {
   const forwarded = {
     status: 'forwarded',
@@ -293,6 +316,9 @@ export async function markCommandForwarded(
     // row alone, without re-deriving which of the payload's two ids this
     // attempt actually used.
     forwarded_message_id: wireMessageId,
+    // A steer: the message of the running turn that reads it. A turn end
+    // that names this row's id closes that turn (`steerTargetAtTurnEnd`).
+    ...(opts?.steeredIntoMessageId ? { steered_into_message_id: opts.steeredIntoMessageId } : {}),
   };
   const rows = await db
     .update(sessionLifecycleCommands)
@@ -302,7 +328,7 @@ export async function markCommandForwarded(
       result: sql`${JSON.stringify(forwarded)}::jsonb || CASE
         WHEN COALESCE(${sessionLifecycleCommands.payload}->>'consumedOnDelivery', '') = 'true'
         THEN '{"status": "delivered"}'::jsonb
-        WHEN COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+        WHEN ${stopPausedOnDeliverySql}
         THEN '{"stop_paused": true, "held": true}'::jsonb
         ELSE ${opts?.noReply ? '{"status": "delivered", "no_reply": true}' : '{}'}::jsonb
       END`,
@@ -325,7 +351,7 @@ export async function markCommandFailed(
     sessionId?: string | null;
     result?: Record<string, unknown>;
   },
-): Promise<void> {
+): Promise<'queued' | 'dead_lettered' | 'lease_lost'> {
   const retry = opts.retryable && opts.attempts < 5;
   const [row] = await db
     .update(sessionLifecycleCommands)
@@ -344,9 +370,9 @@ export async function markCommandFailed(
     .returning();
   if (!row) {
     logLeaseLost(lease, 'markCommandFailed');
-    return;
+    return 'lease_lost';
   }
-  if (retry) return;
+  if (retry) return 'queued';
 
   // Dead-lettered = this command's work is being ABANDONED. That used to be a
   // console.warn deep in the drain — invisible to alerting while the user's
@@ -381,7 +407,10 @@ export async function markCommandFailed(
   // takes a working session away over one lost delivery.
   const isInboxPrompt =
     typeof (row.payload as { clientMessageId?: unknown } | null)?.clientMessageId === 'string';
-  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt) {
+  // A channel reply or a question answer showed its failure where it was sent;
+  // the direct call it replaced never parked the session either.
+  const isDirectFollowUp = (row.payload as { directFollowUp?: unknown } | null)?.directFollowUp === true;
+  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt && !isDirectFollowUp) {
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
@@ -413,7 +442,20 @@ export async function markCommandFailed(
       error,
     }).catch(() => {});
   }
+
+  // A trigger's prompt or queued create is abandoned: its watchers hear about
+  // it (KRTX-1742). An INLINE create's caller got the failure in hand and
+  // answers it on its own path (the cron execution retries it; a webhook or
+  // manual fire alerts at once), so only a queued command alerts here.
+  const triggerSlug = commandTriggerSlug(row);
+  if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
+    await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
+  }
+  return 'dead_lettered';
 }
+
+/** `claimCreateSessionCommand` locks an inline create with this owner prefix. */
+const INLINE_CREATE_LOCK_PREFIX = 'session-lifecycle-inline:';
 
 /**
  * How many times a prompt re-attempts delivery into a runtime that was DOWN.
@@ -572,7 +614,7 @@ export async function reArmRuntimeBlockedPrompts(
         eq(sessionLifecycleCommands.sessionId, sessionId),
         eq(sessionLifecycleCommands.status, 'queued'),
         sql`${sessionLifecycleCommands.result}->>'delivery_blocked' = ${RUNTIME_UNREACHABLE_REASON}`,
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', 'false') <> 'true'`,
+        notHeldSql,
       ),
     )
     .returning({ commandId: sessionLifecycleCommands.commandId });

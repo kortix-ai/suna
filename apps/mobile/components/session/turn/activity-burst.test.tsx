@@ -31,50 +31,28 @@ beforeEach(() => {
 const thought: Part = { type: 'reasoning', id: 'thought-1', sessionID: 's', messageID: 'm', text: 'A synthetic thought', time: { start: 1, end: 2 } };
 const plumbing: Part = { type: 'tool', id: 'plumbing-1', sessionID: 's', messageID: 'm', callID: 'c', tool: 'get_mem', state: { status: 'completed', input: {}, output: '', title: 'Memory', metadata: {}, time: { start: 1, end: 2 } } };
 
+const call: Part = { type: 'tool', id: 'call-1', sessionID: 's', messageID: 'm', callID: 'c2', tool: 'bash', state: { status: 'completed', input: { command: 'ls' }, output: 'ok', title: 'ls', metadata: {}, time: { start: 1, end: 2 } } } as unknown as Part;
+
 function render(parts: Part[]) {
   return create(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts }, turnLive: false }));
 }
 
-describe('ActivityBurst thinking disclosure', () => {
-  test('renders reasoning as a toggleable Thinking disclosure', () => {
-    let tree: ReturnType<typeof create>;
-    act(() => { tree = render([thought]); });
-    expect(tree!.root.findByProps({ accessibilityLabel: 'Thinking' }).props.accessibilityState).toEqual({ expanded: false });
-    act(() => tree!.root.findByProps({ accessibilityLabel: 'Thinking' }).props.onPress());
-    act(() => tree!.unmount());
-    act(() => { tree = render([thought]); });
-    expect(tree!.root.findByProps({ accessibilityLabel: 'Thinking' }).props.accessibilityState).toEqual({ expanded: true });
-    expect(tree!.root.findByType(Markdown).children).toEqual(['A synthetic thought']);
-    act(() => tree!.unmount());
+describe('ActivityBurst thinking', () => {
+  test('a reasoning-only burst renders nothing, live or settled', () => {
+    for (const turnLive of [false, true]) {
+      let tree: ReturnType<typeof create>;
+      act(() => { tree = create(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts: [thought] }, turnLive, isTrailing: turnLive })); });
+      expect(tree!.toJSON()).toBeNull();
+      act(() => tree!.unmount());
+    }
   });
 
-  test('keeps the disclosure choice when invisible plumbing precedes the thought', () => {
+  test('a thought beside a call never reaches the page; only the summary line does', () => {
     let tree: ReturnType<typeof create>;
-    act(() => { tree = render([thought]); });
-    act(() => tree!.root.findByProps({ accessibilityLabel: 'Thinking' }).props.onPress());
-    act(() => tree!.update(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts: [plumbing, thought] }, turnLive: false })));
-    expect(tree!.root.findByProps({ accessibilityLabel: 'Thinking' }).props.accessibilityState).toEqual({ expanded: true });
-    act(() => tree!.unmount());
-  });
-});
-
-describe('ActivityBurst running summary', () => {
-  const running: Part = { type: 'tool', id: 'run-1', sessionID: 's', messageID: 'm', callID: 'c1', tool: 'bash', state: { status: 'running', input: { command: 'ls' }, time: { start: 1 } } } as Part;
-  const summary = () =>
-    create(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts: [running, { ...running, id: 'run-2', callID: 'c2' } as Part] }, turnLive: true, isTrailing: true }));
-
-  test('shimmers "Working · N steps" while running', () => {
-    let tree: ReturnType<typeof create>;
-    act(() => { tree = summary(); });
-    expect(tree!.root.findAllByType('shimmer' as never)).toHaveLength(1);
-    act(() => tree!.unmount());
-  });
-
-  test('keeps shimmering "Working · N steps" while it owns the open sheet', () => {
-    owned = true;
-    let tree: ReturnType<typeof create>;
-    act(() => { tree = summary(); });
-    expect(tree!.root.findAllByType('shimmer' as never)).toHaveLength(1);
+    act(() => { tree = render([thought, plumbing, call]); });
+    expect(JSON.stringify(tree!.toJSON())).not.toContain('A synthetic thought');
+    expect(tree!.root.findAllByProps({ accessibilityLabel: 'Thinking' })).toHaveLength(0);
+    expect(tree!.root.findByProps({ accessibilityHint: 'Opens the activity' })).toBeTruthy();
     act(() => tree!.unmount());
   });
 });

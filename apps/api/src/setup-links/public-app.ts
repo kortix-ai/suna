@@ -10,8 +10,8 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { requestClientKey } from '../middleware/client-ip';
-import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { connectorConnections, connectors, projectSecrets, projectSessions, projects } from '@kortix/db';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { type Context, type Next } from 'hono';
 import { errors, json, lenientBody, makeOpenApiApp } from '../openapi';
@@ -26,7 +26,7 @@ import {
   withheldSecretsFix,
   type SessionWithheldSecrets,
 } from '../projects/lib/session-secret-reach';
-import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
+import { isValidSecretName, projectSecretsDeletedSince, writeSharedProjectSecret } from '../projects/secrets';
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
@@ -50,6 +50,10 @@ const setupLinksPublicApp = makeOpenApiApp();
 // Unauthenticated on purpose: the token in the path IS the capability.
 const TokenParams = z.object({ token: z.string() });
 const LinkErrors = errors(400, 404, 410);
+/** Statuses a SECRET link adds to a link error: the link can also name a
+ *  secret the owner removed after the token was minted (409 — see the
+ *  tombstone check in the two secret routes). */
+const SecretLinkErrors = errors(400, 404, 409, 410);
 /** Statuses `resolveConnectorLink` adds to a link error. */
 const ConnectorLinkErrors = errors(400, 404, 409, 410, 501, 502);
 
@@ -185,6 +189,18 @@ setupLinksPublicApp.use('/connectors/:token', createSetupLinkRateLimitMiddleware
 setupLinksPublicApp.use('/connectors/:token/start', createSetupLinkRateLimitMiddleware());
 setupLinksPublicApp.use('/connectors/:token/finalize', createSetupLinkRateLimitMiddleware());
 
+/**
+ * The one message a link whose target secret was removed after minting
+ * answers with, on the intake page (GET) and on the submit (POST): what
+ * happened, which secret, and the way out. 409, not 410: the link itself did
+ * not expire — the state it pointed at did, and only a fresh link fixes it.
+ */
+function deadSecretLinkMessage(names: string[]): string {
+  const list = names.join(', ');
+  const was = names.length === 1 ? 'was' : 'were';
+  return `This link is no longer valid: ${list} ${was} removed from the project after the link was issued. Ask the agent for a fresh link.`;
+}
+
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
 setupLinksPublicApp.openapi(createRoute({
   method: 'get',
@@ -192,7 +208,7 @@ setupLinksPublicApp.openapi(createRoute({
   tags: ['setup-links'],
   summary: 'Read what a secret setup link asks for',
   request: { params: TokenParams },
-  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...LinkErrors },
+  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...SecretLinkErrors },
 }), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
@@ -203,6 +219,16 @@ setupLinksPublicApp.openapi(createRoute({
   if (!project || project.status === 'archived') {
     return c.json({ error: 'This link is unavailable' }, 404);
   }
+  // A secret the owner removed after this token was minted must not look
+  // collectable: the form would take values the submit then has to refuse.
+  // Tokens minted before `iat` carry no mint time, so 0 — any deletion of a
+  // requested name kills them (an unknown mint time is the oldest possible).
+  const dead = await projectSecretsDeletedSince(
+    resolved.projectId,
+    resolved.payload.fields.map((f) => f.name),
+    resolved.payload.iat ?? 0,
+  );
+  if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
 
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
@@ -231,7 +257,7 @@ setupLinksPublicApp.openapi(createRoute({
       only_requester: z.boolean().optional().openapi({ description: 'Keep the values to the member who asked.' }),
     }) } } },
   },
-  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...LinkErrors },
+  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...SecretLinkErrors },
 }), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
@@ -255,14 +281,33 @@ setupLinksPublicApp.openapi(createRoute({
     if (!project || project.status === 'archived') {
       return c.json({ error: 'This link is unavailable' }, 404);
     }
+    // Same tombstone check as the page, now inside the write transaction and
+    // after the same project-row lock: either this submission commits before
+    // an unset deletes the row, or the unset's tombstone is already visible
+    // here and the submission is refused. A link can never re-create what the
+    // owner removed after minting it (KRTX-2056).
+    const dead = await projectSecretsDeletedSince(
+      resolved.projectId,
+      payload.fields.map((f) => f.name),
+      payload.iat ?? 0,
+    );
+    if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
     // "Only the person who asked" — the one audience a link holder may choose.
     // It can only narrow: the default is everyone in the project.
+    // The minter must still be in the account: a removed member's links die with them.
+    if (payload.uid && !(await linkRequester(resolved.projectId, payload.uid))) {
+      return c.json({ error: 'This link is no longer valid — ask the agent for a fresh one' }, 410);
+    }
     const requester = body?.only_requester === true ? await linkRequester(resolved.projectId, payload.uid) : null;
     if (body?.only_requester === true && !requester) {
       return c.json({ error: 'This link cannot keep the values to one person' }, 400);
     }
     const accountId = requester ? await projectAccount(resolved.projectId) : null;
 
+    // Single use per key, without a table: a key written after the link was
+    // minted is spent. The shared (non-personal) row's updated_at is the marker.
+    const mintedAt = new Date(payload.iat ?? payload.exp - 7 * 24 * 60 * 60_000);
+    let spent = 0;
     const saved: string[] = [];
     for (const [rawName, rawValue] of Object.entries(values)) {
       const name = rawName.toUpperCase();
@@ -271,6 +316,14 @@ setupLinksPublicApp.openapi(createRoute({
       if (!allowed.has(name) || !isValidSecretName(name)) continue;
       const value = typeof rawValue === 'string' ? rawValue : '';
       if (!value) continue;
+      const [written] = await db.select({ id: projectSecrets.secretId }).from(projectSecrets)
+        .where(and(
+          eq(projectSecrets.projectId, resolved.projectId),
+          eq(projectSecrets.identifier, name),
+          isNull(projectSecrets.ownerUserId),
+          gt(projectSecrets.updatedAt, mintedAt),
+        )).limit(1);
+      if (written) { spent++; continue; }
       const audience =
         requester && accountId
           ? { accountId, projectId: resolved.projectId, principals: [{ principal_type: 'user' as const, principal_id: requester.id }], grantedBy: requester.id }
@@ -287,14 +340,14 @@ setupLinksPublicApp.openapi(createRoute({
         ...(pendingId ? { secretId: pendingId } : {}),
       });
       if (audience && pendingId && secretId !== pendingId) {
-        // The key already existed: drop the pending grants, narrow the row itself.
+        // The key already existed: drop the pending grants. A link never narrows an existing row's audience.
         await clearSecretAudience({ accountId: audience.accountId, projectId: audience.projectId, secretId: pendingId });
-        await setSecretAudience({ ...audience, secretId });
       }
       saved.push(name);
     }
 
     if (saved.length === 0) {
+      if (spent > 0) return c.json({ error: 'This link was already used — ask the agent for a fresh one' }, 409);
       return c.json({ error: 'No values provided for the requested keys' }, 400);
     }
 
@@ -741,6 +794,9 @@ async function notifyRequestingSession(
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
       '../projects/session-lifecycle'
     );
+    // A key per submission only so the kick can target this row: an untargeted
+    // kick delivers whichever row is oldest-due.
+    const idempotencyKey = `secret-submitted:${sessionId}:${crypto.randomUUID()}`;
     await enqueueContinueSessionCommand({
       source: 'system:secret-submitted',
       projectId,
@@ -748,8 +804,9 @@ async function notifyRequestingSession(
       sessionId,
       actorUserId,
       text: secretSubmittedPrompt(saved, reach),
+      idempotencyKey,
     });
-    drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+    drainSessionLifecycleQueue({ idempotencyKey, burst: false }).catch(() => {});
     console.info('[setup-links] secret submitted, session notified', { sessionId, saved });
   } catch (err) {
     console.warn('[setup-links] failed to notify session of secret submission:', err);

@@ -233,7 +233,7 @@ export async function respondFromUpstream(
   upstream: Response,
   sseStallKey: string,
 ): Promise<Response> {
-  const { sandboxId, method, remainingPath, origin, access, sandboxAuthored, upstreamPort, promptDelivery, ptl, record, turnIdentity, turn, isSseEventStreamRequest } = req;
+  const { sandboxId, method, remainingPath, origin, access, sandboxAuthored, upstreamPort, promptDelivery, promptDedupeKey, ptl, record, turnIdentity, turn, isSseEventStreamRequest } = req;
   void markSandboxUsed(sandboxId);
   // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
   // OpenCode may hold the message even though the response was lost. Both
@@ -242,6 +242,9 @@ export async function respondFromUpstream(
     await turn.accept();
   } else {
     await turn.abandon();
+    // A definitive 4xx never reached OpenCode's queue: free the claim so a
+    // same-key retry delivers instead of answering `duplicate` for 10 minutes.
+    if (promptDedupeKey && upstream.status < 500) releasePromptDelivery(promptDedupeKey);
   }
   if (promptDelivery) {
     ptl.mark('turn-accept');

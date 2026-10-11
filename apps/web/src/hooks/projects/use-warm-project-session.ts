@@ -68,6 +68,7 @@ export interface WarmSendCreateInput {
   connector_bindings?: SessionConnectorBindingsInput;
   provider_secret_pools?: Record<string, string[]>;
   inherit_unbound?: boolean;
+  persistent_machine?: boolean;
 }
 
 /** What was actually created, so a send can tell whether it fits. */
@@ -107,6 +108,8 @@ export function warmSessionFitsSend(
   if (create.connector_bindings !== undefined) return false;
   if (create.provider_secret_pools !== undefined) return false;
   if (create.inherit_unbound !== undefined) return false;
+  // A warm session boots an ordinary box; a persistent machine is its own create.
+  if (create.persistent_machine) return false;
   if (create.agent_name !== undefined && create.agent_name !== warm.agentName) return false;
   if (create.sandbox_slug !== undefined && create.sandbox_slug !== warm.sandboxSlug) return false;
   return true;

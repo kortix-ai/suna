@@ -22,9 +22,9 @@ describe('the kortix-api suite actually runs on pull requests', () => {
     expect(laneJob).toContain('- lane: browser-1');
     expect(laneJob).toContain('- lane: browser-2');
     expect(laneJob).toContain('- lane: packages');
-    // Four browser shards since 2026-09-18 (see tests.yml's matrix comment).
-    for (const n of [1, 2, 3, 4]) {
-      expect(laneJob).toContain(`args: --browser-only --browser-shard=${n}/4`);
+    // Eight one-worker browser shards since 2026-10-08 (see tests.yml's matrix comment).
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      expect(laneJob).toContain(`args: --browser-only --browser-shard=${n}/8`);
     }
     expect(laneJob).toContain('args: --packages-only');
     expect(laneJob).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');

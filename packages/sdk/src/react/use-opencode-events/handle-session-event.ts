@@ -1,4 +1,3 @@
-import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { isAbortError } from '../../core/http/abort-error';
 import { getClient } from '../../core/runtime/client';
@@ -20,7 +19,7 @@ export function handleSessionEvent(event: RuntimeEvent, ctx: HandlerContext, sta
   else handleSessionCompletion(event, ctx, statusBeforeEvent);
 }
 function handleSessionLifecycle(event: RuntimeEvent, ctx: HandlerContext) {
-  const { queryClient, stopCompaction, reconcileTail, projectId, getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
+  const { queryClient, projectId } = ctx;
   switch (event.type) {
     case 'session.created': {
       const info = readSessionInfo(event);
@@ -103,7 +102,6 @@ function handleSessionDeletion(event: RuntimeEvent, ctx: HandlerContext) {
         queryClient.removeQueries({
           queryKey: runtimeKeys.runtimeMessages(info.id),
         });
-        deleteSessionFromIDB(info.id);
       }
       break;
     }
@@ -153,7 +151,7 @@ function handleSessionCompaction(event: RuntimeEvent, ctx: HandlerContext) {
   }
 }
 function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statusBeforeEvent: ReturnType<typeof useSyncStore.getState>['sessionStatus'][string] | undefined) {
-  const { queryClient, stopCompaction, reconcileTail, projectId, getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
+  const { reconcileTail, getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
   switch (event.type) {
     case 'session.next.revert.committed': {
       const { sessionID } = event.properties as { sessionID?: string };
@@ -192,7 +190,7 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
   }
 }
 function handleSessionFailure(event: RuntimeEvent, ctx: HandlerContext) {
-  const { queryClient, stopCompaction, reconcileTail, projectId, getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
+  const { queryClient, stopCompaction, reconcileTail, getSessionTitle } = ctx;
   switch (event.type) {
     case 'session.error': {
       const props = event.properties;

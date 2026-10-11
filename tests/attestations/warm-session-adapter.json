@@ -1,0 +1,24 @@
+{
+  "source_hash": "668da850fe5d3a11a505e4a7f3009f747c651070eda0b2882378477cf8b85ce0",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-warm-sessions-exclude.test.ts",
+    "apps/mobile/lib/session/warm-session.ts",
+    "apps/web/src/hooks/projects/use-warm-project-session.test.ts",
+    "apps/web/src/hooks/projects/use-warm-project-session.ts",
+    "apps/web/src/hooks/projects/warm-session-boundary.test.ts",
+    "packages/sdk/src/core/warm-session-pool.test.ts",
+    "packages/sdk/src/core/warm-session-pool.ts",
+    "packages/sdk/src/index.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "dcf7d8453eb32eb4141fe34946da7fd39976b1412964d786608b60b176a35a8b",
+  "head": "f4353d0ec03dad85db2fec531e260caf9cf5d7ec",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-11T02:13:09.046Z"
+}

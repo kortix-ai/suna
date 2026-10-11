@@ -20,6 +20,9 @@ export { requireFeatureFlag } from './http-gate';
 
 export const FEATURE_DISABLED_CODE = 'feature_disabled' as const;
 
+/** 403 code: only a platform operator may write this flag (`catalogHidden`). */
+export const FEATURE_OPERATOR_ONLY_CODE = 'feature_operator_only' as const;
+
 export function featureDisabledBody(key: FeatureFlagKey): {
   error: string;
   code: typeof FEATURE_DISABLED_CODE;
@@ -27,7 +30,11 @@ export function featureDisabledBody(key: FeatureFlagKey): {
 } {
   const def = featureFlagDef(key);
   return {
-    error: `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,
+    error: def?.derivedFrom
+      ? `${def.name} is not enabled for this organization.`
+      : def?.catalogHidden
+      ? `${def.name} is not enabled for this project. Contact Kortix to enable it.`
+      : `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,
     code: FEATURE_DISABLED_CODE,
     feature: key,
   };

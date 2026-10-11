@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { loadEnv } from '../../src/core/env';
+import { setDatabaseProjectFeature } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import { createManifestProject, type ManifestProject } from '../helpers/manifest-project';
 import {
@@ -65,11 +67,10 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
 
     // 1. Flag off: the rail has no Apps topic and `?section=apps` falls back.
     // The fixture enables `apps` by default (`database-project.ts`), so turn it
-    // off through the product route rather than assuming the project's state.
-    await api(token, 'PATCH', `/projects/${project.id}/features`, {
-      feature: 'apps',
-      enabled: false,
-    });
+    // off rather than assuming the project's state. `apps` is internal-only: a
+    // project owner gets 403 on PATCH /features, so write the operator's
+    // override directly.
+    await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', false);
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     await dismissOnboarding(page);
     await dismissWelcomeCard(page);
@@ -85,10 +86,7 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     );
 
     // 2. Flag on, with one restricted App to grant.
-    await api(token, 'PATCH', `/projects/${project.id}/features`, {
-      feature: 'apps',
-      enabled: true,
-    });
+    await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
     const app = await api<{ app_id: string; slug: string }>(
       token,
       'POST',

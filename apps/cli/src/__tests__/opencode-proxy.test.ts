@@ -161,6 +161,33 @@ describe('startSandboxPortProxy HTTP', () => {
   });
 });
 
+describe('startSandboxPortProxy token source', () => {
+  test('getToken is read for every request, so a credential refreshed after start is used', async () => {
+    const seen: Array<string | null> = [];
+    const upstream = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: (req) => {
+        seen.push(req.headers.get('authorization'));
+        return Response.json({ ok: true });
+      },
+    });
+    cleanups.push(() => upstream.stop(true));
+    let current = 'tok-old';
+    const proxy = track(
+      startSandboxPortProxy({
+        runtimeUrl: `http://127.0.0.1:${upstream.port}`,
+        token: 'tok-start',
+        getToken: () => current,
+      }),
+    );
+    await fetch(`${proxy.url}/a`);
+    current = 'tok-new';
+    await fetch(`${proxy.url}/b`);
+    expect(seen).toEqual(['Bearer tok-old', 'Bearer tok-new']);
+  });
+});
+
 describe('startSandboxPortProxy WebSocket', () => {
   test('mirrors messages and appends the token as a query param upstream', async () => {
     const seen: { token: string | null } = { token: null };

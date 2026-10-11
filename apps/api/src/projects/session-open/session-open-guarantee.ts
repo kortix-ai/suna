@@ -5,7 +5,6 @@
  * moved verbatim.
  */
 import type { SessionStartResult } from '@kortix/api-contract';
-import { configReleasesEnabled } from '../../config-releases/enabled';
 import { runtimeAdmissionEnforced } from '../../runtime-convergence/admission';
 import { admitRunningSandbox } from '../../runtime-convergence/admit-running-sandbox';
 import { sessionHoldsTurnAuthority } from '../session-lifecycle/inbox-admission';
@@ -31,13 +30,11 @@ export async function enforceRuntimeGuarantee(
   // ── Session-open runtime guarantee ──────────────────────────────────────
   // "Open any session and it works, or it says precisely why not." Same
   // chokepoint as Rule 4 below (`!booting`, box confirmed provider-running,
-  // OpenCode answered) — but UNCONDITIONAL, not scoped to
-  // `configReleasesEnabled`: a project with config releases off still runs a
-  // daemon, a CLI and a model catalog, and a box stuck `components.agent:
-  // 'staged'` for 31 days with `cli: 'failed'` every pass is exactly the
-  // failure this closes regardless of that flag. Gated only by the reaper's
-  // own kill switch (`LEGACY_RUNTIME_BOOTSTRAP`), so an operator can turn
-  // BOTH the background and the open-time repair off with one switch.
+  // OpenCode answered). A box stuck `components.agent: 'staged'` for 31 days
+  // with `cli: 'failed'` every pass is exactly the failure this closes. Gated
+  // only by the reaper's own kill switch (`LEGACY_RUNTIME_BOOTSTRAP`), so an
+  // operator can turn BOTH the background and the open-time repair off with
+  // one switch.
   //
   // Shares the exact classification and the exact repair the reaper already
   // schedules in the background (`guaranteeCurrentRuntimeOnOpen` →
@@ -204,18 +201,10 @@ export async function enforceAdmission(
   // funnel through (see the flows into `openSession` above) — so gating here
   // covers all of them without touching each caller.
   //
-  // Scoped to `configReleasesEnabled`: the whole contract this spec describes
-  // is conditioned on that flag ("With config_releases on, a session runs…
-  // the platform's current runtime" — spec §1). A project with the flag off
-  // never resolves a desired release anywhere else in this file either (see
-  // the CHOKEPOINT comment on `GET /config`), and admission's release-id
-  // resolution would otherwise pay a git-mirror round trip for a promise this
-  // deployment never made.
-  //
   // Only checked once the box is CONFIRMED provider-running and OpenCode has
   // answered (`!booting`) — never while still booting, where a health 503 is
   // completely normal and must not read as an admission failure.
-  if (!booting && configReleasesEnabled(loaded.row.metadata)) {
+  if (!booting) {
     const admission = await admitRunningSandbox({
       externalId: runningExternalId,
       userId: loaded.userId,

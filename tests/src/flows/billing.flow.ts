@@ -192,7 +192,6 @@ flow(
     routes: [
       'POST /v1/billing/cancel-subscription',
       'POST /v1/billing/reactivate-subscription',
-      'POST /v1/billing/schedule-downgrade',
       'POST /v1/billing/cancel-scheduled-change',
       'POST /v1/billing/sync-subscription',
       'GET /v1/billing/proration-preview',
@@ -208,13 +207,6 @@ flow(
     });
     await ctx.step('reactivate on a sub-less account → no subscription', async () => {
       const r = await owner.post('/v1/billing/reactivate-subscription', { account_id: team.id });
-      r.status([400, 404, 409]);
-    });
-    await ctx.step('schedule-downgrade with no active sub → rejected', async () => {
-      const r = await owner.post('/v1/billing/schedule-downgrade', {
-        account_id: team.id,
-        target_tier_key: 'pro',
-      });
       r.status([400, 404, 409]);
     });
     await ctx.step('cancel-scheduled-change with nothing scheduled → rejected', async () => {
@@ -248,7 +240,7 @@ flow(
   'BILL-4b',
   {
     domain: 'billing',
-    routes: ['POST /v1/billing/cancel-subscription', 'POST /v1/billing/sync-seat-quantity'],
+    routes: ['POST /v1/billing/cancel-subscription'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -256,12 +248,6 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post('/v1/billing/cancel-subscription', { account_id: team.id });
-      r.status(403);
-    });
-    await ctx.step('NONMEMBER sync-seat-quantity → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .post('/v1/billing/sync-seat-quantity', { account_id: team.id });
       r.status(403);
     });
   },
@@ -285,9 +271,7 @@ flow(
       'POST /v1/billing/create-per-seat-checkout',
       'POST /v1/billing/cancel-subscription',
       'POST /v1/billing/purchase-credits',
-      'POST /v1/billing/sync-seat-quantity',
       'POST /v1/billing/sync-subscription',
-      'POST /v1/billing/confirm-checkout-session',
     ],
   },
   async (ctx) => {
@@ -314,19 +298,8 @@ flow(
       });
       r.status(403);
     });
-    await ctx.step('MEMBER cannot reconcile the seat quantity → 403', async () => {
-      const r = await asMember.post('/v1/billing/sync-seat-quantity', { account_id: team.id });
-      r.status(403);
-    });
     await ctx.step('MEMBER cannot reconcile the subscription → 403', async () => {
       const r = await asMember.post('/v1/billing/sync-subscription', { account_id: team.id });
-      r.status(403);
-    });
-    await ctx.step('MEMBER cannot confirm a checkout session → 403', async () => {
-      const r = await asMember.post('/v1/billing/confirm-checkout-session', {
-        account_id: team.id,
-        session_id: 'cs_test_member_blocked',
-      });
       r.status(403);
     });
     await ctx.step('ANON cannot start a team subscription checkout → 401', async () => {
@@ -341,25 +314,19 @@ flow(
 );
 
 /**
- * BILL-10 — per-seat (billing v2) management on an unfunded team. `sync-seat-quantity`
- * reconciles the Stripe seat count against account_members; with no per-seat sub it
- * has nothing to sync (200 no-op) or rejects (400). `claim-per-seat` runs the legacy
- * → per-seat migration synchronously; a fresh team has no legacy machine subs, so it
- * returns ok with a "skipped:*" status (or 400 on failure). Neither fakes a sub.
+ * BILL-10 — per-seat (billing v2) claim on an unfunded team. `claim-per-seat` runs
+ * the legacy → per-seat migration synchronously; a fresh team has no legacy machine
+ * subs, so it returns ok with a "skipped:*" status (or 400 on failure). It fakes no sub.
  */
 flow(
   'BILL-10',
   {
     domain: 'billing',
-    routes: ['POST /v1/billing/sync-seat-quantity', 'POST /v1/billing/claim-per-seat'],
+    routes: ['POST /v1/billing/claim-per-seat'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step('sync-seat-quantity on a seat-less account → ok or rejected', async () => {
-      const r = await owner.post('/v1/billing/sync-seat-quantity', { account_id: team.id });
-      r.status([200, 400, 404, 409]);
-    });
     await ctx.step('claim-per-seat on a non-legacy account → skipped', async () => {
       const r = await owner.post('/v1/billing/claim-per-seat', { account_id: team.id });
       r.status([200, 400]);
@@ -382,7 +349,6 @@ flow(
     requires: ['stripe'],
     timeoutMs: 60_000,
     routes: [
-      'POST /v1/billing/create-checkout-session',
       'POST /v1/billing/create-per-seat-checkout',
       'POST /v1/billing/create-portal-session',
     ],
@@ -390,15 +356,6 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step('create-checkout-session → Stripe URL or rejection', async () => {
-      const r = await owner.post('/v1/billing/create-checkout-session', {
-        account_id: team.id,
-        tier_key: 'pro',
-        success_url: 'https://example.com/ok',
-        cancel_url: 'https://example.com/cancel',
-      });
-      r.status([200, 400, 500]);
-    });
     await ctx.step('create-per-seat-checkout → Stripe URL or rejection', async () => {
       const r = await owner.post('/v1/billing/create-per-seat-checkout', {
         account_id: team.id,
@@ -418,19 +375,15 @@ flow(
 );
 
 /**
- * BILL-5 — checkout-session lookup + confirm. A bogus/unknown session id can't be
- * retrieved (4xx) and can't be confirmed; confirm with a missing session_id is a
- * hard 400 (input validation, before any Stripe call). Gated on `stripe`.
+ * BILL-11 — checkout-session lookup. A bogus/unknown session id can't be
+ * retrieved (4xx). Gated on `stripe`.
  */
 flow(
   'BILL-11',
   {
     domain: 'billing',
     requires: ['stripe'],
-    routes: [
-      'GET /v1/billing/checkout-session/:sessionId',
-      'POST /v1/billing/confirm-checkout-session',
-    ],
+    routes: ['GET /v1/billing/checkout-session/:sessionId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -438,17 +391,6 @@ flow(
     await ctx.step('lookup an unknown checkout session → 4xx', async () => {
       const r = await owner.get('/v1/billing/checkout-session/:sessionId', {
         params: { sessionId: 'cs_test_does_not_exist' },
-      });
-      r.status([400, 404, 500]);
-    });
-    await ctx.step('confirm without session_id → 400', async () => {
-      const r = await owner.post('/v1/billing/confirm-checkout-session', { account_id: team.id });
-      r.status(400);
-    });
-    await ctx.step('confirm an unknown session id → rejected', async () => {
-      const r = await owner.post('/v1/billing/confirm-checkout-session', {
-        account_id: team.id,
-        session_id: 'cs_test_does_not_exist',
       });
       r.status([400, 404, 500]);
     });
@@ -668,8 +610,7 @@ flow(
  * routes resolve the account from the CALLER's identity (resolveAccountId(userId)),
  * NOT a body account_id — so we drive them with a THROWAWAY user (a fresh team
  * member synthesized for this run, torn down by the world). We never touch OWNER's
- * own account. Covers both the `/v1/account/*` mount and the `/v1/billing/account/*`
- * mirror mount. ANON must be rejected (401) from the authed deletion routes.
+ * own account. ANON must be rejected (401) from the authed deletion routes.
  */
 flow(
   'DEL-2',
@@ -678,9 +619,7 @@ flow(
     routes: [
       'POST /v1/account/request-deletion',
       'POST /v1/account/cancel-deletion',
-      'GET /v1/billing/account/deletion-status',
-      'POST /v1/billing/account/request-deletion',
-      'POST /v1/billing/account/cancel-deletion',
+      'GET /v1/account/deletion-status',
     ],
   },
   async (ctx) => {
@@ -689,7 +628,7 @@ flow(
     const asVictim = ctx.client.as(victim);
 
     await ctx.step('ANON cannot read deletion status → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/billing/account/deletion-status');
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/account/deletion-status');
       r.status(401);
     });
     await ctx.step('throwaway user schedules deletion (/account mount) → 200', async () => {
@@ -697,9 +636,9 @@ flow(
       r.status(200);
     });
     await ctx.step(
-      'deletion-status (billing mirror mount) reflects the pending request',
+      'deletion-status reflects the pending request',
       async () => {
-        const r = await asVictim.get('/v1/billing/account/deletion-status');
+        const r = await asVictim.get('/v1/account/deletion-status');
         r.status(200);
       },
     );
@@ -718,7 +657,7 @@ flow(
     await ctx.step('scheduling again after a cancel → 200, and the status reads pending', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'after-cancel' });
       r.status(200);
-      const status = await asVictim.get('/v1/billing/account/deletion-status');
+      const status = await asVictim.get('/v1/account/deletion-status');
       status.status(200);
       const body = status.json<{ has_pending_deletion: boolean }>();
       if (body.has_pending_deletion !== true) {
@@ -728,7 +667,7 @@ flow(
     await ctx.step('cancel the second request → 200; status reads not pending', async () => {
       const r = await asVictim.post('/v1/account/cancel-deletion', {});
       r.status(200);
-      const status = await asVictim.get('/v1/billing/account/deletion-status');
+      const status = await asVictim.get('/v1/account/deletion-status');
       status.status(200);
       const body = status.json<{ has_pending_deletion: boolean }>();
       if (body.has_pending_deletion !== false) {
@@ -751,32 +690,41 @@ flow(
 );
 
 /**
- * DEL-2b — billing-mirror deletion mount, exercised independently end-to-end on a
- * second throwaway user (schedule via /billing/account/request-deletion → cancel via
- * the mirror cancel). Confirms the mirror mount is fully wired, not just the status read.
+ * DEL-5 — deletion is an owner act. `addMember` inserts the membership
+ * directly, so the member has no personal account and resolves the TEAM as
+ * its primary account. Every deletion route refuses the member with 403
+ * `account.delete`, and the team survives.
  */
 flow(
-  'DEL-2b',
+  'DEL-5',
   {
     domain: 'billing',
     routes: [
-      'POST /v1/billing/account/request-deletion',
-      'POST /v1/billing/account/cancel-deletion',
+      'GET /v1/account/deletion-status',
+      'POST /v1/account/request-deletion',
+      'POST /v1/account/cancel-deletion',
+      'DELETE /v1/account/delete-immediately',
+      'GET /v1/accounts/:accountId',
     ],
   },
   async (ctx) => {
-    const victim = await ctx.fixtures.user({ label: 'DEL-2b' });
-    const asVictim = ctx.client.as(victim);
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const asMember = ctx.client.as(member);
 
-    await ctx.step('schedule deletion via billing mirror mount → 200', async () => {
-      const r = await asVictim.post('/v1/billing/account/request-deletion', {
-        reason: 'ke2e-mirror',
-      });
-      r.status(200);
+    await ctx.step('MEMBER reads the team deletion-status → 403 account.delete', async () => {
+      (await asMember.get('/v1/account/deletion-status')).status(403).body().has('$.action', 'account.delete');
     });
-    await ctx.step('cancel deletion via billing mirror mount → 200', async () => {
-      const r = await asVictim.post('/v1/billing/account/cancel-deletion', {});
-      r.status(200);
+    await ctx.step('MEMBER cannot request, cancel, or run deletion → 403 account.delete each', async () => {
+      (await asMember.post('/v1/account/request-deletion', { reason: 'ke2e member' }))
+        .status(403).body().has('$.action', 'account.delete');
+      (await asMember.post('/v1/account/cancel-deletion', {}))
+        .status(403).body().has('$.action', 'account.delete');
+      (await asMember.del('/v1/account/delete-immediately'))
+        .status(403).body().has('$.action', 'account.delete');
+    });
+    await ctx.step('the team survives: OWNER reads it → 200', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId', { params: { accountId: team.id } })).status(200);
     });
   },
 );

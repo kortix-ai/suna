@@ -40,6 +40,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useDriveRowInteractions } from './use-drive-row-interactions';
 import { FileDriveMenuItems, FolderDriveMenuItems } from './drive-grid-view';
 import { getFileIcon } from './file-icon';
+import { ownClicks } from './own-clicks';
 
 const ELEVATED_DIR_META: Record<string, string> = {
   '.kortix': 'Project config, tasks, context',
@@ -169,8 +170,8 @@ function ListRow({
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={isRenaming ? undefined : onClick}
-          onDoubleClick={isRenaming ? undefined : onDoubleClick}
+          onClick={isRenaming ? undefined : ownClicks(onClick)}
+          onDoubleClick={isRenaming ? undefined : ownClicks(onDoubleClick)}
           className={cn(
             'group cursor-pointer select-none',
             isCut && 'opacity-40',

@@ -22,9 +22,10 @@ export function createHealthRouter(
           messageId: c.req.query('turn_message_id')?.trim(),
         }
       : undefined
-    const [host, report] = await Promise.all([
+    const [host, report, runtimeCapabilities] = await Promise.all([
       readHostHealth(context, diagnostics.catalogSnapshot),
       diagnostics.health(context, { turn }),
+      diagnostics.capabilities(),
     ])
     const { running } = host.runtime
     const harness = {
@@ -38,7 +39,7 @@ export function createHealthRouter(
       daemon: 'ok',
       // Host-owned `/file` routes for every harness, then what the control and
       // the runtime serve.
-      capabilities: ['file.import', 'file.append', ...controlCapabilities, ...diagnostics.capabilities],
+      capabilities: ['file.import', 'file.append', ...controlCapabilities, ...runtimeCapabilities],
       status: runtimeReady ? 'ok' : repoError || harness.error ? 'error' : harness.state,
       runtimeReady,
       boot_error: repoError ?? harness.error,

@@ -30,7 +30,7 @@ autoscaling), `cloudflare-dns` (the `dev-api` CNAME → ALB).
 ## Apply
 
 CI applies this root. `deploy-dev.yml` -> `terraform-dev-api` runs
-`terraform-apply.yml` on every push to `main` that touches a dev root,
+`terraform-apply.yml` on every push to `dev` that touches a dev root,
 `modules/**`, or either workflow, before the API image rolls onto ECS. There is
 no `terraform.tfvars`: every input is a committed default in `variables.tf`.
 

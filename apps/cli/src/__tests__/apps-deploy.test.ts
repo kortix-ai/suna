@@ -14,6 +14,8 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let serverPort = 0;
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let uploaded: Uint8Array | null = null;
+/** Fields every App response carries in the current test. */
+let appFields: Record<string, unknown> = {};
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -51,10 +53,10 @@ function app(overrides: Record<string, unknown> = {}) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
+    ...appFields,
     ...overrides,
   };
 }
@@ -169,6 +171,9 @@ function startServer(): string {
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'GET') {
         return Response.json(app());
       }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
+        return Response.json(app(body as Record<string, unknown>));
+      }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
@@ -221,6 +226,7 @@ describe('kortix apps deploy (characterization)', () => {
     process.env = { ...ORIGINAL_ENV };
     calls = [];
     uploaded = null;
+    appFields = {};
   });
 
   afterEach(() => {
@@ -242,6 +248,7 @@ describe('kortix apps deploy (characterization)', () => {
         '    path: web',
         '    type: bundle',
         '    output_dir: dist',
+        '    uses: [db]',
         '    resources:',
         '      cpu: 2',
         '      memory_gb: 4',
@@ -263,16 +270,61 @@ describe('kortix apps deploy (characterization)', () => {
     const create = calls.find(
       (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
     );
-    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4 });
+    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, uses: ['db'] });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
     expect(deploymentCall()?.body).toEqual({
       artifact_id: 'art-1',
       source: { kind: 'bundle', output_dir: 'build' },
       environment: { NODE_ENVIRONMENT: 'production' },
       secrets: { DATABASE_URL: 'database-primary' },
+      // The block's release config (Fly model): here only its machine size.
+      config: { resources: { cpu: 2, memory_gb: 4 } },
     });
     expect(r.stdout).toContain('deployment ready');
     expect(r.stdout).toContain('storefront.kortix.test');
+  });
+
+  test('an explicit path still uses the matching kortix.yaml block (spa, mounts, services, labels reach the deploy)', async () => {
+    mkdirSync(join(tmp, 'apps', 'web', 'dist'), { recursive: true });
+    writeFileSync(join(tmp, 'apps', 'web', 'dist', 'index.html'), '<!doctype html>');
+    mkdirSync(join(tmp, 'db'), { recursive: true });
+    writeFileSync(join(tmp, 'db', 'Dockerfile'), 'FROM busybox\n');
+    writeFileSync(join(tmp, 'kortix.yaml'), [
+      'kortix_version: 2',
+      'apps:',
+      '  web:',
+      '    path: apps/web/dist',
+      '    type: static',
+      '    spa: true',
+      '  api:',
+      '    path: db',
+      '    type: dockerfile',
+      '    command: ["/start.sh"]',
+      '    labels: [backend]',
+      '    http_service: { internal_port: 3210, access: public }',
+      '    services:',
+      '      - { name: site, internal_port: 3211, access: public }',
+      '    mounts:',
+      '      - { source: data, destination: /data, initial_size_gb: 10 }',
+      '',
+    ].join('\n'));
+    const config = writeConfig(startServer());
+    // The fieldops agent did exactly this and lost `spa: true`.
+    const web = await runCli(['apps', 'deploy', 'apps/web/dist', '--project', PROJECT], config);
+    expect(web.code).toBe(0);
+    expect((deploymentCall()?.body as { source: { spa?: boolean } }).source.spa).toBe(true);
+    calls = [];
+    // The path `db` is the `api` block's path: the block applies.
+    const api = await runCli(['apps', 'deploy', 'db', '--project', PROJECT], config);
+    expect(api.code).toBe(0);
+    const body = deploymentCall()?.body as { source: Record<string, unknown>; config: Record<string, unknown> };
+    expect(body.source).toMatchObject({ kind: 'dockerfile', command: ['/start.sh'], port: 3210 });
+    expect(body.config).toEqual({
+      http_service: { internal_port: 3210, access: 'public' },
+      services: [{ name: 'site', internal_port: 3211, access: 'public' }],
+      mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10 }],
+    });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ labels: ['backend'] });
   });
 
   test('a directory source is archived and inferred as a bundle from package.json', async () => {
@@ -380,6 +432,51 @@ describe('kortix apps deploy (characterization)', () => {
     );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('kortix.yaml has no apps.nope block');
+  });
+
+  test('the retired --budget flag is ignored with a notice: its value is never read as the path, and nothing sends a budget', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'deploy', '--budget', '20', 'site', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
+    expect(create?.body).toEqual({ slug: 'site', name: 'site' });
+    expect(r.stderr).toContain('--budget is ignored: Apps have no budget');
+    expect(r.stdout).toContain('deployment ready');
+  });
+
+  test('a static deploy and an always-on App print no budget warning', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
+    writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
+    const config = writeConfig(startServer());
+    const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
+    expect(staticRun.code).toBe(0);
+    expect(staticRun.stderr).not.toContain('runs 24/7');
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const serverRun = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(serverRun.code).toBe(0);
+    expect(serverRun.stderr).not.toContain('runs 24/7');
+  });
+
+  test('a server deploy prints the 24/7 run line and no price; a static deploy and an on-demand App do not', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
+    writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const config = writeConfig(startServer());
+    const server = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB');
+    expect(server.stdout).not.toMatch(/\$|USD|month/);
+    expect(server.stdout).not.toContain('budget');
+    const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
+    expect(staticRun.stdout).not.toContain('Runs 24/7');
+    appFields = { always_on: false, estimated_monthly_usd: 73.48 };
+    const onDemand = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(onDemand.stdout).not.toContain('Runs 24/7');
   });
 
   test('an unknown deploy flag is rejected', async () => {

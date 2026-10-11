@@ -41,7 +41,6 @@ const generationConfigEntry = z.object({
   topP: z.number().min(0).max(1).optional(),
   maxOutputTokens: z.number().int().min(1).max(10_000_000).optional(),
 });
-export type GenerationConfigEntry = z.infer<typeof generationConfigEntry>;
 
 const generationConfig = z
   .record(modelId, generationConfigEntry)

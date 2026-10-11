@@ -49,3 +49,24 @@ test('an expired claim (its replica died mid-build) is taken over', async () => 
   expect(await claimSnapshotBuild(key)).toBe(true);
   await releaseSnapshotBuild(key);
 });
+
+test('a heartbeat renewal keeps a claim longer than its lease; releaseAll frees every claim of this replica', async () => {
+  const { renewSnapshotBuild, releaseAllSnapshotBuilds } = await import('../snapshots/build-claim');
+  const key = `daytona:img-${crypto.randomUUID()}`;
+  expect(await claimSnapshotBuild(key)).toBe(true);
+  await db
+    .update(workerLeaderLease)
+    .set({ expiresAt: sql`now() + interval '1 second'` })
+    .where(eq(workerLeaderLease.lockKey, `snapshot-build:${key}`));
+  expect(await renewSnapshotBuild(key)).toBe(true);
+  const [row] = await db
+    .select({ left: sql<number>`extract(epoch from (expires_at - now()))` })
+    .from(workerLeaderLease)
+    .where(eq(workerLeaderLease.lockKey, `snapshot-build:${key}`));
+  expect(Number(row!.left)).toBeGreaterThan(30);
+
+  await releaseAllSnapshotBuilds();
+  expect(await renewSnapshotBuild(key)).toBe(false);
+  expect(await claimSnapshotBuild(key)).toBe(true);
+  await releaseSnapshotBuild(key);
+});

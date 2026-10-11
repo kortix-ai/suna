@@ -398,6 +398,36 @@ describe('shortRelative', () => {
 });
 
 describe('resolveSessionListViewState', () => {
+  // KRTX-1727: an empty page that still carries a cursor rendered "No sessions
+  // yet" (or hid Shared), although older sessions the viewer can see existed.
+  test('no rows yet while the list scans past empty pages is loading, never "empty"', () => {
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0, scanning: true }),
+    ).toBe('loading');
+  });
+
+  test('no rows after the scan, with a cursor left, is "more": offer Load more, never "empty"', () => {
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0, hasMore: true }),
+    ).toBe('more');
+    expect(
+      resolveSessionListViewState({
+        hasData: true,
+        isError: false,
+        totalCount: 0,
+        visibleCount: 0,
+        hasMore: true,
+        serverFiltered: true,
+      }),
+    ).toBe('more');
+  });
+
+  test('rows on screen decide the state as before, cursor or not', () => {
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 3, visibleCount: 3, hasMore: true, scanning: true }),
+    ).toBe('content');
+  });
+
   test('a server-side filter that matches nothing is "no-matches", never the empty onboarding state', () => {
     expect(
       resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0, serverFiltered: true }),

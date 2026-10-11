@@ -1,12 +1,12 @@
-import { connectors, projectSecrets } from '@kortix/db';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { connectors, projectSecrets, projectSecretTombstones, projects } from '@kortix/db';
+import type { Database } from '@kortix/db';
+import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
 import {
   type SecretConsumer,
   type SecretEgressPolicy,
   type SecretStrategy,
-  emitsValue,
   resolveSecretDelivery,
 } from '../secrets/strategy';
 import { db } from '../shared/db';
@@ -85,6 +85,74 @@ export async function writeSharedProjectSecret(input: {
     })
     .returning({ secretId: projectSecrets.secretId });
   return row!.secretId;
+}
+
+/** A deletion older than the longest setup-link TTL (MAX_TTL_MINUTES in
+ *  setup-links/token.ts) plus a day of clock slack can never invalidate a
+ *  link that still exists — its every possible link has expired — so unset
+ *  prunes such tombstones instead of letting the table grow forever. */
+const TOMBSTONE_RETENTION_MINUTES = 31 * 24 * 60;
+
+/** The transaction handle of the write this tombstone is part of (the unset
+ *  route's audited transaction), or the pool itself when the tombstone is the
+ *  only write (the unset of a name whose row does not exist). Both expose the
+ *  same three query builders the helper uses. */
+type SecretWriteTx = Pick<Database, 'select' | 'insert' | 'delete'>;
+
+/**
+ * Record that a shared secret row was deleted, in the same transaction as the
+ * delete. Setup-link tokens are stateless — they carry only their mint time —
+ * so this tombstone is the only way the public intake submit can tell a
+ * "request a missing secret" link from one whose target the owner removed
+ * after minting, and stop the latter from resurrecting the secret.
+ *
+ * Takes the project row's lock FIRST, in the same order the intake submit does
+ * (project row → secret rows): an in-flight submission either commits before
+ * this delete runs (and the delete removes its row) or this tombstone lands
+ * before the submission reads it (and the submission is rejected). Without the
+ * shared lock, a submission that read no tombstone could still re-insert the
+ * row after the delete — the exact resurrection this exists to prevent.
+ */
+export async function recordProjectSecretTombstone(
+  projectId: string,
+  name: string,
+  tx: SecretWriteTx,
+): Promise<void> {
+  await tx.select({ status: projects.status }).from(projects)
+    .where(eq(projects.projectId, projectId)).limit(1).for('update');
+  await tx.insert(projectSecretTombstones)
+    .values({ projectId, name, deletedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [projectSecretTombstones.projectId, projectSecretTombstones.name],
+      set: { deletedAt: new Date() },
+    });
+  await tx.delete(projectSecretTombstones)
+    .where(lt(projectSecretTombstones.deletedAt, new Date(Date.now() - TOMBSTONE_RETENTION_MINUTES * 60_000)));
+}
+
+/**
+ * The requested secret NAMES whose shared row was deleted after `mintedAt`
+ * (the token's `iat`, epoch ms; 0 when the token predates the field — an
+ * unknown mint time is treated as the oldest possible, so a deletion kills
+ * every link that cannot prove it was minted later). An empty result means the
+ * link may proceed; any hit means the link must be refused.
+ */
+export async function projectSecretsDeletedSince(
+  projectId: string,
+  names: string[],
+  mintedAt: number,
+): Promise<string[]> {
+  if (names.length === 0) return [];
+  const rows = await db
+    .select({ name: projectSecretTombstones.name })
+    .from(projectSecretTombstones)
+    .where(and(
+      eq(projectSecretTombstones.projectId, projectId),
+      inArray(projectSecretTombstones.name, names),
+      gt(projectSecretTombstones.deletedAt, new Date(mintedAt)),
+    ))
+    .limit(names.length);
+  return rows.map((row) => row.name);
 }
 
 /** Lock a legacy runtime secret to the server-side connector boundary. */
@@ -256,79 +324,6 @@ export async function listResolvedProjectSecrets(
     });
   }
   return out;
-}
-
-export async function listProjectSecretsSnapshot(projectId: string): Promise<{
-  env: Record<string, string>;
-  names: string[];
-  revision: string;
-}> {
-  const env = await listProjectSecrets(projectId);
-  const names = Object.keys(env).sort();
-  return {
-    env,
-    names,
-    revision: projectSecretsRevision(env),
-  };
-}
-
-/**
- * Per-user, per-agent-grant snapshot — the sandbox-boot view. `grantEnv` is the
- * running agent's `secrets` grant (`AgentGrant.env`); omitted/`'all'` = every
- * secret in the project reaches this session (see resolveGrantedSecretEnv).
- */
-/**
- * THE chokepoint: everything a sandbox is handed passes through here.
- *
- * Two production callers — sandbox boot (`buildSessionSandboxEnvVars`) and the
- * per-prompt hot push (`resolveOwnerRawEnv`) — which is why the delivery
- * decision belongs here rather than at either of them. A row's `strategy`
- * decides whether its value may enter the box AT ALL; the pre-existing grant and
- * allowlist narrowing decide only WHICH rows are considered.
- *
- * `sessionId` is required to deliver anything non-`runtime`: a brokered value is
- * represented in the box by a per-session handle, and with no session there is
- * nothing to mint against. Absent it, non-`runtime` rows are withheld rather
- * than falling back to plaintext — the fallback would defeat the whole point.
- */
-/**
- * Delete from `env` every KEY that no longer has a deliverable value.
- *
- * Mutates in place because the caller owns the map and this is a pure narrowing
- * of it — a row whose delivery says "nothing" is removed from the values, and
- * therefore from `names`, which the daemon derives from the same map. (A name
- * emitted without a value, or the reverse, desynchronises the box's env store.)
- *
- * The subtlety is the SHARED KEY. Two identifiers may resolve to one env KEY —
- * that is deliberate, so an agent can be granted one specific value among
- * several candidates for the same variable. A KEY may therefore only be dropped
- * when EVERY identifier behind it is undeliverable; if one is still `runtime`,
- * the KEY has a legitimate value and dropping it would break a working session.
- */
-export function withholdUndeliverable(
-  rows: ResolvedProjectSecret[],
-  env: Record<string, string>,
-  sessionId: string | null,
-): void {
-  const deliverableKeys = new Set<string>();
-  const seenKeys = new Set<string>();
-  for (const row of rows) {
-    seenKeys.add(row.key);
-    const delivery = resolveSecretDelivery({
-      identifier: row.identifier,
-      strategy: row.strategy,
-      sessionId,
-      // The agent grant and the session allowlist were BOTH applied upstream by
-      // resolveGrantedSecretEnv; re-applying them here would double-count and
-      // could withhold a row the caller already admitted.
-      agentGrantEnv: 'all',
-      sessionAllowlist: null,
-    });
-    if (emitsValue(delivery)) deliverableKeys.add(row.key);
-  }
-  for (const key of seenKeys) {
-    if (!deliverableKeys.has(key)) delete env[key];
-  }
 }
 
 export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>;
@@ -573,40 +568,6 @@ export async function listProjectSecretsSnapshotForUser(
     capabilities,
     capabilitiesJson: serializeSecretCapabilities(capabilities),
   };
-}
-
-export async function getProjectSecretValue(
-  projectId: string,
-  name: string,
-): Promise<string | null> {
-  const normalizedName = name.trim().toUpperCase();
-  // No person here: a value narrowed to an audience is never returned.
-  const rows = await filterSecretRowsByAudience({
-    projectId,
-    subject: NO_SUBJECT,
-    rows: await db
-      .select({
-        secretId: projectSecrets.secretId,
-        identifier: projectSecrets.identifier,
-        valueEnc: projectSecrets.valueEnc,
-        updatedAt: projectSecrets.updatedAt,
-      })
-      .from(projectSecrets)
-      .where(
-        and(
-          eq(projectSecrets.projectId, projectId),
-          eq(projectSecrets.name, normalizedName),
-          isNull(projectSecrets.ownerUserId),
-        ),
-      ),
-  });
-  if (rows.length === 0) return null;
-  // Deterministic pick when multiple identifiers share this key: the canonical
-  // (identifier === key) row wins, else the most-recently-updated one.
-  const canonical = rows.find((r) => r.identifier === normalizedName);
-  const row =
-    canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
-  return decryptProjectSecret(projectId, row.valueEnc);
 }
 
 // The AES-GCM envelope, the pure grant/allowlist predicates, the server-consumer

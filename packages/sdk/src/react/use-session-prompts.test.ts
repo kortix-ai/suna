@@ -28,6 +28,7 @@ import {
   tombstoneRemovedPrompt,
   withEditedPromptOverlays,
   withEditedPromptText,
+  withInterruptedPrompt,
   withoutRemovedPrompts,
 } from './use-session-prompts';
 
@@ -327,6 +328,34 @@ describe('optimistic queue rows', () => {
     expect(row.text).toBe('hello there');
     expect(row.attempts).toBe(0);
     expect(row.created_at).toBe(new Date(1_000).toISOString());
+  });
+
+  test('the optimistic row carries the delivery mode and the placement it implies', () => {
+    const steer = optimisticSessionPrompt({ ...input, delivery: 'steer' }, 1_000);
+    expect(steer.delivery).toBe('steer');
+    expect(steer.placement).toBe('composer');
+    const queue = optimisticSessionPrompt({ ...input, delivery: 'queue' }, 1_000);
+    expect(queue.placement).toBe('composer');
+    const interrupt = optimisticSessionPrompt({ ...input, delivery: 'interrupt' }, 1_000);
+    expect(interrupt.placement).toBe('transcript');
+    // An explicit placement wins; no delivery leaves both as the caller sent them.
+    expect(
+      optimisticSessionPrompt({ ...input, delivery: 'steer', placement: 'transcript' }, 1_000)
+        .placement,
+    ).toBe('transcript');
+    const plain = optimisticSessionPrompt(input, 1_000);
+    expect(plain.delivery).toBeUndefined();
+    expect(plain.placement).toBeUndefined();
+  });
+
+  test('withInterruptedPrompt turns one row into Quick Queue', () => {
+    const rows: SessionPrompt[] = [
+      { ...optimisticSessionPrompt({ ...input, delivery: 'queue' }, 1_000), prompt_id: 'p1' },
+      { ...optimisticSessionPrompt({ ...input, clientMessageId: 'c2' }, 1_000), prompt_id: 'p2', placement: 'composer' },
+    ];
+    const next = withInterruptedPrompt(rows, 'p1');
+    expect(next[0]).toMatchObject({ prompt_id: 'p1', placement: 'transcript', delivery: 'interrupt' });
+    expect(next[1]).toBe(rows[1]);
   });
 
   test('placement and full content survive optimistic acceptance', () => {

@@ -114,13 +114,22 @@ const mockCreateRepo = mock(async (input: { name: string; auth?: { source?: stri
   }
   return fakeRepo(currentOwner.login, input.name);
 });
+type CommitFilesInput = {
+  owner: string;
+  repo: string;
+  branch: string;
+  files: Array<{ path: string; content: string }>;
+  message: string;
+  auth?: { source?: string };
+};
+const mockCommitFiles = mock(async (_input: CommitFilesInput) => {});
 mock.module('../github', () => ({
   ...realGithub,
   createRepo: mockCreateRepo,
   addRepositoryToInstallation: mockAddRepositoryToInstallation,
   commitFile: async () => {},
   // The route writes the starter as one commit; no GitHub in a unit test.
-  commitFiles: async () => {},
+  commitFiles: mockCommitFiles,
   getFileSha: async () => null,
 }));
 
@@ -154,11 +163,11 @@ mock.module('../lib/project-registration', () => ({
 const { projectsApp } = await import('../lib/app');
 (await import('./project-from-repository')).registerProjectFromRepositoryRoutes();
 
-function postCreateRepo() {
+function postCreateRepo(extra: Record<string, unknown> = {}) {
   return projectsApp.request('/create-repo', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'company', installation_id: '777001' }),
+    body: JSON.stringify({ name: 'company', installation_id: '777001', ...extra }),
   });
 }
 
@@ -168,6 +177,7 @@ beforeEach(() => {
   storedUserToken = null;
   mockCreateRepo.mockClear();
   mockRegisterGitHub.mockClear();
+  mockCommitFiles.mockClear();
 });
 
 describe('POST /create-repo — a selected-repositories installation', () => {
@@ -273,5 +283,43 @@ describe('POST /create-repo — GitHub owner type', () => {
     const handed = mockCreateRepo.mock.calls[0]?.[0] as { auth?: { source?: string } };
     expect(handed.auth?.source).toBe('app_installation');
     expect(mockRegisterGitHub).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('POST /create-repo — the starter commit and the registration', () => {
+  test('the starter lands as ONE commit with the installation token, and the project registers as unmanaged', async () => {
+    // One commit, not one per file: a per-file Contents-API loop ran past the
+    // 25 s request deadline. `managed: false`: the repository is the account's,
+    // and `managed: true` made the mirror clone it with the managed-org PAT
+    // (503 git_mirror_unavailable on the first session).
+    currentOwner = { login: 'acme', type: 'Organization' };
+
+    expect((await postCreateRepo()).status).toBe(201);
+
+    expect(mockCommitFiles).toHaveBeenCalledTimes(1);
+    const commit = mockCommitFiles.mock.calls[0]![0];
+    expect(commit).toMatchObject({
+      owner: 'acme',
+      repo: 'company',
+      branch: 'main',
+      message: 'chore: scaffold the Kortix starter',
+      auth: { source: 'app_installation' },
+    });
+    const paths = commit.files.map((file) => file.path);
+    for (const path of ['kortix.yaml', 'README.md', 'skills/agent-browser/SKILL.md']) expect(paths).toContain(path);
+    expect(mockRegisterGitHub).toHaveBeenCalledWith(
+      expect.objectContaining({ managed: false, manifestPath: 'kortix.yaml' }),
+    );
+  });
+
+  test('a selected marketplace project commits its own files, named after the project', async () => {
+    currentOwner = { login: 'acme', type: 'Organization' };
+
+    const res = await postCreateRepo({ source_item_id: 'kortix-projects:starter', project_name: 'Company OS' });
+
+    expect(res.status).toBe(201);
+    const files = mockCommitFiles.mock.calls[0]![0].files;
+    expect(files.map((file) => file.path)).toContain('skills/agent-browser/SKILL.md');
+    expect(files.find((file) => file.path === 'kortix.yaml')?.content).toContain('name: "Company OS"');
   });
 });

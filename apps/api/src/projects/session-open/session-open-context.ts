@@ -27,4 +27,20 @@ export type OpenSessionArgs = {
   };
   projectId: string;
   sessionId: string;
+  /** Keep-alive poll: report a deliberately stopped box, never wake it. */
+  keepStopped?: boolean;
+  /**
+   * When the caller's wake intent was formed: the `/start` request's arrival
+   * (every long-poll tick of it), or the queue time of an automation prompt.
+   * A user Stop at or after this instant wins: the open reports the session
+   * stopped instead of waking it. Absent = an open formed now.
+   */
+  wakeIntentAt?: Date;
+  /** A sandbox row the caller read milliseconds ago — the `/start` prologue's
+   *  joined read (session + sandbox in one statement) and every long-poll
+   *  tick's fresh pair. The open acts on it instead of re-reading the same row
+   *  a second time inside the same tick; `null` means "read, and there is no
+   *  row yet" (the provisioning path), `undefined` keeps the open reading it
+   *  itself, which is what every other caller does. */
+  preloadedSandboxRow?: OpenSessionRow | null;
 };

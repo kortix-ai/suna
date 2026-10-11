@@ -3,8 +3,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { resolveRemoteBranchTip } from '../git/branches';
 import { provenMirrorTip } from '../git/mirror';
-import type { FastBootGitHint } from '../git/commits';
-import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from '../git/commits';
+import type { FastBootGitHint } from '../git/fast-boot-bundle';
+import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from '../git/fast-boot-bundle';
 import type { GitBackedProject } from '../git/types';
 import { metadataMergeSubtree } from './metadata-merge';
 

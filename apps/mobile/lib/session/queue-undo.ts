@@ -7,6 +7,8 @@
  * not brought back.
  */
 
+import { splitPastedContent } from '@kortix/shared';
+
 interface QueuedLike {
   id: string;
 }
@@ -28,6 +30,28 @@ export function restoreQueued<T extends QueuedLike>(
   ];
 }
 
+/** A queue row's line: the typed text without its pastes, or `Pasted text` for a pastes-only prompt (web `rowText`). */
+export function queueRowText(text: string): string {
+  const { text: typed, pastes } = splitPastedContent(text);
+  return typed || (pastes.length > 0 ? 'Pasted text' : '');
+}
+
 export function queueHeaderLabel(count: number): string {
   return `Up next · ${count}`;
+}
+
+const STEER_FALLBACK_CAPTION = {
+  unsupported: 'Waits for this turn. This session cannot take messages mid-turn.',
+  not_prompter: 'Waits for this turn. Another member started it.',
+  turn_ended: 'Runs as its own turn. The turn ended first.',
+} as const;
+
+/** The second line of a queue row: when a steered message is read, or why it
+ *  waits instead. Null for a plain queued message. Copy matches web. */
+export function queueRowCaption(prompt: {
+  delivery?: 'steer' | 'queue' | 'interrupt';
+  steer_fallback?: keyof typeof STEER_FALLBACK_CAPTION | null;
+}): string | null {
+  if (prompt.steer_fallback) return STEER_FALLBACK_CAPTION[prompt.steer_fallback];
+  return prompt.delivery === 'steer' ? 'Read at next step' : null;
 }

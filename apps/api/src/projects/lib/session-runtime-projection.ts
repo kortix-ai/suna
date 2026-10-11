@@ -41,13 +41,15 @@
  * is strictly worse than saying "as of 3 h ago".
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   projectSessions,
   sessionRuntimeProjections,
   sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
+import { writeRuntimeSessionList } from './runtime-session-snapshot';
 
 /**
  * How old a RUNNING box's projection may be before it is refused.
@@ -66,9 +68,6 @@ export const PROJECTION_MAX_BYTES = 256 * 1024;
 
 export type RuntimeProjectionSource = 'daemon_push' | 'api_pull';
 
-/** Identity the live runtime would also produce. See the ghost rule above.
- *  The wire shape lives in `@kortix/api-contract`. */
-export type { RuntimeProjectionIdentity } from '@kortix/api-contract';
 import type { RuntimeProjectionIdentity } from '@kortix/api-contract';
 
 export interface StoredRuntimeProjection {
@@ -245,7 +244,22 @@ export async function saveRuntimeProjection(
     })
     .returning({ etag: sessionRuntimeProjections.projectionEtag });
 
-  return result.length > 0 ? 'stored' : 'ignored';
+  if (result.length === 0) return 'ignored';
+  // The session's list of runtime conversations follows the stored document.
+  // A failure here never fails the projection write it follows.
+  await writeRuntimeSessionList({
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    accountId: input.accountId,
+    projection: input.projection,
+    runtimeSessionId: identity.runtime_session_id,
+  }).catch((err) =>
+    logger.warn('[runtime-projection] session list write failed', {
+      session_id: input.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
+  return 'stored';
 }
 
 export interface RuntimeProjectionRead {

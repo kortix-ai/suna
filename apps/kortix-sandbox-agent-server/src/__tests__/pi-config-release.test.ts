@@ -13,8 +13,8 @@ import { Hono } from 'hono'
 import type { Config } from '@/lib/config/config'
 import { createPiConfigReleases, type PiConfigReleases } from '@/harness/pi/config-release'
 import { createPiControlService } from '@/harness/pi/control'
-import { readBootConfigPointer, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { readBootConfigPointer, readQuarantine, releaseDir } from '@/services/config-provider/boot-config'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { createEnvRouter } from '@/routes/kortix/env'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
@@ -24,6 +24,7 @@ import {
   commitAll,
   initRepo,
   serveRelease,
+  serveSnapshot,
   startFakeApi,
   write,
   type BuiltRelease,
@@ -69,10 +70,14 @@ function release(skill: string, prompt: string): BuiltRelease {
   return buildRelease(repo, commit, DIR, { projectId: 'proj-1', governance: governance(prompt) })
 }
 
-function create(env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED }, opts: { api?: null } = {}) {
+function create(
+  env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
+  opts: { api?: null } = {},
+  checkout: Partial<Config> = {},
+) {
   const sessionEnv: NodeJS.ProcessEnv = { KORTIX_SESSION_ID: 'sess-1', ...env }
   const releases = createPiConfigReleases({
-    cfg: { apiUrl: api.url, projectId: 'proj-1', sandboxToken: TOKEN } as Config,
+    cfg: { apiUrl: api.url, projectId: 'proj-1', sandboxToken: TOKEN, ...checkout } as Config,
     env: sessionEnv,
     root,
     noticePath,
@@ -134,6 +139,50 @@ describe('pi config releases: boot', () => {
     const requests = api.descriptorRequests.length
     await releases.boot()
     expect(api.descriptorRequests.length).toBe(requests)
+  })
+
+  test('a box that checked out the release commit builds the release from its checkout: no download', async () => {
+    const one = release('deploy', 'from the checkout')
+    serveRelease(api, one)
+    const { releases } = create(undefined, {}, { projectTarget: repo, baseSha: one.descriptor.source_commit! })
+
+    await releases.boot(undefined, Promise.resolve(null))
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+  })
+
+  test('a box with no base pin builds a release with no archive from its checkout', async () => {
+    const one = release('deploy', 'from the checkout, no pin')
+    api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const { releases } = create(undefined, {}, { projectTarget: repo })
+
+    await releases.boot(undefined, Promise.resolve(null))
+
+    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true, fallback_reason: null })
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+  })
+
+  test('a release over the archive cap (v3, no archive) boots from the project snapshot', async () => {
+    const one = release('deploy', 'from the snapshot')
+    api.respond({
+      status: 200,
+      json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: serveSnapshot(api, repo, one.descriptor.source_commit!) },
+    })
+    const { releases } = create()
+
+    await releases.boot()
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), '.git'))).toBe(false)
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toHaveLength(1)
   })
 
   test('config releases off: pi reads the working tree, and a stale notice is removed', async () => {
@@ -389,6 +438,70 @@ describe('pi config releases: convergence', () => {
     serveRelease(api, three)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+  })
+
+  test('project tools load from the release root; a change to one restarts, an unrelated change reconfigures', async () => {
+    const withTools = (prompt: string) => JSON.stringify({ ...JSON.parse(governance(prompt)), project_tools: { lookup_order: 'tools/lookup.ts' } })
+    write(repo, 'tools/lookup.ts', 'export default {}\n')
+    write(repo, 'tools/lib/client.ts', 'export const v = 1\n')
+    write(repo, `${DIR}/opencode.json`, '{}\n')
+    const one = buildRelease(repo, commitAll(repo, 'tools'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    serveRelease(api, one)
+    const { releases } = create()
+    await releases.boot()
+    expect(releases.projectRoot()).toBe(releaseDir(root, one.descriptor.release_id!))
+    const runtime = fakeRuntime()
+
+    write(repo, 'README.md', 'unrelated\n')
+    const two = buildRelease(repo, commitAll(repo, 'readme'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    serveRelease(api, two)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+
+    // A helper beside the module is part of the tool.
+    write(repo, 'tools/lib/client.ts', 'export const v = 2\n')
+    const three = buildRelease(repo, commitAll(repo, 'tool helper'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    serveRelease(api, three)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+
+    // So is the declaration itself.
+    write(repo, 'README.md', 'still unrelated\n')
+    const four = buildRelease(repo, commitAll(repo, 'no tools'), DIR, { projectId: 'proj-1', governance: governance('one') })
+    serveRelease(api, four)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
+  })
+
+  test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
+    const withKortix = (prompt: string, kortixTools?: string[]) =>
+      JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
+    write(repo, 'README.md', 'all five\n')
+    const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
+    serveRelease(api, one)
+    const { releases } = create()
+    await releases.boot()
+    const runtime = fakeRuntime()
+
+    write(repo, 'README.md', 'prompt only\n')
+    const two = buildRelease(repo, commitAll(repo, 'prompt only'), DIR, { projectId: 'proj-1', governance: withKortix('two', all) })
+    serveRelease(api, two)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+
+    write(repo, 'README.md', 'show removed\n')
+    const three = buildRelease(repo, commitAll(repo, 'no show'), DIR, { projectId: 'proj-1', governance: withKortix('two', all.slice(0, 4)) })
+    serveRelease(api, three)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+
+    // No list (a config compiled without a `tools` key) is a change too: every Kortix tool loads again.
+    write(repo, 'README.md', 'tools key removed\n')
+    const four = buildRelease(repo, commitAll(repo, 'no tools key'), DIR, { projectId: 'proj-1', governance: withKortix('two') })
+    serveRelease(api, four)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
   })
 
   test('a release without a pi config dir leaves pi none; with releases off pi resolves the working tree', async () => {

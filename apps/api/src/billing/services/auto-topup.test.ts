@@ -13,6 +13,7 @@ const grants: GrantInput[] = [];
 let nextIntentStatus = 'succeeded';
 let existingIntents: Array<Record<string, unknown>> = [];
 let listIntentsFails = false;
+const intentKeys: Array<string | undefined> = [];
 const intentUpdates: Array<{ id: string; params: Record<string, unknown> }> = [];
 
 mock.module('../../config', () => ({
@@ -27,10 +28,38 @@ mock.module('../../config', () => ({
   ),
 }));
 
+/** What the claim answers: a timestamp, or null when another replica holds it. */
+let claimResult: string | null = '2026-10-06T10:00:00.000000+00';
+const claims: Array<string | null> = [];
+
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => account,
+
   updateCreditAccount: async (_accountId: string, update: Record<string, unknown>) => {
     updates.push(update);
+  },
+}));
+
+/** Whether the conditional turn-off wins (false: the account was already off). */
+let disableResult = true;
+const disables: string[] = [];
+const alerts: Array<{ accountId: string; reason: string }> = [];
+
+mock.module('../repositories/auto-topup-claim', () => ({
+  claimAutoTopupCharge: async (_accountId: string, observed: string | null) => {
+    claims.push(observed);
+    return claimResult;
+  },
+  disableAutoTopupIfEnabled: async (accountId: string) => {
+    disables.push(accountId);
+    return disableResult;
+  },
+}));
+
+mock.module('./auto-topup-alert', () => ({
+  notifyAutoTopupDisabled: async (accountId: string, reason: string) => {
+    alerts.push({ accountId, reason });
+    return 1;
   },
 }));
 
@@ -62,8 +91,9 @@ mock.module('../../shared/stripe', () => ({
       },
     },
     paymentIntents: {
-      create: async (params: Record<string, unknown>) => {
+      create: async (params: Record<string, unknown>, options?: { idempotencyKey?: string }) => {
         paymentIntents.push(params);
+        intentKeys.push(options?.idempotencyKey);
         return { id: 'pi_test', status: nextIntentStatus };
       },
       list: async () => {
@@ -115,6 +145,12 @@ beforeEach(() => {
   existingIntents = [];
   listIntentsFails = false;
   intentUpdates.length = 0;
+  claimResult = '2026-10-06T10:00:00.000000+00';
+  claims.length = 0;
+  intentKeys.length = 0;
+  disableResult = true;
+  disables.length = 0;
+  alerts.length = 0;
 });
 
 describe('auto-topup payment-method discovery — non-card checkouts', () => {
@@ -179,6 +215,9 @@ describe('auto-topup with no payment method — the skip must be observable', ()
     expect(updates[0]?.autoTopupDisabledReason).toBe(NO_PAYMENT_METHOD_REASON);
     expect(updates[0]?.autoTopupConsecutiveFailures).toBe(1);
     expect(updates[0]?.autoTopupLastCharged).toBeString();
+    // A first soft failure keeps auto top-up on and tells nobody.
+    expect(disables).toEqual([]);
+    expect(alerts).toEqual([]);
   });
 
   test('repeated skips eventually disable auto-topup rather than retrying forever', async () => {
@@ -190,8 +229,20 @@ describe('auto-topup with no payment method — the skip must be observable', ()
 
     await checkAndTriggerAutoTopup('acct-1');
 
-    expect(updates[0]?.autoTopupEnabled).toBe(false);
     expect(updates[0]?.autoTopupDisabledReason).toBe(NO_PAYMENT_METHOD_REASON);
+    expect(disables).toEqual(['acct-1']);
+    // KRTX-1718: the turn-off tells the owners why.
+    expect(alerts).toEqual([{ accountId: 'acct-1', reason: NO_PAYMENT_METHOD_REASON }]);
+  });
+
+  test('a failure on an account that is already off tells nobody a second time', async () => {
+    account = creditAccount({ autoTopupConsecutiveFailures: 2 });
+    disableResult = false;
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(disables).toEqual(['acct-1']);
+    expect(alerts).toEqual([]);
   });
 });
 
@@ -202,6 +253,25 @@ describe('auto-topup on an asynchronous payment method', () => {
       subscriptions: { data: [] },
     };
     listedPaymentMethods = [{ id: 'pm_bank', type: 'us_bank_account' }];
+  });
+
+  test('a replica that loses the DB claim charges nothing, even across a minute boundary', async () => {
+    claimResult = null;
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(claims).toEqual([null]);
+    expect(paymentIntents).toHaveLength(0);
+    expect(grants).toHaveLength(0);
+  });
+
+  test('the Stripe idempotency key derives from the claim, not the clock', async () => {
+    account = creditAccount({ autoTopupLastCharged: '2026-10-06T09:00:00.000000+00' });
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(claims).toEqual(['2026-10-06T09:00:00.000000+00']);
+    expect(paymentIntents).toHaveLength(1);
+    expect(intentKeys).toEqual(['auto-topup:acct-1:20.00:2026-10-06T10:00:00.000000+00']);
   });
 
   test('a succeeded charge grants the amount keyed on the PaymentIntent id', async () => {

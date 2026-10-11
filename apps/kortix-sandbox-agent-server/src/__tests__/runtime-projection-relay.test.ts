@@ -4,6 +4,7 @@ import { gunzipSync } from 'node:zlib'
 import {
   __resetRuntimeProjectionRelayForTests,
   registerRuntimeStateReader,
+  createSessionTreeWatch,
   scheduleRuntimeProjectionPush,
   shedProjectionToFit,
 } from '@/harness/shared/projection-relay'
@@ -414,5 +415,25 @@ describe('against a real socket', () => {
     } finally {
       server.stop(true)
     }
+  })
+})
+
+// R7.4: apps/api lists a session's runtime conversations from the pushed projection.
+describe('createSessionTreeWatch', () => {
+  const frame = (type: string, id: string, title?: string) => ({ type, properties: { sessionID: id, info: { id, ...(title === undefined ? {} : { title }) } } })
+
+  test('a new session, a new title and a deleted session change the tree; a repeat or another frame does not', () => {
+    const changed = createSessionTreeWatch()
+    expect(changed(frame('session.created', 'ses_root', 'New session'))).toBe(true)
+    // OpenCode sends session.updated on every step: unchanged title, no push.
+    expect(changed(frame('session.updated', 'ses_root', 'New session'))).toBe(false)
+    expect(changed(frame('session.updated', 'ses_root', 'Fix the login bug'))).toBe(true)
+    expect(changed(frame('session.updated', 'ses_root', 'Fix the login bug'))).toBe(false)
+    expect(changed(frame('session.created', 'ses_child', 'Review the change'))).toBe(true)
+    expect(changed(frame('message.updated', 'ses_child', 'x'))).toBe(false)
+    expect(changed(frame('session.deleted', 'ses_child'))).toBe(true)
+    // A session first seen in an update is new to the tree.
+    expect(changed(frame('session.updated', 'ses_late', 'Late'))).toBe(true)
+    expect(changed({ type: 'session.created', properties: {} })).toBe(false)
   })
 })

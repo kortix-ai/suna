@@ -20,6 +20,19 @@
 export const GRID_CLASSNAME = 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3';
 
 /**
+ * The CONNECTOR catalogue's dense variant: borderless `plain` cards carrying
+ * only icon + title + a kind line, so they fit three across from `lg` and
+ * nearly touch — the hover fill separates rows, not gaps. Agents and skills
+ * keep `GRID_CLASSNAME`; their outlined, description-carrying cards need the room.
+ *
+ * Columns follow the grid's own width, not the viewport: a split sheet
+ * narrows the page, and the cards must reflow with it. Wrap the grid in
+ * `DENSE_GRID_CONTAINER_CLASSNAME`.
+ */
+export const DENSE_GRID_CONTAINER_CLASSNAME = '@container';
+export const DENSE_GRID_CLASSNAME = 'grid gap-1 @xl:grid-cols-2 @3xl:grid-cols-3';
+
+/**
  * Height of a real `CatalogCard`, sized to the common two-line-description
  * case so the loading skeleton and the settled card never reflow vertically.
  *

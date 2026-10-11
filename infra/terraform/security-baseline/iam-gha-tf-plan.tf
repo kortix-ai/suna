@@ -31,11 +31,11 @@ resource "aws_iam_role" "gha_tf_plan" {
       # on pull_request with id-token: write and executes PR-controlled code, so
       # a wildcard subject would let any pull request mint a token and assume
       # this account-wide read role. Drift runs on schedule and manual dispatch,
-      # both of which carry the main-branch subject.
+      # both of which carry the dev-branch subject.
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:ref:refs/heads/dev"
         }
       }
     }]

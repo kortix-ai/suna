@@ -10,6 +10,7 @@ import {
   searchQueryParam,
   sessionStarter,
   startedByForScope,
+  uniqueSessions,
 } from './session-tree';
 
 const make = (overrides: Record<string, unknown> = {}): ProjectSession =>
@@ -125,5 +126,28 @@ describe('buildDrawerItems', () => {
     expect(shared.at(-1)).toEqual({ kind: 'more', section: 'shared' });
     const mine = buildDrawerItems([{ id: 'sessions', title: 'Sessions', rows: [leaf], ...base, hasMore: true }], () => false);
     expect(mine.some((i) => i.kind === 'more')).toBe(false);
+  });
+  // The three sections are three queries refreshed at different times. A
+  // session whose starter changed (the viewer ran a shared session) sits in a
+  // stale Shared page and in a fresh Mine page at once.
+  test('a session cached in two sections renders once, in the first', () => {
+    const items = buildDrawerItems(
+      [
+        { id: 'sessions', title: 'Sessions', rows: [leaf], ...base },
+        { id: 'shared', title: 'Shared', rows: [leaf, parent], ...base },
+      ],
+      () => false,
+    );
+    const rows = items.filter((i) => i.kind === 'root').map((i) => `${i.section}:${i.session.session_id}`);
+    expect(rows).toEqual(['sessions:l', 'shared:p']);
+  });
+});
+
+describe('uniqueSessions', () => {
+  test('drops a repeated session_id, keeping the first and the order', () => {
+    const a = make({ session_id: 'a' });
+    const b = make({ session_id: 'b' });
+    const staleA = make({ session_id: 'a', title: 'stale' });
+    expect(uniqueSessions([a, b, staleA])).toEqual([a, b]);
   });
 });

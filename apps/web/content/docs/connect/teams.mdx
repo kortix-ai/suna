@@ -275,6 +275,15 @@ Inbound files and pasted images are available to the agent to download and
 work with — including images pasted into a channel or a group chat, which Teams
 delivers inside the message body rather than as an attachment.
 
+- An image pasted into a channel or a group chat downloads only when the agent
+  may read that thread or chat, by the rules in
+  [Reading a channel](#reading-a-channel). Otherwise `teams download` answers
+  `403`.
+- A download stops at 50 MB and answers `413`.
+- `teams history` and `teams thread` list a post's inline images (`images`,
+  each one a URL for `teams download`) and the names of files shared from
+  SharePoint (`files`). The agent cannot download a SharePoint file.
+
 Paste a screenshot and ask about it and the turn runs on a model that can read
 images, even when the conversation's own model is text-only — the session's
 model pick is left alone. A model the session can no longer run — a key that

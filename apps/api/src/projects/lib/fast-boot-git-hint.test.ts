@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { FastBootGitHint } from '../git/commits';
+import type { FastBootGitHint } from '../git/fast-boot-bundle';
 import type { GitBackedProject } from '../git/types';
 import {
   buildCachedFastBootGitHint,

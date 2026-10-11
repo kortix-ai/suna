@@ -1,25 +1,18 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 /**
- * The schedules / webhooks list.
+ * The triggers list: schedules, app events and webhooks in one table.
  *
- * **What changed and why.** The old table led with a bare icon column, then
- * showed the trigger's 8-character slug under its name, an UPPERCASED agent,
- * a "Signing" column reading "Signed via WEBHOOK_FOO_SECRET", and a "Last
- * fired" column — five columns of wire vocabulary, no row actions, and no
- * responsive behaviour, so on a phone it became a sideways scroll of
- * identifiers. Now: the status tile leads the name cell (one column saved),
- * every value is a sentence, and the columns drop out in reverse order of
- * usefulness as the viewport narrows, with the schedule folded under the name
- * so the phone layout still answers "when does this run?".
- *
- * Row actions live here too. Pausing a schedule used to require opening the
- * panel, reading it, and finding a button — for the single most common thing
- * anyone does on this screen.
+ * A row is a leading tile (the app's logo, a clock, the webhook mark), the name
+ * with a status badge only when the trigger is not live, and a "When" cell of
+ * exactly two lines: what starts it, then where it comes from. An error never
+ * adds a line: its text is a hint on the badge and fills the callout in the
+ * detail sheet. Columns drop out in reverse order of usefulness as the
+ * viewport narrows, and the phone layout keeps the "when" line under the name.
  */
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -38,29 +31,31 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
 import {
   CopyIcon,
   DotsThreeIcon,
+  LinkIcon,
   PauseIcon,
   PlayIcon,
-  TimerIcon,
   TrashIcon,
-  WarningCircleIcon,
-  WebhooksLogoIcon,
 } from '@phosphor-icons/react';
+import { Fragment, type ReactNode } from 'react';
+import type { TriggerControls } from './trigger-controls';
 
+import { describeEventSource, describeEventStatus, type EventAppIndex } from './event-trigger-copy';
 import {
   describeLastRun,
-  describeSecurity,
+  describeNextRun,
   describeWhen,
   localizedKindCopy,
+  triggerBadgeState,
   triggerName,
-  triggerStatus,
   type TriggerKind,
 } from './schedule-copy';
+import { TriggerStatusBadge } from './trigger-status-badge';
+import { TriggerTile } from './trigger-tile';
 
 async function copyWebhookAddress(
   url: string,
@@ -74,7 +69,7 @@ async function copyWebhookAddress(
 
 export interface ScheduleTableProps {
   triggers: ProjectTrigger[];
-  canWrite: boolean;
+  controls: TriggerControls;
   /** Slug of the row whose run is in flight, if any. */
   runningSlug: string | null;
   /** Slug of the row whose pause/resume is in flight, if any. */
@@ -83,6 +78,16 @@ export interface ScheduleTableProps {
   onRun: (trigger: ProjectTrigger) => void;
   onToggle: (trigger: ProjectTrigger) => void;
   onDelete: (trigger: ProjectTrigger) => void;
+  /** Opens the connect flow for an app-event trigger that needs an account. */
+  onConnect?: (trigger: ProjectTrigger) => void;
+  /** Rows under a heading row each, e.g. the App events view by app. Replaces `triggers`' order. */
+  groups?: { key: string; heading: ReactNode; triggers: ProjectTrigger[] }[];
+  /** The event catalog by app slug: real app names and logos. Empty while it loads or when events are off. */
+  apps?: EventAppIndex;
+  /** Event id -> the adapter's event name, from the catalog. */
+  eventNames?: ReadonlyMap<string, string>;
+  /** An agent slug as the agent picker names it. */
+  agentLabel: (slug: string) => string;
 }
 
 /** A mixed list of schedules and webhooks — the type comes off each row's
@@ -90,15 +95,37 @@ export interface ScheduleTableProps {
  *  one table. */
 export function ScheduleTable({
   triggers,
-  canWrite,
+  controls,
   runningSlug,
   togglingSlug,
   onOpen,
   onRun,
   onToggle,
   onDelete,
+  onConnect,
+  groups,
+  apps,
+  eventNames,
+  agentLabel,
 }: ScheduleTableProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const renderRow = (trigger: ProjectTrigger) => (
+    <ScheduleTableRow
+      key={trigger.slug}
+      trigger={trigger}
+      controls={controls}
+      running={runningSlug === trigger.slug}
+      toggling={togglingSlug === trigger.slug}
+      onOpen={() => onOpen(trigger)}
+      onRun={() => onRun(trigger)}
+      onToggle={() => onToggle(trigger)}
+      onDelete={() => onDelete(trigger)}
+      onConnect={onConnect ? () => onConnect(trigger) : undefined}
+      apps={apps}
+      eventNames={eventNames}
+      agentLabel={agentLabel}
+    />
+  );
   return (
     <Table>
       <TableHeader>
@@ -119,19 +146,18 @@ export function ScheduleTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {triggers.map((trigger) => (
-          <ScheduleTableRow
-            key={trigger.slug}
-            trigger={trigger}
-            canWrite={canWrite}
-            running={runningSlug === trigger.slug}
-            toggling={togglingSlug === trigger.slug}
-            onOpen={() => onOpen(trigger)}
-            onRun={() => onRun(trigger)}
-            onToggle={() => onToggle(trigger)}
-            onDelete={() => onDelete(trigger)}
-          />
-        ))}
+        {groups
+          ? groups.map((group) => (
+              <Fragment key={group.key}>
+                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableCell colSpan={5} className="py-2">
+                    {group.heading}
+                  </TableCell>
+                </TableRow>
+                {group.triggers.map(renderRow)}
+              </Fragment>
+            ))
+          : triggers.map(renderRow)}
       </TableBody>
     </Table>
   );
@@ -139,134 +165,147 @@ export function ScheduleTable({
 
 function ScheduleTableRow({
   trigger,
-  canWrite,
+  controls,
   running,
   toggling,
   onOpen,
   onRun,
   onToggle,
   onDelete,
+  onConnect,
+  apps,
+  eventNames,
+  agentLabel,
 }: {
   trigger: ProjectTrigger;
-  canWrite: boolean;
+  controls: TriggerControls;
   running: boolean;
   toggling: boolean;
   onOpen: () => void;
   onRun: () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
+  apps?: EventAppIndex;
+  eventNames?: ReadonlyMap<string, string>;
+  agentLabel: (slug: string) => string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tTriggers = useTranslations('triggers');
-  const kind = trigger.type;
+  const event = trigger.event;
   const name = triggerName(trigger);
-  const status = triggerStatus(trigger.enabled, tI18nComplete);
-  const when = describeWhen(trigger);
-  const security = describeSecurity(trigger, tI18nComplete);
-  const KindIcon = kind === 'cron' ? TimerIcon : WebhooksLogoIcon;
-  // A run that failed outranks Active/Paused on the tile: it is the one
-  // state the owner has to act on.
-  const failed = trigger.last_status === 'failed';
-  const StatusIcon = failed ? WarningCircleIcon : status.active ? KindIcon : PauseIcon;
+  const when = describeWhen(trigger, eventNames);
+  const lastRun = describeLastRun(
+    trigger.type === 'event'
+      ? (event?.last_event_at ?? trigger.last_fired_at)
+      : trigger.last_fired_at,
+  );
+  const detail = whenDetail(trigger, apps, tI18nComplete);
+  // Why a trigger is not live, for the badge's hint. A paused trigger needs no reason.
+  const state = triggerBadgeState(trigger);
+  const reason =
+    state === 'error' || state === 'needs_connection'
+      ? (event && describeEventStatus(event, tI18nComplete).detail) || trigger.last_error
+      : null;
 
   return (
     <TableRow className="group cursor-pointer" onClick={onOpen}>
-      <TableCell className="max-w-[15rem] align-middle">
+      <TableCell className="max-w-[16rem] align-middle">
         <div className="flex min-w-0 items-center gap-3">
-          <span
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-sm',
-              failed ? 'bg-kortix-red/15' : status.tileClassName,
-            )}
-            aria-hidden="true"
-          >
-            <StatusIcon
-              weight="fill"
-              className={cn('size-4 shrink-0', failed ? 'text-kortix-red' : status.iconClassName)}
-            />
-          </span>
+          <TriggerTile
+            trigger={trigger}
+            logo={event ? (apps?.get(event.app ?? event.connector)?.logo ?? null) : null}
+          />
           <span className="min-w-0 flex-1">
-            {/* A real button, so the row is reachable by keyboard — a
-                click handler on the <tr> alone never is. */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpen();
-              }}
-              className="block max-w-full cursor-pointer truncate text-left text-sm font-medium outline-none focus-visible:underline"
-            >
-              {name}
-            </button>
+            <span className="flex min-w-0 items-center gap-2">
+              {/* A real button, so the row is reachable by keyboard — a
+                  click handler on the <tr> alone never is. */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen();
+                }}
+                className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none focus-visible:underline"
+              >
+                {name}
+              </button>
+              <TriggerStatusBadge trigger={trigger} hideLive hint={reason} />
+            </span>
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
-            {failed ? (
-              <span className="text-muted-foreground hidden text-xs sm:block">
-                {tTriggers('runFailed.label')}
-              </span>
-            ) : !status.active ? (
-              <span className="text-muted-foreground hidden text-xs sm:block">
-                {tI18nComplete.raw('texte159b06187d3')}
-              </span>
-            ) : null}
           </span>
         </div>
       </TableCell>
 
-      <TableCell className="hidden max-w-[14rem] align-middle sm:table-cell">
-        <div className="min-w-0 space-y-1">
-          <p className="text-foreground truncate text-sm">{when}</p>
-          {kind === 'cron' && !trigger.run_at ? (
-            <p className="text-muted-foreground truncate text-xs">{trigger.timezone}</p>
-          ) : kind === 'webhook' ? (
-            <Badge variant={security.signed ? 'kortix' : 'warning'} size="sm">
-              {security.label}
-            </Badge>
-          ) : null}
-        </div>
+      <TableCell className="hidden max-w-[18rem] align-middle sm:table-cell">
+        <p className="text-foreground truncate text-sm">{when}</p>
+        {detail ? <p className="text-muted-foreground truncate text-xs">{detail}</p> : null}
       </TableCell>
 
       <TableCell className="text-muted-foreground hidden max-w-[10rem] truncate align-middle text-sm lg:table-cell">
-        {trigger.agent}
+        {agentLabel(trigger.agent)}
       </TableCell>
 
       <TableCell className="text-muted-foreground hidden align-middle text-sm whitespace-nowrap tabular-nums md:table-cell">
-        {describeLastRun(trigger.last_fired_at)}
+        {lastRun}
       </TableCell>
 
       <TableCell className="align-middle">
         <RowActions
           trigger={trigger}
-          canWrite={canWrite}
+          controls={controls}
           busy={running || toggling}
-          active={status.active}
+          active={trigger.enabled}
           onOpen={onOpen}
           onRun={onRun}
           onToggle={onToggle}
           onDelete={onDelete}
+          onConnect={onConnect}
         />
       </TableCell>
     </TableRow>
   );
 }
 
+/** Line 2 of the "When" cell: where an event comes from, when a schedule runs next, which secret signs a webhook. */
+function whenDetail(
+  trigger: ProjectTrigger,
+  apps: EventAppIndex | undefined,
+  tI18nComplete: UiTranslator,
+): ReactNode {
+  if (trigger.type === 'event') {
+    return trigger.event ? describeEventSource(trigger.event, tI18nComplete, apps) : null;
+  }
+  if (trigger.type === 'cron') {
+    const parts = [trigger.run_at ? null : trigger.timezone, describeNextRun(trigger)];
+    return parts.filter(Boolean).join(' · ') || null;
+  }
+  return trigger.secret_env ? (
+    <span className="font-mono">{trigger.secret_env}</span>
+  ) : (
+    tI18nComplete.raw('textc0f06f876fa1')
+  );
+}
+
 function RowActions({
   trigger,
-  canWrite,
+  controls,
   busy,
   active,
   onOpen,
   onRun,
   onToggle,
   onDelete,
+  onConnect,
 }: {
   trigger: ProjectTrigger;
-  canWrite: boolean;
+  controls: TriggerControls;
   busy: boolean;
   active: boolean;
   onOpen: () => void;
   onRun: () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Safe: `ScheduleView` filters every list to `isTriggerKind` before it
@@ -309,21 +348,34 @@ function RowActions({
             {tI18nComplete.raw('text7c4e5224f9d4')}
           </DropdownMenuItem>
         ) : null}
-        {canWrite ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onRun}>
+        {controls.canFire || controls.canUpdate ? <DropdownMenuSeparator /> : null}
+        {controls.canUpdate &&
+        kind === 'event' &&
+        trigger.event?.status === 'needs_connection' &&
+        onConnect ? (
+          <DropdownMenuItem onClick={onConnect}>
+            <LinkIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('textf7d845186faa')}
+          </DropdownMenuItem>
+        ) : null}
+        {controls.canFire ? (
+          <DropdownMenuItem onClick={onRun}>
+            <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('text0991397702fa')}
+          </DropdownMenuItem>
+        ) : null}
+        {controls.canUpdate ? (
+          <DropdownMenuItem onClick={onToggle}>
+            {active ? (
+              <PauseIcon weight="fill" className="size-3.5 shrink-0" />
+            ) : (
               <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              {tI18nComplete.raw('text0991397702fa')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggle}>
-              {active ? (
-                <PauseIcon weight="fill" className="size-3.5 shrink-0" />
-              ) : (
-                <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              )}
-              {active ? 'Pause' : 'Resume'}
-            </DropdownMenuItem>
+            )}
+            {active ? 'Pause' : 'Resume'}
+          </DropdownMenuItem>
+        ) : null}
+        {controls.canDelete ? (
+          <>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onDelete}>
               <TrashIcon className="size-3.5 shrink-0" />

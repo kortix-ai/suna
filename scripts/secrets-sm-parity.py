@@ -18,9 +18,9 @@ import json, os, re, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENVS = {"dev": ("kortix-dev-env", "us-west-2"), "staging": ("kortix-staging-env", "us-west-2"), "prod": ("kortix-prod-env", "eu-west-2")}
+ENVS = {"dev": ("kortix-dev-env", "us-east-2"), "staging": ("kortix-staging-env", "eu-west-2"), "prod": ("kortix-prod-env", "eu-west-2")}
 # ECS API service per env: plain task-definition env vars are the second (small) runtime source.
-ECS = {"dev": ("kortix-dev", "kortix-dev", "us-west-2"), "staging": ("kortix-staging", "kortix-staging", "us-west-2"), "prod": ("kortix-prod", "kortix-prod", "eu-west-2")}
+ECS = {"dev": ("kortix-dev-use2", "kortix-dev-use2", "us-east-2"), "staging": ("kortix-staging-euw2", "kortix-staging-euw2", "eu-west-2"), "prod": ("kortix-prod", "kortix-prod", "eu-west-2")}
 ECS_IGNORE = {"KORTIX_VERSION", "PORT"}  # stamped per rollout / local listen port
 DX = os.environ.get("DOTENVX", str(ROOT / "node_modules/.bin/dotenvx") if (ROOT / "node_modules/.bin/dotenvx").exists() else "dotenvx")
 AWS_ENV = {**os.environ, "AWS_PROFILE": os.environ.get("AWS_PROFILE", "kortix-mfa")}

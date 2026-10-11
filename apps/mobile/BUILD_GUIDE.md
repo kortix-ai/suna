@@ -66,10 +66,10 @@ needs a new version and a store build: OTA cannot ship it.
 |---|---|---|
 | `Deploy Prod` succeeded (each production release) | `production` | `prod-store`, `prod-apk` builds |
 | Actions → Mobile OTA → Run workflow, channel `dev` | `dev` | `dev-store`, `dev-apk` builds |
-| Actions → Mobile OTA → Run workflow, channel `production` | `production` | a hotfix or a re-run (`dry_run` publishes nothing) |
+| Actions → Mobile OTA → Run workflow, channel `production` | `production` | a re-run of the released `prod` branch, whichever branch the button runs from (`dry_run` publishes nothing) |
 
-A push to `main` publishes nothing: since 2026-10-03 only cheap guards and
-path-gated infra run on `main` (Actions minutes).
+A push to `dev` publishes nothing: since 2026-10-03 only cheap guards and
+path-gated infra run on `dev` (Actions minutes).
 
 Per platform the script **skips** (warning on the run) when:
 1. no finished build on the channel has the current `runtimeVersion`;
@@ -106,8 +106,9 @@ second launch.
    With no good update for this runtime, send devices back to the bundle inside
    the binary:
    ```bash
-   eas update:roll-back-to-embedded --channel production --platform all
+   eas update:roll-back-to-embedded --channel production --platform all --runtime-version <runtime> \
+     --message "Roll back <bad-group-id>"
    ```
 3. Confirm: the new entry is on top of `eas update:list --branch production`,
    and a device shows the old behavior on its second launch.
-4. Fix forward on `main`. The next production release publishes again.
+4. Fix forward on `dev`. The next production release publishes again.

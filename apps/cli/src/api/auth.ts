@@ -4,6 +4,7 @@ import {
   activeHost,
   activeHostName,
   configFilePath,
+  envTokenHost,
   getHost,
   removeHost,
   upsertHost,
@@ -75,6 +76,29 @@ function authToHost(auth: Auth, previous?: Host | null): Host {
 export function loadAuth(): Auth | null {
   const host = activeHost();
   return host ? hostToAuth(host) : null;
+}
+
+/**
+ * The platform-injected sandbox identity, ignoring an in-sandbox `hosts use`
+ * selection (KRTX-1705). The connector data plane (CLI subcommands + the stdio
+ * MCP server) is the session's own surface — a session only ever invokes
+ * `kortix connectors`, and its routes are bound to the launching deployment's
+ * project — so a human's host selection must not redirect it. Null without a
+ * delegation env, so callers fall back to loadAuth().
+ */
+export function loadEnvAuth(): Auth | null {
+  const host = envTokenHost();
+  return host ? hostToAuth(host) : null;
+}
+
+/**
+ * The token the config store holds now for the host `auth` names, or null when
+ * the active host differs. A long-lived local proxy calls it per request, so a
+ * `kortix login` in another terminal reaches it without a restart.
+ */
+export function currentTokenFor(auth: Auth): string | null {
+  const stored = loadAuth();
+  return stored && sameApiBase(stored.api_base, auth.api_base) ? stored.token : null;
 }
 
 /** Load a specific named host's auth (for --host overrides). */

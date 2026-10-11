@@ -29,15 +29,33 @@ reset. The OpenCode conversation remains attached to the session.
 
 Kortix also stops an idle session for you:
 
-- After 15 minutes idle, for a normal session.
-- After 5 minutes idle, for a session a trigger started.
+- After 15 minutes idle, for a normal session or a trigger run.
+- After 2 minutes idle, for a worker session another session started.
 
-An open dashboard tab does not keep a session alive. A busy agent turn blocks
-the stop. The maintenance sweep runs every 5 minutes. A normal automatic Stop
-therefore occurs approximately 15 to 20 minutes after the terminal turn.
+A busy agent turn blocks the stop. The maintenance sweep runs every 5 minutes.
+A normal automatic Stop therefore occurs approximately 15 to 20 minutes after
+the terminal turn.
+
+A turn that waits on a person does no work: the agent asked a question, or asks
+for permission to run a tool. Such a turn keeps the computer for at most 2 hours
+after Kortix first sees the wait. In a trigger or schedule run, nobody receives
+the ask, and the limit is 30 minutes. Kortix then ends the turn and stops the
+computer. Send a message to continue. A model call or your open session page
+counts as activity and extends the computer as usual.
+
+A session page you are using keeps the session awake. It counts as in use while
+the tab is visible and you clicked, typed, scrolled or touched it in the last
+10 minutes, and only when you may start sessions in the project. A tab left
+open with no input stops counting after 10 minutes, so the session stops about
+15 to 20 minutes later. A read-only viewer's open tab never keeps it awake.
+Using the page alone keeps a session awake for at most 2 hours after its last
+agent turn; a new message starts a turn and resets that limit.
 
 Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
 normal idle grace. This setting does not change active-turn protection.
+`KORTIX_SANDBOX_TURN_WAITING_MINUTES` changes the 2-hour limit for a turn that
+waits on a person, up to half the 4-hour turn grant. Neither setting changes the
+30-minute limit of a trigger or schedule run.
 
 ## What stop and delete keep
 
@@ -63,6 +81,19 @@ Agents and scripts set labels too: `kortix sessions new --label worker`,
 it labels that session), or `labels` in the API and SDK. A session also carries
 a free-form `metadata` object for your own keys — see
 [SDK sessions](/docs/sdk/sessions#labels-and-metadata).
+
+## Notifications
+
+Kortix notifies you when a session you watch ends a turn, fails, or waits on
+you. You watch the sessions you create and the sessions you send a message in.
+To stop one session's notifications, open the session menu next to its title and
+choose **Mute notifications**. See [Notifications](/docs/work/notifications).
+
+This needs the project's `notification_center` flag. With it off, only the
+session creator's phone gets a session push, and an account owner's phone gets
+one when a trigger starts failing. The session menu has no **Mute
+notifications**. See
+[Turn notifications on](/docs/work/notifications#turn-notifications-on).
 
 ## Runtime
 

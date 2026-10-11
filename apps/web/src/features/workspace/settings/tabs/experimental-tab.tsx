@@ -94,6 +94,8 @@ import { SettingsTabHeader } from '../settings-tab-header';
 export interface ExperimentalCopy {
   stability: Record<FeatureFlagStability, string>;
   overridden: string;
+  /** Origin line of an `operator_only` flag: only Kortix changes it. */
+  managedByKortix: string;
   defaultOn: string;
   defaultOff: string;
   search: string;
@@ -108,6 +110,7 @@ export interface ExperimentalCopy {
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   stability: { experimental: 'Experimental', beta: 'Beta', stable: 'Stable' },
   overridden: 'Overridden for this project',
+  managedByKortix: 'Managed by Kortix',
   defaultOn: 'Default on',
   defaultOff: 'Default off',
   search: 'Search features',
@@ -120,8 +123,36 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
+  // An internal-only flag (`apps`) is listed only while on, and
+  // `PATCH /features` refuses it to anyone but a Kortix operator.
+  if (feature.operator_only) return copy.managedByKortix;
   if (feature.overridden) return copy.overridden;
   return feature.enabled ? copy.defaultOn : copy.defaultOff;
+}
+
+/** The translator surface {@link localizeFeatureFlag} reads. */
+export interface FeatureFlagTranslator {
+  (key: string): string;
+  has(key: string): boolean;
+}
+
+/**
+ * A catalog row with its display copy in the reader's language.
+ *
+ * The catalogs name and describe every flag key this build knows. A page can
+ * still hold a catalog from the previous API during a deploy, listing a flag
+ * this build no longer translates (a graduated flag). That row keeps the
+ * English `name` and `description` the API sent, so it reads as words and
+ * never as a raw message key.
+ */
+export function localizeFeatureFlag<T extends FeatureFlagView>(feature: T, t: FeatureFlagTranslator): T {
+  const nameKey = `flags.${feature.key}.name`;
+  const descriptionKey = `flags.${feature.key}.description`;
+  return {
+    ...feature,
+    name: t.has(nameKey) ? t(nameKey) : feature.name,
+    description: t.has(descriptionKey) ? t(descriptionKey) : feature.description,
+  };
 }
 
 /**
@@ -185,7 +216,7 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
-          <span className="text-muted-foreground/70 text-xs">{originLabel(feature, copy)}</span>
+          <span className="text-muted-foreground text-xs">{originLabel(feature, copy)}</span>
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
@@ -194,7 +225,7 @@ function ExperimentalFeatureRow({
         <Switch
           aria-labelledby={nameId}
           checked={feature.enabled}
-          disabled={!canManage || pending}
+          disabled={!canManage || pending || feature.operator_only === true}
           onCheckedChange={(v) => onToggle(feature.key, v)}
         />
       </div>
@@ -423,11 +454,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
 
   const rawFeatures = (project?.experimental_features ?? [])
     .filter((f) => f.available)
-    .map((feature) => ({
-      ...feature,
-      name: t(`flags.${feature.key}.name` as never),
-      description: t(`flags.${feature.key}.description` as never),
-    }));
+    .map((feature) => localizeFeatureFlag(feature, t as unknown as FeatureFlagTranslator));
   const withPending = rawFeatures.map((f) => ({
     ...f,
     enabled: pendingValues[f.key] ?? f.enabled,
@@ -460,6 +487,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
           stable: t('stability.stable'),
         },
         overridden: t('origin.overridden'),
+        managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
         defaultOn: t('origin.defaultOn'),
         defaultOff: t('origin.defaultOff'),
         search: t('search'),

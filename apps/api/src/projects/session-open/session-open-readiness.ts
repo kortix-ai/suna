@@ -22,6 +22,7 @@ import {
   runtimeReadyWaitPatch,
   runtimeProvenThisBoot,
   servesThroughProbeMiss,
+  shouldWarnRuntimeUnreachable,
   staleRuntimeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import type {
@@ -222,13 +223,17 @@ export async function stampUnreachableDiagnostics(
     // `failed/runtime_unreachable_timeout` on a box whose daemon answered
     // `200 {"daemon":"ok","opencode":"ok"}` — is undiagnosable without this.
     //
-    // Only when the cause CHANGES, though: a stuck session polls every ~3s,
-    // and one warn per poll was a prod log spike (2026-09-29: 1119 lines/hour
-    // from 20 bad_signature sessions). The durable stamp below carries the
-    // same cause/responder/detail for whoever reads the row later.
-    const previousCause = readinessValue(sandboxMetadata(row), 'runtimeUnreachableCause');
+    // The warn is keyed on the SPELL, not the cause: one warn per spell past
+    // the ride-out budget the boot judgment below already enforces. The
+    // earlier gates both spiked — one per poll (2026-09-29: 1119 lines/hour
+    // from 20 bad_signature sessions), then one per CHANGED cause
+    // (2026-10-04: 816 lines/day; a cold wake alternates
+    // `timeout_or_network`/`http_502` every ~11 s and heals inside the
+    // budget). shouldWarnRuntimeUnreachable carries the measurement.
+    const metadata = sandboxMetadata(row);
     const nextCause = ensured.cause ?? 'unspecified';
-    if (previousCause !== nextCause) {
+    const warn = shouldWarnRuntimeUnreachable(metadata, Date.now(), STALE_RUNTIME_UNREACHABLE_MS);
+    if (warn) {
       console.warn('[start] opencode session list unreachable', {
         sandbox_id: row.sandboxId,
         session_id: row.sessionId,
@@ -290,23 +295,26 @@ export async function stampUnreachableDiagnostics(
     // observable and stopped there, which left it unreadable from outside the
     // process — a diagnostic nobody can reach does not diagnose anything.
     //
-    // Written only when it CHANGES — the warn above shares this gate, so a
-    // stuck session costs one write, not one per poll.
-    if (previousCause !== nextCause) {
+    // The cause is written only when it CHANGES; the warn mark only on the
+    // poll that warned. One merge write carries whichever fired.
+    const stamp: Record<string, string> = {};
+    if (warn) stamp.runtimeUnreachableWarnedAt = new Date().toISOString();
+    if (readinessValue(metadata, 'runtimeUnreachableCause') !== nextCause) {
+      stamp.runtimeUnreachableCause = nextCause;
+      stamp.runtimeUnreachableCauseAt = new Date().toISOString();
+      // WHO answered, and what it said. Without these the cause names a
+      // status code and nothing else, which is what left five competing
+      // explanations alive for one 401.
+      if (ensured.responder) stamp.runtimeUnreachableResponder = ensured.responder;
+      if (ensured.detail) stamp.runtimeUnreachableDetail = ensured.detail;
+    }
+    if (Object.keys(stamp).length > 0) {
       // Merge in SQL, never a read-modify-write of the JSONB column (learnings
       // 2026-09-22): a concurrent wake claim on this row would be clobbered.
       await db
         .update(sessionSandboxes)
         .set({
-          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
-            runtimeUnreachableCause: nextCause,
-            runtimeUnreachableCauseAt: new Date().toISOString(),
-            // WHO answered, and what it said. Without these the cause names a
-            // status code and nothing else, which is what left five competing
-            // explanations alive for one 401.
-            ...(ensured.responder ? { runtimeUnreachableResponder: ensured.responder } : {}),
-            ...(ensured.detail ? { runtimeUnreachableDetail: ensured.detail } : {}),
-          })}::jsonb`,
+          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(stamp)}::jsonb`,
         })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
         .catch((err) =>

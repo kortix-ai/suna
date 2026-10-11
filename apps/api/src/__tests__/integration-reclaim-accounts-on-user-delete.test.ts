@@ -6,13 +6,18 @@
  * exists, GET returns 403 "You do not have access to this account", and a
  * re-signup with the same address boots a fresh account instead (KRTX-1300).
  *
+ * The trigger does not delete: it schedules the orphan account for the API
+ * deletion routine (billing/services/account-deletion.ts), which owns the
+ * ordered sweep and the Stripe cancel. The tests run that routine as the
+ * worker does (`processScheduledDeletions`).
+ *
  * Three shapes are proven here:
  *   1. sole member (the personal account) — account and projects reclaimed;
  *   2. a surviving member keeps the account and its projects reachable;
  *   3. an account whose remaining members are already dead (their auth rows
  *      went earlier) is reclaimed by the last live member's deletion.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { accounts, accountMembers, projects } from '@kortix/db';
 import { inArray, sql } from 'drizzle-orm';
 
@@ -41,6 +46,29 @@ const P1 = crypto.randomUUID();
 const P2 = crypto.randomUUID();
 const P3 = crypto.randomUUID();
 const P4 = crypto.randomUUID();
+
+// The auth user is already gone when the sweep runs; Stripe is untouched
+// (these accounts have no subscription).
+const realSupabase = await import('../shared/supabase');
+mock.module('../shared/supabase', () => ({
+  ...realSupabase,
+  getSupabase: () => ({
+    auth: { admin: { deleteUser: async () => ({ error: { status: 404 } }) } },
+    // Session files: an empty bucket (account erasure lists each project).
+    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
+  }),
+}));
+
+async function sweep() {
+  const { processScheduledDeletions } = await import('../billing/services/account-deletion');
+  const result = await processScheduledDeletions();
+  expect(result.errors).toEqual([]);
+}
+
+const pendingRequests = (accountId: string) =>
+  countRows(
+    sql`select count(*) n from kortix.account_deletion_requests where account_id = ${accountId}::uuid and status = 'pending' and scheduled_for <= now()`,
+  );
 
 let ip = 0;
 
@@ -145,6 +173,11 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
   test('deleting the sole member reclaims the personal account and its projects; the same-address re-signup finds no 403 orphan', async () => {
     await db.execute(sql`delete from auth.users where id = ${SOLO}::uuid`);
 
+    // The trigger only schedules; the account survives until the sweep runs.
+    expect(await accountGone(SOLO_A)).toBe(1);
+    expect(await pendingRequests(SOLO_A)).toBe(1);
+    await sweep();
+
     expect(await accountGone(SOLO_A)).toBe(0);
     expect(await projectGone(P1)).toBe(0);
     expect(await projectGone(P2)).toBe(0);
@@ -166,11 +199,14 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
     await db.execute(sql`delete from auth.users where id = ${SHARED}::uuid`);
 
     expect(await accountGone(SHARED_A)).toBe(1);
+    expect(await pendingRequests(SHARED_A)).toBe(0);
     expect(await projectGone(P3)).toBe(1);
   });
 
   test('an account whose remaining members are all dead is reclaimed by its last live member', async () => {
     await db.execute(sql`delete from auth.users where id = ${LAST_LIVE}::uuid`);
+    expect(await pendingRequests(DEAD_A)).toBe(1);
+    await sweep();
 
     expect(await accountGone(DEAD_A)).toBe(0);
     expect(await projectGone(P4)).toBe(0);

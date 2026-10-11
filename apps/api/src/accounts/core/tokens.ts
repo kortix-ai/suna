@@ -1,7 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { accounts } from '@kortix/db';
-import { db } from '../../shared/db';
 import { userAccountNameRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
