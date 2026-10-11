@@ -1016,6 +1016,13 @@
       "when": 1791680688014,
       "tag": "20261011010448_apps_fly_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1791682826356,
+      "tag": "20261011014026_session_transcript_rewind_marker",
+      "breakpoints": true
     }
   ]
 }
