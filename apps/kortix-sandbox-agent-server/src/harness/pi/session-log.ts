@@ -57,13 +57,13 @@ import {
   type SessionLog,
   type SessionLogBlock,
   type SessionLogMessage,
-  type SessionLogSessionPatch,
   type SessionLogThread,
   type ToolCallBlock,
   type ToolResultContent,
 } from '@kortix/api-contract/session-log'
 import type { KortixMessage, KortixPart } from '@kortix/api-contract/transcript'
-import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
+import type { SessionLogChanges, SessionLogPort } from '../contract/session-log'
+import { logChanges } from '../shared/session-log-journal'
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
 
@@ -443,27 +443,9 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null): Se
       const s = read()
       if (!s) return { messages: [], tombstones: [], threads: [] }
       const { log, hashes } = piSessionLog(s)
-      const byThread = new Map(cursors.map((c) => [c.thread_id, c]))
-      const live = new Set(hashes.keys())
-      const messages: ExportedMessage[] = []
-      for (const thread of log.threads) {
-        const cursor = byThread.get(thread.thread_id)
-        for (const message of thread.messages) {
-          const native_hash = hashes.get(message.message_id)!
-          if (!cursor || message.seq > cursor.last_seq || cursor.native_hashes[message.message_id] !== native_hash) messages.push({ message, native_hash })
-        }
-      }
-      const tombstones = cursors.flatMap((c) => Object.keys(c.native_hashes).filter((id) => !live.has(id)))
-      const { threads, ...session } = log
-      const json = JSON.stringify(session)
-      const changed = json !== lastSession
-      lastSession = json
-      return {
-        messages,
-        tombstones,
-        threads: threads.map(({ messages: _messages, ...thread }) => thread),
-        ...(changed ? { session: session as SessionLogSessionPatch } : {}),
-      }
+      const out = logChanges(log, hashes, cursors, lastSession)
+      lastSession = out.sessionJson
+      return out.changes
     },
     /**
      * P6 writes `log` into pi's native store here (root entries with the
