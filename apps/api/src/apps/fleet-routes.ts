@@ -1,5 +1,5 @@
 /**
- * Machines, scale, exec and volumes of an App (the Fly.io model):
+ * Machines, scale, exec and volumes of an App:
  *
  *   GET    /projects/:projectId/apps/:appId/machines                         read
  *   POST   /projects/:projectId/apps/:appId/machines/:machineId/{start|stop|restart}  deploy
@@ -157,7 +157,7 @@ export function registerAppFleetRoutes(): void {
       method: 'put', path: '/{projectId}/apps/{appId}/scale', tags: ['apps'], summary: 'Scale an App', ...auth,
       description:
         `Machines per process group (0 to ${MAX_GROUP_SCALE}). Applied in the background: answers 202 with the new ` +
-        'scale. A group that mounts a volume gets one new, empty volume per new machine (Fly); a scaled-down machine ' +
+        'scale. A group that mounts a volume gets one new, empty volume per new machine; a scaled-down machine ' +
         'keeps its volume for the next one.',
       request: { params: AppParams, body: { content: { 'application/json': { schema: z.object({ count: z.record(z.string().max(32), z.number().int()) }) } } } },
       responses: { 202: json(Open, 'Scale'), ...errors(400, 403, 404, 409) },
@@ -217,7 +217,7 @@ export function registerAppFleetRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/volumes', tags: ['apps'], summary: 'Create an App volume', ...auth,
-      description: 'Pre-creates a volume (Fly `volumes create`). A machine of its process group whose mount names it takes it. Volumes need Platinum.',
+      description: 'Pre-creates a volume. A machine of its process group whose mount names it takes it. Volumes need Platinum.',
       request: {
         params: AppParams,
         body: { content: { 'application/json': { schema: z.object({
@@ -247,7 +247,7 @@ export function registerAppFleetRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Extend an App volume', ...auth,
-      description: '`size_gb` only grows (Fly `volumes extend`); `snapshot_retention_days` is 1 to 60.',
+      description: '`size_gb` only grows; `snapshot_retention_days` is 1 to 60.',
       request: {
         params: VolumeParams,
         body: { content: { 'application/json': { schema: z.object({

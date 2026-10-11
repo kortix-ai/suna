@@ -46,7 +46,7 @@ export function bindProjectAccessResources(projectId: string) {
       stop: (appId: string) => P.stopApp(projectId, appId),
       rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>
         P.rollbackApp(projectId, ...a),
-      /** Machines (Fly model): stable ids across releases; destroying one keeps its volume. */
+      /** Machines: stable ids across releases; destroying one keeps its volume. */
       machines: {
         list: (appId: string) => P.listAppMachines(projectId, appId),
         start: (appId: string, machineId: string) => P.startAppMachine(projectId, appId, machineId),

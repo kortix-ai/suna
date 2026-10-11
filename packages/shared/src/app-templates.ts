@@ -1,5 +1,5 @@
 /**
- * App templates (Fly `launch`): data, never platform code. A template is the
+ * App templates: data, never platform code. A template is the
  * `kortix.yaml` `apps` blocks of a ready-made App, plus what to do after the
  * first deploy. `kortix apps launch --template <name>` writes the blocks and
  * deploys them; the kortix-apps skill documents each one.
@@ -15,8 +15,22 @@ export interface AppTemplate {
   blocks: (name: string) => Record<string, Record<string, unknown>>;
   /** The order to deploy the blocks in (Apps that others use first). */
   deployOrder: (name: string) => string[];
+  /** Project secrets the launch creates once, each right after its App deploys. */
+  secrets?: (name: string) => AppTemplateSecret[];
   /** Printed after the deploy: the commands that finish the setup. */
   nextSteps: (name: string) => string[];
+}
+
+/** A project secret whose value is the last line `command` prints on a machine of the App `app`. */
+export interface AppTemplateSecret {
+  name: string;
+  app: string;
+  command: string[];
+}
+
+/** `crm-data` → `CRM_DATA`: a slug as an env name. */
+export function slugEnvName(slug: string): string {
+  return slug.toUpperCase().replace(/-/g, '_');
 }
 
 /** The self-hosted Convex backend, git 5c7cb5b (2026-09-28). `/version` answers `unknown`: the digest is the version. */
@@ -25,6 +39,29 @@ const CONVEX_BACKEND = 'ghcr.io/get-convex/convex-backend@sha256:d715e9ec0887844
 const CONVEX_DASHBOARD = 'ghcr.io/get-convex/convex-dashboard@sha256:f85cf0d0448b9c835ae3df5c7c1c6f0145dd4c8f0f92eb0245daf304efdd9f1a';
 /** The `convex` npm CLI that matches CONVEX_BACKEND. Bump both together. */
 export const CONVEX_CLI_VERSION = '1.46.0';
+
+/**
+ * Signs the Convex dashboard in without a click, through Convex's embedding
+ * protocol: `/` is a page that frames the dashboard and answers its
+ * `dashboard-credentials-request` with the admin key. Every other request goes
+ * to the dashboard on 6792. Node only, no dependencies.
+ */
+const CONVEX_DASHBOARD_SIGNIN_PROXY = `const http = require('http');
+const credentials = JSON.stringify({ type: 'dashboard-credentials', adminKey: process.env.NEXT_PUBLIC_ADMIN_KEY || '', deploymentUrl: process.env.NEXT_PUBLIC_DEPLOYMENT_URL, deploymentName: process.env.DASHBOARD_NAME }).replace(/</g, '\\\\u003c');
+const page = '<!doctype html><meta charset="utf-8"><title>Convex dashboard</title><style>html,body,iframe{margin:0;border:0;width:100%;height:100%;display:block}</style><iframe src="/?embedded=1"></iframe><script>const c=' + credentials + ';addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="dashboard-credentials-request")e.source.postMessage(c,location.origin)})</script>';
+http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(page);
+  }
+  const upstream = http.request({ host: '127.0.0.1', port: 6792, path: req.url, method: req.method, headers: req.headers }, (answer) => {
+    res.writeHead(answer.statusCode, answer.headers);
+    answer.pipe(res);
+  });
+  upstream.on('error', () => { res.writeHead(502); res.end(); });
+  req.pipe(upstream);
+}).listen(6791, '0.0.0.0');
+`;
 
 export const APP_TEMPLATES: Record<string, AppTemplate> = {
   convex: {
@@ -37,6 +74,8 @@ export const APP_TEMPLATES: Record<string, AppTemplate> = {
         // The supervisor owns the entrypoint; Convex advertises the App's own URLs.
         command: ['sh', '-c', 'cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh'],
         labels: ['backend'],
+        // Its root page is a plain-text banner: the card shows an icon, the dashboard tab is the UI.
+        display: { preview: 'none' },
         always_on: true,
         vm: { cpu: 1, memory_gb: 1, disk_gb: 10 },
         mounts: [{ source: 'data', destination: '/convex/data', initial_size_gb: 10 }],
@@ -48,22 +87,29 @@ export const APP_TEMPLATES: Record<string, AppTemplate> = {
         type: 'oci_image',
         image: CONVEX_DASHBOARD,
         // The dashboard reaches the backend through this App's own binding: same origin, behind the admins gate.
-        command: ['sh', '-c', `cd /app/dashboard-self-hosted && NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/${name} PORT=6791 HOSTNAME=0.0.0.0 exec node ./server.js`],
+        // It runs on 6792; SIGNIN_PROXY on 6791 serves `/` and passes everything else through.
+        command: ['sh', '-c', `cd /app/dashboard-self-hosted && export NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/${name} DASHBOARD_NAME=${name} && { PORT=6792 HOSTNAME=127.0.0.1 node ./server.js & } && exec node -e "$SIGNIN_PROXY"`],
         labels: ['backend', 'dashboard'],
+        // A tab of the backend's detail, not a card of its own.
+        display: { parent: name },
         uses: [name],
         always_on: false,
         vm: { cpu: 1, memory_gb: 1 },
         http_service: { internal_port: 6791, access: 'admins' },
+        // Only project admins reach this App, so its page may carry the admin key.
+        secrets: { NEXT_PUBLIC_ADMIN_KEY: `${slugEnvName(name)}_ADMIN_KEY` },
+        env: { SIGNIN_PROXY: CONVEX_DASHBOARD_SIGNIN_PROXY },
       },
     }),
     deployOrder: (name) => [name, `${name}-dashboard`],
+    secrets: (name) => [
+      { name: `${slugEnvName(name)}_ADMIN_KEY`, app: name, command: ['sh', '-c', 'cd /convex && ./generate_admin_key.sh'] },
+    ],
     nextSteps: (name) => [
-      `kortix apps exec ${name} -- sh -c "cd /convex && ./generate_admin_key.sh"   # the admin key (project admins)`,
-      `kortix secrets set CONVEX_SELF_HOSTED_ADMIN_KEY=<key>   # keep it as a project secret`,
-      `export CONVEX_SELF_HOSTED_URL=<${name} URL> CONVEX_SELF_HOSTED_ADMIN_KEY=<key>   # in apps/${name}, for the convex CLI`,
+      `export CONVEX_SELF_HOSTED_URL=<${name} URL> CONVEX_SELF_HOSTED_ADMIN_KEY="$${slugEnvName(name)}_ADMIN_KEY"   # in apps/${name}, for the convex CLI (a session has the secret in its env)`,
       `kortix apps auth-env ${name} | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done   # Kortix sign-in`,
       `npx convex@${CONVEX_CLI_VERSION} deploy   # push your functions (convex/auth.config.ts: the kortix-apps skill, sign-in)`,
-      `kortix apps access-link ${name}-dashboard   # a browser link to the dashboard (project admins); log in with the admin key`,
+      `Apps tab → ${name} → Dashboard   # the Convex dashboard, signed in (project admins)`,
     ],
   },
 };
