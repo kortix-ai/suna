@@ -230,6 +230,52 @@ describe('flag-only commands reject what they do not know', () => {
   });
 });
 
+describe('providers subcommands reject what they do not know', () => {
+  // KRTX-1541: an unknown flag on `providers ls` used to be silently
+  // ignored, printing the same output as the plain call. The rejection now
+  // happens in runProviders before any command or network call, through the
+  // shared grammar: `unknown option "<first>"` + the subcommand's usage.
+  const run = runAllBeforehand([
+    ['providers', 'ls', '--help'],
+    ['providers', 'ls', '--available'],
+    ['providers', 'ls', '--json', '--bogus'],
+    ['providers', 'set', 'anthropic', 'sk-ant-synthetic', '--bogus'],
+    ['providers', 'login', '--help'],
+    ['providers', 'login', 'openai', '--bogus'],
+  ]);
+
+  test('providers ls --available exits 2 with the usage; providers ls --help exits 0 with the same usage', () => {
+    const help = run(['providers', 'ls', '--help']);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('Usage: kortix providers <subcommand>');
+
+    const bogus = run(['providers', 'ls', '--available']);
+    expect(bogus.code).toBe(2);
+    expect(bogus.stdout).toBe('');
+    expect(bogus.stderr).toEndWith(`\nunknown option "--available"\n\n${help.stdout}`);
+  });
+
+  test('a known flag does not mask the unknown one behind it', () => {
+    const res = run(['providers', 'ls', '--json', '--bogus']);
+    expect(res.code).toBe(2);
+    expect(res.stderr).toContain('unknown option "--bogus"');
+  });
+
+  test('providers set … --bogus exits 2 with the usage, before any network call', () => {
+    const res = run(['providers', 'set', 'anthropic', 'sk-ant-synthetic', '--bogus']);
+    expect(res.code).toBe(2);
+    expect(res.stderr).toContain('unknown option "--bogus"');
+  });
+
+  test('providers login … --bogus exits 2 with the login usage, before OAuth starts', () => {
+    const help = run(['providers', 'login', '--help']);
+    expect(help.code).toBe(0);
+    const res = run(['providers', 'login', 'openai', '--bogus']);
+    expect(res.code).toBe(2);
+    expect(res.stderr).toEndWith(`\nunknown option "--bogus"\n\n${help.stdout}`);
+  });
+});
+
 describe('help and argument errors match the pre-refactor golden output', () => {
   const golden: Array<{ args: string[]; code: number; stdout: string; stderr: string }> =
     JSON.parse(readFileSync(join(import.meta.dir, 'support', 'arg-grammar-golden.json'), 'utf8'));
