@@ -62,9 +62,11 @@ describe('turnStartBodyFields', () => {
 });
 
 describe('revertBodyMessageId', () => {
-  test('reads the OpenCode messageID, and nothing else', () => {
+  test('reads the OpenCode messageID of a whole-message rewind, and nothing else', () => {
     expect(revertBodyMessageId(body({ messageID: ' msg_a ' }))).toBe('msg_a');
-    expect(revertBodyMessageId(body({ messageID: 'msg_a', partID: 'prt_1' }))).toBe('msg_a');
+    // A rewind to a part keeps its message listed: no marker.
+    expect(revertBodyMessageId(body({ messageID: 'msg_a', partID: 'prt_1' }))).toBeNull();
+    expect(revertBodyMessageId(body({ messageID: 'msg_a', partID: '' }))).toBe('msg_a');
     expect(revertBodyMessageId(body({ message_id: 'msg_a' }))).toBeNull();
     expect(revertBodyMessageId(body(null))).toBeNull();
     expect(revertBodyMessageId(new TextEncoder().encode('{').buffer as ArrayBuffer)).toBeNull();

@@ -432,16 +432,27 @@ async function recordAcceptedRewind(req: ForwardRequest, state: ForwardState, up
   if (rewind.kind !== 'revert' && rewind.kind !== 'unrevert') return;
   const messageId = rewind.kind === 'revert' ? revertBodyMessageId(state.requestBody) : null;
   if (rewind.kind === 'revert' && !messageId) return;
-  try {
-    const { setTranscriptRewindMarker } = await import('../../projects/surface');
-    await setTranscriptRewindMarker(req.record.sessionId, rewind.runtimeSessionId, messageId);
-  } catch (err) {
-    // The rewind itself succeeded. A missing marker only keeps the rewound
-    // rows in saved history; it never deletes one.
-    logger.warn('[transcript-mirror] rewind marker not recorded', {
-      session_id: req.record.sessionId,
-      kind: rewind.kind,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  // Three tries, 100 ms then 400 ms apart. The rewind itself succeeded either
+  // way. A lost `revert` write only keeps the rewound rows in saved history.
+  // A lost `unrevert` clear leaves a stale marker: a capture spends it only
+  // on a read that lacks the marker message AND lists a newer one, and then
+  // deletes only rows from the marker onward that the read lacks.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const { setTranscriptRewindMarker } = await import('../../projects/surface');
+      await setTranscriptRewindMarker(req.record.sessionId, rewind.runtimeSessionId, messageId);
+      return;
+    } catch (err) {
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 100 : 400));
+        continue;
+      }
+      logger.warn('[transcript-mirror] rewind marker not recorded', {
+        session_id: req.record.sessionId,
+        kind: rewind.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
   }
 }

@@ -111,11 +111,17 @@ export function turnStartBodyFields(body: ArrayBuffer | undefined): {
   }
 }
 
-/** The message a `POST /session/:id/revert` body rewinds to (`messageID`). */
+/**
+ * The message a `POST /session/:id/revert` body rewinds to (`messageID`), or
+ * null. A rewind to a PART (`partID`) is null too: its boundary message stays
+ * listed after the commit, so a marker for it could never be spent. Its rows
+ * stay in saved history instead.
+ */
 export function revertBodyMessageId(body: ArrayBuffer | undefined): string | null {
   if (!body?.byteLength) return null;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { messageID?: unknown } | null;
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as { messageID?: unknown; partID?: unknown } | null;
+    if (typeof parsed?.partID === 'string' && parsed.partID.trim()) return null;
     const id = parsed?.messageID;
     return typeof id === 'string' && id.trim() ? id.trim() : null;
   } catch {

@@ -806,3 +806,117 @@ test('a pi session never loses rows on any read', async () => {
     await db.end();
   }
 }, 20_000);
+
+/** One OpenCode root with ten saved messages (created 1000..1009), for the
+ *  marker cases below. Every helper reads or writes that one session. */
+async function withSavedRoot(label: string, body: (fx: {
+  message: (n: number) => { info: Record<string, unknown>; parts: unknown[] };
+  id: (n: number) => string;
+  capture: (payload: unknown[], how?: { complete?: boolean; caughtUp?: boolean; tail?: boolean }) => Promise<unknown>;
+  stored: () => Promise<string[]>;
+  marker: () => Promise<string | null>;
+  mark: (messageId: string | null) => Promise<void>;
+}) => Promise<void>): Promise<void> {
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject(label);
+    const sessionId = await seedSession(project, randomUUID());
+    const root = 'ses_markerroot';
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+      sessionId,
+      root,
+    ]);
+    const message = (n: number) => ({
+      info: {
+        id: `msg_m${String(n).padStart(2, '0')}`,
+        sessionID: root,
+        role: n % 2 === 0 ? 'user' : 'assistant',
+        time: n % 2 === 0 ? { created: 1_000 + n } : { created: 1_000 + n, completed: 1_001 + n },
+      },
+      parts: [{ id: `prt_m${n}`, type: 'text', text: `message ${n}` }],
+    });
+    const capture = (payload: unknown[], how: { complete?: boolean; caughtUp?: boolean; tail?: boolean } = { complete: true }) =>
+      captureSessionTranscriptMirror(
+        sessionId,
+        {
+          readMessages: async () => ({
+            opencodeSessionId: root,
+            payload,
+            headComplete: how.complete === true,
+            complete: how.complete === true,
+            caughtUp: how.caughtUp === true,
+          }),
+        },
+        how.tail ? { scope: 'tail' } : undefined,
+      );
+    const stored = async () =>
+      (
+        await db.query(
+          'SELECT message_id FROM kortix.session_transcript_messages WHERE session_id = $1 ORDER BY message_created_at, message_id',
+          [sessionId],
+        )
+      ).rows.map((row) => row.message_id as string);
+    const marker = async () =>
+      ((
+        await db.query('SELECT rewind_message_id FROM kortix.session_transcript_mirrors WHERE session_id = $1', [
+          sessionId,
+        ])
+      ).rows[0]?.rewind_message_id as string | null | undefined) ?? null;
+    await capture(Array.from({ length: 10 }, (_, n) => message(n)));
+    await body({
+      message,
+      id: (n) => `msg_m${String(n).padStart(2, '0')}`,
+      capture,
+      stored,
+      marker,
+      mark: (messageId) => setTranscriptRewindMarker(sessionId, root, messageId),
+    });
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}
+
+const allTen = Array.from({ length: 10 }, (_, n) => `msg_m${String(n).padStart(2, '0')}`);
+
+test('an empty complete read with a marker set deletes nothing and keeps the marker', async () => {
+  // A staged rewind nobody committed, then a box that lost its state. A real
+  // commit always lists the replacement prompt, so a read with nothing at or
+  // after the marker is state loss, never a rewind.
+  await withSavedRoot('transcript-capture-marker-empty', async ({ id, capture, stored, marker, mark }) => {
+    await mark(id(6));
+    await capture([]);
+    expect(await stored()).toEqual(allTen);
+    expect(await marker()).toBe(id(6));
+    // A Stop's one-page `tail` read applies nothing either.
+    await capture([], { tail: true });
+    expect(await stored()).toEqual(allTen);
+    expect(await marker()).toBe(id(6));
+  });
+}, 20_000);
+
+test('a read that lists only messages older than the marker deletes nothing and keeps the marker', async () => {
+  await withSavedRoot('transcript-capture-marker-older', async ({ message, id, capture, stored, marker, mark }) => {
+    await mark(id(6));
+    await capture([0, 1, 2, 3].map(message));
+    await capture([2, 3, 4].map(message), { caughtUp: true });
+    expect(await stored()).toEqual(allTen);
+    expect(await marker()).toBe(id(6));
+    // The commit still applies afterwards: the replacement turn is newer.
+    await capture([0, 1, 2, 3, 4, 5, 10].map(message));
+    expect(await stored()).toEqual([...allTen.slice(0, 6), 'msg_m10']);
+    expect(await marker()).toBeNull();
+  });
+}, 20_000);
+
+test('a marker whose message is not stored under this root is cleared and deletes nothing', async () => {
+  await withSavedRoot('transcript-capture-marker-unknown', async ({ message, capture, stored, marker, mark }) => {
+    await mark('msg_nevercaptured');
+    expect(await marker()).toBe('msg_nevercaptured');
+    await capture([0, 1, 2, 10].map(message));
+    expect(await stored()).toEqual([...allTen, 'msg_m10']);
+    expect(await marker()).toBeNull();
+  });
+}, 20_000);

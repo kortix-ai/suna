@@ -463,13 +463,27 @@ async function applyRecordedRewind(
     .limit(1);
   const pointAt = point?.createdAt ? new Date(point.createdAt) : null;
   if (pointAt) {
+    // A real commit lists the replacement prompt, which is newer than the
+    // rewind point (OpenCode cleans the reverted messages up first, then
+    // writes the prompt). A read that lists nothing at or after the point —
+    // empty, or only older history — is a box that lost its state, never a
+    // rewind: delete nothing and keep the marker for the real commit.
+    const key = (row: (typeof rows)[number]) => timeField(row.info, 'created')?.getTime();
+    const listsNewer = rows.some((row) => {
+      const at = key(row);
+      return (
+        at !== undefined &&
+        (at > pointAt.getTime() || (at === pointAt.getTime() && String(row.info.id) >= marker))
+      );
+    });
+    if (!listsNewer) return;
     if (!input.complete) {
       // A caught-up walk read only down to its oldest row. It must reach the
       // rewind point, or part of the rewound range is unread: keep the marker
       // for a later read.
       let floor: { at: number; id: string } | null = null;
       for (const row of rows) {
-        const at = timeField(row.info, 'created')?.getTime();
+        const at = key(row);
         const id = String(row.info.id);
         if (at !== undefined && (!floor || at < floor.at || (at === floor.at && id < floor.id))) {
           floor = { at, id };
