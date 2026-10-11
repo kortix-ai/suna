@@ -391,11 +391,12 @@ New Apps are private. Use `kortix apps access <app>` to select creator-only,
 whole-project, restricted member/group, public, or password access. Never store
 an App password in `kortix.yaml`.
 
-Use the CLI from the source directory:
+Each App's code lives in its own folder, `apps/<slug>/` by default (`path` is
+free-form; group by team or topic when that fits better). Deploy that folder:
 
 ```sh
-kortix apps deploy ./dist --type static --spa
-kortix apps deploy . --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
+kortix apps deploy apps/storefront/dist --type static --spa
+kortix apps deploy apps/api --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
 kortix apps launch --template convex --name db
 kortix apps releases api          # vN, status, strategy; the live one marked

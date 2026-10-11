@@ -17,7 +17,7 @@ runtime behavior. Data and server logic for a UI belong in a Convex backend App
 Choose the run mode on the first deploy (Lifecycle, below):
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 
 kortix apps deploy --image nginx:1.27-alpine --slug nginx \
@@ -56,7 +56,7 @@ run mode, never a price. To use less compute, use `--on-demand` or a smaller
 machine (`--memory-gb 1`).
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000
 ```
 

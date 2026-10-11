@@ -10,16 +10,15 @@ import {
   type ResolvedPrepIdentity,
   type TransitionDeps,
 } from './provider-transition-runner';
+import { activateWithCas, setPinWithGenerationBump } from './provider-transition-activate';
+import { readActiveRouting } from './provider-transition-routing';
 import {
   acquireLease,
-  activateWithCas,
   findResumableTransitions,
   getTransition,
   heartbeat,
   insertPrebuildTransition,
-  readActiveRouting,
   reserveSwitchTransition,
-  setPinWithGenerationBump,
   updateTransition,
 } from './provider-transition-store';
 

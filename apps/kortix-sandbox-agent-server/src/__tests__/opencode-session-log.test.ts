@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path'
 import {
   AdapterCapabilitiesSchema,
   fromV1,
+  toV1,
   SESSION_LOG_EVENTS,
   SessionLogJournalRequestSchema,
   upcast,
@@ -127,6 +128,15 @@ describe('OpenCode session-log export: one mapping with fromV1', () => {
       expect(withoutDaemonFields(ours)).toEqual(withoutDaemonFields(theirs))
       // A fresh export of a store with no revert numbers like fromV1.
       expect(all(ours).map((m) => m.seq)).toEqual(all(theirs).map((m) => m.seq))
+    }
+  })
+
+  test('toV1 of the journaled record gives back the mirror rows the capture stores (P4.2)', () => {
+    const byId = (rows: V1Row[]) => [...rows].sort((a, b) => (a.info.id < b.info.id ? -1 : 1))
+    for (const [store, rows] of [[before, v1Before], [after, v1After]] as const) {
+      const out = toV1(JSON.parse(JSON.stringify(exported(store).log)))
+      expect(out.root_id).toBe(ROOT)
+      expect(byId(out.rows)).toEqual(byId(JSON.parse(JSON.stringify(rows))))
     }
   })
 

@@ -70,10 +70,11 @@ describe('provider transition audit', () => {
   });
 });
 
-// The store functions need a real database (provider-transition-flow.test.ts
-// skips without one), so the wiring is pinned on their source.
+// The store + activation functions need a real database (provider-transition-
+// flow.test.ts skips without one), so the wiring is pinned on their source.
 test('activateWithCas and failTransition audit their outcome', () => {
+  const activate = readFileSync(new URL('./provider-transition-activate.ts', import.meta.url), 'utf8');
   const store = readFileSync(new URL('./provider-transition-store.ts', import.meta.url), 'utf8');
-  expect(store).toContain("auditProviderTransition(result.row, { outcome: 'activated' })");
+  expect(activate).toContain("auditProviderTransition(result.row, { outcome: 'activated' })");
   expect(store).toContain("auditProviderTransition(row, { outcome: 'failed', errorClass: patch.errorClass, attempts: patch.attempts })");
 });
