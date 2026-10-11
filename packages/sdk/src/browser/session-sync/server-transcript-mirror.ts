@@ -54,10 +54,6 @@ export interface MirrorHydrateDecision {
 	runtimeSessionId: string;
 	/** The store already holds messages for that root. */
 	hasMessages: boolean;
-	/** A transcript already loaded for that root. It refuses nothing on its
-	 *  own: an EMPTY runtime read is lost box state, not an empty conversation,
-	 *  so only `hasMessages` (a non-empty read) outranks the saved copy. */
-	hasLoadedTranscript?: boolean;
 }
 
 /**

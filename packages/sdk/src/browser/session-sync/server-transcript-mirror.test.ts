@@ -341,11 +341,11 @@ test('an empty live read is not authoritative: late saved history still paints',
   // An empty runtime read for the saved root is evidence of lost box state,
   // not of an empty conversation, whichever read lands first.
   expect(shouldHydrateFromMirror({
-    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: false, hasLoadedTranscript: true,
+    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: false,
   })).toBe(true);
   // A live read WITH messages stays authoritative.
   expect(shouldHydrateFromMirror({
-    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: true, hasLoadedTranscript: true,
+    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: true,
   })).toBe(false);
 });
 
