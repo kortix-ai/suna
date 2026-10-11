@@ -1,6 +1,6 @@
 ---
 title: Apps
-description: "Deploy static sites, internal tools and database backends from your project to stable URLs, with releases, machines, volumes, access control and Kortix sign-in built in."
+description: "Deploy static sites, internal tools and backends (data, functions, realtime) from your project to stable URLs, with releases, machines, volumes, access control and Kortix sign-in built in."
 ---
 
 An App is a deployment that one project owns. It has one stable URL, an access
@@ -224,7 +224,7 @@ the App runs or who may open it.
 |---|---|---|
 | `listed` | `true` | `false` takes the App out of the grid. |
 | `preview` | `live` | `live` frames the App on its card. `none` shows an icon. Use `none` for an App whose root page is not for people, such as an API or a backend. |
-| `parent` | none | `parent: <slug>` makes the App a tab in that App's detail, with no card of its own. The tab label is the App's name without the `<parent>-` prefix: `db-dashboard` becomes **Dashboard**. A tab whose parent does not exist stays a card. |
+| `parent` | none | `parent: <slug>` makes the App a tab in that App's detail, with no card of its own. The tab label is the App's name without the `<parent>-` prefix: `backend-dashboard` becomes **Dashboard**. A tab whose parent does not exist stays a card. |
 
 An App with `preview: none` opens on its first tab. Every deploy writes the
 block's `display`; an absent `display` means the defaults. `kortix apps show`
@@ -382,14 +382,14 @@ mounts:
   the data.
 
 ```bash
-kortix apps volumes db                                  # name, group, size, attached machine, retention
-kortix apps volumes create db data --size 10 --process app
-kortix apps volumes extend db data --size 20
-kortix apps volumes snapshots db data                   # daily, manual and final snapshots
-kortix apps volumes snapshot db data                    # a manual snapshot now
-kortix apps volumes restore db data <snapshot>          # project.app.admin
-kortix apps volumes fork db data data_copy              # --snapshot <id> to copy a snapshot
-kortix apps volumes destroy db data --yes               # project.app.admin
+kortix apps volumes backend                             # name, group, size, attached machine, retention
+kortix apps volumes create backend data --size 10 --process app
+kortix apps volumes extend backend data --size 20
+kortix apps volumes snapshots backend data              # daily, manual and final snapshots
+kortix apps volumes snapshot backend data               # a manual snapshot now
+kortix apps volumes restore backend data <snapshot>     # project.app.admin
+kortix apps volumes fork backend data data_copy         # --snapshot <id> to copy a snapshot
+kortix apps volumes destroy backend data --yes          # project.app.admin
 ```
 
 | Operation | What it does |
@@ -510,11 +510,11 @@ An App can use other Apps of its project. Then its code gets sign-in tokens for
 them and reaches them on its own origin.
 
 ```bash
-kortix apps link crm --uses db       # add; kortix apps unlink removes
-kortix apps set crm --uses db,files  # replace; --uses= clears
+kortix apps link crm --uses backend  # add; kortix apps unlink removes
+kortix apps set crm --uses backend,files # replace; --uses= clears
 ```
 
-`uses: [db]` in the `kortix.yaml` block sets the same list on every deploy. An
+`uses: [backend]` in the `kortix.yaml` block sets the same list on every deploy. An
 unknown slug, or one you cannot see, answers `400 app_not_found` with `slugs`.
 
 **Sign-in tokens.** Each project has one token issuer,
@@ -543,7 +543,7 @@ needs one origin and no CORS. The used App checks the token itself.
 ```ts
 import { kortixBinding } from '@kortix/sdk';
 
-const db = kortixBinding('db');   // { url: <origin>/_kortix/apps/db, token: a token fetcher }
+const backend = kortixBinding('backend'); // { url: <origin>/_kortix/apps/backend, token: a token fetcher }
 ```
 
 | The used App or service | Answer |
@@ -728,7 +728,7 @@ a database, server functions, realtime queries, file storage, schedules and
 search. It is an ordinary server App with a volume.
 
 ```bash
-kortix apps launch --template convex --name db   # --provider platinum, --no-deploy
+kortix apps launch --template convex   # --provider platinum, --no-deploy
 ```
 
 Run it in the directory that holds your `kortix.yaml`. A slug that is already in
@@ -737,12 +737,12 @@ needs Platinum: pass `--provider platinum` when Platinum is not your default
 provider. `--no-deploy` writes `kortix.yaml` only.
 
 `launch` writes two blocks into `kortix.yaml` and the dashboard's two files,
-`apps/db/dashboard/Dockerfile` and `apps/db/dashboard/start.js` (a file that
-already exists is kept). It deploys `db`, then writes the backend's admin key to
-the project secret `DB_ADMIN_KEY` (the slug in capitals, `-` becomes `_`). It
+`apps/backend/dashboard/Dockerfile` and `apps/backend/dashboard/start.js` (a file that
+already exists is kept). It deploys `backend`, then writes the backend's admin key to
+the project secret `BACKEND_ADMIN_KEY` (the slug in capitals, `-` becomes `_`). It
 reads the key from the machine and never prints it. The key belongs to the
 backend just launched, so every launch writes it again. Then it deploys
-`db-dashboard`.
+`backend-dashboard`.
 
 There are two Apps because Convex ships the backend and the dashboard as two
 images, and a Kortix App runs one image. The **Apps** tab shows them as one:
@@ -751,8 +751,8 @@ volume; the dashboard sleeps when idle.
 
 | App | What it is |
 |---|---|
-| `db` | The Convex backend, image pinned by digest. Service `http` on port 3210 (`access: public`, a `/version` check): the client URL, the sync WebSocket and the admin API. Service `site` on port 3211 (`access: public`): HTTP actions. Volume `data` at `/convex/data`, 10 GB. Always on, 1 vCPU / 1 GB / 10 GB disk. Label `backend`. `display: { preview: none }`. |
-| `db-dashboard` | The Convex dashboard, built from `apps/db/dashboard/` (`type: dockerfile`). `access: admins`, on demand. It uses `db` and reaches it through `/_kortix/apps/db`. `display: { parent: db }` makes it the **Dashboard** tab of `db`. `secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }` signs it in. |
+| `backend` | The Convex backend, image pinned by digest. Service `http` on port 3210 (`access: public`, a `/version` check): the client URL, the sync WebSocket and the admin API. Service `site` on port 3211 (`access: public`): HTTP actions. Volume `data` at `/convex/data`, 10 GB. Always on, 1 vCPU / 1 GB / 10 GB disk. Label `backend`. `display: { preview: none }`. |
+| `backend-dashboard` | The Convex dashboard, built from `apps/backend/dashboard/` (`type: dockerfile`). `access: admins`, on demand. It uses `backend` and reaches it through `/_kortix/apps/backend`. `display: { parent: backend }` makes it the **Dashboard** tab of `backend`. `secrets: { NEXT_PUBLIC_ADMIN_KEY: BACKEND_ADMIN_KEY }` signs it in. |
 
 `start.js` runs Convex's dashboard on port 6792. On the App's port 6791 it
 serves `/` as a page that frames the dashboard and answers its sign-in request
@@ -763,21 +763,21 @@ Both backend services are `public` because Convex checks sign-in in each
 function. Keep the backend at 1 machine: a second machine gets its own empty
 volume, which makes a second, separate database.
 
-Connect and push your Convex code, for example from `apps/db/`. A session has
-`DB_ADMIN_KEY` in its environment:
+Connect and push your Convex code, for example from `apps/backend/`. A session has
+`BACKEND_ADMIN_KEY` in its environment:
 
 ```bash
-cd apps/db
+cd apps/backend
 npm install convex@1.46.0 @kortix/sdk
-export CONVEX_SELF_HOSTED_URL=<db App URL> CONVEX_SELF_HOSTED_ADMIN_KEY="$DB_ADMIN_KEY"
-kortix apps auth-env db | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
+export CONVEX_SELF_HOSTED_URL=<backend App URL> CONVEX_SELF_HOSTED_ADMIN_KEY="$BACKEND_ADMIN_KEY"
+kortix apps auth-env backend | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
 npx convex deploy
 ```
 
 Use Convex CLI `1.46.0`: it matches the pinned backend.
 
 <Callout type="warning">
-The admin key controls the backend's code and data. Grant `DB_ADMIN_KEY` only to
+The admin key controls the backend's code and data. Grant `BACKEND_ADMIN_KEY` only to
 agents that deploy the backend. Never commit the key or ship it in a web App.
 </Callout>
 
@@ -813,28 +813,28 @@ export const me = query({
 In React, read the member with `useQuery(api.members.me)`. Do not call
 `useConvexAuth()`: it throws under a plain `ConvexProvider`.
 
-- **Dashboard.** Open **Apps** → `db` → **Dashboard** (project admins). It opens
-  signed in. `kortix apps access-link db-dashboard` prints a 5-minute link to
+- **Dashboard.** Open **Apps** → `backend` → **Dashboard** (project admins). It opens
+  signed in. `kortix apps access-link backend-dashboard` prints a 5-minute link to
   the same page.
 - **A backend launched before the Dashboard tab** shows its dashboard as its
   own card, or asks for the key. Run
-  `kortix apps launch --template convex --name db --no-deploy` in an empty
-  directory and copy its `apps/db/dashboard/` files and both `kortix.yaml`
+  `kortix apps launch --template convex --no-deploy` in an empty
+  directory and copy its `apps/backend/dashboard/` files and both `kortix.yaml`
   blocks into your project. Then write the key and deploy the dashboard:
 
   ```bash
-  kortix apps exec db -- sh -c "cd /convex && ./generate_admin_key.sh" | tail -n 1 | kortix secrets set DB_ADMIN_KEY=-
-  kortix apps deploy --manifest-app db-dashboard
+  kortix apps exec backend -- sh -c "cd /convex && ./generate_admin_key.sh" | tail -n 1 | kortix secrets set BACKEND_ADMIN_KEY=-
+  kortix apps deploy --manifest-app backend-dashboard
   ```
 
-  Add `display: { preview: none }` to the backend block; a deploy of `db`
+  Add `display: { preview: none }` to the backend block; a deploy of `backend`
   applies it.
 - **Before a migration, a bulk import or a backfill,** take
-  `kortix apps volumes snapshot db data`. Restore with
-  `kortix apps volumes restore db data <snapshot>`: the live data returns to the
+  `kortix apps volumes snapshot backend data`. Restore with
+  `kortix apps volumes restore backend data <snapshot>`: the live data returns to the
   snapshot.
 - **Keep your own copy** with `npx convex export --path backup.zip --include-file-storage`.
-- **From outside**, `kortix apps connect db` prints how to call the backend:
+- **From outside**, `kortix apps connect backend` prints how to call the backend:
   its URLs and snippets for a sign-in token, an HTTP call and your own server.
   It prints no secret.
 
@@ -845,18 +845,18 @@ for the UI. Kortix signs the team in: the UI knows who is looking, and every
 function knows who calls it.
 
 ```text
-apps/db/convex/        Convex functions: schema.ts, auth.config.ts, members.ts, ...
+apps/backend/convex/        Convex functions: schema.ts, auth.config.ts, members.ts, ...
 apps/crm/              Vite + React UI: src/convex.ts wires the binding
-apps/db/dashboard/     the dashboard App: Dockerfile + start.js (the template)
-kortix.yaml            apps.db and apps.db-dashboard (the template), apps.crm
+apps/backend/dashboard/     the dashboard App: Dockerfile + start.js (the template)
+kortix.yaml            apps.backend and apps.backend-dashboard (the template), apps.crm
 ```
 
 <Steps>
 <Step title="Launch the backend">
-`kortix apps launch --template convex --name db`.
+`kortix apps launch --template convex`.
 </Step>
 <Step title="Write the functions">
-Write the schema and functions in `apps/db/convex/`, with `auth.config.ts` from the template section. Call `requireKortixMember` first in every public query and mutation. Push with `npx convex deploy`.
+Write the schema and functions in `apps/backend/convex/`, with `auth.config.ts` from the template section. Call `requireKortixMember` first in every public query and mutation. Push with `npx convex deploy`.
 </Step>
 <Step title="Wire the UI to the backend">
 Connect through the binding:
@@ -866,9 +866,9 @@ Connect through the binding:
 import { ConvexReactClient } from 'convex/react';
 import { kortixBinding } from '@kortix/sdk';
 
-const db = kortixBinding('db');
-export const convex = new ConvexReactClient(db.url);
-convex.setAuth(db.token);
+const backend = kortixBinding('backend');
+export const convex = new ConvexReactClient(backend.url);
+convex.setAuth(backend.token);
 ```
 </Step>
 <Step title="Declare the UI App">
@@ -879,7 +879,7 @@ apps:
     path: apps/crm/dist
     type: static
     spa: true
-    uses: [db]
+    uses: [backend]
 ```
 </Step>
 <Step title="Build, deploy and open it to the project">
@@ -898,9 +898,9 @@ every function that requires one refuses the call.
 | What broke | Undo |
 |---|---|
 | The UI | `kortix apps rollback crm <vN>` |
-| The backend's image or config | `kortix apps rollback db <vN>`. The volume keeps its data. |
-| Convex code | Check out the last good `apps/db/convex` from git and run `npx convex deploy` again. |
-| Data | `kortix apps volumes restore db data <snapshot>`. Every later change is lost. |
+| The backend's image or config | `kortix apps rollback backend <vN>`. The volume keeps its data. |
+| Convex code | Check out the last good `apps/backend/convex` from git and run `npx convex deploy` again. |
+| Data | `kortix apps volumes restore backend data <snapshot>`. Every later change is lost. |
 
 ## Build on Apps from TypeScript
 

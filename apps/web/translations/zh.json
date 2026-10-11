@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "已为此项目覆盖",
         "defaultOn": "默认开启",
-        "defaultOff": "默认关闭"
+        "defaultOff": "默认关闭",
+        "organization": "整个组织，由 Kortix 管理"
       },
       "search": "搜索功能",
       "loadFailed": "无法加载项目",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "应用事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。"
+        },
+        "volumes": {
+          "name": "卷",
+          "description": "为整个组织提供共享文件和基于卷的会话。"
+        },
+        "stateless_sessions": {
+          "name": "无状态会话",
+          "description": "每次唤醒都是全新的计算机，只保留文件和聊天。需要先开启卷。"
         },
         "drives": {
           "name": "云盘",

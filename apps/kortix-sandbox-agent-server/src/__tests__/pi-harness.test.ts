@@ -3192,6 +3192,20 @@ describe('pi session-log export (P2.5)', () => {
   })
 })
 
+/**
+ * The `log.*` frames of a v2 stream capture, after checking the whole stream: dense seqs, valid
+ * `log.*` payloads, the run's `session.status` frames, and no `message.*` frame (P4.3b).
+ */
+function v2Frames(raw: string) {
+  const all = raw.split('\n\n').filter((f) => /^id: /m.test(f)).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: string; payload: any })
+  expect(all.map((f) => f.seq)).toEqual(all.map((_, i) => i + 1))
+  expect(all.filter((f) => f.type.startsWith('message.'))).toEqual([])
+  expect(all.filter((f) => f.type === 'session.status').map((f) => f.payload.status.type)).toContain('busy')
+  const frames = all.filter((f) => f.type.startsWith('log.')) as Array<{ seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any }>
+  for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
+  return frames
+}
+
 describe('pi session log on the v2 stream (P4.3)', () => {
   const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_SESSION_LOG_DUMP_DIR'] as const
   let saved: Record<string, string | undefined> = {}
@@ -3223,14 +3237,13 @@ describe('pi session log on the v2 stream (P4.3)', () => {
       expect(await flushSessionLogJournal()).toBe(true)
     }
     const raw = await readSse(stream, (t) => t.includes('Second answer here.') && t.split('event: log.message').length > 4)
-    const frames = raw.split('\n\n').filter((f) => f.startsWith('event: log.')).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any })
-    for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
-    expect(frames.map((f) => f.seq)).toEqual(frames.map((_, i) => i + 1))
+    const frames = v2Frames(raw)
     // The journal start: the session and its root thread, before any turn streams.
     expect(frames.slice(0, 2).map((f) => f.type)).toEqual(['log.state', 'log.thread'])
     expect(frames[1]!.payload.thread_id).toBe(root)
 
-    const messages = frames.filter((f) => f.type === 'log.message').map((f) => f.payload.message as SessionLogMessage)
+    // The last put of each message: the turn end's record (P4.3b live puts precede it).
+    const messages = [...new Map(frames.filter((f) => f.type === 'log.message').map((f) => [f.payload.message.message_id, f.payload.message as SessionLogMessage])).values()]
     const answers = messages.filter((m) => m.role === 'assistant' && m.kind === 'turn')
     expect(answers).toHaveLength(2)
     for (const [i, answer] of answers.entries()) {
@@ -3242,12 +3255,69 @@ describe('pi session log on the v2 stream (P4.3)', () => {
       expect(deltas.map((d) => d.payload.delta).join('')).toBe(block.text)
       expect(block.text).toBe(['First answer here.', 'Second answer here.'][i]!)
       // Deltas stream before the turn end's record.
-      const recordSeq = frames.find((f) => f.type === 'log.message' && f.payload.message?.message_id === answer.message_id)!.seq
+      const recordSeq = frames.findLast((f) => f.type === 'log.message' && f.payload.message?.message_id === answer.message_id)!.seq
       expect(Math.max(...deltas.map((d) => d.seq))).toBeLessThan(recordSeq)
     }
-    // Every record on the stream is in a batch the journal wrote, at the same rev.
+    // Every record in a batch the journal wrote is on the stream, at the same rev; the stream's other puts are live puts (P4.3b) at lower revs.
     const batches = readdirSync(dump).map((f) => JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> })
-    const puts = new Map(batches.flatMap((b) => b.puts).map((p) => [`${p.message.message_id}@${p.rev}`, p.message]))
-    for (const f of frames.filter((x) => x.type === 'log.message')) expect(puts.get(`${f.payload.message.message_id}@${f.payload.rev}`)).toEqual(f.payload.message)
+    const onStream = new Map(frames.filter((x) => x.type === 'log.message').map((f) => [`${f.payload.message.message_id}@${f.payload.rev}`, f.payload.message]))
+    for (const p of batches.flatMap((b) => b.puts)) expect(onStream.get(`${p.message.message_id}@${p.rev}`)).toEqual(p.message)
+  })
+
+  test('a live turn (P4.3b): the user put, a streaming put before the first delta, a put for each new block, then the final put at a higher rev', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo live-turn' } }, { text: 'Ran it for you.' }] })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'run the command' }] })).status).toBe(204)
+    await waitFor(() => rt.idle())
+    expect(await flushSessionLogJournal()).toBe(true)
+    const raw = await readSse(stream, (t) => t.includes('Ran it for you.'))
+    const frames = v2Frames(raw)
+
+    const batches = readdirSync(dump).map((f) => JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> })
+    const finals = new Map(batches.flatMap((b) => b.puts).map((p) => [p.message.message_id, p]))
+    const puts = frames.filter((f) => f.type === 'log.message' && f.payload.message)
+    const putsOf = (id: string) => puts.filter((f) => f.payload.message.message_id === id)
+    const user = [...finals.values()].find((p) => p.message.role === 'user' && p.message.kind === 'turn')!.message
+    const answers = [...finals.values()].filter((p) => p.message.role === 'assistant').map((p) => p.message)
+    expect(answers).toHaveLength(2)
+
+    // The user put: complete, at the seq the API receives, before the first assistant put.
+    const userLive = putsOf(user.message_id)[0]!
+    expect(userLive.payload.rev).toBeLessThan(finals.get(user.message_id)!.rev)
+    expect(userLive.payload.message).toMatchObject({ status: 'complete', seq: user.seq, thread_id: root })
+    expect(userLive.seq).toBeLessThan(putsOf(answers[0]!.message_id)[0]!.seq)
+
+    for (const answer of answers) {
+      const own = putsOf(answer.message_id)
+      const final = own.at(-1)!
+      // The API receives one record per message: the turn end's, the last put on the stream.
+      expect(final.payload).toEqual(finals.get(answer.message_id))
+      expect(final.payload.message.status).toBe('complete')
+      const live = own.slice(0, -1)
+      expect(live.length).toBeGreaterThan(0)
+      expect(live[0]!.payload.message).toMatchObject({ status: 'streaming', role: 'assistant', reply_to: user.message_id, completed_at: null })
+      // Seq stability: every streaming put carries the seq, thread and created_at of the turn end's record.
+      for (const f of live) {
+        expect(f.payload.message).toMatchObject({ message_id: answer.message_id, seq: answer.seq, thread_id: root, created_at: answer.created_at })
+        expect(f.payload.rev).toBeLessThan(final.payload.rev)
+      }
+      // Each block is on the stream before its first delta.
+      for (const d of frames.filter((f) => f.type === 'log.block.delta' && f.payload.message_id === answer.message_id)) {
+        const holder = live.find((f) => f.payload.message.blocks.some((b: { id: string }) => b.id === d.payload.block_id))
+        expect(holder, d.payload.block_id).toBeDefined()
+        expect(holder!.seq).toBeLessThan(d.seq)
+      }
+    }
+    // The tool call: a streaming put carries its block while it runs.
+    const call = answers[0]!.blocks.find((b) => b.type === 'tool_call')!
+    expect(putsOf(answers[0]!.message_id).some((f) => f.payload.message.status === 'streaming' && f.payload.message.blocks.some((b: { id: string }) => b.id === call.id))).toBe(true)
+    // The answer's text block: on the stream before any of its text.
+    const text = answers[1]!.blocks.find((b) => b.type === 'text')!
+    expect(frames.some((f) => f.type === 'log.block.delta' && f.payload.block_id === text.id)).toBe(true)
+    // No streaming record reaches the API.
+    for (const p of batches.flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
   })
 })

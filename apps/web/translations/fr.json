@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Remplacé pour ce projet",
         "defaultOn": "Activé par défaut",
-        "defaultOff": "Désactivé par défaut"
+        "defaultOff": "Désactivé par défaut",
+        "organization": "Toute l'organisation, géré par Kortix"
       },
       "search": "Rechercher des fonctionnalités",
       "loadFailed": "Impossible de charger le projet",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "Déclencheurs d'événements d'app",
           "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier."
+        },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Fichiers partagés et sessions sur volumes pour toute l'organisation."
+        },
+        "stateless_sessions": {
+          "name": "Sessions sans état",
+          "description": "Un ordinateur neuf à chaque réveil ; seuls les fichiers et le chat sont conservés. Nécessite les volumes activés."
         },
         "drives": {
           "name": "Drive",

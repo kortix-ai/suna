@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
-        "defaultOff": "Подразумевано искључено"
+        "defaultOff": "Подразумевано искључено",
+        "organization": "Cela organizacija, upravlja Kortix"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "Okidači događaja aplikacije",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru."
+        },
+        "volumes": {
+          "name": "Volumeni",
+          "description": "Deljeni fajlovi i sesije na volumenima za celu organizaciju."
+        },
+        "stateless_sessions": {
+          "name": "Sesije bez stanja",
+          "description": "Svaki put nov računar; čuvaju se samo fajlovi i razgovor. Potrebno je uključiti volumene."
         },
         "drives": {
           "name": "Drive",
