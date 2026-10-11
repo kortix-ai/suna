@@ -1,0 +1,24 @@
+{
+  "source_hash": "e022a68709cc5d05c813e3bf438d302bd83c2c76214a7f5d5f07347fce09a715",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/boot-source-guards.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/fixtures/opencode-session-log.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/README.md",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-db.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/service.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts"
+  ],
+  "diff_hash": "56ff47941571a11293a9bc72a1cfbf01614871c2389126ce62aa08d6adbd5baf",
+  "head": "b8761dca2d1ea7b32b34c1b94ae90156c740ed69",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T15:16:22.848Z"
+}
