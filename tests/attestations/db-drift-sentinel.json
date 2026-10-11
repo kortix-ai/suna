@@ -1,5 +1,5 @@
 {
-  "source_hash": "44a0163b5d40e72b018efd67c0855c4e365456915436918acbed961ebdf1ea9e",
+  "source_hash": "a8cb58b0aeadfdee39236ccdc21a932b108f92e4dd51fe9a042b088c6f76cae3",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-11T114142Z-compare-a-live-database-only-with-what-its-own-migration-led.md",
@@ -10,13 +10,13 @@
     "packages/db/scripts/schema-signature.sql",
     "packages/db/scripts/verify-live-schema.test.ts"
   ],
-  "diff_hash": "3fb7668c9ac6b0778f8340312c5c3e10f1958309263a0c82ce2134417521548d",
-  "head": "cf2237fb2e8cfa65fdf2c5ef89109c27c2c69188",
+  "diff_hash": "65099b21b4e0ac5a28cfeba826f22342990f23e685183c74133ddde06ac204d6",
+  "head": "e600249c024a9b96b860f848966d9eae17036883",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T16:26:45.682Z"
+  "at": "2026-10-11T19:04:41.875Z"
 }
