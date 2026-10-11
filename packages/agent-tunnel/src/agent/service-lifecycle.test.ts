@@ -105,6 +105,18 @@ describe('service log hygiene', () => {
 });
 
 describe('credential probe and the single-agent rule', () => {
+  test('every relay socket opens through openRelaySocket', () => {
+    const src = resolve(import.meta.dir, '..');
+    const raw: string[] = [];
+    for (const file of new Bun.Glob('**/*.ts').scanSync(src)) {
+      if (file.endsWith('.test.ts')) continue;
+      readFileSync(join(src, file), 'utf8').split('\n').forEach((line, i) => {
+        if (/\bnew WebSocket\(/.test(line) && !/^\s*(\/\/|\*)/.test(line)) raw.push(`${file}:${i + 1}`);
+      });
+    }
+    expect(raw).toEqual([]);
+  });
+
   test('auth_ok is valid, though Bun fires close inside socket.close()', async () => {
     let userAgent: string | null = null as string | null;
     const server = Bun.serve({
