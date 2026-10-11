@@ -52,9 +52,13 @@
  * - `toV1` returns rows in the mirror's order reversed to ascending (the read is
  *   `message_created_at DESC NULLS LAST, message_id DESC`, so a missing time comes first), then
  *   message id. Compare rows keyed by message id: Postgres orders ids by its collation.
- * - `toV1` on a native v2 record (any producer other than `kortix-v1-import`) skips `system`
- *   and `context` messages (an old client would draw them as user bubbles) and never passes a
- *   harness block's `data` through as a v1 part.
+ * - `toV1` applies the stored residuals whatever the producer: a daemon adapter that runs
+ *   `fromV1` (OpenCode, P2.6) journals records under producer `opencode`, and they are exact
+ *   too. A thread `fromV1` built always carries a `kortix.transcript.v1` ext, so that ext (or
+ *   producer `kortix-v1-import`) marks a v1-derived message. On one, an `opencode` or `pi`
+ *   harness block's `data` is the v1 part and passes through. On a native v2 record (no such
+ *   ext, as the pi adapter writes), `toV1` skips `system` and `context` messages (an old
+ *   client would draw them as user bubbles) and never passes a harness block's `data` through.
  * - Output never aliases input: `fromV1` and `toV1` clone their input.
  */
 import type { KortixFilePart, KortixMessageInfo, KortixPart } from '../transcript';
@@ -100,8 +104,8 @@ export type V1Change = { set: unknown } | { del: true } | { sub: Record<string, 
 type Harness = NonNullable<FromV1Options['harness']>;
 type J = Record<string, any>;
 type MessageData = { info?: V1Change; summary?: V1Change; parts?: unknown; runtime_session_id?: string | null };
-/** `imported`: the message came from `fromV1`, so its harness blocks hold v1 parts and its ext holds residuals. */
-type Ctx = { sessionID: string | null; messageID: string; created: number | undefined; imported: boolean };
+/** `fromV1`: the message came from `fromV1`, so its `opencode`/`pi` harness blocks hold v1 parts. */
+type Ctx = { sessionID: string | null; messageID: string; created: number | undefined; fromV1: boolean };
 
 const IMPORT = 'kortix-v1-import';
 const PRODUCER = { harness: IMPORT, harness_version: KORTIX_TRANSCRIPT_SCHEMA, adapter_version: '1' };
@@ -175,8 +179,13 @@ const extOf = (h: Harness, entry: { native_id?: string; data?: unknown }): Ext =
 
 // ─── v2 -> v1 builders (shared by toV1 and by fromV1's residual) ─────────────
 
-/** The v1 url of an attachment: the one it came with, else its object ref. */
-const urlOf = (a: { url?: string; ref?: string }) => (a.url !== undefined ? { url: a.url } : a.ref !== undefined ? { url: a.ref } : {});
+/**
+ * The v1 url of an attachment: the one it came with, else (native records only) its object ref.
+ * A v1-derived block keeps exactly the url its part had: an adapter sets `ref` after `fromV1`
+ * (P2.6), and the stored part has no url for it.
+ */
+const urlOf = (a: { url?: string; ref?: string }, c: Ctx) =>
+  a.url !== undefined ? { url: a.url } : a.ref !== undefined && !c.fromV1 ? { url: a.ref } : {};
 const textOf = (content: ToolResultContent[] | undefined) => (content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
 const head = (b: { id: string }, c: Ctx) => ({ id: b.id, ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: c.messageID });
 
@@ -190,7 +199,7 @@ function toolState(b: ToolCallBlock, c: Ctx, base: J): J {
   if (b.status === 'running') return { status: 'running', input: b.input ?? {}, ...(b.title && { title: b.title }), time: { start } };
   if (b.status === 'error') return { status: 'error', ...input, error: textOf(r?.content), ...(r?.exit_code !== undefined && { metadata: meta }), time: { start, end } };
   const atts = (r?.content ?? []).flatMap((x, i) =>
-    x.type === 'attachment' ? [{ ...base, id: `${b.id}-a${i}`, type: 'file', mime: x.mime, ...urlOf(x) }] : [],
+    x.type === 'attachment' ? [{ ...base, id: `${b.id}-a${i}`, type: 'file', mime: x.mime, ...urlOf(x, c) }] : [],
   );
   const compacted = msOf(r?.cleared_at);
   return {
@@ -206,7 +215,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
   switch (b.type) {
     case 'text': return { ...base, type: 'text', text: b.text, ...(b.synthetic !== undefined && { synthetic: b.synthetic }) };
     case 'reasoning': return { ...base, type: 'reasoning', text: b.text, time: { start: c.created } };
-    case 'attachment': return { ...base, type: 'file', mime: b.mime, ...(b.name !== undefined && { filename: b.name }), ...urlOf(b) };
+    case 'attachment': return { ...base, type: 'file', mime: b.mime, ...(b.name !== undefined && { filename: b.name }), ...urlOf(b, c) };
     case 'tool_call': return { ...base, type: 'tool', callID: b.call_id, tool: b.name, state: toolState(b, c, { ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: c.messageID }) };
     case 'step': return b.phase === 'start'
       ? { ...base, type: 'step-start' }
@@ -216,7 +225,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
       ...(b.trigger === 'overflow' && { overflow: true }), ...(b.first_kept_message_id !== null && { tail_start_id: b.first_kept_message_id }),
     };
     case 'harness':
-      if (c.imported && (b.harness === 'opencode' || b.harness === 'pi')) return b.data;
+      if (c.fromV1 && (b.harness === 'opencode' || b.harness === 'pi')) return b.data;
       return b.model_visible && b.fallback_text !== undefined ? { ...base, type: 'text', text: b.fallback_text, synthetic: true } : undefined;
     case 'subtask': return undefined;
   }
@@ -258,17 +267,18 @@ function summaryOf(m: SessionLogMessage, cb: CompactionBlock, c: Ctx): { info: J
   return { info, parts: [{ id: `${id}-p0`, ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: id, type: 'text', text: cb.summary }] };
 }
 
-function rowsOf(m: SessionLogMessage, threadNative: string | null): V1Row[] {
-  const imported = m.producer.harness === IMPORT;
-  if (!imported && (m.role === 'system' || m.kind === 'context')) return [];
-  const d = imported ? (v1Ext(m.ext)?.data as MessageData | undefined) : undefined;
+/** `v1Thread`: the thread carries the `kortix.transcript.v1` ext every `fromV1` thread gets. */
+function rowsOf(m: SessionLogMessage, threadNative: string | null, v1Thread: boolean): V1Row[] {
+  const v1 = v1Thread || m.producer.harness === IMPORT;
+  if (!v1 && (m.role === 'system' || m.kind === 'context')) return [];
+  const d = v1Ext(m.ext)?.data as MessageData | undefined;
   const sessionID = d && 'runtime_session_id' in d ? d.runtime_session_id ?? null : threadNative;
-  const c: Ctx = { sessionID, messageID: m.message_id, created: msOf(m.created_at), imported };
+  const c: Ctx = { sessionID, messageID: m.message_id, created: msOf(m.created_at), fromV1: v1 };
   const parts = d && 'parts' in d
     ? d.parts
     : m.blocks.flatMap((b) => {
       const p = partOf(b, c);
-      return p === undefined ? [] : [apply(p, imported ? (v1Ext((b as { ext?: Ext }).ext)?.data as V1Change | undefined) : undefined)];
+      return p === undefined ? [] : [apply(p, v1Ext((b as { ext?: Ext }).ext)?.data as V1Change | undefined)];
     });
   const rows = [{ runtime_session_id: sessionID, info: apply(infoOf(m, c), d?.info), parts } as V1Row];
   const cb = m.blocks.find((b): b is CompactionBlock => b.type === 'compaction');
@@ -293,7 +303,7 @@ const threadNativeOf = (t: SessionLogThread) => {
 export function toV1(input: SessionLog): V1Transcript {
   const log = structuredClone(input);
   const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0];
-  const rows = log.threads.flatMap((t) => t.messages.flatMap((m) => rowsOf(m, threadNativeOf(t))));
+  const rows = log.threads.flatMap((t) => t.messages.flatMap((m) => rowsOf(m, threadNativeOf(t), v1Ext(t.ext) !== undefined)));
   const stated = v1Ext(log.ext)?.data as { root_id?: string | null } | undefined;
   const rootId = stated && 'root_id' in stated ? stated.root_id ?? null : root ? threadNativeOf(root) : null;
   return { session_id: log.session_id, root_id: rootId, rows: rows.sort(rowOrder) };
@@ -458,7 +468,7 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
 function keepResidual(m: SessionLogMessage, row: V1Row, sum: V1Row | undefined, threadNative: string | null, h: Harness) {
   const data: MessageData = {};
   if (row.runtime_session_id !== threadNative) data.runtime_session_id = row.runtime_session_id;
-  const c: Ctx = { sessionID: row.runtime_session_id, messageID: m.message_id, created: msOf(m.created_at), imported: true };
+  const c: Ctx = { sessionID: row.runtime_session_id, messageID: m.message_id, created: msOf(m.created_at), fromV1: true };
   if (Array.isArray(row.parts)) {
     m.blocks.forEach((b, i) => {
       if (b.type === 'harness' || b.type === 'subtask') return;
