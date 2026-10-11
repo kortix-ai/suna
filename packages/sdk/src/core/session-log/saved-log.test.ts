@@ -79,4 +79,21 @@ describe('the saved copy of a v2 session (the session log)', () => {
     expect(kept.messages).toEqual(full.messages.slice(full.messages.length - kept.messages.length));
     expect(kept.has_more).toBe(true);
   });
+
+  test('remove and clear forget both copies', async () => {
+    const storage = memoryStorage();
+    const store = createSavedCopyStore({ storage, userId: 'u1', now: () => T0 });
+    const copies = savedSessionLogCopies(store)!;
+    await store.write('p1', 's1', envelope());
+    await copies.write('p1', 's2', page());
+    await store.write('p1', 's3', envelope());
+    await store.remove('p1', 's2');
+    expect(copies.read('p1', 's2')).toBeNull();
+    await copies.write('p1', 's2', page());
+    await store.clear();
+    expect(copies.read('p1', 's2')).toBeNull();
+    expect(store.read('p1', 's1')).toBeNull();
+    expect(store.read('p1', 's3')).toBeNull();
+    expect([...storage.data.keys()]).toEqual([]);
+  });
 });

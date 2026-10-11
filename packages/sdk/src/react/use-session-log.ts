@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
-import { KORTIX_TRANSCRIPT_SCHEMA } from '../core/runtime/transcript-types';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
+import { isV1Thread } from '../core/session-log/v1-view';
 import {
   fetchFirstSessionLogPage,
   loadSessionLogPage,
@@ -53,11 +53,8 @@ export function useSessionLogThread(
   });
 }
 
-/** The `fromV1` mark on the page's thread: only such a thread reads through `toV1` (`v1-view.ts`). */
-function pageThreadIsV1(page: SessionLogPage): boolean {
-  const head = page.threads.find((t) => t.thread_id === page.thread_id);
-  return Object.values(head?.ext ?? {}).some((e) => e.version === KORTIX_TRANSCRIPT_SCHEMA);
-}
+/** Only a page of a `fromV1` thread is read as v2 (`isV1Thread`). */
+const pageThreadIsV1 = (page: SessionLogPage) => isV1Thread(page.threads.find((t) => t.thread_id === page.thread_id));
 
 /**
  * Internal (`useSession` mounts it). Negotiates the session's dialect
@@ -108,9 +105,12 @@ export function useSessionLogSync(
     const copies = savedSessionLogCopies(currentSavedCopyStore());
     let stream: { close: () => void } | null = null;
     let stopped = false;
-    const refuse = () => {
-      store().dropSessionLog(sessionId);
-      setRefusedKey(`${projectId}/${sessionId}`);
+    let busy = false;
+    // The last turn end the session stream reported, kept across re-joins: a different one is a turn end.
+    let lastEnded: string | null | undefined;
+    const join = (options: Omit<SessionControlStreamOptions, 'projectId' | 'sessionId'>) => {
+      stream?.close();
+      stream = joinStream({ projectId, sessionId, ...options });
     };
     const load = async (): Promise<SessionLogPage | null> => {
       const page = await fetchFirstSessionLogPage(loader, projectId, sessionId, controller.signal);
@@ -123,24 +123,47 @@ export function useSessionLogSync(
       }
       return page;
     };
+    // Re-read after a reconnect (`up` after a drop); the first report is the connection already up.
+    const onReconnect = (run: () => void) => {
+      let connected = true;
+      return (up: boolean) => {
+        if (up && !connected) run();
+        connected = up;
+      };
+    };
+    const attempt = async (): Promise<void> => {
+      if (busy || stopped) return;
+      busy = true;
+      const page = await load();
+      busy = false;
+      if (stopped) return;
+      if (page && pageThreadIsV1(page)) {
+        setRefusedKey(null);
+        join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()) });
+        return;
+      }
+      store().dropSessionLog(sessionId);
+      setRefusedKey(`${projectId}/${sessionId}`);
+      // A native thread (pi) never becomes a `fromV1` one: stay on v1. A missing log (a new
+      // session whose journal has not posted yet) or an invalid page is retried at the next
+      // turn end and after a stream reconnect, on the session stream without `schema=v2`.
+      if (page) return;
+      join({
+        onControl: (frame) => {
+          if (frame.type !== 'kortix.control.turn') return;
+          const ended = (frame.payload as { last_ended?: { turn_token?: string } | null })?.last_ended?.turn_token ?? null;
+          const seen = lastEnded;
+          lastEnded = ended;
+          if (seen !== undefined && ended !== seen) void attempt();
+        },
+        onConnectionChange: onReconnect(() => void attempt()),
+      });
+    };
     void (async () => {
       const saved = await Promise.resolve(copies?.read(projectId, sessionId) ?? null).catch(() => null);
       if (stopped) return;
       if (saved && pageThreadIsV1(saved) && !store().sessionLogs[sessionId]) store().applySessionLogPage(sessionId, saved);
-      const page = await load();
-      if (stopped) return;
-      if (!page || !pageThreadIsV1(page)) return refuse();
-      let connected = true;
-      stream = joinStream({
-        projectId,
-        sessionId,
-        schema: 'v2',
-        onConnectionChange: (up) => {
-          // The first report is the connection already up: the page above is current.
-          if (up && !connected) void load();
-          connected = up;
-        },
-      });
+      await attempt();
     })();
     return () => {
       stopped = true;

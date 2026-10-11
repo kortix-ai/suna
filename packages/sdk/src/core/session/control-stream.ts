@@ -76,10 +76,14 @@ export interface SessionControlStreamOptions {
   runtime?: boolean;
   /**
    * `'v2'`: the session negotiated the session log. While any subscriber asks for it, a
-   * connection with the runtime channel adds `schema=v2`: the runtime channel then carries
-   * `log.*` frames in place of the `message.*` transcript frames, and every other runtime
-   * frame as before. The v2 log has its own sequence, so a switch either way reconnects at
-   * once without the runtime cursor. An API that predates the parameter ignores it.
+   * connection with the runtime channel adds `schema=v2`, and a switch either way reconnects at
+   * once at the same cursors.
+   * - Until P4.4 (the API relay) is on dev, the API ignores `schema`: the runtime channel keeps
+   *   the v1 frames, and a live turn streams through them as before.
+   * - With P4.4 and P4.3b (kortixd) on dev, the runtime channel carries `log.*` frames in place
+   *   of the `message.*` transcript frames, plus every non-transcript frame (`session.*`,
+   *   `permission.*`, `question.*`, `todo.*`, ...); a streaming `log.message` put precedes the
+   *   first `log.block.delta` of a message.
    */
   schema?: 'v2';
   /**
@@ -300,11 +304,10 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
     // Read at connect time: a runtime subscriber that joins later upgrades.
     const withRuntime = shared.runtimeRefs > 0;
     shared.connectedWithRuntime = withRuntime;
+    // The runtime cursor carries across a dialect switch. An API that ignores `schema` resumes
+    // the same log with nothing lost; one that serves the v2 log under its own epoch answers the
+    // stale cursor with `kortix.resync`, and the view re-reads (`onRuntimeResync`).
     const withLog = withRuntime && shared.logRefs > 0;
-    if (withLog !== shared.connectedWithLog) {
-      seq = null;
-      epoch = null;
-    }
     shared.connectedWithLog = withLog;
     try {
       const url = new URL(

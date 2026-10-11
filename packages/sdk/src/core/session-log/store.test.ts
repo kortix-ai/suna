@@ -79,6 +79,15 @@ describe('applySessionLogPage', () => {
     expect(ids(state)).toContain(older.message_id);
   });
 
+  test('a stream-put message the API page lacks (API lag) survives the settle', () => {
+    const all = rootMessages();
+    const newest = all.at(-1)!;
+    let state = applySessionLogEvent(EMPTY_SESSION_LOG_STATE, ev('log.message', { rev: 5, message: newest }));
+    // The API has not stored the newest message yet: its page ends one message earlier.
+    state = applySessionLogPage(state, page(all.slice(0, -1)));
+    expect(ids(state)).toEqual(all.map((m) => m.message_id));
+  });
+
   test('ignores a message that fails validation', () => {
     const messages = rootMessages();
     (messages[1] as Record<string, unknown>).seq = 'x';

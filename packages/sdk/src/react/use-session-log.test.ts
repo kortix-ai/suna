@@ -148,6 +148,36 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(store.read(PROJECT, SESSION)).not.toBeNull();
   });
 
+  test('a 404 (a new session whose journal has not posted yet) is retried at the next turn end and on a stream reconnect', async () => {
+    let calls = 0;
+    let stored = false;
+    const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
+    const state = mount({ loader: async () => { calls++; if (!stored) throw new Error('404'); return v1Page(); } });
+    await flush();
+    expect(state.dialect).toBe('v1');
+    expect(calls).toBe(1);
+    // It waits on the session stream without schema v2.
+    expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
+    const watch = joined[0]!.options;
+    act(() => watch.onControl(turn('t1')));
+    act(() => watch.onControl(turn('t1')));
+    await flush();
+    expect(calls).toBe(1); // the first turn frame is the state at join, a repeat is not a turn end
+    act(() => watch.onConnectionChange(true));
+    act(() => watch.onConnectionChange(false));
+    act(() => watch.onConnectionChange(true));
+    await flush();
+    expect(calls).toBe(2); // a reconnect retries
+    stored = true;
+    act(() => joined.at(-1)!.options.onControl(turn('t2')));
+    await flush();
+    expect(calls).toBe(3); // a turn end retries; this time the log is there
+    expect(state.dialect).toBe('v2');
+    expect(useSyncStore.getState().sessionLogs[SESSION]).toBeDefined();
+    expect(joined.at(-1)!.options.schema).toBe('v2');
+    expect(joined.filter((j) => j.options.schema !== 'v2').every((j) => j.closed)).toBe(true);
+  });
+
   test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
     const bad = v1Page();
     (bad.messages[0] as Record<string, unknown>).seq = 'x';
@@ -156,7 +186,7 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
       await flush();
       expect(state.dialect).toBe('v1');
       expect(useSyncStore.getState().sessionLogs).toEqual({});
-      expect(joined).toEqual([]);
+      expect(joined.some((j) => j.options.schema === 'v2')).toBe(false);
       act(() => renderer?.unmount());
       renderer = null;
     }
