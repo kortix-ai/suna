@@ -95,7 +95,7 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
-# Each block is the App's fly.toml: a deploy creates an immutable release of
+# Each block is the App's release config: a deploy creates an immutable release of
 # its artifact and this config (processes, http_service, services, mounts, vm,
 # deploy). `kortix apps launch --template convex --name db` writes a block like
 # `db` below (a self-hosted Convex backend) plus `db-dashboard` (admins only,

@@ -2,7 +2,7 @@
  * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
- * exec and volume routes of the Fly model. Maps to spec section 28 (APP-1..8,
+ * exec and volume routes. Maps to spec section 28 (APP-1..8,
  * APP-11; APP-9 and APP-10 live in apps-tokens.flow.ts).
  */
 import { flow } from "../core/flow";

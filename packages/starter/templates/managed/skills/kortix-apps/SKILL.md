@@ -1,11 +1,11 @@
 ---
 name: kortix-apps
-description: "Build, deploy and operate Kortix Apps on the Fly.io model through the pre-authenticated CLI or SDK: static sites and SPAs, Dockerfile or OCI servers, workers, and stateful backends (a database, a Convex backend) with persistent volumes, snapshots and built-in Kortix sign-in. Use when the user asks to publish, host, deploy, preview, inspect, scale, wake, suspend, roll back, debug, or remove an App; asks for a database, an API, a backend, a data model, auth, or 'store this'; asks for an internal tool, business app, CRM, tracker, dashboard, portal, or any app the team logs in to; before writing any Convex code; or asks what an App costs or how it runs."
+description: "Build, deploy and operate Kortix Apps through the pre-authenticated CLI or SDK: static sites and SPAs, Dockerfile or OCI servers, workers, and stateful backends (a database, a Convex backend) with persistent volumes, snapshots and built-in Kortix sign-in. Use when the user asks to publish, host, deploy, preview, inspect, scale, wake, suspend, roll back, debug, or remove an App; asks for a database, an API, a backend, a data model, auth, or 'store this'; asks for an internal tool, business app, CRM, tracker, dashboard, portal, or any app the team logs in to; before writing any Convex code; or asks what an App costs or how it runs."
 ---
 
 # Kortix Apps
 
-Kortix Apps follow the Fly.io model:
+Kortix Apps are built from three parts:
 
 - **Release:** every deploy is an immutable release (v1, v2, …): the build
   plus its config. Rollback is a new release from an old one.
@@ -44,7 +44,7 @@ another host. Volumes need Platinum (the default on Kortix Cloud).
 | A website or UI with no stored data | A static App | references/web-static.md |
 | An app with data, login or realtime (an internal tool, a CRM, a tracker) | A Convex backend App (`kortix apps launch --template convex`) + a static App for the UI that uses it | "Internal apps" below, references/convex.md |
 | A database or an API only | The Convex template | references/convex.md |
-| A server of its own (SSR, native packages, a custom service), a worker, several process groups | A server App | references/web-server.md, references/fly-model.md |
+| A server of its own (SSR, native packages, a custom service), a worker, several process groups | A server App | references/web-server.md, references/apps-model.md |
 | A call to an external system from an App | The connector gateway | references/connectors.md |
 
 Default to static for every UI. Server logic for a UI (queries, writes,
@@ -64,10 +64,10 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 `kortix.yaml` block) for every later release of the same App. Never create a
 new slug for a normal update.
 
-Declare Apps in `kortix.yaml` `apps.<slug>` (≈ fly.toml; kortix-system,
+Declare Apps in `kortix.yaml` `apps.<slug>` (kortix-system,
 `references/kortix/kortix-yaml.md`). `kortix apps deploy` with no arguments
 deploys every block, used Apps first; `kortix apps deploy <path>` uses the
-block whose `path` it is. The Fly keys:
+block whose `path` it is. The keys:
 
 ```yaml
 apps:
@@ -105,7 +105,7 @@ kortix apps scale count <app> 3 --process worker
 kortix apps exec <app> -- ls /data             # project admins; output and exit code
 ```
 
-A group with a mount gets one new, empty volume per new machine (Fly). Never
+A group with a mount gets one new, empty volume per new machine. Never
 scale a single-instance database above 1: each machine gets its own volume.
 
 ## Volumes and snapshots
@@ -297,7 +297,7 @@ kortix apps volumes destroy <slug> <volume> --yes       # admins; a final snapsh
 
 ## References
 
-- references/fly-model.md — releases, machines, volumes, strategies, release_command, checks, scale, services, exec, the env every machine gets.
+- references/apps-model.md — releases, machines, volumes, strategies, release_command, checks, scale, services, exec, the env every machine gets.
 - references/web-static.md — static sources, build rules, caching, verify.
 - references/web-server.md — Dockerfile and OCI Apps, process groups, run mode, wake, diagnose.
 - references/convex.md — the Convex template: launch, connect, push, test, dashboard, durability, delete.

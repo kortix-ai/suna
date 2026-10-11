@@ -910,7 +910,7 @@ describe('validateManifest — [[triggers]] type = "event"', () => {
   });
 });
 
-describe('apps: the Fly model (processes, services, mounts, vm, deploy, labels)', () => {
+describe('apps: release config (processes, services, mounts, vm, deploy, labels)', () => {
   const issues = (yaml: string) =>
     validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
       .issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`);

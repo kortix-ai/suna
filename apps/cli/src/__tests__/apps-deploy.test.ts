@@ -293,7 +293,7 @@ describe('kortix apps deploy (characterization)', () => {
       source: { kind: 'bundle', output_dir: 'build' },
       environment: { NODE_ENVIRONMENT: 'production' },
       secrets: { DATABASE_URL: 'database-primary' },
-      // The block's release config (Fly model): here only its machine size.
+      // The block's release config: here only its machine size.
       config: { resources: { cpu: 2, memory_gb: 4 } },
     });
     expect(r.stdout).toContain('deployment ready');

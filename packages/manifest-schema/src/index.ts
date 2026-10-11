@@ -999,7 +999,7 @@ function validateAppStringMap(
 const APP_LABEL_RE = /^[a-z0-9][a-z0-9-]{0,30}$/;
 
 /**
- * The Fly-model fields of an App block: shapes first, then every rule the
+ * The release-config fields of an App block: shapes first, then every rule the
  * deploy engine relies on (`appReleaseConfigIssues`), so `kortix validate`
  * refuses what the API would refuse. A static App runs no machine: skipped.
  */

@@ -1,4 +1,4 @@
-# The App model (Fly.io): releases, machines, volumes
+# The App model: releases, machines, volumes
 
 ## Releases
 

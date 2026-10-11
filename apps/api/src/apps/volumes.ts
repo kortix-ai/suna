@@ -1,5 +1,5 @@
 /**
- * App volumes (Fly volumes, on Platinum volumes). A volume belongs to one
+ * App volumes (on Platinum volumes). A volume belongs to one
  * machine of a process group and outlives every instance of it: a release swap
  * stops the old instance, detaches the volume (Platinum commits it) and mounts
  * it on the new instance at create.
@@ -99,7 +99,7 @@ async function createVolume(input: {
 
 /**
  * The volume a machine mounts: its own; else an unattached volume of the same
- * mount whose machine is gone (Fly: a new machine takes an unattached volume
+ * mount whose machine is gone (a new machine takes an unattached volume
  * of that name, so a lost machine never strands its data); else a new, empty
  * one of `initial_size_gb`.
  */
@@ -203,7 +203,7 @@ export async function detachVolume(
   await releaseVolume(runtime.volumeId, runtime.runtimeId);
 }
 
-/** Pre-create a volume (Fly `volumes create`): a later machine of its group with a mount of this name takes it. */
+/** Pre-create a volume: a later machine of its group with a mount of this name takes it. */
 export async function createAppVolume(input: {
   appId: string;
   accountId: string;
@@ -229,7 +229,7 @@ export async function createAppVolume(input: {
   });
 }
 
-/** Grow a volume's allotment (never shrink, Fly verbatim) or change its snapshot retention. */
+/** Grow a volume's allotment (never shrink) or change its snapshot retention. */
 export async function updateAppVolume(
   appId: string,
   volumeId: string,

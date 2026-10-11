@@ -1,5 +1,5 @@
 /**
- * App templates (Fly `launch`): data, never platform code. A template is the
+ * App templates: data, never platform code. A template is the
  * `kortix.yaml` `apps` blocks of a ready-made App, plus what to do after the
  * first deploy. `kortix apps launch --template <name>` writes the blocks and
  * deploys them; the kortix-apps skill documents each one.
@@ -40,6 +40,29 @@ const CONVEX_DASHBOARD = 'ghcr.io/get-convex/convex-dashboard@sha256:f85cf0d0448
 /** The `convex` npm CLI that matches CONVEX_BACKEND. Bump both together. */
 export const CONVEX_CLI_VERSION = '1.46.0';
 
+/**
+ * Signs the Convex dashboard in without a click, through Convex's embedding
+ * protocol: `/` is a page that frames the dashboard and answers its
+ * `dashboard-credentials-request` with the admin key. Every other request goes
+ * to the dashboard on 6792. Node only, no dependencies.
+ */
+const CONVEX_DASHBOARD_SIGNIN_PROXY = `const http = require('http');
+const credentials = JSON.stringify({ type: 'dashboard-credentials', adminKey: process.env.NEXT_PUBLIC_ADMIN_KEY || '', deploymentUrl: process.env.NEXT_PUBLIC_DEPLOYMENT_URL, deploymentName: process.env.DASHBOARD_NAME }).replace(/</g, '\\\\u003c');
+const page = '<!doctype html><meta charset="utf-8"><title>Convex dashboard</title><style>html,body,iframe{margin:0;border:0;width:100%;height:100%;display:block}</style><iframe src="/?embedded=1"></iframe><script>const c=' + credentials + ';addEventListener("message",e=>{if(e.origin===location.origin&&e.data&&e.data.type==="dashboard-credentials-request")e.source.postMessage(c,location.origin)})</script>';
+http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(page);
+  }
+  const upstream = http.request({ host: '127.0.0.1', port: 6792, path: req.url, method: req.method, headers: req.headers }, (answer) => {
+    res.writeHead(answer.statusCode, answer.headers);
+    answer.pipe(res);
+  });
+  upstream.on('error', () => { res.writeHead(502); res.end(); });
+  req.pipe(upstream);
+}).listen(6791, '0.0.0.0');
+`;
+
 export const APP_TEMPLATES: Record<string, AppTemplate> = {
   convex: {
     name: 'convex',
@@ -64,7 +87,8 @@ export const APP_TEMPLATES: Record<string, AppTemplate> = {
         type: 'oci_image',
         image: CONVEX_DASHBOARD,
         // The dashboard reaches the backend through this App's own binding: same origin, behind the admins gate.
-        command: ['sh', '-c', `cd /app/dashboard-self-hosted && NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/${name} PORT=6791 HOSTNAME=0.0.0.0 exec node ./server.js`],
+        // It runs on 6792; SIGNIN_PROXY on 6791 serves `/` and passes everything else through.
+        command: ['sh', '-c', `cd /app/dashboard-self-hosted && export NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/${name} DASHBOARD_NAME=${name} && { PORT=6792 HOSTNAME=127.0.0.1 node ./server.js & } && exec node -e "$SIGNIN_PROXY"`],
         labels: ['backend', 'dashboard'],
         // A tab of the backend's detail, not a card of its own.
         display: { parent: name },
@@ -72,8 +96,9 @@ export const APP_TEMPLATES: Record<string, AppTemplate> = {
         always_on: false,
         vm: { cpu: 1, memory_gb: 1 },
         http_service: { internal_port: 6791, access: 'admins' },
-        // Read per request (getInitialProps): the dashboard opens signed in. Only project admins reach it.
+        // Only project admins reach this App, so its page may carry the admin key.
         secrets: { NEXT_PUBLIC_ADMIN_KEY: `${slugEnvName(name)}_ADMIN_KEY` },
+        env: { SIGNIN_PROXY: CONVEX_DASHBOARD_SIGNIN_PROXY },
       },
     }),
     deployOrder: (name) => [name, `${name}-dashboard`],

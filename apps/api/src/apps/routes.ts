@@ -204,7 +204,7 @@ function serializeDeployment(row: typeof appDeployments.$inferSelect) {
     hosting_provider: row.hostingProvider,
     runtime_spec: row.runtimeSpec,
     build_spec: row.buildSpec,
-    /** The release config (Fly model), its deploy strategy and the release command's outcome. */
+    /** The release config, its deploy strategy and the release command's outcome. */
     config: row.config,
     strategy: row.strategy,
     release_command_status: row.releaseCommandStatus,
@@ -731,7 +731,7 @@ export function registerAppsRoutes(): void {
       method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
       description:
         'Queue a release of an uploaded artifact (`artifact_id` + `source`); answers 202. `config` is the release ' +
-        'config on the Fly.io model (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
+        'config (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
         'command, readiness_path, always_on and resources map onto it). Without it the release runs one `app` ' +
         'process group on the source port, sized like the App. An invalid config answers 400 `app_config_invalid` ' +
         'with `issues: [{path, message}]`; a mount on a provider without volumes answers 400 `app_volumes_unsupported`.',
@@ -1070,7 +1070,7 @@ export function registerAppsRoutes(): void {
       method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
       description:
         'Roll back to an earlier release: a NEW release (the next version) from that release\'s artifact and ' +
-        'config, rolled out on its strategy like any deploy (Fly verbatim). Volumes keep their data. Answers 202 ' +
+        'config, rolled out on its strategy like any deploy. Volumes keep their data. Answers 202 ' +
         'with the App and the queued release in `deployment`.',
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
       responses: { 202: json(AppObject, 'App'), ...errors(403, 404, 409) },

@@ -29,7 +29,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kortix apps launch`). No published name is removed.
 
 ### Added
-- Apps on the Fly.io model (releases, machines, volumes).
+- Apps: releases, machines, volumes.
   `CreateAppBuildInput.config` (`AppReleaseConfigInput`) carries a release's
   config: `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`
   (`strategy`, `release_command`). An invalid config answers
@@ -263,7 +263,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Changed
-- Apps run on the Fly.io model. `rollbackApp` creates a NEW release from the
+- `rollbackApp` creates a NEW release from the
   target's artifact and config and answers `202` with the App plus the queued
   release in `deployment`; it no longer moves traffic to the old release in
   place. It resolves with the new `AppRollback` type (`App & { deployment }`),

@@ -35,7 +35,7 @@ export type AppCapability =
   | 'volumes'
   | 'snapshots';
 
-/* ─── The release config (the Fly.io model; kortix.yaml `apps.<name>` ≈ fly.toml) ─── */
+/* ─── The release config (kortix.yaml `apps.<name>`) ─── */
 
 export type AppDeployStrategy = 'rolling' | 'immediate' | 'bluegreen' | 'canary';
 export type AppAutoStop = 'off' | 'stop' | 'suspend';
@@ -377,7 +377,7 @@ export interface CreateAppBuildInput {
   /** Runtime environment key -> project secret identifier. */
   secrets?: Record<string, string>;
   /**
-   * The release config (Fly.io model). Omitted: one `app` process group on the
+   * The release config. Omitted: one `app` process group on the
    * source port, sized like the App. Invalid: `400 app_config_invalid` with
    * `issues: [{path, message}]`.
    */
@@ -409,7 +409,7 @@ export interface AppDeployment {
   source_session_id: string | null;
   /** Immutable caller class recorded when the deployment was created. */
   actor_type: 'human' | 'agent' | 'service_account' | 'system';
-  /** The release's resolved config (Fly model); `null` for a release made before releases carried one. */
+  /** The release's resolved config; `null` for a release made before releases carried one. */
   config: AppReleaseConfig | null;
   /** How this release rolls out; `null` before the worker resolves it. */
   strategy: AppDeployStrategy | null;

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { appDisplayIssues, appMountFor, appReleaseConfigIssues, appServicesFor, appVmFor, resolveAppReleaseConfig } from './app-config';
 
 describe('resolveAppReleaseConfig', () => {
-  test('the old shorthands map onto Fly fields: port, command, readiness_path, always_on, resources', () => {
+  test('the old shorthands map onto release fields: port, command, readiness_path, always_on, resources', () => {
     const config = resolveAppReleaseConfig({ port: 3000, command: 'node server.js', readiness_path: '/health', always_on: false, resources: { cpu: 2, memory_gb: 4 } });
     expect(config.processes).toEqual({ app: 'node server.js' });
     expect(config.services).toEqual([{

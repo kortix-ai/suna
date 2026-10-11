@@ -1,10 +1,9 @@
 ---
 title: Apps
-description: Deploy static sites, servers, workers, and backends with persistent volumes to stable Kortix URLs, on the Fly.io model.
+description: Deploy static sites, servers, workers, and backends with persistent volumes to stable Kortix URLs.
 ---
 
-A Kortix App is a provider-neutral deployment owned by one project. Kortix runs
-it on the Fly.io model. An App owns one stable URL and an access policy. Each
+A Kortix App is a provider-neutral deployment owned by one project. An App owns one stable URL and an access policy. Each
 deploy creates an immutable, numbered release: the artifact plus its resolved
 config. A failed release never replaces live traffic. A server App runs
 machines per process group, and a machine can mount a volume that outlives
@@ -158,7 +157,7 @@ The full subcommand list:
 |---|---|
 | `kortix apps list` | List the Apps you may open: slug, state, URL. `--json` adds labels, scale, services, and capabilities. |
 | `kortix apps create <slug>` | Create an App without deploying it. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses <slugs>`. |
-| `kortix apps launch --template <name>` | Add a ready-made App to `kortix.yaml` and deploy it (Fly `launch`). `--name <slug>` (default: the template name), `--no-deploy` writes `kortix.yaml` only. Template: `convex`. |
+| `kortix apps launch --template <name>` | Add a ready-made App to `kortix.yaml` and deploy it. `--name <slug>` (default: the template name), `--no-deploy` writes `kortix.yaml` only. Template: `convex`. |
 | `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image` as a new release. `--always-on` and `--on-demand` set the run mode. With no path and several `apps` blocks, it deploys every block in link order: each after the Apps it uses, then by name. |
 | `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--uses <slugs>` (replaces; `--uses=` clears). |
 | `kortix apps link <id\|slug> --uses <slugs>` | Add Apps this App uses. `kortix apps unlink` removes them. |
@@ -202,7 +201,7 @@ redeploy.
 
 ### Deployment defaults from `kortix.yaml`
 
-An `apps.<name>` block is the App's `fly.toml`: deploy defaults plus the
+An `apps.<name>` block holds the App's deploy defaults plus the
 release config. The server stays the App control plane: the block never
 carries access, passwords, or member ids.
 

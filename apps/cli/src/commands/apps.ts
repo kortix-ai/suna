@@ -43,10 +43,10 @@ import {
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
-Deploy and operate Kortix Apps on the Fly.io model: immutable releases,
+Deploy and operate Kortix Apps: immutable releases,
 replaceable machines, persistent volumes. Each App owns one stable URL: a site
 or a server. A server App runs machines per process group; a machine may mount
-a volume that outlives every release (a database, uploads, any backend). Configure it in kortix.yaml apps.<name> (≈ fly.toml): processes,
+a volume that outlives every release (a database, uploads, any backend). Configure it in kortix.yaml apps.<name>: processes,
 http_service, services, mounts, vm, deploy (strategy, release_command), labels.
 What an App supports is its capabilities (kortix apps show). <app> is an App id
 or slug.
@@ -64,8 +64,8 @@ Subcommands:
                                     and ignores both.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
-  launch --template <name>          Add a ready-made App to kortix.yaml and deploy it
-                                    (Fly launch). Templates: convex (a self-hosted
+  launch --template <name>          Add a ready-made App to kortix.yaml and deploy it.
+                                    Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
                                     HTTP-action services, an admins-only dashboard).
     --name <slug>                   Default: the template name.
@@ -473,8 +473,8 @@ function readManifestOrNew(path: string): string {
 }
 
 /**
- * `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` (Fly
- * `launch`): write a template's `apps` blocks into ./kortix.yaml (comments
+ * `kortix apps launch --template <name> [--name <slug>] [--no-deploy]`:
+ * write a template's `apps` blocks into ./kortix.yaml (comments
  * kept; a slug already there is refused), deploy them in order, and print the
  * commands that finish the setup.
  */
@@ -627,7 +627,7 @@ async function deployOne(
         ...(flags.provider ? { provider: flags.provider } : {}),
         ...(manifestBlock?.env ? { environment: manifestBlock.env } : {}),
         ...(manifestBlock?.secrets ? { secrets: manifestBlock.secrets } : {}),
-        // The release config (Fly model): processes, services, mounts, vm, deploy.
+        // The release config: processes, services, mounts, vm, deploy.
         ...(releaseConfig ? { config: releaseConfig } : {}),
       });
       if (flags.wait)
@@ -743,7 +743,7 @@ async function rollbackCommand(
   const result = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, positional[0]!);
     const target = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
-    // A NEW release from the target's artifact and config (Fly verbatim). A server
+    // A NEW release from the target's artifact and config. A server
     // from before this answered the App alone, with traffic already moved.
     const app = (await ctx.apps.rollback(found.app_id, target.deployment_id)) as App & { deployment?: AppDeployment };
     const release = app.deployment && wait

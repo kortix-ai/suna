@@ -402,7 +402,7 @@ both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
-`kortix.project(projectId).apps` deploys immutable App releases behind one stable URL, on the Fly.io model: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+`kortix.project(projectId).apps` deploys immutable App releases behind one stable URL: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
 
 ```ts
 const apps = kortix.project(projectId).apps;
@@ -429,7 +429,7 @@ Branch on `app.capabilities` (`machines`, `scale`, `exec`, `volumes`, `snapshots
 ```ts
 await apps.deployments.create(api.app_id, {
   artifact_id, source: { kind: 'oci_image', image, command: ['node', 'server.js'] },
-  config: {                                              // the release config (kortix.yaml apps.<name> ≈ fly.toml)
+  config: {                                              // the release config (kortix.yaml apps.<name>)
     processes: { app: '', worker: 'node worker.js' },
     http_service: { internal_port: 3000, access: 'app', processes: ['app'] },
     mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10, processes: ['app'] }],

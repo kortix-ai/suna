@@ -1,7 +1,7 @@
 /**
  * An App as JSON. Every response carries `capabilities` (the only thing
  * clients branch on), its `services`, `machines`, `volumes`, `labels`, `scale`
- * and active release `config` (the Fly model), `uses` / `used_by` (App links, by slug) and `auth` (the
+ * and active release `config`, `uses` / `used_by` (App links, by slug) and `auth` (the
  * issuer, audience and key set URL that verify the App's Kortix sign-in tokens).
  */
 import { z } from '@hono/zod-openapi';
@@ -134,7 +134,7 @@ function serializeApp(
     })),
     machines: fleet.machines,
     volumes: fleet.volumes,
-    /** The active release's config (Fly model), or null for a static App or before the first deploy. */
+    /** The active release's config, or null for a static App or before the first deploy. */
     config: releaseConfig,
     /** `static`: served from storage, no runtime. `sandbox`: a server App. null: never deployed. */
     hosting_type: hostingType,

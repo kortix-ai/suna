@@ -1,13 +1,13 @@
 # Kortix Apps
 
 Kortix Apps deploy static sites, HTTP servers, workers and backends from a
-project, on the Fly.io model. Each App has one stable URL. Each deploy creates
+project. Each App has one stable URL. Each deploy creates
 an immutable release (`vN`): the artifact plus its resolved config. Traffic
 moves to a release only after its machines pass their checks. A server App
 runs machines per process group; a machine may mount a volume that outlives
 every release. The `kortix-apps` system skill covers releases, machines,
 volumes, services, templates (`convex`), sign-in tokens and bindings
-(`references/fly-model.md` there).
+(`references/apps-model.md` there).
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
 Project Settings → Feature flags; the user contacts Kortix). The API returns `403`, the

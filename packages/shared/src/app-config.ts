@@ -1,7 +1,7 @@
 /**
- * The configuration of one App release, on the Fly.io model: process groups,
+ * The configuration of one App release: process groups,
  * services (named ports), mounts (volumes), VM sizes, checks and the deploy
- * strategy. `kortix.yaml` `apps.<name>` is the authored form (≈ fly.toml); the
+ * strategy. `kortix.yaml` `apps.<name>` is the authored form; the
  * CLI resolves it with `resolveAppReleaseConfig`, the API validates it again
  * with `appReleaseConfigIssues` and stores the result on the release, and the
  * deploy engine reads only the resolved form.
@@ -42,7 +42,7 @@ export interface AppService {
 }
 
 export interface AppMount {
-  /** Volume name. Each machine of the group gets its own volume of this name (Fly). */
+  /** Volume name. Each machine of the group gets its own volume of this name. */
   source: string;
   destination: string;
   initial_size_gb: number;
@@ -108,7 +108,7 @@ export const MAX_VOLUME_GB = 100;
 
 const GROUP_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const SERVICE_NAME = /^[a-z][a-z0-9-]{0,30}$/;
-/** Fly volume names: letters, digits and underscores. */
+/** Volume names: letters, digits and underscores. */
 const VOLUME_NAME = /^[a-z0-9_]{1,30}$/;
 const SYSTEM_DIRS = ['/bin', '/boot', '/dev', '/etc', '/lib', '/lib64', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var', '/kortix'];
 
@@ -125,11 +125,11 @@ function check(input: Partial<AppCheck> | undefined, fallbackPath?: string): App
 }
 
 /**
- * The resolved release config. Shorthands map onto the Fly fields:
+ * The resolved release config. Shorthands map onto the full fields:
  * `port` → `http_service.internal_port`, `command` → `processes.app`,
  * `readiness_path` → an http check, `always_on` → `auto_stop_machines: off` and
  * `min_machines_running: 1` (`false`: `stop` and 0), `resources` → the default VM.
- * An explicit Fly field wins over its shorthand.
+ * An explicit full field wins over its shorthand.
  */
 export function resolveAppReleaseConfig(input: AppReleaseConfigInput = {}): AppReleaseConfig {
   const processes = input.processes && Object.keys(input.processes).length > 0
@@ -195,7 +195,7 @@ export function resolveAppReleaseConfig(input: AppReleaseConfigInput = {}): AppR
     mounts,
     vm,
     deploy: {
-      // Fly refuses bluegreen and canary with volumes; without them a full swap keeps the App up.
+      // Bluegreen and canary need two machines on one volume, so a volume refuses them; without them a full swap keeps the App up.
       strategy: input.deploy?.strategy ?? (mounts.length > 0 ? 'rolling' : 'bluegreen'),
       release_command: input.deploy?.release_command?.trim() ? input.deploy.release_command.trim() : null,
     },
@@ -266,7 +266,7 @@ export function appReleaseConfigIssues(config: AppReleaseConfig): AppConfigIssue
     }
     knownGroups(`${path}.processes`, mount.processes);
     for (const group of mount.processes) {
-      // Fly: a machine mounts at most one volume.
+      // A machine mounts at most one volume.
       if (mountedGroups.has(group)) issues.push({ path: `${path}.processes`, message: `process group "${group}" already mounts a volume; a machine mounts one.` });
       mountedGroups.add(group);
     }

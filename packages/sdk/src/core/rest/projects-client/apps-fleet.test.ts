@@ -105,7 +105,7 @@ test('volumes: list, create, extend, destroy (with confirm), snapshots, restore 
   expect(last()).toMatchObject({ url: `${base}/volumes/v1/fork`, method: 'POST', body: { name: 'copy' } });
 });
 
-test('the App and its inputs carry the Fly model: labels, scale, services, machines, volumes, config; deploy takes a config', () => {
+test('the App and its inputs carry labels, scale, services, machines, volumes, config; deploy takes a config', () => {
   const labels: Equal<App['labels'], string[] | undefined> = true;
   const scale: Equal<App['scale'], Record<string, number> | undefined> = true;
   const services: Equal<App['services'], AppServiceSummary[] | undefined> = true;
