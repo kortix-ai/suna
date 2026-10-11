@@ -304,6 +304,11 @@ describe('what a message contributes', () => {
     expect(view[2]).toEqual({ role: 'tool', call_id: 'c1', content: '', is_error: false, images: ['c'.repeat(64)] });
   });
 
+  test('an attachment with neither sha256 nor ref (F13, bytes missing) adds nothing', () => {
+    const log = logOf(thread('root', [msg('m1', 1, 'user', [text('see'), attachment({ ref: undefined, bytes: undefined })])]));
+    expect(rootView(log)).toEqual([{ role: 'user', text: ['see'], images: [] }]);
+  });
+
   test('a text stored by reference needs resolve_text', () => {
     const log = logOf(thread('root', [msg('m1', 1, 'user', [text('preview', { ref: 'obj/big', bytes: 999999 })])]));
     expect(() => rootView(log)).toThrow('stored by reference');

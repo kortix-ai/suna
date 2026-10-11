@@ -18,7 +18,7 @@
  *    comparison joins them. An assistant `synthetic` text block is dropped;
  *  - a tool call contributes `call_id`, `name`, `input` and `result.model_content ?? result.content`;
  *  - an attachment contributes the bytes behind `ref`. The view carries the content id (`sha256`, or
- *    the hash in a `blob:<sha256>` ref), never the bytes;
+ *    the hash in a `blob:<sha256>` ref), never the bytes. A block without `ref` (F13, bytes missing) adds nothing;
  *  - a harness block with `model_visible: false` is dropped. A visible one contributes `fallback_text`;
  *  - reasoning follows `target` (see `ViewTarget`).
  */
@@ -61,6 +61,8 @@ export type ModelViewOptions = {
 
 const sha256 = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex');
 const refSha = (ref: string) => (ref.startsWith('blob:') ? ref.slice(5) : ref);
+/** The content id of an attachment: its `sha256`, else the hash in its `ref`. F13: a block with neither has no bytes (a missing v1 object), and the model sees nothing for it. */
+const attachmentId = (a: { sha256?: string; ref?: string }): string[] => (a.sha256 ? [a.sha256] : a.ref ? [refSha(a.ref)] : []);
 
 // ─── record → view ───────────────────────────────────────────────────────────
 
@@ -134,7 +136,7 @@ function segments(m: SessionLogMessage, target: ViewTarget, opts: ModelViewOptio
 function messageView(m: SessionLogMessage, target: ViewTarget, opts: ModelViewOptions): ModelView {
   const { text, reasoning } = segments(m, target, opts);
   if (m.role === 'user') {
-    const images = m.blocks.flatMap((b) => (b.type === 'attachment' ? [b.sha256 ?? refSha(b.ref)] : []));
+    const images = m.blocks.flatMap((b) => (b.type === 'attachment' ? attachmentId(b) : []));
     return [{ role: 'user', text, images }];
   }
   if (m.role !== 'assistant') return [];
@@ -144,7 +146,7 @@ function messageView(m: SessionLogMessage, target: ViewTarget, opts: ModelViewOp
     if (b.type !== 'tool_call' || !b.result) continue;
     const rc = b.result.model_content ?? b.result.content;
     const content = rc.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n').trim();
-    const images = rc.flatMap((c) => (c.type === 'attachment' ? [c.sha256 ?? refSha(c.ref)] : []));
+    const images = rc.flatMap((c) => (c.type === 'attachment' ? attachmentId(c) : []));
     out.push({ role: 'tool', call_id: b.call_id, content, is_error: b.result.is_error, ...(images.length ? { images } : {}) });
   }
   return out;
