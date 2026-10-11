@@ -1,0 +1,29 @@
+{
+  "source_hash": "d220a2cf7009ab0f61912c73072771f58605be57a40d9d4b79d3887db0b88840",
+  "diff_files": [
+    "apps/api/src/__tests__/helpers/fake-session-storage.ts",
+    "apps/api/src/__tests__/integration-session-log-blobs.test.ts",
+    "apps/api/src/__tests__/integration-session-log-read.test.ts",
+    "apps/api/src/projects/lib/session-attachments.test.ts",
+    "apps/api/src/projects/lib/session-attachments.ts",
+    "apps/api/src/projects/session-log-blobs.ts",
+    "apps/api/src/projects/session-log-ingest.ts",
+    "apps/api/src/projects/session-log-read.ts",
+    "apps/web/content/docs/sdk/reference.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
+    "packages/api-contract/src/session-log/schema.ts",
+    "packages/api-contract/src/session-log/types.ts",
+    "packages/db/migrations/20261011231931109_session_attachments_bucket.sql",
+    "packages/sdk/src/core/session-log/types.ts"
+  ],
+  "diff_hash": "c46a48e1a2e93b7fb32bab1df5e758c68f788afdebf04467824fd726068be581",
+  "head": "5e24ac0608243cd7c716a5d2ea5b7acf4f95c817",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T23:41:36.090Z"
+}
