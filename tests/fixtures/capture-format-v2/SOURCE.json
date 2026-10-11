@@ -1,10 +1,5 @@
 {
   "repository": "kortix-ai/capture",
-  "commit": "cefcd6b24771be706e43c7cfc0c73c8e0f4a6ff2",
-  "paths": [
-    "apps/recorder/schemas",
-    "apps/recorder/fixtures/capture-format-v2"
-  ],
-  "schemas_commit": "5c1f149bc385d7a46810c976a187d72ea497e66a",
-  "note": "The fixture bucket is from `commit`; the schemas are from `schemas_commit` (multi-display, additive)."
+  "commit": "a4a262329995add5f9b6b0bacfaad4bb8721540e",
+  "paths": ["apps/recorder/schemas", "apps/recorder/fixtures/capture-format-v2"]
 }

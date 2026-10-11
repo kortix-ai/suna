@@ -3,13 +3,17 @@
 # one pinned commit: the JSON Schemas and the synthetic fixture bucket + issuer
 # responses. Re-run with a new SHA when the engine changes the contract, then
 # update SOURCE.json and run the CAP flows and integration-capture.
-#   tests/fixtures/capture-format-v2/vendor.sh <sha>
+#   tests/fixtures/capture-format-v2/vendor.sh <sha> [source]
+# `source` defaults to the GitHub repository; pass a local checkout of
+# kortix-ai/capture to vendor a commit that is not pushed yet.
 set -euo pipefail
-sha="${1:?usage: vendor.sh <kortix-ai/capture commit sha>}"
+sha="${1:?usage: vendor.sh <kortix-ai/capture commit sha> [source repo URL or path]}"
+src="${2:-https://github.com/kortix-ai/capture.git}"
+[ -d "$src" ] && src="file://$(cd "$src" && pwd)"
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-git clone -q --filter=blob:none --no-checkout https://github.com/kortix-ai/capture.git "$work/capture"
+git clone -q --filter=blob:none --no-checkout "$src" "$work/capture"
 git -C "$work/capture" sparse-checkout set --no-cone apps/recorder/schemas apps/recorder/fixtures/capture-format-v2
 git -C "$work/capture" checkout -q "$sha"
 rm -rf "$here/schemas" "$here/bucket" "$here/issuer"
