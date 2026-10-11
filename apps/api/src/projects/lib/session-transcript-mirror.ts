@@ -662,6 +662,30 @@ export async function mirrorHoldsStrippedRows(sessionId: string, root: string): 
 }
 
 /**
+ * Record (`messageId`) or clear (`null`) the rewind marker of a session's
+ * root, when the sandbox proxy saw OpenCode accept `POST /session/:id/revert`
+ * or `/unrevert`. A capture deletes stored rows only after this marker (see
+ * `session_transcript_mirrors.rewind_message_id`). A session with no mirror
+ * row, or a revert of another OpenCode session, updates nothing: there are no
+ * rows of that root to delete.
+ */
+export async function setTranscriptRewindMarker(
+  sessionId: string,
+  runtimeSessionId: string,
+  messageId: string | null,
+): Promise<void> {
+  await db
+    .update(sessionTranscriptMirrors)
+    .set({ rewindMessageId: messageId })
+    .where(
+      and(
+        eq(sessionTranscriptMirrors.sessionId, sessionId),
+        eq(sessionTranscriptMirrors.runtimeSessionId, runtimeSessionId),
+      ),
+    );
+}
+
+/**
  * Pure: a mirror window bounded by size. Keeps the NEWEST messages whose
  * serialized size fits `maxChars`, and always at least one, so paging older
  * always moves. A cut window points its cursor at the oldest message it kept:
