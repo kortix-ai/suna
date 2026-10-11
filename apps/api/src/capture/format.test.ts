@@ -12,13 +12,13 @@ import {
   PolicySchema,
   accountPrefix,
   checkManifest,
-  chunkDisplay,
   jsonLines,
   liveState,
   foldIndex,
   objectKey,
   parseActionLine,
   parseCaptureKey,
+  parseDisplay,
   parseFrameLine,
   policyDocument,
 } from './format';
@@ -87,10 +87,10 @@ describe('the vendored fixture bucket', () => {
     const chunk = json('1790845200000-1.manifest.json');
     const display = { id: 2, name: 'Studio Display', x: 1728, y: 0, w: 2560, h: 1440, scale: 2, main: false };
     const checked = checkManifest({ ...chunk, display }, FIXTURE_DEVICE);
-    expect(checked.ok && chunkDisplay(checked.manifest)).toEqual(display);
+    expect(checked.ok && parseDisplay(checked.manifest.display)).toEqual(display);
     conforms('manifest-chunk', { ...chunk, display });
-    expect(chunkDisplay(chunk)).toBeNull();
-    expect(chunkDisplay({ ...chunk, display: { name: 'no id' } })).toBeNull();
+    expect(parseDisplay(chunk.display)).toBeNull();
+    expect(parseDisplay({ name: 'no id' })).toBeNull();
 
     const line = lines('1790845200000-1.frames.jsonl.zst')[0]!;
     const onSecond = { ...line, display: { ...(line.display as object), id: 2, name: 'Studio Display', main: false, focused: false } };

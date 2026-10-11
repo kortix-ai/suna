@@ -28,9 +28,9 @@ import {
   objectKey,
   parseActionLine,
   parseCaptureKey,
+  parseDisplay,
   parseFrameLine,
   accountPrefix,
-  chunkDisplay,
   type Manifest,
 } from './format';
 import { captureEnabled, readWorkspace } from './workspace';
@@ -123,7 +123,7 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
       : [];
   const items = frames.length + actions.length + audio.length;
   // A multi-display device writes one screen item per display.
-  const display = manifest.kind === 'chunk' ? chunkDisplay(manifest) : null;
+  const display = manifest.kind === 'chunk' ? parseDisplay(manifest.display) : null;
 
   const chunkId = await db.transaction(async (tx) => {
     const [chunk] = await tx

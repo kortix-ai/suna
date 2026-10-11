@@ -671,8 +671,6 @@ const envSchema = z.object({
   KORTIX_CAPTURE_STS_ROLE_ARN: optStr,
   /** STS endpoint override (MinIO serves STS on its S3 endpoint). Empty = AWS STS. */
   KORTIX_CAPTURE_STS_ENDPOINT: optUrl(''),
-  /** Device credential lifetime. AWS role chaining caps it at 3600 s; the floor is 900 s. */
-  KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS: optInt(3600),
   /** SQS queue with the bucket's `*.manifest.json` ObjectCreated events. Unset ⇒ index polling only. */
   KORTIX_CAPTURE_SQS_QUEUE_URL: optStr,
   /** How often the index reader polls each active device's `index/<day>.jsonl` and `status.json`. */
@@ -1405,7 +1403,6 @@ export const config = {
   KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: env.KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY,
   KORTIX_CAPTURE_STS_ROLE_ARN: env.KORTIX_CAPTURE_STS_ROLE_ARN,
   KORTIX_CAPTURE_STS_ENDPOINT: env.KORTIX_CAPTURE_STS_ENDPOINT,
-  KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS: env.KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS,
   KORTIX_CAPTURE_SQS_QUEUE_URL: env.KORTIX_CAPTURE_SQS_QUEUE_URL,
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: env.KORTIX_CAPTURE_INDEX_POLL_SECONDS,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,

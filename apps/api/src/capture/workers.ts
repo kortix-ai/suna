@@ -25,7 +25,7 @@ import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '
 import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
 import { ingestManifest } from './ingest';
 import { readWorkspace } from './workspace';
-import { captureRegion, captureStore, captureStoreConfigured, getCaptureObjectIfChanged } from './store';
+import { captureRegion, captureStore, captureStoreConfigured } from './store';
 
 export const INGEST_QUEUE = 'capture.ingest';
 
@@ -74,18 +74,18 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
   const folder = `${accountPrefix(device.accountId)}/${device.deviceId}`;
   const patch: Partial<typeof captureDevices.$inferInsert> = {};
 
-  const status = await getCaptureObjectIfChanged(`${folder}/status.json`, null);
-  if (status.status === 'ok') {
-    const doc = decodeJson(status.body);
+  const status = await captureStore.getBytes(`${folder}/status.json`);
+  if (status) {
+    const doc = decodeJson(status);
     const reported = statusReportedAt(doc);
     if (doc && reported) {
       patch.status = doc;
       patch.statusReportedAt = new Date(reported);
     }
   }
-  const described = await getCaptureObjectIfChanged(`${folder}/device.json`, null);
-  if (described.status === 'ok') {
-    const doc = decodeJson(described.body);
+  const described = await captureStore.getBytes(`${folder}/device.json`);
+  if (described) {
+    const doc = decodeJson(described);
     if (doc) Object.assign(patch, { deviceInfo: doc, ...deviceFields(doc) });
   }
 

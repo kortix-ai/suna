@@ -9,7 +9,6 @@ import {
   useCaptureDays,
   useCaptureDeviceGrant,
   useCaptureDevices,
-  useCaptureFrame,
   useCapturePolicy,
   useCaptureSearch,
   useCaptureTimeline,
@@ -99,7 +98,7 @@ function harness() {
   return { client, calls, bodies, mount, settle };
 }
 
-test('the timeline page reads days, the timeline, items, a search and a frame for one member and device', async () => {
+test('the timeline page reads days, the timeline, items and a search for one member and device', async () => {
   const h = harness();
   h.bodies['GET /days'] = { days: [{ day: '2026-10-03', start_at: 'a', end_at: 'b', screen_seconds: 60 }] };
   h.bodies['GET /timeline'] = { runs: [{ app: 'Mail' }], chunks: [], ranges: [] };
@@ -110,7 +109,6 @@ test('the timeline page reads days, the timeline, items, a search and a frame fo
     timeline = useCaptureTimeline('a1', { from: '2026-10-03T00:00:00.000Z', to: '2026-10-04T00:00:00.000Z', userId: 'u2' });
     useCaptureTimelineItems('a1', { from: '2026-10-03T09:00:00.000Z', to: '2026-10-03T10:00:00.000Z' });
     useCaptureSearch('a1', { q: 'invoice', kinds: ['screen'] });
-    useCaptureFrame('a1', 'f1', { userId: 'u2' });
     return null;
   }
   await h.mount(Probe);
@@ -122,7 +120,6 @@ test('the timeline page reads days, the timeline, items, a search and a frame fo
       'GET http://test.local/accounts/a1/capture/timeline?from=2026-10-03T00%3A00%3A00.000Z&to=2026-10-04T00%3A00%3A00.000Z&user_id=u2',
       'GET http://test.local/accounts/a1/capture/timeline/items?from=2026-10-03T09%3A00%3A00.000Z&to=2026-10-03T10%3A00%3A00.000Z',
       'GET http://test.local/accounts/a1/capture/search?q=invoice&kinds=screen',
-      'GET http://test.local/accounts/a1/capture/frames/f1?user_id=u2',
     ]),
   );
 });
@@ -134,7 +131,6 @@ test('a null account, query or id sends nothing', async () => {
     useCaptureTimeline('a1', null);
     useCaptureTimelineItems(undefined, { day: '2026-10-03' });
     useCaptureSearch('a1', null);
-    useCaptureFrame('a1', null);
     useCaptureDevices(null);
     useCapturePolicy(null);
     return null;
@@ -153,6 +149,8 @@ test('raw capture only: no range, people, Capture-role or device-sync hooks', ()
     'useCaptureMembers',
     'useSetCaptureMemberRole',
     'useSyncCaptureDevice',
+    // No host reads a single frame through a hook; `kortix.capture.account(id).frame()` stays.
+    'useCaptureFrame',
   ]) {
     expect(name in hooks).toBe(false);
   }

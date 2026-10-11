@@ -32,8 +32,6 @@ mock.module('../capture/store', () => ({
   captureRegion: () => 'us-east-1',
   deviceEndpoint: () => 'https://store.test',
   putCaptureObject: async (key: string, body: string) => void objects.set(key, new TextEncoder().encode(body)),
-  getCaptureObjectIfChanged: async (key: string) =>
-    objects.has(key) ? { status: 'ok', body: objects.get(key)!, etag: createHash('md5').update(objects.get(key)!).digest('hex') } : { status: 'missing' },
 }));
 
 const { accounts, captureDevices, captureWorkspaces, timelineChunks } = await import('@kortix/db');

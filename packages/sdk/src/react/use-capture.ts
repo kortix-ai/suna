@@ -7,7 +7,6 @@ import {
   getCaptureChunkMedia,
   getCaptureDays,
   getCaptureDeviceGrant,
-  getCaptureFrame,
   getCapturePolicy,
   getCaptureTimeline,
   getCaptureTimelineItems,
@@ -122,16 +121,6 @@ export function useCaptureSearch(accountId: AccountId, query: CaptureSearchQuery
     queryKey: qk.capture.timelineRead(accountId ?? '', 'search', query),
     queryFn: () => searchCapture(accountId as string, query as CaptureSearchQuery),
     enabled: !!accountId && !!query?.q.trim(),
-    ...contract(FRESHNESS.captureTimeline),
-  });
-}
-
-/** One frame with its on-screen text and a signed URL (5 min) of its video chunk. */
-export function useCaptureFrame(accountId: AccountId, frameId: string | null | undefined, opts: { userId?: string } = {}) {
-  return useQuery({
-    queryKey: qk.capture.timelineRead(accountId ?? '', 'frame', { frameId, userId: opts.userId ?? null }),
-    queryFn: () => getCaptureFrame(accountId as string, frameId as string, opts),
-    enabled: !!accountId && !!frameId,
     ...contract(FRESHNESS.captureTimeline),
   });
 }

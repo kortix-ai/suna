@@ -31,45 +31,6 @@ export function durationParts(seconds: number): { hours: number; minutes: number
   return { hours: Math.floor(total / 60), minutes: total % 60 };
 }
 
-/**
- * The visible span of a day's track: from the hour before the first recorded
- * moment to the hour after the last, so the runs fill the track instead of a
- * mostly empty 24 hours. An empty day shows 08:00 to 18:00.
- */
-export function trackSpan(
-  day: string,
-  firstMs: number | null,
-  lastMs: number | null,
-): { start: number; end: number } {
-  const { from, to } = dayWindow(day);
-  const dayStart = Date.parse(from);
-  const dayEnd = Date.parse(to);
-  if (firstMs === null || lastMs === null) {
-    return { start: dayStart + 8 * 3_600_000, end: dayStart + 18 * 3_600_000 };
-  }
-  const floorHour = (ms: number) => {
-    const d = new Date(ms);
-    d.setMinutes(0, 0, 0);
-    return d.getTime();
-  };
-  const start = Math.max(dayStart, floorHour(firstMs));
-  const end = Math.min(dayEnd, floorHour(lastMs) + 3_600_000);
-  return { start, end: Math.max(end, start + 3_600_000) };
-}
-
-/** The whole hours inside a span, for the track's axis labels. */
-export function hourTicks(start: number, end: number): number[] {
-  const ticks: number[] = [];
-  const d = new Date(start);
-  d.setMinutes(0, 0, 0);
-  if (d.getTime() < start) d.setHours(d.getHours() + 1);
-  while (d.getTime() <= end) {
-    ticks.push(d.getTime());
-    d.setHours(d.getHours() + 1);
-  }
-  return ticks;
-}
-
 /** The index of the last item at or before `at` (items sorted by `ts`), or -1. */
 export function indexAtOrBefore<T extends { ts: string }>(items: readonly T[], at: number): number {
   let lo = 0;
@@ -85,22 +46,6 @@ export function indexAtOrBefore<T extends { ts: string }>(items: readonly T[], a
     }
   }
   return found;
-}
-
-/** The five chart tokens, assigned to apps by a stable hash of the name. */
-const CHART_TOKENS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-] as const;
-
-export function appColor(app: string | null | undefined): string {
-  if (!app) return 'var(--muted-foreground)';
-  let hash = 0;
-  for (let i = 0; i < app.length; i++) hash = (hash * 31 + app.charCodeAt(i)) >>> 0;
-  return CHART_TOKENS[hash % CHART_TOKENS.length]!;
 }
 
 /** "12 seconds ago", "3 hours ago" in the given locale. */

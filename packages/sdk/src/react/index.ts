@@ -153,7 +153,6 @@ export {
   useCaptureDays,
   useCaptureDeviceGrant,
   useCaptureDevices,
-  useCaptureFrame,
   useCapturePolicy,
   useCaptureSearch,
   useCaptureTimeline,

@@ -206,7 +206,7 @@ Capture belongs to the account, not to a project. `kortix.capture.account(accoun
 | `deviceGrant(userCode)` · `approveDevice(userCode, accountId?)` · `denyDevice(userCode)` | The person's half of the device sign-in. |
 | `me.search(query)` · `me.timeline(query)` · `me.frame(frameId)` | Reads for the person the token acts for, in the token's account. A credential that acts for no person gets `403 capture_no_human`. |
 
-React (`@kortix/sdk/react`): `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureDevices` (polls every 10 s), `useRevokeCaptureDevice`, `useCapturePolicy`, `useSetCapturePolicy`, `useCaptureDays`, `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`, `useCaptureFrame`, `useCaptureChunkMedia`, `useCaptureDeviceGrant`, `useApproveCaptureDevice`, `useDenyCaptureDevice`. Each account hook takes the account id first. A `null` id sends no request.
+React (`@kortix/sdk/react`): `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureDevices` (polls every 10 s), `useRevokeCaptureDevice`, `useCapturePolicy`, `useSetCapturePolicy`, `useCaptureDays`, `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`, `useCaptureChunkMedia`, `useCaptureDeviceGrant`, `useApproveCaptureDevice`, `useDenyCaptureDevice`. Each account hook takes the account id first. A `null` id sends no request.
 
 ## The project handle
 

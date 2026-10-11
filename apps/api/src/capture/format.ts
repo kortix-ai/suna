@@ -98,11 +98,6 @@ export function parseDisplay(value: unknown): CaptureDisplay | null {
   };
 }
 
-/** The display a screen item recorded; null from a device that records one display. */
-export function chunkDisplay(manifest: { display?: unknown }): CaptureDisplay | null {
-  return parseDisplay(manifest.display);
-}
-
 /** Validate a manifest against its key and the device it was written for. */
 export function checkManifest(raw: unknown, deviceId: string): ManifestCheck {
   const parsed = ManifestSchema.safeParse(raw);

@@ -90,12 +90,12 @@ function sts(): STSClient {
 const stsIssuer: CaptureCredentialIssuer = {
   async issue({ prefix, deviceId }) {
     const bucket = captureStore.bucket;
-    const ttl = Math.min(Math.max(config.KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS, 900), 3600);
     const out = await sts().send(
       new AssumeRoleCommand({
         RoleArn: config.KORTIX_CAPTURE_STS_ROLE_ARN!,
         RoleSessionName: `capture-${deviceId.replace(/-/g, '').slice(0, 32)}`,
-        DurationSeconds: ttl,
+        // One hour, STS's longest for a role session without a raised maximum.
+        DurationSeconds: 3600,
         Policy: JSON.stringify(deviceSessionPolicy(bucket, prefix, deviceId)),
       }),
     );
