@@ -78,13 +78,23 @@ One policy applies to every device of the account:
 
 - layers: screen, actions, audio (audio is off until someone turns it on);
 - personal-data masking on the device;
+- mandatory exclusions: apps, websites, the categories password managers,
+  messaging and banking, and private browsing. Password managers and private
+  browsing are excluded by default. A device adds them to the member's own
+  exclusions, which stay on that computer; the member cannot remove the
+  account's;
 - an account-wide pause;
 - retention on the device and in Kortix (`remote_days`);
 - the notice the device shows the person it records.
 
 Kortix publishes the policy to `orgs/<account_id>/policy.json` in the capture
-store, where every device reads it. Kortix also enforces the layers when it
-indexes: a device never widens the policy.
+store, where every device reads it. A device cannot write a policy of its
+own. Kortix also enforces the layers when it indexes: a device never widens
+the policy.
+
+A device records every connected display, the active one (the display with
+the focused window) first. Each display is its own recorded item; the
+timeline names the display of every item and frame.
 
 ## Kortix Capture API
 
@@ -113,9 +123,9 @@ or, where the route takes it, `scope=account` for every member (audited as
 | `GET devices/<device_id>/assets/<name>` | a signed URL of one action screenshot (5 minutes) |
 | `GET policy` · `PUT policy` `{ "policy": { … } }` | the account policy; writing needs `capture.manage` |
 | `GET days?tz=Europe/Berlin&user_id=&device_id=` | the days with recordings, newest first, in a time zone |
-| `GET timeline?day=&from=&to=&user_id=&device_id=` | `{ runs, chunks }`: app and window runs, and the indexed items, in a window of at most 31 days |
-| `GET timeline/items?from=&to=&user_id=&device_id=` | `{ frames, actions, audio }`, oldest first, at most 500 of each |
-| `GET search?q=refund or invoice&kinds=screen,actions,audio&app=&from=&to=&limit=20&scope=account` | hits, newest first: `{ kind, id, ts, user_id, device_id, chunk_id, app, title, url, snippet }` (one screen hit per chunk and window; `limit` up to 100) |
+| `GET timeline?day=&from=&to=&user_id=&device_id=&display_id=` | `{ displays, focus, runs, chunks }`: the displays seen, which display held the focus when, app and window runs (of the focused display, or of `display_id`), and the indexed items, in a window of at most 31 days |
+| `GET timeline/items?from=&to=&user_id=&device_id=&display_id=` | `{ frames, actions, audio }`, oldest first, at most 500 of each; `display_id=all` for every display |
+| `GET search?q=refund or invoice&kinds=screen,actions,audio&app=&from=&to=&limit=20&scope=account` | hits, newest first: `{ kind, id, ts, user_id, device_id, chunk_id, display_id, display_name, app, title, url, snippet }` (one screen hit per chunk and window; `limit` up to 100) |
 | `GET frames/<frame_id>` | `{ frame, video: { url, expires_at, offset_ms }, screenshot }`: the full on-screen text, the 1 fps chunk video to seek, the nearest action screenshot (signed URLs, 5 minutes) |
 | `GET chunks/<chunk_id>/media` | signed URLs of an item's video or audio |
 
