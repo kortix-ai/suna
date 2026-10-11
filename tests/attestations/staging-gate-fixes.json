@@ -1,0 +1,19 @@
+{
+  "source_hash": "777a549f2387974e1e68bc0169b4bd549441917b95d7525879a198c075e6b21d",
+  "diff_files": [
+    "apps/web/src/features/workspace/customize/sections/connectors-view.tsx",
+    "apps/web/src/lib/navigation/nav-contract.test.ts",
+    "packages/sdk/src/react/connector-setup.test.ts",
+    "tests/e2e/specs/23-composio-connector.spec.ts"
+  ],
+  "diff_hash": "b5c8c8af6c83fcd811041e9adc51d77fa6c70b868b07184c3ee50eb1ed3774cd",
+  "head": "7a0a7a127e009c132537eaaeced0f99a1e9385f8",
+  "passed": true,
+  "lanes": {
+    "browser": "pass",
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T17:47:58.476Z"
+}
