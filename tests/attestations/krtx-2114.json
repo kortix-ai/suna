@@ -1,0 +1,22 @@
+{
+  "source_hash": "b49890d52014867607c7fb26353c17fe3c377d5b75b8870fc749094d0cc29a1e",
+  "diff_files": [
+    ".agents/skills/contributing/SKILL.md",
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-10T232803Z-run-the-trunk-suite-where-its-consumer-polls-it-removing-a-c.md",
+    ".agents/skills/testing/SKILL.md",
+    ".github/workflows/tests.yml",
+    "AGENTS.md",
+    "apps/mobile/BUILD_GUIDE.md",
+    "tests/unit/sandbox-workflow.test.ts"
+  ],
+  "diff_hash": "8b9857efbb326394ed9b2dbc5cedf394da3571de1b7febeebfddea0dd467844f",
+  "head": "2adb5fafac8b944b054bf5287905bc301168c504",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T00:29:53.745Z"
+}
