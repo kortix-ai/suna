@@ -29,12 +29,12 @@
     "packages/sdk/src/react/model-flatten.test.ts"
   ],
   "diff_hash": "104fad7de8a101ac0729bef6b2baf96a38eda709a9db819aa616bf1700d4c87a",
-  "head": "ecf26df6bd2a7c658ee84c76dfad0a31e732be3a",
-  "passed": false,
+  "head": "d52442ee543a68a7051088c31100a53470ed39e5",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-11T08:06:37.711Z"
+  "at": "2026-10-11T08:56:03.353Z"
 }
