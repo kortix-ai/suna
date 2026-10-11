@@ -2,12 +2,11 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import type { Agent, MessageWithParts } from '@kortix/sdk/react';
+import type { Agent, FlatModel, MessageWithParts } from '@kortix/sdk/react';
 import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import type { FlatModel } from '../model-flatten';
 import { AgentSelector } from './agent-selector';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 import { TokenProgress } from './token-progress';

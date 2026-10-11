@@ -1,0 +1,40 @@
+{
+  "source_hash": "f7b38f85f21826aedb54860102bde1760411fa8669aad9faf83463bab2f70e19",
+  "diff_files": [
+    "apps/web/src/components/projects/schedule/schedule-detail-sheet.mutations.test.tsx",
+    "apps/web/src/components/projects/schedule/then-fields.tsx",
+    "apps/web/src/features/session/composer/composer-toolbar.tsx",
+    "apps/web/src/features/session/composer/composer-underbar.tsx",
+    "apps/web/src/features/session/composer/composer.tsx",
+    "apps/web/src/features/session/composer/context-usage.ts",
+    "apps/web/src/features/session/composer/token-progress.test.ts",
+    "apps/web/src/features/session/composer/token-progress.tsx",
+    "apps/web/src/features/session/model-connection-gate.tsx",
+    "apps/web/src/features/session/model-consumers.test.tsx",
+    "apps/web/src/features/session/model-flatten.test.ts",
+    "apps/web/src/features/session/model-flatten.ts",
+    "apps/web/src/features/session/model-grouping.test.ts",
+    "apps/web/src/features/session/model-grouping.ts",
+    "apps/web/src/features/session/model-selector.tsx",
+    "apps/web/src/features/session/model-tags.ts",
+    "apps/web/src/features/session/session-chat-input.tsx",
+    "apps/web/src/features/session/use-model-connection-gate.tsx",
+    "apps/web/src/features/workspace/capabilities/agents/agent-detail-aside.tsx",
+    "apps/web/src/features/workspace/command-palette.tsx",
+    "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
+    "apps/web/src/features/workspace/customize/sections/llm-provider/model-rows.test.ts",
+    "apps/web/src/features/workspace/customize/sections/llm-provider/model-rows.ts",
+    "apps/web/src/features/workspace/customize/sections/view/agent-editor-basics-fields.tsx",
+    "apps/web/src/features/workspace/customize/sections/view/channels-view.tsx",
+    "packages/sdk/src/react/model-flatten.test.ts"
+  ],
+  "diff_hash": "104fad7de8a101ac0729bef6b2baf96a38eda709a9db819aa616bf1700d4c87a",
+  "head": "d52442ee543a68a7051088c31100a53470ed39e5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T08:56:03.353Z"
+}
