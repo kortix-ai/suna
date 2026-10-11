@@ -28,6 +28,7 @@ const CONNECTOR = crypto.randomUUID();
 const CONNECTION = crypto.randomUUID();
 
 const REAL_SCHEMA = { type: 'object', properties: { to: { type: 'string' } }, required: ['to'] };
+const OUTPUT_SCHEMA = { type: 'object', properties: { id: { type: 'string' } } };
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'connector-schema-omission-test' });
@@ -65,6 +66,7 @@ beforeAll(async () => {
     description: 'Send an email',
     risk: 'write',
     inputSchema: REAL_SCHEMA,
+    outputSchema: OUTPUT_SCHEMA,
   });
 });
 
@@ -124,5 +126,19 @@ describe('listCatalog keeps inputSchema unless a caller opts out, and slug filte
   test('an unknown slug returns an empty catalog, not everything', async () => {
     const list = await dbConnectorRouterDeps.listCatalog(principal, { slug: 'does-not-exist' });
     expect(list).toHaveLength(0);
+  });
+
+  test('outputSchema is absent by default, so the sandbox catalog payload does not grow', async () => {
+    const list = await dbConnectorRouterDeps.listCatalog(principal);
+    const action = list.find((c) => c.slug === 'mailer')?.actions[0];
+    expect(action && 'outputSchema' in action).toBe(false);
+  });
+
+  test('includeOutputSchemas: true adds the stored output schema', async () => {
+    const list = await dbConnectorRouterDeps.listCatalog(principal, {
+      slug: 'mailer',
+      includeOutputSchemas: true,
+    });
+    expect(list[0]?.actions[0]?.outputSchema).toEqual(OUTPUT_SCHEMA);
   });
 });

@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
@@ -341,20 +340,24 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       fullBrowser,
       fullPackageQuality,
     ];
+    // The SDK lane owns the gate's only wall-clock assertions (the ReDoS
+    // guards in packages/sdk, 100 ms and 1000 ms bounds). Inside the heavy
+    // start burst they measured 1272 ms against the 1000 ms bound on a
+    // 6-core box (PR #9266 saw the same at load 57), while the lane alone
+    // passes at ~370 ms and CI runs every lane in an isolated job. Give the
+    // SDK a stage of its own so no lane can steal its clock.
+    const fullStage = [fullFlows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
     return {
       mode: 'full',
       lanes,
       // Four REST workers and four browsers contend for the same local API and
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
-      stages: [
-        [fullFlows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit],
-        [fullBrowser],
-        [fullPackageQuality],
-      ],
+      stages: [fullStage, [sdk], [fullBrowser], [fullPackageQuality]],
     };
   }
-  const lanes = [flows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  const coreStage = [flows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  const lanes = [...coreStage, sdk];
   // `pnpm test` is the whole attested suite minus the browser journeys, so it
   // also runs package quality (the attestation's `packages` lane) after the
   // core stage. The SDK runs once, as its own lane.
@@ -365,7 +368,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   return {
     mode: 'core',
     lanes: [...lanes, corePackageQuality],
-    stages: [lanes, [corePackageQuality]],
+    stages: [coreStage, [sdk], [corePackageQuality]],
   };
 }
 
@@ -517,16 +520,6 @@ const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
 /** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
 const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
 
-/** The Kortix agent-box marker: the platform bakes its model catalog and the
- *  rest of the box state (/opt/kortix/{scaffold.git,managed-skills},
- *  /etc/pt-env) into every sandbox image, and nothing writes them elsewhere.
- *  The agent-server suites read that state, so the `packages` lane cannot
- *  attest a PR here; the scheduled Tests run on a clean CI runner is the
- *  backstop. */
-export function onKortixSandboxImage(catalog = '/opt/kortix/llm-catalog.json'): boolean {
-  return existsSync(catalog);
-}
-
 function dockerAvailable(): boolean {
   try {
     return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
@@ -545,10 +538,6 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       // No Docker (a factory sandbox): the DB lanes cannot run.
       for (const lane of plan.lanes)
         if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
-    }
-    if (onKortixSandboxImage()) {
-      for (const lane of plan.lanes)
-        if (lane.name === 'package-quality') skipped.set(lane.name, 'skipped-sandbox-image');
     }
     if (skipped.size > 0) {
       plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));

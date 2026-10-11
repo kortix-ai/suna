@@ -12,6 +12,9 @@ export {
   type ConnectorPopupOpener,
 } from './connector-setup';
 
+// One connector action's output as a cached query, with typed connector errors.
+export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-query';
+
 // The one call a host makes on every identity change (sign-out, a different
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
@@ -21,6 +24,9 @@ export { resetIdentityState } from './reset-identity-state';
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
 export { useRuntimeSupports } from './use-runtime-supports';
+// The session's one live connection (R5.3). `useSession` mounts it; a host that
+// runs its own copy of a poll (self-heal, sync) gates it on this.
+export { useSessionStreamConnected } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -132,7 +138,14 @@ export {
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
-export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export {
+  useProjectTriggers,
+  projectTriggersKey,
+  useProjectTriggerEventTypes,
+  useProjectTriggerEventApps,
+  projectTriggerEventAppsKey,
+  projectTriggerEventTypesKey,
+} from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
@@ -141,9 +154,13 @@ export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-
 export {
   useProjectApps,
   useAppDeployments,
+  useAppDeployment,
   useAppAccess,
+  useAppSnapshots,
   projectAppsKey,
   appDeploymentsKey,
+  appDeploymentKey,
+  appSnapshotsKey,
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by
@@ -201,9 +218,12 @@ export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
 export * from './use-sessions-needing-input';
+// The caller's notification inbox, preferences and session watch (KRTX-1742).
+export * from './use-notifications';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`
 // (`@kortix/sdk/server`): the viewer hook and the sign-in link.

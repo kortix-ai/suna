@@ -1,3 +1,5 @@
+import { splitPastedContent } from '@kortix/shared';
+
 import { parseFileReferences } from './message-parsing';
 
 /**
@@ -36,7 +38,9 @@ function messageAttachmentCount(parts: readonly PartLike[]): number {
   let count = 0;
   for (const part of parts) {
     if (part.type === 'file') count += 1;
-    else if (part.type === 'text' && part.text) count += parseFileReferences(part.text).files.length;
+    // A `<file>` inside a paste is paste text, not an attachment.
+    else if (part.type === 'text' && part.text)
+      count += parseFileReferences(splitPastedContent(part.text).text).files.length;
   }
   return count;
 }

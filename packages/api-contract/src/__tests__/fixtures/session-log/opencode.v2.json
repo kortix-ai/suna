@@ -1,0 +1,2546 @@
+{
+  "schema": "kortix.session/2",
+  "v": 1,
+  "session_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+  "title": "Live golden-shaped session",
+  "created_at": "2026-10-09T17:10:52.137Z",
+  "harness": {
+    "current": "opencode",
+    "history": [
+      {
+        "harness": "opencode",
+        "version": "1.18.23",
+        "from_seq": 1,
+        "at": "2026-10-09T17:10:52.137Z"
+      }
+    ]
+  },
+  "selection": {
+    "agent": "build",
+    "model": {
+      "provider": "mock",
+      "model": "mock-model-2",
+      "variant": "default"
+    }
+  },
+  "todos": [
+    {
+      "content": "Create hello.txt",
+      "status": "completed",
+      "priority": "high"
+    },
+    {
+      "content": "List files",
+      "status": "in_progress",
+      "priority": "medium"
+    }
+  ],
+  "pending": {
+    "questions": [],
+    "permissions": []
+  },
+  "threads": [
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+      "parent_thread_id": null,
+      "spawned_by": null,
+      "agent": "build",
+      "title": "Live golden-shaped session",
+      "created_at": "2026-10-09T17:10:52.137Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a56df60012SIcnvKm741O2J",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 1,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.150Z",
+          "completed_at": "2026-10-09T17:10:52.150Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Create hello.txt containing hi",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a56df8001CZ79RkOD950ZLk"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a56df60012SIcnvKm741O2J",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852150
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model"
+                  },
+                  "id": "msg_121a56df60012SIcnvKm741O2J"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a56e9a001Gf2qudzB4r62Jh",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 2,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a56df60012SIcnvKm741O2J",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.314Z",
+          "completed_at": "2026-10-09T17:10:52.802Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5705f001UmfwhpKFQu5Sgz"
+                  }
+                }
+              }
+            },
+            {
+              "type": "reasoning",
+              "text": "I will write the file and track it.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57061001aQ7hKv66WYQivt",
+                    "time": {
+                      "start": 1791565852769,
+                      "end": 1791565852770
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "I'll create the file.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5706200122nFpGnf5l4nTR",
+                    "part": {
+                      "time": {
+                        "start": 1791565852770,
+                        "end": 1791565852780
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181v8c1",
+              "name": "todowrite",
+              "kind": "todo",
+              "input": {
+                "todos": [
+                  {
+                    "content": "Create hello.txt",
+                    "status": "completed",
+                    "priority": "high"
+                  },
+                  {
+                    "content": "List files",
+                    "status": "in_progress",
+                    "priority": "medium"
+                  }
+                ]
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[\n  {\n    \"content\": \"Create hello.txt\",\n    \"status\": \"completed\",\n    \"priority\": \"high\"\n  },\n  {\n    \"content\": \"List files\",\n    \"status\": \"in_progress\",\n    \"priority\": \"medium\"\n  }\n]"
+                  }
+                ],
+                "is_error": false
+              },
+              "title": "1 todos",
+              "started_at": "2026-10-09T17:10:52.774Z",
+              "ended_at": "2026-10-09T17:10:52.777Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57063001IbO9GIre7T4S76",
+                    "state": {
+                      "title": "1 todos",
+                      "metadata": {
+                        "todos": [
+                          {
+                            "content": "Create hello.txt",
+                            "status": "completed",
+                            "priority": "high"
+                          },
+                          {
+                            "content": "List files",
+                            "status": "in_progress",
+                            "priority": "medium"
+                          }
+                        ],
+                        "truncated": false
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181v8c2",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "echo hi > hello.txt",
+                "description": "Create hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "title": "echo hi > hello.txt",
+              "started_at": "2026-10-09T17:10:52.792Z",
+              "ended_at": "2026-10-09T17:10:52.798Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57067001YvKTFn7i92HTTI",
+                    "state": {
+                      "title": "echo hi > hello.txt",
+                      "metadata": {
+                        "output": "(no output)",
+                        "exit": 0,
+                        "truncated": false
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57080001nbbuSq6sUn6mFC",
+                    "reason": "tool-calls",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a56e9a001Gf2qudzB4r62Jh",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a56df60012SIcnvKm741O2J",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852314,
+                    "completed": 1791565852802
+                  },
+                  "finish": "tool-calls",
+                  "id": "msg_121a56e9a001Gf2qudzB4r62Jh"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a57083001Y4fYUac2ZdmFvS",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 3,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a56df60012SIcnvKm741O2J",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.803Z",
+          "completed_at": "2026-10-09T17:10:52.815Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5708c001MIh9ZTqFJKvVbC"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "Done.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5708d001AODSGzc3K49NXd",
+                    "part": {
+                      "time": {
+                        "start": 1791565852813,
+                        "end": 1791565852814
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5708e0011y7ZlKhYo4YLJq",
+                    "reason": "stop",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a57083001Y4fYUac2ZdmFvS",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a56df60012SIcnvKm741O2J",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852803,
+                    "completed": 1791565852815
+                  },
+                  "finish": "stop",
+                  "id": "msg_121a57083001Y4fYUac2ZdmFvS"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a57093001aBg6vYZuCIaE9U",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 4,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.819Z",
+          "completed_at": "2026-10-09T17:10:52.819Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Read hello.txt and look at this image",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57093002cGr5jqlpHB1PzN"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "Called the Read tool with the following input: {\"filePath\":\"/work/proto/harness/opencode/runs/live/ws/dot.png\"}",
+              "synthetic": true,
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570930030OrpyzLRfSDPlA"
+                  }
+                }
+              }
+            },
+            {
+              "type": "attachment",
+              "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "mime": "image/png",
+              "name": "dot.png",
+              "bytes": 70,
+              "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57093004hrhcp5vXFrIUfz"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a57093001aBg6vYZuCIaE9U",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852819
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model"
+                  },
+                  "id": "msg_121a57093001aBg6vYZuCIaE9U"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a5709a001jNDHHYlirrgPjp",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 5,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a57093001aBg6vYZuCIaE9U",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.826Z",
+          "completed_at": "2026-10-09T17:10:52.843Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570a5001oegMXKSb2Rjvg2"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181vac5",
+              "name": "read",
+              "kind": "read",
+              "input": {
+                "filePath": "hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<path>/work/proto/harness/opencode/runs/live/ws/hello.txt</path>\n<type>file</type>\n<content>\n1: hi\n\n(End of file - total 1 lines)\n</content>"
+                  }
+                ],
+                "is_error": false
+              },
+              "title": "hello.txt",
+              "started_at": "2026-10-09T17:10:52.839Z",
+              "ended_at": "2026-10-09T17:10:52.841Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570a5002xtKKf2p1PHtRcv",
+                    "state": {
+                      "title": "hello.txt",
+                      "metadata": {
+                        "preview": "hi",
+                        "truncated": false,
+                        "loaded": [],
+                        "display": {
+                          "type": "file",
+                          "path": "/work/proto/harness/opencode/runs/live/ws/hello.txt",
+                          "text": "hi",
+                          "lineStart": 1,
+                          "lineEnd": 1,
+                          "totalLines": 1,
+                          "truncated": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570aa0018xENMVpoXn945S",
+                    "reason": "tool-calls",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a5709a001jNDHHYlirrgPjp",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a57093001aBg6vYZuCIaE9U",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852826,
+                    "completed": 1791565852843
+                  },
+                  "finish": "tool-calls",
+                  "id": "msg_121a5709a001jNDHHYlirrgPjp"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570ac001aILkitPKbeH00e",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 6,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a57093001aBg6vYZuCIaE9U",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.844Z",
+          "completed_at": "2026-10-09T17:10:52.850Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570b00010iVZPYwBoak7vs"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "It says hi. The image is a single pixel.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570b0002OdBwRR1e94WPed",
+                    "part": {
+                      "time": {
+                        "start": 1791565852848,
+                        "end": 1791565852849
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570b1001IVHbKkmy40sHez",
+                    "reason": "stop",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570ac001aILkitPKbeH00e",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a57093001aBg6vYZuCIaE9U",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852844,
+                    "completed": 1791565852850
+                  },
+                  "finish": "stop",
+                  "id": "msg_121a570ac001aILkitPKbeH00e"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570ba001blyg2lRWYQmBXa",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 7,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.858Z",
+          "completed_at": "2026-10-09T17:10:52.858Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Run the command `false` and report the result.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570ba002m9mcmD793pkmGY"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570ba001blyg2lRWYQmBXa",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852858
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model"
+                  },
+                  "id": "msg_121a570ba001blyg2lRWYQmBXa"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570bc0014yexxSudKL4IXx",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 8,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "error",
+          "in_context": false,
+          "hidden_reason": "failed_attempt",
+          "agent": "build",
+          "reply_to": "msg_121a570ba001blyg2lRWYQmBXa",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "error",
+          "error": {
+            "code": "UnknownError",
+            "message": "Expected 'function.name' to be a string."
+          },
+          "created_at": "2026-10-09T17:10:52.860Z",
+          "completed_at": "2026-10-09T17:10:52.865Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570c0001lZYh8FgyfAp0x7"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570bc0014yexxSudKL4IXx",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570ba001blyg2lRWYQmBXa",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache": {
+                      "read": 0,
+                      "write": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852860,
+                    "completed": 1791565852865
+                  },
+                  "error": {
+                    "name": "UnknownError",
+                    "data": {
+                      "message": "Expected 'function.name' to be a string."
+                    }
+                  },
+                  "id": "msg_121a570bc0014yexxSudKL4IXx"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570c40012rZe81Rd5bKRL7",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 9,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.868Z",
+          "completed_at": "2026-10-09T17:10:52.868Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Try again.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570c4002a5cuQisfHdzMOU"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570c40012rZe81Rd5bKRL7",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852868
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model"
+                  },
+                  "id": "msg_121a570c40012rZe81Rd5bKRL7"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570c6001Du1RVe4VRdFU5n",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 10,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a570c40012rZe81Rd5bKRL7",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.870Z",
+          "completed_at": "2026-10-09T17:10:52.884Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570c9001RcgcF00nuHT1rz"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181vbda",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "false",
+                "description": "Run false"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 1
+              },
+              "title": "false",
+              "started_at": "2026-10-09T17:10:52.875Z",
+              "ended_at": "2026-10-09T17:10:52.882Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570ca001csiyE4QzCoMCum",
+                    "state": {
+                      "title": "false",
+                      "metadata": {
+                        "output": "(no output)",
+                        "exit": 1,
+                        "truncated": false
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570d30014MKVTNFEMycuex",
+                    "reason": "tool-calls",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570c6001Du1RVe4VRdFU5n",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570c40012rZe81Rd5bKRL7",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852870,
+                    "completed": 1791565852884
+                  },
+                  "finish": "tool-calls",
+                  "id": "msg_121a570c6001Du1RVe4VRdFU5n"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570d4001V4cNCWZ0vOpA1B",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 11,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a570c40012rZe81Rd5bKRL7",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.884Z",
+          "completed_at": "2026-10-09T17:10:52.893Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570d80019d22P83GxGFSje"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181vbsc",
+              "name": "read",
+              "kind": "read",
+              "input": {
+                "filePath": "missing.txt"
+              },
+              "status": "error",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "File not found: /work/proto/harness/opencode/runs/live/ws/missing.txt"
+                  }
+                ],
+                "is_error": true,
+                "error": {
+                  "message": "File not found: /work/proto/harness/opencode/runs/live/ws/missing.txt"
+                }
+              },
+              "started_at": "2026-10-09T17:10:52.890Z",
+              "ended_at": "2026-10-09T17:10:52.891Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570d90016d74z0FzQIztlu",
+                    "state": {}
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570dc001iZFcg3WBQZgIOk",
+                    "reason": "tool-calls",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570d4001V4cNCWZ0vOpA1B",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570c40012rZe81Rd5bKRL7",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852884,
+                    "completed": 1791565852893
+                  },
+                  "finish": "tool-calls",
+                  "id": "msg_121a570d4001V4cNCWZ0vOpA1B"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570dd001VI8G4MBLN2A23u",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 12,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a570c40012rZe81Rd5bKRL7",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.893Z",
+          "completed_at": "2026-10-09T17:10:52.899Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570e1001n7s01IybkXTtvn"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "The command failed with exit code 1.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570e1002mgb87MAVc9OWpi",
+                    "part": {
+                      "time": {
+                        "start": 1791565852897,
+                        "end": 1791565852898
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570e2001Aeiw7N6UI7AkN5",
+                    "reason": "stop",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570dd001VI8G4MBLN2A23u",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570c40012rZe81Rd5bKRL7",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852893,
+                    "completed": 1791565852899
+                  },
+                  "finish": "stop",
+                  "id": "msg_121a570dd001VI8G4MBLN2A23u"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570ea001d6vZ8SqdViuRlP",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 13,
+          "role": "user",
+          "kind": "compaction",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.906Z",
+          "completed_at": "2026-10-09T17:10:52.912Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "compaction",
+              "summary": "SUMMARY-L: the user created hello.txt containing hi, checked an image, and ran false.",
+              "first_kept_message_id": "msg_121a57093001aBg6vYZuCIaE9U",
+              "trigger": "manual",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "part_id": "prt_121a570ea0024s0oxgIuTceIiI"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570ea001d6vZ8SqdViuRlP",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model"
+                  },
+                  "agent": "build",
+                  "time": {
+                    "created": 1791565852906
+                  },
+                  "id": "msg_121a570ea001d6vZ8SqdViuRlP"
+                },
+                "summary": {
+                  "info": {
+                    "role": "assistant",
+                    "parentID": "msg_121a570ea001d6vZ8SqdViuRlP",
+                    "mode": "compaction",
+                    "agent": "compaction",
+                    "summary": true,
+                    "path": {
+                      "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                      "root": "/work/proto/harness/opencode/runs/live/ws"
+                    },
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    },
+                    "modelID": "mock-model",
+                    "providerID": "mock",
+                    "time": {
+                      "created": 1791565852908,
+                      "completed": 1791565852912
+                    },
+                    "finish": "stop",
+                    "id": "msg_121a570ec001xT0owDhwqqluSR"
+                  },
+                  "text_part_id": "prt_121a570ef001bPDxDRQEX0dylL",
+                  "parts": 3
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570f40010WBcgJnrdgt3jn",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 14,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.916Z",
+          "completed_at": "2026-10-09T17:10:52.916Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Spawn a helper to list the files",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570f4002hozB0cH817cEtF"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570f40010WBcgJnrdgt3jn",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852916
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model-2"
+                  },
+                  "id": "msg_121a570f40010WBcgJnrdgt3jn"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570f6001upTgwPLvHpvYui",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 15,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a570f40010WBcgJnrdgt3jn",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.918Z",
+          "completed_at": "2026-10-09T17:10:52.964Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570f90013HDwWHjALAy57f"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181vcpg",
+              "name": "task",
+              "kind": "task",
+              "input": {
+                "description": "list files",
+                "prompt": "List the files in the workspace",
+                "subagent_type": "general"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<task id=\"ses_ede5a8f04ffehgjPY0X7feqgTN\" state=\"completed\">\n<task_result>\nFound hello.txt\n</task_result>\n</task>"
+                  }
+                ],
+                "is_error": false
+              },
+              "title": "list files",
+              "started_at": "2026-10-09T17:10:52.924Z",
+              "ended_at": "2026-10-09T17:10:52.962Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570fa001BlN5N2ZV5TMl9v",
+                    "state": {
+                      "title": "list files",
+                      "metadata": {
+                        "parentSessionId": "ses_ede5a9216ffe9YJll63DDa8zSS",
+                        "sessionId": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+                        "model": {
+                          "modelID": "mock-model-2",
+                          "providerID": "mock"
+                        },
+                        "truncated": false
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "subtask",
+              "thread_id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+              "agent": "general",
+              "description": "list files",
+              "call_id": "call_mv181vcpg"
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57123001AvJE1VB9W7xDAg",
+                    "reason": "tool-calls",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570f6001upTgwPLvHpvYui",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570f40010WBcgJnrdgt3jn",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model-2",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852918,
+                    "completed": 1791565852964
+                  },
+                  "finish": "tool-calls",
+                  "id": "msg_121a570f6001upTgwPLvHpvYui"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a57124001PKDisDfS7LvdGL",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 16,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a570f40010WBcgJnrdgt3jn",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.964Z",
+          "completed_at": "2026-10-09T17:10:52.970Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57128001AS7o18fYsI2I49"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "The helper found hello.txt.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57129001iC0NQLILHN12xq",
+                    "part": {
+                      "time": {
+                        "start": 1791565852969,
+                        "end": 1791565852969
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a571290024fx2XG0ipBKj0r",
+                    "reason": "stop",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a57124001PKDisDfS7LvdGL",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570f40010WBcgJnrdgt3jn",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model-2",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852964,
+                    "completed": 1791565852970
+                  },
+                  "finish": "stop",
+                  "id": "msg_121a57124001PKDisDfS7LvdGL"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a5712d001FCmUbzFJIjHLDc",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 17,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.973Z",
+          "completed_at": "2026-10-09T17:10:52.973Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "What is in hello.txt? Answer in one word.",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5712d00298BAtTQpvLqqnF"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a5712d001FCmUbzFJIjHLDc",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852973
+                  },
+                  "agent": "build",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model-2"
+                  },
+                  "id": "msg_121a5712d001FCmUbzFJIjHLDc"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a5712f001I7hmGost7gWkwE",
+          "thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "seq": 18,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "build",
+          "reply_to": "msg_121a5712d001FCmUbzFJIjHLDc",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.975Z",
+          "completed_at": "2026-10-09T17:10:52.985Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57137001KysROOkO9yINFD"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "hi",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57137002aGm43df61w0coq",
+                    "part": {
+                      "time": {
+                        "start": 1791565852983,
+                        "end": 1791565852984
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57138001O2a1f7Sfl7Y7GX",
+                    "reason": "stop",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a5712f001I7hmGost7gWkwE",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a5712d001FCmUbzFJIjHLDc",
+                  "role": "assistant",
+                  "mode": "build",
+                  "agent": "build",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model-2",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852975,
+                    "completed": 1791565852985
+                  },
+                  "finish": "stop",
+                  "id": "msg_121a5712f001I7hmGost7gWkwE"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "ext": {
+        "opencode": {
+          "version": "1.18.23",
+          "native_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+          "data": {
+            "info": {
+              "id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+              "slug": "crisp-river",
+              "projectID": "f253e81e8871e13ad9695498ddbd5471c880fab8",
+              "directory": "/work/proto/harness/opencode/runs/live/ws",
+              "path": "",
+              "title": "Live golden-shaped session",
+              "agent": "build",
+              "model": {
+                "id": "mock-model-2",
+                "providerID": "mock",
+                "variant": "default"
+              },
+              "version": "1.18.23",
+              "summary": {
+                "additions": 0,
+                "deletions": 0,
+                "files": 0
+              },
+              "cost": 0,
+              "tokens": {
+                "input": 1100,
+                "output": 110,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              },
+              "time": {
+                "created": 1791565852137,
+                "updated": 1791565852986
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+      "parent_thread_id": "ses_ede5a9216ffe9YJll63DDa8zSS",
+      "spawned_by": {
+        "message_id": "msg_121a570f6001upTgwPLvHpvYui",
+        "call_id": "call_mv181vcpg"
+      },
+      "agent": "general",
+      "title": "list files (@general subagent)",
+      "created_at": "2026-10-09T17:10:52.923Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a570fd001Z7Faoaq6wgcENl",
+          "thread_id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+          "seq": 1,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "origin": "subagent",
+          "agent": "general",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.925Z",
+          "completed_at": "2026-10-09T17:10:52.925Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "List the files in the workspace",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a570fe001qzwcPXxZaoDXlU"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a570fd001Z7Faoaq6wgcENl",
+              "data": {
+                "info": {
+                  "role": "user",
+                  "time": {
+                    "created": 1791565852925
+                  },
+                  "agent": "general",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model-2"
+                  },
+                  "id": "msg_121a570fd001Z7Faoaq6wgcENl"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a57105001VhHMjjH9W4V03j",
+          "thread_id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+          "seq": 2,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "general",
+          "reply_to": "msg_121a570fd001Z7Faoaq6wgcENl",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.933Z",
+          "completed_at": "2026-10-09T17:10:52.950Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5710d0019a1GdplzA04QgS"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv181vd8i",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "ls",
+                "description": "List files"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "README.md\ndot.png\nhello.txt\n"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "title": "ls",
+              "started_at": "2026-10-09T17:10:52.948Z",
+              "ended_at": "2026-10-09T17:10:52.949Z",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5710d002BsQLicxNEiGRaR",
+                    "state": {
+                      "title": "ls",
+                      "metadata": {
+                        "output": "README.md\ndot.png\nhello.txt\n",
+                        "exit": 0,
+                        "truncated": false
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57115001cHvgtrycQggBWU",
+                    "reason": "tool-calls",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a57105001VhHMjjH9W4V03j",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570fd001Z7Faoaq6wgcENl",
+                  "role": "assistant",
+                  "mode": "general",
+                  "agent": "general",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model-2",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852933,
+                    "completed": 1791565852950
+                  },
+                  "finish": "tool-calls",
+                  "id": "msg_121a57105001VhHMjjH9W4V03j"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_121a57117001HP6ZH2pj7ldSq6",
+          "thread_id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+          "seq": 3,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "agent": "general",
+          "reply_to": "msg_121a570fd001Z7Faoaq6wgcENl",
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T17:10:52.951Z",
+          "completed_at": "2026-10-09T17:10:52.961Z",
+          "producer": {
+            "harness": "opencode",
+            "harness_version": "1.18.23",
+            "adapter_version": "0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "step",
+              "phase": "start",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5711e0012TrlULr03uiTCa"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "Found hello.txt",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a5711f001XiW22J7u7ikoNf",
+                    "part": {
+                      "time": {
+                        "start": 1791565852959,
+                        "end": 1791565852959
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "step",
+              "phase": "finish",
+              "ext": {
+                "opencode": {
+                  "version": "1.18.23",
+                  "data": {
+                    "id": "prt_121a57120001p3fM7nAPnJhhvm",
+                    "reason": "stop",
+                    "cost": 0,
+                    "tokens": {
+                      "total": 110,
+                      "input": 100,
+                      "output": 10,
+                      "reasoning": 0,
+                      "cache": {
+                        "write": 0,
+                        "read": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "opencode": {
+              "version": "1.18.23",
+              "native_id": "msg_121a57117001HP6ZH2pj7ldSq6",
+              "data": {
+                "info": {
+                  "parentID": "msg_121a570fd001Z7Faoaq6wgcENl",
+                  "role": "assistant",
+                  "mode": "general",
+                  "agent": "general",
+                  "path": {
+                    "cwd": "/work/proto/harness/opencode/runs/live/ws",
+                    "root": "/work/proto/harness/opencode/runs/live/ws"
+                  },
+                  "cost": 0,
+                  "tokens": {
+                    "total": 110,
+                    "input": 100,
+                    "output": 10,
+                    "reasoning": 0,
+                    "cache": {
+                      "write": 0,
+                      "read": 0
+                    }
+                  },
+                  "modelID": "mock-model-2",
+                  "providerID": "mock",
+                  "time": {
+                    "created": 1791565852951,
+                    "completed": 1791565852961
+                  },
+                  "finish": "stop",
+                  "id": "msg_121a57117001HP6ZH2pj7ldSq6"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "ext": {
+        "opencode": {
+          "version": "1.18.23",
+          "native_id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+          "data": {
+            "info": {
+              "id": "ses_ede5a8f04ffehgjPY0X7feqgTN",
+              "slug": "brave-sailor",
+              "projectID": "f253e81e8871e13ad9695498ddbd5471c880fab8",
+              "directory": "/work/proto/harness/opencode/runs/live/ws",
+              "path": "",
+              "parentID": "ses_ede5a9216ffe9YJll63DDa8zSS",
+              "title": "list files (@general subagent)",
+              "agent": "general",
+              "model": {
+                "id": "mock-model-2",
+                "providerID": "mock",
+                "variant": "default"
+              },
+              "version": "1.18.23",
+              "summary": {
+                "additions": 0,
+                "deletions": 0,
+                "files": 0
+              },
+              "cost": 0,
+              "tokens": {
+                "input": 200,
+                "output": 20,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              },
+              "permission": [
+                {
+                  "permission": "task",
+                  "pattern": "*",
+                  "action": "deny"
+                }
+              ],
+              "time": {
+                "created": 1791565852923,
+                "updated": 1791565852965
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "ext": {
+    "opencode": {
+      "version": "1.18.23",
+      "data": {}
+    }
+  }
+}

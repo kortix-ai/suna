@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckIcon } from '@phosphor-icons/react';
+import { CheckIcon, MinusIcon } from '@phosphor-icons/react';
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
 import * as React from 'react';
 
@@ -17,6 +17,8 @@ const checkboxControlClassName = cn(
   'disabled:opacity-50',
   'data-[state=checked]:border-foreground data-[state=checked]:bg-kortix-blue data-[state=checked]:border-kortix-blue data-[state=checked]:border',
   'data-[state=checked]:text-background data-[state=checked]:[&_svg]:size-3',
+  // Indeterminate (some of a group): the checked fill, with a dash for the mark.
+  'data-[state=indeterminate]:bg-kortix-blue data-[state=indeterminate]:border-kortix-blue data-[state=indeterminate]:text-background data-[state=indeterminate]:[&_svg]:size-3',
   'aria-invalid:border-destructive',
 );
 
@@ -35,7 +37,11 @@ function Checkbox({ className, label, id, ...props }: CheckboxProps) {
         data-slot="checkbox-indicator"
         className="flex items-center justify-center text-current"
       >
-        <CheckIcon className="size-2.5" />
+        {props.checked === 'indeterminate' ? (
+          <MinusIcon weight="bold" className="size-2.5" />
+        ) : (
+          <CheckIcon className="size-2.5" />
+        )}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

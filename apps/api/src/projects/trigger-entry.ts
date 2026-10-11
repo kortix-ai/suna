@@ -1,5 +1,6 @@
 import { BoundedMap } from '../shared/bounded-map';
 import {
+  EVENT_FORBIDDEN_KEYS,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
@@ -14,6 +15,7 @@ import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule
 import {
   GIT_TRIGGER_SESSION_MODES,
   type GitMonitorFields,
+  type GitTriggerEventFields,
   type GitMonitorMode,
   type GitTriggerParseError,
   type GitTriggerSessionMode,
@@ -80,6 +82,58 @@ export function parseMonitorFields(
     }
   }
   return { run, monitorMode, intervalSeconds, expectEventWithinSeconds };
+}
+
+/**
+ * Parse + validate the `type: event` fields off a manifest entry (`config` key)
+ * or a CRUD body (`event_config` key). Mirrors `@kortix/manifest-schema`'s
+ * `validateEventTrigger`. Cron/webhook/monitor wiring is a hard error. The
+ * provider validates `config` against the event's JSON schema at subscribe time.
+ */
+export function parseEventFields(
+  row: Record<string, unknown>,
+  configKey: 'config' | 'event_config',
+): GitTriggerEventFields | { error: string } {
+  const connector = typeof row.connector === 'string' ? row.connector.trim() : '';
+  if (!connector) return { error: 'event triggers must declare a `connector`' };
+  const type = typeof row.event === 'string' ? row.event.trim() : '';
+  if (!type) return { error: 'event triggers must declare an `event`' };
+  const configRaw = row[configKey];
+  if (configRaw !== undefined && configRaw !== null && !isPlainObject(configRaw)) {
+    return { error: `${configKey} must be an object` };
+  }
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return { error: `${key} is not valid on an event trigger — events are driven by the connected app` };
+    }
+  }
+  const accountRaw = row[configKey === 'config' ? 'account' : 'event_account'];
+  if (accountRaw !== undefined && accountRaw !== null && (typeof accountRaw !== 'string' || !accountRaw.trim())) {
+    return { error: 'account must be the label of a shared account on the connector' };
+  }
+  const sourceRaw = row[configKey === 'config' ? 'source' : 'event_source'];
+  if (sourceRaw !== undefined && sourceRaw !== null && (typeof sourceRaw !== 'string' || !sourceRaw.trim())) {
+    return { error: 'source must be the event source adapter id, such as "composio"' };
+  }
+  // Omitted (not null) when unset, so an event's schedule revision stays what it was before `account` and `source` existed.
+  const account = typeof accountRaw === 'string' ? accountRaw.trim() : '';
+  const source = typeof sourceRaw === 'string' ? sourceRaw.trim() : '';
+  return { connector, ...(account ? { account } : {}), ...(source ? { source } : {}), type, config: (configRaw as Record<string, unknown> | undefined | null) ?? {} };
+}
+
+/** connector/account/source/event/config belong to event triggers only; returns the error text or null. */
+export function eventOnlyKeyError(
+  row: Record<string, unknown>,
+  configKey: 'config' | 'event_config',
+  type: string,
+): string | null {
+  const prefixed = configKey !== 'config';
+  for (const key of ['connector', prefixed ? 'event_account' : 'account', prefixed ? 'event_source' : 'source', 'event', configKey]) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return `${key} is only valid on an event trigger (type is "${type}")`;
+    }
+  }
+  return null;
 }
 
 function parseMonitorDuration(
@@ -284,6 +338,12 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     if (spec.expectEventWithinSeconds !== null) {
       entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
     }
+  } else if (spec.type === 'event' && spec.event) {
+    entry.connector = spec.event.connector;
+    if (spec.event.account) entry.account = spec.event.account;
+    if (spec.event.source) entry.source = spec.event.source;
+    entry.event = spec.event.type;
+    if (Object.keys(spec.event.config).length > 0) entry.config = spec.event.config;
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
@@ -323,10 +383,22 @@ function parseTriggerEntry(
   }
 
   const typeRaw = typeof row.type === 'string' ? row.type.trim() : '';
-  if (typeRaw !== 'cron' && typeRaw !== 'webhook' && typeRaw !== 'monitor') {
-    return err(slug, `type must be "cron", "webhook", or "monitor" (got "${typeRaw || 'unset'}")`);
+  if (
+    typeRaw !== 'cron' &&
+    typeRaw !== 'webhook' &&
+    typeRaw !== 'monitor' &&
+    typeRaw !== 'event'
+  ) {
+    return err(
+      slug,
+      `type must be "cron", "webhook", "monitor", or "event" (got "${typeRaw || 'unset'}")`,
+    );
   }
   const type = typeRaw as GitTriggerType;
+  if (type !== 'event') {
+    const bad = eventOnlyKeyError(row, 'config', type);
+    if (bad) return err(slug, bad);
+  }
 
   const prompt =
     typeof row.prompt === 'string'
@@ -440,6 +512,27 @@ function parseTriggerEntry(
     sessionKey,
     filter,
   };
+
+  if (type === 'event') {
+    const event = parseEventFields(row, 'config');
+    if ('error' in event) return err(slug, event.error);
+    return {
+      ok: true,
+      spec: {
+        ...base,
+        type: 'event',
+        cron: null,
+        runAt: null,
+        timezone: 'UTC',
+        secretEnv: null,
+        run: null,
+        monitorMode: null,
+        intervalSeconds: null,
+        expectEventWithinSeconds: null,
+        event,
+      },
+    };
+  }
 
   if (type === 'monitor') {
     const monitor = parseMonitorFields(row);

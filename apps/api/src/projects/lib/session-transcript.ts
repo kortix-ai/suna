@@ -15,15 +15,12 @@ import {
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import type { ProjectSessionRow } from './serializers';
 import {
-  type CompactMessage,
-  type CompactToolCall,
   compactMessage,
   normalizeMessageList,
 } from './session-transcript-compact';
 import {
   boundMirrorWindow,
   MIRROR_WINDOW_MAX_CHARS,
-  type MirrorMessage,
   type MirrorSnapshot,
   readSessionTranscriptMirror,
   UnknownTranscriptCursorError,
@@ -54,30 +51,6 @@ const TRANSCRIPT_ENDPOINT_BUDGET_MS = 8_000;
  */
 const DEGRADE_LOG_INTERVAL_MS = 60_000;
 let lastDegradeLogAt = 0;
-
-export type { CompactMessage, CompactToolCall };
-
-/**
- * Which source answered.
- *
- * A NEGATIVE IS A CLAIM, so this is never inferred from an empty array. `live`
- * is the sandbox's own runtime endpoint; `mirror` is the durable server-side
- * copy written at turn end (`session-transcript-mirror.ts`); `none` is the
- * honest "nothing could answer", and it is the only value that ever accompanies
- * `available: false`. Mirror and live are NEVER merged — the field says which
- * one you got.
- *
- * The wire shapes live in `@kortix/api-contract`: `SessionTranscript` is the
- * compact digest, `SessionTranscriptSyncEnvelope` the sync-store window (the
- * runtime's message envelopes verbatim, every part 1:1 except attachment bytes,
- * see `sanitizeParts`; mirror-only, at most `limit` messages and
- * MIRROR_WINDOW_MAX_CHARS of JSON, newest first to be kept).
- */
-export type {
-  SessionTranscriptSource,
-  SessionTranscript as SessionTranscriptDigest,
-  SessionTranscriptSyncEnvelope,
-} from '@kortix/api-contract';
 
 /** Seam for tests: the mirror read is the one collaborator whose absence vs
  *  presence changes which branch the digest takes, and a DB is not needed to

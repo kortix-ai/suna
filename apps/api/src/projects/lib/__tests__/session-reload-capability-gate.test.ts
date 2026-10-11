@@ -13,7 +13,6 @@ import { join, relative } from 'node:path';
 import {
   convergeToReloadResult,
   reloadDetail,
-  reloadNeedsAttention,
   reloadSessionConfig,
   type SessionReloadDeps,
   type SessionReloadResult,
@@ -57,9 +56,6 @@ function convergeBody(outcome: string, overrides: Record<string, unknown> = {}) 
 
 function fakeDaemon(opts: {
   capable: boolean;
-  /** The project's `config_releases` flag. This double defaults to an
-   *  opted-in project; the platform default is OFF. */
-  releasesEnabled?: boolean;
   turnInFlight?: boolean;
   converge?: unknown;
   convergeStatus?: number[];
@@ -109,7 +105,6 @@ function fakeDaemon(opts: {
     recordReport: async (input) => {
       recorded.push(input.report);
     },
-    configReleasesEnabled: async () => opts.releasesEnabled !== false,
     repairOrphanedTurn: async () => {},
   };
   return { deps, requests, pushes, recorded };
@@ -344,8 +339,8 @@ const releaseState = (overrides: Partial<NonNullable<SessionReloadResult['releas
   ...overrides,
 });
 
-describe('reloadDetail and reloadNeedsAttention with a release', () => {
-  test('a fallback leads the sentence and needs attention', () => {
+describe('reloadDetail with a release', () => {
+  test('a fallback leads the sentence', () => {
     const result = reloadResult({
       applied: false,
       agent_files: 'unknown',
@@ -355,7 +350,6 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadDetail(result)).toBe(
       'The new config failed to load: replacement did not serve GET /agent within 90 s. An earlier config still runs this session.',
     );
-    expect(reloadNeedsAttention(result)).toBe(true);
   });
 
   test('a fallback names what runs: the platform default config, or the workspace config', () => {
@@ -377,9 +371,8 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadDetail(earlier)).toBe('The new config failed to load: boom. An earlier config still runs this session.');
   });
 
-  test('a fallback needs attention even on an otherwise applied result', () => {
+  test('a fallback leads the sentence even on an otherwise applied result', () => {
     const result = reloadResult({ release: releaseState({ fallback_reason: 'disk full.' }) });
-    expect(reloadNeedsAttention(result)).toBe(true);
     expect(reloadDetail(result).startsWith('The new config failed to load: disk full. ')).toBe(true);
   });
 
@@ -390,27 +383,21 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadDetail(result)).not.toContain('own config files');
   });
 
-  test('an applied release without a fallback is not a warning', () => {
+  test('an applied release without a fallback reports a plain reload', () => {
     const result = reloadResult({ release: releaseState() });
-    expect(reloadNeedsAttention(result)).toBe(false);
     expect(reloadDetail(result)).toBe('Reloaded. The next prompt runs the new config.');
   });
 });
 
 describe('compiled-governance push callers', () => {
-  test('only the two legacy paths reference pushSessionAgentConfigToSandbox', async () => {
+  test('only the legacy reload path references pushSessionAgentConfigToSandbox', async () => {
     // Any other path would push KORTIX_COMPILED_AGENT_CONFIG to a daemon whose
     // release already carries governance. The push also checks the capability
     // itself (agent-config-push.test.ts). Comment lines do not count.
     //
-    // Two callers are legitimate, and both are behind a "config releases do
-    // not apply here" branch:
-    //   • session-reload.ts        — the daemon has no `config.release.v1`,
-    //                                or `config_releases` is off.
-    //   • session-config-convergence.ts — `config_releases` is off and the
-    //                                session was RESTARTED, which pushed the
-    //                                compiled governance before config
-    //                                releases existed (spec, "Feature flag").
+    // One caller is legitimate: session-reload.ts, behind its "the daemon has
+    // no `config.release.v1`" branch. The restart fallback in
+    // session-config-convergence.ts went with the `config_releases` flag.
     const src = join(import.meta.dir, '..', '..', '..');
     const users: string[] = [];
     for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: src })) {
@@ -427,63 +414,37 @@ describe('compiled-governance push callers', () => {
         .join('\n');
       if (code.includes('pushSessionAgentConfigToSandbox')) users.push(relative(src, join(src, file)));
     }
-    expect(users.sort()).toEqual([
-      'projects/lib/session-config-convergence.ts',
-      'projects/lib/session-reload.ts',
-    ]);
+    expect(users.sort()).toEqual(['projects/lib/session-reload.ts']);
   });
 });
 
-// ── The `config_releases` flag (spec, "Feature flag") ───────────────────────
+// ── The pre-release path (a daemon without `config.release.v1`) ───────────
 //
-// CHOKEPOINT: `reloadSessionConfig` reads the flag once and ignores the
-// daemon's own capability when it is off. A capable daemon then receives
-// exactly what an old daemon receives — the plain refresh plus the governance
-// push — and the result carries no `release` block, so the CLI and the web
-// render the pre-release, etag-based text.
-describe('reloadSessionConfig with config_releases off', () => {
-  test('a CAPABLE daemon takes the legacy path: no converge, no release block', async () => {
-    const daemon = fakeDaemon({ capable: true, releasesEnabled: false });
-    const result = await reloadSessionConfig(INPUT, daemon.deps);
-
-    expect(daemon.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
-      'GET /kortix/health?turn=1',
-      'POST /kortix/refresh?restart=0&base_config=1',
-    ]);
-    expect(daemon.requests.map((r) => r.path)).not.toContain('/kortix/config/converge');
-    expect(daemon.pushes.length).toBe(1);
-    expect(result.config_path).toBe('legacy');
-    expect('release' in result).toBe(false);
-    expect('release_outcome' in result).toBe(false);
-  });
-
-  test('nothing is written to the project quarantine ledger', async () => {
-    const daemon = fakeDaemon({ capable: true, releasesEnabled: false });
-    await reloadSessionConfig(INPUT, daemon.deps);
-    expect(daemon.recorded).toEqual([]);
-  });
-
+// Config releases graduated: no project can switch them off, so only a daemon
+// without `config.release.v1` reaches this path. It receives the plain refresh
+// plus the governance push, and the result carries no `release` block, so the
+// CLI and the web render the pre-release, etag-based text.
+describe('reloadSessionConfig on a daemon without config releases', () => {
   test('a mid-turn refusal reports no release state either', async () => {
-    const daemon = fakeDaemon({ capable: true, releasesEnabled: false, turnInFlight: true });
+    const daemon = fakeDaemon({ capable: false, turnInFlight: true });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
     expect(result.reason).toBe('session is mid-turn');
     expect(result.config_path).toBe('legacy');
     expect('release' in result).toBe(false);
   });
 
-  test('no request carries config_dir=1 with the flag off either', async () => {
-    const daemon = fakeDaemon({ capable: true, releasesEnabled: false });
+  test('no request carries config_dir=1', async () => {
+    const daemon = fakeDaemon({ capable: false });
     await reloadSessionConfig(INPUT, daemon.deps);
     expect(daemon.requests.filter((r) => r.path.includes('config_dir'))).toEqual([]);
   });
 
-  // Prod 2026-09-30: with the flag off OpenCode reads the agent files in the
-  // session's checkout, and a fix merged to base never reached a live session
-  // through two reloads. The refresh now brings the base config dir in.
+  // Prod 2026-09-30: here OpenCode reads the agent files in the session's
+  // checkout, and a fix merged to base never reached a live session through
+  // two reloads. The refresh now brings the base config dir in.
   test('the base agent files are brought forward, and the daemon reload counts as applied', async () => {
     const daemon = fakeDaemon({
-      capable: true,
-      releasesEnabled: false,
+      capable: false,
       refreshBody: { config_dir: { synced: true, reload: 'disposed', turn_ended: false } },
       push: { applied: false, reason: 'no compiled agent config' },
     });
@@ -501,11 +462,10 @@ describe('reloadSessionConfig with config_releases off', () => {
   });
 
   // `daemonHasConfigReleases` is true only while a release is SERVED, so on a
-  // project without releases the push runs too and its reload is reported.
+  // box without a release the push runs too and its reload is reported.
   test('with the push also applying, the push reload is what is reported', async () => {
     const daemon = fakeDaemon({
-      capable: true,
-      releasesEnabled: false,
+      capable: false,
       refreshBody: { config_dir: { synced: true, reload: 'disposed', turn_ended: false } },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
@@ -516,21 +476,18 @@ describe('reloadSessionConfig with config_releases off', () => {
 
   test('the session\'s own agent edits are kept and reported', async () => {
     const daemon = fakeDaemon({
-      capable: true,
-      releasesEnabled: false,
+      capable: false,
       refreshBody: { config_dir: { synced: false, skipped: 'local changes', kept: ['.kortix/opencode/agents/kortix.md'] } },
       push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
     expect(result).toMatchObject({ applied: false, agent_files: 'kept-yours', opencode_reload: null });
-    expect(reloadNeedsAttention(result)).toBe(true);
   });
 
   test('agent files already on base read "already current", not the governance skip', async () => {
     const daemon = fakeDaemon({
-      capable: true,
-      releasesEnabled: false,
+      capable: false,
       refreshBody: { config_dir: { synced: false, skipped: 'already matches base' } },
       push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
     });
@@ -540,7 +497,7 @@ describe('reloadSessionConfig with config_releases off', () => {
   });
 
   test('refresh_repo false never asks for the base config', async () => {
-    const daemon = fakeDaemon({ capable: true, releasesEnabled: false });
+    const daemon = fakeDaemon({ capable: false });
     const result = await reloadSessionConfig({ ...INPUT, refreshRepo: false }, daemon.deps);
 
     expect(daemon.requests.map((r) => r.path)).toContain('/kortix/refresh?restart=0&repo=0');
@@ -548,12 +505,4 @@ describe('reloadSessionConfig with config_releases off', () => {
     expect(result.agent_files).toBe('not-requested');
   });
 
-  test('turning the flag back ON converges the same session again', async () => {
-    const off = fakeDaemon({ capable: true, releasesEnabled: false });
-    await reloadSessionConfig(INPUT, off.deps);
-    const on = fakeDaemon({ capable: true, releasesEnabled: true, etagAfter: 'ffff' });
-    const result = await reloadSessionConfig(INPUT, on.deps);
-    expect(on.requests.map((r) => r.path)).toContain('/kortix/config/converge');
-    expect(result).toMatchObject({ applied: true, config_path: 'release', release_outcome: 'applied' });
-  });
 });

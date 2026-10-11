@@ -963,8 +963,9 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
     'agentmail_email',
     'apps',
-    'config_releases',
     'connectors_api_discover',
+    'drives',
+    'ephemeral_sandboxes',
     'llm_gateway',
     'marketplace',
     'meta_agent',
@@ -974,7 +975,9 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'pi_harness',
     'us_region',
+    'event_triggers',
     'warm_sessions',
+    'notification_center',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);
@@ -1049,6 +1052,22 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
   };
   const canonical: FeatureFlagView = legacy;
   expect(canonical.key).toBe('apps');
+});
+
+test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
+  const managed: FeatureFlagView = {
+    key: 'apps',
+    name: 'Apps',
+    description: 'x',
+    stability: 'experimental',
+    available: true,
+    enabled: true,
+    overridden: true,
+    operator_only: true,
+  };
+  const legacy: FeatureFlagView = { ...managed, key: 'monitors', operator_only: undefined };
+  expect(managed.operator_only).toBe(true);
+  expect(legacy.operator_only).toBeUndefined();
 });
 
 async function captureFeatureCall(

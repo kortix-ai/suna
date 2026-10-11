@@ -1,0 +1,30 @@
+{
+  "source_hash": "fd520cf217c688c6cc7affd2ae1757d37a302d409b35589ed15043613ae9a73e",
+  "diff_files": [
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/e2e/specs/20-workspace-switching.spec.ts",
+    "tests/e2e/specs/25-failed-session-no-redirect-loop.spec.ts",
+    "tests/e2e/specs/27-desktop-parity.spec.ts",
+    "tests/e2e/specs/30-session-transcript-history.spec.ts",
+    "tests/e2e/specs/free-tier-pricing-onboarding.spec.ts",
+    "tests/src/core/flow.ts",
+    "tests/src/fixtures/supabase.ts",
+    "tests/src/flows/agent-principals.flow.ts",
+    "tests/src/flows/apps.flow.ts",
+    "tests/src/flows/config-releases.flow.ts",
+    "tests/src/flows/iam.flow.ts",
+    "tests/src/flows/llm-gateway.flow.ts",
+    "tests/src/flows/runtime-assets.flow.ts",
+    "tests/src/flows/session-attachments.flow.ts",
+    "tests/src/flows/sessions.flow.ts"
+  ],
+  "diff_hash": "16a7eb95df1fb60f0e27d8f37405139a642b129a76a1f7feb01c2dca18d312e7",
+  "head": "a95664765956c5fcc8e83b76d046776504d06e72",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T00:26:59.448Z"
+}

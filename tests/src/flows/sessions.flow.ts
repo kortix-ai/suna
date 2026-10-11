@@ -9,13 +9,14 @@ import {
   CreateSessionPromptResultSchema,
   ProjectSessionSchema,
   SessionPromptListSchema,
+  SessionStartResultSchema,
   SessionTurnStatusSchema,
   WarmProjectSessionResultSchema,
 } from '@kortix/api-contract';
 import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import { createDatabaseSession } from '../fixtures/database-project';
+import { createDatabaseSession, fundDatabaseAccount } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
 
 flow(
@@ -1149,7 +1150,7 @@ flow(
     });
 
     await ctx.step('the owner deletes the session → its live links answer 410 and read back revoked', async () => {
-      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params })).status(200);
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params })).status(200).body().has('$.ok', true);
       (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: share.public_token } })).status(410);
       (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: share.public_token } }))
         .status(410);
@@ -1161,6 +1162,30 @@ flow(
       if (shares.length === 0 || live.length !== 0) {
         throw new Error(`the delete did not revoke every share: ${JSON.stringify(shares)}`);
       }
+    });
+
+    await ctx.step('the delete keeps the session row and its branch, stopped and tombstoned; an unknown session → 404', async () => {
+      const { Client } = await import('pg');
+      const databaseUrl = ctx.env.databaseUrl as string;
+      const db = new Client({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+      await db.connect();
+      try {
+        const row = (
+          await db.query<{ status: string; branch_name: string; deleted_at: string | null }>(
+            `SELECT status::text AS status, branch_name, metadata->>'deletedAt' AS deleted_at FROM kortix.project_sessions WHERE session_id = $1`,
+            [sessionId],
+          )
+        ).rows[0];
+        if (!row || row.status !== 'stopped' || row.branch_name !== `session/${sessionId}` || !row.deleted_at) {
+          throw new Error(`deleted session row: ${JSON.stringify(row)}`);
+        }
+      } finally {
+        await db.end();
+      }
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId: crypto.randomUUID() } }))
+        .status(404)
+        .body()
+        .has('$.error', 'Not found');
     });
   },
 );
@@ -2274,6 +2299,30 @@ flow(
       r.status(200);
       if (r.json<Row>().labels.length !== 0) throw new Error('labels not cleared');
     });
+
+    await ctx.step('PATCH name stores an explicit override: name and custom_name answer it, and an empty name clears it back to the auto title', async () => {
+      (await patch(owner, shared, { name: 'Human name', metadata: { custom: 'ok' } }))
+        .status(200)
+        .body()
+        .has('$.name', 'Human name')
+        .has('$.custom_name', 'Human name')
+        .has('$.metadata.custom_name', 'Human name')
+        .has('$.metadata.custom', 'ok')
+        .has('$.metadata.name', 'Shared');
+      (await owner.get(one, { params: { ...params, sessionId: shared } })).status(200).body().has('$.name', 'Human name').has('$.custom_name', 'Human name');
+      (await patch(owner, shared, { name: '' })).status(200).body().has('$.name', 'Shared').has('$.custom_name', null);
+    });
+
+    await ctx.step('the project-wide inventory names each row owner and its access', async () => {
+      const r = await owner.get(`${list}?scope=project`, { params });
+      r.status(200);
+      const row = r.json<Array<Record<string, unknown>>>().find((s) => s.session_id === coordinator);
+      if (!row) throw new Error('the coordinator is missing from the project inventory');
+      const want = { owner_email: ctx.P.OWNER.email, owner_type: 'user', can_access: true, runtime_status: null, deleted_at: null, deleted_by: null };
+      for (const [key, value] of Object.entries(want)) {
+        if (row[key] !== value) throw new Error(`inventory ${key}: got ${JSON.stringify(row[key])}, want ${JSON.stringify(value)}`);
+      }
+    });
   },
 );
 
@@ -2304,6 +2353,7 @@ flow(
     const put = (as: typeof owner, body: unknown, id = sessionId) =>
       as.put(url, body, { params: { projectId: project.id, sessionId: id } });
     const tabId = crypto.randomUUID();
+    const sandboxId = crypto.randomUUID();
     const databaseUrl = ctx.env.databaseUrl as string;
     const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
     const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
@@ -2333,11 +2383,30 @@ flow(
         }
       });
 
+      // KRTX-1729: each presence ping granted 30 minutes, so a tab left visible
+      // kept the computer up all night. A ping grants the idle grace (15 min).
+      await ctx.step('a present owner keeps the computer awake by the idle grace, not 30 minutes', async () => {
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $2, $3, $4, 'active')`,
+          [sandboxId, sessionId, project.accountId, project.id],
+        );
+        await db.query("UPDATE kortix.session_sandboxes SET deadline_at = now() + interval '1 minute' WHERE sandbox_id = $1::uuid", [sandboxId]);
+        (await put(owner, { tab_id: tabId, active: true })).status(200);
+        const { rows } = await db.query(
+          'SELECT extract(epoch from (deadline_at - now()))::int AS secs FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid',
+          [sandboxId],
+        );
+        const minutes = Number(rows[0]?.secs) / 60;
+        if (!(minutes > 10 && minutes <= 16)) throw new Error(`deadline is ${minutes.toFixed(1)} min away, expected the 15-min idle grace`);
+      });
+
       await ctx.step('active=false clears the lease', async () => {
         (await put(owner, { tab_id: tabId, active: false })).status(200).body().has('$.ok', true);
         if ((await leases()).length !== 0) throw new Error('lease not cleared');
       });
     } finally {
+      await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sandboxId]).catch(() => {});
       await db.end();
     }
   },
@@ -2438,6 +2507,143 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
       });
     } finally {
+      await db.end();
+    }
+  },
+);
+
+// SESS-48 — POST /start answers from stored rows before any provider call, so
+// each branch runs on the local profile: malformed and unknown ids, a fresh
+// provisioning row, an abandoned one retired, and a stored terminal failure.
+flow(
+  'SESS-48',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['POST /v1/projects/:projectId/sessions/:sessionId/start', 'GET /v1/projects/:projectId/sessions/:sessionId'],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const db = new Client({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    const team = await ctx.fixtures.team({ name: ctx.fixtures.name('sess-48') });
+    const project = await team.project();
+    await fundDatabaseAccount(ctx.env, team.id);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const start = (sessionId: string) => owner.post('/v1/projects/:projectId/sessions/:sessionId/start', {}, { params: { projectId: project.id, sessionId } });
+    const seed = async (
+      sessionStatus: 'provisioning' | 'failed',
+      sandbox: { provider: 'daytona' | 'e2b'; status: 'provisioning' | 'error'; metadata: Record<string, unknown>; ageMinutes?: number },
+    ): Promise<string> => {
+      const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
+      ctx.track('session', sessionId, { projectId: project.id });
+      await db.query('UPDATE kortix.project_sessions SET status = $2, sandbox_provider = $3 WHERE session_id = $1', [sessionId, sessionStatus, sandbox.provider]);
+      await db.query(
+        `INSERT INTO kortix.session_sandboxes
+           (sandbox_id, session_id, account_id, project_id, provider, external_id, status, config, metadata, created_at, updated_at)
+         VALUES ($1::uuid, $1, $2::uuid, $3::uuid, $4, NULL, $5, '{}'::jsonb, $6::jsonb,
+                 now() - make_interval(mins => $7::int), now() - make_interval(mins => $7::int))`,
+        [sessionId, team.id, project.id, sandbox.provider, sandbox.status, JSON.stringify(sandbox.metadata), sandbox.ageMinutes ?? 0],
+      );
+      return sessionId;
+    };
+    const sandboxRows = async (sessionId: string) =>
+      (await db.query<{ status: string; external_id: string | null }>('SELECT status::text AS status, external_id FROM kortix.session_sandboxes WHERE session_id = $1', [sessionId])).rows;
+    try {
+      await ctx.step('a malformed session id → 400 and an unknown one → 404, before any sandbox work', async () => {
+        (await start('not-a-uuid')).status(400).body().has('$.error', 'Invalid session id');
+        (await start(crypto.randomUUID())).status(404).body().has('$.error', 'Not found');
+        (await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId: 'not-a-uuid' } }))
+          .status(400)
+          .body()
+          .has('$.error', 'Invalid session id');
+      });
+
+      await ctx.step('a fresh provisioning row with no provider identity answers provisioning and is left alone', async () => {
+        const sessionId = await seed('provisioning', { provider: 'daytona', status: 'provisioning', metadata: { initStatus: 'pending', initAttempts: 0, initMaxAttempts: 3 } });
+        (await start(sessionId))
+          .status(200)
+          .body()
+          .has('$.stage', 'provisioning')
+          .has('$.retriable', true)
+          .has('$.sandbox.sandbox_id', sessionId)
+          .has('$.sandbox.external_id', null)
+          .has('$.sandbox.status', 'provisioning')
+          .schema(SessionStartResultSchema);
+        const rows = await sandboxRows(sessionId);
+        if (rows.length !== 1 || rows[0]!.status !== 'provisioning') throw new Error(`fresh row changed: ${JSON.stringify(rows)}`);
+      });
+
+      for (const [reason, metadata, ageMinutes] of [
+        ['stale_provisioning_pending', { initStatus: 'pending', initAttempts: 0, initMaxAttempts: 3 }, 11],
+        ['stale_provisioning_lost', { initStatus: 'provisioning', initAttempts: 1, initMaxAttempts: 3, initUpdatedAt: new Date(Date.now() - 6 * 60_000).toISOString() }, 6],
+      ] as const) {
+        await ctx.step(`an abandoned provisioning row is retired: ${reason}, no sandbox, row gone`, async () => {
+          const sessionId = await seed('provisioning', { provider: 'daytona', status: 'provisioning', metadata, ageMinutes });
+          (await start(sessionId)).status(200).body().has('$.stage', 'provisioning').has('$.retriable', true).has('$.sandbox', null).has('$.reason', reason);
+          if ((await sandboxRows(sessionId)).length !== 0) throw new Error('the abandoned row was not retired');
+        });
+      }
+
+      const PROTECTED = 'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.';
+      for (const c of [
+        {
+          label: 'a stored capacity failure answers one typed terminal failure, twice, without re-provisioning',
+          provider: 'e2b',
+          metadata: { initStatus: 'failed', initAttempts: 1, initMaxAttempts: 1, failureCategory: 'provider-capacity', errorMessage: 'The sandbox provider is at capacity right now. Stop another session and retry.' },
+          category: 'provider-capacity',
+          message: 'The sandbox provider is at capacity right now. Stop another session and retry.',
+          retryable: true,
+        },
+        {
+          label: 'a stored E2B placement error is transient: /start re-provisions it, and when it cannot allocate it answers the exhausted contract instead of replaying',
+          provider: 'e2b',
+          metadata: {
+            initStatus: 'failed',
+            initAttempts: 3,
+            initMaxAttempts: 3,
+            failureCategory: 'sandbox-provider',
+            errorMessage: 'The sandbox provider could not start this session. Try again.',
+            lastProvisioningError: '500: Failed to place sandbox',
+          },
+          category: 'provider-capacity',
+          message: 'The sandbox provider could not start this session after 1 attempts. Restart the session to try again.',
+          retryable: true,
+          reason: 'provider_transient_retries_exhausted',
+        },
+        {
+          label: 'a protected-delivery failure is actionable and not retryable',
+          provider: 'daytona',
+          metadata: { initStatus: 'failed', initAttempts: 1, initMaxAttempts: 1, failureCategory: 'unsupported-secret-delivery', errorMessage: PROTECTED },
+          category: 'unsupported-secret-delivery',
+          message: PROTECTED,
+          retryable: false,
+        },
+      ] as const) {
+        await ctx.step(c.label, async () => {
+          const sessionId = await seed('failed', { provider: c.provider, status: 'error', metadata: c.metadata });
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const answer = (await start(sessionId)).status(200).body();
+            answer
+              .has('$.stage', 'failed')
+              .has('$.retriable', false)
+              .has('$.sandbox.status', 'error')
+              .has('$.failure.category', c.category)
+              .has('$.failure.message', c.message)
+              .has('$.failure.retryable', c.retryable);
+            // The transient case runs the #9489 retry path. Its exhausted answer is
+            // the deterministic one here: the local profile's allowed providers
+            // (platinum, daytona) exclude this case's provider, so /start can never
+            // allocate and always reports the spent-retries verdict, retry after retry.
+            if ('reason' in c) answer.has('$.reason', c.reason);
+          }
+          const rows = await sandboxRows(sessionId);
+          if (rows.length !== 1 || rows[0]!.status !== 'error' || rows[0]!.external_id !== null) throw new Error(`a terminal failure changed the row: ${JSON.stringify(rows)}`);
+        });
+      }
+    } finally {
+      await db.query('DELETE FROM kortix.session_sandboxes WHERE project_id = $1::uuid', [project.id]).catch(() => {});
       await db.end();
     }
   },

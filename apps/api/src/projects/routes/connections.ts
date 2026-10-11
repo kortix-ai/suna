@@ -28,10 +28,12 @@ import { sessionMayEnumerateConnection } from '../lib/connector-connection-visib
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readJsonObject } from '../../shared/http-body';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
+import { connectionIdsWithCredentials } from '../../connectors/credentials';
 import {
   ConnectionViewSchema,
   computerConnectionFields,
   loadComputerMachines,
+  connectionAuthorized,
   serializeConnection,
 } from '../lib/connection-view';
 
@@ -238,7 +240,7 @@ export function registerConnectionsRoutes(): void {
           projectId,
           PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
         ));
-      const [sharing, machines] = await Promise.all([
+      const [sharing, machines, credentialed] = await Promise.all([
         loadConnectionSharing({
           projectId,
           accountId: loaded.row.accountId,
@@ -247,6 +249,7 @@ export function registerConnectionsRoutes(): void {
         loadComputerMachines(
           listed.filter((item) => item.usable).map((item) => item.connection.tunnelId),
         ),
+        connectionIdsWithCredentials(listed.map((item) => item.connection.connectionId)),
       ]);
       return c.json({
         connections: listed
@@ -262,6 +265,10 @@ export function registerConnectionsRoutes(): void {
               ? { shared_with: sharing.get(item.connection.connectionId) ?? [] }
               : {}),
             usable: item.usable,
+            authorized: connectionAuthorized(
+              item.connection.metadata,
+              credentialed.has(item.connection.connectionId),
+            ),
           })),
       });
     },

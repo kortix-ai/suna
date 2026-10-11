@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 700 route actions and 64 other events.
+This page lists 729 route actions and 66 other events.
 
 ## `account.`
 
@@ -62,6 +62,7 @@ This page lists 700 route actions and 64 other events.
 | `admin.impersonate.start` | Started account impersonation | `POST /v1/admin/api/impersonate` |
 | `admin.impersonate.stop` | Stopped account impersonation | `DELETE /v1/admin/api/impersonate/:grantId` |
 | `admin.ops.overview.read` | Viewed platform operations overview | `GET /v1/ops/overview` |
+| `admin.project.feature.set` | Set project feature flag as admin | `PUT /v1/admin/api/projects/:id/features` |
 | `admin.project.list` | Listed all platform projects | `GET /v1/admin/api/projects` |
 | `admin.sandbox.list` | Listed all platform sandboxes | `GET /v1/admin/api/sandboxes` |
 | `admin.sandbox.migrate` | Migrated sandbox to another provider | `POST /v1/admin/api/sandboxes/:sessionId/migrate` |
@@ -90,19 +91,30 @@ This page lists 700 route actions and 64 other events.
 | `app.artifact.create` | Registered Kortix App artifact | `POST /v1/projects/:projectId/apps/artifacts` |
 | `app.artifact.finalize` | Finalized Kortix App artifact upload | `POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize` |
 | `app.create` | Created Kortix App | `POST /v1/projects/:projectId/apps` |
+| `app.credentials.rotate` | Rotated Kortix App admin credentials | `POST /v1/projects/:projectId/apps/:appId/rotate-credentials` |
+| `app.credentials.view` or `app.credentials.read` | Read Kortix App admin credentials | `GET /v1/projects/:projectId/apps/:appId/credentials` |
+| `app.dashboard.access` | Opened Kortix App dashboard | before the API router |
 | `app.delete` | Deleted Kortix App | `DELETE /v1/projects/:projectId/apps/:appId` |
 | `app.deployment.create` | Deployed Kortix App | `POST /v1/projects/:projectId/apps/:appId/deployments` |
 | `app.deployment.delete` | Deleted Kortix App deployment | `DELETE /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
 | `app.deployment.list` | Listed Kortix App deployments | `GET /v1/projects/:projectId/apps/:appId/deployments` |
 | `app.deployment.log.list` | Viewed Kortix App deployment logs | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs` |
 | `app.deployment.read` | Viewed Kortix App deployment | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
+| `app.endpoint.access` | Called Kortix App API | before the API router |
+| `app.endpoint.websocket.connect` | Opened Kortix App API WebSocket | before the API router |
 | `app.list` | Listed Kortix Apps | `GET /v1/projects/:projectId/apps` |
+| `app.log.read` | Read Kortix App process log | `GET /v1/projects/:projectId/apps/:appId/logs` |
 | `app.origin.access` | Opened deployed Kortix App | before the API router |
 | `app.origin.websocket.connect` | Opened Kortix App WebSocket | before the API router |
 | `app.read` | Viewed Kortix App | `GET /v1/projects/:projectId/apps/:appId` |
 | `app.rollback` | Rolled back Kortix App | `POST /v1/projects/:projectId/apps/:appId/rollback` |
+| `app.snapshot.create` | Took Kortix App snapshot | `POST /v1/projects/:projectId/apps/:appId/snapshots` |
+| `app.snapshot.delete` | Deleted Kortix App snapshot | `DELETE /v1/projects/:projectId/apps/:appId/snapshots/:snapshotId` |
+| `app.snapshot.list` | Listed Kortix App snapshots | `GET /v1/projects/:projectId/apps/:appId/snapshots` |
+| `app.snapshot.restore` | Restored Kortix App snapshot | `POST /v1/projects/:projectId/apps/:appId/restore` |
 | `app.start` | Started Kortix App | `POST /v1/projects/:projectId/apps/:appId/start` |
 | `app.stop` | Stopped Kortix App | `POST /v1/projects/:projectId/apps/:appId/stop` |
+| `app.token.mint` | Minted Kortix App sign-in token | `POST /v1/projects/:projectId/apps/:appId/token` |
 | `app.update` | Updated Kortix App | `PATCH /v1/projects/:projectId/apps/:appId` |
 
 ## `approval.`
@@ -182,6 +194,7 @@ This page lists 700 route actions and 64 other events.
 | `billing.subscription.scheduled_change.cancel` | Canceled scheduled plan change | `POST /v1/billing/cancel-scheduled-change` |
 | `billing.subscription.sync` | Synchronized subscription | `POST /v1/billing/sync-subscription` |
 | `billing.tier_configuration.list` | Viewed tier configurations | `GET /v1/billing/tier-configurations` |
+| `billing.top_up_request.create` | Asked the owners to add credits | `POST /v1/accounts/:accountId/top-up-requests` |
 | `billing.transaction.list` | Listed credit transactions | `GET /v1/billing/transactions` |
 | `billing.transaction.summary.read` | Viewed transaction summary | `GET /v1/billing/transactions/summary` |
 | `billing.usage_history.read` | Viewed credit usage history | `GET /v1/billing/usage-history` |
@@ -312,6 +325,12 @@ This page lists 700 route actions and 64 other events.
 | `connector.setup_link.start` | Started connector setup-link authorization | `POST /v1/setup-links/connectors/:token/start` |
 | `connector.sync` | Synchronized connectors | `POST /v1/connectors/projects/:projectId/connectors/sync` |
 
+## `feedback.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `feedback.create` | Filed product feedback | `POST /v1/feedback` |
+
 ## `file.`
 
 | Action | Title | Route |
@@ -320,6 +339,7 @@ This page lists 700 route actions and 64 other events.
 | `file.content.read` | Viewed file content | `GET /v1/projects/:projectId/files/content` |
 | `file.history.list` | Viewed file history | `GET /v1/projects/:projectId/files/history` |
 | `file.list` | Listed project files | `GET /v1/projects/:projectId/files` |
+| `file.raw.read` | Viewed raw file content | `GET /v1/projects/:projectId/files/raw` |
 | `file.search` | Searched project files | `GET /v1/projects/:projectId/files/search` |
 
 ## `gateway.`
@@ -537,6 +557,13 @@ This page lists 700 route actions and 64 other events.
 | --- | --- | --- |
 | `notification.device_token.delete` | Removed push notification device | `DELETE /v1/notifications/device-token/:token` |
 | `notification.device_token.register` | Registered push notification device | `POST /v1/notifications/device-token` |
+| `notification.inbox.list` | Viewed notifications | `GET /v1/notifications` |
+| `notification.inbox.mark_read` | Marked notifications read | `POST /v1/notifications/read` |
+| `notification.preferences.read` | Viewed notification preferences | `GET /v1/notifications/preferences` |
+| `notification.preferences.update` | Changed notification preferences | `PUT /v1/notifications/preferences` |
+| `notification.web_push.subscribe` | Registered browser for push notifications | `POST /v1/notifications/web-push/subscriptions` |
+| `notification.web_push.unsubscribe` | Removed browser push subscription | `DELETE /v1/notifications/web-push/subscriptions` |
+| `notification.web_push_key.read` | Read browser push key | `GET /v1/notifications/web-push/key` |
 
 ## `oauth.`
 
@@ -619,6 +646,8 @@ This page lists 700 route actions and 64 other events.
 | `project.suna_migration.eligibility.read` | Viewed project migration eligibility | `GET /v1/projects/suna-migration/eligibility` |
 | `project.suna_migration.read` | Viewed project migration status | `GET /v1/projects/suna-migration/status` |
 | `project.suna_migration.start` | Started project migration | `POST /v1/projects/suna-migration/start` |
+| `project.token_issuer.keys.read` | Read project token signing keys | `GET /v1/projects/:projectId/jwks.json` |
+| `project.token_issuer.read` | Read project token issuer metadata | `GET /v1/projects/:projectId/.well-known/openid-configuration` |
 | `project.update` | Updated project | `PATCH /v1/projects/:projectId` |
 
 ## `review.`
@@ -802,6 +831,8 @@ This page lists 700 route actions and 64 other events.
 | `session.update` | Updated session | `PATCH /v1/projects/:projectId/sessions/:sessionId` |
 | `session.warm.claim` | Claimed warm session sandbox | `POST /v1/projects/:projectId/sessions/warm/claim` |
 | `session.warm.create` | Warmed session sandbox | `POST /v1/projects/:projectId/sessions/warm` |
+| `session.watch.read` | Viewed session notification setting | `GET /v1/projects/:projectId/sessions/:sessionId/watch` |
+| `session.watch.update` | Changed session notification setting | `PUT /v1/projects/:projectId/sessions/:sessionId/watch` |
 
 ## `setup.`
 
@@ -858,6 +889,8 @@ This page lists 700 route actions and 64 other events.
 | `trigger.activation.set` | Paused or resumed all triggers | `PATCH /v1/projects/:projectId/triggers/activation` |
 | `trigger.create` | Created trigger | `POST /v1/projects/:projectId/triggers` |
 | `trigger.delete` | Deleted trigger | `DELETE /v1/projects/:projectId/triggers/:slug` |
+| `trigger.event_apps.list` | Listed apps that can trigger events | `GET /v1/projects/:projectId/triggers/event-apps` |
+| `trigger.event_types.list` | Listed trigger event types | `GET /v1/projects/:projectId/triggers/event-types` |
 | `trigger.fire` | Fired trigger | `POST /v1/projects/:projectId/triggers/:slug/fire` |
 | `trigger.list` | Listed triggers | `GET /v1/projects/:projectId/triggers` |
 | `trigger.update` | Updated trigger | `PATCH /v1/projects/:projectId/triggers/:slug` |
@@ -896,6 +929,7 @@ This page lists 700 route actions and 64 other events.
 | --- | --- | --- |
 | `webhook.agentmail.message.receive` | Received AgentMail inbound email | `POST /v1/webhooks/email/agentmail` |
 | `webhook.daytona.sandbox_lifecycle.receive` | Received Daytona sandbox lifecycle event | `POST /v1/webhooks/sandbox/daytona` |
+| `webhook.event.receive` | Received app event | `POST /v1/webhooks/events/:provider` |
 | `webhook.pipedream.connection.receive` | Received Pipedream connection webhook | `POST /v1/connectors/webhook/pipedream` |
 | `webhook.platinum.sandbox_lifecycle.receive` | Received Platinum sandbox lifecycle event | `POST /v1/webhooks/sandbox/platinum` |
 | `webhook.slack.command.receive` | Received Slack slash command | `POST /v1/webhooks/slack/commands` |
@@ -919,6 +953,8 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `admin.account.temporary_access.grant` | Granted temporary account access |
 | `admin.impersonate.action` | Acted while impersonating account |
 | `api.rate_limit.exceeded` | Hit API rate limit |
+| `app.budget.alert` | Kortix App reached a budget share |
+| `app.credentials.read` | Read Kortix App admin credentials |
 | `app.deployment.activated` | Activated Kortix App deployment |
 | `app.deployment.failed` | Failed Kortix App deployment |
 | `audit.anonymous.suppressed` | Suppressed anonymous audit rows |

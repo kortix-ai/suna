@@ -135,6 +135,7 @@ mock.module('@/components/session/turn/activity-burst', () => ({
   ActivityBurst: ({ isTrailing }: any) => React.createElement('rn-burst', { isTrailing, loop: React.useContext(LoopMotion) }),
 }));
 mock.module('@/components/session/turn/user-message', () => ({ UserMessage: passthrough('rn-user-message') }));
+mock.module('@/components/session/SessionChangeRequests', () => ({ SessionChangeRequests: passthrough('rn-change-requests') }));
 
 let CompactionMarker: typeof import('./compaction-divider').CompactionMarker;
 let TurnActions: typeof import('./turn-actions').TurnActions;
@@ -349,6 +350,78 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
     expect(textParts.at(-1)).toMatchObject({ text: 'Looks good so far. One nit.' });
     expect(textParts.at(-1).isStreaming).toBeFalsy();
     expect(textPartLifecycle).toEqual(['mount:Looks good so far']);
+  });
+
+  // KRTX-1678: the reply streamed as a standalone block and moved into the
+  // segments list when the first tool call arrived — a remount mid-stream.
+  test('the first tool call does not remount the streaming reply', async () => {
+    const toolPart = {
+      id: 'tool-1',
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call-1',
+      state: { status: 'running', input: { command: 'ls' } },
+      sessionID: 's-1',
+      messageID: 'a-1',
+    };
+    const withTool = {
+      ...turnWith('Let me check the files.'),
+      assistantMessages: [
+        {
+          info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } },
+          parts: [textPart('Let me check the files.'), toolPart],
+        },
+      ],
+    } as unknown as import('@/lib/session/types').Turn;
+    const working = (turn: import('@/lib/session/types').Turn) => (
+      <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />
+    );
+
+    await act(async () => {
+      tree = create(working(turnWith('Let me check the files.')));
+    });
+    await act(async () => {
+      tree?.update(working(withTool));
+    });
+
+    expect(textParts.at(-1)).toMatchObject({ text: 'Let me check the files.', isStreaming: true });
+    expect(textPartLifecycle).toEqual(['mount:Let me check the files.']);
+  });
+
+  test('change request cards render at the end of the turn once it settles', async () => {
+    const changeRequests = [{ id: 'cr:1' }] as unknown as import('@/lib/session/session-change-requests').ChangeItem[];
+    const onOpen = () => {};
+
+    await act(async () => {
+      tree = create(
+        <SessionTurn
+          turn={turnWith('Opened a change request.')}
+          isWorkingTurn
+          sessionStatus={{ type: 'busy' } as never}
+          isBusy
+          changeRequests={changeRequests}
+          onOpenChangeRequest={onOpen}
+        />,
+      );
+    });
+    // Working: an outcome is not a settled fact yet (web gates on `!working`).
+    expect(JSON.stringify(tree?.toJSON() ?? {})).not.toContain('rn-change-requests');
+
+    await act(async () => {
+      tree?.update(
+        <SessionTurn
+          turn={turnWith('Opened a change request.', 3_000)}
+          isWorkingTurn={false}
+          isBusy={false}
+          changeRequests={changeRequests}
+          onOpenChangeRequest={onOpen}
+        />,
+      );
+    });
+    const json = JSON.stringify(tree?.toJSON() ?? {});
+    expect(json).toContain('rn-change-requests');
+    // Above the action bar, as web's outcome cards.
+    expect(json.indexOf('rn-change-requests')).toBeLessThan(json.indexOf('session-turn-actions'));
   });
 });
 

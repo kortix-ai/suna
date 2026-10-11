@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { app } from '../index';
+import { RETIRED_ROUTES } from '../routes/retired';
 
 const EXCLUDED: Array<{ route: RegExp; reason: string }> = [
   { route: /^ALL \/v1\/(llm|llm-gateway)\/\*$/, reason: 'LLM gateway bridge; its ingress routes are documented with registerPath' },
@@ -19,8 +20,12 @@ const EXCLUDED: Array<{ route: RegExp; reason: string }> = [
   { route: /^HEAD \/v1\/runtime-assets\//, reason: 'HEAD twin of a documented GET' },
   { route: /^GET \/v1\/(connectors\/oauth2|webhooks\/teams\/oauth)\/callback$/, reason: 'OAuth browser redirect, not called by a client' },
   { route: /^POST \/v1\/webhooks\/teams\//, reason: 'Microsoft Bot Framework activity webhook' },
+  { route: /^(GET|PUT|POST|DELETE) \/v1\/projects\/:projectId\/sessions\/:sessionId\/drive-sync\//, reason: "the session box's drive-sync daemon; takes only that sandbox's credential" },
   { route: /^(GET|POST|DELETE) \/v1\/mcp$/, reason: 'MCP streamable-HTTP endpoint, described by the MCP protocol' },
 ];
+
+/** Retired routes are 410 stubs (routes/retired.ts): served, never documented. */
+const RETIRED = new Set(RETIRED_ROUTES.map(([method, path]) => `${method} ${path}`));
 
 type Doc = { paths: Record<string, Record<string, { requestBody?: unknown }>> };
 
@@ -55,7 +60,9 @@ function enumMembers(node: unknown, out: string[] = []): string[] {
 
 describe('OpenAPI route coverage', () => {
   test('every served route is documented or excluded with a reason', () => {
-    const undocumented = [...routes].filter((r) => !documented.has(r) && !EXCLUDED.some((e) => e.route.test(r)));
+    const undocumented = [...routes].filter(
+      (r) => !documented.has(r) && !RETIRED.has(r) && !EXCLUDED.some((e) => e.route.test(r)),
+    );
     expect(undocumented.sort()).toEqual([]);
   });
 

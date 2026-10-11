@@ -9,7 +9,6 @@
 // Slack commands use, so the two surfaces can never disagree about how a binding
 // is stored or resolved.
 import { createRoute, z } from "@hono/zod-openapi";
-import { config } from "../../config";
 import { accountMayUseManagedModels } from "../../billing/services/entitlements";
 import {
   type ChannelBindingRow,
@@ -40,6 +39,7 @@ import {
   chooseEffectiveModel,
   toWireModel,
 } from "../../llm-gateway/resolution/effective";
+import { platformDefaultModelId } from "../../llm-gateway/models/served-managed-models";
 import { type AccountModelDefaults, getAccountModelDefaults } from "../../repositories/model-preferences";
 import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
@@ -172,6 +172,7 @@ async function resolveBindingEffectiveModel(
     projectDefault: ctx.modelDefaults.projects[ctx.projectId] ?? null,
     accountDefault: ctx.modelDefaults.account,
     freeModelsOnly: ctx.freeModelsOnly,
+    platformDefault: platformDefaultModelId(),
   });
 }
 

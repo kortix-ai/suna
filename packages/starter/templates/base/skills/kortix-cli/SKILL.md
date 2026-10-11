@@ -47,6 +47,8 @@ kortix sessions status                          # every agent on the project + w
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
 kortix apps deploy . --slug <slug>               # deploy and block until the stable URL is ready
+kortix tools ls                                 # the tools a session gets (kortix.yaml tools:), and removed Kortix tools
+kortix tools eject <name>                       # copy a Kortix tool to tools/<name>.ts to change it
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
 ```
 
@@ -99,6 +101,7 @@ git add . && git commit -m "…" && git push origin HEAD
 kortix cr open --title "…" --description "…"     # head + session auto-detected in a sandbox
 ```
 
-Never commit big static assets (video, datasets, build output): a session's
-agent config build fails when the repository is over 32 MiB compressed. Put
-them in object storage instead. Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.
+Never commit big static assets (video, datasets, build output): every session
+downloads them, and above 512 MiB compressed a running session stops picking
+up agent config changes from the base branch. Put them in object storage
+instead. Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.

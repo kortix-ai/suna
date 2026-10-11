@@ -26,37 +26,3 @@ export interface ConversationSection {
   periodLabel?: string; // Time period key for localization (today, yesterday, thisWeek, etc.)
   conversations: Conversation[];
 }
-
-/**
- * Bottom Nav Item Type
- * 
- * Navigation items in the bottom menu
- */
-export interface BottomNavItem {
-  id: string;
-  icon: AppIcon;
-  label: string;
-  onPress: () => void;
-}
-
-/**
- * Tier Type
- * 
- * Available subscription tiers
- */
-export type TierType = 'Basic' | 'Plus' | 'Pro' | 'Ultra';
-
-/**
- * User Profile Type
- * 
- * User information for profile section
- */
-export interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-  tier?: TierType;
-  planName?: string; // Plan name from subscription (e.g., 'Plus', 'Pro', 'Ultra')
-}
-

@@ -15,6 +15,7 @@ import {
   handleCall,
 } from '../connectors/gateway';
 import type { DefaultMode, Policy } from '../connectors/policy';
+import type { ChannelWriteMisfire } from '../connectors/channel-write-scope';
 
 const ALICE = 'user-alice';
 
@@ -52,6 +53,12 @@ interface FakeOpts {
   enforcePolicies?: boolean;
   fetchStatus?: number;
   fetchBody?: string;
+  /** Upstream deadline for the call; default is the configured 60 s. */
+  callTimeoutMs?: number;
+  /** When set, gateChannelWrite answers a gate whose misfire always returns it. */
+  misfire?: ChannelWriteMisfire;
+  /** Replaces the default recording fetch. */
+  fetchImpl?: GatewayDeps['fetchImpl'];
 }
 
 function makeDeps(o: FakeOpts = {}) {
@@ -78,15 +85,21 @@ function makeDeps(o: FakeOpts = {}) {
       records.push(r);
       return null;
     },
-    fetchImpl: async (url, init) => {
-      fetchCalls.push({ url, ...init });
-      const status = o.fetchStatus ?? 200;
-      return {
-        status,
-        ok: status >= 200 && status < 300,
-        text: async () => o.fetchBody ?? '{"id":"ch_1"}',
-      };
-    },
+    ...(o.callTimeoutMs !== undefined && { callTimeoutMs: o.callTimeoutMs }),
+    ...(o.misfire && {
+      gateChannelWrite: async () => ({ refusal: null, misfire: () => o.misfire ?? null }),
+    }),
+    fetchImpl:
+      o.fetchImpl ??
+      (async (url, init) => {
+        fetchCalls.push({ url, ...init });
+        const status = o.fetchStatus ?? 200;
+        return {
+          status,
+          ok: status >= 200 && status < 300,
+          text: async () => o.fetchBody ?? '{"id":"ch_1"}',
+        };
+      }),
   };
   return { deps, records, fetchCalls, credentialCalls };
 }
@@ -105,7 +118,14 @@ describe('handleCall — happy path', () => {
   test('resolves shared credential, attaches auth, returns ok, audits', async () => {
     const { deps, records, fetchCalls, credentialCalls } = makeDeps();
     const res = await handleCall(deps, baseInput);
-    expect(res).toEqual({ status: 'ok', data: { id: 'ch_1' }, risk: 'write' });
+    expect(res).toEqual({
+      status: 'ok',
+      data: { id: 'ch_1' },
+      risk: 'write',
+      binding: 'openapi',
+      output: { id: 'ch_1' },
+      upstreamStatus: 200,
+    });
     expect(fetchCalls[0]!.headers.Authorization).toBe('Bearer sk_live_123');
     expect(credentialCalls[0]).toEqual({ connectorId: 'conn-stripe', userId: null }); // shared
     expect(records.at(-1)).toMatchObject({ status: 'ok', risk: 'write', actingUserId: ALICE });
@@ -187,11 +207,28 @@ describe('handleCall — denials', () => {
 });
 
 describe('handleCall — upstream + errors', () => {
+  test('a credential resolution failure (OAuth2 token refresh) is an error with its message, audited, never sent upstream', async () => {
+    // Native OAuth2 client credentials (16d230808a) mint a token per call; a
+    // failed mint must answer a structured error the agent can read.
+    const { deps, records, fetchCalls } = makeDeps();
+    deps.resolveCredential = async () => {
+      throw new Error('OAuth2 token request failed (503): temporarily_unavailable');
+    };
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'error',
+      reason: 'OAuth2 token request failed (503): temporarily_unavailable',
+    });
+    expect(records.at(-1)).toMatchObject({ status: 'error' });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
   test('non-2xx upstream → error with the body excerpt (agent sees the real cause)', async () => {
     const { deps } = makeDeps({ fetchStatus: 402, fetchBody: '{"error":"declined"}' });
     expect(await handleCall(deps, baseInput)).toEqual({
       status: 'error',
       reason: 'upstream_402: {"error":"declined"}',
+      binding: 'openapi',
+      upstreamStatus: 402,
     });
   });
 
@@ -200,7 +237,7 @@ describe('handleCall — upstream + errors', () => {
     deps.fetchImpl = async () => {
       throw new Error('network down');
     };
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'network down' });
+    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'network down', binding: 'openapi' });
     expect(records.at(-1)).toMatchObject({ status: 'error' });
   });
 });
@@ -241,7 +278,14 @@ describe('handleCall — pipedream path', () => {
       actionPath: 'send_email',
       args: { to: 'a@b.com' },
     });
-    expect(res).toEqual({ status: 'ok', data: { sent: true }, risk: 'write' });
+    expect(res).toEqual({
+      status: 'ok',
+      data: { sent: true },
+      risk: 'write',
+      binding: 'pipedream',
+      output: { sent: true },
+      upstreamStatus: 200,
+    });
     expect(fetchCalls).toHaveLength(0);
     expect(credentialCalls[0]).toEqual({ connectorId: 'conn-gmail', userId: null }); // shared
     expect(captured).toMatchObject({
@@ -300,7 +344,14 @@ describe('handleCall — pipedream path', () => {
       actionPath: 'request',
       args: { method: 'POST', url: 'https://gmail.googleapis.com/x', body: { a: 1 } },
     });
-    expect(res).toEqual({ status: 'ok', data: { id: 1 }, risk: 'write' });
+    expect(res).toEqual({
+      status: 'ok',
+      data: { id: 1 },
+      risk: 'write',
+      binding: 'pipedream_proxy',
+      output: { id: 1 },
+      upstreamStatus: 201,
+    });
     expect(fetchCalls).toHaveLength(0); // proxy path, not the HTTP builder
     expect(captured).toMatchObject({ app: 'gmail', accountId: 'apn_abc123' });
     expect(captured.args).toMatchObject({ method: 'POST', url: 'https://gmail.googleapis.com/x' });
@@ -646,5 +697,109 @@ describe('handleCall — layered policies (project → connector → default)', 
       status: 'denied',
       resultSummary: { reason: 'policy_block', policy_source: 'project' },
     });
+  });
+});
+
+// The Slack misfire-undo path: a write that landed in another project's
+// conversation is taken back (chat.delete) before the gateway answers. The
+// undo is best-effort — it must never hold the /call response past the same
+// upstream deadline the main request already ran under.
+const SLACK: GatewayConnector = {
+  connectorId: 'conn-slack',
+  slug: 'slack',
+  provider: 'channel',
+  platform: 'slack',
+  baseUrl: 'https://slack.com/api',
+  auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+  hasAuth: true,
+  credentialMode: 'shared',
+  enabled: true,
+};
+
+const POST_MESSAGE: GatewayAction = {
+  path: 'slack.chat.postMessage',
+  relPath: 'chat.postMessage',
+  inputSchema: { type: 'object', properties: { channel: {}, text: {} } },
+  risk: 'write',
+  binding: { kind: 'http', method: 'POST', path: '/chat.postMessage' },
+};
+
+const MISFIRE: ChannelWriteMisfire = {
+  refusal: { reason: 'conversation_not_in_project', message: 'That conversation is not part of this project.' },
+  undo: { path: '/chat.delete', args: { channel: 'C0ELSEWHERE', ts: '1700000900.000900' } },
+};
+
+const slackInput: CallInput = {
+  projectId: 'proj-1',
+  accountId: 'acct-1',
+  subject: { userId: ALICE, groupIds: [] },
+  sessionId: 'sess-1',
+  connectorSlug: 'slack',
+  actionPath: 'chat.postMessage',
+  args: { channel: 'C0ELSEWHERE', text: 'hi' },
+};
+
+/** A fetch that never settles on its own; rejects only when aborted, like the real fetch. */
+function hangingFetch(urlsEndingIn: string[], calls: unknown[]): GatewayDeps['fetchImpl'] {
+  return async (url, init) => {
+    calls.push({ url, init });
+    if (urlsEndingIn.some((suffix) => String(url).endsWith(suffix))) {
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new Error('The operation was aborted')));
+      });
+    }
+    return {
+      status: 200,
+      ok: true,
+      text: async () => '{"ok":true,"channel":"C0ELSEWHERE","ts":"1700000900.000900"}',
+    };
+  };
+}
+
+describe('handleCall — channel misfire undo', () => {
+  test('a misfire whose undo fetch hangs still answers within the call deadline', async () => {
+    const CALL_MS = 300;
+    const calls: unknown[] = [];
+    const { deps, records } = makeDeps({
+      connector: SLACK,
+      action: POST_MESSAGE,
+      callTimeoutMs: CALL_MS,
+      misfire: MISFIRE,
+      fetchImpl: hangingFetch(['/chat.delete'], calls),
+    });
+    const pending = handleCall(deps, slackInput);
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const res = await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          watchdog = setTimeout(() => reject(new Error('handleCall hung past the call deadline')), CALL_MS + 1500);
+        }),
+      ]);
+      if (res.status !== 'denied') throw new Error(`expected denied, got ${res.status}`);
+      expect(res.message).toBe(
+        'That conversation is not part of this project. Kortix could not remove it: delete it in Slack.',
+      );
+      expect(records.at(-1)).toMatchObject({ status: 'denied', resultSummary: { removed: false } });
+      // The undo POST ran under an abort signal bound to the call deadline.
+      const undo = calls.at(-1) as { init: { signal?: AbortSignal } };
+      expect(undo.init.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      if (watchdog) clearTimeout(watchdog);
+    }
+  });
+
+  test('a misfire whose undo succeeds still reports removal, unchanged', async () => {
+    const { deps, records, fetchCalls } = makeDeps({
+      connector: SLACK,
+      action: POST_MESSAGE,
+      misfire: MISFIRE,
+    });
+    const res = await handleCall(deps, slackInput);
+    if (res.status !== 'denied') throw new Error(`expected denied, got ${res.status}`);
+    expect(res.message).toBe('That conversation is not part of this project. Kortix removed it.');
+    expect(records.at(-1)).toMatchObject({ status: 'denied', resultSummary: { removed: true } });
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[1]!.url).toBe('https://slack.com/api/chat.delete');
   });
 });

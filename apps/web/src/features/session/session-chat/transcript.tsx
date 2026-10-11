@@ -15,7 +15,7 @@ import { isQuestionTool } from '../session-activity-groups';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useTranslations } from '@/i18n/use-translations';
-import { type SessionMessageAuthor, type SessionPrompt, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, toolKind } from '@kortix/sdk';
+import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, toolKind } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CheckCircleIcon as CheckCircle,
@@ -465,6 +465,10 @@ interface SessionTurnProps {
   pendingPrompt?: SessionPrompt;
   onRetryQueued?: (id: string) => void;
   onRemoveQueued?: (id: string) => void;
+  /** Who is looking. A prompt runs as its author, so Retry is the author's
+   *  and Remove the author's or a session manager's (`sessionPromptActions`).
+   *  Omitted: the viewer's own. Keep it referentially stable (memo). */
+  queuedPromptViewer?: SessionPromptViewer;
   /** The files this turn's Send carried, by identity — see `UserMessage`. */
   pendingAttachments?: ReadonlyArray<SentAttachment>;
   uploadStatus?: AttachmentUploadStatus;
@@ -485,6 +489,9 @@ interface SessionTurnProps {
    * messages. Absent → the marker keeps its inline-disclosure fallback.
    */
   onOpenCompactionSummary?: (turnId: string, summary: string) => void;
+  /** Open a sent paste's full text in the panel's detail view, provided like
+   *  `onOpenCompactionSummary`. Absent → the paste tile is inert. */
+  onOpenPastedContent?: (id: string, text: string) => void;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
   /** Map of user message IDs to command info for rendering command pills */
@@ -1528,7 +1535,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
 /** The user side of a turn: the report card, the system-pill line, and the
  *  user bubble (hidden for notification-only turns). */
 function TurnUserBlock(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'queuedPromptViewer' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend' | 'onOpenPastedContent'> & {
     model: TurnModelState;
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
@@ -1550,7 +1557,7 @@ function TurnUserBlock(
 
 /** The user message bubble — dimmed while the prompt waits in the queue. */
 function TurnUserBubble(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'queuedPromptViewer' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend' | 'onOpenPastedContent'> & {
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
   },
@@ -1561,9 +1568,13 @@ function TurnUserBubble(
     pendingAttachments, uploadStatus, pendingText, agentNames,
     commandMessages, commands, sessionId, ownsPlan, onRewind, rewindDisabled,
     editingText, editPending, onEditCancel, onEditSend,
-    onRetryQueued, onRemoveQueued,
+    onRetryQueued, onRemoveQueued, queuedPromptViewer, onOpenPastedContent,
   } = props;
   const { queueState, queuedStatus } = props.queueTone;
+  const promptActions =
+    pendingPrompt && queuedPromptViewer
+      ? sessionPromptActions(pendingPrompt, queuedPromptViewer)
+      : { own: true, removable: true };
   return (
     <>
     {/* ── User message ── */}
@@ -1595,17 +1606,18 @@ function TurnUserBubble(
           editPending={editPending}
           onEditCancel={onEditCancel}
           onEditSend={onEditSend}
+          onOpenPastedContent={onOpenPastedContent}
           deliveryStatus={
             queuedStatus === 'failed' ? (
               <QueuedPromptFailure
                 lastError={pendingPrompt?.last_error}
                 onRetry={
-                  pendingPrompt && onRetryQueued
+                  pendingPrompt && onRetryQueued && promptActions.own
                     ? () => onRetryQueued(pendingPrompt.prompt_id)
                     : undefined
                 }
                 onRemove={
-                  pendingPrompt && onRemoveQueued
+                  pendingPrompt && onRemoveQueued && promptActions.removable
                     ? () => onRemoveQueued(pendingPrompt.prompt_id)
                     : undefined
                 }
@@ -1979,6 +1991,8 @@ function TurnFooter(
         Gated on `!working` for the same reason the action bar is — an
         outcome is a settled fact, and a card that appears mid-stream would
         claim a change request exists before the server has one. */}
+      {!working && <TurnOutcomes turnKey={turn.userMessage.info.id} />}
+
       {/* ── Action bar (copy + turn meta) ──
           Gated on `!working` only. A turn that ends in tool calls has no closing
           prose, but its finished-at / duration / cost are still turn facts —

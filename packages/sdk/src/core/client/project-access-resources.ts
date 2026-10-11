@@ -18,7 +18,23 @@ export function bindProjectAccessResources(projectId: string) {
         /** Agents whose `kortix.yaml` `apps:` grant names this App. Read-only. */
         agents: (appId: string) => P.listAppAgents(projectId, appId),
       },
-      remove: (appId: string) => P.deleteApp(projectId, appId),
+      remove: (appId: string, options?: P.DeleteAppOptions) => P.deleteApp(projectId, appId, options),
+      /** Polls until the App's instance runs with no operation in flight. Resolves at once without an instance. */
+      waitUntilReady: (appId: string, options?: P.WaitForAppOptions) => P.waitForApp(projectId, appId, options),
+      /** Capability `snapshots` (list, create, delete) and `restore`. */
+      snapshots: {
+        list: (appId: string) => P.listAppSnapshots(projectId, appId),
+        create: (appId: string) => P.createAppSnapshot(projectId, appId),
+        delete: (appId: string, snapshotId: string) => P.deleteAppSnapshot(projectId, appId, snapshotId),
+        restore: (appId: string, snapshotId: string) => P.restoreAppSnapshot(projectId, appId, snapshotId),
+      },
+      /** Capability `admin_credentials`. Every read is audited. */
+      credentials: (appId: string) => P.getAppCredentials(projectId, appId),
+      rotateCredentials: (appId: string) => P.rotateAppCredentials(projectId, appId),
+      /** Capability `member_tokens`: a 15-minute sign-in token for the App, naming the caller. */
+      token: (appId: string) => P.createAppToken(projectId, appId),
+      /** Capability `logs`: the end of the App's process log. */
+      log: (appId: string, options?: P.GetAppLogOptions) => P.getAppLog(projectId, appId, options),
       artifacts: {
         register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>
           P.registerAppArtifact(projectId, input),
@@ -44,7 +60,6 @@ export function bindProjectAccessResources(projectId: string) {
       rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>
         P.rollbackApp(projectId, ...a),
     },
-
     /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
   };
 }

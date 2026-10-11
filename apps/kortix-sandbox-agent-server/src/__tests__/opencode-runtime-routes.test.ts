@@ -99,6 +99,9 @@ let dbPath: string
 function buildDb(messages = 6, attachmentBytes = 120_000): void {
   const db = new Database(dbPath, { create: true })
   db.exec('PRAGMA journal_mode = WAL')
+  // A throwaway temp database: durability costs real fsyncs, and on a loaded
+  // worker sandbox that pushed the beforeEach past bun's 5 s default.
+  db.exec('PRAGMA synchronous = OFF')
   db.exec(`
     CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL,
       directory text NOT NULL, title text NOT NULL, version text NOT NULL, revert text, agent text, model text,
@@ -457,6 +460,22 @@ describe('GET /messages/:sessionId', () => {
     expect(body.head_seq).toBeNull()
   })
 
+  test('a cursor read on a degraded database is a typed error, never a silently wrong page', async () => {
+    const { app } = makeRouter({ dbPath: join(root, 'absent.db') })
+    const delta = await app.request(`http://d/messages/${SESSION}?after_seq=100`, { headers: auth })
+    expect(delta.status).toBe(502)
+    const body = (await delta.json()) as any
+    expect(body.error).toBe('transcript unreadable')
+    expect(body.source).toBe('opencode-http')
+    expect(body.detail).toBe('cursor reads need the sqlite mirror; it is unavailable')
+    expect(body.db.supported).toBe(false)
+    expect(body.db.version_supported).toBe(true)
+    expect(body.messages).toBeUndefined()
+    // A message-id cursor (`?after=msg_…`) degrades the same way.
+    const after = await app.request(`http://d/messages/${SESSION}?after=msg_004`, { headers: auth })
+    expect(after.status).toBe(502)
+  })
+
   test('gzip compresses the transcript page', async () => {
     const { app } = makeRouter()
     const gz = await app.request(`http://d/messages/${SESSION}?limit=6`, { headers: { ...auth, 'Accept-Encoding': 'gzip' } })
@@ -611,6 +630,24 @@ describe('GET /events (SSE)', () => {
     const data = dataOf(heartbeat!)
     expect(data.type).toBe('kortix.heartbeat')
     expect(data).not.toHaveProperty('seq')
+  })
+
+  test('a reader that falls too far behind is dropped, so its queue stays bounded', async () => {
+    // The API stops reading while its own client is slow (R5.1 backpressure).
+    // The daemon then ends this stream instead of queueing without limit; the
+    // API reconnects with its cursor and the ring replays what it missed.
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const res = await app.request('http://d/events', { headers: auth })
+    for (let i = 0; i < 10_000; i++) {
+      publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
+    }
+    expect(bus.subscriberCount).toBe(0)
+    const frames = await readFrames(res, 20_000, 2_000)
+    // hello + at most the bounded backlog, then the end of the stream.
+    expect(frames.length).toBeLessThan(5_000)
+    // The ring still holds everything the reader missed.
+    expect(bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay).toHaveLength(10_000)
   })
 
   test('cancelling the stream unsubscribes', async () => {

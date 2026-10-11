@@ -23,6 +23,7 @@ import type {
   HarnessAssetsService,
 } from './port'
 import { logger } from '@/lib/log/logger'
+import { bootArtifactSkills } from './boot-artifacts'
 import { fetchArtifactByChunks } from './runtime-asset-chunks'
 import { localDigest, localCliSha } from './runtime-assets-bake'
 export { bakeRuntimeAssetsState } from './runtime-assets-bake'
@@ -34,7 +35,7 @@ export { replaceCli } from './runtime-assets-cli'
 export type { ReplaceCliDeps } from './runtime-assets-cli'
 import { optionalString, manifestComponent, isV2Manifest, manifestBuild, agentSelfUpdateAllowed, resolveArtifactUrl, agentStateDirOf, agentBakedPathOf, isCompiledStandalone } from './runtime-assets-manifest'
 import { writeOverlay, fetchJson, fetchArtifact, chunkStoreSources } from './runtime-assets-download'
-import { withReleaseStoreLock } from '../config-release/boot-config'
+import { withReleaseStoreLock } from '@/lib/release-store-lock'
 
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
@@ -636,12 +637,14 @@ export async function reconcileRuntimeAssets(
       if (overlayPresent && state.managed_skills_hash === skillsHash) {
         skills = 'current'
       } else {
-        const payload = await fetchJson<{ hash: string; files: OverlayFile[] }>(
-          fetchImpl,
-          `${base}/managed-skills`,
-          token,
-          DOWNLOAD_TIMEOUT_MS,
-        )
+        const payload =
+          (await bootArtifactSkills<{ hash: string; files: OverlayFile[] }>(skillsHash)) ??
+          (await fetchJson<{ hash: string; files: OverlayFile[] }>(
+            fetchImpl,
+            `${base}/managed-skills`,
+            token,
+            DOWNLOAD_TIMEOUT_MS,
+          ))
         if (!payload || !Array.isArray(payload.files)) {
           skills = 'failed'
         } else if (overlayHash(payload.files) !== skillsHash) {
