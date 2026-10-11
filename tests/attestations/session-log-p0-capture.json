@@ -1,6 +1,8 @@
 {
-  "source_hash": "2b8e771e02d969800eff32f15daf20caad7e442e524662152fa93eabcb1cb782",
+  "source_hash": "0123c969d7ea837fe6a276d91d6b95bcef8b1d0d89d301e99ae996d182cf44fc",
   "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-11T002547Z-never-delete-saved-transcript-rows-because-a-read-is-shorter.md",
     "apps/api/src/__tests__/integration-session-transcript-capture.test.ts",
     "apps/api/src/projects/lib/session-transcript-capture.ts",
     "apps/api/src/projects/lib/session-transcript-mirror.ts",
@@ -13,13 +15,13 @@
     "packages/db/migrations/20261010234341264_session_transcript_rewind_marker.sql",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "11704573960eea8a85b48a0e211907f43924ae99b305f425e21df6ad1587b6c0",
-  "head": "53eb75508e5e8c02792a57c6646f824899d0f44d",
+  "diff_hash": "6cc77b4107bf5c55a50c151182fc0166b6894d9a3ad57908de1236c444b48192",
+  "head": "9afc83d36e6f9739f8562027cadd4a40af7cb1e4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T00:04:52.613Z"
+  "at": "2026-10-11T00:38:29.400Z"
 }
