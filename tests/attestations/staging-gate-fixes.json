@@ -1,0 +1,16 @@
+{
+  "source_hash": "7ac0fd70688f8bc59c65f26a525873ae9fa7cba9a45ad9f277bb36a72db51a1c",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-platinum-snapshot-size.test.ts",
+    "apps/web/src/hooks/projects/use-warm-project-session.test.ts"
+  ],
+  "diff_hash": "11cf519d083b331194dff66f4ed9d1298818156f457833e9ec5bb2a398874a3a",
+  "head": "94e3cb59a21d6a8931de3a6f77dce28f9ed15d67",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T10:18:28.397Z"
+}

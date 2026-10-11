@@ -468,6 +468,7 @@ Every machine gets this environment, besides the release's `env` and
 | `KORTIX_APP_SLUG` | The App's slug |
 | `KORTIX_APP_URL` | The App's URL (its primary service) |
 | `KORTIX_SERVICE_URL_<NAME>` | The URL of every other HTTP service (`-` becomes `_`) |
+| `KORTIX_USES_URL_<SLUG>` | The URL of every App this App uses (`-` becomes `_`). A server calls a used App there; the browser binding needs the viewer's App cookie, which a server has not |
 | `KORTIX_MACHINE_ID` | The machine id, stable across releases |
 | `KORTIX_PROCESS_GROUP` | The machine's process group |
 | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS` | Verify the App's sign-in tokens (see [Apps an App uses](#apps-an-app-uses-sign-in-tokens-and-bindings)) |

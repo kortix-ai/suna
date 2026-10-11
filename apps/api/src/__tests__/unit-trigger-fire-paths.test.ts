@@ -1428,6 +1428,47 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('a manual fire on an empty wallet answers 402 insufficient_credits, not 500', async () => {
+    seedManifest(cronEntry({ slug: 'manual', name: 'Manual', cron: '* * * * * *', prompt: 'Report' }));
+    walletBalance = 0;
+    const billingWasEnabled = config.KORTIX_BILLING_INTERNAL_ENABLED;
+    config.KORTIX_BILLING_INTERNAL_ENABLED = true;
+    try {
+      const res = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers/manual/fire`, { method: 'POST' });
+      expect(res.status).toBe(402);
+      expect(await res.json()).toMatchObject({ code: 'insufficient_credits' });
+    } finally {
+      config.KORTIX_BILLING_INTERNAL_ENABLED = billingWasEnabled;
+    }
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows[0]?.lastStatus).toBe('failed');
+  });
+
+  test('a webhook fire on an empty wallet answers 402 insufficient_credits, not 500', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    walletBalance = 0;
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const billingWasEnabled = config.KORTIX_BILLING_INTERNAL_ENABLED;
+    config.KORTIX_BILLING_INTERNAL_ENABLED = true;
+    try {
+      const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Kortix-Signature': sign(rawBody, 'shhh'),
+          'X-Kortix-Delivery-Id': 'empty-wallet-1',
+        },
+        body: rawBody,
+      });
+      expect(res.status).toBe(402);
+      expect(await res.json()).toMatchObject({ code: 'insufficient_credits' });
+    } finally {
+      config.KORTIX_BILLING_INTERNAL_ENABLED = billingWasEnabled;
+    }
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
   test('a bad signature refreshes the manifest mirror at most once per budget window, and a missing one never reads it', async () => {
     seedManifest(webhookEntry({
       slug: 'hook',

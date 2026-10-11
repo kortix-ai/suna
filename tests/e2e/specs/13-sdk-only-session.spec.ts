@@ -553,6 +553,15 @@ test("13 — opening a terminal without a cached PTY wakes a stopped sandbox and
       exact: true,
     });
     await expect(terminalButton).toBeVisible({ timeout: 120_000 });
+    // A stopped session with no messages renders the full-page "This session
+    // is stopped" card, which has no header and so no Terminal button. One
+    // exchange first keeps the conversation view, whose header survives a stop.
+    const message = page.getByRole("textbox", { name: "Message input" });
+    await message.fill("Reply with exactly one word: PONG");
+    await page.getByRole("button", { name: "Send message" }).click({ force: true });
+    await expect(page.getByText("PONG", { exact: true }).last()).toBeVisible({
+      timeout: 180_000,
+    });
     // This page has not mounted the terminal, so neither the PTY query nor its
     // remembered ID exists. Stop after navigation to isolate terminal wake.
     await api(
@@ -564,6 +573,9 @@ test("13 — opening a terminal without a cached PTY wakes a stopped sandbox and
     await expect
       .poll(() => readSessionStatuses(sessionId), { timeout: 60_000 })
       .toEqual({ projectSession: "stopped", sandbox: "stopped" });
+    await expect(terminalButton).toBeVisible({ timeout: 30_000 });
+    // Still stopped when the terminal opens, or the wake below proves nothing.
+    expect(await readSessionStatuses(sessionId)).toEqual({ projectSession: "stopped", sandbox: "stopped" });
 
     const responses: { method: string; status: number; payload: unknown }[] = [];
     page.on("response", (response) => {

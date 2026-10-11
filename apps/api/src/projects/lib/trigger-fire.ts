@@ -75,6 +75,18 @@ export async function markGitTriggerFired(
 }
 
 /**
+ * Failure codes that describe the account (no usable model, no credits, no
+ * subscription, no billing account), not a server fault. A fire route answers
+ * them `402 { error, code }`, the billing gate's convention.
+ */
+export const ACCOUNT_STATE_FIRE_CODES: ReadonlySet<string> = new Set([
+  'no_usable_model',
+  'insufficient_credits',
+  'subscription_required',
+  'no_account',
+]);
+
+/**
  * Record a failed attempt (fire error or parse error) WITHOUT advancing
  * `last_fired_at`, so the trigger is still due and retries next sweep — but the
  * reason is now visible in the triggers API/UI instead of vanishing into a log.
