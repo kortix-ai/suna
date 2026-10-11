@@ -2,8 +2,9 @@
  * The Kortix session log, `kortix.session/2` minor 1: the harness-neutral record
  * of a session (threads, messages, blocks) that every harness adapter exports to
  * and restores from. Types come from `types.ts`, validators from `schema.ts`, the
- * daemon-to-API journal and manifest from `wire.ts`, and `fromV1`/`toV1` (the exact
- * conversion from and to the v1 mirror) from `v1.ts`.
+ * daemon-to-API journal and manifest from `wire.ts`, `fromV1`/`toV1` (the exact conversion from
+ * and to the v1 mirror) from `v1.ts`, and the oracle (`modelView`, the request normalizers) from
+ * `model-view.ts`.
  * Import it as `@kortix/api-contract/session-log`.
  */
 import { SessionLogSchema } from './schema';
@@ -13,6 +14,7 @@ export * from './types';
 export * from './schema';
 export * from './wire';
 export * from './v1';
+export * from './model-view';
 
 /**
  * Every reader calls this on a record it loads. Minor 1 is the only minor, so it
