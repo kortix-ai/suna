@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { open, rename, rm, stat } from 'node:fs/promises'
+import { open, rename, rm } from 'node:fs/promises'
 
 /**
  * The storage side of one drive, as the box reaches it: the Kortix API's
@@ -149,21 +149,21 @@ export function createHttpDriveSyncApi(opts: {
         await rm(part, { force: true })
         let total: number | null = null
         for (let attempt = 1; ; attempt++) {
-          const have = await stat(part).then((s) => s.size, () => 0)
-          if (total !== null && have >= total) break
+          // One handle per attempt: the resume point is its own size, never a
+          // path checked and then reopened (CodeQL js/file-system-race).
+          const fh = await open(part, 'a')
           try {
+            const have = (await fh.stat()).size
+            if (total !== null && have >= total) break
             const res = await req(`${d}/files/content${q({ path })}`, have > 0 ? { headers: { Range: `bytes=${have}-` } } : {})
             const length = Number(res.headers.get('x-pt-content-length') ?? res.headers.get('content-length') ?? NaN)
             const range = res.headers.get('content-range')
             if (res.status === 206 && range) total = Number(range.split('/')[1])
             else if (Number.isFinite(length)) total = length
-            const fh = await open(part, res.status === 206 ? 'a' : 'w')
-            try {
-              if (res.body) for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) await fh.write(chunk)
-            } finally {
-              await fh.close()
-            }
-            const got = (await stat(part)).size
+            // A whole-file answer restarts the copy; appends then land at 0.
+            if (res.status !== 206) await fh.truncate(0)
+            if (res.body) for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) await fh.write(chunk)
+            const got = (await fh.stat()).size
             if (total === null || got >= total) break
             throw new Error(`short read ${got}/${total}`)
           } catch (err) {
@@ -172,6 +172,8 @@ export function createHttpDriveSyncApi(opts: {
               throw err
             }
             await new Promise((r) => setTimeout(r, attempt * 500))
+          } finally {
+            await fh.close()
           }
         }
         const sha = await sha256File(part)
@@ -179,22 +181,23 @@ export function createHttpDriveSyncApi(opts: {
         return sha
       },
       async upload(path, src, expect) {
-        const size = (await stat(src)).size
-        if (size <= SINGLE_PUT_MAX) {
-          const body = new Uint8Array(await Bun.file(src).arrayBuffer())
-          const sha = createHash('sha256').update(body).digest('hex')
-          const r = await json<{ version?: string }>(`${d}/files/content${q({ path, expect })}`, {
-            method: 'PUT',
-            body,
-            headers: { 'Content-Type': 'application/octet-stream' },
-          })
-          return { version: r.version ?? null, sha256: sha }
-        }
-        // Block upload: hash each 1 MiB block, send only the ones storage lacks.
-        const blocks: string[] = []
-        const whole = createHash('sha256')
+        // One handle: the size and the bytes come from the same open file.
         const fh = await open(src, 'r')
         try {
+          const size = (await fh.stat()).size
+          if (size <= SINGLE_PUT_MAX) {
+            const body = new Uint8Array(await fh.readFile())
+            const sha = createHash('sha256').update(body).digest('hex')
+            const r = await json<{ version?: string }>(`${d}/files/content${q({ path, expect })}`, {
+              method: 'PUT',
+              body,
+              headers: { 'Content-Type': 'application/octet-stream' },
+            })
+            return { version: r.version ?? null, sha256: sha }
+          }
+          // Block upload: hash each 1 MiB block, send only the ones storage lacks.
+          const blocks: string[] = []
+          const whole = createHash('sha256')
           const buf = Buffer.alloc(BLOCK_BYTES)
           for (let off = 0; off < size; off += BLOCK_BYTES) {
             const { bytesRead } = await fh.read(buf, 0, Math.min(BLOCK_BYTES, size - off), off)
@@ -221,10 +224,10 @@ export function createHttpDriveSyncApi(opts: {
             })
           }
           await req(`${d}/files/upload/${encodeURIComponent(plan.upload_id)}/commit${q({ path, expect })}`, { method: 'POST' })
+          return { version: null, sha256: whole.digest('hex') }
         } finally {
           await fh.close()
         }
-        return { version: null, sha256: whole.digest('hex') }
       },
       async remove(path, expect) {
         await req(`${d}/files${q({ path, recursive: 'false', expect })}`, { method: 'DELETE' }, [404])
