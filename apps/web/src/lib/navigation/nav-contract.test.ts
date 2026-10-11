@@ -34,20 +34,34 @@ const NAV_RULES = [
   '@next/next/no-location-assign-relative-destination',
 ];
 
+/**
+ * Every child here is async `Bun.spawn`, never a sync spawn: bun <= 1.4.2's
+ * spawnSync can lose the child's exit and spin the test worker at 100% CPU
+ * forever (oven-sh/bun#34069), where no test timeout can fire. The kill
+ * bounds a child that really hangs.
+ */
+async function run(cmd: string[], timeout = 100_000): Promise<{ stdout: string; stderr: string; code: number }> {
+  const proc = Bun.spawn(cmd, { cwd: WEB_ROOT, stdout: 'pipe', stderr: 'pipe', timeout });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (proc.signalCode) throw new Error(`${cmd[0]} killed after ${timeout} ms (${proc.signalCode})`);
+  return { stdout, stderr, code };
+}
+
 /** Files that could possibly trip either rule. */
-function candidateFiles(): string[] {
-  const out = Bun.spawnSync(
-    [
+async function candidateFiles(): Promise<string[]> {
+  const { stdout } = await run([
       'grep',
       '-rlE',
       'router\\.(push|replace)\\(|window\\.location|location\\.(href|assign|replace)\\s*=',
       'src',
       '--include=*.ts',
-      '--include=*.tsx',
-    ],
-    { cwd: WEB_ROOT },
-  ).stdout.toString();
-  return out
+    '--include=*.tsx',
+  ]);
+  return stdout
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
@@ -57,28 +71,16 @@ function candidateFiles(): string[] {
 type LintMessage = { ruleId: string | null; line: number; message: string };
 type LintResult = { filePath: string; messages: LintMessage[] };
 
-/**
- * ESLint over every candidate takes 16-20 s alone and minutes on a loaded
- * packages lane. It runs through `Bun.spawn`, on ESLint's own bin, with a hard
- * kill: `npx` through `node:child_process` once left an isolated worker
- * spinning at full CPU for 19 min with no child alive, so neither the child
- * nor the test timeout ever ended it (staging promotion for v0.13.54).
- */
-const ESLINT_KILL_MS = 100_000;
-
+/** ESLint over every candidate: 16-20 s alone, minutes on a loaded packages lane. */
 async function lintNavRules(files: string[]): Promise<string[]> {
   if (files.length === 0) return [];
-  const proc = Bun.spawn(
-    [resolve(WEB_ROOT, 'node_modules/.bin/eslint'), '--format', 'json', ...files],
-    { cwd: WEB_ROOT, stdout: 'pipe', stderr: 'pipe', timeout: ESLINT_KILL_MS },
-  );
-  const [raw, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
+  const { stdout: raw, stderr, code } = await run([
+    resolve(WEB_ROOT, 'node_modules/.bin/eslint'),
+    '--format',
+    'json',
+    ...files,
   ]);
   // eslint exits 1 when it reports problems; the JSON is still on stdout.
-  if (proc.signalCode) throw new Error(`eslint killed after ${ESLINT_KILL_MS} ms (${proc.signalCode})`);
   if (!raw) throw new Error(`eslint exited ${code} with no output: ${stderr}`);
   const results = JSON.parse(raw) as LintResult[];
   return results.flatMap((r) =>
@@ -90,7 +92,7 @@ async function lintNavRules(files: string[]): Promise<string[]> {
 
 describe('nav contract — no full page reload on an in-app navigation', () => {
   test('no nav control reaches a static internal href through router.push or window.location', async () => {
-    expect(await lintNavRules(candidateFiles())).toEqual([]);
+    expect(await lintNavRules(await candidateFiles())).toEqual([]);
   }, 120_000);
 
   test('both rules are wired at error level, not warn', () => {
@@ -178,13 +180,11 @@ describe('nav contract — every URL written to history is a real route', () => 
   // hrefs is deleted (KRTX-1012); its allow-list entry went with it.
   const LEGACY_UNREACHABLE = ['src/features/workspace/command-palette.tsx'];
 
-  test('no live code writes a /sessions/<id> or /terminal/<id> tab href', () => {
-    // grep exits 1 on no match; spawnSync does not throw on that.
-    const hits = Bun.spawnSync(
-      ['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'],
-      { cwd: WEB_ROOT },
-    )
-      .stdout.toString()
+  test('no live code writes a /sessions/<id> or /terminal/<id> tab href', async () => {
+    // grep exits 1 on no match; `run` does not throw on that.
+    const hits = (
+      await run(['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'])
+    ).stdout
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)
