@@ -692,6 +692,7 @@ function forgetSessionIds(sessionID: string): void {
 	bridgedPartIds.delete(sessionID);
 	// Same leak class, on the two T14 + T16 maps above.
 	deltaEventTails.delete(sessionID);
+	deltaOffsets.delete(sessionID);
 	stubAssistantIds.delete(sessionID);
 }
 
@@ -805,6 +806,23 @@ const deltaActiveParts = new Map<string, Set<string>>();
 // Kept across `session.idle` to reject a reconnect's replay of final deltas.
 // New turns use new part ids. Released by `forgetSessionIds`/`reset()`.
 const deltaEventTails = new Map<string, Map<string, Set<string>>>();
+
+// Where the live stream's next delta belongs in a part's text, per session,
+// keyed like `deltaEventTails`. It follows the stream: a part's first frame, a
+// snapshot, each delta. A hydrate does not move it. So when a tail read wrote
+// text the stream already sent, the deltas that re-deliver it (a reconnect's
+// replay, a queue still draining) find their own text at their offset and are
+// skipped, whatever their event ids. Released with `deltaEventTails`.
+const deltaOffsets = new Map<string, Map<string, number>>();
+
+function setDeltaOffset(sessionID: string, key: string, offset: number): void {
+	let bucket = deltaOffsets.get(sessionID);
+	if (!bucket) {
+		bucket = new Map();
+		deltaOffsets.set(sessionID, bucket);
+	}
+	bucket.set(key, offset);
+}
 
 /** Session-scoped tracking for `session.error`'s stub assistant message (see
  *  the handler below) — same shape/reason as the maps above, except the value
@@ -1204,7 +1222,10 @@ function appendPartDeltas(
 		let message: Message | undefined;
 		for (let i = messages.length - 1; i >= 0 && !message; i--) if (messages[i]!.id === messageID) message = messages[i];
 		if ((message as { time?: { completed?: number } } | undefined)?.time?.completed) return s;
-		let delta = "";
+		const existing = ((list[result.index] as unknown as Record<string, unknown>)[field] as string | undefined) ?? "";
+		const offsetKey = `${messageID}:${partID}:${field}`;
+		let offset = deltaOffsets.get(sessionID)?.get(offsetKey) ?? existing.length;
+		let text = existing;
 		for (const piece of pieces) {
 			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
 			// when the caller supplied an event id (every real wire delta does);
@@ -1225,7 +1246,12 @@ function appendPartDeltas(
 					deltaEventTails.set(sessionID, sessionTails);
 				}
 				let appliedIds = sessionTails.get(tailKey);
-				if (appliedIds?.has(piece.id)) continue;
+				if (appliedIds?.has(piece.id)) {
+					// Already applied. If the part holds its text at the offset
+					// (a replay after a hydrate), the stream moves past it.
+					if (offset < text.length && text.startsWith(piece.delta, offset)) offset += piece.delta.length;
+					continue;
+				}
 				if (!appliedIds) {
 					appliedIds = new Set();
 					sessionTails.set(tailKey, appliedIds);
@@ -1238,16 +1264,21 @@ function appendPartDeltas(
 					if (oldest !== undefined) appliedIds.delete(oldest);
 				}
 			}
-			delta += piece.delta;
+			// The part already holds this text where the stream says it goes:
+			// a hydrate wrote it before the delta arrived.
+			if (offset < text.length && text.startsWith(piece.delta, offset)) {
+				offset += piece.delta.length;
+				continue;
+			}
+			text += piece.delta;
+			offset = text.length;
 			applied = true;
 		}
+		setDeltaOffset(sessionID, offsetKey, offset);
 		if (!applied) return s;
 		const next = [...list];
 		const part = { ...next[result.index] };
-		const existing = (part as Record<string, unknown>)[field] as
-			| string
-			| undefined;
-		(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
+		(part as Record<string, unknown>)[field] = text;
 		next[result.index] = part as Part;
 		return { parts: { ...s.parts, [messageID]: next } };
 	});
@@ -1285,16 +1316,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Verify the binary search result — the list may be temporarily
 			// unsorted due to optimistic messages appended at the end.
 			const bsValid = result.found && list[result.index]?.id === message.id;
-			if (bsValid) {
+			const index = bsValid ? result.index : list.findIndex((m) => m.id === message.id);
+			if (index !== -1) {
+				// A message completes once. An earlier frame of it, replayed after
+				// the turn ended, must not reopen it: deltas of a completed message
+				// are dropped (`appendPartDeltas`), and a reopened one would take
+				// the replayed deltas a second time.
+				const completed = (list[index] as { time?: { completed?: number } }).time?.completed;
+				const incoming = message as { time?: { created: number; completed?: number } };
+				const kept = completed && incoming.time && !incoming.time.completed
+					? ({ ...message, time: { ...incoming.time, completed } } as Message)
+					: message;
 				const next = [...list];
-				next[result.index] = message;
-				return { messages: { ...s.messages, [sessionID]: next } };
-			}
-			// Fall back to linear scan to handle unsorted optimistic entries.
-			const linearIdx = list.findIndex((m) => m.id === message.id);
-			if (linearIdx !== -1) {
-				const next = [...list];
-				next[linearIdx] = message;
+				next[index] = kept;
 				return { messages: { ...s.messages, [sessionID]: next } };
 			}
 			// New message — placed by `time.created`, the key the server's own
@@ -1377,6 +1411,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				) {
 					const isPrefixGrowth = incomingText.startsWith(prevText);
 					if (!isPrefixGrowth) {
+						// An earlier frame of this part, delivered again (a replay):
+						// the stream stands at its end, so the deltas after it
+						// re-deliver text the part holds.
+						if (partSessionID && prevText.startsWith(incomingText)) {
+							setDeltaOffset(partSessionID, `${messageID}:${part.id}:text`, incomingText.length);
+						}
 						// Incoming text is not a prefix extension — reject the update
 						// entirely. Returning `s` preserves referential equality and
 						// prevents downstream selectors from re-firing.
@@ -1388,9 +1428,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 			}
+			// The stream's own frame: its next delta continues this text.
+			const followStream = () => {
+				if (partSessionID && isTextLikePart(part)) {
+					setDeltaOffset(partSessionID, `${messageID}:${part.id}:text`, part.text.length);
+				}
+			};
 			const next = [...list];
 			if (result.found) {
 				next[result.index] = part;
+				followStream();
 			} else {
 				// For NEW text/reasoning parts: if deltas have already been
 				// applied for this part ID, the part was created by the delta
@@ -1411,6 +1458,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 				next.splice(result.index, 0, part);
+				followStream();
 			}
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
@@ -2286,6 +2334,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
 		deltaEventTails.clear();
+		deltaOffsets.clear();
 		stubAssistantIds.clear();
 		// The data these holds protected is gone, so the holds are too —
 		// otherwise a late unmount could free a session the next page opened.
@@ -2712,6 +2761,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);
 			deltaEventTails.delete(sid);
+			deltaOffsets.delete(sid);
 
 			// Attach the error to the TURN THAT FAILED, which is the turn the
 			// last user message opened: `session.error` terminates the turn the
