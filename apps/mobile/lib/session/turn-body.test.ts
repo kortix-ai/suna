@@ -317,6 +317,12 @@ describe('turnWorkSplit (KRTX-2113, web TurnToolBlocks fold)', () => {
     expect(turnWorkSplit(segmentTurn([shownFile(), text('Done.')]), false)).toBeNull();
   });
 
+  test('work made only of interim text is no work: the sheet would open empty and hide that text', () => {
+    // Mobile drops text from the sheet (`workParts`), so text-only work renders as today.
+    expect(turnWorkSplit(segmentTurn([text('Checking.'), text('Done.')]), false)).toBeNull();
+    expect(turnWorkSplit(segmentTurn([text('Here it is.'), shownFile(), text('Done.')]), false)).toBeNull();
+  });
+
   test('a burst that renders nothing is no work and does not block the final text', () => {
     // A thought-only burst has no step: `burstView(...).hidden`, so ActivityBurst draws nothing.
     const invisible = { kind: 'burst' as const, parts: [reasoning('hmm')] };

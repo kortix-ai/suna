@@ -1708,22 +1708,21 @@ function TurnToolBlocks(
       // See `TurnLiveContext`.
       <TurnLiveContext.Provider value={working}>
         <div className="space-y-3">
-          {/* While working, every segment streams inside the accordion (row
-              hidden, forced open), so settling folds it in place. A settled
-              turn with no work (only deliverables and text) keeps the same
-              wrapper, still forced open with its row hidden, so nothing in it
-              remounts. Settling still remounts one thing, by design: the
-              final text and the hoisted cards move out of the accordion into
-              the slots below. */}
-          {fold ? (
-            <TurnWorkAccordion working={working || !split} durationMs={durationMs}>
-              {(split?.work ?? segments).map(renderSegment)}
-            </TurnWorkAccordion>
-          ) : (
-            segments.map(renderSegment)
-          )}
-          {split?.hoisted.map(renderSegment)}
-          {split?.final.map(renderSegment)}
+          {/* One keyed array in both states, so the hoisted deliverables and
+              the final text keep their instances at settle: a `show` iframe
+              does not reload and the final markdown does not re-parse. While
+              working (or settled with nothing to fold) it is the plain stream.
+              Settled, the work leaves for the "Worked for" row, which mounts
+              closed. The cost: the work disappears at once, not in a fold. */}
+          {split
+            ? [
+                <TurnWorkAccordion key="turn-work" durationMs={durationMs}>
+                  {split.work.map(renderSegment)}
+                </TurnWorkAccordion>,
+                ...split.hoisted.map(renderSegment),
+                ...split.final.map(renderSegment),
+              ]
+            : segments.map(renderSegment)}
         </div>
       </TurnLiveContext.Provider>
     )}

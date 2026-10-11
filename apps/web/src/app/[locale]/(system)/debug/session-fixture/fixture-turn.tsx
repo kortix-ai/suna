@@ -321,11 +321,15 @@ export function FixtureTurn({
             {/* Mirrors `TurnToolBlocks` (KRTX-2113): a settled turn folds its
                 work behind one "Worked for" row; deliverables and the final
                 text stay below it. */}
-            <TurnWorkAccordion working={working || !split} durationMs={sessionTurnDurationMs(turn)}>
-              {(split?.work ?? segments).map(renderSegment)}
-            </TurnWorkAccordion>
-            {split?.hoisted.map(renderSegment)}
-            {split?.final.map(renderSegment)}
+            {split
+              ? [
+                  <TurnWorkAccordion key="turn-work" durationMs={sessionTurnDurationMs(turn)}>
+                    {split.work.map(renderSegment)}
+                  </TurnWorkAccordion>,
+                  ...split.hoisted.map(renderSegment),
+                  ...split.final.map(renderSegment),
+                ]
+              : segments.map(renderSegment)}
           </div>
         </TurnLiveContext.Provider>
       )}

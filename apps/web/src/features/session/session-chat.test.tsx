@@ -625,9 +625,8 @@ describe('SessionChat moved turn sections', () => {
     try {
       const markup = renderChat();
       expect(markup).not.toContain('>Worked');
-      // The wrapper stays (forced open, row hidden) so the card never remounts at settle.
-      expect(markup).toContain('group/work');
-      expect(markup).toContain('class="select-none hidden"');
+      // Nothing to fold: the plain list, no accordion wrapper.
+      expect(markup).not.toContain('group/work');
       expect(markup).toContain('Lone Deliverable');
       expect(markup).toContain('Synthetic note under the card.');
     } finally {

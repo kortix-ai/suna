@@ -9,7 +9,7 @@ const STEP = <div>synthetic step content</div>;
 describe('TurnWorkAccordion', () => {
   test('a settled turn paints one collapsed "Worked for" row and no step content', () => {
     const html = renderToStaticMarkup(
-      <TurnWorkAccordion working={false} durationMs={134_000}>
+      <TurnWorkAccordion durationMs={134_000}>
         {STEP}
       </TurnWorkAccordion>,
     );
@@ -22,7 +22,7 @@ describe('TurnWorkAccordion', () => {
   test('an unknown or sub-second duration reads "Worked"', () => {
     for (const durationMs of [null, 400]) {
       const html = renderToStaticMarkup(
-        <TurnWorkAccordion working={false} durationMs={durationMs}>
+        <TurnWorkAccordion durationMs={durationMs}>
           {STEP}
         </TurnWorkAccordion>,
       );
@@ -31,39 +31,11 @@ describe('TurnWorkAccordion', () => {
     }
   });
 
-  test('a working turn streams its steps with the row hidden', () => {
-    const html = renderToStaticMarkup(
-      <TurnWorkAccordion working durationMs={134_000}>
-        {STEP}
-      </TurnWorkAccordion>,
-    );
-    expect(html).toContain('synthetic step content');
-    expect(html).toContain('data-state="open"');
-    expect(html).not.toContain('Worked');
-    // Bare trick: the trigger slot stays, its contents are an empty hidden node.
-    expect(html).toContain('class="select-none hidden"');
-  });
 
-  test('working never clips the live stream; settled clips the fold', () => {
-    const live = renderToStaticMarkup(
-      <TurnWorkAccordion working durationMs={134_000}>
-        {STEP}
-      </TurnWorkAccordion>,
-    );
-    expect(live).toContain('class="overflow-visible"');
-    expect(live).not.toContain('overflow-hidden');
-    const settled = renderToStaticMarkup(
-      <TurnWorkAccordion working={false} durationMs={134_000}>
-        {STEP}
-      </TurnWorkAccordion>,
-    );
-    expect(settled).toContain('class="overflow-hidden"');
-    expect(settled).not.toContain('overflow-visible');
-  });
 
   test('the row caret answers its own group, never an inner burst', () => {
     const html = renderToStaticMarkup(
-      <TurnWorkAccordion working={false} durationMs={134_000}>
+      <TurnWorkAccordion durationMs={134_000}>
         {STEP}
       </TurnWorkAccordion>,
     );
