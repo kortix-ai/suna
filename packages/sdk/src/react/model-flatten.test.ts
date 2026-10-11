@@ -299,13 +299,12 @@ describe('isOfferedModel', () => {
   });
 });
 
-// Characterization (KRTX-452, phase 1 of KRTX-451): the canonical SDK
-// flattener already diverges from the host copy
-// (apps/web/src/features/session/model-flatten.ts) on these behaviors. The
-// host test pins the same fixtures on the host side. Later phases reconcile
-// the host onto these SDK semantics; these assertions are the spec they
-// reconcile to.
-describe('flattenModels — SDK semantics the host copy still lacks (characterization)', () => {
+// These behaviors once diverged from the web-host copy of the flattener
+// (KRTX-451 phase 1 characterized the drift against
+// apps/web/src/features/session/model-flatten.ts; KRTX-455 phase 4 deleted
+// that host file, so the SDK is the single definition). They stay as
+// regression pins on the SDK semantics every picker now runs on.
+describe('flattenModels — semantics that once diverged from the deleted host copy', () => {
   const driftList = gatewayProviderList({
     // Stale pre-removal entries a baked catalog can still carry.
     auto: { name: 'Auto' },
