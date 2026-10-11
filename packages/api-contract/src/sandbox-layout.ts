@@ -37,6 +37,7 @@ export const KORTIXD_SHARED_SOURCES = [
   'packages/api-contract/src/session-log/model-view.ts',
   'packages/api-contract/src/session-log/schema.ts',
   'packages/api-contract/src/session-log/types.ts',
+  'packages/api-contract/src/session-log/v1.ts',
   'packages/api-contract/src/session-log/wire.ts',
   'packages/api-contract/src/transcript.ts',
   'packages/sdk/src/core/session/wire-message-id.ts',

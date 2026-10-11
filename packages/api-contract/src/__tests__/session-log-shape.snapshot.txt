@@ -10,13 +10,14 @@ AdapterCapabilitiesSchema = {
 AttachmentBlockSchema = {
   type: literal("attachment")
   id: string(min1)
-  ref: string
+  ref: string | absent
   mime: string
   name: string | absent
   label: string | absent
   source_path: string | absent
-  bytes: number(int)(min0)
+  bytes: number(int)(min0) | absent
   sha256: string | absent
+  url: string | absent
   ext: ExtSchema | absent
 }
 
@@ -367,9 +368,10 @@ ToolResultContentSchema = union(
   }
   | {
     type: literal("attachment")
-    ref: string
+    ref: string | absent
     mime: string
     sha256: string | absent
+    url: string | absent
   }
 )
 
