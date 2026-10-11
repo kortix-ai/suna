@@ -1,0 +1,27 @@
+{
+  "source_hash": "c7a434703abe841e9f2575cab8f74ba84b59c7ba8f5d3f0559af197112d444a0",
+  "diff_files": [
+    "apps/api/src/platform/services/session-sandbox.test.ts",
+    "apps/api/src/platform/services/session-sandbox.ts",
+    "apps/api/src/projects/lib/metadata-merge.integration.test.ts",
+    "apps/api/src/projects/lib/metadata-merge.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-activate.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-audit.test.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-flow.integration.test.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-routing.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-runner.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-service.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-store-activate.test.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-store.test.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-store.ts"
+  ],
+  "diff_hash": "b09d8e6a1a015f67d317fc1634d029aec0d0c7024ddf73b9636743f500fb5723",
+  "head": "b25249d52f15256eadcc699fbb336e2118a78365",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T19:29:14.330Z"
+}

@@ -39,7 +39,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import * as realAgents from '../../projects/agents';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
-import * as realProviderTransitionStore from '../../projects/provider-transition/provider-transition-store';
+import * as realProviderTransitionRouting from '../../projects/provider-transition/provider-transition-routing';
 import * as realProviders from '../providers';
 
 const dialect = new PgDialect();
@@ -275,8 +275,8 @@ mock.module('../providers', () => ({
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
 }));
 
-mock.module('../../projects/provider-transition/provider-transition-store', () => ({
-  ...realProviderTransitionStore,
+mock.module('../../projects/provider-transition/provider-transition-routing', () => ({
+  ...realProviderTransitionRouting,
   readActiveRouting: async () => activeRouting,
 }));
 

@@ -45,7 +45,7 @@ describe('access help page', () => {
   // The paragraph that keeps the two authority systems apart. Without it people
   // read "role" as covering what a running agent may do, which it does not —
   // that is the manifest's Kortix permissions. Same wording as
-  // `content/docs/accounts.mdx`'s "one vocabulary, two bindings".
+  // `content/docs/accounts/index.mdx`.
   test('it states the one-vocabulary-two-bindings rule', () => {
     expect(flat).toContain("raw('text4e2c36d015a8')");
     expect(flat).toContain("raw('textfe384b93382f')");
