@@ -19,8 +19,10 @@
  * - User text: `text` is the v1 text, `model_text` the text pi sent when it
  *   differs (a prompt template pi expanded). A pi image is an attachment with
  *   `ref: blob:<sha256>` and `bytes`; the bytes stay in the native store (no
- *   object store yet). A v1 file part pi never received (not an image, or a
- *   model without image input) is a model-invisible harness block.
+ *   object store yet). A v1 file part pi never received (not an image, a
+ *   model without image input, or an image pi dropped) is a harness block
+ *   `{ kind: 'undelivered_file', model_visible: false }`, never an
+ *   attachment: the model never saw it, so a restore must not present it.
  * - Reasoning is display only (C3); its signature stays in `ext.pi`.
  * - A call with no result, at rest, is closed (C2/F11) with pi-ai's own text.
  * - An errored or aborted reply is out of context: pi-ai never replays one.
@@ -263,7 +265,7 @@ function deriveThread(input: {
           m.blocks.push({ type: 'attachment', id: (part?.id as string | undefined) ?? `${id}-n${i}`, ...attachment(c), ...(part?.filename ? { name: part.filename } : {}) })
         }
       })
-      // A file pi never received: the model saw nothing of it.
+      // A file pi never received: a harness block, never an attachment, so a restore does not present it to the model.
       for (const part of pool.rest('file')) {
         const url = String(part.url ?? '')
         const data = url.startsWith('data:') ? { mime: part.mime, filename: part.filename, bytes: Buffer.from(url.slice(url.indexOf(',') + 1), 'base64').length } : { mime: part.mime, filename: part.filename, url }
