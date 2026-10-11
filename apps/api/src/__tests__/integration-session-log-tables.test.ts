@@ -7,7 +7,8 @@
  * drizzle declarations (`schema-contract.ts` proves those match it).
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { sessionLogMessages } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '../shared/db';
 
@@ -81,6 +82,55 @@ test('a session stores one log row, a thread, two messages and a blob', async ()
   // bigint: a blob over 2^31 bytes round-trips.
   const [blob] = await rows(sql`SELECT bytes::text AS bytes FROM kortix.session_log_blobs WHERE session_id = ${SESSION}`);
   expect(blob!.bytes).toBe('5000000000');
+});
+
+test('rev read through the drizzle column is an exact JS number past int4', async () => {
+  // Raw `db.execute` returns int8 as a string (postgres.js); the drizzle
+  // column (`bigint`, mode 'number') maps it with Number.
+  const [row] = await db
+    .select({ rev: sessionLogMessages.rev })
+    .from(sessionLogMessages)
+    .where(and(eq(sessionLogMessages.sessionId, SESSION), eq(sessionLogMessages.messageId, 'msg_b')));
+  expect(typeof row!.rev).toBe('number');
+  expect(row!.rev).toBe(REV + 2);
+});
+
+test('the four tables carry exactly the declared indexes and constraints', async () => {
+  const indexes = await rows(sql`
+    SELECT i.indexrelid::regclass::text AS index
+      FROM pg_index i
+     WHERE i.indrelid IN ('kortix.session_logs'::regclass, 'kortix.session_log_threads'::regclass,
+                          'kortix.session_log_messages'::regclass, 'kortix.session_log_blobs'::regclass)
+     ORDER BY 1`);
+  expect(indexes.map((row) => row.index)).toEqual([
+    'kortix.session_log_blobs_pkey',
+    'kortix.session_log_messages_pkey',
+    'kortix.session_log_messages_thread_seq_key',
+    'kortix.session_log_threads_pkey',
+    'kortix.session_logs_pkey',
+  ]);
+  const constraints = await rows(sql`
+    SELECT conrelid::regclass::text AS on_table, conname AS name, contype::text AS type,
+           condeferrable AS deferrable, confrelid::regclass::text AS refs, confdeltype::text AS on_delete
+      FROM pg_constraint
+     WHERE conrelid IN ('kortix.session_logs'::regclass, 'kortix.session_log_threads'::regclass,
+                        'kortix.session_log_messages'::regclass, 'kortix.session_log_blobs'::regclass)
+     ORDER BY 2`);
+  const pk = (on_table: string, name: string) => ({ on_table, name, type: 'p', deferrable: false, refs: '-', on_delete: ' ' });
+  // confdeltype 'c' = ON DELETE CASCADE.
+  const fk = (on_table: string, name: string) =>
+    ({ on_table, name, type: 'f', deferrable: false, refs: 'kortix.project_sessions', on_delete: 'c' });
+  expect(constraints).toEqual([
+    pk('kortix.session_log_blobs', 'session_log_blobs_pkey'),
+    fk('kortix.session_log_blobs', 'session_log_blobs_session_fk'),
+    pk('kortix.session_log_messages', 'session_log_messages_pkey'),
+    fk('kortix.session_log_messages', 'session_log_messages_session_fk'),
+    { on_table: 'kortix.session_log_messages', name: 'session_log_messages_thread_seq_key', type: 'u', deferrable: false, refs: '-', on_delete: ' ' },
+    pk('kortix.session_log_threads', 'session_log_threads_pkey'),
+    fk('kortix.session_log_threads', 'session_log_threads_session_fk'),
+    pk('kortix.session_logs', 'session_logs_pkey'),
+    fk('kortix.session_logs', 'session_logs_session_fk'),
+  ]);
 });
 
 test('a second message at the same (session_id, thread_id, seq) is rejected', async () => {

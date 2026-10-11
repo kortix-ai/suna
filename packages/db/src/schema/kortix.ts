@@ -2522,6 +2522,7 @@ export const sessionLogs = kortixSchema.table(
     gradeCounts: jsonb('grade_counts').$type<Record<string, number>>(),
     // The Session record without `threads`.
     record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    // Row time. The session's own `created_at` lives in `record`.
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
