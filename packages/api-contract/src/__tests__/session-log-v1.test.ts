@@ -213,6 +213,17 @@ describe('fromV1 / toV1 round trip', () => {
     for (const t of ['text', 'subtask', 'reasoning', 'file', 'tool', 'step-start', 'step-finish', 'snapshot', 'patch', 'agent', 'retry', 'compaction']) expect(types.has(t)).toBe(true);
   });
 
+  // A daemon adapter runs `fromV1` and then sets its own producer (P2.6), so its records carry
+  // the residuals under producer `opencode` or `pi`. `toV1` must be exact on them too (P4.2).
+  for (const [name, make, opts] of FIXTURES) {
+    const harness = opts?.harness ?? 'opencode';
+    test(`toV1 is exact on a journaled record (producer ${harness}): ${name}`, () => {
+      const log = json(fromV1(make(), opts));
+      for (const t of log.threads) for (const m of t.messages) m.producer = { harness, harness_version: '1.18.23', adapter_version: '1.0.0' };
+      expectExact(make(), toV1(log));
+    });
+  }
+
   test('row order does not change the result', () => {
     const x = mainFixture();
     const shuffled = { ...x, rows: [...x.rows].reverse() };
@@ -450,8 +461,9 @@ describe('toV1 on native v2 records', () => {
     expect(toV1(log).rows.filter((r) => hidden.includes(r.info.id))).toEqual([]);
   });
 
-  test('a native harness block from an opencode/pi adapter is not passed through as a v1 part', () => {
+  test('a harness block on a native thread (no v1 ext, as the pi adapter writes) is not passed through as a v1 part', () => {
     const log = json(fromV1(piFixture(), { harness: 'pi' }));
+    delete log.threads[0].ext;
     const m = log.threads[0].messages[1];
     m.producer = { harness: 'pi', harness_version: '1.0.3', adapter_version: '1' };
     m.blocks.push({ type: 'harness', id: 'h1', harness: 'pi', kind: 'custom', data: { anything: true }, model_visible: false });
