@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import type { AppBlockV2 } from '@kortix/manifest-schema';
 import type {
   App,
@@ -35,6 +35,15 @@ export function positiveNumber(value: string | undefined, label: string): number
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) throw new Error(`${label} must be positive`);
   return number;
+}
+
+/**
+ * `--budget <usd>` is retired: Apps have no budget. Consume it, so its value
+ * is never read as a path or an App id, and say it was ignored.
+ */
+export function dropRetiredBudgetFlag(rest: string[]): void {
+  if (takeFlagValue(rest, ['--budget']) === undefined) return;
+  process.stderr.write('  ! --budget is ignored: Apps have no budget. Account credits pay for App compute.\n');
 }
 
 export function positiveInteger(value: string | undefined, label: string): number | undefined {
@@ -181,11 +190,12 @@ interface DeployFlags {
   groupIds?: string[];
   /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
   alwaysOn?: boolean;
-  /** `--budget <usd>`: the monthly compute budget, applied like `alwaysOn`. */
-  budget?: number;
+  /** A worker-only App (process groups, no http service): no port. */
+  workerOnly?: boolean;
 }
 
 export function deployFlags(rest: string[]): DeployFlags {
+  dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
   if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
     throw new Error('--provider must be daytona, platinum, or e2b');
@@ -230,7 +240,6 @@ export function deployFlags(rest: string[]): DeployFlags {
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
     alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
-    budget: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
   };
 }
 
@@ -247,6 +256,22 @@ export function loadManifestApps(cwd: string): { root: string; blocks: Record<st
   const rawApps = manifest.data.apps;
   if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
   return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
+}
+
+/**
+ * The `apps.<name>` block a deploy targets when no `--manifest-app` names one:
+ * the block named by `--app`, else the block whose `path` is the source path.
+ * Without it, `kortix apps deploy apps/web --app web` ignored the block (its
+ * `spa: true` among others).
+ */
+export function matchingManifestApp(cwd: string, input: { app?: string; path?: string }): string | undefined {
+  const loaded = loadManifestApps(cwd);
+  if (!loaded) return undefined;
+  if (input.app && loaded.blocks[input.app]) return input.app;
+  if (!input.path) return undefined;
+  const wanted = resolvePath(cwd, input.path);
+  return Object.entries(loaded.blocks)
+    .find(([, block]) => resolvePath(loaded.root, block.path ?? '.') === wanted)?.[0];
 }
 
 export function loadManifestAppDefaults(
@@ -282,7 +307,6 @@ export function mergeManifestDefaults(
     type: flags.type ?? manifestBlock?.type,
     image: flags.image ?? manifestBlock?.image,
     command: flags.command ?? manifestBlock?.command,
-    port: flags.port ?? manifestBlock?.port,
     dockerfile: flags.dockerfile ?? manifestBlock?.dockerfile,
     root: flags.root ?? manifestBlock?.root,
     outputDir: flags.outputDir ?? manifestBlock?.output_dir,
@@ -290,6 +314,10 @@ export function mergeManifestDefaults(
     buildCommand: flags.buildCommand ?? manifestBlock?.build_command,
     readinessPath: flags.readinessPath ?? manifestBlock?.readiness_path,
     spa: flags.spa ?? manifestBlock?.spa,
+    // The primary service's port: `port`, else `http_service.internal_port`.
+    port: flags.port ?? manifestBlock?.port ?? (manifestBlock?.http_service?.internal_port as number | undefined),
+    // Process groups without an http service: a worker-only App serves no port.
+    workerOnly: Boolean(manifestBlock?.processes) && manifestBlock?.port === undefined && !manifestBlock?.http_service,
   };
 }
 
@@ -324,13 +352,13 @@ function buildSource(kind: 'static' | 'bundle' | 'dockerfile', flags: DeployFlag
       ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
     };
   }
-  if (!flags.command || !flags.port) {
-    throw new Error('Dockerfile deployments require --command and --port');
+  if (!flags.command || (!flags.port && !flags.workerOnly)) {
+    throw new Error('Dockerfile deployments require --command and --port (or http_service.internal_port)');
   }
   return {
     kind,
     command: flags.command,
-    port: flags.port,
+    ...(flags.port ? { port: flags.port } : {}),
     ...(flags.dockerfile ? { dockerfile: flags.dockerfile } : {}),
     ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
   };
@@ -397,27 +425,6 @@ export async function readAppArchive(source: string): Promise<Uint8Array> {
 }
 
 /**
- * A manifest budget applies only to an on-demand server App. On an always-on
- * or convex App the cost is fixed (size × 24/7), so the API refuses a budget;
- * an older kortix.yaml that still sets one deploys with a notice instead of failing.
- */
-export function manifestBudget(
-  block: ManifestAppDefaults['block'] | undefined,
-  existing: App | undefined,
-  flags: DeployFlags,
-): number | undefined {
-  const budget = block?.monthly_budget_usd;
-  if (budget === undefined) return undefined;
-  const kind = block?.kind ?? existing?.kind ?? 'web';
-  const alwaysOn = flags.alwaysOn ?? block?.always_on ?? existing?.always_on ?? true;
-  if (kind === 'web' && alwaysOn === false) return budget;
-  process.stderr.write(
-    `  ! monthly_budget_usd in kortix.yaml is ignored: a ${kind === 'convex' ? 'convex' : 'always-on'} App has a fixed monthly cost. Remove it, or set always_on: false for a budget.\n`,
-  );
-  return undefined;
-}
-
-/**
  * Resolve or create the App a deployment targets: an explicit --app, else the
  * manifest block's identity (updating an existing slug in place), else one
  * derived from the image reference or source path.
@@ -430,13 +437,10 @@ export async function provisionDeployApp(
 ): Promise<App> {
   const flagSettings = {
     ...(flags.alwaysOn === undefined ? {} : { always_on: flags.alwaysOn }),
-    ...(flags.budget === undefined ? {} : { monthly_budget_usd: flags.budget }),
   };
   if (flags.app) {
     const app = await resolveApp(apps, flags.app);
-    const changed =
-      (flags.alwaysOn !== undefined && app.always_on !== flags.alwaysOn) ||
-      (flags.budget !== undefined && app.monthly_budget_usd !== flags.budget);
+    const changed = flags.alwaysOn !== undefined && app.always_on !== flags.alwaysOn;
     return changed ? apps.update(app.app_id, flagSettings) : app;
   }
   if (manifestDefaults) {
@@ -455,9 +459,6 @@ export async function provisionDeployApp(
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
       ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
-      ...(manifestBudget(manifestBlock, existing, flags) !== undefined
-        ? { monthly_budget_usd: manifestBudget(manifestBlock, existing, flags) }
-        : {}),
       ...flagSettings,
       // The Apps this App uses; the manifest's list replaces the App's.
       ...(manifestBlock?.uses !== undefined ? { uses: manifestBlock.uses } : {}),
@@ -466,8 +467,6 @@ export async function provisionDeployApp(
     return apps.create({
       slug: manifestSlug,
       name: flags.name ?? manifestDefaults.name,
-      // The kind is fixed at create; a later manifest change does not convert an App.
-      ...(manifestBlock?.kind ? { kind: manifestBlock.kind } : {}),
       ...settings,
     });
   }
@@ -478,17 +477,10 @@ export async function provisionDeployApp(
   return apps.create({ slug, name: flags.name ?? slug, ...flagSettings });
 }
 
-/**
- * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month".
- * Null for an on-demand or static App, or when the server predates the estimate.
- */
-export function runCostLine(app: App): string | null {
-  const estimate = app.estimated_monthly_usd;
-  if (typeof app.monthly_budget_usd === 'number' || !estimate || app.hosting_type === 'static') return null;
-  return (
-    `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
-    `about $${Math.round(estimate)}/month`
-  );
+/** How an always-on App runs: "Runs 24/7 on 1 vCPU / 2 GB". Null for an on-demand or static App. */
+export function runModeLine(app: App): string | null {
+  if (app.always_on === false || app.hosting_type === 'static') return null;
+  return `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB`;
 }
 
 /**
@@ -504,8 +496,8 @@ export async function stageArtifact(
   json: boolean,
 ): Promise<{ artifactId: string; source: AppSource; cleanup?: () => Promise<void> }> {
   if (flags.image) {
-    if (!flags.command || !flags.port)
-      throw new Error('OCI deployments require --command and --port');
+    if (!flags.command || (!flags.port && !flags.workerOnly))
+      throw new Error('OCI deployments require --command and --port (or http_service.internal_port)');
     const registered = await apps.artifacts.register({ kind: 'oci_image', image: flags.image });
     return {
       artifactId: registered.artifact.artifact_id,
@@ -513,7 +505,7 @@ export async function stageArtifact(
         kind: 'oci_image',
         image: flags.image,
         command: flags.command,
-        port: flags.port,
+        ...(flags.port ? { port: flags.port } : {}),
         ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
       },
     };

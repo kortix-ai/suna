@@ -6,7 +6,6 @@
 
 import {
   appRuntimes,
-  appConvexInstances,
   projectMonitorBoxes,
   sandboxComputeSessions,
   sessionSandboxes,
@@ -65,27 +64,12 @@ function nonSessionRuntimeBillingStatus(status: string | null): string | null {
 }
 
 /**
- * A `convex` App machine row's status in the same vocabulary. A deleted App's
- * row (`deleted`, kept in retention) is gone, and a parked one (its project is
- * archived, apps/kinds/convex/lifecycle.ts) is
- * stopped, whatever its `status` column says.
- */
-function backendBillingStatus(row: {
-  backendStatus: string | null;
-  backendMetadata: unknown;
-}): string | null {
-  if (!row.backendStatus) return null;
-  if (row.backendStatus === 'deleted') return 'deleted';
-  if ((row.backendMetadata as { parked?: unknown } | null)?.parked) return 'stopped';
-  return nonSessionRuntimeBillingStatus(row.backendStatus);
-}
-
-/**
  * Every compute window belongs to exactly one runtime model. Session windows
  * join through `session_sandboxes`; App windows join through `app_runtime_id`;
  * monitor windows join through `project_monitor_boxes.box_id`, which IS the
- * monitor window's `sandbox_id`; backend windows join through
- * `app_convex_instances.app_id` (the App id), likewise. Keeping all four joins in one
+ * monitor window's `sandbox_id`. A leftover `backend` window (the retired
+ * `convex` App machine) has no runtime row: it reads as `sandbox-row-missing`
+ * and this sweep closes it. Keeping all three joins in one
  * bounded query preserves oldest-first sweep order.
  *
  * The monitor join is load-bearing, not defensive: a monitor box has NO
@@ -116,11 +100,6 @@ function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
       monitorMetadata: projectMonitorBoxes.metadata,
       monitorProvider: projectMonitorBoxes.provider,
       monitorExternalId: projectMonitorBoxes.externalId,
-      backendStatus: appConvexInstances.status,
-      backendUpdatedAt: appConvexInstances.updatedAt,
-      backendMetadata: appConvexInstances.metadata,
-      backendProvider: appConvexInstances.provider,
-      backendExternalId: appConvexInstances.externalId,
     })
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
@@ -129,7 +108,6 @@ function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
       projectMonitorBoxes,
       eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
     )
-    .leftJoin(appConvexInstances, backendWindowJoin())
     .where(eq(sandboxComputeSessions.state, 'active'))
     .orderBy(sql`${sandboxComputeSessions.startedAt} asc`)
     .limit(limit);
@@ -171,44 +149,33 @@ export async function reconcileOrphanComputeSessions(
     try {
       const isApp = row.workloadType === 'app';
       const isMonitor = row.workloadType === 'monitor';
-      const isBackend = row.workloadType === 'backend';
       const runtimeStatus = isApp
         ? nonSessionRuntimeBillingStatus(row.appStatus)
         : isMonitor
           ? nonSessionRuntimeBillingStatus(row.monitorStatus)
-          : isBackend
-            ? backendBillingStatus(row)
-            : row.sbStatus;
+          : row.sbStatus;
       const runtimeUpdatedAt = isApp
         ? row.appUpdatedAt
         : isMonitor
           ? row.monitorUpdatedAt
-          : isBackend
-            ? row.backendUpdatedAt
-            : row.sbUpdatedAt;
+          : row.sbUpdatedAt;
       const runtimeMetadata = (
         isApp
           ? row.appMetadata
           : isMonitor
             ? row.monitorMetadata
-            : isBackend
-              ? row.backendMetadata
-              : row.sbMetadata
+            : row.sbMetadata
       ) as Record<string, unknown> | null;
       const provider = isApp
         ? row.appProvider
         : isMonitor
           ? row.monitorProvider
-          : isBackend
-            ? row.backendProvider
-            : row.sessionProvider;
+          : row.sessionProvider;
       const externalId = isApp
         ? row.appExternalId
         : isMonitor
           ? row.monitorExternalId
-          : isBackend
-            ? row.backendExternalId
-            : row.sessionExternalId;
+          : row.sessionExternalId;
       const startedAt = parseTimestamp(row.startedAt) ?? now;
       const openForMs = Math.max(0, now.getTime() - startedAt.getTime());
       const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
@@ -317,14 +284,6 @@ export async function reconcileOrphanComputeSessions(
   return result;
 }
 
-/** A `convex` App window's `sandbox_id` IS its App id. Joined for those windows only. */
-function backendWindowJoin() {
-  return and(
-    eq(sandboxComputeSessions.workloadType, 'backend'),
-    eq(appConvexInstances.appId, sandboxComputeSessions.sandboxId),
-  );
-}
-
 async function updateComputeSessionMetadata(
   computeId: string,
   metadata: Record<string, unknown>,
@@ -356,7 +315,6 @@ export async function countBillingInvariantViolations(): Promise<number> {
       projectMonitorBoxes,
       eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
     )
-    .leftJoin(appConvexInstances, backendWindowJoin())
     .where(
       and(
         eq(sandboxComputeSessions.state, 'active'),
@@ -369,12 +327,7 @@ export async function countBillingInvariantViolations(): Promise<number> {
           ${projectMonitorBoxes.boxId} IS NULL OR
           ${projectMonitorBoxes.status} NOT IN ('provisioning', 'starting', 'running')
         )) OR
-        (${sandboxComputeSessions.workloadType} = 'backend' AND (
-          ${appConvexInstances.appId} IS NULL OR
-          ${appConvexInstances.status} NOT IN ('provisioning', 'running') OR
-          ${appConvexInstances.metadata} ? 'parked'
-        )) OR
-        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor', 'backend') AND (
+        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor') AND (
           ${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active'
         ))
       )`,
@@ -408,15 +361,13 @@ export async function countStaleLivenessWindows(now = new Date()): Promise<numbe
       projectMonitorBoxes,
       eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
     )
-    .leftJoin(appConvexInstances, backendWindowJoin())
     .where(
       and(
         eq(sandboxComputeSessions.state, 'active'),
         sql`(
         (${sandboxComputeSessions.workloadType} = 'app' AND ${appRuntimes.status} = 'running') OR
         (${sandboxComputeSessions.workloadType} = 'monitor' AND ${projectMonitorBoxes.status} = 'running') OR
-        (${sandboxComputeSessions.workloadType} = 'backend' AND ${appConvexInstances.status} = 'running' AND NOT (${appConvexInstances.metadata} ? 'parked')) OR
-        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor', 'backend') AND ${sessionSandboxes.status} = 'active')
+        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor') AND ${sessionSandboxes.status} = 'active')
       )`,
         sql`coalesce(${sandboxComputeSessions.metadata}->>'lastAliveAt', ${sandboxComputeSessions.startedAt}::text) < ${cutoff}`,
       ),

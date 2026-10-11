@@ -3,9 +3,14 @@
 import { Label } from '@/components/ui/label';
 import { type AutosizeTextAreaRef, Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/features/session/model-selector';
-import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { AgentSelector } from '@/features/session/session-chat-input';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { type Agent, useRuntimeProviders } from '@kortix/sdk/react';
+import {
+  type Agent,
+  flattenModels,
+  modelProviderMode,
+  useRuntimeProviders,
+} from '@kortix/sdk/react';
 import { useMemo, useRef } from 'react';
 
 import { InlineError, type PatchDraft } from './composer-parts';
@@ -30,7 +35,10 @@ export function ThenFields({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const promptRef = useRef<AutosizeTextAreaRef | null>(null);
   const { data: providers } = useRuntimeProviders();
-  const models = useMemo(() => flattenModels(providers), [providers]);
+  const models = useMemo(
+    () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
+    [providers],
+  );
 
   function insertVariable(token: string) {
     const el = promptRef.current?.textArea;

@@ -17,6 +17,8 @@ async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
     connectionString: databaseUrl,
     ssl: local ? false : { rejectUnauthorized: false },
   });
+  // A dropped connection must fail the next query, not crash the runner.
+  client.on('error', () => {});
   await client.connect();
   return client;
 }

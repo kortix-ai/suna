@@ -23,6 +23,7 @@ import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow } from '../core/flow';
 import type { FlowContext, Principal, TeamFixture } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
+import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 import {
   AgentPrincipalsWorld,
   type AgentSession,
@@ -855,6 +856,7 @@ flow(
   {
     domain: 'agent-principals',
     requires: ['database', 'appHost'],
+    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/projects/:projectId/apps',

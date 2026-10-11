@@ -1,30 +1,16 @@
 {
-  "source_hash": "3e558f3d4a571fce8c43e6b522ce023e4d31e0ea69d8322bd86fb9f57e5eac91",
+  "source_hash": "7ac0fd70688f8bc59c65f26a525873ae9fa7cba9a45ad9f277bb36a72db51a1c",
   "diff_files": [
-    "apps/api/src/__tests__/e2e-slack-cli.test.ts",
-    "apps/kortix-app-runtime/build_test.go",
-    "apps/kortix-app-runtime/caddy/go.mod",
-    "apps/kortix-app-runtime/caddy/go.sum",
-    "apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/fake-drive-sync-api.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/on-boot.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/shared/on-boot.ts",
-    "apps/kortix-sandbox-agent-server/src/services/drive-sync/remote.ts",
-    "packages/db/drizzle/meta/20261010223257_snapshot.json",
-    "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261010223257817_project_secret_tombstones_snapshot.sql",
-    "packages/sdk/src/core/rest/projects-client/drives.test.ts",
-    "packages/sdk/src/core/rest/projects-client/drives.ts",
-    "scripts/boot-artifacts/publish.ts",
-    "tests/e2e/specs/23-composio-connector.spec.ts"
+    "apps/api/src/__tests__/unit-platinum-snapshot-size.test.ts",
+    "apps/web/src/hooks/projects/use-warm-project-session.test.ts"
   ],
-  "diff_hash": "97a5923a5e48a9607d8fdf8d1fb537c7ed076ce89cce334436b7f9ea3b349dd2",
-  "head": "4111610f227a40cd16d465ff339a5c9af4bc164a",
+  "diff_hash": "11cf519d083b331194dff66f4ed9d1298818156f457833e9ec5bb2a398874a3a",
+  "head": "94e3cb59a21d6a8931de3a6f77dce28f9ed15d67",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T23:38:15.148Z"
+  "at": "2026-10-11T10:18:28.397Z"
 }

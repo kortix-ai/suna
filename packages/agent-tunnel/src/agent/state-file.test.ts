@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,6 +27,16 @@ describe('agent state file', () => {
       expect(JSON.stringify(state)).not.toContain('token');
     } finally {
       rmSync(join(home, '..'), { recursive: true, force: true });
+    }
+  });
+
+  test('a writer that died without writing offline reads as offline', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-state-'));
+    try {
+      writeFileSync(stateFilePath(home), JSON.stringify({ tunnelId: 't', apiUrl: 'u', status: 'online', since: '', agentVersion: '0', pid: 2 ** 22 + 7 }));
+      expect(readAgentState(home)?.status).toBe('offline');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });

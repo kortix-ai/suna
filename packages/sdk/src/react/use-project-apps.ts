@@ -2,20 +2,28 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createAppVolumeSnapshot,
+  destroyAppMachine,
+  destroyAppVolume,
+  forkAppVolume,
+  listAppMachines,
+  listAppVolumeSnapshots,
+  listAppVolumes,
+  restartAppMachine,
+  restoreAppVolume,
+  scaleApp,
+  startAppMachine,
+  stopAppMachine,
+  updateAppVolume,
   createApp,
   createAppAccessSession,
   createAppDeployment,
-  createAppSnapshot,
   deleteApp,
-  deleteAppSnapshot,
   getAppAccess,
   getAppDeployment,
   listAppDeployments,
-  listAppSnapshots,
   listApps,
-  restoreAppSnapshot,
   rollbackApp,
-  rotateAppCredentials,
   startApp,
   stopApp,
   updateApp,
@@ -38,11 +46,6 @@ export const appDeploymentKey = (
   deploymentId: string | null | undefined,
 ) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
 
-export const appSnapshotsKey = (
-  projectId: string | null | undefined,
-  appId: string | null | undefined,
-) => qk.project.appSnapshots(projectId ?? '', appId ?? '');
-
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
 /** Project App inventory (only the Apps the caller may open; a project manager: every App) and lifecycle mutations. */
@@ -54,11 +57,6 @@ export function useProjectApps(projectId: string | null | undefined) {
     queryFn: () => listApps(projectId as string),
     enabled: !!projectId,
     ...contract('inventory'),
-    // Poll while an App's instance provisions or runs an operation (resize, restore, rotation, recovery).
-    refetchInterval: (q: { state: { data?: Array<{ instance?: { status: string; operation: string | null } | null }> } }) =>
-      q.state.data?.some((app) => app.instance && (app.instance.status === 'provisioning' || app.instance.operation))
-        ? 2_000
-        : false,
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
@@ -80,20 +78,11 @@ export function useProjectApps(projectId: string | null | undefined) {
     onSuccess: invalidate,
   });
   const remove = useMutation({
-    /** An App with `snapshots` needs `confirm`: its slug, typed by the person deleting it. */
-    mutationFn: (target: string | { appId: string; confirm?: string }) =>
-      typeof target === 'string'
-        ? deleteApp(projectId as string, target)
-        : deleteApp(projectId as string, target.appId, { confirm: target.confirm }),
-    onSuccess: invalidate,
-  });
-  /** Capability `admin_credentials`: replaces the admin key. */
-  const rotateCredentials = useMutation({
-    mutationFn: (appId: string) => rotateAppCredentials(projectId as string, appId),
+    mutationFn: (appId: string) => deleteApp(projectId as string, appId),
     onSuccess: invalidate,
   });
 
-  return { ...query, create, update, start, stop, remove, rotateCredentials };
+  return { ...query, create, update, start, stop, remove };
 }
 
 /** Immutable deployment history and deployment-specific mutations. */
@@ -213,39 +202,97 @@ export function useAppAccess(
   return { policy, session, update };
 }
 
-/**
- * Capability `snapshots`: one App's snapshots, automatic backup and schedule,
- * plus create, delete and restore mutations. A restore also refreshes the App
- * list (the instance runs an operation).
- */
-export function useAppSnapshots(
-  projectId: string | null | undefined,
-  appId: string | null | undefined,
-  enabled = true,
-) {
+export const appMachinesKey = (projectId: string | null | undefined, appId: string | null | undefined) =>
+  qk.project.appMachines(projectId ?? '', appId ?? '');
+export const appVolumesKey = (projectId: string | null | undefined, appId: string | null | undefined) =>
+  qk.project.appVolumes(projectId ?? '', appId ?? '');
+
+/** An App's machines, polled every 5 s, with start/stop/restart/destroy and scale. */
+export function useAppMachines(projectId: string | null | undefined, appId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = appSnapshotsKey(projectId, appId);
+  const queryKey = appMachinesKey(projectId, appId);
   const query = useQuery({
     queryKey,
-    queryFn: () => listAppSnapshots(projectId as string, appId as string),
-    enabled: !!projectId && !!appId && enabled,
+    queryFn: () => listAppMachines(projectId as string, appId as string),
+    enabled: !!projectId && !!appId,
+    ...contract('inventory'),
+    refetchInterval: 5_000,
+  });
+  const invalidate = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey }),
+    queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) }),
+  ]);
+  const start = useMutation({
+    mutationFn: (machineId: string) => startAppMachine(projectId as string, appId as string, machineId),
+    onSuccess: invalidate,
+  });
+  const stop = useMutation({
+    mutationFn: (machineId: string) => stopAppMachine(projectId as string, appId as string, machineId),
+    onSuccess: invalidate,
+  });
+  const restart = useMutation({
+    mutationFn: (machineId: string) => restartAppMachine(projectId as string, appId as string, machineId),
+    onSuccess: invalidate,
+  });
+  const destroy = useMutation({
+    mutationFn: (machineId: string) => destroyAppMachine(projectId as string, appId as string, machineId),
+    onSuccess: invalidate,
+  });
+  const scale = useMutation({
+    mutationFn: (count: Record<string, number>) => scaleApp(projectId as string, appId as string, count),
+    onSuccess: invalidate,
+  });
+  return { ...query, start, stop, restart, destroy, scale };
+}
+
+/** An App's volumes, with snapshot, restore, fork, extend and destroy. */
+export function useAppVolumes(projectId: string | null | undefined, appId: string | null | undefined) {
+  const queryClient = useQueryClient();
+  const queryKey = appVolumesKey(projectId, appId);
+  const query = useQuery({
+    queryKey,
+    queryFn: () => listAppVolumes(projectId as string, appId as string),
+    enabled: !!projectId && !!appId,
     ...contract('inventory'),
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
-  const create = useMutation({
-    mutationFn: () => createAppSnapshot(projectId as string, appId as string),
-    onSuccess: invalidate,
-  });
-  const remove = useMutation({
-    mutationFn: (snapshotId: string) => deleteAppSnapshot(projectId as string, appId as string, snapshotId),
+  const snapshot = useMutation({
+    mutationFn: (volumeId: string) => createAppVolumeSnapshot(projectId as string, appId as string, volumeId),
     onSuccess: invalidate,
   });
   const restore = useMutation({
-    mutationFn: (snapshotId: string) => restoreAppSnapshot(projectId as string, appId as string, snapshotId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey });
-      void queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) });
-    },
+    mutationFn: (input: { volumeId: string; snapshotId: string }) =>
+      restoreAppVolume(projectId as string, appId as string, input.volumeId, input.snapshotId),
+    onSuccess: invalidate,
   });
-  return { ...query, create, delete: remove, restore };
+  const fork = useMutation({
+    mutationFn: (input: { volumeId: string; name: string; snapshotId?: string }) =>
+      forkAppVolume(projectId as string, appId as string, input.volumeId, { name: input.name, snapshot_id: input.snapshotId }),
+    onSuccess: invalidate,
+  });
+  const extend = useMutation({
+    mutationFn: (input: { volumeId: string; sizeGb: number }) =>
+      updateAppVolume(projectId as string, appId as string, input.volumeId, { size_gb: input.sizeGb }),
+    onSuccess: invalidate,
+  });
+  const destroy = useMutation({
+    mutationFn: (input: { volumeId: string; name: string }) =>
+      destroyAppVolume(projectId as string, appId as string, input.volumeId, input.name),
+    onSuccess: invalidate,
+  });
+  return { ...query, snapshot, restore, fork, extend, destroy };
+}
+
+/** A volume's snapshots, newest first. */
+export function useAppVolumeSnapshots(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+  volumeId: string | null | undefined,
+) {
+  return useQuery({
+    queryKey: qk.project.appVolumeSnapshots(projectId ?? '', appId ?? '', volumeId ?? ''),
+    queryFn: () => listAppVolumeSnapshots(projectId as string, appId as string, volumeId as string),
+    enabled: !!projectId && !!appId && !!volumeId,
+    ...contract('inventory'),
+  });
 }
