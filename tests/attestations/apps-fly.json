@@ -1,17 +1,21 @@
 {
-  "source_hash": "38335af1e5d6f48ac185b0be943dcc00b67f2beef5c5d77982a143ea4f94ef18",
+  "source_hash": "a24781b450e00b494ef9027fde6b38d2117e88ac6bfe1e3848c0c1d04e5587ad",
   "diff_files": [
-    "apps/cli/src/__tests__/apps-launch-yaml.test.ts",
-    "apps/cli/src/commands/apps-launch-yaml.ts",
-    "apps/cli/src/commands/apps.ts"
+    "apps/api/src/apps/machines.integration.test.ts",
+    "apps/api/src/apps/machines.ts",
+    "apps/web/content/docs/feature-flags/apps.mdx",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/managed/skills/kortix-apps/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-apps/references/bindings.md",
+    "packages/starter/templates/managed/skills/kortix-apps/references/fly-model.md"
   ],
-  "diff_hash": "7999bb2e9e175bd357956f3b5d241c0d529ab5916680fc8bd503d3743dd3fcf8",
-  "head": "9d56092c0afce9d857c7fcfee4874f936cea0b0d",
+  "diff_hash": "2b98a284af01c2e9bcc632eb7998b5497015667ae352b0e27b1e6428874ecfa9",
+  "head": "b45e9748f9d5a510b5c8403fd12f78b21b4e5d5d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T03:41:08.411Z"
+  "at": "2026-10-11T04:05:00.953Z"
 }
