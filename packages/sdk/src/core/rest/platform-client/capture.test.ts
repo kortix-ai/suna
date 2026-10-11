@@ -16,6 +16,9 @@ import {
   getCaptureFrame,
   getCapturePolicy,
   getCaptureTimeline,
+  type CaptureDisplay,
+  type CaptureFocusSpan,
+  type CaptureTimeline,
   getCaptureTimelineItems,
   listCaptureDevices,
   revokeCaptureDevice,
@@ -102,6 +105,17 @@ test('timeline: a day, a window, and its items; the query names the subject and 
   expect(last().url).toBe(`${P}/timeline?from=2026-10-03T09%3A00%3A00.000Z&to=2026-10-03T10%3A00%3A00.000Z&user_id=u2&device_id=d1`);
   await getCaptureTimelineItems('a1', { day: '2026-10-03' });
   expect(last().url).toBe(`${P}/timeline/items?day=2026-10-03`);
+});
+
+test('multiple displays: one display or every display; the timeline lists displays and focus spans', async () => {
+  const display: CaptureDisplay = { id: 2, name: 'External Display', x: 1512, y: 0, w: 2560, h: 1440, scale: 1, main: false };
+  const focus: CaptureFocusSpan = { device_id: 'd1', display_id: 1, start_at: '2026-10-03T09:00:00.000Z', end_at: '2026-10-03T09:05:00.000Z' };
+  nextBody = { user_id: 'u1', from: '', to: '', displays: [display], focus: [focus], runs: [], chunks: [] } satisfies CaptureTimeline;
+  const timeline = await getCaptureTimeline('a1', { day: '2026-10-03', deviceId: 'd1', displayId: 2 });
+  expect(last().url).toBe(`${P}/timeline?day=2026-10-03&device_id=d1&display_id=2`);
+  expect(timeline.displays[0]!.name).toBe('External Display');
+  await getCaptureTimelineItems('a1', { day: '2026-10-03', displayId: 'all' });
+  expect(last().url).toBe(`${P}/timeline/items?day=2026-10-03&display_id=all`);
 });
 
 test('recorded days: grouped in the caller’s time zone, for a member or one device', async () => {

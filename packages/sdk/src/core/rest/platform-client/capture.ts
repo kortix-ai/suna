@@ -65,6 +65,29 @@ export interface CapturePolicyRecord {
   updated_by: string | null;
 }
 
+/** One physical display of a device. Points in the device's global desktop space (top-left origin). */
+export interface CaptureDisplay {
+  /** The OS display id; stable while the display stays connected. */
+  id: number;
+  name: string | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Pixels per point; null when the device did not say. */
+  scale: number | null;
+  /** The main display (menu bar, dock). */
+  main: boolean;
+}
+
+/** Which display held the focused window from `start_at` to `end_at`. */
+export interface CaptureFocusSpan {
+  device_id: string;
+  display_id: number;
+  start_at: string;
+  end_at: string;
+}
+
 export interface CaptureDevice {
   device_id: string;
   /** The member the device records. */
@@ -74,6 +97,8 @@ export interface CaptureDevice {
   os_version: string | null;
   arch: string | null;
   app_version: string | null;
+  /** The displays the device reported, in its layout; empty from a one-display device. */
+  displays: CaptureDisplay[];
   live: {
     state: CaptureLiveState;
     /** The device's last `status.json`, verbatim. */
@@ -93,6 +118,11 @@ export interface CaptureWindowQuery {
   /** Another member (IAM `capture.read_all`, audited). Default: the caller. */
   userId?: string;
   deviceId?: string;
+  /**
+   * One display's screen items, runs and frames. Default: the display that held
+   * the focused window at each moment. `'all'` (items only): every display's frames.
+   */
+  displayId?: number | 'all';
 }
 
 /** Consecutive frames of one device with the same app and window title. */
@@ -115,12 +145,19 @@ export interface CaptureChunk {
   end_at: string;
   item_count: number;
   encrypted: boolean;
+  /** The display a screen item recorded (one item per display); null for audio, actions and one-display devices. */
+  display_id: number | null;
+  display: CaptureDisplay | null;
 }
 
 export interface CaptureTimeline {
   user_id: string;
   from: string;
   to: string;
+  /** Every display with screen items in the window, main first, whatever `displayId` asked for. */
+  displays: CaptureDisplay[];
+  /** Which display held the focused window, over time: the active display at any moment. */
+  focus: CaptureFocusSpan[];
   runs: CaptureActivityRun[];
   chunks: CaptureChunk[];
 }
@@ -138,6 +175,10 @@ export interface CaptureFrame {
   domain: string | null;
   ocr_text: string | null;
   inactive: boolean;
+  /** The display the frame shows; null from a one-display device. */
+  display_id: number | null;
+  /** The display held the focused window when the frame was taken. */
+  focused: boolean;
   /** On-screen text boxes, in image pixels (frame detail only). */
   ocr_boxes?: Array<{ text: string; x: number; y: number; w: number; h: number }> | null;
 }
@@ -204,7 +245,7 @@ export interface CaptureDays {
 
 export type CaptureSearchKind = 'screen' | 'actions' | 'audio';
 
-export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day'> {
+export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day' | 'displayId'> {
   /** Web-search syntax: words, "a phrase", -exclude. */
   q: string;
   kinds?: CaptureSearchKind[];
@@ -228,6 +269,9 @@ export interface CaptureSearchHit {
   app: string | null;
   title: string | null;
   url: string | null;
+  /** The display a screen hit shows; null for actions, audio and one-display devices. */
+  display_id: number | null;
+  display_name: string | null;
   snippet: string;
 }
 
@@ -251,6 +295,8 @@ export interface CaptureMediaUrl extends CaptureSignedUrl {
 
 export interface CaptureFrameDetail {
   frame: CaptureFrame;
+  /** The frame's display; null from a one-display device. */
+  display?: CaptureDisplay | null;
   /** The frame's video chunk; seek to `offset_ms` (`frame_index` seconds: the chunk video is 1 fps). */
   video: (CaptureMediaUrl & { offset_ms: number }) | null;
   /** The action screenshot nearest the frame on its device (within 30 s): a still of the moment. */
@@ -326,6 +372,7 @@ const windowParams = (query: CaptureWindowQuery = {}) => ({
   to: query.to,
   user_id: query.userId,
   device_id: query.deviceId,
+  display_id: query.displayId,
 });
 
 // ── Devices ───────────────────────────────────────────────────────────────────
