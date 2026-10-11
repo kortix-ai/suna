@@ -17,17 +17,22 @@
  * - every burst is this line, even ONE call ("Completed 1 step"): web shows
  *   those bare, mobile never expands a step inline (Jay, 2026-09-24);
  * - thinking never shows: `burstView` drops reasoning parts;
- * - a burst that merges to nothing (plumbing only) renders nothing.
+ * - a burst that merges to nothing (plumbing only) renders nothing;
+ * - under an opened "Worked for" row (`WorkFoldContext`) the summary line is a
+ *   second door to the same steps, so the burst lists one row per sheet entry
+ *   (icon + step label) instead; a tap opens the sheet on that step's detail.
  */
 
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import type { Part } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CaretRightIcon } from '@/lib/icons';
 import { burstView, samePartsList } from '@/lib/session/activity';
-import { ownsBurst } from '@/lib/session/activity-sheet';
+import { activitySheetEntries, ownsBurst, type ActivitySheetEntry } from '@/lib/session/activity-sheet';
+import { ACTIVITY_ICONS } from '@/components/session/tool/shared/tool-icons';
+import { WorkFoldContext } from './work-fold-context';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
@@ -70,15 +75,30 @@ function ActivityBurstImpl({
     if (ownsSheet) useActivitySheetStore.getState().sync(parts, view, context);
   }, [ownsSheet, parts, view, context]);
 
-  const openSheet = useCallback(() => useActivitySheetStore.getState().show(parts, view, context), [parts, view, context]);
+  const openSheet = useCallback(
+    (focusKey?: string) => useActivitySheetStore.getState().show(parts, view, context, focusKey),
+    [parts, view, context],
+  );
+  const flat = useContext(WorkFoldContext);
+  const entries = useMemo(() => (flat ? activitySheetEntries(view) : null), [flat, view]);
 
   if (view.hidden) return null;
+
+  if (entries) {
+    return (
+      <View style={{ gap: TURN_SPACE.rowPadY }}>
+        {entries.map((entry) => (
+          <StepRow key={entry.key} entry={entry} onOpen={openSheet} />
+        ))}
+      </View>
+    );
+  }
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityHint="Opens the activity"
-      onPress={openSheet}
+      onPress={() => openSheet()}
       style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}
     >
       {view.running ? (
@@ -91,6 +111,29 @@ function ActivityBurstImpl({
         </Text>
       )}
       <CaretRightIcon size={TURN_SPACE.caret} color={palette.muted40} />
+    </Pressable>
+  );
+}
+
+/** One step of a burst under an opened "Worked for" row: the sheet entry's icon and label. */
+function StepRow({ entry, onOpen }: { entry: ActivitySheetEntry; onOpen: (focusKey?: string) => void }) {
+  const palette = useTurnPalette();
+  const Icon = ACTIVITY_ICONS[entry.icon];
+  const color = entry.failed ? palette.destructive : palette.muted70;
+  return (
+    <Pressable
+      testID={entry.key}
+      accessibilityRole="button"
+      accessibilityHint="Opens the details"
+      // An entry with no body opens the sheet's list, never an empty detail.
+      onPress={() => onOpen(entry.openable ? entry.key : undefined)}
+      hitSlop={{ top: 4, bottom: 4 }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap3, paddingVertical: TURN_SPACE.rowPadY }}
+    >
+      <Icon size={TURN_SPACE.icon} color={color} />
+      <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.rowSm, { flexShrink: 1, color }]}>
+        {entry.title}
+      </Text>
     </Pressable>
   );
 }

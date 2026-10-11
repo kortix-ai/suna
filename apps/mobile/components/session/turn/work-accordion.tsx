@@ -24,6 +24,7 @@ import { workedForLabel } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { DisclosureCaret, DisclosureContent } from '@/components/session/chain-of-thought';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
+import { WorkFoldContext } from './work-fold-context';
 
 export function WorkAccordion({
   durationMs,
@@ -54,7 +55,10 @@ export function WorkAccordion({
         <DisclosureCaret open={open} color={palette.muted40} />
       </Pressable>
       <DisclosureContent open={open}>
-        <View style={{ paddingTop: gap, gap }}>{children}</View>
+        {/* The body mounts only while open, so every burst in it is under an opened row. */}
+        <WorkFoldContext.Provider value>
+          <View style={{ paddingTop: gap, gap }}>{children}</View>
+        </WorkFoldContext.Provider>
       </DisclosureContent>
     </View>
   );

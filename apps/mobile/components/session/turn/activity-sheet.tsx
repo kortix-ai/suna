@@ -211,6 +211,8 @@ interface ActivitySheetProps {
   /** Dismiss now, animated (a permission prompt needs the screen). */
   dismissRequested: boolean;
   onDismiss: () => void;
+  /** Entry to open on, read once at mount (`OpenActivitySheet.focusKey`). */
+  initialKey?: string;
 }
 
 function ActivitySheetImpl({
@@ -220,6 +222,7 @@ function ActivitySheetImpl({
   connectorHandoff,
   dismissRequested,
   onDismiss,
+  initialKey,
 }: ActivitySheetProps) {
   const ref = useRef<BottomSheetModal>(null);
   // A Connect tapped inside this sheet: held until the sheet has dismissed.
@@ -244,7 +247,8 @@ function ActivitySheetImpl({
     if (request) connectorHandoff?.requestConnect(request);
   }, [onDismiss, connectorHandoff]);
   const insets = useSafeAreaInsets();
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // A step tapped in a "Worked for" row opens straight on its detail.
+  const [selectedKey, setSelectedKey] = useState<string | null>(initialKey ?? null);
   // The list animates only when it comes back from a detail, never on open.
   const [returning, setReturning] = useState(false);
 
@@ -378,6 +382,7 @@ export function ActivitySheetHost({
       connectorHandoff={connectorHandoff}
       dismissRequested={burstHasPendingPermission(sheet.callIds, permissions)}
       onDismiss={closeSheet}
+      initialKey={sheet.focusKey}
     />
   );
 }
