@@ -3,7 +3,7 @@
  *
  * This is the kernel that lets the relay stop being a buffered JSON-RPC and
  * become a real egress proxy. Today `substituteBuffer` / `redactSecretFromResponse`
- * (http-broker.ts) call `buffer.indexOf` over a COMPLETE body, which forces the
+ * (broker/substitution.ts) call `buffer.indexOf` over a COMPLETE body, which forces the
  * whole request and the whole response to be held in memory — that is where the
  * 1 MiB / 5 MiB caps come from, and why nothing can stream.
  *
