@@ -1,0 +1,18 @@
+{
+  "source_hash": "0a21ca75e8cae64cc9daa351c082993cae342481b23867ff7d6769f77b815681",
+  "diff_files": [
+    "apps/api/src/sandbox-proxy/preview-origin.test.ts",
+    "apps/api/src/sandbox-proxy/preview-origin.ts",
+    "apps/api/src/sandbox-proxy/preview-state-page.test.ts",
+    "packages/shared/src/preview-state-page.ts"
+  ],
+  "diff_hash": "9ef974a0414b284b0265d905d73b7ef6f722fc2e8caee1c165d6956af074b7d4",
+  "head": "84986f3a00bf5c8a86d5b66341dd31683fb9fbe2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T12:21:43.278Z"
+}
