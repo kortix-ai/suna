@@ -1,7 +1,7 @@
 /**
  * C9 — a prompt on a box that is behind converges FIRST, then runs.
  *
- * THE CHOKEPOINT. `forwardToSandbox` (`sandbox-proxy/routes/preview.ts`) is
+ * THE CHOKEPOINT. `forwardToSandbox` (`sandbox-proxy/forward/`) is
  * the one funnel every turn passes through: the HTTP proxy calls it, and so
  * does the server-side prompt queue (`session-lifecycle/engine.ts`). The gate
  * is `isTurnStartRequest`, so the OpenCode ports 4096/4097 are covered too —
@@ -59,7 +59,6 @@
 
 import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { configReleasesEnabled } from '../../config-releases/enabled';
 import { resolveDesiredRelease } from '../../config-releases/desired';
 import { ownerMayUseAgent } from '../../config-releases/repoint';
 import {
@@ -132,7 +131,6 @@ interface SessionTarget {
   repoUrl: string;
   defaultBranch: string;
   manifestPath: string | null;
-  projectMetadata: unknown;
   baseRef: string;
   agentName: string | null;
   sessionMetadata: unknown;
@@ -150,7 +148,6 @@ const sessionMemo = ttlMemo({
         repoUrl: projects.repoUrl,
         defaultBranch: projects.defaultBranch,
         manifestPath: projects.manifestPath,
-        projectMetadata: projects.metadata,
         baseRef: projectSessions.baseRef,
         agentName: projectSessions.agentName,
         sessionMetadata: projectSessions.metadata,
@@ -297,7 +294,6 @@ export interface TurnStartConvergenceDeps {
   /** One `GET /kortix/health`. Asked only when the API does not know already. */
   probeRunningRelease: (sessionId: string) => Promise<string | null | undefined>;
   converge: (sessionId: string) => Promise<SessionConfigConvergenceOutcome>;
-  releasesEnabled: (metadata: unknown) => boolean;
   now: () => number;
 }
 
@@ -408,7 +404,7 @@ const defaultDeps: TurnStartConvergenceDeps = {
   desiredReleaseId: (target, sessionId) => desiredReleases.get(target, sessionId),
   runningReleaseId: lastKnownRunningRelease,
   probeRunningRelease,
-  // DYNAMIC import on purpose. `sandbox-proxy/routes/preview.ts` calls this
+  // DYNAMIC import on purpose. `sandbox-proxy/forward/turn-start.ts` calls this
   // gate on every turn start, and a static edge would pull the whole reload
   // graph — `session-reload` and `sandbox-env-sync` among them — into the
   // proxy's module graph. Five proxy unit tests that partially mock
@@ -420,12 +416,11 @@ const defaultDeps: TurnStartConvergenceDeps = {
       schedule: 'turn-start',
       refreshRepo: false,
     }),
-  releasesEnabled: configReleasesEnabled,
   now: () => Date.now(),
 };
 
 export type TurnStartDecision =
-  /** The flag is off for this project, or the session is gone. Nothing ran. */
+  /** The session is gone, or this gate threw. Nothing ran. */
   | 'skipped'
   /** The box already runs the desired release. Nothing ran, no network call. */
   | 'current'
@@ -456,10 +451,6 @@ export async function convergeBeforeTurnStart(
   try {
     const target = await deps.loadTarget(sessionId);
     if (!target) return done('skipped', null);
-    // CHOKEPOINT — the `config_releases` flag on the turn path. Off ⇒ the box
-    // keeps reading its workspace config dir and no release is ever resolved,
-    // so nothing here may cost the turn a single call.
-    if (!deps.releasesEnabled(target.projectMetadata)) return done('skipped', null);
 
     const desired = await deps.desiredReleaseId(target, sessionId).catch(() => null);
     let running = deps.runningReleaseId(sessionId);
@@ -529,7 +520,7 @@ export interface AssetConvergenceDeps {
 function defaultAssetDeps(): AssetConvergenceDeps {
   return {
     // DYNAMIC imports, same reason as `converge` above: this gate runs on every
-    // turn start from `sandbox-proxy/routes/preview.ts`, and a static edge would
+    // turn start from `sandbox-proxy/forward/turn-start.ts`, and a static edge would
     // pull the manifest graph (which hashes ~200 MB of binary on first use) and
     // the whole reload graph into the proxy's module graph. A box that is
     // already current never reaches either.

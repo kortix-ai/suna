@@ -6,27 +6,18 @@
 # paid 7-13 times per request: /accounts/me measured 2084ms on dev vs 24ms on
 # prod (colocated), for identical code and identical query counts.
 #
-#   dev-api-use2-shadow.kortix.com    → Cloudflare (proxied, Full strict) → ALB
-#   gateway-dev-use2-shadow.kortix.com → Cloudflare → ALB → gateway service
+#   dev-api-use2.kortix.com     → Cloudflare (proxied, Full strict) → ALB → API
+#   gateway-dev-use2.kortix.com → Cloudflare (proxied, Full strict) → ALB → gateway
 #
-# These are SHADOW verification hostnames only, exactly like
-# ../prod-us-east-2-shadow's api-use2-shadow / gateway-use2-shadow. This root
-# does not touch dev-api-ecs-fargate.kortix.com, gateway-dev-ecs-fargate.
-# kortix.com, or the dev-api Worker's ACTIVE_BACKEND — ../dev keeps serving
-# live traffic until the runbook's cutover step repoints DNS. See
-# the apply runbook in PR #7844 for the full apply sequence,
-# what gets created, what (later) gets destroyed, and the rollback.
+# These are this stack's origin hostnames. The dev-api Worker
+# (infra/cloudflare/workers/api-router) routes dev-api.kortix.com to them
+# (ACTIVE_BACKEND "us-east-2"). README.md in this directory has the apply
+# steps and the record of the move from us-west-2.
 #
 # Naming: local.name is "kortix-dev-use2", NOT "kortix-dev". IAM roles and
-# policies are ACCOUNT-GLOBAL, not region-scoped (unlike almost everything
-# else an AWS region touches) — reusing "kortix-dev" while ../dev's
-# us-west-2 stack (which already owns IAM roles of that name) is still live
-# would collide on `terraform apply` the moment this root tried to create
-# them. The project-snapshots S3 bucket name is globally unique for the same
-# reason: "kortix-dev-project-snapshots" already exists in us-west-2 and
-# cannot be reused until that bucket is deleted. Keeping distinct names lets
-# both regions run in parallel — "stand the new region up before tearing the
-# old one down" — with zero risk of the two roots fighting over one resource.
+# policies are ACCOUNT-GLOBAL, and the old us-west-2 stack owned the
+# "kortix-dev" names while both stacks ran in parallel during the move. That
+# stack was destroyed on 2026-10-12; the names stay so nothing is replaced.
 
 terraform {
   required_version = ">= 1.5"
@@ -74,7 +65,7 @@ module "network" {
   name               = local.name
   cidr               = "10.14.0.0/16" # distinct from dev (10.10), staging (10.20), staging-euw2 (10.24)
   az_count           = 2
-  single_nat_gateway = true # dev: one NAT to save cost, matches ../dev
+  single_nat_gateway = true # dev: one NAT to save cost
   tags               = local.tags
 }
 
@@ -86,7 +77,7 @@ module "network" {
 # root creating a new one (manage_validation_records = false — same reason
 # ../prod-us-east-2-shadow/main.tf sets it). Covers both the primary API
 # hostname and the gateway hostname with one cert, so no separate
-# gateway_certificate_arn plumbing is needed the way ../dev needs it.
+# gateway_certificate_arn plumbing is needed.
 module "certificate" {
   count                     = var.enable_https ? 1 : 0
   source                    = "../../modules/acm-cloudflare"
@@ -107,15 +98,14 @@ data "aws_secretsmanager_secret" "env" {
 }
 
 # ── Project snapshot object store (S3 config provider) ────────────────────────
-# New bucket, new region: "kortix-dev-project-snapshots" (us-west-2) already
-# exists and S3 bucket names are globally unique, so this cannot reuse that
-# name. Snapshots are DERIVED data (rebuilt from Git on a cache miss), so a
-# fresh, empty bucket here is safe by construction — nothing to migrate.
+# Snapshots are DERIVED data (rebuilt from Git on a cache miss), so this bucket
+# started empty. The old us-west-2 cache "kortix-dev-project-snapshots" was
+# deleted on 2026-10-12.
 module "project_snapshots" {
   source                = "../../modules/project-snapshots-bucket"
   name                  = "${local.name}-project-snapshots"
   tags                  = local.tags
-  transfer_acceleration = true # same rationale as ../dev: sandboxes are not colocated with this bucket either
+  transfer_acceleration = true # sandboxes are not colocated with this bucket
 }
 
 # ── Audit-event archive (WORM) ────────────────────────────────────────────────
@@ -149,7 +139,7 @@ module "api" {
   container_port  = var.container_port
   certificate_arn = one(module.certificate[*].certificate_arn)
   environment = merge(var.api_environment, {
-    LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-use2-shadow.kortix.com"
+    LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-use2.kortix.com"
   })
   secrets                     = var.api_secrets
   secrets_blob_arn            = data.aws_secretsmanager_secret.env.arn
@@ -163,8 +153,8 @@ module "api" {
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # Same sizing as ../dev (see that file's comment history for the
-  # OOM-driven task_memory floor). Identical instance class, different region.
+  # The us-west-2 dev stack's sizing (its history has the OOM-driven
+  # task_memory floor). Identical instance class, different region.
   task_cpu                   = 1024
   task_memory                = 4096
   desired_count              = 2
@@ -190,7 +180,7 @@ module "gateway" {
   container_port    = 8090
   health_check_path = "/health/live"
   certificate_arn   = one(module.certificate[*].certificate_arn)
-  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api-use2-shadow.kortix.com" })
+  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
   secrets           = var.api_secrets
   secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
@@ -208,26 +198,25 @@ module "gateway" {
   tags                       = local.tags
 }
 
-# ── DNS: shadow verification hostnames only ────────────────────────────────────
-# dev-api-use2-shadow / gateway-dev-use2-shadow → this root's ALBs. The real
-# dev-api-ecs-fargate / gateway-dev-ecs-fargate hostnames stay pointed at
-# ../dev until the runbook's cutover step. Cutting over is a DNS record
-# value change, not a resource this module needs to add later.
+# ── DNS: this stack's origin hostnames ────────────────────────────────────────
+# dev-api-use2 / gateway-dev-use2 → this root's ALBs. The dev-api Worker decides
+# which origin serves dev-api.kortix.com, so these records never change at the
+# switch-over.
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {
-    dev-api-use2-shadow = {
-      name    = "dev-api-use2-shadow"
+    dev-api-use2 = {
+      name    = "dev-api-use2"
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true
       ttl     = 1
     }
-    gateway-dev-use2-shadow = {
-      name    = "gateway-dev-use2-shadow"
+    gateway-dev-use2 = {
+      name    = "gateway-dev-use2"
       type    = "CNAME"
       value   = module.gateway.alb_dns_name
       proxied = true

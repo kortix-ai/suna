@@ -15,6 +15,8 @@ import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions } from '../projects/surface';
+import { resolveFeatureFlag } from './registry';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;
@@ -37,6 +39,12 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   agentmail_email: reconcileProjectChannels,
+  // Off: drop every provider instance so no delivery outlives the switch.
+  // On: existing triggers go live without a re-save.
+  event_triggers: async ({ projectId, accountId, metadata }) => {
+    if (resolveFeatureFlag(metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(projectId, accountId);
+    else await releaseProjectEventSubscriptions(projectId);
+  },
   llm_gateway: async ({ projectId, metadata }) => {
     await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
   },

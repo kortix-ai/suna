@@ -334,27 +334,14 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     expect(exportIndex).toBeGreaterThan(renameIndex);
   });
 
-  test('Export and Summarize items are renamed to plain language and styled as visually subordinate', () => {
+  test('Export and Summarize items are renamed to plain language', () => {
     // "Compact session" / "Export transcript" were the jargon-y labels the
     // brief called out by name — they must not survive under those names.
+    // The items render in the plain menu style (#9169), not muted.
     expect(source).not.toContain('Compact session');
     expect(source).not.toContain('Export transcript');
     expect(source).toContain('Export conversation');
     expect(source).toContain('Summarize conversation');
-
-    const exportItemStart = source.indexOf('Export conversation') - 400;
-    const exportItem = source.slice(
-      Math.max(0, exportItemStart),
-      source.indexOf('Export conversation'),
-    );
-    expect(exportItem).toContain('text-muted-foreground');
-
-    const compactItemStart = source.indexOf('Summarize conversation') - 400;
-    const compactItem = source.slice(
-      Math.max(0, compactItemStart),
-      source.indexOf('Summarize conversation'),
-    );
-    expect(compactItem).toContain('text-muted-foreground');
   });
 });
 
@@ -527,5 +514,39 @@ describe('SessionSiteHeader Fork', () => {
     const exportAt = menu.indexOf('text5d974f9e80c3');
     expect(forkAt).toBeGreaterThan(-1);
     expect(exportAt).toBeGreaterThan(forkAt);
+  });
+});
+
+/**
+ * KRTX-1742: the session menu mutes and unmutes this session's notifications
+ * for the caller. The item waits for the watch read, so it never shows the
+ * wrong verb, and a subsession (whose row is its parent's) has none. With the
+ * project's `notification_center` flag off there is no read and no item.
+ */
+describe('SessionSiteHeader mute notifications', () => {
+  const menu = source.slice(source.indexOf('const sessionActionItems = ('));
+
+  test('the watch is read for the project session, never for a subsession', () => {
+    expect(source).toContain('useSessionWatch({');
+    expect(source).toContain('enabled: isProjectSession && !parent && notificationCenter,');
+  });
+
+  test('the flag gates the read and the item', () => {
+    expect(source).toContain('const notificationCenter = useNotificationCenter(projectId);');
+    expect(source).toContain(
+      'const watching = notificationCenter ? sessionWatch.data?.watching : undefined;',
+    );
+  });
+
+  test('the item shows once the watch is known, and names the next state', () => {
+    const item = menu.slice(menu.indexOf('{watching !== undefined && ('));
+    expect(item).toContain('onClick={toggleWatch}');
+    expect(item).toContain("watching ? tNotifications('session.mute') : tNotifications('session.unmute')");
+  });
+
+  test('the toggle flips the watch and reports the result', () => {
+    expect(source).toContain('.setWatching(!watching)');
+    expect(source).toContain("tNotifications('session.muted')");
+    expect(source).toContain("tNotifications('session.unmuted')");
   });
 });

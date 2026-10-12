@@ -70,6 +70,7 @@ import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   getProject,
@@ -94,6 +95,10 @@ import { SettingsTabHeader } from '../settings-tab-header';
 export interface ExperimentalCopy {
   stability: Record<FeatureFlagStability, string>;
   overridden: string;
+  /** Origin line of an `operator_only` flag: only Kortix changes it. */
+  managedByKortix: string;
+  /** Origin line of an organization flag (`scope: 'organization'`, also operator-only). */
+  organization: string;
   defaultOn: string;
   defaultOff: string;
   search: string;
@@ -108,6 +113,8 @@ export interface ExperimentalCopy {
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   stability: { experimental: 'Experimental', beta: 'Beta', stable: 'Stable' },
   overridden: 'Overridden for this project',
+  managedByKortix: 'Managed by Kortix',
+  organization: 'Whole organization, managed by Kortix',
   defaultOn: 'Default on',
   defaultOff: 'Default off',
   search: 'Search features',
@@ -120,8 +127,38 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
+  // An internal-only flag (`apps`) is listed only while on, and
+  // `PATCH /features` refuses it to anyone but a Kortix operator.
+  // One value for every project of the organization (`volumes`).
+  if (feature.scope === 'organization') return copy.organization;
+  if (feature.operator_only) return copy.managedByKortix;
   if (feature.overridden) return copy.overridden;
   return feature.enabled ? copy.defaultOn : copy.defaultOff;
+}
+
+/** The translator surface {@link localizeFeatureFlag} reads. */
+export interface FeatureFlagTranslator {
+  (key: string): string;
+  has(key: string): boolean;
+}
+
+/**
+ * A catalog row with its display copy in the reader's language.
+ *
+ * The catalogs name and describe every flag key this build knows. A page can
+ * still hold a catalog from the previous API during a deploy, listing a flag
+ * this build no longer translates (a graduated flag). That row keeps the
+ * English `name` and `description` the API sent, so it reads as words and
+ * never as a raw message key.
+ */
+export function localizeFeatureFlag<T extends FeatureFlagView>(feature: T, t: FeatureFlagTranslator): T {
+  const nameKey = `flags.${feature.key}.name`;
+  const descriptionKey = `flags.${feature.key}.description`;
+  return {
+    ...feature,
+    name: t.has(nameKey) ? t(nameKey) : feature.name,
+    description: t.has(descriptionKey) ? t(descriptionKey) : feature.description,
+  };
 }
 
 /**
@@ -157,12 +194,17 @@ function ExperimentalFeatureRow({
   feature,
   pending,
   canManage,
+  blocked = false,
   onToggle,
   copy,
 }: {
   feature: FeatureFlagView;
   pending: boolean;
+  /** Already resolved for this row (an `operator_only` row needs a platform operator). */
   canManage: boolean;
+  /** The flag depends on one that is off (Stateless sessions needs Volumes):
+   *  the switch is dead, and the row's description says why. */
+  blocked?: boolean;
   onToggle: (key: string, next: boolean) => void;
   copy: ExperimentalCopy;
 }) {
@@ -185,7 +227,7 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
-          <span className="text-muted-foreground/70 text-xs">{originLabel(feature, copy)}</span>
+          <span className="text-muted-foreground text-xs">{originLabel(feature, copy)}</span>
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
@@ -193,8 +235,8 @@ function ExperimentalFeatureRow({
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
         <Switch
           aria-labelledby={nameId}
-          checked={feature.enabled}
-          disabled={!canManage || pending}
+          checked={blocked ? false : feature.enabled}
+          disabled={blocked || !canManage || pending}
           onCheckedChange={(v) => onToggle(feature.key, v)}
         />
       </div>
@@ -215,7 +257,13 @@ export interface ExperimentalTabViewProps {
    *  and shows `Loading` beside it. */
   pendingKeys?: readonly string[];
   canManage?: boolean;
+  /** The reader is a platform operator: may change an `operator_only` flag
+   *  (the route's own rule, project-settings.ts patchFeatureFlagHandler). */
+  canManageOperatorOnly?: boolean;
   onToggle?: (key: string, next: boolean) => void;
+  /** The `volumes` flag is on, read from the unfiltered list so a search that
+   *  hides the Volumes row cannot wake the Stateless sessions switch. */
+  volumesEnabled?: boolean;
   /**
    * Search text, CONTROLLED — the container owns it and hands down an already
    * filtered `features`.
@@ -252,7 +300,9 @@ export function ExperimentalTabView({
   features = [],
   pendingKeys = [],
   canManage = true,
+  canManageOperatorOnly = false,
   onToggle = () => {},
+  volumesEnabled = false,
   showPermissionNotice = false,
   query = '',
   onQueryChange = () => {},
@@ -263,6 +313,8 @@ export function ExperimentalTabView({
   // field does not vanish under the cursor the moment it matches nothing.
   const showSearch = features.length > 0 || searching;
   const pendingKeySet = new Set(pendingKeys);
+  // Stateless sessions run on Volumes; with Volumes off the switch is dead.
+  const volumesOff = !volumesEnabled;
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -327,7 +379,8 @@ export function ExperimentalTabView({
                   key={feature.key}
                   feature={feature}
                   pending={pendingKeySet.has(feature.key)}
-                  canManage={canManage}
+                  canManage={canManage && (feature.operator_only !== true || canManageOperatorOnly)}
+                  blocked={feature.key === 'stateless_sessions' && volumesOff}
                   onToggle={onToggle}
                   copy={copy}
                 />
@@ -336,6 +389,7 @@ export function ExperimentalTabView({
             {showPermissionNotice ? (
               <p className="text-muted-foreground text-xs">{copy.permission}</p>
             ) : null}
+
           </>
         )}
       </div>
@@ -376,6 +430,10 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
   // a toggle the server would reject.
   const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;
+  // An `operator_only` flag (`apps`, `volumes`) is written only by a platform
+  // operator; everyone else sees it read-only. Fail-closed while loading.
+  const adminRole = useAdminRole();
+  const isOperator = adminRole.data?.isAdmin === true;
 
   // Show the intended position while a toggle's request is in flight — same
   // reason the old per-row `pendingValue` state existed, now lifted to the
@@ -423,11 +481,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
 
   const rawFeatures = (project?.experimental_features ?? [])
     .filter((f) => f.available)
-    .map((feature) => ({
-      ...feature,
-      name: t(`flags.${feature.key}.name` as never),
-      description: t(`flags.${feature.key}.description` as never),
-    }));
+    .map((feature) => localizeFeatureFlag(feature, t as unknown as FeatureFlagTranslator));
   const withPending = rawFeatures.map((f) => ({
     ...f,
     enabled: pendingValues[f.key] ?? f.enabled,
@@ -449,7 +503,9 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       features={features}
       pendingKeys={Object.keys(pendingValues)}
       canManage={canEdit}
+      canManageOperatorOnly={isOperator}
       onToggle={handleToggle}
+      volumesEnabled={withPending.some((f) => f.key === 'volumes' && f.enabled)}
       showPermissionNotice={!canEdit && !writeCap.isLoading}
       query={query}
       onQueryChange={setQuery}
@@ -460,6 +516,8 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
           stable: t('stability.stable'),
         },
         overridden: t('origin.overridden'),
+        managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
+        organization: t('origin.organization'),
         defaultOn: t('origin.defaultOn'),
         defaultOff: t('origin.defaultOff'),
         search: t('search'),

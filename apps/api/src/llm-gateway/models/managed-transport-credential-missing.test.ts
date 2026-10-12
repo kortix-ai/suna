@@ -33,7 +33,6 @@ mock.module('../../config', () => ({
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'deepseek-v4.1-flash';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
-        if (key === 'AWS_BEDROCK_REGION') return 'us-west-2';
         if (key === 'AWS_BEDROCK_API_KEY') return 'bedrock-key';
         if (key === 'OPENROUTER_API_KEY') return undefined;
         if (key === 'MORPH_API_KEY') return undefined;
@@ -81,7 +80,7 @@ mock.module('../credentials/codex', () => ({
 const { RUNTIME_MANAGED_MODELS } = await import('./managed-models');
 const { SERVED_MANAGED_MODELS } = await import('./served-managed-models');
 const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
-const { managedPickerModels } = await import('./picker-catalog');
+await import('./picker-catalog');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 
 describe('an OpenRouter model without a credential is not offered', () => {
@@ -90,7 +89,6 @@ describe('an OpenRouter model without a credential is not offered', () => {
     expect(SERVED_MANAGED_MODELS).toEqual([]);
     expect(managedModels()['deepseek-v4.1-flash']).toBeUndefined();
     expect(gatewayModelCatalog('proj')['deepseek-v4.1-flash']).toBeUndefined();
-    expect(managedPickerModels().map((model) => model.id)).not.toContain('kortix/deepseek-v4.1-flash');
   });
 
   test('refuses an explicit request for the uncredentialed model', async () => {

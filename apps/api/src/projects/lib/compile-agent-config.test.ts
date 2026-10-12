@@ -925,6 +925,81 @@ describe('v2 agent tool toggles', () => {
     expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
     expect(config?.agent.other.tools).toBeUndefined();
   });
+
+  test('all, none, a list and exclude compile to the map a harness reads', () => {
+    const config = compileAgentConfig({
+      kortix_version: 2,
+      default_agent: 'everything',
+      agents: {
+        everything: { tools: 'all' },
+        nothing: { tools: 'none' },
+        researcher: { tools: ['read', 'web_search', 'lookup_order'] },
+        no_shell: { tools: { exclude: ['bash', 'edit'] } },
+      },
+    });
+    expect(config?.agent.everything.tools).toBeUndefined();
+    expect(config?.agent.nothing.tools).toEqual({ '*': false });
+    expect(config?.agent.researcher.tools).toEqual({ '*': false, read: true, web_search: true, lookup_order: true });
+    expect(config?.agent.no_shell.tools).toEqual({ bash: false, edit: false });
+  });
+
+  test('kortix_version 3 compiles tools on the inline agent', () => {
+    const config = compileAgentConfig({ kortix_version: 3, default_agent: 'writer', agents: { writer: { prompt: 'Write.', tools: ['read'] } } });
+    expect(config?.agent.writer.tools).toEqual({ '*': false, read: true });
+  });
+});
+
+describe('project tools', () => {
+  test('the valid top-level tools reach the compiled set as project_tools', () => {
+    const manifest = {
+      kortix_version: 2,
+      default_agent: 'worker',
+      tools: { lookup_order: 'tools/lookup_order.ts', note: 'integrations/crm/note.mjs', bash: 'tools/bash.ts', up: '../x.ts' },
+      agents: { worker: {} },
+    };
+    const expected = { lookup_order: 'tools/lookup_order.ts', note: 'integrations/crm/note.mjs' };
+    expect(compileAgentConfig(manifest)?.project_tools).toEqual(expected);
+    expect(compileSelectedAgentConfig(manifest, 'worker').project_tools).toEqual(expected);
+    expect(compileAgentConfig({ ...manifest, tools: undefined })?.project_tools).toBeUndefined();
+  });
+
+  const v2 = (tools?: unknown) => ({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, ...(tools === undefined ? {} : { tools }) });
+  const v3 = (tools?: unknown) => ({ kortix_version: 3, default_agent: 'worker', agents: { worker: { prompt: 'Work.' } }, ...(tools === undefined ? {} : { tools }) });
+
+  test('without a tools key, kortix_tools is absent: the daemon loads every Kortix tool', () => {
+    for (const manifest of [v2(), v3()]) {
+      expect(compileAgentConfig(manifest)).not.toHaveProperty('kortix_tools');
+      expect(compileSelectedAgentConfig(manifest, 'worker')).not.toHaveProperty('kortix_tools');
+    }
+  });
+
+  test('with a tools key, kortix_tools lists the kortix:<name> entries; project_tools keeps module paths only', () => {
+    const tools = {
+      web_search: 'kortix:web_search',
+      show: 'kortix:show',
+      memory: 'tools/memory.ts',
+      lookup_order: 'tools/lookup_order.ts',
+      image_search: 'kortix:scrape_webpage',
+      stray: 'kortix:web_search',
+    };
+    for (const manifest of [v2(tools), v3(tools)]) {
+      for (const compiled of [compileAgentConfig(manifest)!, compileSelectedAgentConfig(manifest, 'worker')]) {
+        expect(compiled.kortix_tools).toEqual(['web_search', 'show']);
+        expect(compiled.project_tools).toEqual({ memory: 'tools/memory.ts', lookup_order: 'tools/lookup_order.ts' });
+        expect(Object.values(compiled.project_tools ?? {}).some((path) => path.startsWith('kortix:'))).toBe(false);
+      }
+    }
+  });
+
+  test('an empty tools key (a map, or every line deleted) compiles to an empty kortix_tools list', () => {
+    for (const tools of [{}, null]) {
+      for (const manifest of [v2(tools), v3(tools)]) {
+        expect(compileAgentConfig(manifest)?.kortix_tools).toEqual([]);
+        expect(compileSelectedAgentConfig(manifest, 'worker').kortix_tools).toEqual([]);
+        expect(compileAgentConfig(manifest)).not.toHaveProperty('project_tools');
+      }
+    }
+  });
 });
 
 describe('compileAgentConfig — a denied bash/edit also denies the tools that do the same job', () => {

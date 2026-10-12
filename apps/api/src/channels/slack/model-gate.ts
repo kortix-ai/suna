@@ -1,5 +1,5 @@
-import { and, eq } from 'drizzle-orm';
-import { accountMembers, projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountRoleMap } from '../../iam/read-models';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';

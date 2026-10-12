@@ -4,7 +4,20 @@ import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import { db } from '../shared/db';
 import { totalSpendSql } from '../shared/llm-spend';
 
-type Period = 'day' | 'week' | 'month';
+export type Period = 'day' | 'week' | 'month';
+
+/** A budget at or past 80% of its limit this period: who to tell (KRTX-1718). */
+export interface BudgetCrossing {
+  budgetId: string;
+  /** The highest threshold reached; spend only grows within a period. */
+  threshold: 80 | 100;
+  scope: 'project' | 'member';
+  subjectUserId: string | null;
+  period: Period;
+  action: 'block' | 'warn';
+  limitUsd: number;
+  spentUsd: number;
+}
 
 export interface BudgetCheckResult {
   /** A 'block' budget is exhausted — the caller must deny the request. */
@@ -17,6 +30,8 @@ export interface BudgetCheckResult {
    * 'warn' budget isn't a silent no-op (it used to never even be queried).
    */
   warnings?: string[];
+  /** Budgets at or past 80% this period, for the budget alerts. */
+  crossings?: BudgetCrossing[];
 }
 
 async function spendForPeriod(
@@ -142,11 +157,29 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
   if (budgets.length === 0) return { exceeded: false };
 
   const warnings: string[] = [];
+  const crossings: BudgetCrossing[] = [];
+  const signals = () => ({
+    ...(warnings.length ? { warnings } : {}),
+    ...(crossings.length ? { crossings } : {}),
+  });
   for (const b of budgets) {
     if (b.scope === 'member' && b.subjectUserId !== principal.userId) continue;
     const subject = b.scope === 'member' ? b.subjectUserId : null;
     const spent = await spendForPeriod(principal.projectId, subject, b.period as Period);
     const limit = Number(b.limitUsd);
+    const threshold = spent >= limit ? 100 : spent >= limit * 0.8 ? 80 : null;
+    if (threshold && b.budgetId) {
+      crossings.push({
+        budgetId: b.budgetId,
+        threshold,
+        scope: b.scope as BudgetCrossing['scope'],
+        subjectUserId: subject,
+        period: b.period as Period,
+        action: b.action as BudgetCrossing['action'],
+        limitUsd: limit,
+        spentUsd: spent,
+      });
+    }
 
     if (b.action === 'block') {
       // Fold in other admissions still in flight for this exact project/
@@ -158,7 +191,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
         return {
           exceeded: true,
           message: `${who} gateway budget ($${limit}/${b.period}) is exhausted — $${spent.toFixed(2)} used this ${b.period}.`,
-          ...(warnings.length ? { warnings } : {}),
+          ...signals(),
         };
       }
       // Reserve for THIS admission before returning — the next concurrent
@@ -177,5 +210,5 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
       );
     }
   }
-  return { exceeded: false, ...(warnings.length ? { warnings } : {}) };
+  return { exceeded: false, ...signals() };
 }

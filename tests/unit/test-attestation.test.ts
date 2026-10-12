@@ -34,10 +34,19 @@ describe('evaluate attestation', () => {
     expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), cur()).code).toBe(1);
   });
-  it('packages may be skipped-sandbox-image (owner rule: the Kortix image breaks those tests at base); --strict never lets it pass', () => {
+  it('a diff that touches packages/db needs db-suites=pass, not skipped-no-db', () => {
+    const skipped = att({ lanes: lanes({ 'db-suites': 'skipped-no-db' }) });
+    const touching = { sourceHash: 'h', changed: { files: ['packages/db/migrations/x.sql'], lines: {}, hash: '', attestations: [] } };
+    const other = { sourceHash: 'h', changed: { files: ['apps/web/a.ts'], lines: {}, hash: '', attestations: [] } };
+    expect(evaluate(skipped, touching).code).toBe(1);
+    expect(evaluate(skipped, touching).reason).toContain('packages/db');
+    expect(evaluate(att(), touching).code).toBe(0);
+    expect(evaluate(skipped, other).code).toBe(0);
+  });
+  it('no skip exists for packages: any skipped-sandbox-image lane value is not green', () => {
     const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image', 'db-suites': 'skipped-no-db' }) });
-    expect(evaluate(a, cur()).code).toBe(0);
-    expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
+    expect(evaluate(a, cur()).code).toBe(1);
+    expect(evaluate(a, cur()).reason).toContain('packages');
     expect(evaluate(att({ lanes: lanes({ core: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
   });

@@ -34,6 +34,7 @@ import {
   writeStartStash,
   type UseSessionPromptsResult,
 } from '@kortix/sdk/react';
+import { randomUUID } from '@/lib/utils/random-uuid';
 
 /** One candidate first prompt: the text, the files this tab holds, the stable
  *  attachment identities a bubble draws and the failed-upload status. */
@@ -424,7 +425,7 @@ function planSend({
   const first = !submitted && !firstSendInFlight.current;
   // Read before this send joins the session's delivery chain.
   const detached = !!attachments && deliversDetached(sessionId, attachments);
-  const clientMessageId = crypto.randomUUID();
+  const clientMessageId = randomUUID();
   const messageId = mintSessionWireMessageId(sessionId, clientMessageId);
   const placement = options.placement ?? 'transcript';
   const overrides = {
@@ -512,6 +513,8 @@ interface UseInstantSessionSendResult {
     options: ComposerOptions,
     attachments?: AttachmentSubmission,
   ) => Promise<void>;
+  /** Drop this tab's copy of a sent message, whose text outranks the row's. */
+  forgetExtraSend: (clientMessageId: string) => void;
 }
 
 /**
@@ -596,5 +599,13 @@ export function useInstantSessionSend(
     ],
   );
 
-  return { submitted, effectiveSubmission, extraSends, handleSend };
+  // An edited queued message (`queued-prompt-edit.ts`) must show the server's
+  // new text, not this tab's copy of the old one.
+  const forgetExtraSend = useCallback(
+    (clientMessageId: string) =>
+      setExtraSends((prev) => prev.filter((extra) => extra.id !== clientMessageId)),
+    [setExtraSends],
+  );
+
+  return { submitted, effectiveSubmission, extraSends, handleSend, forgetExtraSend };
 }

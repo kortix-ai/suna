@@ -37,6 +37,17 @@ describe('ApiClient', () => {
     expect(seenAuth).toBe('Bearer secret');
   });
 
+  test('sends the edge key header only when configured', async () => {
+    const seen: Array<string | undefined> = [];
+    const fetchImpl: FetchLike = async (_url, init) => {
+      seen.push((init.headers as Record<string, string>)['x-kortix-internal-edge-key']);
+      return jsonResponse({ principal });
+    };
+    await createApiClient({ baseUrl: 'https://api.test', token: 's', edgeKey: 'k1', fetchImpl }).authenticate('t');
+    await client(fetchImpl).authenticate('t');
+    expect(seen).toEqual(['k1', undefined]);
+  });
+
   test('resolveUpstream returns candidates', async () => {
     const candidates = [{ provider: 'openrouter' }, { provider: 'anthropic' }];
     const result = await client(async () => jsonResponse({ candidates })).resolveUpstream(

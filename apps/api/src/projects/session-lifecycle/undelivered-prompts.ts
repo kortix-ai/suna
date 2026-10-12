@@ -1,8 +1,9 @@
 /**
  * Prompt-delivery backstop: session_lifecycle_commands normally drain on the
- * scheduler's 60s tick (startProjectTriggerScheduler). A command still `queued`
- * TEN MINUTES past its available_at means that drain is starved — leader dead,
- * scheduler disabled, or the tick wedged — and every prompt behind it (trigger
+ * 1 s lifecycle worker every replica runs (workers/session-lifecycle-worker.ts)
+ * and on targeted kicks. A command still `queued` TEN MINUTES past its
+ * available_at means that drain is starved — the worker disabled or wedged —
+ * and every prompt behind it (trigger
  * fires, approval resumes) is sitting undelivered while its session shows
  * "queued — agent picking up" forever. This pass executes those stale rows
  * through the SAME claim/retry/dead-letter machinery the drain uses

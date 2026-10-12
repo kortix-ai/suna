@@ -1,4 +1,3 @@
-import type { Context } from 'hono';
 import { config } from '../config';
 
 /**
@@ -47,11 +46,6 @@ export function clientIpFromHeaders(
   return header('x-real-ip')?.trim() || null;
 }
 
-/** `clientIpFromHeaders` for a Hono request; `null` when neither header is set. */
-export function requestClientIp(c: Context): string | null {
-  return clientIpFromHeaders((name) => c.req.header(name));
-}
-
 /**
  * The caller's rate-limit bucket key: the client address, or `'unknown'` when
  * neither header is set. Every request without an address shares that one
@@ -61,7 +55,22 @@ export function clientKeyFromHeaders(header: HeaderReader): string {
   return clientIpFromHeaders(header) ?? 'unknown';
 }
 
-/** `clientKeyFromHeaders` for a Hono request. */
-export function requestClientKey(c: Context): string {
-  return clientKeyFromHeaders((name) => c.req.header(name));
+/**
+ * The caller's address as this deployment sees it, from its request headers.
+ *
+ * `cf-connecting-ip` is read FIRST because the edge OVERWRITES it on every
+ * request. `x-forwarded-for` is not overwritten — Cloudflare appends to what
+ * the client sent, so its first hop is attacker-controlled. A caller who
+ * exfiltrated a session token can therefore set `x-forwarded-for` to the pinned
+ * sandbox address and replay the token from anywhere; they cannot forge
+ * `cf-connecting-ip`. The fallback for deployments that do not sit behind Cloudflare
+ * is `clientIpFromHeaders`. `cf-connecting-ip` is trustworthy only while the
+ * origin accepts Cloudflare traffic alone (the ALB ingress CIDRs in Terraform).
+ */
+export function egressIpFromHeaders(header: HeaderReader): string | null {
+  const cf = header('cf-connecting-ip')?.trim();
+  if (cf) return cf;
+  // Not behind Cloudflare: the leftmost xff entry is client-written, so use the
+  // trusted-hop rule, never `split(',')[0]`.
+  return clientIpFromHeaders(header);
 }

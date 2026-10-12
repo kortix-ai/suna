@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Context } from 'hono';
 
-import { callerKortixSessionId } from './caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 
 /** Minimal stand-in for the two context vars this reads. */
 const ctx = (authType?: string, sessionId?: string) =>

@@ -1,59 +1,25 @@
 import { describe, expect, test } from 'bun:test';
-import { planViewerActions } from './viewer-actions';
+import { pathCrumbs } from './viewer-actions';
 
-// The layout rule for every file viewer's toolbar in the session panel. Radix
-// only mounts menu content once it is open, so static markup cannot show what
-// a menu holds — this pins it directly.
-
-const NONE = {
-  canCopy: false,
-  canCopyLink: false,
-  canDownload: false,
-  hasExtraMenuItems: false,
-};
-
-describe('planViewerActions', () => {
-  test('Download is never a menu item, whatever else the surface has', () => {
-    for (const canCopy of [true, false]) {
-      for (const canCopyLink of [true, false]) {
-        for (const hasExtraMenuItems of [true, false]) {
-          const plan = planViewerActions({
-            canCopy,
-            canCopyLink,
-            canDownload: true,
-            hasExtraMenuItems,
-          });
-          expect(plan.download).toBe(true);
-          expect(plan.menu as string[]).not.toContain('download');
-        }
-      }
-    }
+describe('pathCrumbs — the folders the address pill shows', () => {
+  test('drops the sandbox root and the file name', () => {
+    expect(pathCrumbs('/workspace/src/pages/Home.tsx')).toEqual(['src', 'pages']);
   });
 
-  test('a text file: Copy is primary, Copy link waits behind the caret', () => {
-    expect(
-      planViewerActions({ ...NONE, canCopy: true, canCopyLink: true, canDownload: true }),
-    ).toEqual({ primary: 'copy', menu: ['link'], download: true });
+  test('a file at the root has no folders', () => {
+    expect(pathCrumbs('/workspace/notes.txt')).toEqual([]);
   });
 
-  test('a PDF or spreadsheet: Copy link is primary and there is no caret', () => {
-    // The old shape put Download behind this caret — a menu for one action.
-    expect(
-      planViewerActions({ ...NONE, canCopyLink: true, canDownload: true }),
-    ).toEqual({ primary: 'link', menu: [], download: true });
+  test('a path outside /workspace keeps every folder', () => {
+    expect(pathCrumbs('/tmp/out/report.pdf')).toEqual(['tmp', 'out']);
   });
 
-  test('no share context: no split button, Download alone', () => {
-    expect(planViewerActions({ ...NONE, canDownload: true })).toEqual({
-      primary: null,
-      menu: [],
-      download: true,
-    });
+  test('only a whole /workspace segment is the root', () => {
+    expect(pathCrumbs('/workspaces/a/b.txt')).toEqual(['workspaces', 'a']);
   });
 
-  test('a running app: Copy link plus its extra menu item, no Download', () => {
-    expect(
-      planViewerActions({ ...NONE, canCopyLink: true, hasExtraMenuItems: true }),
-    ).toEqual({ primary: 'link', menu: ['extra'], download: false });
+  test('no path, no folders', () => {
+    expect(pathCrumbs(undefined)).toEqual([]);
+    expect(pathCrumbs('')).toEqual([]);
   });
 });

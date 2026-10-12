@@ -548,6 +548,8 @@ describe('the check and restore-order commands', () => {
   });
 
   // A merge commit may keep either parent's order, file by file.
+  // Builds a git repository and runs the CLI several times: up to ~6.5 s while
+  // `pnpm test` runs every lane at once, over bun's 5 s default.
   test('with two bases, each catalog passes when it keeps the order of either one', () => {
     const repo = repository();
     try {
@@ -571,7 +573,7 @@ describe('the check and restore-order commands', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('check fails on a catalog that is not canonical, and format fixes it', () => {
     const repo = repository();

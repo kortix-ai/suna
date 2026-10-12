@@ -214,7 +214,7 @@ mock.module('../secrets/relay-transport', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/secret-relay');
+(await import('../projects/routes/secret-relay')).registerSecretRelayRoutes();
 
 function buildApp() {
   const app = new Hono<{

@@ -18,7 +18,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import {
   getPublicSessionShare,
   getPublicShareByToken,
@@ -360,7 +360,7 @@ export default function PublicSessionSharePage() {
             // unrecognized token list means MAXIMALLY restrictive: no scripts,
             // no same-origin. Every shared preview was a dead blank frame in
             // seven of eight locales.
-            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+            sandbox={framePolicy('app', iframeSrc).sandbox}
           />
         )}
       </section>

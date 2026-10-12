@@ -6,6 +6,14 @@ const API_SRC = resolve(import.meta.dir, '../..');
 const GENERIC_DATA_PATHS = [
   'sandbox-proxy/backend.ts',
   'sandbox-proxy/routes/preview.ts',
+  // The forwarder `routes/preview.ts` re-exports (R4.2).
+  'sandbox-proxy/forward/access.ts',
+  'sandbox-proxy/forward/forward-to-sandbox.ts',
+  'sandbox-proxy/forward/retry.ts',
+  'sandbox-proxy/forward/turn-start.ts',
+  'sandbox-proxy/forward/upstream.ts',
+  'sandbox-proxy/forward/wake.ts',
+  'sandbox-proxy/forward/ws-upstream.ts',
   'sandbox-proxy/routes/public-share.ts',
   'projects/lib/sandbox-daemon-ready.ts',
   // The env-sync implementation is split across sibling modules (KRTX-300);
@@ -15,13 +23,13 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-secret-propagation.ts',
   'projects/lib/sandbox-session-push.ts',
   'projects/opencode-mapping.ts',
-  'projects/routes/session-open.ts',
-  'projects/routes/session-open-provision.ts',
-  'projects/routes/session-open-readiness.ts',
-  'projects/routes/session-open-recovery.ts',
-  'projects/routes/session-open-guarantee.ts',
-  'projects/routes/resume-stopped-sandbox.ts',
-  'projects/routes/stopped-wake-result.ts',
+  'projects/session-open/session-open.ts',
+  'projects/session-open/session-open-provision.ts',
+  'projects/session-open/session-open-readiness.ts',
+  'projects/session-open/session-open-recovery.ts',
+  'projects/session-open/session-open-guarantee.ts',
+  'projects/session-open/resume-stopped-sandbox.ts',
+  'projects/session-open/stopped-wake-result.ts',
   // Egress-enforced delivery. There is ONE mechanism for every provider
   // and no verdict to
   // read: the guest holds a handle and the broker route substitutes the value.

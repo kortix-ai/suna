@@ -33,7 +33,8 @@ export interface TurnEventsOptions {
   /** The user message this assistant run answers. Read once at message start. */
   parentMessageId: () => string | null
   model: () => { providerID: string; modelID: string }
-  agent: string
+  /** The agent the running turn runs on. Read once per assistant message. */
+  agent: () => string
   workspace: string
   now?: () => number
   /** Out-of-band frame sink for parts reserved outside `translate` (see `toolRef`). */
@@ -44,6 +45,13 @@ export interface TurnEventsOptions {
    * the `retry` status instead of idle: the turn is not over.
    */
   retryPlan?: (message: AgentMessage) => { attempt: number; message: string; next: number } | null
+  /**
+   * pi compacts the conversation and retries this failed message (a context
+   * overflow, or a reply cut by the length limit). Like a retry, the message
+   * ends without its error and the run stays busy; `settleRetry` publishes the
+   * error when the recovery never came.
+   */
+  recovers?: (message: AgentMessage) => boolean
 }
 
 /** Part ids are stable per (messageId, index). */
@@ -130,7 +138,11 @@ export class PiTurnEvents {
   private toolIndex = new Map<string, { partId: string; name: string; input: unknown; startedAt: number; endedAt?: number }>()
   /** The last assistant message of this run failed and will be retried. */
   private retrying: { attempt: number; message: string; next: number } | null = null
+  /** The error withheld from a message pi is about to recover from. */
+  private withheld: KortixMessageError | null = null
   private announced = false
+  /** The finished info of the last assistant message, without its error. */
+  private lastInfo: KortixAssistantMessageInfo | null = null
 
   constructor(private readonly opts: TurnEventsOptions) {
     this.now = opts.now ?? (() => Date.now())
@@ -163,6 +175,7 @@ export class PiTurnEvents {
     switch (event.type) {
       case 'agent_start':
         this.retrying = null
+        this.withheld = null
         this.announced = false
         return [{ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }]
 
@@ -259,16 +272,12 @@ export class PiTurnEvents {
       case 'message_end': {
         if (event.message.role !== 'assistant') return []
         this.retrying = (event.message as PiAssistantMessage).stopReason === 'error' ? (this.opts.retryPlan?.(event.message) ?? null) : null
-        const error = this.retrying ? undefined : assistantMessageError(event.message)
-        const out: TurnEventEmission[] = [
-          {
-            type: 'message.updated',
-            properties: {
-              sessionID,
-              info: { ...this.assistantInfo(event.message), time: { created: this.currentCreatedAt, completed: this.now() }, ...(error ? { error } : {}) },
-            },
-          },
-        ]
+        const failure = this.retrying ? undefined : assistantMessageError(event.message)
+        this.withheld = failure && failure.code !== 'aborted' && this.opts.recovers?.(event.message) ? failure : null
+        if (this.withheld) this.retrying = { attempt: 1, message: 'Compacting the conversation to continue.', next: this.now() }
+        const error = this.withheld ? undefined : failure
+        this.lastInfo = { ...this.assistantInfo(event.message), time: { created: this.currentCreatedAt, completed: this.now() } }
+        const out: TurnEventEmission[] = [{ type: 'message.updated', properties: { sessionID, info: { ...this.lastInfo, ...(error ? { error } : {}) } } }]
         if (error && event.message.stopReason !== 'aborted') out.push({ type: 'session.error', properties: { sessionID, error } })
         return out
       }
@@ -295,7 +304,15 @@ export class PiTurnEvents {
   settleRetry(): TurnEventEmission[] {
     if (!this.announced) return []
     this.announced = false
-    return this.idleFrames()
+    const error = this.withheld
+    this.withheld = null
+    if (!error) return this.idleFrames()
+    const sessionID = this.opts.sessionID
+    return [
+      { type: 'message.updated', properties: { sessionID, info: { ...this.lastInfo!, error } } },
+      { type: 'session.error', properties: { sessionID, error } },
+      ...this.idleFrames(),
+    ]
   }
 
   private idleFrames(): TurnEventEmission[] {
@@ -317,7 +334,7 @@ export class PiTurnEvents {
       time: { created: this.currentCreatedAt },
       modelID: model.modelID,
       providerID: model.providerID,
-      ...assistantInfoFields(assistant.usage, { agent: this.opts.agent, workspace: this.opts.workspace }),
+      ...assistantInfoFields(assistant.usage, { agent: this.opts.agent(), workspace: this.opts.workspace }),
     }
   }
 

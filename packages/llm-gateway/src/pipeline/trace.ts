@@ -97,6 +97,8 @@ export function createTraceEmitter(
       attempts: fields.attempts ?? 0,
       candidatesTried: fields.candidatesTried ?? [],
       attemptFailures: fields.attemptFailures ?? [],
+      ...(fields.servedModel ? { servedModel: fields.servedModel } : {}),
+      ...(fields.fallbackFrom ? { fallbackFrom: fields.fallbackFrom } : {}),
       upstream: fields.upstream,
       usage: fields.usage ?? EMPTY_USAGE,
       upstreamCost: fields.upstreamCost ?? 0,

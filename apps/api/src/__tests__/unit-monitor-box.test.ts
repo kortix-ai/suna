@@ -117,6 +117,7 @@ describe('decideMonitorBox', () => {
     expect(decideMonitorBox({ ...base, flagEnabled: false, box: box() })).toEqual({
       kind: 'stop',
       reason: 'monitors flag is off',
+      box: box(),
     });
     expect(decideMonitorBox({ ...base, flagEnabled: false }).kind).toBe('none');
   });
@@ -125,6 +126,7 @@ describe('decideMonitorBox', () => {
     expect(decideMonitorBox({ ...base, enabledMonitors: 0, box: box() })).toEqual({
       kind: 'stop',
       reason: 'no enabled monitors',
+      box: box(),
     });
   });
 
@@ -136,6 +138,7 @@ describe('decideMonitorBox', () => {
     expect(decideMonitorBox({ ...base, budgetExceeded: true, box: box() })).toEqual({
       kind: 'stop',
       reason: 'monthly monitor compute budget exceeded',
+      box: box(),
     });
     // The gate must hold with NO box too, or the next tick simply rebuilds it.
     expect(decideMonitorBox({ ...base, budgetExceeded: true }).kind).toBe('none');
@@ -156,6 +159,7 @@ describe('decideMonitorBox', () => {
     expect(decideMonitorBox({ ...base, box: box({ manifestRevision: 'stale' }) })).toEqual({
       kind: 'restart',
       reason: 'manifest revision drift',
+      box: box({ manifestRevision: 'stale' }),
     });
   });
 

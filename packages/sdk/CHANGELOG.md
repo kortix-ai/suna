@@ -5,7 +5,113 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (display)
+- `AppDisplay` (`listed`, `preview`: `live` | `none`, `parent`): where Kortix
+  shows an App. `App.display` reads it; `UpdateAppInput.display` replaces it
+  whole (`{}` restores the defaults). Presentation only. Additive: a server
+  that predates it omits the field.
+
+### Removed
+- Apps have no monthly budget. `App.monthly_budget_usd`,
+  `CreateAppInput.monthly_budget_usd` and `UpdateAppInput.monthly_budget_usd`
+  are gone: account credits pay for App compute, and the billing `402` is the
+  only cost gate. A server that still sends the field is ignored; a client
+  that still sends it gets `200` and the server ignores it.
+- The unreleased `convex` App kind is gone before any release carried it
+  (0.13.53, the last published version, has none of these names): `AppKind`,
+  `App.kind`, `App.instance` and the `AppInstance*` types, `AppSnapshot*`,
+  `AppCredentials`, `DeleteAppOptions`, `DeleteAppResult`, `GetAppLogOptions`,
+  `WaitForAppOptions`, `getAppCredentials`, `rotateAppCredentials`,
+  `listAppSnapshots`, `createAppSnapshot`, `deleteAppSnapshot`,
+  `restoreAppSnapshot`, `getAppLog`, `waitForApp`, `useAppSnapshots`,
+  `appSnapshotsKey`, and the `'convex'` source kind. A Convex backend is now an
+  ordinary server App with a volume (the `convex` template of
+  `kortix apps launch`). No published name is removed.
+
 ### Added
+- Apps: releases, machines, volumes.
+  `CreateAppBuildInput.config` (`AppReleaseConfigInput`) carries a release's
+  config: `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`
+  (`strategy`, `release_command`). An invalid config answers
+  `400 app_config_invalid` with `issues`. `UpdateAppInput.labels` replaces an
+  App's labels. `App` gains `capabilities` (`AppCapability`), `labels`,
+  `scale`, `services` (`AppServiceSummary[]`, each with its URL), `machines`
+  (`total`, `running`, `stopped`), `volumes` (`count`, `size_gb`), `config`
+  (the live release's `AppReleaseConfig`), `uses`, `used_by`, `auth`
+  (`AppAuth`), `always_on`, `hosting_type`, `estimated_monthly_usd` (each
+  group's `vm` × its scale, 24/7), `retained_deployments`, and `warnings`.
+  Machines: `listAppMachines`, `startAppMachine`, `stopAppMachine`,
+  `restartAppMachine`, `destroyAppMachine`, `scaleApp` (0-20 machines per
+  process group), `execInApp` (project admins). Volumes: `listAppVolumes`,
+  `createAppVolume`, `updateAppVolume` (grow, retention), `destroyAppVolume`
+  (`confirmName`), `listAppVolumeSnapshots`, `createAppVolumeSnapshot`,
+  `restoreAppVolume`, `forkAppVolume`. Sign-in: `createAppToken` (capability
+  `member_tokens`). Facade: `project(pid).apps.{machines.{list, start, stop,
+  restart, destroy}, scale, exec, volumes.{list, create, update, destroy,
+  snapshots, snapshot, restore, fork}, token}`. Types: `AppMachine`,
+  `AppMachineState`, `AppVolume`, `AppVolumeSnapshot`, `AppExecInput`,
+  `AppExecResult`, `CreateAppVolumeInput`, `AppReleaseConfig`,
+  `AppReleaseConfigInput`, `AppServiceConfig`, `AppServiceAccess`,
+  `AppAutoStop`, `AppCheck`, `AppMountConfig`, `AppVmConfig`,
+  `AppDeployStrategy`, `AppServiceSummary`, `AppCapability`, `AppAuth`,
+  `AppToken`, `CreateAppBuildInput`.
+- `@kortix/sdk/react`: `useAppMachines(projectId, appId)` (5 s poll; `start`,
+  `stop`, `restart`, `destroy`, `scale`), `useAppVolumes(projectId, appId)`
+  (`snapshot`, `restore`, `fork`, `extend`, `destroy`),
+  `useAppVolumeSnapshots(projectId, appId, volumeId)`, `useAppDeployment`,
+  and the keys `appMachinesKey`, `appVolumesKey`, plus
+  `qk.project.appMachines`, `qk.project.appVolumes`,
+  `qk.project.appVolumeSnapshots`.
+- `FeatureFlagKey` gains `notification_center` (also in `FEATURE_FLAG_KEYS`
+  and `KortixProject.experimental`). Off by default. It gates the KRTX-1742
+  notification entries below per project. Turn it on with
+  `updateFeatureFlag(projectId, 'notification_center', true)`.
+- Notifications (KRTX-1742), behind the `notification_center` project flag,
+  off by default. While it is off, the server writes no inbox row and sends
+  no Web Push and no email for that project, and the session watch routes
+  answer `403` `feature_disabled`. The caller's inbox: `listNotifications({ limit?,
+  before? })` → `InboxNotificationPage` (`notifications`, `unread_count`,
+  `next_before`) and `markNotificationsRead({ ids } | { all: true } |
+  { sessionId })`. Push and email choices per kind:
+  `getNotificationPreferences()` and `updateNotificationPreferences(patch)` →
+  `NotificationPreferences` (`kinds`, `email_available`). Web Push:
+  `getWebPushPublicKey()`, `registerWebPushSubscription({ endpoint, keys })`,
+  `unregisterWebPushSubscription(endpoint)`. Session watch:
+  `getSessionWatch(projectId, sessionId)` and `setSessionWatch(projectId,
+  sessionId, watching)`, also `session(pid, sid).watch()` and `.setWatch()`.
+  Facade: `kortix.notifications.{list, markRead, preferences,
+  updatePreferences, webPushPublicKey, registerWebPushSubscription,
+  unregisterWebPushSubscription}`. Types: `InboxNotification`,
+  `InboxNotificationKind`, `InboxNotificationPage`, `NotificationPreferences`,
+  `NotificationPreferencesPatch`, `WebPushSubscriptionInput`. Constants:
+  `INBOX_NOTIFICATION_KINDS`, `DEFAULT_NOTIFICATION_PREFERENCES`.
+- `@kortix/sdk/react`: `useNotificationInbox({ userId, limit?, enabled? })`
+  (60 s poll while visible, `unreadCount`, optimistic `markRead`,
+  `markAllRead`, `markSessionRead`), `useNotificationPreferences({ userId })`
+  (optimistic `update`), `useSessionWatch({ userId, projectId, sessionId })`
+  (optimistic `setWatching`), `notificationInboxQueryOptions`, and the
+  `qk.notifications` key family (`scope`, `inbox`, `preferences`,
+  `sessionWatch`, keyed by user). Each hook takes `enabled`; a host passes
+  `useFeatureFlag(projectId, 'notification_center').enabled`.
+- `session(pid, sid).presence()` accepts `alerts?: boolean`, and
+  `useSession({ presenceAlerts })` sends it: with `notification_center` on,
+  the server skips the phone and Web Push only while an alerting tab is in
+  use. A change is sent at once, without dropping the lease. A second
+  argument `{ keepalive?: boolean }` lets the request outlive a closing page;
+  default on for an absent report, off for a present one.
+- `useSession({ presencePageExit })`, default `false`: `pagehide` reports
+  absent, and every absent report is sent with `keepalive`, so a closed tab
+  ends its lease at once. Off is the presence from before: no `pagehide`
+  report and no `keepalive`. A closing tab still turns hidden and reports
+  absent, but the browser can cancel that request as the page unloads, and
+  the lease then lives to its 90 s expiry. Pass the project's
+  `notification_center` flag. A change applies without a new presence
+  report.
+- `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
+  `action`, `maxPages`, `nextArgs`): `paginateConnector` and
+  `connector(slug).paginate` throw it when `maxPages` (default 100) ends a
+  cursor that still has pages. Resume with `nextArgs`. A capped listing no
+  longer completes as if it were whole.
 - `ChannelBinding` gains optional `channelUnavailable`: Slack answered that the
   conversation is deleted or out of the bot's reach. Slack bindings now carry
   `channelName` (a channel without `#`, the other person's name for a DM, the
@@ -157,6 +263,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Changed
+- `rollbackApp` creates a NEW release from the
+  target's artifact and config and answers `202` with the App plus the queued
+  release in `deployment`; it no longer moves traffic to the old release in
+  place. It resolves with the new `AppRollback` type (`App & { deployment }`),
+  a subtype of the `App` it returned before. `AppDeployment` gains `config`,
+  `strategy` and `release_command_status`.
+- `getAppAuthEnv(projectId, appId)` (facade `apps.authEnv(appId)`) and `AppAuthEnv`:
+  `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and the project key set inline as a
+  `data:` URL, for a backend that verifies App sign-in tokens without a network call.
+- `App.estimated_monthly_usd` is deprecated: Kortix shows no prices. The field
+  stays on the wire; hosts must not display it. `DockerfileAppSource.port` and `OciImageAppSource.port` are optional:
+  omit them for a worker-only release (a `config` with `processes` and no
+  service).
 - Every turn start goes through the session's durable prompt inbox
   (`POST .../prompts`), as the web composer and the CLI already did.
   `session(pid, sid).send(text)` resolves with the `CreateSessionPromptResult`
@@ -184,6 +303,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown until the probe answers, as before.
 
 ### Deprecated
+- The `config_releases` member of `FeatureFlagKey`. Config releases graduated
+  out of the flag system: every session runs its base branch's config release.
+  It is absent from `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'config_releases')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'config_releases', …)` answers `400`. Removed in the
+  next major.
+- `createCheckoutSession`, `confirmCheckoutSession` and `scheduleDowngrade`
+  (and the facade's `kortix.billing.checkout.{createSession,confirmSession}`
+  and `kortix.billing.subscription.scheduleDowngrade`). The API retired their
+  routes; each now rejects with `ENDPOINT_RETIRED` and sends no request. Use
+  `createPerSeatCheckout` for checkout and the Stripe customer portal
+  (`createPortalSession`) for a plan change. Removed in the next major.
 - `useSession` option `initialOpenCodeSessionId` (use
   `initialRuntimeSessionId`) and `opencodeSessionId` on the
   `useSessionMessages` source (use `runtimeSessionId`). Both keep working; the
@@ -275,8 +406,88 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `completeRuntimeProviderOAuth`, `setRuntimeProviderApiKey`,
   `getRuntimeConfig`, `updateRuntimeConfig` and `refreshRuntimeConfiguration`.
   Behavior is unchanged. Removed in the next major.
+- The exports in **Removed in the next major** below that were not deprecated
+  yet: the `message-queue` reducers and types, the types of the retired admin
+  hooks, `useUpdateRuntimeSession`, `useRuntimeSessionDiff`, `useInitSession`,
+  `useSendRuntimeMessage`, `useRuntimeAgent` and `useRuntimeTools`, and the
+  four `./internal/*` store subpaths. Behavior is unchanged.
+
+### Removed in the next major
+
+The removal list for the next breaking release. No first-party host
+(`apps/*`, `packages/*` other than this one) imports any name or subpath
+below: check again with `rg -w <name> apps packages -g '!packages/sdk/**'`
+before the cut. Each name carries `@deprecated <replacement>. Removed in the
+next major.`, and `src/deprecated-exports.test.ts` fails when a tag is
+missing. Every other entry under **Deprecated** above that says "Removed in
+the next major" goes in the same release.
+
+Subpaths. For each, delete the `exports` and `publishConfig.exports` keys in
+`package.json`, its row in `SUBPATH_TIERS` (`src/index.isomorphic.test.ts`),
+its entry in `NOT_ROOT_REACHABLE` (`src/root-canonical.test.ts`) when it has
+one, and its file.
+
+| Subpath | Replacement | File |
+|---|---|---|
+| `./opencode-client`, `./config`, `./auth`, `./api-client`, `./projects-client`, `./feature-flags`, `./fresh-sessions`, `./instance-routes`, `./opencode-errors`, `./platform-client`, `./event-stream`, `./files`, `./session`, `./session/url`, `./turns` | `@kortix/sdk` (the same names) | `src/deprecated/<name>.ts` (`./session/url`: `session-url.ts`) |
+| `./idb-sync-cache` | `@kortix/sdk/internal/idb-sync-cache` | `src/deprecated/idb-sync-cache.ts` |
+| `./sync-store`, `./server-store`, `./sandbox-connection-store`, `./opencode-pending-store` | none; read session state with `useSession` | `src/deprecated/<name>.ts` |
+| `./internal/sync-store`, `./internal/server-store`, `./internal/sandbox-connection-store`, `./internal/opencode-pending-store` | none; read session state with `useSession` | `src/internal/<name>.ts` (the stores in `src/browser/stores/` stay) |
+| `./message-queue` | `useSession().send` (the server orders prompts) | `src/core/session/message-queue.ts` and its test |
+
+Names.
+
+| Name | Replacement | File |
+|---|---|---|
+| `claimNext`, `completeInFlight`, `createSessionQueue`, `editQueued`, `enqueue`, `failInFlight`, `removeQueued`, `reorderQueued`, `retryFailed`, `QueuedMessage`, `QueuedMessageInput`, `SessionQueue` (root re-export block in `src/index.ts`) | `useSession().send` | `src/core/session/message-queue.ts` |
+| every export (28 hooks, 34 types) | none: the API removed the route | `src/react/use-admin-analytics.ts` (whole file) |
+| every export (8 hooks, `useRefreshFeedbackData`, 10 types) | none: the API removed the route | `src/react/use-admin-feedback.ts` (whole file) |
+| every export (4 hooks, 5 types) | none: the API removed the route | `src/react/use-system-status.ts` (whole file) |
+| `useUserBillingSummary`, `useAdminUserTransactions`, `useAdjustCredits`, `useProcessRefund` | none: the API removed the route | `src/react/use-admin-billing.ts` (whole file) |
+| `useAdminSandboxDetail`, `useAdminSandboxHealth`, `useAdminSandboxHealthBatch`, `useAdminSandboxExec`, `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`, `fetchAdminSandboxProxyToken`, `AdminSandboxDetail`, `ProviderMachineDetail`, `AdminInstanceLayerStatus`, `AdminInstanceLayerAction`, `AdminInstanceLayerHealth`, `AdminSandboxHealth`, `AdminSandboxHealthBatchResponse`, `ExecResult`, `ProxyTokenResult` | none: the API removed the route | `src/react/use-admin-sandboxes.ts` (`useAdminSandboxes` stays) |
+| `useAdminAccountSandboxes`, `AdminAccountSandbox` | none: the API removed the route | `src/react/use-admin-accounts.ts` |
+| `useCreateTunnelConnection`, `useTunnelPermissions`, `useGrantTunnelPermission`, `useRevokeTunnelPermission`, `useTunnelPermissionRequests`, `useApprovePermissionRequest`, `useDenyPermissionRequest`, `useTunnelAuditLogs`, `TunnelPermission`, `TunnelPermissionRequest`, `TunnelAuditLog`, `AuditLogPage`, `TunnelConnectionCreateResponse` | device auth; a connector's `require_approval` policy | `src/react/use-tunnel.ts` |
+| `useRetiredQuery`, `useRetiredMutation` (not exported) | none: no caller remains | `src/react/retired-endpoint.ts` (whole file) |
+| `useOpenCodeRuntimeReady` | `useRuntimeReady` | `src/react/use-opencode-sessions/keys.ts` |
+| `useOpenCodeSessions`, `useOpenCodeSession`, `useCreateOpenCodeSession`, `useOpenCodeSessionTodo`, `useSummarizeOpenCodeSession` | `useRuntimeSessions`, `useRuntimeSession`, `useCreateRuntimeSession`, `useRuntimeSessionTodo`, `useSummarizeRuntimeSession` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useUpdateRuntimeSession`, `useUpdateOpenCodeSession` | `updateProjectSession` (`name`) | `src/react/use-opencode-sessions/sessions.ts` |
+| `useRuntimeSessionDiff`, `useOpenCodeSessionDiff` | `useRuntimeVcsDiff` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useInitSession` | `useExecuteRuntimeCommand` with `command: 'init'` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useDeleteOpenCodeSession` | `deleteProjectSession` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useOpenCodeMessages` | `useRuntimeMessages` | `src/react/use-opencode-sessions/messages.ts` |
+| `useSendRuntimeMessage`, `useSendOpenCodeMessage` | `useSession().send` | `src/react/use-opencode-sessions/messages.ts` |
+| `useAbortOpenCodeSession` | `useAbortRuntimeSession` | `src/react/use-opencode-sessions/messages.ts` |
+| `useOpenCodeAgents`, `useRuntimeAgent`, `useOpenCodeAgent` | `useRuntimeAgents` (select by `name`) | `src/react/use-opencode-sessions/agents.ts` |
+| `useRuntimeTools`, `useOpenCodeTools`, `useOpenCodeToolIds`, `useOpenCodeSkills` | none: OpenCode-only routes | `src/react/use-opencode-sessions/tools.ts` |
+| `useOpenCodeProjects` | none: OpenCode-only route | `src/react/use-opencode-sessions/projects.ts` |
+| `useOpenCodeCurrentProject`, `useOpenCodePathInfo` | `useRuntimeCurrentProject`, `useRuntimePathInfo` | `src/react/use-opencode-sessions/projects.ts` |
+| `useOpenCodeCommands`, `useExecuteOpenCodeCommand` | `useRuntimeCommands`, `useExecuteRuntimeCommand` | `src/react/use-opencode-sessions/commands.ts` |
+| `useOpenCodeProviders` | `useRuntimeProviders` | `src/react/use-opencode-sessions/providers.ts` |
+| `useShareSession`, `useUnshareSession` | none: OpenCode-only routes | `src/react/use-opencode-sessions/sharing.ts` (whole file) |
+| `useUpdatePart`, `useDeletePart` | none: OpenCode-only routes | `src/react/use-opencode-sessions/parts.ts` (whole file) |
+| `useOpenCodeVcsDiff` | `useRuntimeVcsDiff` | `src/react/use-opencode-sessions/vcs.ts` |
+
+Also in the same change: for a whole file, delete its `export *` line in
+`src/react/index.ts` or `src/react/use-opencode-sessions/index.ts`; delete the
+lists above from
+`src/deprecated-exports.test.ts`; re-record `src/public-surface.snapshot.json`
+and `src/public-type-surface.snapshot.json` and confirm the diff only removes
+these names; drop the `@kortix/sdk/internal/server-store` entry from
+`apps/web/eslint.config.mjs`; drop the `@kortix/sdk/turns` note from
+`apps/web/content/docs/sdk/reference.mdx`. `apps/web/scripts/split-tool-renderers.ts`
+writes `@kortix/sdk/internal/sync-store` and `useOpenCodeMessages` into the
+files it generates; it reads a `.bak` file that no longer exists, so nothing
+runs it. Comments in `apps/web` and `apps/api` still name `useOpenCodeAgents`,
+`useOpenCodeCommands`, `useOpenCodeMessages`, `useSummarizeOpenCodeSession`
+and `useOpenCodeRuntimeReady`; they compile either way.
+
+The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
+  and `throw` of a returned async generator inside its scope. Before, each
+  `connector(slug).paginate` page ran outside the scope and used the
+  process-global config: another client's token and backend.
 - `useSession({ chatEngine: false })` no longer reads a transcript for no
   session. Its inner `useSessionSync('')` went busy with the session, and the
   busy to idle step started `GET /session//message`, which answered 400 and
@@ -350,6 +561,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   release. The API no longer accepts or emits that value.
 
 ### Internal
+- Deleted dead internal code: `src/react/model-lookup.ts` (a re-export no
+  entry point reached) and nine unread non-exported functions, constants,
+  variables and imports. No public name changed.
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.
 - A bare-global tripwire (`process`/`window`/`document`/`localStorage`/

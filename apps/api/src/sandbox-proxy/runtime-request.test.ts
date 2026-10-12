@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { classifyRuntimeRequest, turnStartBodyFields } from './runtime-request';
+import { classifyRuntimeRequest, revertBodyMessageId, turnStartBodyFields } from './runtime-request';
 import { clientAbortTarget } from './client-abort';
 import { isNonIdempotentSessionWrite } from './prompt-dedupe';
 import { isLongTurnCompletionRequest } from './preview-retry-budget';
@@ -23,6 +23,9 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/kortix/runtime/sessions/ses_%31/abort', { kind: 'abort', runtimeSessionId: 'ses_1', prefix: '' }],
     ['GET', '/session/ses_1/message', { kind: 'message-list', runtimeSessionId: 'ses_1', prefix: '' }],
     ['GET', '/session/ses_1/message/', { kind: 'message-list', runtimeSessionId: 'ses_1', prefix: '' }],
+    ['POST', '/session/ses_1/revert', { kind: 'revert', runtimeSessionId: 'ses_1', prefix: '' }],
+    ['POST', '/session/ses_1/revert?directory=%2Fworkspace', { kind: 'revert', runtimeSessionId: 'ses_1', prefix: '' }],
+    ['POST', '/proxy/4096/session/ses_1/unrevert/', { kind: 'unrevert', runtimeSessionId: 'ses_1', prefix: '/proxy/4096' }],
   ] as const)('%s %s', (method, path, expected) => {
     expect(classifyRuntimeRequest(method, path)).toEqual(expected);
   });
@@ -40,6 +43,9 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/kortix/runtime/messages/ses_1'],
     ['POST', '/session/%E0%A4%A/prompt_async'],
     ['POST', '/global/event'],
+    ['GET', '/session/ses_1/revert'],
+    ['POST', '/session/ses_1/revertx'],
+    ['POST', '/session/ses_1/revert/extra'],
   ])('%s %s is not a runtime turn route', (method, path) => {
     expect(classifyRuntimeRequest(method, path)).toEqual({ kind: 'other' });
   });
@@ -52,6 +58,19 @@ describe('turnStartBodyFields', () => {
     expect(turnStartBodyFields(body({ parts: [] }))).toEqual({ messageId: null, noReply: false });
     expect(turnStartBodyFields(new TextEncoder().encode('{').buffer as ArrayBuffer)).toEqual({ messageId: null, noReply: false });
     expect(turnStartBodyFields(undefined)).toEqual({ messageId: null, noReply: false });
+  });
+});
+
+describe('revertBodyMessageId', () => {
+  test('reads the OpenCode messageID of a whole-message rewind, and nothing else', () => {
+    expect(revertBodyMessageId(body({ messageID: ' msg_a ' }))).toBe('msg_a');
+    // A rewind to a part keeps its message listed: no marker.
+    expect(revertBodyMessageId(body({ messageID: 'msg_a', partID: 'prt_1' }))).toBeNull();
+    expect(revertBodyMessageId(body({ messageID: 'msg_a', partID: '' }))).toBe('msg_a');
+    expect(revertBodyMessageId(body({ message_id: 'msg_a' }))).toBeNull();
+    expect(revertBodyMessageId(body(null))).toBeNull();
+    expect(revertBodyMessageId(new TextEncoder().encode('{').buffer as ArrayBuffer)).toBeNull();
+    expect(revertBodyMessageId(undefined)).toBeNull();
   });
 });
 

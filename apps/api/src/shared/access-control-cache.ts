@@ -2,18 +2,12 @@ import { db } from './db';
 import { platformSettings, accessAllowlist } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-const REFRESH_INTERVAL_MS = 60_000;
-
-const globalForAccessControl = globalThis as typeof globalThis & {
-  __kortixAccessControlRefreshTimer?: ReturnType<typeof setInterval> | null;
-};
-
 let signupsEnabled = true; // fail-open default
 let allowedEmails = new Set<string>();
 let allowedDomains = new Set<string>();
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-async function refresh() {
+/** One cache load (workers/access-control-cache-worker.ts runs it every 60s). */
+export async function refreshAccessControlCache() {
   try {
     // Load signups_enabled setting
     const [setting] = await db
@@ -36,26 +30,6 @@ async function refresh() {
   } catch (err) {
     // Fail open — keep previous state (defaults to signups enabled)
     console.error('[access-control-cache] refresh failed, keeping previous state:', err);
-  }
-}
-
-export function startAccessControlCache() {
-  if (globalForAccessControl.__kortixAccessControlRefreshTimer) {
-    clearInterval(globalForAccessControl.__kortixAccessControlRefreshTimer);
-  }
-  refresh(); // initial load (fire-and-forget)
-  refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
-  globalForAccessControl.__kortixAccessControlRefreshTimer = refreshTimer;
-}
-
-export function stopAccessControlCache() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-  if (globalForAccessControl.__kortixAccessControlRefreshTimer) {
-    clearInterval(globalForAccessControl.__kortixAccessControlRefreshTimer);
-    globalForAccessControl.__kortixAccessControlRefreshTimer = null;
   }
 }
 

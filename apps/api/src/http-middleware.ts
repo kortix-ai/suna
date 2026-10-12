@@ -13,6 +13,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import {
+  dbPoolWaitSuspected,
   requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
@@ -25,7 +26,7 @@ import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
-import { auditApiRequest } from './shared/audit';
+import { auditApiRequest } from './middleware/audit';
 import { isUuid } from './shared/validate';
 
 // The global middleware chain, in the registration order the request sees it.
@@ -131,6 +132,17 @@ installFetchTiming(config.SUPABASE_URL);
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
 
+/**
+ * `X-Kortix-Upstream-Status` as a number, or null when the header is absent,
+ * empty, or not a positive status (`Number('')` is 0, so the `> 0` guard is
+ * what separates "absent" from a real status — there is no HTTP status 0).
+ * Same parse as the SDK's `getSessionHealth`.
+ */
+function parseUpstreamStatusHeader(value: string | null): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 // ── Never emit 502/504 to a client that reaches us through Cloudflare ────────
 // Cloudflare REPLACES the body of an origin 502/504 with its own HTML "Bad
 // gateway" page and drops our headers with it — including
@@ -208,6 +220,7 @@ app.use('*', async (c, next) => {
       status,
       durationMs: duration,
       proxyHop: c.res.headers.get(PROXY_HOP_HEADER)?.toLowerCase() ?? null,
+      upstreamStatus: parseUpstreamStatusHeader(c.res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)),
     }) ||
     // Suppress only SUCCESSFUL probes (a non-2xx still logs, so a
     // failing/degraded probe stays fully visible).
@@ -233,6 +246,10 @@ app.use('*', async (c, next) => {
       ...getDiagnosticFields(),
       ...requestClientLogFields((name) => c.req.header(name)),
       ...(serverTiming ? { server_timing: serverTiming } : {}),
+      // Derives from the same breakdown: when the db stage's per-statement wall
+      // reads as connection-queue wait (KRTX-1571), name it on the line so a
+      // saturation episode is one grep instead of a post-hoc reconstruction.
+      ...(serverTiming && dbPoolWaitSuspected(serverTiming) ? { db_pool_wait_suspected: true } : {}),
       // Only on failed proxy requests: identify the failing hop without logging
       // request bodies, response bodies, or any sandbox identity.
       ...(status >= 500 && path.startsWith('/v1/p/')

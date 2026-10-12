@@ -38,7 +38,7 @@ mock.module('../lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./secrets');
+(await import('./secrets')).registerSecretsRoutes();
 
 function buildApp(caller: { agentSession?: boolean }) {
   const app = new Hono<{ Variables: Record<string, unknown> }>();

@@ -27,12 +27,13 @@ name: Terraform Apply
 #     runs would break drift detection with "state snapshot was created by a
 #     newer Terraform". Bump both files together or neither.
 #
-# EVERY root under infra/terraform is now driven from here. environments/dev and
-# environments/prod were the last two manual ones: they read an operator-local,
-# gitignored terraform.tfvars, so CI planned inputs no operator ever used. Every
-# value from those files now lives in committed variable defaults, except
-# `api_image` — that one changes per deploy, so the caller passes it (see the
-# input below) and CI plans the exact image the same run ships.
+# EVERY root under infra/terraform is now driven from here. The old us-west-2
+# dev root and environments/prod were the last two manual ones: they read an
+# operator-local, gitignored terraform.tfvars, so CI planned inputs no operator
+# ever used. Every value from those files now lives in committed variable
+# defaults, except `api_image` — that one changes per deploy, so the caller
+# passes it (see the input below) and CI plans the exact image the same run
+# ships.
 # infra/terraform/README.md carries the full root-by-root table.
 
 on:
@@ -65,7 +66,7 @@ on:
         type: string
       trusted_branch:
         description: >-
-          Branch the applied commit must be reachable from (main, staging, prod).
+          Branch the applied commit must be reachable from (dev, staging, prod).
           Enforced in-workflow before any credential is minted.
         required: true
         type: string
@@ -105,7 +106,7 @@ env:
 jobs:
   apply:
     name: apply ${{ inputs.tf_root }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 45
     environment: ${{ inputs.github_environment }}
     env:
@@ -166,7 +167,7 @@ jobs:
 
       - name: Check out the aws-env action
         if: inputs.cloudflare
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env

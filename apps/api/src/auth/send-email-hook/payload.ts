@@ -1,5 +1,6 @@
 // Parsing + link building for the Supabase "send email" auth hook payload.
 // Kept separate from the route so every branch is unit-testable without HTTP.
+import { config } from '../../config';
 import type { AuthEmailActionType } from './templates';
 
 export interface SendEmailHookPayload {
@@ -36,6 +37,11 @@ const ACTION_TYPES: readonly AuthEmailActionType[] = [
 function asActionType(raw: string | undefined): AuthEmailActionType | null {
   const value = (raw || '').toLowerCase() as AuthEmailActionType;
   return ACTION_TYPES.includes(value) ? value : null;
+}
+
+/** Public Supabase origin for the verification link — see buildVerifyUrl(). */
+export function authVerifyBaseUrl(): string {
+  return (config.SUPABASE_PUBLIC_URL || config.SUPABASE_URL || '').trim();
 }
 
 /**

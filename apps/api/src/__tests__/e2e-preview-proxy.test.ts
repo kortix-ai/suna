@@ -71,7 +71,6 @@ let mockResolvedPreviewPorts: number[] = [];
 let mockResolveIngressError: Error | null = null;
 /** Called on every ingress resolution; a fake clock uses it to make one slow. */
 let mockOnResolveIngress: (() => void) | null = null;
-let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -214,7 +213,7 @@ mock.module('../projects/lib/on-behalf-of', () => ({
 }));
 
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
-// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/forward/access.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
 // leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
 // agent-switch assertion answer 502 instead of the 204 it is about.
@@ -416,12 +415,6 @@ mock.module('../projects/secrets', () => {
   };
 });
 
-mock.module('../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
-    mockSnapshotSyncCalls.push(input);
-  },
-}));
-
 // The proxy owns two of the four title hooks. Keep the REAL prompt extraction
 // (that is the part the proxy actually decides) and capture only the generator
 // call, whose own idempotency/CAS is covered by unit + integration tests.
@@ -558,7 +551,6 @@ beforeEach(() => {
   mockResolvedPreviewPorts = [];
   mockResolveIngressError = null;
   mockOnResolveIngress = null;
-  mockSnapshotSyncCalls = [];
   mockTitleCalls = [];
   // The per-sandbox env-push memo (`env-sync-skip-decision.ts`) would
   // otherwise carry over from the previous test on the same TEST_SANDBOX_ID
@@ -692,6 +684,7 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     ['answers 500', { status: 500, body: 'boom' }, 4096],
     ['cannot be reached', { status: 0, body: '', error: new Error('ECONNREFUSED') }, 4096],
     ['is too old to report the field', { status: 200, body: '{"status":"ok"}' }, 4096],
+    ['names the OpenCode harness and its port', { status: 200, body: '{"harness":{"id":"opencode","details":{"port":4097}},"opencode_port":4097}' }, 4097],
   ])('an opencode PTY dials the live port: the daemon %s', async (_label, health, port) => {
     mockFetchResponses = [health];
 
@@ -704,6 +697,19 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     expect(healthReads()).toHaveLength(1);
     // Bounded, so a wedged box cannot hang the terminal.
     expect(healthReads()[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  // R7.5: pi reports `opencode_port: null`. The 4096 fallback dialed a port
+  // where nothing listens and the terminal died with close code 4502.
+  test('an opencode PTY on a pi box is refused with 409 naming the Kortix PTY, after one health read', async () => {
+    mockFetchResponses = [{ status: 200, body: '{"harness":{"id":"pi","details":{"model":"kortix/x"}},"opencode_port":null}' }];
+    const res = await preparePreviewWsUpgrade(upgradeUrl('ws-pi-box', 4096, '/pty/pty_1/connect'));
+    expect(res).toMatchObject({ ok: false, status: 409 });
+    if (!res.ok) {
+      expect(res.message).toContain('pty_unsupported_runtime');
+      expect(res.message).toContain('/kortix/pty/');
+    }
+    expect(healthReads()).toHaveLength(1);
   });
 
   // The value changes on exactly the event this exists for, so it is read on
@@ -1633,7 +1639,7 @@ describe('Preview proxy: retry exhaustion', () => {
 // no wake, no resend of the (non-idempotent) message, and a distinct,
 // honest signal instead of the generic "sandbox unreachable" 502. See
 // preview-retry-budget.ts (proxyAttemptTimeoutMs) and forwardToSandbox's
-// catch block in routes/preview.ts.
+// catch block in forward/retry.ts.
 describe('Preview proxy: long-turn completion timeout', () => {
   test('a connect-timer abort on POST /session/:id/message returns 504 LONG_TURN_PROXY_TIMEOUT — no wake, no resend', async () => {
     const savedFetch = globalThis.fetch;

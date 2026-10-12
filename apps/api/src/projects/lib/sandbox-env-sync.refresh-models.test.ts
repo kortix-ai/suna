@@ -212,8 +212,8 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
   });
 
   test('an explicit caller opencodeEnv push still asks for a reload', async () => {
-    // e.g. a channel follow-up asking to flip KORTIX_CONNECTORS_MCP_ENABLED
-    // through this same call (see continue-session.ts's continueSession).
+    // e.g. a caller moving KORTIX_MODEL through this same call
+    // (see continue-session.ts's continueSession).
     await syncSandboxEnvForPrompt({
       projectId: 'proj-1',
       sessionId: 'sess-1',
@@ -231,7 +231,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
       previewUrl: 'https://sandbox.test',
       providerHeaders: {},
       providerName: 'daytona',
-      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+      opencodeEnv: { KORTIX_MODEL: 'kortix/test-model' },
     });
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);

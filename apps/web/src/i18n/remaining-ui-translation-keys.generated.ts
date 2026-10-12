@@ -1,5 +1,7 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  Drive: 'text6312b4b9baf1',
+  Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',
   '{label} needs permission for: {toolName}': 'textbe9a4d2a34e1',
   '**This week:** 7 deals advanced, 2 slipped. - **Acme** → Proposal ($120k) - **Globex** → Negotiation ($90k) - At risk: **Initech**, **Umbrella** — no activity in 14 days':
@@ -96,7 +98,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Bundle: 'textf2daa18861b5',
   Bundles: 'textff042b6ded4e',
   Cancelled: 'textd353a99eb455',
-  'Canonical path returned by list_public_content, such as /docs or /pricing.': 'text87e3eca29ea9',
   Careers: 'text7e658675b5ca',
   'Careers at Kortix – Open positions': 'text47f57c0ab829',
   'Categorizes, prioritizes and routes inbound tickets, drafting an empathetic first reply.':

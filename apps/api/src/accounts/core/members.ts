@@ -1,8 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountGroupMembers,
-  accountGroups,
-  accountMembers,
   accountMemberships,
   projects,
 } from '@kortix/db';
@@ -10,7 +8,10 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { isAudienceObjectType } from '../../iam/audience-grants';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { accountGroupIds, accountGroupMembershipRows } from '../../iam/group-read';
+import { accountDirectoryRows, verifiedMfaMemberIds } from '../../iam/membership-read';
 import { auth, errors, json } from '../../openapi';
 import {
   accountRoleMap,
@@ -24,6 +25,7 @@ import {
   type Writer,
 } from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
+import { deleteMemberNotificationData } from '../../notifications/cleanup';
 import { db } from '../../shared/db';
 import { registerInviteRoutes, registerMemberInviteRoute } from './invites';
 import { grantAccountRole } from './member-role-write';
@@ -91,7 +93,10 @@ async function auditProjectAssignmentsRevoked(
       scopeType: 'project',
       liveOnly: false,
     });
-    for (const row of rows) await auditAssignmentRevoked(writer, accountId, row);
+    // Audience grants stay (`deleteProjectScopeAssignments`), so they are not revoked.
+    for (const row of rows) {
+      if (!isAudienceObjectType(row.objectType)) await auditAssignmentRevoked(writer, accountId, row);
+    }
   } catch (err) {
     console.warn('[members] canonical project-assignment revoke audit failed', {
       accountId,
@@ -103,6 +108,18 @@ async function auditProjectAssignmentsRevoked(
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
+/**
+ * Group grants are independent rows. Leaving them behind makes a later
+ * re-invite restore access to groups this user was taken out of. Removal,
+ * leave and SCIM deprovisioning all delete them (KRTX-1722).
+ */
+async function deleteAccountGroupMemberships(accountId: string, userId: string): Promise<void> {
+  await db.delete(accountGroupMembers).where(and(
+    eq(accountGroupMembers.userId, userId),
+    inArray(accountGroupMembers.groupId, accountGroupIds(accountId)),
+  ));
+}
+
 export function registerMemberRoutes(): void {
   // GET /v1/accounts/:accountId/members — list members.
   accountsRouter.openapi(
@@ -155,14 +172,7 @@ export function registerMemberRoutes(): void {
         // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
         // the one store the engine reads — so this list can no longer disagree
         // with what the gate says a moment later.
-        db
-          .select({
-            userId: accountMembers.userId,
-            isSuperAdmin: accountMembers.isSuperAdmin,
-            joinedAt: accountMembers.joinedAt,
-          })
-          .from(accountMembers)
-          .where(eq(accountMembers.accountId, accountId)),
+        accountDirectoryRows(accountId),
         accountRoleMap(accountId),
         // Direct project grants per member, one batched query (name + role, not
         // just a count) — powers both the "N projects" chip and a popover
@@ -184,15 +194,7 @@ export function registerMemberRoutes(): void {
         (async () => {
             const map = new Map<string, Array<{ group_id: string; name: string }>>();
             try {
-              const groupRows = await db
-                .select({
-                  userId: accountGroupMembers.userId,
-                  groupId: accountGroups.groupId,
-                  name: accountGroups.name,
-                })
-                .from(accountGroupMembers)
-                .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
-                .where(eq(accountGroups.accountId, accountId));
+              const groupRows = await accountGroupMembershipRows(accountId);
               for (const g of groupRows) {
                 const list = map.get(g.userId) ?? [];
                 list.push({ group_id: g.groupId, name: g.name });
@@ -230,14 +232,7 @@ export function registerMemberRoutes(): void {
           (async () => {
             const map = new Map<string, boolean>();
             try {
-              const mfaRows = await db.execute<{ user_id: string }>(sql`
-      SELECT DISTINCT user_id::text
-      FROM auth.mfa_factors
-      WHERE status = 'verified'
-        AND user_id IN (
-          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
-        )
-    `);
+              const mfaRows = await verifiedMfaMemberIds(accountId);
               const mfaData = (mfaRows as unknown as { rows: typeof mfaRows }).rows ?? mfaRows;
               for (const row of mfaData as Array<{ user_id: string }>) {
                 map.set(row.user_id, true);
@@ -373,15 +368,9 @@ export function registerMemberRoutes(): void {
       // without access rather than with access and no identity.
       await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
-      // Group grants are independent rows. Leaving them behind makes a later
-      // re-invite restore access to groups the owner already removed this user from.
-      await db.delete(accountGroupMembers).where(and(
-        eq(accountGroupMembers.userId, targetUserId),
-        inArray(accountGroupMembers.groupId, db
-          .select({ groupId: accountGroups.groupId })
-          .from(accountGroups)
-          .where(eq(accountGroups.accountId, accountId))),
-      ));
+      await deleteAccountGroupMemberships(accountId, targetUserId);
+      // KRTX-1742: their inbox and watcher rows here would keep naming sessions.
+      await deleteMemberNotificationData(accountId, targetUserId);
       await db
         .delete(accountMemberships)
         .where(
@@ -423,6 +412,10 @@ export function registerMemberRoutes(): void {
         // No seat reconciler exists: a failure here leaves the Stripe seat count
         // (and the member's YOLO token) wrong until the next member change.
         logger.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: targetUserId, error: err instanceof Error ? err.message : String(err) }),
+      );
+      // Their personal drives in this account pass to an owner.
+      await import('../../drives/service').then(({ releaseMemberDrives }) =>
+        releaseMemberDrives(accountId, targetUserId),
       );
 
       return c.json({ ok: true });
@@ -513,6 +506,11 @@ export function registerMemberRoutes(): void {
         await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
+      if (newRole === 'member') {
+        // An owner or admin reached every company drive; as a member they reach
+        // only what is granted, and drives they attached by role leave now.
+        await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
+      }
 
       return c.json({
         user_id: targetUserId,
@@ -561,6 +559,8 @@ export function registerMemberRoutes(): void {
 
       await deleteProjectScopeAssignments(accountId, userId);
       await deleteAccountScopeAssignments(accountId, userId);
+      await deleteAccountGroupMemberships(accountId, userId);
+      await deleteMemberNotificationData(accountId, userId);
       await db
         .delete(accountMemberships)
         .where(
@@ -582,6 +582,10 @@ export function registerMemberRoutes(): void {
         // No seat reconciler exists: a failure here leaves the Stripe seat count
         // (and the member's YOLO token) wrong until the next member change.
         logger.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: userId, error: err instanceof Error ? err.message : String(err) }),
+      );
+      // Their personal drives in this account pass to an owner.
+      await import('../../drives/service').then(({ releaseMemberDrives }) =>
+        releaseMemberDrives(accountId, userId),
       );
 
       return c.json({ ok: true });

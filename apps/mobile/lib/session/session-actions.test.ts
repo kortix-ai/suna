@@ -109,6 +109,34 @@ describe('open change request prompt', () => {
   });
 });
 
+describe('sessionActionRows files row', () => {
+  const input: SessionActionRowsInput = {
+    isOpenThread: true,
+    hasRuntime: true,
+    canManageLifecycle: true,
+    canCompact: true,
+    changes: { pending: false, error: false, count: 0 },
+    busy: false,
+    compacting: false,
+  };
+
+  test('open thread: visible and enabled', () => {
+    expect(sessionActionRows(input).files).toEqual({ visible: true, enabled: true });
+  });
+
+  test('asleep sandbox (no runtime): still visible and enabled', () => {
+    expect(sessionActionRows({ ...input, hasRuntime: false }).files).toEqual({ visible: true, enabled: true });
+  });
+
+  test('busy session: still enabled', () => {
+    expect(sessionActionRows({ ...input, busy: true }).files.enabled).toBe(true);
+  });
+
+  test('not the open thread: hidden', () => {
+    expect(sessionActionRows({ ...input, isOpenThread: false }).files.visible).toBe(false);
+  });
+});
+
 describe('sessionActionRows', () => {
   const base: SessionActionRowsInput = {
     isOpenThread: true,

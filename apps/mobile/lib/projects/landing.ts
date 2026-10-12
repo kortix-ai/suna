@@ -20,7 +20,6 @@
  */
 
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
-import { classifyStartFailure } from '@/lib/projects/start-failure';
 
 export type LandingResolution =
   | { kind: 'project'; projectId: string; accountId: string }
@@ -117,8 +116,9 @@ export async function checkLastProject(input: {
 
 /**
  * A fresh answer, or the one this device kept (the persisted query cache,
- * lib/query) when the request fails. Never the kept one for an ended login
- * (401/403): signing in again is the only way on, and the start screen says so.
+ * lib/query) when the request fails. Never the kept one when the server
+ * rejected the token or denied the request (401 / 403): the kept copy would
+ * open what the server just refused.
  */
 export async function freshOrCached<T>(
   fetch: () => Promise<T>,
@@ -127,7 +127,8 @@ export async function freshOrCached<T>(
   try {
     return await fetch();
   } catch (error) {
-    const kept = classifyStartFailure(error) === 'session' ? undefined : cached();
+    const status = (error as { status?: unknown } | null | undefined)?.status;
+    const kept = status === 401 || status === 403 ? undefined : cached();
     if (kept !== undefined) return kept;
     throw error;
   }

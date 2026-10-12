@@ -19,7 +19,6 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ObjectStore } from '../object-store/s3';
 import {
   CONFIG_ARCHIVE_CONTENT_TYPE,
-  CONFIG_RELEASES_BUCKET,
   S3ConfigArchiveStore,
   configArchiveKey,
 } from './store';
@@ -27,6 +26,8 @@ import {
 const SUPABASE_URL = 'http://127.0.0.1:54321';
 const ENDPOINT = `${SUPABASE_URL}/storage/v1/s3`;
 const PREFIX = 'config-releases-test';
+/** The bucket the migration creates in a Supabase-backed environment. */
+const CONFIG_RELEASES_BUCKET = 'kortix-config-releases';
 
 async function storageReachable(): Promise<boolean> {
   try {

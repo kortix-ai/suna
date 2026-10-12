@@ -48,7 +48,7 @@ mock.module('../projects/lib/session-secret-reach', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/setup-links');
+(await import('../projects/routes/setup-links')).registerSetupLinksRoutes();
 
 let sessionId: string | undefined;
 

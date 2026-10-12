@@ -154,7 +154,9 @@ ok "Minted PAT ${PAT:0:18}…"
 
 section "Auth"
 
-out=$($CLI login --token "$PAT" 2>&1)
+# --api pins the target: a fresh config always seeds the `cloud` host, and
+# login prefers a stored host URL over KORTIX_API_URL.
+out=$($CLI login --token "$PAT" --api "$KORTIX_API_URL" 2>&1)
 rc=$?
 assert_exit "login --token returns 0" 0 "$rc"
 assert_contains "login prints success line" "Logged in to host" "$out"

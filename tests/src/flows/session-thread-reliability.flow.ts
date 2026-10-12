@@ -844,3 +844,85 @@ flow(
     });
   },
 );
+
+// R7.1: pi's Kortix prompt route dropped `no_reply`, so a released Stop batch
+// ran one turn per row on pi instead of one turn for the batch.
+harnessFlow(
+  'SESS-49',
+  {
+    domain: 'sessions',
+    requires: ['funded', 'daytona'],
+    // Boot (≤540s) + the boot turn + a held turn + the batch turn.
+    timeoutMs: 1_200_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const params = { projectId, sessionId };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const stamp = Date.now();
+    const alpha = `ALPHA${stamp}`;
+    const batch = `BATCH${stamp}`;
+    const waiting = async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params });
+      r.status(200);
+      return (r.json<{ prompts?: Array<{ prompt_id: string; state: string; reason?: string | null }> }>().prompts ?? []);
+    };
+
+    await ctx.step('a long turn runs', async () => {
+      await sendPrompt(ctx, projectId, sessionId, `Run the shell command "sleep 90" with your bash tool, then reply with the word LONG${stamp}.`);
+      await waitForTurn(ctx, projectId, sessionId, (turn) => turn.turns.some((t) => t.state === 'active'), `a running turn in ${sessionId}`);
+    });
+
+    let ids: string[] = [];
+    await ctx.step('two prompts queue behind the running turn and wait', async () => {
+      ids = [
+        await sendPrompt(ctx, projectId, sessionId, `Remember the code word ${alpha}. Do not answer this message on its own.`),
+        await sendPrompt(ctx, projectId, sessionId, `Reply with the word ${batch}, then the code word from my previous message.`),
+      ];
+      // `queued` or `waiting`: in the inbox, not handed to the runtime.
+      const rows = await waiting();
+      for (const id of ids) {
+        const row = rows.find((p) => p.prompt_id === id);
+        if (row?.state !== 'queued' && row?.state !== 'waiting') {
+          throw new Error(`a queued prompt did not wait behind the running turn: ${JSON.stringify(row)}`);
+        }
+      }
+    });
+
+    await ctx.step('Stop holds both prompts and ends the turn', async () => {
+      (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts/hold', { held: true }, { params })).status(200);
+      await abortTurn(ctx, session);
+      await waitForTurn(ctx, projectId, sessionId, (turn) => turn.turns.length === 0, `the stopped turn to end in ${sessionId}`);
+      const rows = await waiting();
+      for (const id of ids) {
+        const row = rows.find((p) => p.prompt_id === id);
+        if (row?.reason !== 'held') throw new Error(`Stop did not hold a queued prompt: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('Resume releases both as one batch: one turn answers both, parented on the second', async () => {
+      (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts/hold', { held: false }, { params })).status(200);
+      const messages = await waitForAssistantText(ctx, projectId, sessionId, batch);
+      const first = messages.find((m) => m.role === 'user' && m.text.includes(alpha));
+      const second = messages.find((m) => m.role === 'user' && m.text.includes(batch));
+      if (!first?.id || !second?.id) throw new Error(`a batch prompt is missing from the transcript: ${JSON.stringify({ first, second })}`);
+      const answeredFirst = messages.filter((m) => m.role === 'assistant' && m.parent_id === first.id);
+      if (answeredFirst.length > 0) {
+        throw new Error(`the first batch row ran a turn of its own on ${harness}: ${JSON.stringify(answeredFirst.map((m) => m.text))}`);
+      }
+      if (!messages.some((m) => m.role === 'assistant' && m.parent_id === second.id && m.text.includes(batch))) {
+        throw new Error(`no reply parented on the second batch row carries ${batch}`);
+      }
+    });
+  },
+);

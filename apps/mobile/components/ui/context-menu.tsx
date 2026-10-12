@@ -17,8 +17,8 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { FullWindowOverlay } from '@/components/kortix/full-window-overlay';
 import { FadeIn, ReduceMotion } from 'react-native-reanimated';
-import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
 const ContextMenu = ContextMenuPrimitive.Root;
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
@@ -83,7 +83,6 @@ function ContextMenuSubContent({
   );
 }
 
-const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;
 
 function ContextMenuContent({
   className,
@@ -171,6 +170,22 @@ function ContextMenuItem({
   );
 }
 
+/**
+ * The shared body of the checkable menu items (checkbox + radio): the same
+ * row classes and the same absolute indicator slot; the caller supplies the
+ * primitive and the indicator content.
+ */
+const CHECKABLE_ITEM_CLASS =
+  'active:bg-accent group relative flex flex-row items-center gap-2 rounded-lg py-2 pl-8 pr-2 sm:py-1.5';
+
+function CheckableItemIndicatorSlot({ children }: { children: React.ReactNode }) {
+  return (
+    <View className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <ContextMenuPrimitive.ItemIndicator>{children}</ContextMenuPrimitive.ItemIndicator>
+    </View>
+  );
+}
+
 function ContextMenuCheckboxItem({
   className,
   children,
@@ -182,7 +197,7 @@ function ContextMenuCheckboxItem({
     <TextClassContext.Provider value="text-sm text-popover-foreground select-none group-active:text-accent-foreground">
       <ContextMenuPrimitive.CheckboxItem
         className={cn(
-          'active:bg-accent group relative flex flex-row items-center gap-2 rounded-lg py-2 pl-8 pr-2 sm:py-1.5',
+          CHECKABLE_ITEM_CLASS,
           Platform.select({
             web: 'focus:bg-accent focus:text-accent-foreground cursor-default outline-none data-[disabled]:pointer-events-none',
           }),
@@ -190,17 +205,15 @@ function ContextMenuCheckboxItem({
           className
         )}
         {...props}>
-        <View className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-          <ContextMenuPrimitive.ItemIndicator>
-            <Icon
-              as={Check}
-              className={cn(
-                'text-foreground size-4',
-                Platform.select({ web: 'pointer-events-none' })
-              )}
-            />
-          </ContextMenuPrimitive.ItemIndicator>
-        </View>
+        <CheckableItemIndicatorSlot>
+          <Icon
+            as={Check}
+            className={cn(
+              'text-foreground size-4',
+              Platform.select({ web: 'pointer-events-none' })
+            )}
+          />
+        </CheckableItemIndicatorSlot>
         <>{children}</>
       </ContextMenuPrimitive.CheckboxItem>
     </TextClassContext.Provider>
@@ -218,7 +231,7 @@ function ContextMenuRadioItem({
     <TextClassContext.Provider value="text-sm text-popover-foreground select-none group-active:text-accent-foreground">
       <ContextMenuPrimitive.RadioItem
         className={cn(
-          'active:bg-accent group relative flex flex-row items-center gap-2 rounded-lg py-2 pl-8 pr-2 sm:py-1.5',
+          CHECKABLE_ITEM_CLASS,
           Platform.select({
             web: 'focus:bg-accent focus:text-accent-foreground cursor-default outline-none data-[disabled]:pointer-events-none',
           }),
@@ -226,11 +239,9 @@ function ContextMenuRadioItem({
           className
         )}
         {...props}>
-        <View className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-          <ContextMenuPrimitive.ItemIndicator>
-            <View className="bg-foreground h-2 w-2 rounded-full" />
-          </ContextMenuPrimitive.ItemIndicator>
-        </View>
+        <CheckableItemIndicatorSlot>
+          <View className="bg-foreground h-2 w-2 rounded-full" />
+        </CheckableItemIndicatorSlot>
         <>{children}</>
       </ContextMenuPrimitive.RadioItem>
     </TextClassContext.Provider>

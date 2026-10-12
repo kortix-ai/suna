@@ -82,7 +82,6 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
-import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
@@ -783,14 +782,16 @@ export function ProfileTab() {
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
-  // The gate fails closed: only a definitive `supported: true` from a
-  // successful status check arms the row. The old `?? !isCheckingDeletionStatus`
-  // mapped a rejected check — `data` undefined, `isLoading` false — to
-  // "supported", arming the destructive dialog against an endpoint of unknown
-  // state (KRTX-2177). `false` covers loading too: the row already renders the
-  // unavailable shape while the check runs, and the definitive `supported:
-  // false` answer renders the same shape, so neither branch changes.
-  const accountDeletionSupported = isBillingEnabled() && deletionStatus?.supported === true;
+  // The API decides: its deletion-status route answers on every deployment
+  // that deletes accounts, self-hosted ones included (billing on or off) — but
+  // only a DEFINITIVE answer arms the row. The gate fails closed (KRTX-2177):
+  // the old `?? !isCheckingDeletionStatus` mapped a rejected check — `data`
+  // undefined, `isLoading` false — to "supported", arming the destructive
+  // dialog against an endpoint of unknown state. `false` covers loading too:
+  // the row already renders the unavailable shape while the check runs, and a
+  // definitive `supported: false` answer renders the same shape, so neither
+  // branch changes.
+  const accountDeletionSupported = deletionStatus?.supported === true;
   // "The freshest known outcome is a failure." A bare `isError` is not enough:
   // the moment a retry starts, query-core clears the error of a data-less query
   // (fetchState sets `status: 'pending'`), and the row would flash the

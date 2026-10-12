@@ -24,6 +24,7 @@ import { ActivityStep, iconFor } from './activity-step';
 import { isAnsweredQuestionPart } from './answered-question-step';
 import { mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
+import { WorkFoldContext } from './turn-work-accordion';
 
 function tool(id: string, name: string, state: Record<string, unknown>): ToolPart {
   return {
@@ -651,6 +652,23 @@ describe('ActivityBurst', () => {
 
   test('two calls keep the summary line', () => {
     expect(renderBurst([done('1', 'bash'), done('2', 'bash')])).toContain('Completed 2 steps');
+  });
+
+  test('inside an opened "Worked for" fold, a burst drops its own summary and shows its steps', () => {
+    // The fold row already summarises the turn. A second "Completed 2 steps"
+    // row under it is a door in front of a door.
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <WorkFoldContext.Provider value>
+            <ActivityBurst parts={[done('1', 'bash'), done('2', 'read')]} sessionId="session-1" working={false} disableNavigation />
+          </WorkFoldContext.Provider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(markup).not.toContain('Completed 2 steps');
+    expect(markup).toContain('data-state="open"');
+    expect(markup).toContain('data-status="done"');
   });
 
   test('one ROW over three calls keeps the summary line', () => {

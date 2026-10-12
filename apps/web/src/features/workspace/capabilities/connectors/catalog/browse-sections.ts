@@ -41,6 +41,7 @@ export function connectToolkitApp(toolkit: ConnectToolkit): EasyConnectApp {
     hasTriggers: false,
     featuredWeight: 0,
     provider: 'composio',
+    directId: toolkit.directId ?? null,
   };
 }
 

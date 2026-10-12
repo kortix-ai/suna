@@ -14,6 +14,7 @@ import { formatDistanceStrict } from 'date-fns';
 // `turn/message-time` — the same one the user bubble's timestamp reads through,
 // so there is exactly one place that knows how to get a stamp off a message.
 import { messageTime } from './turn/message-time';
+import type { TurnServedModel } from './turn/served-model';
 
 export interface SessionTurnSpan {
   startedAt: number | null;
@@ -64,11 +65,14 @@ export function sessionTurnMetaRows(
     now,
     durationMs,
     cost,
+    served,
   }: {
     endedAt: number | null;
     now: number;
     durationMs: number | null;
     cost: TurnCostInfo | null | undefined;
+    /** The models that answered the turn, from the gateway's request record. */
+    served?: TurnServedModel;
   },
   tI18nComplete: UiTranslator,
 ): SessionTurnMetaRow[] {
@@ -90,10 +94,21 @@ export function sessionTurnMetaRows(
     if (value) rows.push({ label: tI18nComplete.raw('text4fc52a3c4c55'), value });
   }
 
+  if (served && served.models.length > 0) {
+    rows.push({ label: tI18nComplete.raw('servedModelRow'), value: served.models.join(', ') });
+    if (served.fallbackFrom) {
+      rows.push({ label: tI18nComplete.raw('servedModelInPlaceOf'), value: served.fallbackFrom });
+    }
+  }
+
+  // `cost` is the transcript's estimate, priced at the model the turn asked
+  // for. When a fallback model answered, that price is for a model that did
+  // not run, so the row shows what Kortix billed instead.
+  const shownCost = served?.fallbackFrom ? served.billedCost : (cost?.cost ?? 0);
   // `formatCost(0)` renders as "$0.00" — a real-looking number for a turn
   // that spent nothing — so the row is gated on the raw value, not the string.
-  if (cost && cost.cost > 0) {
-    rows.push({ label: tI18nComplete.raw('text204a5eb2cd28'), value: formatCost(cost.cost) });
+  if (shownCost > 0) {
+    rows.push({ label: tI18nComplete.raw('text204a5eb2cd28'), value: formatCost(shownCost) });
   }
 
   // Deliberately `input + output` only, NOT every token field: `reasoning` /

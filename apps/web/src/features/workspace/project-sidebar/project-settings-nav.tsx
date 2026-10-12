@@ -11,7 +11,9 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { useIsMobile } from '@/hooks/utils';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 
@@ -71,6 +73,10 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // same leaf the Connectors row above already probes, so folding it in
   // removed a duplicate probe rather than a gate.
   { key: 'secrets', action: PROJECT_ACTIONS.PROJECT_SECRET_READ },
+  // Files is the project's shared folders. Anyone who can read the project
+  // may open it; what each person sees in it follows folder access, decided
+  // by the drives API per folder.
+  { key: 'files', action: PROJECT_ACTIONS.PROJECT_READ },
   // Settings (`/projects/<id>/config`) holds the project configuration that
   // did not earn its own top-level tab: project.settings.write.
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
@@ -84,7 +90,7 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
  * The probes are unconditional and fixed-order on purpose. Hooks cannot
  * be called from a loop that short-circuits.
  */
-function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
+export function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
   // ONE request. These used to be seven `useProjectCan` singles, and each one
   // is its own `GET …/iam/members/:me/effective?action=…` plus a CORS
   // preflight — fourteen round trips on every project page open, for a
@@ -135,6 +141,12 @@ export function ProjectCustomizeNavItem() {
   const { setOpenMobile } = useSidebar();
   const caps = useProjectPageCans(projectId);
   const tab = useCapabilityTab(projectId);
+  // Files lives under Customize, so its open conflict copies (in folders the
+  // caller can see) badge this row: the sidebar keeps no Files row of its own.
+  const tDrives = useTranslations('drives');
+  const drivesGate = useFeatureFlag(projectId, 'drives');
+  const drive = useProjectDrive(projectId, drivesGate.enabled);
+  const conflicts = drivesGate.enabled ? (drive.data?.openConflicts ?? 0) : 0;
   // Active on the legacy index (`/customize`, for the instant before it
   // redirects) AND on any capability tab — the row stays lit while browsing
   // Connectors or one agent's page, not just on the landing tab.
@@ -162,26 +174,42 @@ export function ProjectCustomizeNavItem() {
       >
         <HoverPrefetchLink href={capabilityTabHref(projectId, tab)} prefetch onClick={handleClick}>
           <span className="shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              width="24"
-              height="24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M15.37 9.73C15.9 10 16.6 10 18 10C19.4 10 20.1 10 20.64 9.73C21.11 9.49 21.49 9.11 21.73 8.63C22 8.1 22 7.4 22 6C22 4.6 22 3.9 21.73 3.37C21.49 2.89 21.11 2.51 20.64 2.27C20.1 2 19.4 2 18 2C16.6 2 15.9 2 15.37 2.27C14.89 2.51 14.51 2.89 14.27 3.37C14 3.9 14 4.6 14 6C14 7.4 14 8.1 14.27 8.63C14.51 9.11 14.89 9.49 15.37 9.73Z" />
-              <path d="M10 14V10C10 8.6 10 7.9 9.73 7.37C9.49 6.89 9.11 6.51 8.63 6.27C8.1 6 7.4 6 6 6C4.6 6 3.9 6 3.37 6.27C2.89 6.51 2.51 6.89 2.27 7.37C2 7.9 2 8.6 2 10V14H10Z" />
-              <path d="M10 14H2V17C2 19.36 2 20.54 2.73 21.27C3.46 22 4.64 22 7 22H10V14Z" />
-              <path d="M14 14H10V22H14C15.4 22 16.1 22 16.64 21.73C17.11 21.49 17.49 21.11 17.73 20.64C18 20.1 18 19.4 18 18C18 16.6 18 15.9 17.73 15.37C17.49 14.89 17.11 14.51 16.64 14.27C16.1 14 15.4 14 14 14Z" />
-            </svg>
+            <CustomizeGlyph />
           </span>
           {t('customize')}
+          {conflicts > 0 ? (
+            <span
+              className="text-kortix-orange ml-auto text-xs font-medium tabular-nums"
+              aria-label={tDrives('conflictCount', { count: conflicts })}
+            >
+              {conflicts}
+            </span>
+          ) : null}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
+  );
+}
+
+/** The Customize row's glyph, shared with the Customize sidebar modal. */
+export function CustomizeGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15.37 9.73C15.9 10 16.6 10 18 10C19.4 10 20.1 10 20.64 9.73C21.11 9.49 21.49 9.11 21.73 8.63C22 8.1 22 7.4 22 6C22 4.6 22 3.9 21.73 3.37C21.49 2.89 21.11 2.51 20.64 2.27C20.1 2 19.4 2 18 2C16.6 2 15.9 2 15.37 2.27C14.89 2.51 14.51 2.89 14.27 3.37C14 3.9 14 4.6 14 6C14 7.4 14 8.1 14.27 8.63C14.51 9.11 14.89 9.49 15.37 9.73Z" />
+      <path d="M10 14V10C10 8.6 10 7.9 9.73 7.37C9.49 6.89 9.11 6.51 8.63 6.27C8.1 6 7.4 6 6 6C4.6 6 3.9 6 3.37 6.27C2.89 6.51 2.51 6.89 2.27 7.37C2 7.9 2 8.6 2 10V14H10Z" />
+      <path d="M10 14H2V17C2 19.36 2 20.54 2.73 21.27C3.46 22 4.64 22 7 22H10V14Z" />
+      <path d="M14 14H10V22H14C15.4 22 16.1 22 16.64 21.73C17.11 21.49 17.49 21.11 17.73 20.64C18 20.1 18 19.4 18 18C18 16.6 18 15.9 17.73 15.37C17.49 14.89 17.11 14.51 16.64 14.27C16.1 14 15.4 14 14 14Z" />
+    </svg>
   );
 }

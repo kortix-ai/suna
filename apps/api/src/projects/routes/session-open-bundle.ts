@@ -48,6 +48,7 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z, type RouteHandler } from '@hono/zod-openapi';
 
 import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
@@ -59,7 +60,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
@@ -71,6 +72,7 @@ import { readSessionTurnState } from '../lib/session-turn-read';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
+import { readSessionLogPage } from '../session-log-read';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;
@@ -150,6 +152,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
     const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
+    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log', loaded.row.accountId);
     const userId = c.get('userId') as string;
 
     // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the
@@ -162,7 +165,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime, audit] = await Promise.allSettled([
+    const [turn, queue, transcript, models, runtime, audit, log] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
@@ -194,8 +197,10 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
               accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
-              resolvedForCaller:
-                resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+              // Same answer as GET /model-defaults (KRTX-1067): the platform
+              // default is servable for every tier, so the fallback is the
+              // same for free and paid callers.
+              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
               resolvedSource: resolved.source,
               freeTier,
             };
@@ -223,6 +228,12 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           limit: AUDIT_ACTIONS_LIMIT,
         });
       })(),
+      // = `GET .../log`, the first page of the root thread, only with the
+      // `session_log` flag on. Same window as the transcript leg; `?transcript=0`
+      // reads the pointer only (session, generation, threads, no messages).
+      logEnabled
+        ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
+        : Promise.resolve(undefined),
     ]);
 
     const prompts =
@@ -330,24 +341,36 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         audit.status === 'fulfilled'
           ? { known: true as const, ...audit.value }
           : failed(audit.reason),
+
+      // = `GET .../log` (P4.2). Absent with the `session_log` flag off.
+      // `page: null`: the session has no stored log yet.
+      ...(logEnabled && {
+        log:
+          log.status === 'fulfilled'
+            ? { known: true as const, page: typeof log.value === 'object' ? log.value : null }
+            : failed(log.reason),
+      }),
     });
   };
 
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/snapshot',
-    'Get the session snapshot (state, prompts, audit) in one read',
-  ),
-  handleSessionSnapshot,
-);
-// The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
-// The #6987 rename to `/snapshot` left shipped clients 404ing here — the
-// bundle degraded silently to 6-8 serial reads on every session open. Same
-// handler, same contract; keep until no supported SDK requests it.
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/open-bundle',
-    'Get the session snapshot (legacy open-bundle path)',
-  ),
-  handleSessionSnapshot,
-);
+export function registerSessionOpenBundleRoutes(): void {
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/snapshot',
+      'Get the session snapshot (state, prompts, audit) in one read',
+    ),
+    handleSessionSnapshot,
+  );
+
+  // The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
+  // The #6987 rename to `/snapshot` left shipped clients 404ing here — the
+  // bundle degraded silently to 6-8 serial reads on every session open. Same
+  // handler, same contract; keep until no supported SDK requests it.
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/open-bundle',
+      'Get the session snapshot (legacy open-bundle path)',
+    ),
+    handleSessionSnapshot,
+  );
+}

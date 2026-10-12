@@ -61,11 +61,14 @@ export function resolveHostNotice(hostArg?: string): HostNotice {
     };
   }
 
-  const { name, host } = activeHostEntry();
+  const { name, host, envWins } = activeHostEntry();
   return {
     name,
     url: host.url,
-    authState: hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored'),
+    // The auth state follows the actual winner: an in-sandbox `hosts use`
+    // (KRTX-1705) serves commands from the stored credential, so the notice
+    // must stop calling it a session/project token.
+    authState: hostAuthState(host, envWins ? 'env' : 'stored'),
     ...(tokenAgent(host) ? { agent: tokenAgent(host) } : {}),
   };
 }
@@ -171,13 +174,13 @@ export function renderContext(): string {
   const { hostName: linkHostName, auth: linkAuth } = resolveProjectAuth();
   const linkedHost =
     linkHostName && (linkAuth?.token || !hasEnvTokenHost()) ? getHost(linkHostName) : null;
-  const active = activeHostEntry();
-  const name = linkedHost && linkHostName ? linkHostName : active.name;
-  const host = linkedHost ?? active.host;
+  const { name: activeName, host: activeHost, envWins } = activeHostEntry();
+  const name = linkedHost && linkHostName ? linkHostName : activeName;
+  const host = linkedHost ?? activeHost;
   const signedIn = Boolean(host.token);
   const authState = hostAuthState(
     host,
-    linkedHost ? 'stored' : hasEnvTokenHost() ? 'env' : 'stored',
+    linkedHost ? 'stored' : envWins ? 'env' : 'stored',
   );
   const agent = tokenAgent(host);
   const labelW = 7; // "account".length / "project".length / "session".length

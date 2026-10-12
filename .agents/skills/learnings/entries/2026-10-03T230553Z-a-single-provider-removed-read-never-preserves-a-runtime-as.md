@@ -1,0 +1,13 @@
+---
+recorded: 2026-10-03T23:05:53Z
+incident_date: 2026-10-02
+---
+# A single provider removed read never preserves a runtime as lost: every discovery path runs the in-place recovery gate first
+
+**Rule:** Before `preserveEstablishedRuntime` condemns an identity on a provider `removed` answer, the calling path must have asked the in-place recovery gate (`provider.recoverInPlace`, decided by `decideRemovedParkedOutcome` / `recoverRemovedParkedRuntime`). A bare `getStatus() === 'removed'` is a hypothesis, not a verdict: Platinum collapses `failed-start` (a start that failed, disk intact), `lost`, `deleted` and a 404 into `removed`. And once an identity is condemned (`runtimeIdentityState: 'unavailable'`), no background path may run recovery against it again — the sweep skips it (`decideParkedRuntime`), and a rescue that later fails re-reports the loss as a new occurrence.
+
+**Trigger surface:** Any code path that turns a provider status read into `preserveEstablishedRuntime(row, …, 'provider_removed')`: the `/start` open phase (`session-open-recovery.ts`), the wake-maintenance late-start reconcile (`runtime-wake-maintenance.ts` `reconcileRuntimeWakeCandidate`), the parked-verify sweep (`parked-runtime-verification.ts`), provider webhooks (`sandbox-state-sync.ts` — authoritative, the provider's own statement), stuck-provisioning. When you add a discovery path, wire the same gate; when you add a provider, decide whether it gets a `recoverInPlace` and say so in its contract.
+
+**Incident:** 2026-10-02/03 prod, API release kortix-api@dev (v0.13.47/48 fleet). Two parked runtimes were preserved as lost from one `removed` read each by the wake-maintenance late-start reconcile, the only background path without the gate (the open path got it in #7668, the sweep in #7696/KRTX-225). Box A, condemned 19:00 UTC, was still stoppable 14.5 h later (`Platinum stop … last state: stopping`); box B, condemned 10:39 UTC, served `200`s on its proxy route at 10:42 and for hours after. Both sessions' work was intact; users saw "This session's computer was lost". Better Stack pattern `cb64e421` (KRTX-208) reopened after PR #7668 had already cut the 1800-occurrence flood to ~4/3d.
+
+**Enforcement:** `apps/api/src/projects/session-lifecycle/runtime-wake-maintenance.test.ts` — the `removed` candidate tests fail if a pass condemns without consulting `recoverRemoved` (red at base 6920a86ca2, green at the fix); `apps/api/src/projects/reaping/parked-runtime-verification.test.ts` — `recoverRemovedParkedRuntime` returns `preserve-lost` untouched for an already-condemned identity, pinning the skip. The decision itself lives in one shared helper both background paths call.

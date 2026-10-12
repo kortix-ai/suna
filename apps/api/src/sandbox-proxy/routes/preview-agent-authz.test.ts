@@ -94,9 +94,6 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // immediately keeps every case in this file off the network.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
@@ -104,7 +101,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({

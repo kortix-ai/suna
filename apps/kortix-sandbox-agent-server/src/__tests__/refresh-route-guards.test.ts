@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '@/lib/config/config'
+import type { HarnessControlOperations } from '@/harness/contract/control'
 import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
 import { createOpenCodeControlService } from '@/harness/open-code/control'
 import type { Opencode } from '@/harness/open-code/lifecycle'
@@ -72,7 +73,7 @@ describe('reboot must not reset an existing session branch', () => {
   })
 
   test('the daemon probes for the ref and only creates when it is absent', () => {
-    const SRC = readFileSync(join(import.meta.dir, '..', 'lib', 'git', 'git.ts'), 'utf8')
+    const SRC = readFileSync(join(import.meta.dir, '..', 'services', 'workspace-provider', 'checkout.ts'), 'utf8')
     const fn = SRC.split('async function checkoutLocalSessionBranch(')[1]?.split('\n}\n')[0]
     expect(fn).toBeTruthy()
     expect(fn).toContain("'rev-parse', '--verify', '--quiet'")
@@ -177,5 +178,41 @@ describe('base=1 requires a DIRECT service call', () => {
       const res = await post(path, { Authorization: `Bearer ${TOKEN}` })
       expect(res.status).not.toBe(403)
     }
+  })
+})
+
+describe('on_boot=1 requires a DIRECT service call', () => {
+  const TOKEN = 'service-key-under-test'
+
+  function router(onBoot: () => void) {
+    const cfg = { sandboxToken: TOKEN } as Config
+    const control = {
+      refresh: async () => ({ ok: true, repo: {}, runtime: 'ok', runtime_pid: 1 }),
+    } as unknown as HarnessControlOperations
+    return createRefreshRouter(cfg, control, { runSandboxOnBoot: onBoot })
+  }
+
+  test('a proxied request cannot launch the project boot command', async () => {
+    let calls = 0
+    const res = await router(() => calls++).request('/?on_boot=1', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    })
+    expect(res.status).toBe(403)
+    expect(calls).toBe(0)
+  })
+
+  test('a direct service request launches the project boot command after refresh', async () => {
+    let calls = 0
+    const res = await router(() => calls++).request('/?restart=0&repo=0&on_boot=1', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        [KORTIX_SERVICE_CALL_HEADER]: '1',
+      },
+    })
+    expect(res.status).toBe(200)
+    expect(calls).toBe(1)
+    expect(await res.json()).toMatchObject({ on_boot: 'started' })
   })
 })

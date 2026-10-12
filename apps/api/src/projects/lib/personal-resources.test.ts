@@ -11,31 +11,27 @@ const LAUNCHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 describe('personalResourceOwner', () => {
   test('flag OFF / ungoverned: the legacy user is returned unchanged', () => {
-    expect(
-      personalResourceOwner({ agentPrincipal: false, legacyUserId: LAUNCHER, onBehalfOfUserId: null, visibility: 'project' }),
-    ).toBe(LAUNCHER);
-    expect(
-      personalResourceOwner({ agentPrincipal: false, legacyUserId: null, onBehalfOfUserId: HUMAN, visibility: 'private' }),
-    ).toBeNull();
+    expect(personalResourceOwner({ agentPrincipal: false, legacyUserId: LAUNCHER })).toBe(LAUNCHER);
+    expect(personalResourceOwner({ agentPrincipal: false, legacyUserId: null })).toBeNull();
   });
 
   test("agent principal, private session: the on-behalf-of human, never the launcher", () => {
     expect(
-      personalResourceOwner({ agentPrincipal: true, legacyUserId: LAUNCHER, onBehalfOfUserId: HUMAN, visibility: 'private' }),
+      personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: HUMAN, visibility: 'private' }),
     ).toBe(HUMAN);
   });
 
   test('agent principal, shared session: none', () => {
     for (const visibility of ['project', 'restricted', null] as const) {
       expect(
-        personalResourceOwner({ agentPrincipal: true, legacyUserId: LAUNCHER, onBehalfOfUserId: HUMAN, visibility }),
+        personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: HUMAN, visibility }),
       ).toBeNull();
     }
   });
 
   test('agent principal, unattended or cleared (on_behalf_of null): none', () => {
     expect(
-      personalResourceOwner({ agentPrincipal: true, legacyUserId: LAUNCHER, onBehalfOfUserId: null, visibility: 'private' }),
+      personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: null, visibility: 'private' }),
     ).toBeNull();
   });
 });

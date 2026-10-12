@@ -76,13 +76,10 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 // The deadline module is stubbed only where it TALKS TO THE DATABASE. The

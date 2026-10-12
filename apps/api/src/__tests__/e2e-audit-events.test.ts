@@ -32,7 +32,8 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest, recordAuditEvent } = await import('../shared/audit');
+const { recordAuditEvent } = await import('../shared/audit');
+const { auditApiRequest } = await import('../middleware/audit');
 
 describe('audit event middleware', () => {
   beforeEach(() => {

@@ -1,6 +1,6 @@
 'use server';
 import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants';
 
 export async function createClient() {
@@ -24,7 +24,20 @@ export async function createClient() {
     process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+  // GoTrue records the User-Agent and client IP of the request that signs in
+  // (`auth.sessions`), and Settings → Security names each signed-in device by
+  // them. A sign-in through this client reaches GoTrue from the server, so
+  // without these it records `node` and the server's address for every
+  // browser. Forward the browser's own.
+  const requestHeaders = await headers();
+  const forwarded: Record<string, string> = {};
+  const userAgent = requestHeaders.get('user-agent');
+  const clientIp = requestHeaders.get('x-forwarded-for') ?? requestHeaders.get('x-real-ip');
+  if (userAgent) forwarded['user-agent'] = userAgent;
+  if (clientIp) forwarded['x-forwarded-for'] = clientIp;
+
   return createServerClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: forwarded },
     cookieOptions: {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
       path: '/',

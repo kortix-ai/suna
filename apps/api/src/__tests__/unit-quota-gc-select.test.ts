@@ -7,7 +7,6 @@ import {
   QUOTA_GC_MAX_PER_PASS,
   QUOTA_GC_MIN_IDLE_MS,
   QUOTA_GC_ORG_HIGH_WATER,
-  QUOTA_GC_ORG_TARGET,
   SCOPED_PPWARM_PREFIX,
   type SnapshotLike,
   selectSnapshotsToReap,

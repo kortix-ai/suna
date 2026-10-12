@@ -18,30 +18,33 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
+import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
-import { KORTIX_RUNTIME_SCHEMA, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
-import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
+import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
+import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
-import type { PiConfig } from './config'
-import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
+import { loadTools } from '@/services/tools/host'
+import type { PiConfig, ProjectInstructions } from './config'
+import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
-import { nativeModelId } from './model'
+import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
-import { PiTurnEvents, assistantMessageError, type TurnEventEmission } from './turn-events'
+import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
 import { TransientRetry, type RetryPlan } from './transient-retry'
+import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
+import type { PiSessionSnapshot } from './session-log'
 
 export type { CompiledAgent }
 
@@ -75,6 +78,8 @@ export interface PromptInput {
   system?: string
   /** OpenCode `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
+  /** A slash command (`/name arguments`): the user message on the wire becomes the text pi expands it to. */
+  command?: boolean
 }
 
 export class PromptRejected extends Error {}
@@ -153,6 +158,8 @@ export interface PiRuntimeHooks {
   onPermissionAsked?: (request: RuntimePermissionRequest) => void
   /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
   onFrame?: (frame: RuntimeFrame) => void
+  /** A turn read a steered message: it is on the wire and in the model's context. */
+  onSteerRead?: (read: { rootId: string; messageId: string }) => void
 }
 
 export interface PiRuntimeOptions {
@@ -160,8 +167,8 @@ export interface PiRuntimeOptions {
   sessionId: string
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
-  /** The config release the runtime reads skills and the session notice from (config-release.ts). */
-  releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'>
+  /** The config release the runtime reads skills, project tools, the root AGENTS.md and the session notice from (config-release.ts). */
+  releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'>
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -175,8 +182,12 @@ interface ChildSession {
   transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
+  /** The session-log seq the next message of this child gets (session-log.ts, the seq rule). */
+  nextSeq: number
   /** Set while a prompt runs in the child. */
   agent: Agent | null
+  /** The child's turn adapter since its last prompt: names the reply it streams (`sessionLogSnapshot`). */
+  turnEvents?: PiTurnEvents
 }
 
 interface ChildDump {
@@ -186,14 +197,35 @@ interface ChildDump {
   createdAt: number
   updatedAt: number
   agentMessages: AgentMessage[]
+  /** The Kortix message id of each agent message (session log). Absent in dumps written before P2.5. */
+  messageIds?: Array<string | null>
+  /** The session-log seq of each agent message. Absent in dumps written before P2.5. */
+  seqs?: number[]
   transcript: KortixMessage[]
 }
 
 interface Turn {
   messageId: string
   input: PromptInput
+  /** The agent the turn runs on, resolved at admission (`resolveTurnAgent`). */
+  agent: string
   resolve: (outcome: TurnOutcome) => void
   outcome: Promise<TurnOutcome>
+  /**
+   * Stop or the watchdog asked to end the turn. pi may still be compacting
+   * before the model call, where `agent.abort()` has no run to stop: the
+   * run that starts afterwards is cut at `agent_start`.
+   */
+  stopRequested?: boolean
+  /** Taken back before it started (`retract`): its queue slot runs nothing. */
+  retracted?: boolean
+}
+
+/** A steered message no turn has read yet. `message` is the object handed to `agent.steer()`. */
+interface Steered {
+  messageId: string
+  input: PromptInput
+  message: AgentMessage
 }
 
 interface Dump {
@@ -201,11 +233,24 @@ interface Dump {
   rootId: string
   title: string
   createdAt: number
+  /** The model context. A daemon built before pi 1.0 restores from it; this one reads `entries`. Remove when no such daemon runs. */
   agentMessages: AgentMessage[]
+  /** pi's session entries: the conversation, its context edits and its compactions. Absent in a dump written before pi 1.0. */
+  entries?: SessionEntry[]
+  /** pi's session header, which `entries` leaves out. Absent in dumps written before P2.5. */
+  header?: SessionHeader
+  /** pi entry id → Kortix message id (session log). Absent in dumps written before P2.5. */
+  messageIds?: Record<string, string>
   transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
   children?: ChildDump[]
+}
+
+/** The reply `agent` streams now, as the session-log snapshot names it. */
+function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): { id: string; timestamp: number } | null {
+  const message = agent?.state.streamingMessage
+  return message && turn?.messageId ? { id: turn.messageId, timestamp: message.timestamp } : null
 }
 
 function decodeDataUrl(url: string): { mime: string; data: string } | null {
@@ -226,17 +271,19 @@ export class PiRuntime {
   private readonly env: NodeJS.ProcessEnv
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
-  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'> | null
+  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'> | null
   private readonly clock = new MessageIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
   private agent: Agent | null = null
   private models: PiModels | null = null
   private selected: SelectedModel | null = null
-  private executionEnv: ExecutionEnv | null = null
   private core: typeof import('@earendil-works/pi-agent-core') | null = null
-  /** bash/read/write/edit/glob/grep: what a child session may be given. */
+  private coding: typeof import('@earendil-works/pi-coding-agent') | null = null
+  /** bash/read/write/edit/glob/grep and the hosted tools: what a child session may be given. */
   private workspaceTools: AgentTool<any, any>[] = []
+  /** Extension tools the agent's tool access hides; they come back when it allows them again. */
+  private hiddenTools = new Set<string>()
   /** Workspace tools + `question`: the root's tools before extensions add theirs. */
   private baseTools: AgentTool<any, any>[] = []
   /** pi's AgentSession around `agent`: extensions, prompt expansion, tool registry. */
@@ -251,22 +298,55 @@ export class PiRuntime {
   private projectBundle: Promise<string | null> | null = null
   private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
+  /** The root AGENTS.md, read with the skills: never per turn, so an edit reaches the next re-read. */
+  private instructions: ProjectInstructions | null = null
   private compiled: CompiledAgentConfig | null = null
+  /** The session's agent: what a prompt that picks none runs on (`resolveAgentName`). */
+  private sessionAgentName = 'build'
+  /** The agent of the running turn, or of the last one: its prompt, permission policy, tools and sampling are applied. */
   private agentName = 'build'
   private policy: PermissionPolicy = {}
   private adapter: PiTurnEvents | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private active: Turn | null = null
   private runningTools = 0
+  /** Steered messages the running turn has not read, in send order (kortixd's queue in front of pi's). */
+  private steered: Steered[] = []
+  /** Steered ids the running turn read. */
+  private readonly steerReads = new Set<string>()
+  /** The user message the next assistant message answers: the turn's, then the newest steered one read. */
+  private turnParent: string | null = null
   private abortAfterTool: { promptId: string; messageId: string } | null = null
   private status: 'idle' | 'busy' = 'idle'
   /** Turns admitted and not yet finished, the running one included. */
   private pendingTurns = 0
+  /** Prompts admitted behind the running work that have not started: a turn, or a `noReply` message before its queue slot. */
+  private readonly waiting = new Map<string, { retracted?: boolean }>()
+  /** `noReply` messages in pi's context that no model call has read, with their session entry. */
+  private readonly unreadNoReply = new Map<string, string>()
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
   /** The retry state of the root turn in flight (transient-retry.ts). */
   private turnRetry: TransientRetry | null = null
+  /** The last assistant message of the root turn in flight. The context is no index: a retry or a compaction rewrites it. */
+  private turnAssistant: AgentMessage | null = null
+  /** pi already compacted once for the failed attempt in flight; a second failure is final (pi's own rule). */
+  private recoveryTried = false
+  /** The compaction in flight: its summary message on the wire. */
+  private compaction: KortixAssistantMessageInfo | null = null
   private resetProgressWatchdog: (() => void) | null = null
   private workspaceReady = true
+  /**
+   * The Kortix message id of each pi message object (root and children): pi
+   * stores its own ids, the session log uses the transcript's. Read into
+   * `entryIds` (and a child's `messageIds`) when persisted.
+   */
+  private readonly nativeIds = new WeakMap<object, string>()
+  /** The session-log seq of each child message object (`childSeqs`). */
+  private readonly nativeSeqs = new WeakMap<object, number>()
+  /** pi entry id → Kortix message id: what `nativeIds` resolved, the restored map and compaction entries. */
+  private readonly entryIds = new Map<string, string>()
+  /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
+  private turnPromptMapped = false
 
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
@@ -356,50 +436,54 @@ export class PiRuntime {
     this.startError = null
     const startedAt = this.now()
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, host, { subagents }, { convertToLlm }, prebuiltRoot] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, prebuiltRoot] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
-        import('@earendil-works/pi-agent-core/node'),
+        import('@earendil-works/pi-coding-agent'),
         import('./extensions/host'),
         import('./extensions/subagents'),
-        import('@earendil-works/pi-coding-agent'),
         // Started in the constructor: by now it has run beside the repo clone.
         this.prefetchProjectBundle(),
       ])
       this.core = core
+      this.coding = coding
+      const { convertToLlm } = coding
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
-      this.agentName = this.resolveAgentName()
+      this.sessionAgentName = this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
         env: this.env,
         defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
       })
       this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
-      // pi spreads the live process.env into every shell itself; BASH_ENV adds
-      // the egress shim's proxy + CA, which only the agent env file carries.
-      this.executionEnv = new node.NodeExecutionEnv({ cwd: this.workspace, shellEnv: { ...AGENT_SHELL_ENV } })
       this.adapter = new PiTurnEvents({
         sessionID: this.rootId,
         mintMessageId: () => this.clock.mint(this.now()),
-        parentMessageId: () => this.active?.messageId ?? null,
+        parentMessageId: () => this.turnParent,
         model: () => ({ providerID: this.selected!.providerID, modelID: this.selected!.modelID }),
-        agent: this.agentName,
+        agent: () => this.agentName,
         workspace: this.workspace,
         now: this.now,
         publish: (frame) => this.publish(frame),
         retryPlan: (message) => retryStatus(this.turnRetry?.plan(message)),
+        recovers: (message) => this.recovers(message),
       })
-      this.workspaceTools = createWorkspaceTools(this.executionEnv)
+      const hosted = await loadTools(this.projectRoot(), this.compiled)
+      this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName }))
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
       // so only a batch made entirely of parallel tools (task calls) runs concurrently.
       // Every built-in tool is registered; the agent's `tools` switches pick the active ones (rebuildSystemPrompt).
       this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
         (tool) => ({ ...tool, executionMode: 'sequential' as const }),
       )
-      this.skills = await this.loadSkills(core.loadSkills)
+      this.skills = await this.loadSkills()
+      this.instructions = this.loadInstructions()
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
+      // pi's session store is the model context: the agent's messages are its projection.
+      const sessionManager = coding.SessionManager.inMemory(this.workspace, undefined, restored?.entries && restored.header ? [restored.header, ...restored.entries] : restored?.entries)
+      if (restored && !restored.entries) for (const message of restored.agentMessages) sessionManager.appendMessage(message as never)
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         streamFn: withAgentSampling(
@@ -408,12 +492,14 @@ export class PiRuntime {
         ),
         convertToLlm,
         toolExecution: 'parallel',
+        // Every message steered before a step boundary reaches the next step together (D9.5).
+        steeringMode: 'all',
         initialState: {
           systemPrompt: '',
           model: this.selected.model,
           thinkingLevel: this.thinkingLevel(this.compiledAgent()?.variant),
           tools: [],
-          messages: restored?.agentMessages ?? [],
+          messages: sessionManager.buildSessionContext().messages,
         },
         ...host.extensionAgentHooks(this.runner),
       })
@@ -424,6 +510,7 @@ export class PiRuntime {
       this.pi = await host.createPiSession({
         projectConfigDir: await this.projectConfigDir(),
         agent,
+        sessionManager,
         ref: this.runner,
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
@@ -432,15 +519,17 @@ export class PiRuntime {
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
-        systemPrompt: () => this.systemPrompt(core.formatSkillsForSystemPrompt),
+        systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
+        compaction: compactionSettings(this.models.catalog, this.cfg.piCompactAtTokens),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
       // The session installed the extension tool hooks; the permission policy runs first.
-      agent.beforeToolCall = this.toolGate((tool, args) => this.compiledAgent()?.tools?.[tool] === false ? 'deny' : this.permissions.rule(tool, args), true, agent.beforeToolCall)
+      agent.beforeToolCall = this.toolGate((tool, args) => (toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
+      this.pi.session.subscribe((event) => this.onSessionEvent(event))
       this.state = 'ok'
       logger.info('[pi] runtime ready', {
         rootId: this.rootId,
@@ -450,7 +539,7 @@ export class PiRuntime {
         skills: this.skillList().length,
         extensions: this.pi.status(),
         extensionsMs: Math.round(extensionsMs * 100) / 100,
-        restoredMessages: restored?.agentMessages.length ?? 0,
+        restoredMessages: agent.state.messages.length,
         ms: this.now() - startedAt,
       })
     } catch (err) {
@@ -488,7 +577,7 @@ export class PiRuntime {
     const { createPiModels } = await import('./model')
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
     this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
-    this.agentName = this.resolveAgentName()
+    this.sessionAgentName = this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
       env: this.env,
       defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
@@ -496,8 +585,8 @@ export class PiRuntime {
     this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
-    const core = await import('@earendil-works/pi-agent-core')
-    this.skills = await this.loadSkills(core.loadSkills)
+    this.skills = await this.loadSkills()
+    this.instructions = this.loadInstructions()
     // Extensions re-register what depends on the agent config (the task tool lists the subagents).
     await this.runner.current?.emit({ type: 'session_start', reason: 'reload' })
     this.rebuildSystemPrompt()
@@ -507,11 +596,11 @@ export class PiRuntime {
     return { changed: before !== after }
   }
 
-  /** Reload skills from disk (after a repo refresh). */
+  /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
   async reloadSkills(): Promise<number> {
     if (!this.agent) return 0
-    const core = await import('@earendil-works/pi-agent-core')
-    this.skills = await this.loadSkills(core.loadSkills)
+    this.skills = await this.loadSkills()
+    this.instructions = this.loadInstructions()
     this.rebuildSystemPrompt()
     return this.skills.length
   }
@@ -541,25 +630,31 @@ export class PiRuntime {
     if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
     if (!this.workspaceReady) throw new PromptRejected('workspace is not ready')
     const messageId = input.messageID ?? this.clock.mint(this.now())
-    if (this.transcript.messageById(messageId) || this.completedTurns.has(messageId)) {
-      throw new PromptRejected(`message ${messageId} was already admitted`)
-    }
+    if (this.knows(messageId)) throw new PromptRejected(`message ${messageId} was already admitted`)
     this.clock.observe(messageId)
-    if (input.model) {
-      const modelId = input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
-      if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
-    }
-    this.publishUserMessage(this.rootId, messageId, input)
+    const agentName = this.resolveTurnAgent(input.agent)
+    // The prompt's model, else the model the picked agent pins, else the current one.
+    const modelId = input.model
+      ? input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
+      : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
+    if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
+    this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
     if (input.noReply) {
       // OpenCode `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
       // so a box that sleeps before anyone answers still has it.
+      const slot: { retracted?: boolean } = {}
+      this.waiting.set(messageId, slot)
       const done = (this.queue = this.queue.then(() => {
+        if (this.waiting.get(messageId) === slot) this.waiting.delete(messageId)
+        if (slot.retracted) return
         const images = this.images(input)
-        this.agent!.state.messages = [
-          ...this.agent!.state.messages,
-          { role: 'user', content: images.length ? [{ type: 'text', text: input.text }, ...images] : input.text, timestamp: this.now() },
-        ]
+        const session = this.pi!.session
+        const message = { role: 'user' as const, content: images.length ? [{ type: 'text' as const, text: input.text }, ...images] : input.text, timestamp: this.now() }
+        this.nativeIds.set(message, messageId)
+        const entryId = session.sessionManager.appendMessage(message)
+        this.unreadNoReply.set(messageId, entryId)
+        session.refreshContext()
         this.completedTurns.set(messageId, 'idle')
         this.persist()
       }).catch(() => {}))
@@ -567,7 +662,8 @@ export class PiRuntime {
     }
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
-    const turn: Turn = { messageId, input, resolve, outcome }
+    const turn: Turn = { messageId, input, agent: agentName, resolve, outcome }
+    this.waiting.set(messageId, turn)
     this.pendingTurns += 1
     this.queue = this.queue
       .then(() => this.runTurn(turn))
@@ -578,15 +674,163 @@ export class PiRuntime {
     return { messageId, done: outcome }
   }
 
+  /** The id is on record: a message, a finished turn, the running turn or an unread steered message. */
+  private knows(messageId: string): boolean {
+    return (
+      !!this.transcript.messageById(messageId) ||
+      this.completedTurns.has(messageId) ||
+      this.active?.messageId === messageId ||
+      this.steered.some((entry) => entry.messageId === messageId)
+    )
+  }
+
+  /**
+   * Hand a message to the running turn. pi reads it at the next step boundary
+   * (after the running tool batch), and the runtime publishes it on the wire
+   * then (`onAgentEvent`). `no_turn` when no turn would read it: none runs, or
+   * the running one is being stopped. The turn's model, agent and variant apply.
+   */
+  steer(input: PromptInput & { messageID: string }): 'steered' | 'duplicate' | 'no_turn' {
+    if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
+    const messageId = input.messageID
+    if (this.knows(messageId)) return 'duplicate'
+    if (!this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn'
+    this.clock.observe(messageId)
+    const message: AgentMessage = {
+      role: 'user',
+      content: [{ type: 'text', text: input.text || '(attachment)' }, ...this.images(input)],
+      timestamp: this.now(),
+    }
+    this.steered.push({ messageId, input, message })
+    this.agent.steer(message)
+    return 'steered'
+  }
+
+  /**
+   * Take back a steered message the turn has not read. pi can only clear its
+   * steering queue, so the other queued messages are steered again in order.
+   * `read` when pi already took it for the next step, null when it is not a
+   * steered message of this turn.
+   */
+  withdrawSteer(messageId: string): 'removed' | 'read' | null {
+    if (this.steerReads.has(messageId)) return 'read'
+    const entry = this.steered.find((candidate) => candidate.messageId === messageId)
+    if (!entry || !this.agent) return null
+    const queued = this.agent.peekQueuedMessages()
+    if (!queued.includes(entry.message)) return 'read'
+    this.steered = this.steered.filter((candidate) => candidate !== entry)
+    this.agent.clearSteeringQueue()
+    for (const message of queued) if (message !== entry.message) this.agent.steer(message)
+    return 'removed'
+  }
+
+  /**
+   * Take back a user message no model call has read: an unread steered
+   * message, a prompt queued behind the running work, or a `noReply` message
+   * no turn has read. Its frames leave the wire and pi's context, and the id
+   * may be sent again. `read` when a model call read it (its turn runs or
+   * ran), null when the root holds no such message.
+   */
+  retract(messageId: string): 'retracted' | 'read' | null {
+    const steered = this.withdrawSteer(messageId)
+    if (steered) return steered === 'removed' ? 'retracted' : 'read'
+    const waiting = this.waiting.get(messageId)
+    if (waiting) {
+      waiting.retracted = true
+      this.waiting.delete(messageId)
+      this.removeUserMessage(messageId)
+      return 'retracted'
+    }
+    const entryId = this.unreadNoReply.get(messageId)
+    if (entryId && this.pi) {
+      this.unreadNoReply.delete(messageId)
+      // Null omits the entry from the model context, as `omitFailedAttempt` does.
+      this.pi.session.sessionManager.appendContextEdit(entryId, null)
+      this.pi.session.refreshContext()
+      this.completedTurns.delete(messageId)
+      this.removeUserMessage(messageId)
+      return 'retracted'
+    }
+    return this.knows(messageId) ? 'read' : null
+  }
+
+  private removeUserMessage(messageId: string): void {
+    this.publish({ type: 'message.removed', properties: { sessionID: this.rootId, messageID: messageId } })
+    this.persist()
+  }
+
+  /**
+   * Summarize the conversation now (`/session/:id/summarize`). It runs between
+   * turns on the serial queue; the wire carries its progress and its result.
+   */
+  compact(): void {
+    if (!this.pi || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
+    const session = this.pi.session
+    this.pendingTurns += 1
+    this.queue = this.queue
+      .then(() => {
+        // The summary reads every message in the context.
+        this.unreadNoReply.clear()
+        return session.compact()
+      })
+      // The failure is on the wire (`compaction_end`); nothing else waits for it.
+      .catch((err) => logger.warn('[pi] compaction failed', { err: err instanceof Error ? err.message : String(err) }))
+      .finally(() => {
+        this.pendingTurns -= 1
+      })
+  }
+
+  /** pi's prompt templates, as the command list a client reads (`GET /command`). */
+  commandList(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[] }> {
+    return (this.pi?.session.promptTemplates ?? []).map((template) => ({
+      name: template.name,
+      description: template.description,
+      source: 'command' as const,
+      template: template.content,
+      hints: [...new Set(template.content.match(/\$(\d+|ARGUMENTS)/g) ?? [])],
+    }))
+  }
+
+  /** The prompt a `POST /session/:id/command` body asks for: `/name arguments`, which pi expands. */
+  commandPrompt(raw: unknown): PromptInput {
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+    const name = typeof body.command === 'string' ? body.command : ''
+    if (!this.commandList().some((command) => command.name === name)) throw new PromptRejected(`unknown command "${name}"`)
+    const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
+    const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
+    return {
+      ...parsePromptBody({
+        parts: [{ type: 'text', text: `/${name}${args ? ` ${args}` : ''}` }],
+        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+        ...(body.agent !== undefined ? { agent: body.agent } : {}),
+        ...(body.variant !== undefined ? { variant: body.variant } : {}),
+        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+      }),
+      command: true,
+    }
+  }
+
   /** Stop the run in flight. Idempotent: aborting an idle agent is a no-op. */
   async abort(): Promise<boolean> {
+    this.pi?.session.abortCompaction()
     if (!this.active) return false
     this.permissions.rejectAll()
     this.questions.rejectAll()
     this.turnRetry?.abort()
-    this.agent?.abort()
+    this.active.stopRequested = true
+    this.stopPi()
     await this.active.outcome
     return true
+  }
+
+  /**
+   * pi's own stop: the model call, a compaction and the post-run checks. A bare
+   * `agent.abort()` lets pi compact (a model call) after the stopped reply.
+   */
+  private stopPi(): void {
+    // A stopped turn reads no steered message; the turn's end drops what is unread.
+    this.agent?.clearSteeringQueue()
+    this.pi?.session.abort().catch((err) => logger.warn('[pi] abort failed', { err: err instanceof Error ? err.message : String(err) }))
   }
 
   /**
@@ -619,13 +863,25 @@ export class PiRuntime {
   }
 
   private async runTurn(turn: Turn): Promise<void> {
+    if (this.waiting.get(turn.messageId) === turn) this.waiting.delete(turn.messageId)
+    if (turn.retracted) {
+      turn.resolve('aborted')
+      return
+    }
+    // The turn's first model call reads every `noReply` message before it.
+    this.unreadNoReply.clear()
+    this.applyAgent(turn.agent)
     const agent = this.agent!
     this.active = turn
+    this.turnParent = turn.messageId
+    this.turnPromptMapped = false
+    this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
-    const before = agent.state.messages.length
+    this.turnAssistant = null
+    this.recoveryTried = false
     const retry = new TransientRetry({
       baseDelayMs: this.cfg.piTurnRetryBaseMs,
       contextWindow: () => this.selected?.model.contextWindow ?? 0,
@@ -639,8 +895,9 @@ export class PiRuntime {
       if (this.runningTools || !this.active || timedOut) return
       watchdog = setTimeout(() => {
         timedOut = true
+        turn.stopRequested = true
         retry.abort()
-        agent.abort()
+        this.stopPi()
       }, this.cfg.piNoProgressMs)
     }
     this.resetProgressWatchdog = armWatchdog
@@ -652,7 +909,7 @@ export class PiRuntime {
       const images = this.images(turn.input)
       // A transient model error continues the turn instead of ending it (transient-retry.ts).
       armWatchdog()
-      await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }))
+      await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }), () => this.omitFailedAttempt())
       for (const frame of this.adapter!.settleRetry()) this.publish(frame)
       if (timedOut) {
         outcome = 'error'
@@ -663,9 +920,7 @@ export class PiRuntime {
         this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
       }
       // Only this turn's messages: an extension command answers without a model call.
-      const last = agent.state.messages.slice(before).reverse().find((m) => m.role === 'assistant') as
-        | { stopReason?: string; errorMessage?: string }
-        | undefined
+      const last = this.turnAssistant as { stopReason?: string; errorMessage?: string } | null
       if (!timedOut && (last?.stopReason === 'aborted' || retry.wasAborted)) outcome = 'aborted'
       else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
@@ -690,6 +945,7 @@ export class PiRuntime {
       this.permissions.rejectAll()
       this.questions.rejectAll()
       this.active = null
+      this.turnParent = null
       this.runningTools = 0
       this.abortAfterTool = null
       this.status = 'idle'
@@ -698,9 +954,151 @@ export class PiRuntime {
       turn.resolve(outcome)
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
+    // Steered messages the turn did not read. A stopped turn drops them (the
+    // API's Stop path owns them). Otherwise they start the next turn: the first
+    // is its prompt, the rest are read before its first model call. Same queue
+    // slot, so no prompt admitted meanwhile runs before them.
+    const [next, ...rest] = turn.stopRequested ? [] : this.steered
+    this.steered = rest
+    agent.clearSteeringQueue()
+    if (!next) return
+    for (const entry of rest) agent.steer(entry.message)
+    // A steered message took the running turn's agent; the turn it starts keeps it.
+    this.publishUserMessage(this.rootId, next.messageId, next.input)
+    this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: next.messageId })
+    let resolveNext!: (outcome: TurnOutcome) => void
+    const nextOutcome = new Promise<TurnOutcome>((r) => (resolveNext = r))
+    await this.runTurn({ messageId: next.messageId, input: next.input, agent: this.agentName, resolve: resolveNext, outcome: nextOutcome })
+  }
+
+  /** Omit the failed model attempt from pi's session store, so the retry does not send it again. */
+  private omitFailedAttempt(): void {
+    const session = this.pi!.session
+    const failed = session.sessionManager.getBranch().findLast((entry) => entry.type === 'message')
+    if (failed?.type === 'message' && failed.message.role === 'assistant') session.sessionManager.appendContextEdit(failed.id, null)
+    session.refreshContext()
+  }
+
+  /**
+   * pi compacts and retries a failed model attempt once: a context overflow, or
+   * a reply cut by the length limit. True for the attempt it will try to recover.
+   */
+  private recovers(message: AgentMessage): boolean {
+    // ponytail: a step that a Kortix retry continued runs outside pi's prompt loop, so pi does not
+    // compact after it and the error is final. Move the retry into pi's loop (`agent_before_settle`) to recover it too.
+    if (this.turnRetry?.retried) return false
+    if (this.recoveryTried || !this.pi?.session.autoCompactionEnabled || message.role !== 'assistant') return false
+    if (message.stopReason !== 'length' && !isContextOverflow(message, this.selected?.model.contextWindow ?? 0)) return false
+    this.recoveryTried = true
+    return true
+  }
+
+  /**
+   * pi's compaction on the wire, in OpenCode's shape: a user message whose one
+   * part is `compaction` (the request), an assistant message flagged `summary`
+   * that ends with the summary text or an error, `time.compacting` on the
+   * session while it runs, and `session.compacted` when it is over. The
+   * transcript keeps every message; only the model's context gets shorter.
+   */
+  private onSessionEvent(event: AgentSessionEvent): void {
+    const sessionID = this.rootId
+    if (event.type === 'compaction_start') {
+      const created = this.now()
+      const markerId = this.clock.mint(created)
+      const model = { providerID: this.selected!.providerID, modelID: this.selected!.modelID }
+      this.compaction = {
+        id: this.clock.mint(created),
+        role: 'assistant',
+        sessionID,
+        parentID: markerId,
+        summary: true,
+        time: { created },
+        ...model,
+        ...assistantInfoFields(undefined, { agent: this.agentName, workspace: this.workspace }),
+      }
+      this.publishSessionUpdated()
+      this.publish({ type: 'message.updated', properties: { sessionID, info: { id: markerId, role: 'user', sessionID, time: { created }, agent: this.agentName, model } } })
+      this.publish({
+        type: 'message.part.updated',
+        properties: {
+          sessionID,
+          time: created,
+          part: { id: `${markerId}-p0`, messageID: markerId, sessionID, type: 'compaction', auto: event.reason !== 'manual', ...(event.reason === 'overflow' ? { overflow: true } : {}) },
+        },
+      })
+      this.publish({ type: 'message.updated', properties: { sessionID, info: this.compaction } })
+      return
+    }
+    if (event.type !== 'compaction_end' || !this.compaction) return
+    const info = this.compaction
+    this.compaction = null
+    // pi appended the compaction entry before it emitted the end: it is the leaf.
+    const leaf = event.result ? this.pi?.session.sessionManager.getLeafEntry() : undefined
+    if (leaf?.type === 'compaction' && info.parentID) this.entryIds.set(leaf.id, info.parentID)
+    const completed = this.now()
+    const error: KortixMessageError | undefined = event.result
+      ? undefined
+      : event.aborted
+        ? { name: 'MessageAbortedError', data: { message: 'The compaction was stopped' }, code: 'aborted' }
+        : { name: 'UnknownError', data: { message: event.errorMessage ?? 'The compaction failed' } }
+    if (event.result) {
+      this.publish({
+        type: 'message.part.updated',
+        properties: { sessionID, time: completed, part: { id: `${info.id}-p0`, messageID: info.id, sessionID, type: 'text', text: event.result.summary } },
+      })
+    }
+    this.publish({
+      type: 'message.updated',
+      properties: {
+        sessionID,
+        info: {
+          ...info,
+          ...assistantInfoFields(event.result?.usage, { agent: this.agentName, workspace: this.workspace }),
+          time: { created: info.time.created, completed },
+          ...(error ? { error } : {}),
+        },
+      },
+    })
+    this.publishSessionUpdated()
+    this.publish({ type: 'session.compacted', properties: { sessionID } })
+    this.persist()
+  }
+
+  /** The session row changed (`time.compacting`). */
+  private publishSessionUpdated(): void {
+    this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info: this.sessionObject() } })
   }
 
   private onAgentEvent(event: AgentEvent): void {
+    if (event.type === 'agent_start' && this.active?.stopRequested) this.stopPi()
+    const steered = event.type === 'message_start' && event.message.role === 'user' ? this.steered.find((entry) => entry.message === event.message) : undefined
+    if (steered) {
+      // The turn reads a steered message now: it goes on the wire at this step, and the next reply answers it.
+      this.steered = this.steered.filter((entry) => entry !== steered)
+      this.steerReads.add(steered.messageId)
+      this.turnParent = steered.messageId
+      this.publishUserMessage(this.rootId, steered.messageId, steered.input)
+      this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: steered.messageId })
+    } else if (event.type === 'message_start' && event.message.role === 'user' && this.active?.input.command) {
+      const { content } = event.message
+      const text = typeof content === 'string' ? content : content.map((block) => (block.type === 'text' ? block.text : '')).join('')
+      const messageID = this.active.messageId
+      this.publish({ type: 'message.part.updated', properties: { sessionID: this.rootId, time: this.now(), part: { id: `${messageID}-p0`, messageID, sessionID: this.rootId, type: 'text', text } } })
+    }
+    if (event.type === 'message_start' && event.message.role === 'user' && !this.nativeIds.has(event.message)) {
+      if (steered) this.nativeIds.set(event.message, steered.messageId)
+      else if (this.active && !this.turnPromptMapped) {
+        this.turnPromptMapped = true
+        this.nativeIds.set(event.message, this.active.messageId)
+      }
+    }
+    if (event.type === 'message_end' && event.message.role === 'assistant' && this.adapter) this.nativeIds.set(event.message, this.adapter.messageId)
+    if (event.type === 'message_end' && event.message.role === 'assistant') {
+      // pi-ai reports a request that the stop cancelled before it went out as an error ("The operation was aborted.").
+      if (event.message.stopReason === 'error' && this.active?.stopRequested) event.message.stopReason = 'aborted'
+      this.turnAssistant = event.message
+      if (event.message.stopReason !== 'error' && event.message.stopReason !== 'length') this.recoveryTried = false
+    }
     if (event.type === 'tool_execution_start') this.runningTools += 1
     if (event.type === 'tool_execution_end') this.runningTools = Math.max(0, this.runningTools - 1)
     if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end' || event.type === 'message_update') this.resetProgressWatchdog?.()
@@ -767,17 +1165,18 @@ export class PiRuntime {
 
   /**
    * Re-read the base system prompt (compiled agent, skills) into pi's session,
-   * with the built-in tools the agent's `tools` switches leave on. A switch
-   * back on re-activates the tool in place: every built-in stays registered.
+   * with the tools the agent's tool access allows (`toolAllowed`). Every tool
+   * stays registered, so access granted again re-activates it in place.
    */
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
     if (!session) return
-    const switches = this.compiledAgent()?.tools
+    const allowed = (name: string) => toolAllowed(this.compiledAgent()?.tools, name)
     // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
     const builtIn = this.baseTools.map((tool) => tool.name)
-    const others = session.getActiveToolNames().filter((name) => !builtIn.includes(name))
-    session.setActiveToolsByName([...builtIn.filter((name) => switches?.[name] !== false), ...others])
+    const others = [...new Set([...session.getActiveToolNames(), ...this.hiddenTools])].filter((name) => !builtIn.includes(name))
+    this.hiddenTools = new Set(others.filter((name) => !allowed(name)))
+    session.setActiveToolsByName([...builtIn, ...others].filter(allowed))
   }
 
   // ── child sessions ───────────────────────────────────────────────────────
@@ -812,6 +1211,7 @@ export class PiRuntime {
         status: 'idle',
         transcript: new TranscriptStore(),
         agentMessages: [],
+        nextSeq: 1,
         agent: null,
       }
       this.children.set(child.id, child)
@@ -819,8 +1219,8 @@ export class PiRuntime {
     }
     const selected = input.model ? this.models.select(nativeModelId(input.model)) : this.selected
     const model = { providerID: selected.providerID, modelID: selected.modelID }
-    const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools)
-      .filter((tool) => this.compiled?.agent?.[input.agent]?.tools?.[tool.name] !== false)
+    const allowed = (tool: string) => toolAllowed(this.compiledAgent()?.tools, tool) && toolAllowed(this.compiled?.agent?.[input.agent]?.tools, tool)
+    const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools).filter((tool) => allowed(tool.name))
     const policy = compilePermissionPolicy(input.permission)
     const messageId = this.clock.mint(this.now())
     this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
@@ -830,7 +1230,7 @@ export class PiRuntime {
       mintMessageId: () => this.clock.mint(this.now()),
       parentMessageId: () => messageId,
       model: () => model,
-      agent: input.agent,
+      agent: () => input.agent,
       workspace: this.workspace,
       now: this.now,
       publish: (frame) => this.publish(frame),
@@ -843,7 +1243,7 @@ export class PiRuntime {
       ),
       toolExecution: 'sequential',
       initialState: {
-        systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt, { base: input.systemPrompt, tools, policy, interactive: false }),
+        systemPrompt: this.systemPrompt({ base: input.systemPrompt, tools, policy, interactive: false }),
         model: selected.model,
         thinkingLevel: this.thinkingLevel(input.variant, selected),
         tools,
@@ -857,13 +1257,21 @@ export class PiRuntime {
     agent.beforeToolCall = this.toolGate((tool, args) => {
       const own = resolvePolicyRule(policy, tool, args)
       const session = this.permissions.rule(tool, args)
-      if (own === 'deny' || session === 'deny' || this.compiledAgent()?.tools?.[tool] === false || this.compiled?.agent?.[input.agent]?.tools?.[tool] === false) return 'deny'
+      if (own === 'deny' || session === 'deny' || !allowed(tool)) return 'deny'
       return own ?? session
     }, false, this.childExtensionGate())
+    const owner = child
     agent.subscribe((event) => {
+      // In state order: pi puts the system prompt message in state without a message event.
+      if (event.type === 'message_end') this.childSeqs(owner, agent.state.messages)
+      if (event.type === 'message_end' && !this.nativeIds.has(event.message)) {
+        if (event.message.role === 'assistant') this.nativeIds.set(event.message, adapter.messageId)
+        else if (event.message.role === 'user') this.nativeIds.set(event.message, messageId)
+      }
       for (const frame of adapter.translate(event)) this.publish(frame, frame.transcriptOnly ? { transcriptOnly: true } : undefined)
     })
     child.agent = agent
+    child.turnEvents = adapter
     input.onSession?.({ sessionId: child.id, model })
     const abort = () => {
       retry.abort()
@@ -920,6 +1328,13 @@ export class PiRuntime {
 
   extensionStatus(): ExtensionStatus {
     return this.pi?.status() ?? { loaded: [], failed: [] }
+  }
+
+  /** The root AGENTS.md in the system prompt, or null when there is none. */
+  agentsMd(): Pick<ProjectInstructions, 'source' | 'path' | 'bytes' | 'sha'> | null {
+    if (!this.instructions) return null
+    const { source, path, bytes, sha } = this.instructions
+    return { source, path, bytes, sha }
   }
 
   private translateAndPublish(event: AgentEvent): void {
@@ -1041,6 +1456,37 @@ export class PiRuntime {
     return this.compiled?.agent?.[this.agentName]
   }
 
+  /**
+   * The agent a prompt runs on: the one it picks when the compiled config has
+   * it as a primary agent, else the session's agent, as OpenCode does for a
+   * prompt with no agent. A pick pi cannot run is logged and not applied.
+   */
+  private resolveTurnAgent(requested: string | undefined): string {
+    const name = requested?.trim()
+    if (!name || name === 'default' || name === this.sessionAgentName) return this.sessionAgentName
+    // Own keys only: `__proto__` or `constructor` would resolve through the
+    // prototype chain to an agent with no permission rules, which allows every tool.
+    const agents = this.compiled?.agent ?? {}
+    const agent = Object.hasOwn(agents, name) ? agents[name] : undefined
+    if (agent && !agent.disable && agent.mode !== 'subagent') return name
+    logger.warn('[pi] the prompt picks an agent the session cannot run; it runs on the session agent', {
+      requested: name,
+      reason: !agent ? 'unknown' : agent.disable ? 'disabled' : 'subagent',
+      agent: this.sessionAgentName,
+    })
+    return this.sessionAgentName
+  }
+
+  /** Make `name` the agent of the next model call: its permission policy, tool switches and prompt. Between turns only. */
+  private applyAgent(name: string): void {
+    if (name === this.agentName) return
+    this.agentName = name
+    this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
+    this.permissions.setPolicy(this.policy)
+    // `setActiveToolsByName` re-reads `systemPrompt()`, so the next request carries the agent's prompt.
+    this.rebuildSystemPrompt()
+  }
+
   /** An agent's `temperature`, `top_p` and `steps` for its requests on `model`. */
   private sampling(agent: CompiledAgent | undefined, model: SelectedModel) {
     return {
@@ -1056,24 +1502,28 @@ export class PiRuntime {
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
   }
 
+  /** Where project tools load from: the release root while a release runs, else the working tree. */
+  private projectRoot(): string | null {
+    const released = this.releases?.projectRoot()
+    return released !== undefined ? released : this.workspace
+  }
+
   /** The pi-native config dir: the release's `pi/` while a release runs, else the working tree's. */
   private async projectConfigDir(): Promise<string | null> {
     const released = this.releases?.piConfigDir()
     return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
   }
 
-  private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
-    if (!this.executionEnv) return []
+  private async loadSkills(): Promise<Skill[]> {
+    if (!this.coding) return []
     const dirs = resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
-      const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')
-      const { skills, diagnostics } = await load(this.executionEnv, dirs, BACKGROUND_CONTEXT)
-      for (const diagnostic of diagnostics) logger.warn('[pi] skill diagnostic', diagnostic)
-      // Two directories can carry the same skill (a project's OpenCode copy and
-      // the managed overlay): the first directory wins, like OpenCode's search order.
-      const seen = new Set<string>()
-      return skills.filter((skill) => (seen.has(skill.name) ? false : (seen.add(skill.name), true)))
+      // Two directories can carry the same skill (a project's OpenCode copy and the managed
+      // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
+      const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
+      for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
+      return skills
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []
@@ -1086,14 +1536,15 @@ export class PiRuntime {
    * skills its own grant allows.
    */
   private systemPrompt(
-    formatSkills: (skills: Skill[]) => string,
     child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false },
   ): string {
     const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
+    // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
+    if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)
     // pi appends the working directory (and package skills) to the root's prompt.
     if (child) parts.push(`Working directory: ${this.workspace}`)
     const skills = this.skills.filter((skill) => skillGranted(child?.policy ?? this.policy, skill.name))
-    if (skills.length > 0) parts.push(formatSkills(skills))
+    if (skills.length > 0) parts.push(this.coding!.formatSkillsForPrompt(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
     const releaseNotice = this.releases?.notice()
@@ -1107,6 +1558,13 @@ export class PiRuntime {
       ].join('\n'),
     )
     return parts.join('\n\n')
+  }
+
+  /** The root AGENTS.md of the checkout the running config decides: the release, the working tree, or none (the image default). */
+  private loadInstructions(): ProjectInstructions | null {
+    const released = this.releases?.projectRoot()
+    if (released === null) return null
+    return readProjectInstructions(released ?? this.workspace, released ? 'release' : 'workspace')
   }
 
   private readInstruction(path: string): string | null {
@@ -1152,7 +1610,7 @@ export class PiRuntime {
       directory: this.workspace,
       title: this.title,
       version: PI_HARNESS_VERSION,
-      time: { created: this.createdAt, updated: this.updatedAt },
+      time: { created: this.createdAt, updated: this.updatedAt, ...(this.compaction ? { compacting: this.compaction.time.created } : {}) },
     }
   }
 
@@ -1190,13 +1648,16 @@ export class PiRuntime {
         head_seq: null,
       },
       agents: { known: true, value: agents },
-      commands: { known: true, value: [] },
+      commands: {
+        known: true,
+        value: this.commandList().map(({ template, ...command }) => ({ ...command, agent: null, model: null, subtask: null, template_bytes: template.length })),
+      },
       config: {
         known: true,
         value: {
           model: selected ? `${selected.providerID}/${selected.modelID}` : null,
           small_model: null,
-          default_agent: this.agentName,
+          default_agent: this.sessionAgentName,
           permission: this.compiledAgent()?.permission ?? null,
           instructions: null,
           enabled_providers: selected ? [selected.providerID] : null,
@@ -1210,7 +1671,7 @@ export class PiRuntime {
             title: this.title,
             parent_id: null,
             directory: this.workspace,
-            time: { created: this.createdAt, updated: this.updatedAt, compacting: null, archived: null },
+            time: { created: this.createdAt, updated: this.updatedAt, compacting: this.compaction?.time.created ?? null, archived: null },
             revert: null,
           },
           ...[...this.children.values()].map((child) => ({
@@ -1246,7 +1707,7 @@ export class PiRuntime {
     if (messageId === null) {
       return { inFlight: this.busy(), end: this.busy() ? null : this.latestEnd(), orphanedPrompt: false }
     }
-    if (this.active?.messageId === messageId) return { inFlight: true, end: null, orphanedPrompt: false }
+    if (this.active?.messageId === messageId || this.steered.some((entry) => entry.messageId === messageId)) return { inFlight: true, end: null, orphanedPrompt: false }
     const completed = this.completedTurns.get(messageId)
     if (completed) return { inFlight: false, end: completed === 'error' ? 'failed' : 'completed', orphanedPrompt: false }
     // Queued behind the running turn: on record, not yet answered, still ours.
@@ -1257,6 +1718,62 @@ export class PiRuntime {
   private latestEnd(): 'completed' | 'failed' | null {
     const last = [...this.completedTurns.values()].at(-1)
     return last ? (last === 'error' ? 'failed' : 'completed') : null
+  }
+
+  // ── session log ──────────────────────────────────────────────────────────
+
+  /** pi entry id → Kortix message id, for every entry whose message has one. */
+  private entryMessageIds(): Record<string, string> {
+    for (const entry of this.pi?.session.sessionManager.getEntries() ?? []) {
+      const id = entry.type === 'message' ? this.nativeIds.get(entry.message) : undefined
+      if (id) this.entryIds.set(entry.id, id)
+    }
+    return Object.fromEntries(this.entryIds)
+  }
+
+  /** The seq of each of the child's messages; a message seen for the first time gets the next one, for good. */
+  private childSeqs(child: ChildSession, messages: AgentMessage[] = child.agent ? child.agent.state.messages : child.agentMessages): number[] {
+    return messages.map((m) => {
+      let seq = this.nativeSeqs.get(m)
+      if (seq === undefined) this.nativeSeqs.set(m, (seq = child.nextSeq++))
+      return seq
+    })
+  }
+
+  /** What the session-log adapter (session-log.ts) reads; null while the runtime is down. */
+  sessionLogSnapshot(): PiSessionSnapshot | null {
+    const manager = this.pi?.session.sessionManager
+    if (!manager || this.state !== 'ok') return null
+    return {
+      sessionId: this.sessionId,
+      rootId: this.rootId,
+      title: this.title,
+      header: manager.getHeader(),
+      entries: manager.getEntries(),
+      leafId: manager.getLeafId(),
+      entryMessageIds: this.entryMessageIds(),
+      transcript: this.transcript.all(),
+      children: [...this.children.values()].map((child) => {
+        const agentMessages = child.agent ? child.agent.state.messages : child.agentMessages
+        return {
+          id: child.id,
+          title: child.title,
+          agentName: child.agentName,
+          createdAt: child.createdAt,
+          agentMessages,
+          messageIds: agentMessages.map((m) => this.nativeIds.get(m) ?? null),
+          seqs: this.childSeqs(child),
+          nextSeq: child.nextSeq,
+          reply: replying(child.agent, child.turnEvents),
+          transcript: child.transcript.all(),
+          busy: child.agent !== null,
+        }
+      }),
+      busy: this.status === 'busy' || this.active !== null,
+      reply: replying(this.agent, this.adapter),
+      agent: this.sessionAgentName,
+      model: this.selected ? { provider: this.selected.providerID, model: this.selected.modelID } : null,
+    }
   }
 
   // ── durability ───────────────────────────────────────────────────────────
@@ -1275,6 +1792,9 @@ export class PiRuntime {
         title: this.title,
         createdAt: this.createdAt,
         agentMessages: this.agent.state.messages,
+        ...(this.pi
+          ? { entries: this.pi.session.sessionManager.getEntries(), header: this.pi.session.sessionManager.getHeader() ?? undefined, messageIds: this.entryMessageIds() }
+          : {}),
         transcript: this.transcript.all(),
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
         children: [...this.children.values()].map((child) => ({
@@ -1284,6 +1804,8 @@ export class PiRuntime {
           createdAt: child.createdAt,
           updatedAt: child.updatedAt,
           agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
+          messageIds: (child.agent ? child.agent.state.messages : child.agentMessages).map((m) => this.nativeIds.get(m) ?? null),
+          seqs: this.childSeqs(child),
           transcript: child.transcript.all(),
         })),
       }
@@ -1318,13 +1840,20 @@ export class PiRuntime {
       this.transcript.load(dump.transcript)
       for (const message of dump.transcript) this.clock.observe(message.info.id as string)
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
+      for (const [entryId, messageId] of Object.entries(dump.messageIds ?? {})) this.entryIds.set(entryId, messageId)
       this.children.clear()
       for (const saved of dump.children ?? []) {
         const transcript = new TranscriptStore()
         transcript.load(saved.transcript)
         for (const message of saved.transcript) this.clock.observe(message.info.id as string)
-        const { transcript: _saved, ...rest } = saved
-        this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null })
+        const { transcript: _saved, messageIds, seqs, ...rest } = saved
+        saved.agentMessages.forEach((m, i) => {
+          if (messageIds?.[i]) this.nativeIds.set(m, messageIds[i]!)
+          // A dump written before P2.5 has no seqs: its messages number from 1, in order.
+          this.nativeSeqs.set(m, seqs?.[i] ?? i + 1)
+        })
+        const nextSeq = Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1
+        this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null, nextSeq })
       }
       this.title = dump.title
       return dump

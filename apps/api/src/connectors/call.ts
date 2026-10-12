@@ -42,6 +42,17 @@ export interface ExecResult {
   status: number;
   ok: boolean;
   data: unknown;
+  /** The upstream's `Retry-After`, in seconds, on a failed response that sent one. */
+  retryAfterSeconds?: number;
+}
+
+/** `Retry-After` as seconds: delta-seconds or an HTTP date. Undefined when absent or unreadable. */
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 const NO_AUTH: ConnectorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -778,6 +789,10 @@ export type FetchImpl = (
     headers: Record<string, string>;
     body?: string;
     tls?: { cert: string; key: string; ca?: string };
+    /** Aborts the request at the gateway's call deadline. */
+    signal?: AbortSignal;
+    /** `text()` rejects with `upstream_response_too_large` past this many bytes. */
+    maxResponseBytes?: number;
   },
 ) => Promise<{
   status: number;
@@ -841,8 +856,14 @@ async function performRequestWithHeaders(
     tls: req.tls,
   });
   const text = await res.text();
+  const retryAfterSeconds = res.ok ? undefined : parseRetryAfter(res.headers?.get('retry-after'));
   return {
-    result: { status: res.status, ok: res.ok, data: parseResponseBody(text) },
+    result: {
+      status: res.status,
+      ok: res.ok,
+      data: parseResponseBody(text),
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    },
     header: (name: string) => res.headers?.get(name) ?? null,
   };
 }
@@ -969,7 +990,7 @@ function redactExactValue(value: string, secret: string | null | undefined): str
   return redacted;
 }
 
-function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
+export function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
   if (!data || typeof data !== 'object' || !('error' in data)) return null;
   const error = (data as { error?: unknown }).error;
   if (!error || typeof error !== 'object') return 'unknown error';

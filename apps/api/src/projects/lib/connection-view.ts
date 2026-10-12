@@ -1,4 +1,5 @@
 /** The public `Connection` view shared by the connection routes. */
+import { connectionSignedIn } from '../../connectors/credentials';
 import { ConnectionSchema, type ComputerMachineStatus } from '@kortix/api-contract';
 import { tunnelConnections } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
@@ -32,6 +33,9 @@ export function serializeConnection(row: {
     connected_as: connectedAsOf(row.metadata),
   };
 }
+
+/** Whether an account is signed in (`connectionSignedIn`, `connectors/credentials.ts`). */
+export const connectionAuthorized = connectionSignedIn;
 
 /** Live status of each paired machine, by tunnel id. One query. */
 export async function loadComputerMachines(

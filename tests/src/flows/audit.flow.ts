@@ -737,12 +737,18 @@ flow(
     });
 
     await ctx.step('delivery ledger contains the reconciliation event', async () => {
-      const r = await owner.get('/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries', {
-        params: { accountId: team.id, webhookId },
-      });
-      r.status(200).body().exists('$.deliveries');
-      const deliveries = r.json<{ deliveries: Array<{ delivery_id: string }> }>().deliveries;
-      if (deliveries.length === 0) throw new Error('expected a durable audit webhook delivery');
+      // The reconcile event goes through the audit queue (250 ms flush) and the
+      // delivery row comes from the audit_events insert trigger, so poll.
+      const deliveries = await waitFor(
+        async () => {
+          const r = await owner.get('/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries', {
+            params: { accountId: team.id, webhookId },
+          });
+          r.status(200).body().exists('$.deliveries');
+          return r.json<{ deliveries: Array<{ delivery_id: string }> }>().deliveries;
+        },
+        { until: (rows) => rows.length > 0, timeoutMs: 15_000, intervalMs: 500, description: 'a durable audit webhook delivery' },
+      );
       const delivery = deliveries[0];
       if (!delivery) throw new Error('expected a durable audit webhook delivery');
       deliveryId = delivery.delivery_id;

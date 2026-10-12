@@ -15,9 +15,8 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { contract, type ModelKey, qk } from '@kortix/sdk/react';
+import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
 import { resolveEntitlementsPending } from './entitlements-pending';
-import type { FlatModel } from './session-chat-input';
 
 /**
  * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'

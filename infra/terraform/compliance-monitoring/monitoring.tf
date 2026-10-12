@@ -55,13 +55,9 @@ locals {
       dimension = replace(arn, "/^.*:loadbalancer\\//", "")
     }
   }
-  usw2_compliance_waf_albs = {
-    for arn, alb in local.usw2_albs : arn => alb
-    if !contains(["kortix-dev-web-alb", "kortix-staging-web-alb"], alb.name)
-  }
   euw2_compliance_waf_albs = {
     for arn, alb in local.euw2_albs : arn => alb
-    if alb.name != "kortix-prod-web-alb"
+    if !contains(["kortix-prod-web-alb", "kortix-staging-euw2-web-alb"], alb.name)
   }
   alarm_tags = {
     ManagedBy = "kortix-compliance"
@@ -102,8 +98,10 @@ resource "aws_iam_role_policy" "drata_sns_inspection" {
   policy = data.aws_iam_policy_document.drata_sns_inspection.json
 }
 
+# us-west-2 runs no web ALB since 2026-10-12, so every ALB there gets the
+# compliance association. Each eu-west-2 web root owns its own association.
 resource "aws_wafv2_web_acl_association" "usw2" {
-  for_each     = local.usw2_compliance_waf_albs
+  for_each     = local.usw2_albs
   resource_arn = each.key
   web_acl_arn  = data.aws_wafv2_web_acl.usw2.arn
 }
@@ -175,6 +173,15 @@ resource "aws_cloudwatch_metric_alarm" "usw2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
   tags                = local.alarm_tags
+
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "euw2_target_response_time" {
@@ -232,6 +239,15 @@ resource "aws_cloudwatch_metric_alarm" "euw2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.aws_sns_topic.euw2_alerts.arn]
   tags                = local.alarm_tags
+
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "usw2_instance_cpu" {

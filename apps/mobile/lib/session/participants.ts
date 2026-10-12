@@ -81,6 +81,25 @@ export function messageAvatarPerson(
   return { name: author.name, email: author.email, avatar_url: author.avatar_url ?? null };
 }
 
+/**
+ * The Kortix session that sent a message, or null (web `resolveTranscriptAuthors`
+ * + `MessageAuthorLabel`). A spawned session's first message has no prompt
+ * record of its own, so `initial_author` goes to the first user message that
+ * has no author. Always drawn: a session sender is never the viewer.
+ */
+export function messageSessionAuthor(
+  authors: SessionMessageAuthors | undefined,
+  userMessageIds: readonly string[],
+  messageId: string,
+): { session_id: string; name: string; agent?: string } | null {
+  let author = authors?.authors[messageId];
+  if (!author && authors?.initial_author && userMessageIds.find((id) => !authors.authors[id]) === messageId) {
+    author = authors.initial_author;
+  }
+  if (author?.kind !== 'session') return null;
+  return { session_id: author.session_id, name: author.name, agent: author.agent };
+}
+
 export interface ParticipantSheetRow {
   key: string;
   person: SessionParticipant;

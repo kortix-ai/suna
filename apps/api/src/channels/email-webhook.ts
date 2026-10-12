@@ -1,3 +1,2 @@
-import './email/routes';
-
 export { emailWebhookApp } from './email/app';
+export { registerEmailWebhookRoutes } from './email/routes';

@@ -9,6 +9,7 @@
  * To add an icon: add its import + export pair here (alphabetical), then
  * import it from `@/lib/icons` at the call site.
  */
+import { AlarmIcon as AlarmGlyph } from 'phosphor-react-native/src/icons/Alarm';
 import { ArchiveIcon as ArchiveGlyph } from 'phosphor-react-native/src/icons/Archive';
 import { ArrowClockwiseIcon as ArrowClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowClockwise';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowCounterClockwise';
@@ -37,7 +38,6 @@ import { CaretRightIcon as CaretRightGlyph } from 'phosphor-react-native/src/ico
 import { CaretUpDownIcon as CaretUpDownGlyph } from 'phosphor-react-native/src/icons/CaretUpDown';
 import { CaretUpIcon as CaretUpGlyph } from 'phosphor-react-native/src/icons/CaretUp';
 import { CertificateIcon as CertificateGlyph } from 'phosphor-react-native/src/icons/Certificate';
-import { ChartLineIcon as ChartLineGlyph } from 'phosphor-react-native/src/icons/ChartLine';
 import { ChatCircleIcon as ChatCircleGlyph } from 'phosphor-react-native/src/icons/ChatCircle';
 import { ChatIcon as ChatGlyph } from 'phosphor-react-native/src/icons/Chat';
 import { ChatsTeardropIcon as ChatsTeardropGlyph } from 'phosphor-react-native/src/icons/ChatsTeardrop';
@@ -60,7 +60,6 @@ import { DownloadIcon as DownloadGlyph } from 'phosphor-react-native/src/icons/D
 import { DownloadSimpleIcon as DownloadSimpleGlyph } from 'phosphor-react-native/src/icons/DownloadSimple';
 import { EnvelopeIcon as EnvelopeGlyph } from 'phosphor-react-native/src/icons/Envelope';
 import { ExportIcon as ExportGlyph } from 'phosphor-react-native/src/icons/Export';
-import { EyeIcon as EyeGlyph } from 'phosphor-react-native/src/icons/Eye';
 import { EyeglassesIcon as EyeglassesGlyph } from 'phosphor-react-native/src/icons/Eyeglasses';
 import { FileArchiveIcon as FileArchiveGlyph } from 'phosphor-react-native/src/icons/FileArchive';
 import { FileAudioIcon as FileAudioGlyph } from 'phosphor-react-native/src/icons/FileAudio';
@@ -173,7 +172,6 @@ import { StackIcon as StackGlyph } from 'phosphor-react-native/src/icons/Stack';
 import { StarIcon as StarGlyph } from 'phosphor-react-native/src/icons/Star';
 import { StopCircleIcon as StopCircleGlyph } from 'phosphor-react-native/src/icons/StopCircle';
 import { SunIcon as SunGlyph } from 'phosphor-react-native/src/icons/Sun';
-import { TagIcon as TagGlyph } from 'phosphor-react-native/src/icons/Tag';
 import { TargetIcon as TargetGlyph } from 'phosphor-react-native/src/icons/Target';
 import { TerminalIcon as TerminalGlyph } from 'phosphor-react-native/src/icons/Terminal';
 import { TerminalWindowIcon as TerminalWindowGlyph } from 'phosphor-react-native/src/icons/TerminalWindow';
@@ -193,12 +191,12 @@ import { WarningIcon as WarningGlyph } from 'phosphor-react-native/src/icons/War
 import { WebhooksLogoIcon as WebhooksLogoGlyph } from 'phosphor-react-native/src/icons/WebhooksLogo';
 import { WifiHighIcon as WifiHighGlyph } from 'phosphor-react-native/src/icons/WifiHigh';
 import { WifiSlashIcon as WifiSlashGlyph } from 'phosphor-react-native/src/icons/WifiSlash';
-import { WrenchIcon as WrenchGlyph } from 'phosphor-react-native/src/icons/Wrench';
 import { XCircleIcon as XCircleGlyph } from 'phosphor-react-native/src/icons/XCircle';
 import { XIcon as XGlyph } from 'phosphor-react-native/src/icons/X';
 
 import { withAppWeight, withFixedWeight } from './bind';
 
+export const AlarmIcon = withAppWeight(AlarmGlyph, 'AlarmIcon');
 export const ArchiveIcon = withAppWeight(ArchiveGlyph, 'ArchiveIcon');
 export const ArrowClockwiseIcon = withAppWeight(ArrowClockwiseGlyph, 'ArrowClockwiseIcon');
 export const ArrowCounterClockwiseIcon = withAppWeight(ArrowCounterClockwiseGlyph, 'ArrowCounterClockwiseIcon');
@@ -227,7 +225,6 @@ export const CaretRightIcon = withAppWeight(CaretRightGlyph, 'CaretRightIcon');
 export const CaretUpDownIcon = withAppWeight(CaretUpDownGlyph, 'CaretUpDownIcon');
 export const CaretUpIcon = withAppWeight(CaretUpGlyph, 'CaretUpIcon');
 export const CertificateIcon = withAppWeight(CertificateGlyph, 'CertificateIcon');
-export const ChartLineIcon = withAppWeight(ChartLineGlyph, 'ChartLineIcon');
 export const ChatCircleIcon = withAppWeight(ChatCircleGlyph, 'ChatCircleIcon');
 export const ChatIcon = withAppWeight(ChatGlyph, 'ChatIcon');
 export const ChatsTeardropIcon = withAppWeight(ChatsTeardropGlyph, 'ChatsTeardropIcon');
@@ -254,7 +251,6 @@ export const DownloadIcon = withAppWeight(DownloadGlyph, 'DownloadIcon');
 export const DownloadSimpleIcon = withAppWeight(DownloadSimpleGlyph, 'DownloadSimpleIcon');
 export const EnvelopeIcon = withAppWeight(EnvelopeGlyph, 'EnvelopeIcon');
 export const ExportIcon = withAppWeight(ExportGlyph, 'ExportIcon');
-export const EyeIcon = withAppWeight(EyeGlyph, 'EyeIcon');
 export const EyeglassesIcon = withAppWeight(EyeglassesGlyph, 'EyeglassesIcon');
 export const FileArchiveIcon = withAppWeight(FileArchiveGlyph, 'FileArchiveIcon');
 export const FileAudioIcon = withAppWeight(FileAudioGlyph, 'FileAudioIcon');
@@ -371,7 +367,6 @@ export const StackIcon = withAppWeight(StackGlyph, 'StackIcon');
 export const StarIcon = withAppWeight(StarGlyph, 'StarIcon');
 export const StopCircleIcon = withAppWeight(StopCircleGlyph, 'StopCircleIcon');
 export const SunIcon = withAppWeight(SunGlyph, 'SunIcon');
-export const TagIcon = withAppWeight(TagGlyph, 'TagIcon');
 export const TargetIcon = withAppWeight(TargetGlyph, 'TargetIcon');
 export const TerminalIcon = withAppWeight(TerminalGlyph, 'TerminalIcon');
 export const TerminalWindowIcon = withAppWeight(TerminalWindowGlyph, 'TerminalWindowIcon');
@@ -391,7 +386,6 @@ export const WarningIcon = withAppWeight(WarningGlyph, 'WarningIcon');
 export const WebhooksLogoIcon = withAppWeight(WebhooksLogoGlyph, 'WebhooksLogoIcon');
 export const WifiHighIcon = withAppWeight(WifiHighGlyph, 'WifiHighIcon');
 export const WifiSlashIcon = withAppWeight(WifiSlashGlyph, 'WifiSlashIcon');
-export const WrenchIcon = withAppWeight(WrenchGlyph, 'WrenchIcon');
 export const XCircleIcon = withAppWeight(XCircleGlyph, 'XCircleIcon');
 export const XIcon = withAppWeight(XGlyph, 'XIcon');
 

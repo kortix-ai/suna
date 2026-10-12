@@ -58,6 +58,16 @@ describe('chooseEffectiveModel', () => {
       chooseEffectiveModel({ projectDefault: 'anthropic/claude-sonnet-4.6', freeModelsOnly: true }),
     ).toEqual({ model: 'anthropic/claude-sonnet-4.6', source: 'project' });
   });
+
+  test('free tier: the platform default managed candidate is kept (KRTX-1067)', () => {
+    const platform = 'deepseek-v4.1-flash';
+    expect(
+      chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true, platformDefault: platform }),
+    ).toEqual({ model: platform, source: 'account' });
+    expect(
+      chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true, platformDefault: platform }),
+    ).toEqual({ model: `kortix/${platform}`, source: 'project' });
+  });
 });
 
 describe('toWireModel / toOpencodeModelRef', () => {

@@ -6,7 +6,7 @@ import { useState, type ReactNode } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
-import type { FlatModel } from './session-chat-input';
+import type { FlatModel } from '@kortix/sdk/react';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 /** Stable empty list so the hook's `models = []` default isn't re-allocated per render. */

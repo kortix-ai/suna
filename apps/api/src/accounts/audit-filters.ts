@@ -10,6 +10,7 @@
 
 import { auditEventsAll } from '@kortix/db';
 import { type SQL, eq, gte, ilike, like, lte, or, sql } from 'drizzle-orm';
+import { escapeLike } from '../shared/sql-like';
 
 export interface AuditFilterInput {
   /** actor user_id, or null for "everyone". */
@@ -40,7 +41,19 @@ export interface AuditFilterInput {
 /** The first day audit rows can carry `credential_kind` (migration 20260930024523072). */
 const CREDENTIAL_KIND_SINCE = new Date('2026-09-30T00:00:00Z');
 
-export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] {
+/**
+ * A free-text `q` is a leading-wildcard ILIKE over eight columns: no index serves
+ * it, so it reads every row it is allowed to see. Without a `since` it searches
+ * only this window, so a large account cannot run it over its whole history.
+ */
+export const Q_DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function buildFilters(
+  accountId: string,
+  input: AuditFilterInput,
+  // The export walks history on purpose and has its own budget; only the interactive search is floored.
+  options: { floorFreeTextSearch?: boolean } = {},
+): SQL[] {
   const conditions: SQL[] = [eq(auditEventsAll.accountId, accountId)];
   // `or`/`and` are typed `SQL | undefined` in drizzle (a 0-arg call is
   // meaningless), so push through a guard rather than non-null-assert.
@@ -73,13 +86,14 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
     if (input.actionPrefix === 'connector.') {
       push(or(like(auditEventsAll.action, 'connector.%'), like(auditEventsAll.action, 'computer.%')));
     } else {
+      const prefix = escapeLike(input.actionPrefix);
       push(
         input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
           ? or(
               eq(auditEventsAll.action, input.actionPrefix),
-              like(auditEventsAll.action, `${input.actionPrefix}.%`),
+              like(auditEventsAll.action, `${prefix}.%`),
             )
-          : like(auditEventsAll.action, `${input.actionPrefix}%`),
+          : like(auditEventsAll.action, `${prefix}%`),
       );
     }
   }
@@ -88,7 +102,7 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
     // Prefix match so a caller can pass "project" and catch project,
     // project_session, etc. Plain `like` (case-sensitive by convention —
     // resource types are snake_case identifiers).
-    push(like(auditEventsAll.resourceType, `${input.resourceType}%`));
+    push(like(auditEventsAll.resourceType, `${escapeLike(input.resourceType)}%`));
   }
 
   if (input.sinceRaw) {
@@ -101,7 +115,10 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   }
 
   if (input.q) {
-    const term = `%${input.q}%`;
+    const term = `%${escapeLike(input.q)}%`;
+    if (!input.sinceRaw && options.floorFreeTextSearch !== false) {
+      push(gte(auditEventsAll.occurredAt, new Date(Date.now() - Q_DEFAULT_WINDOW_MS)));
+    }
     // OR across the three text columns a human actually searches by. ILIKE so
     // it's case-insensitive (audit actions are lowercase by convention, but
     // resource ids / user-supplied names are not).

@@ -68,7 +68,7 @@ export async function waitForDaemonRuntimeReady(args: {
   deps?: DaemonReadyDeps;
 }): Promise<boolean> {
   const fetchImpl = args.deps?.fetchImpl ?? fetch;
-  const sleep = args.deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = args.deps?.sleep ?? Bun.sleep;
   const now = args.deps?.now ?? Date.now;
   const deadline = now() + (args.budgetMs ?? RUNTIME_READY_WAIT_BUDGET_MS);
   for (;;) {

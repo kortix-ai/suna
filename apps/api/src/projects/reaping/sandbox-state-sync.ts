@@ -178,7 +178,7 @@ export async function markPendingStopObservation(sandboxId: string): Promise<boo
  * EVERY OBSERVER THAT POLLS MUST CALL THIS, and both do: the reaper's status
  * poll (reaping/box-reaper.ts, the 20s active-turn lane, which visits every row
  * holding turn authority) and the session access path
- * (projects/routes/shared.ts, polled ~1/s by the web client). Only those two can
+ * (projects/session-open/index.ts, polled ~1/s by the web client). Only those two can
  * ARM a marker repeatedly. The webhook ingress can arm one on a transitional
  * `stopping` delivery, and either poller drops it on its next running read.
  */
@@ -207,6 +207,12 @@ export interface StoppedStateWrite {
   stopReason: StopReason;
   /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
+  /**
+   * An ephemeral box was deleted, not stopped: the row gives up its external
+   * id in the same write (the identity guard admits exactly this, keyed on the
+   * `ephemeralRetiredExternalId` marker the metadata carries).
+   */
+  retiredExternalId?: boolean;
   now?: Date;
 }
 
@@ -328,7 +334,11 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     await transitionSandbox(
       'stop',
       write.sandboxId,
-      { at: now, metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch } },
+      {
+        at: now,
+        metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch },
+        ...(write.retiredExternalId ? { columns: { externalId: null, baseUrl: null } } : {}),
+      },
       tx,
     );
     // A turn that was in flight when the box parked ended because the runtime
@@ -442,7 +452,7 @@ export interface StoppedReconcileOptions {
    * to wait for a second one while a turn is open. Three callers pass it: the
    * provider webhook ingress (platform/webhooks/sandbox-webhooks.ts, whose
    * `classifyLifecycle` maps the transitional `stopping` / `archiving` straight
-   * to `stopped`), the session access path in projects/routes/shared.ts — which
+   * to `stopped`), the session access path in projects/session-open/index.ts — which
    * polls `provider.getStatus` every second and stops nothing itself, and which
    * therefore authored the 2026-08-17 mid-turn park — and, through its own copy
    * of the same gate, the reaper's status poll. All three read the row back and

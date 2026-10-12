@@ -2,7 +2,7 @@
  * Boot-order tripwire for `sandbox-proxy/index.ts`.
  *
  * CI run 36351579974 (PR #7859): the API process never reached readiness.
- * `apps/api/src/projects/routes/shared.ts` gained a top-level `import {
+ * `apps/api/src/projects/session-open/index.ts` gained a top-level `import {
  * guaranteeCurrentRuntimeOnOpen } from '../lib/legacy-runtime-bootstrap-wiring'`,
  * and that wiring module has a top-level import from `sandbox-proxy/backend`.
  * `sandbox-proxy/index.ts` imports (via `routes/preview`) a chain that

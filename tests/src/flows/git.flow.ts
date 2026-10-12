@@ -18,6 +18,7 @@
  */
 import { flow } from "../core/flow";
 import { serveFixtureRepoLocally } from "../fixtures/local-git";
+import { withDb } from "../fixtures/chat";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
@@ -30,9 +31,6 @@ flow(
     domain: "git",
     routes: [
       "GET /v1/git/:project/info/refs",
-      "GET /v1/git/:project/compiled-checkout",
-      "GET /v1/git/:project/compiled-runtime",
-      "GET /v1/git/:project/compiled-pi-runtime",
       "GET /v1/git/:project/project-snapshot",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
@@ -79,36 +77,6 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/git/:project/git-upload-pack", {}, { params: { project: p.id } });
       r.status([401, 403, 502]);
-    });
-    await ctx.step("compiled checkout without git auth → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-checkout", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
-    });
-    await ctx.step("compiled runtime without git auth → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-runtime", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
-    });
-    await ctx.step("compiled pi runtime without git auth → 401", async () => {
-      // Same auth boundary as compiled-runtime; the pi_worker feature-flag
-      // gate sits BEHIND auth, so an anonymous caller never learns whether
-      // the flag is on.
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-pi-runtime", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
     });
     await ctx.step("git-receive-pack (push) without git auth → 401", async () => {
       const r = await ctx.client
@@ -389,6 +357,13 @@ flow(
     await ctx.step("OWNER lists repos (no install locally → 409 with install_url)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/repositories");
       r.status([200, 400, 409, 502, 503]);
+    });
+    await ctx.step("the retired `pat` selector is an unknown installation → 409 not connected to this account", async () => {
+      const team = await ctx.fixtures.team();
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/repositories", {
+        query: { account_id: team.id, installation_id: "pat" },
+      });
+      r.status(409).body().has("$.error", "Selected GitHub installation is not connected to this account");
     });
   },
 );
@@ -779,6 +754,174 @@ flow(
         managed.status([403, 409, 400]);
       },
     );
+  },
+);
+
+// GH-1b — the account connection surface with real rows. The local profile has
+// no GitHub, so the rows a successful POST /github/installation writes are
+// inserted directly; every read and the disconnect go through the real routes.
+// Both GET paths share one handler: same payload (minus the per-call
+// install_url nonce), same PROJECT_CREATE gate.
+flow(
+  "GH-1b",
+  {
+    domain: "git",
+    requires: ["database"],
+    routes: [
+      "GET /v1/projects/github/installation",
+      "GET /v1/projects/github/installations",
+      "DELETE /v1/projects/github/installation",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const query = { account_id: team.id };
+    const withoutInstallUrl = (body: Record<string, unknown>) => {
+      const { install_url: _nonce, ...rest } = body;
+      return rest;
+    };
+    try {
+      await ctx.step("a fresh team: installed false, installations []", async () => {
+        const r = await owner.get("/v1/projects/github/installations", { query });
+        r.status(200).body().has("$.account_id", team.id).has("$.installed", false).has("$.installations", []).has("$.installation_id", null);
+      });
+      await withDb(ctx, (db) =>
+        db.query(
+          `INSERT INTO kortix.account_github_installations
+             (account_id, installation_id, owner_login, owner_type, repository_selection, permissions, metadata)
+           VALUES ($1, '910000001', 'ke2e-org-a', 'Organization', 'all', '{"contents":"write"}', '{}'),
+                  ($1, '910000002', 'ke2e-org-b', 'Organization', 'selected', '{"contents":"write"}',
+                   '{"html_url":"https://github.com/organizations/ke2e-org-b/settings/installations/910000002"}')`,
+          [team.id],
+        ),
+      );
+      await ctx.step("OWNER: both GET paths list both connections with one identical payload", async () => {
+        const singular = await owner.get("/v1/projects/github/installation", { query });
+        const plural = await owner.get("/v1/projects/github/installations", { query });
+        singular.status(200);
+        plural.status(200).body().has("$.account_id", team.id).has("$.installed", true).has("$.requires_installation", false);
+        const body = plural.json<any>();
+        const byId = new Map<string, any>(body.installations.map((i: any) => [i.installation_id, i]));
+        const a = byId.get("910000001");
+        const b = byId.get("910000002");
+        if (byId.size !== 2 || !a || !b) throw new Error(`expected exactly the two seeded installations, got ${JSON.stringify(body.installations)}`);
+        if (a.owner_login !== "ke2e-org-a" || a.owner_type !== "Organization" || a.repository_selection !== "all") {
+          throw new Error(`installation a: ${JSON.stringify(a)}`);
+        }
+        if (
+          b.owner_login !== "ke2e-org-b" ||
+          b.repository_selection !== "selected" ||
+          b.installation_url !== "https://github.com/organizations/ke2e-org-b/settings/installations/910000002"
+        ) {
+          throw new Error(`installation b: ${JSON.stringify(b)}`);
+        }
+        if (JSON.stringify(withoutInstallUrl(singular.json())) !== JSON.stringify(withoutInstallUrl(body))) {
+          throw new Error(`the two GET paths disagree:\n${singular.text()}\n${plural.text()}`);
+        }
+      });
+      await ctx.step("MEMBER (no project.create): both GET paths → the same 403", async () => {
+        const singular = await ctx.client.as(member).get("/v1/projects/github/installation", { query });
+        const plural = await ctx.client.as(member).get("/v1/projects/github/installations", { query });
+        singular.status(403).body().has("$.action", "project.create");
+        plural.status(403);
+        if (singular.text() !== plural.text()) throw new Error(`403 bodies differ:\n${singular.text()}\n${plural.text()}`);
+      });
+      await ctx.step("OWNER disconnects → {ok: true}; the account reads not connected and the rows are gone", async () => {
+        (await owner.del("/v1/projects/github/installation", { query })).status(200).body().has("$.ok", true);
+        const r = await owner.get("/v1/projects/github/installation", { query });
+        r.status(200).body().has("$.installed", false).has("$.installations", []).has("$.installation_id", null);
+        const left = await withDb(ctx, (db) =>
+          db.query("SELECT count(*)::int AS n FROM kortix.account_github_installations WHERE account_id = $1", [team.id]),
+        );
+        if (left.rows[0].n !== 0) throw new Error(`${left.rows[0].n} installation rows survived the disconnect`);
+      });
+    } finally {
+      await withDb(ctx, (db) => db.query("DELETE FROM kortix.account_github_installations WHERE account_id = $1", [team.id])).catch(() => {});
+    }
+  },
+);
+
+// GH-18b — the 2026-08-29 fix. A cloud platform admin is NOT a self-host
+// operator: the backend owner (`managed-kortix` on cloud) holds every
+// customer's repository. The run-scoped platform admin is synthetic, so no
+// operator allowlist (KORTIX_PLATFORM_ADMIN_EMAILS) names it.
+flow(
+  "GH-18b",
+  {
+    domain: "git",
+    requires: ["admin"],
+    routes: ["GET /v1/projects/git/backend/repositories", "POST /v1/projects/link-repository"],
+  },
+  async (ctx) => {
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+    await ctx.step("platform admin lists the instance backend → 403, no repository listing", async () => {
+      const r = await admin.get("/v1/projects/git/backend/repositories");
+      r.status(403).body().has("$.error", "The instance git backend is only browsable by a self-host operator");
+    });
+    await ctx.step("platform admin imports a backend repository by name → 403", async () => {
+      const r = await admin.post("/v1/projects/link-repository", {
+        source: "managed",
+        repo_full_name: "managed-kortix/someone-elses-project",
+      });
+      r.status(403).body().has("$.error", "Managed GitHub repository import is only available to a self-host operator");
+    });
+  },
+);
+
+// GH-21 — a BYO host token is a platform git credential, never a runtime
+// project secret: it is stored encrypted in project_git_credentials and the
+// secrets surface neither lists nor deletes it.
+flow(
+  "GH-21",
+  {
+    domain: "git",
+    requires: ["database"],
+    routes: [
+      "PUT /v1/projects/:projectId/git-credential",
+      "GET /v1/projects/:projectId/secrets",
+      "DELETE /v1/projects/:projectId/secrets/:name",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ metadata: { git: { provider: "gitlab", auth: { method: "none" } } } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const token = `glpat-ke2e-${crypto.randomUUID()}`;
+    await ctx.step("a BYO GitLab token is stored as a platform git credential → 200, never echoed", async () => {
+      const r = await owner.put("/v1/projects/:projectId/git-credential", { token }, { params });
+      r.status(200)
+        .body()
+        .has("$.configured", true)
+        .has("$.provider", "gitlab")
+        .has("$.git_connection.provider", "gitlab")
+        .has("$.git_connection.auth_method", "project_credential")
+        .has("$.git_connection.status", "connected");
+      if (r.text().includes(token)) throw new Error("the git credential response echoed the token");
+    });
+    await ctx.step("the credential is not a runtime project secret: not listed, KORTIX_GIT_AUTH_TOKEN not deletable", async () => {
+      const listed = await owner.get("/v1/projects/:projectId/secrets", { params });
+      listed.status(200);
+      const items = listed.json<{ items: Array<{ name?: string; identifier?: string }> }>().items;
+      if (items.some((i) => i.name === "KORTIX_GIT_AUTH_TOKEN" || i.identifier === "KORTIX_GIT_AUTH_TOKEN")) {
+        throw new Error("the git credential is listed as a project secret");
+      }
+      if (listed.text().includes(token)) throw new Error("the secrets list leaked the token");
+      (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "KORTIX_GIT_AUTH_TOKEN" } })).status(403);
+    });
+    await ctx.step("storage: one encrypted gitlab credential row, zero project secret rows", async () => {
+      const creds = await withDb(ctx, async (db) =>
+        (await db.query<{ provider: string; value_enc: string }>("SELECT provider, value_enc FROM kortix.project_git_credentials WHERE project_id = $1::uuid", [project.id])).rows,
+      );
+      if (creds.length !== 1 || creds[0]!.provider !== "gitlab" || creds[0]!.value_enc.includes(token)) {
+        throw new Error(`git credential rows: ${JSON.stringify(creds.map((c) => c.provider))}`);
+      }
+      const secrets = await withDb(ctx, async (db) =>
+        (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM kortix.project_secrets WHERE project_id = $1::uuid", [project.id])).rows[0]?.n,
+      );
+      if (secrets !== 0) throw new Error(`expected no project secret rows, found ${secrets}`);
+    });
   },
 );
 

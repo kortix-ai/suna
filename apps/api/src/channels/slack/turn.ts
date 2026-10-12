@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
@@ -144,68 +143,55 @@ export async function sweepStaleSlackTurns(): Promise<void> {
   const stale = await db
     .select()
     .from(chatTurnStreams)
-    .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff)))
+    // Teams rows carry a channelRef and have their own sweep (teams/turn.ts). They
+    // must not fill this window, and the oldest rows go first so none starves.
+    .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff), isNull(chatTurnStreams.channelRef)))
+    .orderBy(asc(chatTurnStreams.updatedAt))
     .limit(50);
-  for (const row of stale) {
-    if (row.channelRef) continue;
-    // Thirty minutes without a `slack step` is not proof of a dead run: a
-    // build, a test suite, or a subagent posts nothing while it works. This
-    // used to close the thread as "timed out" AND abort the runtime turn,
-    // killing healthy work mid-run (prod 2026-09-25: one `slack step`, then
-    // two subagents with model calls every minute, aborted at 30m56s). The
-    // runtime's turn authority decides; a live run keeps its thread, touched
-    // so it is not reconsidered for another 30 minutes.
-    if (await runtimeStillWorking(row.sessionId)) {
-      await db
-        .update(chatTurnStreams)
-        .set({ updatedAt: new Date() })
-        .where(and(eq(chatTurnStreams.sessionId, row.sessionId), eq(chatTurnStreams.finalized, false)));
-      continue;
-    }
-    if (!(await claimFinalize(row.sessionId))) continue;
-    const token = await loadSlackTokenForProject(row.projectId);
-    if (token) {
-      // Last-resort close: the runtime holds no turn, yet no end relay reached
-      // this thread in 30 minutes (the sandbox died, or the relay was lost).
-      await finalizeTurn(rowToHandle(row, token), {
-        error: ':warning: *This run ended without a reply.* Open the session to see how far it got.',
-      });
-    } else {
-      // No token (app uninstalled / token rotated) → we can't post or clear
-      // the ⏳. Reap the row anyway (below) and surface it so a dead install
-      // is observable instead of silently dropping every turn.
-      console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
-        projectId: row.projectId,
-        teamId: row.teamId,
-        sessionId: row.sessionId,
-      });
-    }
-    await deleteTurn(row.sessionId);
-    await abortDeadRuntimeTurn(row.sessionId);
-  }
-  await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
-}
-
-let gcTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Leader-only (bootstrap.ts): one replica sweeps, not all of them. */
-export function startSlackTurnGc(): void {
-  if (gcTimer) return;
-  gcTimer = setInterval(() => {
-    void runWorkerTick('slack-turn-gc', async () => {
-      try {
-        await sweepStaleSlackTurns();
-      } catch (err) {
-        console.warn('[slack-webhook] gc tick failed', err);
+  try {
+    for (const row of stale) {
+      // Thirty minutes without a `slack step` is not proof of a dead run: a
+      // build, a test suite, or a subagent posts nothing while it works. This
+      // used to close the thread as "timed out" AND abort the runtime turn,
+      // killing healthy work mid-run (prod 2026-09-25: one `slack step`, then
+      // two subagents with model calls every minute, aborted at 30m56s). The
+      // runtime's turn authority decides; a live run keeps its thread, touched
+      // so it is not reconsidered for another 30 minutes.
+      if (await runtimeStillWorking(row.sessionId)) {
+        await db
+          .update(chatTurnStreams)
+          .set({ updatedAt: new Date() })
+          .where(and(eq(chatTurnStreams.sessionId, row.sessionId), eq(chatTurnStreams.finalized, false)));
+        continue;
       }
-    });
-  }, 5 * 60 * 1000);
+      if (!(await claimFinalize(row.sessionId))) continue;
+      const token = await loadSlackTokenForProject(row.projectId);
+      if (token) {
+        // Last-resort close: the runtime holds no turn, yet no end relay reached
+        // this thread in 30 minutes (the sandbox died, or the relay was lost).
+        await finalizeTurn(rowToHandle(row, token), {
+          error: ':warning: *This run ended without a reply.* Open the session to see how far it got.',
+        });
+      } else {
+        // No token (app uninstalled / token rotated) → we can't post or clear
+        // the ⏳. Reap the row anyway (below) and surface it so a dead install
+        // is observable instead of silently dropping every turn.
+        console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
+          projectId: row.projectId,
+          teamId: row.teamId,
+          sessionId: row.sessionId,
+        });
+      }
+      await deleteTurn(row.sessionId);
+      await abortDeadRuntimeTurn(row.sessionId);
+    }
+  } finally {
+    // The dedup table is bounded by this delete; a throw above must not skip it.
+    await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
+  }
 }
 
-export function stopSlackTurnGc(): void {
-  if (gcTimer) clearInterval(gcTimer);
-  gcTimer = null;
-}
+export { startSlackTurnGc, stopSlackTurnGc } from '../../workers/slack-turn-gc-worker';
 
 /**
  * Does the runtime's turn authority still hold a live turn for this session?
@@ -594,18 +580,6 @@ export type TurnRelayReason =
 
 export type TurnRelayResult = { ok: true } | { ok: false; reason: TurnRelayReason };
 
-export async function relayTurnStep(
-  sessionId: string,
-  title: string,
-  opts: {
-    detail?: string;
-    outputForPrev?: string;
-    sourcesForPrev?: Array<{ url: string; text: string }>;
-  } = {},
-): Promise<boolean> {
-  return (await relayTurnStepDetailed(sessionId, title, opts)).ok;
-}
-
 export async function relayTurnStepDetailed(
   sessionId: string,
   title: string,
@@ -677,14 +651,6 @@ export async function relayTurnStepDetailed(
   await repaintLivePlan(handle);
   await saveTurn(handle);
   return { ok: true };
-}
-
-export async function relayTurnAnswer(
-  sessionId: string,
-  text: string,
-  blocks?: unknown[],
-): Promise<boolean> {
-  return (await relayTurnAnswerDetailed(sessionId, text, blocks)).ok;
 }
 
 export async function relayTurnAnswerDetailed(

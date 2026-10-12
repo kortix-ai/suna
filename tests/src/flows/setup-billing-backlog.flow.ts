@@ -86,72 +86,6 @@ flow(
 );
 
 /**
- * BILL-2 — "free Stripe sub for a server type".
- *
- * SPEC DRIFT: the spec lists `POST /billing/setup/initialize {server_type,location}`,
- * but that route does NOT exist in apps/api/src/billing (and is absent from
- * spec/routes.generated.json). The real surface is `server_type`/`location` passed as
- * fields on `POST /billing/create-checkout-session` (apps/api/src/billing/routes/
- * subscriptions.ts:46-64 → createCheckoutSession({ serverType, location })).
- *
- * So BILL-2 is realised here as: a server-type-scoped checkout. The membership boundary
- * (ANON → 401, NONMEMBER → 403) runs without Stripe. The OWNER happy-path is a real
- * Stripe test-mode call — a good config returns a hosted URL (200); a config/input
- * problem surfaces as 4xx/5xx, so it uses a permissive envelope rather than the
- * `requires:["stripe"]` flow-gate (this keeps the authz boundary covered everywhere).
- */
-flow(
-  "BILL-2",
-  {
-    domain: "billing",
-    serial: true,
-    timeoutMs: 60_000,
-    routes: ["POST /v1/billing/create-checkout-session"],
-  },
-  async (ctx) => {
-    const team = await ctx.fixtures.team();
-
-    await ctx.step("NONMEMBER cannot checkout for a team they don't belong to → 403", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/create-checkout-session", {
-        account_id: team.id,
-        tier_key: "pro",
-        server_type: "compute",
-        location: "us",
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
-      });
-      r.status(403);
-    });
-
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/create-checkout-session", {
-        account_id: team.id,
-        tier_key: "pro",
-        server_type: "compute",
-      });
-      r.status(401);
-    });
-
-    if (ctx.env.target !== "local") {
-      await ctx.step("OWNER server-type-scoped checkout → Stripe URL or rejection", async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/create-checkout-session", {
-          account_id: team.id,
-          tier_key: "pro",
-          server_type: "compute",
-          location: "us",
-          success_url: "https://example.com/ok",
-          cancel_url: "https://example.com/cancel",
-        });
-        // Member-of-account passes authz; the outcome depends on Stripe wiring on the
-        // target. A configured target returns a hosted URL (200); an unconfigured or
-        // input-rejecting one returns 4xx/5xx. Permissive envelope covers both.
-        r.status([200, 400, 404, 500]);
-      });
-    }
-  },
-);
-
-/**
  * BILL-9 — authorization on billing write ops.
  *
  * SPEC DRIFT: the spec claims write ops require a `billing.write` capability and that
@@ -175,7 +109,6 @@ flow(
     routes: [
       "POST /v1/billing/cancel-subscription",
       "POST /v1/billing/reactivate-subscription",
-      "POST /v1/billing/schedule-downgrade",
     ],
   },
   async (ctx) => {
@@ -190,13 +123,6 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/reactivate-subscription", { account_id: team.id });
       r.status(401);
     });
-    await ctx.step("ANON schedule-downgrade → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/schedule-downgrade", {
-        account_id: team.id,
-        target_tier_key: "pro",
-      });
-      r.status(401);
-    });
 
     // --- NONMEMBER is rejected by the membership resolver (the REAL authz gate). ---
     await ctx.step("NONMEMBER cancel-subscription → 403", async () => {
@@ -205,13 +131,6 @@ flow(
     });
     await ctx.step("NONMEMBER reactivate-subscription → 403", async () => {
       const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/reactivate-subscription", { account_id: team.id });
-      r.status(403);
-    });
-    await ctx.step("NONMEMBER schedule-downgrade → 403", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/schedule-downgrade", {
-        account_id: team.id,
-        target_tier_key: "pro",
-      });
       r.status(403);
     });
 

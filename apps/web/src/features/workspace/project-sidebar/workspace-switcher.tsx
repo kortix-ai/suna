@@ -83,6 +83,7 @@ import { isAccountCreationRestricted } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { openCustomizeSidebar } from '@/stores/sidebar-nav-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -91,7 +92,6 @@ import {
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
   MonitorIcon,
-  CodeSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -100,6 +100,8 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
+import { Mcp } from '@/features/icon/icons/mcp';
+import { SidebarToggle } from '@/features/icon/icons/sidebar-toggle';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
@@ -312,9 +314,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits
-                  `headers()` and has no `loading.tsx`, so the default `auto`
-                  intent would cache nothing for a dynamic route. */}
+              {/* Reorder and hide the sidebar's nav rows. The modal is mounted
+                  by ProjectSidebar, the only host of this menu. */}
+              <DropdownMenuItem onSelect={() => deferAfterClose(openCustomizeSidebar)} size="sm">
+                <SidebarToggle />
+                {t('customizeSidebar')}
+              </DropdownMenuItem>
+
+              {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits
+                  `headers()`, so the default `auto` intent would cache nothing
+                  for a dynamic route. */}
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                 <Link href="/download" prefetch data-desktop-hidden>
                   <Download />
@@ -326,7 +335,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
                 size="sm"
               >
-                <CodeSimpleIcon />
+                <Mcp />
                 {t('workspace.connectMcp')}
               </DropdownMenuItem>
 

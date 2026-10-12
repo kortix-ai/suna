@@ -140,15 +140,32 @@ export function selectDbSuites(suites: DbSuite[], filters: string[]): DbSuite[] 
 }
 
 /**
+ * Monday 00:00 UTC of `now`'s week, as an ISO date: the template's calendar key.
+ */
+export function templateWeekKey(now: Date): string {
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+}
+
+/**
  * Content hash of everything that shapes the migrated template: the platform
  * `auth` schema copied from the local Supabase database, the migration files,
  * the bootstrap SQL, and the migrate scripts with their prerequisites. A
  * change to any of them builds a new template; an unchanged tree reuses the
  * one already on the local cluster.
+ *
+ * The hash also carries the Monday of the build week (`templateWeekKey`): the
+ * migrations read the calendar (the audit partitions pre-create from
+ * `current_date` at apply time), so a template built last week serves
+ * partitions that end before the tests' horizon. Keying on the week rebuilds
+ * the template when the calendar moves; the 3-day idle prune drops the old one.
  */
 export function migrationTemplateHash(root: string, platformSchemaSql: string): string {
   const hash = createHash('sha256');
   hash.update(platformSchemaSql);
+  hash.update('\0');
+  hash.update(templateWeekKey(new Date()));
   hash.update('\0');
   const inputs = ['packages/db/migrations', 'packages/db/drizzle', 'packages/db/scripts'];
   for (const input of inputs) {

@@ -8,6 +8,12 @@ import { CaretUpIcon, PencilSimpleIcon, TrashIcon, XIcon } from '@phosphor-icons
 import { Fragment, useId, useState } from 'react';
 import type { QueueRow } from '../queue-projection';
 
+const STEER_FALLBACK_KEY = {
+  unsupported: 'steerFallbackUnsupported',
+  not_prompter: 'steerFallbackNotPrompter',
+  turn_ended: 'steerFallbackTurnEnded',
+} as const;
+
 export interface QueuedPromptListProps {
   rows: readonly QueueRow[];
   heldCount: number;
@@ -15,7 +21,15 @@ export interface QueuedPromptListProps {
   onResume?: () => void;
   onEdit?: (promptId: string) => void;
   onRemove?: (promptId: string) => void;
+  /** Run THIS prompt through the inbox's one retry primitive: a failed row's
+   *  "Retry", a queued row's "Send now" — the row is promoted past the
+   *  ordering gate and answered first, without touching the live turn. When
+   *  a Stop hold keeps other rows back, the same call is the hold's release:
+   *  the batch drains in queue order in one turn (KRTX-683). */
   onRetry?: (promptId: string) => void;
+  /** "Stop and send": the turn ends after its running tool, then this row
+   *  runs. Pass it only while a turn runs. */
+  onStopAndSend?: (promptId: string) => void;
   /** The row the composer is editing. It stays in its slot, drawn as the
    *  editing row, until Submit saves the new text or Cancel drops the edit. */
   editing?: { promptId: string } | null;
@@ -30,6 +44,7 @@ export function QueuedPromptList({
   onEdit,
   onRemove,
   onRetry,
+  onStopAndSend,
   editing = null,
   onCancelEdit,
 }: QueuedPromptListProps) {
@@ -155,6 +170,18 @@ export function QueuedPromptList({
                           {t('queuedFiles', { count: row.attachmentCount })}
                         </span>
                       )}
+                      {row.fromAnotherMember && (
+                        <p className="text-muted-foreground text-xs" data-queued-author="other">
+                          {t('queuedByAnotherMember')}
+                        </p>
+                      )}
+                      {!failed && (row.steer || row.steerFallback) && (
+                        <p className="text-muted-foreground text-xs" data-queued-delivery>
+                          {row.steerFallback
+                            ? t(STEER_FALLBACK_KEY[row.steerFallback])
+                            : t('steerNextStep')}
+                        </p>
+                      )}
                       {failed && (
                         <p className="text-kortix-red text-xs" role="status" title={row.lastError}>
                           {copy.raw('textcd5f943d5863')}
@@ -180,7 +207,39 @@ export function QueuedPromptList({
                           <PencilSimpleIcon className="size-3.5" />
                         </Button>
                       )}
-                      {failed && onRetry && (
+                      {/* Send now: hurry one queued row. The same primitive as
+                          Retry below, and the gentler twin of "Stop and send":
+                          the live turn keeps running, and this row is answered
+                          first at the next drain. Another member's row runs as
+                          them, so only they may hurry it. A row already handed
+                          to the running turn (`steer` with no fallback) has
+                          nothing to hurry — the turn reads it at its next
+                          step — so it keeps only its Remove. */}
+                      {row.state === 'queued' &&
+                        !(row.steer && !row.steerFallback) &&
+                        !row.fromAnotherMember &&
+                        onRetry && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          aria-label={copy.raw('text588032878324')}
+                          onClick={() => onRetry(row.id)}
+                        >
+                          {copy.raw('text588032878324')}
+                        </Button>
+                      )}
+                      {row.interruptible && onStopAndSend && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => onStopAndSend(row.id)}
+                        >
+                          {t('stopAndSend')}
+                        </Button>
+                      )}
+                      {row.retryable && onRetry && (
                         <Button
                           type="button"
                           variant="ghost"

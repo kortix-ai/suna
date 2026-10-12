@@ -1,5 +1,5 @@
 import '../node-ws-polyfill';
-import { AGENT_REPLACED_CLOSE_CODE, AGENT_VERSION, isCredentialRejection } from './agent';
+import { AGENT_REPLACED_CLOSE_CODE, AGENT_VERSION, isCredentialRejection, openRelaySocket } from './agent';
 import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
 
 /**
@@ -36,18 +36,18 @@ export function probeCredentials(
   return new Promise<CredentialProbeResult>((resolve) => {
     let socket: WebSocket;
     try {
-      socket = new WebSocket(new URL(buildTunnelWsUrl(config)));
+      socket = openRelaySocket(new URL(buildTunnelWsUrl(config)).href);
     } catch {
       resolve('unreachable');
       return;
     }
 
     // resolve() is idempotent, so the first verdict wins and later events are
-    // harmless no-ops. That removes any need to track settled state by hand.
+    // harmless no-ops. Resolve before close(): Bun fires 'close' inside it.
     const settle = (result: CredentialProbeResult): void => {
       clearTimeout(timer);
-      try { socket.close(1000, 'probe complete'); } catch {}
       resolve(result);
+      try { socket.close(1000, 'probe complete'); } catch {}
     };
 
     const timer = setTimeout(() => settle('unreachable'), options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);

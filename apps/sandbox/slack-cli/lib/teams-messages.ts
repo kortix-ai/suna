@@ -36,7 +36,14 @@ export interface SimpleMessage {
   at: string;
   from: string;
   text: string;
+  /** Inline images, as Graph URLs `teams download --url` accepts. */
+  images?: string[];
+  /** Names of files shared from SharePoint or OneDrive. */
+  files?: string[];
 }
+
+/** An inline image's Graph hostedContents URL in a message body. */
+const GRAPH_IMAGE = /<img\b[^>]*\bsrc\s*=\s*"(https:\/\/graph\.microsoft\.com\/[^"]+\/hostedContents\/[^"]+)"/gi;
 
 const ENTITIES: Record<string, string> = {
   '&nbsp;': ' ',
@@ -84,6 +91,7 @@ type GraphMessage = {
   deletedDateTime?: string | null;
   from?: { user?: { displayName?: string }; application?: { displayName?: string } } | null;
   body?: { content?: string };
+  attachments?: Array<{ contentType?: string; name?: string | null }> | null;
 };
 
 function messagesOf(raw: unknown): GraphMessage[] {
@@ -98,7 +106,9 @@ function messagesOf(raw: unknown): GraphMessage[] {
 
 /**
  * Graph messages → what an agent can read: oldest first, the last `limit`,
- * system events ("X added Y") and deleted messages dropped.
+ * system events ("X added Y") and deleted messages dropped. A message that is
+ * only a shared file or an image is kept, with the file's name or the image's
+ * download URL.
  */
 export function simplifyTeamsMessages(raws: unknown[], limit = 30): SimpleMessage[] {
   const seen = new Set<string>();
@@ -108,14 +118,21 @@ export function simplifyTeamsMessages(raws: unknown[], limit = 30): SimpleMessag
       if (!m?.id || seen.has(m.id)) continue;
       if (m.deletedDateTime) continue;
       if (m.messageType && m.messageType !== 'message') continue;
-      const text = stripTeamsHtml(m.body?.content ?? '');
-      if (!text) continue;
+      const html = m.body?.content ?? '';
+      const text = stripTeamsHtml(html);
+      const images = [...html.matchAll(GRAPH_IMAGE)].map((x) => x[1]);
+      const files = (m.attachments ?? [])
+        .filter((a) => a.contentType === 'reference' && a.name)
+        .map((a) => a.name as string);
+      if (!text && images.length === 0 && files.length === 0) continue;
       seen.add(m.id);
       out.push({
         id: m.id,
         at: m.createdDateTime ?? '',
         from: m.from?.user?.displayName ?? m.from?.application?.displayName ?? 'unknown',
         text,
+        ...(images.length ? { images } : {}),
+        ...(files.length ? { files } : {}),
       });
     }
   }

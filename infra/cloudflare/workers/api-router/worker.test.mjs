@@ -24,12 +24,12 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
-  test('deploys the dev router from main and verifies its commit and SCIM boundary', () => {
+  test('deploys the dev router from dev and verifies its commit and SCIM boundary', () => {
     const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
-    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.push.branches).toEqual(['dev']);
     expect(workflow.on.push.paths).toContain('infra/cloudflare/workers/api-router/**');
     const job = workflow.jobs.deploy;
-    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job.if).toBe("github.ref == 'refs/heads/dev'");
     expect(job['continue-on-error']).toBeUndefined();
     const commands = job.steps.map((step) => step.run ?? '').join('\n');
     expect(commands).toContain('deploy --env dev');
@@ -43,7 +43,7 @@ describe('api-router worker', () => {
     expect(commands).toContain('urn:ietf:params:scim:api:messages:2.0:Error');
   });
 
-  test('keeps the staging API on EKS in config and deployment metadata', () => {
+  test('routes staging to its eu-west-2 stack in config and deployment metadata', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
       'utf8',
@@ -59,10 +59,38 @@ describe('api-router worker', () => {
     const stagingVars = wrangler.match(
       /\[env\.staging\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
     )?.[1];
-    expect(stagingVars).toContain('ACTIVE_BACKEND = "ecs-fargate"');
-    expect(deployWorkflow).toContain(
-      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"}',
+    expect(stagingVars).toContain('ACTIVE_BACKEND = "eu-west-2"');
+    expect(stagingVars).toContain('GATEWAY_ACTIVE_BACKEND = "eu-west-2"');
+    expect(stagingVars).toContain('BACKEND_EU_WEST_2 = "https://staging-api-euw2.kortix.com"');
+    for (const binding of [
+      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"eu-west-2"}',
+      '{type:"plain_text", name:"BACKEND_EU_WEST_2", text:"https://staging-api-euw2.kortix.com"}',
+      '{type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"eu-west-2"}',
+      '{type:"plain_text", name:"GATEWAY_BACKEND_EU_WEST_2", text:"https://gateway-staging-euw2.kortix.com"}',
+    ]) {
+      expect(deployWorkflow).toContain(binding);
+    }
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(stagingVars).not.toContain('ECS_FARGATE');
+    expect(deployWorkflow).not.toContain('staging-api-ecs-fargate');
+    expect(deployWorkflow).not.toContain('gateway-staging-ecs-fargate');
+  });
+
+  test('routes dev only to its us-east-2 stack', () => {
+    const wrangler = readFileSync(
+      new URL('./wrangler.toml', import.meta.url),
+      'utf8',
     );
+    const devVars = wrangler.match(
+      /\[env\.dev\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+
+    expect(devVars).toContain('ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('GATEWAY_ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"');
+    expect(devVars).toContain('GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"');
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(devVars).not.toContain('ECS_FARGATE');
   });
 
   test('keeps the prepared US East 2 origins inactive in production config', () => {
@@ -179,11 +207,11 @@ describe('api-router worker', () => {
 
   test('keeps staging sized for the release gate, with an on-demand floor', () => {
     const stagingTerraform = readFileSync(
-      new URL('../../../terraform/environments/staging/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/staging-eu-west-2/main.tf', import.meta.url),
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
 
@@ -204,9 +232,17 @@ describe('api-router worker', () => {
     expect(num(stagingApi, 'task_memory')).toBeGreaterThanOrEqual(
       num(devApi, 'task_memory'),
     );
-    expect(num(stagingApi, 'min_capacity')).toBeGreaterThanOrEqual(
-      num(devApi, 'min_capacity'),
+    // staging's floor is var.api_task_count (2 only while the old stack still
+    // holds database connections), so read the variable's default.
+    const stagingVariables = readFileSync(
+      new URL('../../../terraform/environments/staging-eu-west-2/variables.tf', import.meta.url),
+      'utf8',
     );
+    expect(stagingApi).toMatch(/min_capacity\s*=\s*var\.api_task_count/);
+    const stagingFloor = Number(
+      stagingVariables.match(/variable "api_task_count"[\s\S]*?default\s*=\s*(\d+)/)?.[1],
+    );
+    expect(stagingFloor).toBeGreaterThanOrEqual(num(devApi, 'min_capacity'));
 
     // A Spot-only service with no on-demand base goes to zero tasks on one
     // reclaim, and the edge then reports that as MAINTENANCE_MODE.
@@ -240,7 +276,7 @@ describe('api-router worker', () => {
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
     const prodTerraform = readFileSync(
@@ -450,6 +486,64 @@ describe('api-router worker', () => {
     );
 
     expect(proxiedUserAgent).toBeNull();
+  });
+
+  // A GET or HEAD that arrives carrying a body must still reach the origin.
+  // The Workers runtime throws inside `new Request` when a GET/HEAD carries a
+  // body, the origin request is built outside the try/catch, and Cloudflare
+  // answers the client with its bare "error code: 1101" 500 before the origin
+  // ever ran (reproduced on workerd: GET/HEAD with a body returned 500
+  // "TypeError: Request with a GET or HEAD method cannot have a body." at the
+  // origin-request construction). GET and HEAD bodies have no defined
+  // semantics, so the origin request never carries one: the body is dropped
+  // and the content-length that framed it goes with it. Bun's Request
+  // constructor does not enforce the GET/HEAD rule the Workers runtime does,
+  // so the incoming request is modeled by shadowing `body` on a real Request.
+  test.each(['GET', 'HEAD'])('a %s with a body reaches the origin without a body', async (method) => {
+    const incoming = new Request('https://api.kortix.com/v1/projects', { method });
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('unexpected'));
+        controller.close();
+      },
+    });
+    Object.defineProperty(incoming, 'body', { get: () => stream });
+    incoming.headers.set('content-length', '9');
+
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(incoming, env);
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.method).toBe(method);
+    expect(proxiedRequest.body).toBeNull();
+    expect(proxiedRequest.headers.get('content-length')).toBeNull();
+    expect(await proxiedRequest.text()).toBe('');
+  });
+
+  test('a POST body is forwarded to the origin unchanged', async () => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/projects', {
+        method: 'POST',
+        headers: { 'content-length': '7' },
+        body: 'payload',
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.headers.get('content-length')).toBe('7');
+    expect(await proxiedRequest.text()).toBe('payload');
   });
 
   test('routes gateway hostnames to the gateway backend, independent of the API toggle', async () => {
@@ -983,5 +1077,37 @@ describe('api-router worker', () => {
     expect(proxiedUpgrade).toBe('websocket');
     expect(response).toBe(upgradeResponse);
     expect(response.webSocket).toBe(webSocket);
+  });
+
+  describe('/internal edge gate', () => {
+    const gated = { ...env, INTERNAL_EDGE_KEY: 'edge-key-1' };
+    const call = (path, headers = {}, e = gated, host = 'api.kortix.com') => {
+      const seen = [];
+      globalThis.fetch = async (input) => {
+        seen.push(input.headers.get('x-kortix-internal-edge-key'));
+        return new Response('{"principal":null}', { status: 200 });
+      };
+      return worker
+        .fetch(new Request(`https://${host}${path}`, { method: 'POST', headers }), e)
+        .then((response) => ({ response, seen }));
+    };
+
+    test('public caller without the key gets 404 and never reaches the origin', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate');
+      expect(response.status).toBe(404);
+      expect(seen).toEqual([]);
+      expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
+    });
+
+    test('gateway with the key is forwarded and the key is stripped', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
+      expect(response.status).toBe(200);
+      expect(seen).toEqual([null]);
+    });
+
+    test('non-internal paths and an unset key are unaffected', async () => {
+      expect((await call('/v1/health')).response.status).toBe(200);
+      expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
   });
 });

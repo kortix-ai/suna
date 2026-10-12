@@ -84,6 +84,7 @@ describe('qk.project', () => {
       qk.project.appAccess(id, 'app_1'),
       qk.project.appAccessSession(id, 'app_1'),
       qk.project.appDeployments(id, 'app_1'),
+      qk.project.appDeployment(id, 'app_1', 'deployment_1'),
       qk.project.triggers(id),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),
@@ -484,5 +485,112 @@ describe('qk.project.sessionsPaged label filter', () => {
     expect(labeled).not.toEqual(plain);
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: ['eu', 'bug'] })).toEqual(labeled);
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: [] })).toEqual(plain);
+  });
+});
+
+// KRTX-1742. The inbox, the preference record and a session's watch state all
+// answer for the CALLER, so — like `qk.accounts` — the user id is a key
+// segment. Without it, an in-tab identity swap would show user B user A's
+// inbox until the next poll.
+describe('qk.notifications', () => {
+  test('every member partitions by user, and carries the user id as a segment', () => {
+    expect(qk.notifications.inbox('user_a', 20)).not.toEqual(qk.notifications.inbox('user_b', 20) as never);
+    expect(qk.notifications.preferences('user_a')).not.toEqual(qk.notifications.preferences('user_b') as never);
+    expect(qk.notifications.sessionWatch('user_a', 'P1', 'S1')).not.toEqual(
+      qk.notifications.sessionWatch('user_b', 'P1', 'S1') as never,
+    );
+    expect(qk.notifications.inbox('user_a', 20)).toContain('user_a');
+    expect(qk.notifications.preferences('user_a')).toContain('user_a');
+    expect(qk.notifications.sessionWatch('user_a', 'P1', 'S1')).toContain('user_a');
+  });
+
+  test('an unknown user gets its own slot, never a signed-in user\'s', () => {
+    for (const anon of [
+      qk.notifications.inbox(undefined, 20),
+      qk.notifications.inbox(null, 20),
+    ]) {
+      expect(anon).not.toEqual(qk.notifications.inbox('user_a', 20) as never);
+      expect(startsWith(anon, qk.notifications.inbox('user_a', 20))).toBe(false);
+    }
+    expect(qk.notifications.preferences(undefined)).not.toEqual(qk.notifications.preferences('user_a') as never);
+  });
+
+  test('the inbox page size is part of the key', () => {
+    expect(qk.notifications.inbox('user_a', 20)).not.toEqual(qk.notifications.inbox('user_a', 50) as never);
+  });
+
+  test('a session watch key names the project and the session', () => {
+    expect(qk.notifications.sessionWatch('user_a', 'P1', 'S1')).not.toEqual(
+      qk.notifications.sessionWatch('user_a', 'P1', 'S2') as never,
+    );
+    expect(qk.notifications.sessionWatch('user_a', 'P1', 'S1')).not.toEqual(
+      qk.notifications.sessionWatch('user_a', 'P2', 'S1') as never,
+    );
+  });
+
+  test('the three members never collide, whatever the ids', () => {
+    // A user id equal to another member's literal must not alias it.
+    for (const user of ['user_a', 'inbox', 'preferences', 'session-watch']) {
+      const keys = [
+        qk.notifications.inbox(user, 20),
+        qk.notifications.preferences(user),
+        qk.notifications.sessionWatch(user, 'P1', 'S1'),
+      ];
+      for (let i = 0; i < keys.length; i++) {
+        for (let j = 0; j < keys.length; j++) {
+          if (i !== j) expect(startsWith(keys[i]!, keys[j]!)).toBe(false);
+        }
+      }
+    }
+  });
+
+  test('scope() is a strict prefix of every member and never a key itself', () => {
+    const scope = qk.notifications.scope();
+    for (const key of [
+      qk.notifications.inbox('user_a', 20),
+      qk.notifications.inbox(undefined, 20),
+      qk.notifications.preferences('user_a'),
+      qk.notifications.sessionWatch('user_a', 'P1', 'S1'),
+    ]) {
+      expect(startsWith(key, scope)).toBe(true);
+      expect(key.length).toBeGreaterThan(scope.length);
+    }
+  });
+
+  test('is disjoint from the account and project families and from kortixKeys', () => {
+    const mine = [qk.notifications.scope(), qk.notifications.inbox('P1', 20), qk.notifications.sessionWatch('u', 'P1', 'S1')];
+    const others = [
+      qk.accounts.scope(),
+      qk.accounts.list('P1'),
+      qk.projects.scope(),
+      qk.projects.list('P1'),
+      qk.project.scope('P1'),
+      qk.project.session('P1', 'S1'),
+      kortixKeys.projects(),
+      kortixKeys.project('P1'),
+    ];
+    for (const a of mine) {
+      for (const o of others) {
+        expect(startsWith(a, o)).toBe(false);
+        expect(startsWith(o, a)).toBe(false);
+      }
+    }
+  });
+
+  test('a real cache: invalidating scope() reaches every member; a project invalidation reaches none', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const keys = [
+      qk.notifications.inbox('user_a', 20),
+      qk.notifications.preferences('user_a'),
+      qk.notifications.sessionWatch('user_a', 'P1', 'S1'),
+    ];
+    for (const key of keys) client.setQueryData(key, { seeded: true });
+    expect(client.getQueryData(qk.notifications.inbox('user_b', 20))).toBeUndefined();
+
+    await client.invalidateQueries({ queryKey: qk.project.scope('P1') });
+    for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+
+    await client.invalidateQueries({ queryKey: qk.notifications.scope() });
+    for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
   });
 });

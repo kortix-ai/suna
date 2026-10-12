@@ -10,5 +10,10 @@
                 ]
             }
         ]
+    },
+    "webcredentials": {
+        "apps": [
+            "T8G9J33433.com.kortix.app"
+        ]
     }
 }

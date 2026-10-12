@@ -9,7 +9,7 @@ import { ClientAbortError, UpstreamHttpError, isUnknownParameterRejection } from
 import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
-import { clampRetryAfterSeconds, providerClientErrorBody } from './error-response';
+import { MAX_RELAYED_RETRY_AFTER_SECONDS, clampRetryAfterSeconds, providerClientErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
 import { publicUpstreamError, shownModel, shownProvider } from './public-identity';
 
@@ -289,6 +289,33 @@ export async function fallbackCandidates(
   return own;
 }
 
+/** ChatGPT's plan limit window is a week; an account rests at most a week and a day. */
+const MAX_USAGE_LIMIT_REST_SECONDS = 8 * 24 * 60 * 60;
+
+/**
+ * Seconds until a ChatGPT plan limit (`usage_limit_reached`) resets, from its
+ * `resets_in_seconds` or `resets_at`. A pooled account rests that long: a
+ * 30 s rest made every request in the window pay one more refused call.
+ */
+async function usageLimitResetSeconds(failure: Failure): Promise<number | undefined> {
+  const text = failure.response
+    ? await failure.response.clone().text().catch(() => '')
+    : failure.error instanceof UpstreamHttpError ? failure.error.body : '';
+  let error: unknown;
+  try {
+    error = (JSON.parse(text) as { error?: unknown }).error;
+  } catch {
+    return undefined;
+  }
+  if (!error || typeof error !== 'object') return undefined;
+  const { type, resets_in_seconds: inSeconds, resets_at: at } = error as Record<string, unknown>;
+  if (type !== 'usage_limit_reached') return undefined;
+  const seconds =
+    typeof inSeconds === 'number' ? inSeconds : typeof at === 'number' ? at - Date.now() / 1000 : undefined;
+  if (seconds === undefined || !(seconds > 0)) return undefined;
+  return Math.min(MAX_USAGE_LIMIT_REST_SECONDS, Math.ceil(seconds));
+}
+
 function retryAfterOf(failure: Failure): string | null | undefined {
   if (failure.response) return failure.response.headers.get('retry-after');
   return failure.error instanceof UpstreamHttpError ? failure.error.headers?.['retry-after'] : undefined;
@@ -368,8 +395,10 @@ export async function dispatch(
   const notePoolRateLimit = async (failure: Failure): Promise<void> => {
     const secretId = failure.attempt.descriptor.poolSecretId;
     if (!secretId || failure.status !== 429) return;
-    const seconds = clampRetryAfterSeconds(retryAfterOf(failure)) ?? 30;
-    earliestPoolRetryAt = Math.min(earliestPoolRetryAt, Date.now() + seconds * 1000);
+    const seconds = (await usageLimitResetSeconds(failure)) ?? clampRetryAfterSeconds(retryAfterOf(failure)) ?? 30;
+    // OpenCode waits out a retry-after verbatim, so the client hears at most a minute.
+    const clientSeconds = Math.min(seconds, MAX_RELAYED_RETRY_AFTER_SECONDS);
+    earliestPoolRetryAt = Math.min(earliestPoolRetryAt, Date.now() + clientSeconds * 1000);
     if (!ctx.notePoolRateLimit) return;
     try {
       await ctx.notePoolRateLimit(secretId, seconds);

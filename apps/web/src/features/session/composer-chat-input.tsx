@@ -64,6 +64,8 @@ export function ComposerChatInput({
   draftScope,
   draftActive,
   promptAttachments,
+  submitLabel,
+  onArrowUpAtStart,
 }: {
   onSend: (
     text: string,
@@ -123,6 +125,10 @@ export function ComposerChatInput({
   draftActive?: boolean;
   /** Host-owned upload controller. See `SessionChatInputProps.promptAttachments`. */
   promptAttachments?: SessionChatInputProps['promptAttachments'];
+  /** Editing a queued message: the send saves it, so the control says this. */
+  submitLabel?: SessionChatInputProps['submitLabel'];
+  /** Up in an empty composer: open the latest queued message for editing. */
+  onArrowUpAtStart?: SessionChatInputProps['onArrowUpAtStart'];
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -278,6 +284,8 @@ export function ComposerChatInput({
       commands={commands || []}
       draftScope={draftScope}
       draftActive={draftActive}
+      submitLabel={submitLabel}
+      onArrowUpAtStart={onArrowUpAtStart}
     />
   );
 }

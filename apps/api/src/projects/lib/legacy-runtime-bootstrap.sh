@@ -81,8 +81,10 @@ FETCH_TOKEN="$REPAIR_TOKEN"; [ -n "$FETCH_TOKEN" ] || FETCH_TOKEN="$TOKEN"
 [ -n "$FETCH_TOKEN" ] || fail preflight "no credential for the manifest fetch"
 free_mb=$(df -Pm "$STATE_DIR" 2>/dev/null | awk 'NR==2{print $4}')
 [ "${free_mb:-0}" -ge 400 ] || fail preflight "only ${free_mb:-0} MB free under $STATE_DIR"
-MAN=$(curl -fsS --max-time 30 -H "Authorization: Bearer $FETCH_TOKEN" "$API/v1/runtime-assets/manifest") \
-  || fail manifest "manifest fetch from $API failed"
+fetch_manifest() {
+  MAN=$(curl -fsS --max-time 30 -H "Authorization: Bearer $FETCH_TOKEN" "$API/v1/runtime-assets/manifest")
+}
+fetch_manifest || fail manifest "manifest fetch from $API failed"
 field() {
   if command -v python3 >/dev/null 2>&1; then
     printf '%s' "$MAN" | python3 -c 'import json,sys
@@ -114,7 +116,19 @@ if [ -f "$STATE_DIR/agent.current" ] \
    && [ "$(sha256sum "$STATE_DIR/agent.current" | cut -d' ' -f1)" = "$AGENT_SHA" ]; then
   log "agent.current already at $AGENT_SHA"
 else
-  download "$AGENT_PATH" "$AGENT_SHA" "$STATE_DIR/agent.next" || fail agent "agent download failed"
+  # A digest mismatch can mean the manifest and the payload came from different
+  # API builds (a rolling deploy, or a binary rebuilt under the API). Re-read the
+  # manifest once and verify against what it says now; never retry the same digest.
+  if ! download "$AGENT_PATH" "$AGENT_SHA" "$STATE_DIR/agent.next"; then
+    fetch_manifest || fail agent "agent download failed and the manifest re-fetch failed"
+    NEW_SHA=$(field agent sha256); AGENT_PATH=$(field agent path); AGENT_VER=$(field agent version)
+    [ -n "$NEW_SHA" ] && [ "$NEW_SHA" != "$AGENT_SHA" ] || fail agent "agent download failed"
+    log "manifest moved from $AGENT_SHA to $NEW_SHA; retrying the agent download once"
+    AGENT_SHA="$NEW_SHA"
+    BUILD=$(printf '%s' "$MAN" | tr -d '\n ' | sed -n 's/.*"build":\([0-9]*\).*/\1/p')
+    if [ "$EP_SOURCE" = manifest ]; then EP_SHA=$(field entrypoint sha256); EP_PATH=$(field entrypoint path); fi
+    download "$AGENT_PATH" "$AGENT_SHA" "$STATE_DIR/agent.next" || fail agent "agent download failed after a manifest re-fetch"
+  fi
   chmod 0755 "$STATE_DIR/agent.next"
   printf '%s\n' "$AGENT_SHA" > "$STATE_DIR/agent.next.sha256"
   rm -f "$STATE_DIR/agent.pinned"

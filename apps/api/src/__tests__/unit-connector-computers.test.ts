@@ -10,6 +10,11 @@
  *   • label   — duplicate machine names get a numbered label.
  */
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { capabilityForMethod, normalizeDesktopCall } from 'agent-tunnel';
+import cuaDriverTools from '../connectors/cua-driver-tools.generated.json';
+import { validateScopeForOperation } from '../tunnel/core/permission-checker';
 import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../connectors/computers';
 import { extractConnectors } from '../projects/connectors';
 import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../projects/triggers';
@@ -67,6 +72,46 @@ describe('computerCatalog()', () => {
     const a = byPath.get('desktop.cua.call')!;
     expect(a.binding).toEqual({ kind: 'tunnel', method: 'desktop.cua.call' });
     expect(Object.keys((a.inputSchema as any).properties)).toEqual(['tool', 'args']);
+  });
+
+  test('desktop schemas are the pinned driver\'s own: targeting fields present, scroll takes a direction', () => {
+    const pin = /const VERSION = '([^']+)'/.exec(
+      readFileSync(join(import.meta.dir, '../../../desktop-electron/scripts/fetch-cua-driver.js'), 'utf8'),
+    )?.[1];
+    // A driver bump must regenerate the snapshot: node apps/desktop-electron/scripts/dump-cua-tools.js
+    expect(cuaDriverTools.driver_version).toBe(pin!);
+    const schema = (path: string) => byPath.get(path)!.inputSchema as any;
+    for (const tool of ['click', 'type_text', 'press_key', 'hotkey', 'scroll']) {
+      expect(Object.keys(schema(`desktop.cua.${tool}`).properties)).toEqual(
+        expect.arrayContaining(['pid', 'window_id', 'element_token']),
+      );
+    }
+    expect(schema('desktop.cua.scroll').required).toEqual(['direction']);
+    expect(schema('desktop.cua.get_window_state').required).toEqual(['pid', 'window_id']);
+    expect(byPath.get('desktop.cua.health_report')!.binding).toEqual({ kind: 'tunnel', method: 'desktop.cua.health_report' });
+    for (const action of actions.filter((a) => a.path.startsWith('desktop.cua.'))) {
+      expect(JSON.stringify(action.inputSchema ?? {})).not.toContain('"session"');
+    }
+  });
+});
+
+describe('desktop authorization', () => {
+  test('a legacy feature-scoped desktop grant allows every driver tool, listed or not', () => {
+    for (const tool of ['health_report', 'click', 'browser_navigate']) {
+      expect(validateScopeForOperation('desktop', { features: ['screenshot'] } as any, 'cua.call', { tool }).allowed).toBe(true);
+    }
+  });
+
+  test('desktop.cua.<tool> relays as desktop.cua.call, which every installed agent serves', () => {
+    expect(capabilityForMethod('desktop.cua.health_report')).toBe('desktop');
+    expect(capabilityForMethod('desktop.cua.')).toBeNull();
+    expect(normalizeDesktopCall('desktop.cua.hotkey', { keys: ['cmd', 'c'], pid: 7, permissionId: 'p' })).toEqual({
+      method: 'desktop.cua.call',
+      params: { tool: 'hotkey', args: { keys: ['cmd', 'c'], pid: 7 }, permissionId: 'p' },
+    });
+    for (const method of ['desktop.cua.call', 'desktop.cua.describe', 'fs.read']) {
+      expect(normalizeDesktopCall(method, { a: 1 })).toEqual({ method, params: { a: 1 } });
+    }
   });
 });
 
@@ -181,6 +226,7 @@ describe('handleCall — computer (tunnel)', () => {
       expect(result).toEqual({
         status: 'ok', data: discovery.data, risk: 'read',
         account: { connection_id: 'conn-account-1', label: 'Studio Mac', owner_type: 'member' },
+        binding: 'tunnel', output: discovery.data, upstreamStatus: null,
       });
       expect(calls).toEqual([{
         tunnelId: TUNNEL, accountId: 'acct-1', actorUserId: 'u1', projectId: 'proj-1',
@@ -197,6 +243,9 @@ describe('handleCall — computer (tunnel)', () => {
       data: { content: 'hello' },
       risk: 'read',
       account: { connection_id: 'conn-account-1', label: 'Studio Mac', owner_type: 'member' },
+      binding: 'tunnel',
+      output: { content: 'hello' },
+      upstreamStatus: null,
     });
     expect(calls).toEqual([
       {
@@ -219,18 +268,18 @@ describe('handleCall — computer (tunnel)', () => {
     expect(calls).toHaveLength(0);
   });
 
-  for (const kind of ['computer_offline', 'computer_capability_not_approved'] as const) {
+  for (const kind of ['computer_offline', 'computer_capability_not_approved', 'computer_desktop_permission_missing'] as const) {
     test(`${kind} → error reason starts with the code`, async () => {
       const { deps } = makeDeps({ ok: false, kind, message: 'detail' });
       const res = await handleCall(deps, input({ path: '/x' }));
-      expect(res).toEqual({ status: 'error', reason: `${kind}: detail` });
+      expect(res).toEqual({ status: 'error', reason: `${kind}: detail`, binding: 'tunnel' });
     });
   }
 
   test('a relay failure → error with the machine message', async () => {
     const { deps } = makeDeps({ ok: false, kind: 'error', message: 'ENOENT' });
     const res = await handleCall(deps, input({ path: '/x' }));
-    expect(res).toEqual({ status: 'error', reason: 'ENOENT' });
+    expect(res).toEqual({ status: 'error', reason: 'ENOENT', binding: 'tunnel' });
   });
 });
 

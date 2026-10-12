@@ -24,8 +24,8 @@ export const mockRegistry = {
   getCreditBalance: null as ((id: string) => Promise<any>) | null,
   updateCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   upsertCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
-  getYearlyAccountsDueForRotation: null as (() => Promise<any[]>) | null,
-  getFreeAccountsDueForRotation: null as (() => Promise<any[]>) | null,
+  getYearlyAccountsDueForRotation: null as ((after?: string) => Promise<any[]>) | null,
+  getFreeAccountsDueForRotation: null as ((after?: string) => Promise<any[]>) | null,
 
   getPurchaseByPaymentIntent: null as ((id: string) => Promise<any>) | null,
   updatePurchaseStatus: null as ((...args: any[]) => Promise<void>) | null,
@@ -92,10 +92,10 @@ export function registerGlobalMocks() {
       mockRegistry.upsertCreditAccount ? mockRegistry.upsertCreditAccount(id, data) : undefined,
     updateBalance: async () => {},
     getSubscriptionInfo: async () => null,
-    getYearlyAccountsDueForRotation: async () =>
-      mockRegistry.getYearlyAccountsDueForRotation ? mockRegistry.getYearlyAccountsDueForRotation() : [],
-    getFreeAccountsDueForRotation: async () =>
-      mockRegistry.getFreeAccountsDueForRotation ? mockRegistry.getFreeAccountsDueForRotation() : [],
+    getYearlyAccountsDueForRotation: async (after?: string) =>
+      mockRegistry.getYearlyAccountsDueForRotation ? mockRegistry.getYearlyAccountsDueForRotation(after) : [],
+    getFreeAccountsDueForRotation: async (after?: string) =>
+      mockRegistry.getFreeAccountsDueForRotation ? mockRegistry.getFreeAccountsDueForRotation(after) : [],
   }));
 
   mock.module('../../billing/repositories/transactions', () => ({
@@ -162,15 +162,22 @@ export function registerGlobalMocks() {
       delete: () => ({
         where: async () => ({ rowCount: 0 }),
       }),
+      // The sweep soft-deletes the account's sessions before their boxes.
+      update: () => ({
+        set: () => ({
+          where: () => Object.assign(Promise.resolve([]), { returning: async () => [] }),
+        }),
+      }),
       transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
+      // The bounded chunk deletes are raw SQL; a count below the chunk size ends the loop.
+      execute: async () => [],
     };
     return {
       db,
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only
     // `select().from().where()`. Flipping this to true sends the code down real
-    // persistence branches this mock cannot serve (8 createCheckoutSession
-    // tests fail with "Stripe API error" — verified).
+    // persistence branches this mock cannot serve.
       hasDatabase: false,
     };
   });
@@ -203,8 +210,15 @@ export function registerGlobalMocks() {
       mockRegistry.cancelDeletionRequest ? mockRegistry.cancelDeletionRequest(id) : undefined,
     markDeletionCompleted: async (id: string) =>
       mockRegistry.markDeletionCompleted ? mockRegistry.markDeletionCompleted(id) : undefined,
+    countOverdueBacklog: async () => 0,
     getScheduledDeletions: async () =>
       mockRegistry.getScheduledDeletions ? mockRegistry.getScheduledDeletions() : [],
+    // The claim hands back the due request it names, as the real UPDATE does.
+    claimDeletionRequest: async (id: string) =>
+      (mockRegistry.getScheduledDeletions ? await mockRegistry.getScheduledDeletions() : []).find(
+        (row: { id: string }) => row.id === id,
+      ) ?? null,
+    releaseDeletionRequest: async () => undefined,
   }));
 }
 
@@ -219,7 +233,6 @@ export function registerWalletMock() {
 
   mock.module('../../billing/wallet', () => ({ wallet: fakeWallet.wallet }));
   mock.module('../../billing/services/credits', () => ({
-    calculateTokenCost: () => 0,
     getCreditSummary: () => ({ total: 0, daily: 0, monthly: 0, extra: 0 }),
   }));
 }

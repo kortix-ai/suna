@@ -13,7 +13,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
-import { CheckIcon, ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
+import { CaretDownIcon, CaretLeftIcon, CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -94,12 +94,15 @@ interface QuestionPromptProps {
 export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPromptProps>(
   function QuestionPrompt({ request, onReply, onReject, onActionChange }, ref) {
     const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+    const tCommon = useTranslations('common');
     const questions = request.questions;
     const isSingle = questions.length === 1 && !questions[0].multiple;
 
     const [tab, setTab] = useState(0);
     const [answers, setAnswers] = useState<QuestionAnswer[]>(() => questions.map(() => []));
     const [replying, setReplying] = useState(false);
+    // Collapsed hides the body so the transcript gets the height back.
+    const [collapsed, setCollapsed] = useState(false);
 
     const isConfirm = tab === questions.length;
     const currentQuestion = questions[tab] as QuestionInfo | undefined;
@@ -264,165 +267,137 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     if (replying) return null;
 
     // -----------------------------------------------------------------------
-    // Header summary text
+    // Render — the question docks onto the composer card as one surface:
+    // a quiet `2 / 3 · Header` line, the question, then radio rows. Custom
+    // answers are typed in the composer right below.
     // -----------------------------------------------------------------------
 
-    const headerSummary = (() => {
-      if (isSingle) {
-        const q = questions[0];
-        const trimmedHeader = q.header?.trim();
-        if (trimmedHeader && trimmedHeader !== q.question.trim()) {
-          return trimmedHeader;
-        }
-        return 'Question';
-      }
-      const answered = answers.filter((a) => a.length > 0).length;
-      return `${answered} of ${questions.length} answered`;
-    })();
-
-    // -----------------------------------------------------------------------
-    // Render
-    // -----------------------------------------------------------------------
+    const total = questions.length;
+    const stepLabel = isConfirm
+      ? tI18nComplete.raw('texteebdd24a77d9')
+      : currentQuestion?.header?.trim() || '';
+    const collapsedLabel = isConfirm
+      ? stepLabel
+      : (currentQuestion?.question ?? '')
+          .replace(/[*_`#>]/g, '')
+          .split('\n')[0]
+          .trim() || stepLabel;
 
     return (
       <div className="relative isolate z-10 w-full">
-        <div className="flex w-full items-center gap-2 p-2 py-1.5">
-          <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
-            {isSingle ? '' : tI18nComplete('texte870362067ac', { value0: questions.length })}
-            <span className="text-foreground/80 truncate font-medium">{headerSummary}</span>
-          </span>
+        <div className="flex w-full items-center gap-2 px-3 py-1 pr-1.5">
+          {/* The label is the disclosure: it toggles the body. Collapsed, it
+              shows the question itself so the pending ask stays readable. */}
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            aria-controls={`${request.id}-panel`}
+            className="text-muted-foreground hover:text-foreground flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors"
+          >
+            {!isSingle && (
+              <span className="shrink-0 tabular-nums">
+                {Math.min(tab + 1, total)} / {total}
+              </span>
+            )}
+            {(collapsed ? collapsedLabel : stepLabel) && (
+              <span className={cn('min-w-0 truncate', collapsed && 'text-foreground')}>
+                {!isSingle && (
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    ·{' '}
+                  </span>
+                )}
+                {collapsed ? collapsedLabel : stepLabel}
+              </span>
+            )}
+            <CaretDownIcon
+              className={cn(
+                'duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none',
+                collapsed && '-rotate-90',
+              )}
+            />
+          </button>
+          {!isSingle && !collapsed && (
+            <div className="flex shrink-0 items-center">
+              <button
+                type="button"
+                onClick={() => setTab(tab - 1)}
+                disabled={tab === 0}
+                aria-label={tCommon('back')}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-30"
+              >
+                <CaretLeftIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={advanceToNext}
+                disabled={isConfirm || currentAnswers.length === 0}
+                aria-label={tCommon('next')}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-30"
+              >
+                <CaretRightIcon className="size-3.5" />
+              </button>
+            </div>
+          )}
           {/* A real <button>: Enter AND Space activate it natively, and Space no
               longer scrolls the transcript out from under the question. */}
           <button
             type="button"
             onClick={reject}
             aria-label={tI18nComplete.raw('text31d11513a187')}
-            className="text-muted-foreground/40 hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
           >
             <Close className="size-3" />
           </button>
         </div>
 
-        {/* Body — scrollable so long option lists don't blow up the card */}
-        <div className="border-border/30 max-h-[420px] overflow-y-auto border-t">
-          {/* Tab bar (multi-question only) */}
-          {!isSingle && (
-            <div
-              role="tablist"
-              aria-label={tI18nComplete.raw('text9a72221a2747')}
-              className="scrollbar-hide border-border/30 bg-muted/20 flex items-center gap-0.5 overflow-x-auto border-b px-2 py-1"
-            >
-              {questions.map((q, i) => {
-                const isAnswered = (answers[i]?.length ?? 0) > 0;
-                return (
-                  <button
-                    key={q.question}
-                    type="button"
-                    role="tab"
-                    id={`${request.id}-tab-${i}`}
-                    aria-selected={tab === i}
-                    aria-controls={`${request.id}-panel`}
-                    onClick={() => {
-                      setTab(i);
-                    }}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-sm font-medium whitespace-nowrap transition-colors duration-150',
-                      tab === i
-                        ? 'bg-background/80 text-foreground border-border/70'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'flex size-3 shrink-0 items-center justify-center rounded-sm border',
-                        isAnswered
-                          ? 'border-border bg-muted'
-                          : tab === i
-                            ? 'border-foreground/30'
-                            : 'border-border',
-                      )}
-                    >
-                      {isAnswered && <CheckIcon className="text-foreground size-2" />}
-                      {!isAnswered && tab === i && (
-                        <div className="bg-foreground size-0.5 rounded-full" />
-                      )}
-                    </span>
-                    {q.header || `Q${i + 1}`}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                role="tab"
-                id={`${request.id}-tab-confirm`}
-                aria-selected={isConfirm}
-                aria-controls={`${request.id}-panel`}
-                onClick={() => {
-                  setTab(questions.length);
-                }}
-                className={cn(
-                  'cursor-pointer rounded-full border px-2 py-0.5 text-sm font-medium transition-colors duration-150',
-                  isConfirm
-                    ? 'bg-background/80 text-foreground border-border/70'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent',
-                )}
-              >
-                {tI18nComplete.raw('texteebdd24a77d9')}
-              </button>
-            </div>
+        {/* Body — scrollable so long option lists don't blow up the card. The
+            0fr/1fr grid row animates the collapse without measuring height. */}
+        <div
+          className={cn(
+            'duration-normal grid transition-[grid-template-rows] ease-out motion-reduce:transition-none',
+            collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
           )}
-
+        >
           <div
             id={`${request.id}-panel`}
-            role={isSingle ? undefined : 'tabpanel'}
-            aria-labelledby={
-              isSingle
-                ? undefined
-                : isConfirm
-                  ? `${request.id}-tab-confirm`
-                  : `${request.id}-tab-${tab}`
-            }
-            className="px-3 py-2"
+            aria-label={isSingle ? undefined : tI18nComplete.raw('text9a72221a2747')}
+            inert={collapsed}
+            className={cn(
+              'duration-normal min-h-0 overflow-y-auto px-px transition-opacity ease-out motion-reduce:transition-none',
+              collapsed ? 'pb-0 opacity-0' : 'max-h-[420px] pb-1.5',
+            )}
           >
-            {/* Confirm / review tab */}
             {isConfirm ? (
-              <div className="space-y-0.5">
+              <div className="flex flex-col">
                 {questions.map((q, i) => {
                   const ans = answers[i] ?? [];
                   const done = ans.length > 0;
                   return (
-                    <div
+                    <button
                       key={i}
-                      className={cn('flex items-center gap-1.5 py-0.5', !done && 'opacity-40')}
+                      type="button"
+                      onClick={() => setTab(i)}
+                      className="hover:bg-muted/60 flex w-full cursor-pointer items-baseline gap-4 rounded-lg px-3 py-2 text-left transition-colors"
                     >
-                      <span
-                        className={cn(
-                          'flex size-3 shrink-0 items-center justify-center rounded-sm border',
-                          done ? 'border-border bg-muted' : 'border-border',
-                        )}
-                      >
-                        {done && <CheckIcon className="text-foreground size-2" />}
+                      <span className="text-muted-foreground w-28 shrink-0 truncate text-xs">
+                        {q.header || q.question}
                       </span>
                       <span
                         className={cn(
-                          'min-w-0 flex-1 text-sm leading-tight',
+                          'min-w-0 flex-1 truncate text-sm',
                           done ? 'text-foreground' : 'text-muted-foreground',
                         )}
                       >
-                        <span className="block truncate">{q.header || q.question}</span>
+                        {done ? ans.join(', ') : '—'}
                       </span>
-                      <span className="text-muted-foreground max-w-[40%] shrink-0 truncate text-sm">
-                        {ans.length > 0 ? ans.join(', ') : '\u2014'}
-                      </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             ) : currentQuestion ? (
-              <div className="space-y-1">
-                {/* Question text */}
-                <div className="text-foreground/95 max-h-[300px] overflow-y-auto text-xs leading-relaxed font-medium md:text-sm">
+              <div className="flex flex-col gap-1.5">
+                <div className="text-foreground max-h-[300px] overflow-y-auto px-3 text-sm leading-relaxed font-medium">
                   <QuestionMarkdown
                     content={
                       currentQuestion.question +
@@ -431,49 +406,52 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                   />
                 </div>
 
-                {/* Options — compact rows */}
-                <div className="space-y-px">
+                <div className="flex flex-col">
                   {options.map((opt, i) => {
                     const isPicked = currentAnswerSet.has(opt.label);
+                    // Adjacent picked rows join into one block: only the run's
+                    // outer corners stay rounded.
+                    const joinsAbove =
+                      isPicked && currentAnswerSet.has(options[i - 1]?.label ?? '');
+                    const joinsBelow =
+                      isPicked && currentAnswerSet.has(options[i + 1]?.label ?? '');
+                    const { title, recommended } = splitRecommended(opt.label);
                     return (
                       <button
                         key={opt.label}
                         type="button"
-                        aria-pressed={isMulti ? isPicked : undefined}
+                        aria-pressed={isPicked}
                         onClick={() => selectOption(i)}
                         className={cn(
-                          'group flex w-full cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-[color,background-color,border-color,scale] duration-150 ease-out active:scale-[0.998]',
-                          isPicked
-                            ? 'bg-primary/10 border-primary/30'
-                            : 'hover:bg-muted/40 border-transparent',
+                          'group duration-normal flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2 text-left transition-colors ease-out',
+                          isPicked ? 'bg-muted' : 'hover:bg-muted/60',
+                          joinsAbove && 'rounded-t-none',
+                          joinsBelow && 'rounded-b-none',
                         )}
                       >
                         <span
                           className={cn(
-                            'flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors',
+                            'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
                             isPicked
-                              ? 'border-primary/50 bg-primary/10'
-                              : 'border-border group-hover:border-foreground/30',
+                              ? 'bg-foreground border-foreground'
+                              : 'border-muted-foreground/40 group-hover:border-foreground/60',
                           )}
                         >
-                          {isPicked && <CheckIcon className="text-foreground size-2.5" />}
+                          {isPicked && (
+                            <CheckIcon weight="bold" className="text-background size-2.5" />
+                          )}
                         </span>
-                        <span className="min-w-0 text-xs leading-tight">
-                          <span
-                            className={cn(
-                              'font-semibold transition-colors duration-150',
-                              isPicked ? 'text-foreground' : 'text-foreground/80',
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-baseline gap-2">
+                            <span className="text-foreground text-sm font-medium">{title}</span>
+                            {recommended && (
+                              <span className="text-muted-foreground shrink-0 text-xs">
+                                {recommended}
+                              </span>
                             )}
-                          >
-                            {opt.label}
                           </span>
                           {opt.description && (
-                            <span
-                              className={cn(
-                                'ml-1',
-                                isPicked ? 'text-muted-foreground/90' : 'text-muted-foreground',
-                              )}
-                            >
+                            <span className="text-muted-foreground text-xs leading-relaxed">
                               {opt.description}
                             </span>
                           )}
@@ -490,3 +468,10 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     );
   },
 );
+
+/** Agents mark the suggested option by suffixing its label with
+ *  "(Recommended)". Show that as a quiet tag; the reply keeps the raw label. */
+function splitRecommended(label: string): { title: string; recommended: string | null } {
+  const match = /^(.*?)\s*\((Recommended)\)\s*$/i.exec(label);
+  return match ? { title: match[1], recommended: match[2] } : { title: label, recommended: null };
+}

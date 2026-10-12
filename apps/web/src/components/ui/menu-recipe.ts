@@ -40,7 +40,7 @@ export type MenuRowTone = 'default' | 'destructive';
  *   lg  min-h-10  ≈ 37px   touch-first lists
  */
 const MENU_ROW_SIZE: Record<MenuRowSize, string> = {
-  sm: 'min-h-8 py-1',
+  sm: 'min-h-8 py-[0.275rem]',
   md: 'min-h-9 py-1.5',
   lg: 'min-h-10 py-2',
 };
@@ -70,7 +70,7 @@ export const MENU_INSET_END = 'pr-8';
  * inside 14px boxes.
  */
 const MENU_ROW_BASE =
-  "relative flex w-full items-center gap-2 rounded-sm px-2 text-sm font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+  "relative flex w-full items-center gap-2 rounded-sm px-2 text-sm font-medium outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
 /**
  * Keyboard focus and pointer hover resolve to the same treatment on purpose —
@@ -164,11 +164,11 @@ export const MENU_PANEL = cn(FLOATING_PANEL, 'p-1');
  * The animated `MENU_PANEL` / `FLOATING_PANEL` remain for the context menu and
  * the animated hover card.
  */
-export const MENU_PANEL_STATIC = cn(FLOATING_PANEL_SURFACE, 'p-1');
+export const MENU_PANEL_STATIC = cn(FLOATING_PANEL_SURFACE, 'p-1 py-[0.25rem]');
 
 /** Group label: `px-2` matches every row, so labels and rows share a left edge. */
 export const MENU_LABEL = 'text-muted-foreground px-2 py-1 text-xs font-medium tracking-normal';
 
-export const MENU_SEPARATOR = 'bg-border -mx-1.5 my-1.5 h-px';
+export const MENU_SEPARATOR = 'bg-border -mx-1.5 my-1 h-px';
 
 export const MENU_SHORTCUT = 'ml-auto text-xs tracking-widest opacity-60';

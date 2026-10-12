@@ -14,8 +14,9 @@
  *
  * It is the layout of app/projects/[id]/: a nested stack of project home
  * (index), at most one covering route: the open page, thread, or connecting
- * session (view), Sessions, Files, or Account, and the sub-pages pushed over
- * it (page: project Settings, Schedules, Secrets). Every project page shows
+ * session (view), Sessions, Files, Account, or Notifications, and the sub-pages pushed over
+ * it (page: project Settings, Schedules, Secrets; Files over the thread,
+ * from the session ··· sheet). Every project page shows
  * the hamburger and the drawer opens on it, except a sub-page, which shows
  * Go back. Android back from a sub-page pops it; from a covering route it
  * returns to project home; from project home it does nothing. Only the
@@ -25,6 +26,7 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useProjectSessionConnect } from '@/lib/session/project-connect';
+import { markComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { useProjectHomeSend } from '@/components/session/use-project-home-send';
 import { useProjectStack } from '@/components/session/use-project-stack';
 import { View } from 'react-native';
@@ -44,6 +46,7 @@ import {
   PROJECT_ACCOUNT_ROUTE,
   PROJECT_FILES_ROUTE,
   PROJECT_HOME_ROUTE,
+  PROJECT_INBOX_ROUTE,
   PROJECT_PAGE_ROUTE,
   PROJECT_SESSIONS_ROUTE,
   PROJECT_VIEW_ROUTE,
@@ -57,6 +60,7 @@ import {
   drawerThreadMove,
   shownProjectSessionId,
   projectEdgeGesture,
+  projectViewKey,
   type SubPageId,
 } from '@/lib/session/project-stack';
 import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
@@ -95,7 +99,9 @@ import {
   runtimeSessionsOf,
   sessionParentId,
 } from '@kortix/sdk';
-import { KortixProjectProvider } from '@kortix/sdk/react';
+import { KortixProjectProvider, useNotificationInbox } from '@kortix/sdk/react';
+import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
+import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { getSandboxUrl } from '@/lib/platform/client';
@@ -120,14 +126,14 @@ const Pages = {
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
   },
+  get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
+    return require('@/components/pages/FilesNavPage').FilesNavPage;
+  },
   get ReviewPage(): typeof import('@/components/pages/ReviewPage').ReviewPage {
     return require('@/components/pages/ReviewPage').ReviewPage;
   },
   get SettingsNavPage(): typeof import('@/components/pages/SettingsNavPage').SettingsNavPage {
     return require('@/components/pages/SettingsNavPage').SettingsNavPage;
-  },
-  get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
-    return require('@/components/pages/MemoryPage').MemoryPage;
   },
   get AppsPage(): typeof import('@/components/pages/AppsPage').AppsPage {
     return require('@/components/pages/AppsPage').AppsPage;
@@ -206,6 +212,15 @@ export function ProjectScreen() {
   // open and the app is in the foreground, so a home send skips the sandbox
   // boot. Gated by the project's `warm_sessions` flag (billed compute).
   useWarmProjectSession(projectId, project?.experimental?.warm_sessions === true);
+  // KRTX-1742 (the inbox, its drawer pill, reading a session's notifications)
+  // is behind the project's `notification_center` flag, off by default.
+  // Unknown while the project loads: off.
+  const notificationCenterOn = project?.experimental?.notification_center === true;
+  // This phone's opt-outs reach the user's record once, only for a user who
+  // opens such a project.
+  useEffect(() => {
+    if (notificationCenterOn) void carryOverLegacyKinds();
+  }, [notificationCenterOn]);
   // Opening a session any other way uses it: a held warm session with that id
   // is no longer a candidate, so drop it and keep one ready.
   const releaseWarmSession = useCallback((sessionId: string) => {
@@ -252,6 +267,19 @@ export function ProjectScreen() {
   );
   // The same items per originating session: the drawer's Needs you group.
   const needsYouSessions = useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
+
+  // The caller's notifications across every project (KRTX-1742): the drawer's
+  // Notifications count. The Notifications page reads the same query (same
+  // limit). It polls every 60 s while the app is in the foreground, and not
+  // while a root screen covers the project or the flag is off.
+  const inbox = useNotificationInbox({
+    userId,
+    limit: NOTIFICATION_INBOX_LIMIT,
+    enabled: isFocused && notificationCenterOn,
+  });
+  const notificationsUnreadCount = inbox.unreadCount;
+  const inboxRef = useRef(inbox);
+  inboxRef.current = inbox;
 
 
   // ── Handlers (copied verbatim from ProjectScreenLegacy) ──
@@ -363,17 +391,51 @@ export function ProjectScreen() {
   }, [isFocused, shownSessionId]);
   useEffect(() => () => usePushStore.getState().setViewingSessionId(null), []);
 
-  // A tapped notification for this project: open its session, the same path
-  // as the Sessions page. The session already on screen stays as it is.
+  // The session on screen has its notifications read (KRTX-1742). A web tab
+  // does it through its presence lease; the app holds none. Once when a
+  // session comes on screen (a drawer row, the Sessions page, a push tap, a
+  // Notifications row), and again when the inbox shows a new unread row of it
+  // (a push that arrived while the app was open or in the background, then a
+  // refetch). Known to have nothing unread: no request. Keyed by the newest
+  // unread row (the inbox lists newest first): a failed read restores the same
+  // row, and that row is not sent again, so a failing server sees no loop.
+  // Flag off: no read (the disabled inbox is not `isSuccess`, so the check
+  // below would send one).
+  const shownUnreadRowId = shownSessionId
+    ? (inbox.data?.notifications.find((row) => !row.read && row.session_id === shownSessionId)?.id ?? null)
+    : null;
+  const readSessionRef = useRef<string | null>(null);
+  const readSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!notificationCenterOn) return;
+    const opened = readSessionRef.current !== shownSessionId;
+    readSessionRef.current = shownSessionId;
+    if (!shownSessionId || (!opened && !shownUnreadRowId)) return;
+    const sent = `${shownSessionId}:${shownUnreadRowId ?? ''}`;
+    if (!opened && readSentRef.current === sent) return;
+    const { isSuccess, unreadCount, markSessionRead } = inboxRef.current;
+    if (isSuccess && unreadCount === 0) return;
+    readSentRef.current = sent;
+    markSessionRead(shownSessionId).catch(() => {});
+  }, [notificationCenterOn, shownSessionId, shownUnreadRowId]);
+
+  // A tapped notification for this project (a push, or a Notifications row):
+  // open its session, the same path as the Sessions page. The session already
+  // on screen stays as it is. An alert without a session (an automation)
+  // opens the project: back to project home.
   const pushOpen = usePushStore((s) => s.pendingOpen);
   useEffect(() => {
     if (!pushOpen || !projectId || !scopeReady || !isFocused) return;
     const open = usePushStore.getState().takeOpen(projectId);
     if (!open) return;
+    if (!open.sessionId) {
+      returnHome();
+      return;
+    }
     if (drawerSessionRowMove(open.sessionId, shownSessionIdRef.current) === 'open') {
       handleOpenSessionById(open.sessionId);
     }
-  }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
+  }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById, returnHome]);
 
   // A drawer row (the drawer has already closed itself) that targets one
   // runtime session of `ps`: its root (a session row) or a sub-session (a
@@ -418,6 +480,13 @@ export function ProjectScreen() {
     [openThreadFromDrawer]
   );
 
+  // New session (the drawer's button, the Sessions page's pinned one): project
+  // home with the keyboard up, so the next thing is typing the prompt.
+  const startNewSession = useCallback(() => {
+    if (projectId) markComposerFocus(projectId);
+    returnHome();
+  }, [projectId, returnHome]);
+
   // The open session's parent: that parent's children start open in the drawer.
   const activeParentSessionId = activeProjectSession ? sessionParentId(activeProjectSession) : null;
 
@@ -432,9 +501,11 @@ export function ProjectScreen() {
         activeRuntimeSessionId={shownRuntimeId}
         activeParentSessionId={activeParentSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
+        notificationsEnabled={notificationCenterOn}
+        notificationsUnreadCount={notificationsUnreadCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
-        onNewSession={returnHome}
+        onNewSession={startNewSession}
         onOpenProjectSession={openSessionFromDrawer}
         onOpenSubsession={openSubsessionFromDrawer}
         onNavigateRoute={navigateProjectRoute}
@@ -451,8 +522,10 @@ export function ProjectScreen() {
       activeParentSessionId,
       drawerOpen,
       reviewNeedsYouCount,
+      notificationCenterOn,
+      notificationsUnreadCount,
       needsYouSessions,
-      returnHome,
+      startNewSession,
       openSessionFromDrawer,
       openSubsessionFromDrawer,
       navigateProjectRoute,
@@ -468,6 +541,12 @@ export function ProjectScreen() {
     !scopeReady ||
     (!activePageId && !activeSessionId && !connectingProjectSessionId);
   isHomeRef.current = isHome;
+  const viewKey = projectViewKey({
+    isHome,
+    activePageId,
+    activeSessionId,
+    connectingSessionId: connectingProjectSessionId,
+  });
 
   // The thread renders only once the context holds its sandbox. Until then it
   // shows the connecting view, so SessionPage never starts its sync and
@@ -574,8 +653,7 @@ export function ProjectScreen() {
              PageHeader hamburger opens the drawer. A page that takes `onBack`
              gets handlePageBack: back to the thread it was opened over, else
              project home. Entry points: Review (drawer), Browser (a preview
-             card or tool link), a project (a project_select/create tool row).
-             Memory has no entry point (COR-156: re-add one or delete it). */
+             card or tool link), a project (a project_select/create tool row). */
           activePageId === 'page:review' && PAGE_TABS[activePageId] ? (
             <Pages.ReviewPage
               page={PAGE_TABS[activePageId]}
@@ -587,8 +665,6 @@ export function ProjectScreen() {
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:apps' && PAGE_TABS[activePageId] ? (
             <Pages.AppsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
-            <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId.startsWith('page:project:') ? (
             <Pages.ProjectDetailPage
               projectId={activePageId.replace('page:project:', '')}
@@ -701,10 +777,16 @@ export function ProjectScreen() {
           return <Pages.SecretsNavPage page={page} projectId={projectId} onBack={onBack} />;
         case 'page:members':
           return <Pages.MembersNavPage page={page} projectId={projectId} onBack={onBack} />;
+        case 'page:files-nav':
+          return <Pages.FilesNavPage page={page} projectId={projectId} onBack={onBack} />;
       }
     },
     [projectId, openSubPage]
   );
+
+  // The session ··· sheet's Files row (KRTX-1636): the project's Files as a
+  // sub-page over the thread, so back returns to that thread.
+  const openFilesOverThread = useCallback(() => openSubPage('page:files-nav'), [openSubPage]);
 
   // Project home — Kortix symbol, composer.
   // Memoized: a stable element lets React skip home when only `drawerOpen`
@@ -738,9 +820,10 @@ export function ProjectScreen() {
       home: homeContent,
       view: viewContent,
       isHome,
+      viewKey,
       homeKey,
       goHome,
-      newSession: returnHome,
+      newSession: startNewSession,
       onViewCovered: handleViewCovered,
       projectId,
       // Stable: a useCallback whose only dependency is a zustand store action.
@@ -755,9 +838,10 @@ export function ProjectScreen() {
       homeContent,
       viewContent,
       isHome,
+      viewKey,
       homeKey,
       goHome,
-      returnHome,
+      startNewSession,
       handleViewCovered,
       projectId,
       handleOpenProjectSession,
@@ -844,6 +928,7 @@ export function ProjectScreen() {
             <Stack.Screen name={PROJECT_SESSIONS_ROUTE} />
             <Stack.Screen name={PROJECT_FILES_ROUTE} />
             <Stack.Screen name={PROJECT_ACCOUNT_ROUTE} />
+            <Stack.Screen name={PROJECT_INBOX_ROUTE} />
             <Stack.Screen name={PROJECT_PAGE_ROUTE} options={{ gestureEnabled: true }} />
           </Stack>
         </ProjectRouteProvider>
@@ -853,7 +938,7 @@ export function ProjectScreen() {
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the
           Sessions page's long press, and the drawer's session row long press
           all open it through `openSessionActions` (ProjectRouteValue). */}
-      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} />
+      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} onOpenFiles={openFilesOverThread} />
 
       {/* The project/account switcher (COR-124), opened by the drawer's
           switcher row. A picked project closes the drawer too. */}

@@ -10,7 +10,6 @@
 
 import * as React from 'react';
 import { Keyboard, TextInput, View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { MagnifyingGlassIcon as Search, XIcon as X } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
@@ -18,9 +17,9 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import { haptics } from '@/lib/haptics';
-import { THEME } from '@/lib/utils/theme';
+import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
-export interface SearchHeaderProps {
+interface SearchHeaderProps {
   value: string;
   onChangeText: (text: string) => void;
   /** Leave search mode. The screen clears its query and restores the header. */
@@ -34,8 +33,7 @@ export function SearchHeader({
   onCancel,
   placeholder = 'Search',
 }: SearchHeaderProps) {
-  const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
+  const colors = useThemePalette();
 
   const handleCancel = () => {
     haptics.selection();

@@ -8,7 +8,7 @@ import {
 } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { platformDefaultModelId, SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The real upstream provider id for the ChatGPT-subscription lineup served
 // under `codex/<id>` — kept as one named constant so this file, the sandbox
@@ -313,10 +313,15 @@ const EMPTY_CATALOG: Record<string, GatewayModel> = {};
 let cachedRevision = -1;
 let cachedByokAndCodex: Record<string, GatewayModel> = {};
 let cachedFullCatalog: Record<string, GatewayModel> = MANAGED_ONLY;
+// Free tier's project shape: byokAndCodex plus the ONE managed model every tier
+// may use — the platform default (KRTX-1067). Cached per revision like the
+// other shapes so callers can rely on identity.
+let cachedFreeByokAndCodex: Record<string, GatewayModel> = {};
 
 function refreshedCatalogs(): {
   byokAndCodex: Record<string, GatewayModel>;
   full: Record<string, GatewayModel>;
+  freeByokAndCodex: Record<string, GatewayModel>;
 } {
   const revision = runtimeModelCatalog.status().revision;
   if (revision !== cachedRevision) {
@@ -326,22 +331,38 @@ function refreshedCatalogs(): {
       ...gatewayCodexModels(catalog),
     };
     cachedFullCatalog = { ...MANAGED_ONLY, ...cachedByokAndCodex };
+    const defaultId = platformDefaultModelId();
+    const freeDefault = MANAGED_ONLY[defaultId];
+    cachedFreeByokAndCodex = freeDefault
+      ? { ...cachedByokAndCodex, [defaultId]: freeDefault }
+      : cachedByokAndCodex;
     cachedRevision = revision;
   }
-  return { byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
+  return {
+    byokAndCodex: cachedByokAndCodex,
+    full: cachedFullCatalog,
+    freeByokAndCodex: cachedFreeByokAndCodex,
+  };
 }
 
 // `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
 // `freeManagedOnly` (a free-tier account with internal billing on) hides every
-// managed Kortix model. A free user's own connected provider keys still work,
-// but there is no unreliable platform-managed free default.
+// managed Kortix model EXCEPT the platform default — the one managed model every
+// tier may use, which /model-defaults already advertises as free-tier eligible
+// (KRTX-1067). Hiding it left a fresh free account with no model to pick and no
+// way to send. A free user's own connected provider keys still work.
 export function gatewayModelCatalog(
   projectId: string | undefined,
   opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
   const catalogs = refreshedCatalogs();
   if (opts?.freeManagedOnly) {
-    return projectId ? catalogs.byokAndCodex : EMPTY_CATALOG;
+    if (!projectId) {
+      const defaultId = platformDefaultModelId();
+      const freeDefault = MANAGED_ONLY[defaultId];
+      return freeDefault ? { [defaultId]: freeDefault } : EMPTY_CATALOG;
+    }
+    return catalogs.freeByokAndCodex;
   }
   return projectId ? catalogs.full : MANAGED_ONLY;
 }

@@ -41,7 +41,6 @@ import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { flattenModels } from '@/features/session/session-chat-input';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
@@ -96,6 +95,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { openCustomizeSidebar } from '@/stores/sidebar-nav-store';
 import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -125,6 +125,7 @@ import {
 import {
   agentScopedModelSelectionKey,
   contract,
+  flattenModels,
   flattenProjectSessionPages,
   invalidateProject,
   modelProviderMode,
@@ -876,7 +877,7 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
-  // What the active session's runtime serves (E1): a pi session has no compact.
+  // What the active session's runtime serves (E1): a control shows only with its capability.
   const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
@@ -998,7 +999,10 @@ export function CommandPalette() {
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
-  const allModels = useMemo(() => flattenModels(providers), [providers]);
+  const allModels = useMemo(
+    () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
+    [providers],
+  );
   // Only for the persisted selection state (session agent, per-agent model,
   // recents) — model visibility is the server's `enabled` flag on each model,
   // never a store heuristic.
@@ -1384,15 +1388,13 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      // The landing door, NOT `latestProjectPath`: the last-project cookie
-      // names a project in the account just left, which still passes the
-      // ownership check (it's scoped by user, not account) and would open
-      // the wrong account's workspace. Same rule `account-switcher.tsx`
-      // follows after creating an account.
+      // The landing door for THIS account (`?account=`). The plain door
+      // reopened the project the browser remembered, in the account just
+      // left, and set the selected account back to it (KRTX-1731).
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `setSelectedAccountId`. The 'accounts' page effect
       // warms it.
-      router.push(PROJECT_LANDING_PATH);
+      router.push(`${PROJECT_LANDING_PATH}?account=${encodeURIComponent(a.account_id)}`);
       close();
     },
     [setSelectedAccountId, router, close],
@@ -1742,6 +1744,11 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
+  const handleCustomizeSidebar = useCallback(() => {
+    close();
+    openCustomizeSidebar();
+  }, [close]);
+
   const handleTogglePanelMode = useCallback(() => {
     close();
     const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
@@ -2057,6 +2064,7 @@ export function CommandPalette() {
       // the action branch runs — same arrangement as `conversationDensity`.
       reviewChanges: handleReviewChanges,
       toggleSidebar: handleToggleSidebar,
+      customizeSidebar: handleCustomizeSidebar,
       togglePanelMode: handleTogglePanelMode,
       // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
       // before the action branch runs. If that map entry is ever removed, the
@@ -2081,6 +2089,7 @@ export function CommandPalette() {
       handleOpenProjectMembers,
       handleReviewChanges,
       handleToggleSidebar,
+      handleCustomizeSidebar,
       handleTogglePanelMode,
       goToPage,
       handleOpenSessionTerminal,

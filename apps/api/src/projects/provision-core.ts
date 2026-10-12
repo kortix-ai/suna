@@ -21,8 +21,12 @@ import {
   isRetiredManagedProvider,
   parseBasicAuthHeader,
   type GitConnectionRef,
+  type GitHostBackend,
+  type ProvisionedRepo,
+  type UpstreamGit,
 } from './git-backends';
 import {
+  type ManagedRepoSeedState,
   ManagedRepoSeedError,
   buildManagedRepoSeedState,
   pushSeedFiles,
@@ -45,12 +49,7 @@ import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import {
-  enforceProjectQuota,
-  getProjectMemberRole,
-  grantProjectRole,
-  resolveProjectAccount,
-} from './lib/access';
+import { getProjectMemberRole, grantProjectRole, projectQuotaDenial } from './lib/access';
 import {
   buildConnectionRef,
   getProjectGitConnection,
@@ -73,8 +72,12 @@ import {
 } from './lib/provision-idempotency';
 import { normalizeProjectGlyph } from './lib/project-glyph';
 import { normalizeProjectIcon } from './lib/project-icon';
-import { PROJECT_NAME_MAX_LENGTH, normalizeString, serializeProject } from './lib/serializers';
-import { readJsonObject } from '../shared/http-body';
+import {
+  PROJECT_NAME_MAX_LENGTH,
+  type ProjectRow,
+  normalizeString,
+  serializeProject,
+} from './lib/serializers';
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
@@ -97,9 +100,9 @@ const FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000;
  * Kept as a literal union, not `number`, so `c.json(result.body,
  * result.status)` is checked against the route's declared responses instead
  * of a route silently casting the mismatch away with `as never`. 403 is
- * produced here too — `enforceProjectQuota` (`lib/access.ts`) returns a raw
- * `c.json({...}, 403)` `Response` when the account is at its project limit,
- * not only from each route's own pre-`runProvision` `authorize()` gate.
+ * produced here too — `projectQuotaDenial` (`lib/project-quota.ts`) returns the
+ * 403 body when the account is at its project limit, not only from each
+ * route's own pre-`runProvision` `authorize()` gate.
  */
 export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 
@@ -137,28 +140,10 @@ export function createRepoFailureResult(error: unknown): ProvisionResult {
   return { status: 502, body: { error: message } };
 }
 
+/** The request body and the caller's account scope; built by the route (`buildProvisionContext`). */
 export interface ProvisionContext {
-  /**
-   * Hono request context. Kept, rather than reshaped, ONLY so
-   * `enforceProjectQuota(c, accountId)` can stay byte-identical — it already
-   * returns a ready-made `Response`, which `runProvision` unwraps into a
-   * `ProvisionResult` below.
-   */
-  c: any;
   body: Record<string, unknown>;
   scope: { userId: string; accountId: string; accountRole: AccountRole };
-}
-
-/**
- * Reads the request body and resolves the caller's account scope — the part
- * of the old `POST /provision` handler that runs BEFORE the
- * `PROJECT_CREATE` authorization check. Kept out of `runProvision` itself so
- * a caller (either route) can still 403 before any provisioning work starts.
- */
-export async function buildProvisionContext(c: any): Promise<ProvisionContext> {
-  const body = await readJsonObject(c);
-  const scope = await resolveProjectAccount(c, body);
-  return { c, body, scope };
 }
 
 /**
@@ -192,8 +177,186 @@ async function provisionReplayAccess(
 // has no `origin` remote. BYO-repo projects go through POST / and /create-repo.
 export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): Promise<ProvisionResult> {
   emit('validating');
-  const { c, body, scope } = ctx;
+  const { body, scope } = ctx;
 
+  const validated = await validateProvisionRequest(body);
+  if ('result' in validated) return validated.result;
+  const { request } = validated;
+  const { provider, backend, name, sourceItemId, starterTemplate } = request;
+
+  // Managed repo name = a readable slug from the display name + the project's
+  // UUID, so managed repos under the shared org NEVER collide (two projects can
+  // share a name). We generate the project id up front to bake it into the repo
+  // name and reuse it as the project row id.
+  const projectId = randomUUID();
+  const baseSlug = (
+    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
+    'kortix-project'
+  ).slice(0, 40);
+  const repoSlug = `${baseSlug}-${projectId}`;
+  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+
+  const replayed = await replayOrEnforceProjectQuota(ctx, request.idempotencyKey);
+  if (replayed) return replayed;
+
+  const created = await createManagedRepo(emit, request, scope, projectId, repoSlug, defaultBranch);
+  if ('result' in created) return created.result;
+  const { provisioned } = created;
+
+  const authMethod = provider === 'github' ? 'github_app' : 'managed';
+  const now = new Date();
+
+  // A PROJECT ALWAYS HAS A MANIFEST. Seeding is the DEFAULT, not an opt-in.
+  //
+  // `seed_starter` chooses WHO supplies the scaffold — the server here, or a
+  // client that is about to push its own `kortix init` output — never WHETHER
+  // the project gets one. It used to default to false, so a caller who said
+  // nothing (a bare `POST /v1/projects/provision`, an agent, any integration)
+  // got a repo with no kortix.yaml, no agents and no skills, recorded as
+  // `caller_opted_out` so the self-heal skipped it permanently. See
+  // ./managed-repo-seed.ts for the full rule.
+  //
+  // The one opt-out is an EXPLICIT `seed_starter: false` (`kortix ship`, which
+  // pushes its own history with a plain non-force push that a seeded repo would
+  // reject). Even that records `expected: true` with `client_owns_first_commit`,
+  // so a client that never pushes is repaired on next access by
+  // `shouldSelfHealManagedRepoSeed` instead of being left permanently blank —
+  // and the repair re-checks `remoteBranchExists`, so it is a no-op once the
+  // client HAS pushed.
+  //
+  // Resolved BEFORE the insert so the row records the INTENT: a crash between
+  // the insert and a verified seed leaves `{ expected: true, seeded: false }`,
+  // which the same repair path fixes.
+  const clientOwnsFirstCommit = body.seed_starter === false || body.seedStarter === false;
+  const seedStarter = !clientOwnsFirstCommit || !!sourceItemId;
+  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
+  const initialSeedState = buildManagedRepoSeedState(
+    seedStarter
+      ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
+      : { seeded: false, expected: true, reason: 'client_owns_first_commit', at: now.toISOString(), template: starterTemplate },
+  );
+
+  const inserted = await insertProvisionedProject(emit, request, scope, {
+    projectId,
+    provisioned,
+    authMethod,
+    initialSeedState,
+    now,
+  });
+  if ('result' in inserted) return inserted.result;
+  const { row } = inserted;
+  setContextField('projectId', row.projectId);
+
+  await grantProjectRole({
+    accountId: scope.accountId,
+    projectId: row.projectId,
+    userId: scope.userId,
+    role: 'manager',
+    grantedBy: scope.userId,
+  });
+  await upsertProjectGitConnection({
+    accountId: scope.accountId,
+    projectId: row.projectId,
+    provider,
+    repoUrl: provisioned.upstreamUrl,
+    upstreamUrl: provisioned.upstreamUrl,
+    managed: true,
+    repoOwner: provisioned.repoOwner,
+    repoName: provisioned.repoName,
+    externalRepoId: provisioned.externalRepoId,
+    defaultBranch: provisioned.defaultBranch,
+    authMethod,
+    installationId: provisioned.installationId,
+    credentialRef: provisioned.credentialRef,
+    visibility: 'private',
+    status: 'connected',
+    // `seeded: false` used to be hard-coded here and never updated, so the
+    // connection row claimed every project was unseeded — including seeded
+    // ones. Record the seed INTENT instead; the authoritative, updated state
+    // lives on `projects.metadata.git.seed` (see managed-repo-seed.ts).
+    metadata: { seed_expected: initialSeedState.expected },
+  });
+  const connRef = buildConnectionRef(
+    row,
+    getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
+  );
+
+  // Resolve a push credential for seeding / the CLI's first push. The managed
+  // GitHub backend mints an installation token.
+  let internalPushToken = provisioned.initialToken;
+  let exportablePushToken = provisioned.initialToken;
+  if (!internalPushToken) {
+    const resolved = await resolveProjectGitAuth(row);
+    internalPushToken = resolved.auth?.token ?? null;
+    exportablePushToken = resolved.authSource === 'pat'
+      ? null
+      : resolved.auth?.token ?? null;
+  }
+  const writeUpstream = internalPushToken
+    ? backend.buildUpstream(connRef, internalPushToken, 'write')
+    : null;
+  const exportableCredential = exportablePushToken
+    ? parseBasicAuthHeader(
+        backend.buildUpstream(connRef, exportablePushToken, 'write').headers.Authorization,
+      )
+    : null;
+
+  const seeding = await seedProvisionedRepo(emit, request, scope, {
+    seedStarter,
+    marketplaceItems,
+    repoSlug,
+    now,
+    row,
+    provisioned,
+    connRef,
+    writeUpstream,
+    internalPushToken,
+  });
+  if ('result' in seeding) return seeding.result;
+  const { seeded } = seeding;
+
+  if (seeded) {
+    kickProjectTemplatePrebuilds(
+      {
+        projectId: row.projectId,
+        repoUrl: writeUpstream?.url ?? row.repoUrl,
+        defaultBranch: row.defaultBranch,
+        manifestPath: row.manifestPath,
+        gitAuthToken: internalPushToken,
+        gitAuthHeaders: writeUpstream?.headers ?? {},
+      },
+      { accountId: scope.accountId, source: 'project-create' },
+    );
+  }
+
+  return {
+    status: 201,
+    body: {
+      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      push_token: exportablePushToken,
+      git_username: exportableCredential?.username ?? null,
+      repo_id: provisioned.externalRepoId,
+      seeded,
+    },
+  };
+}
+
+/** What a provision request resolved to once every check passed. */
+interface ProvisionRequest {
+  provider: string;
+  backend: GitHostBackend;
+  name: string;
+  idempotencyKey: string | null;
+  icon: string | null;
+  iconGlyph: ReturnType<typeof normalizeProjectGlyph>;
+  sourceItemId: string | null;
+  starterTemplate: ReturnType<typeof normalizeStarterTemplateId>;
+}
+
+/** The request checks. They all run before anything is created upstream. */
+async function validateProvisionRequest(
+  body: Record<string, unknown>,
+): Promise<{ result: ProvisionResult } | { request: ProvisionRequest }> {
   // Managed-git provider, provider-agnostic via the backend registry. GitHub is
   // the default + only active managed backend. Forgejo / Artifacts slot in here
   // as drop-ins.
@@ -204,30 +367,36 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // reason; EXISTING repos on it keep working through their connection row.
   const provider = normalizeString(body.provider) ?? defaultManagedProviderId();
   if (!hasBackend(provider)) {
-    return { status: 400, body: { error: `Unsupported managed git provider "${provider}"` } };
+    return { result: { status: 400, body: { error: `Unsupported managed git provider "${provider}"` } } };
   }
   if (isRetiredManagedProvider(provider)) {
     return {
-      status: 400,
-      body: {
-        error: `Managed git provider "${provider}" is retired — new repositories are provisioned on github`,
+      result: {
+        status: 400,
+        body: {
+          error: `Managed git provider "${provider}" is retired — new repositories are provisioned on github`,
+        },
       },
     };
   }
   const backend = getBackend(provider);
   if (!(await backend.isConfigured())) {
     return {
-      status: 503,
-      body: { error: `Managed git provider "${provider}" is not configured on this server` },
+      result: {
+        status: 503,
+        body: { error: `Managed git provider "${provider}" is not configured on this server` },
+      },
     };
   }
 
   const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
-  if (!name) return { status: 400, body: { error: 'name is required' } };
+  if (!name) return { result: { status: 400, body: { error: 'name is required' } } };
   if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
     return {
-      status: 400,
-      body: { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+      result: {
+        status: 400,
+        body: { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+      },
     };
   }
   // The column is varchar(255); without this check an over-long name (users
@@ -236,8 +405,10 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // repo per retry. Reject BEFORE anything is created upstream.
   if (name.length > PROJECT_NAME_MAX_LENGTH) {
     return {
-      status: 400,
-      body: { error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` },
+      result: {
+        status: 400,
+        body: { error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` },
+      },
     };
   }
 
@@ -247,7 +418,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // quietly unprotected. The LOOKUP happens further down, next to the quota
   // check and before anything exists upstream.
   const idempotency = readProvisionIdempotencyKey(body);
-  if (!idempotency.ok) return { status: 400, body: { error: idempotency.error } };
+  if (!idempotency.ok) return { result: { status: 400, body: { error: idempotency.error } } };
   const idempotencyKey = idempotency.key;
 
   // Optional per-project emoji from the create-project modal. Invalid values
@@ -268,25 +439,32 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   if (sourceItemId) {
     const sourceItem = await getCatalogItemDetail(sourceItemId);
     if (!sourceItem || sourceItem.type !== 'registry:project') {
-      return { status: 400, body: { error: `Unknown or non-cloneable project item "${sourceItemId}"` } };
+      return { result: { status: 400, body: { error: `Unknown or non-cloneable project item "${sourceItemId}"` } } };
     }
   }
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
+  return {
+    request: {
+      provider,
+      backend,
+      name,
+      idempotencyKey,
+      icon,
+      iconGlyph,
+      sourceItemId,
+      starterTemplate,
+    },
+  };
+}
 
-  // Managed repo name = a readable slug from the display name + the project's
-  // UUID, so managed repos under the shared org NEVER collide (two projects can
-  // share a name). We generate the project id up front to bake it into the repo
-  // name and reuse it as the project row id.
-  const projectId = randomUUID();
-  const baseSlug = (
-    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
-    'kortix-project'
-  ).slice(0, 40);
-  const repoSlug = `${baseSlug}-${projectId}`;
-  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
-
+/** Replay the project an idempotency key already made, or refuse an account at its quota. */
+async function replayOrEnforceProjectQuota(
+  ctx: ProvisionContext,
+  idempotencyKey: string | null,
+): Promise<ProvisionResult | null> {
+  const { scope } = ctx;
   // IDEMPOTENCY — MUST STAY ABOVE `backend.createRepo`. Provision mints a
   // brand-new managed repo per call, so a repeat (a reload, a second tab, a
   // retry after a lost response) used to create a genuine duplicate project
@@ -337,27 +515,33 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
     };
   }
 
-  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
+  const provisionQuota = await projectQuotaDenial(scope.accountId);
   if (provisionQuota) {
-    // `enforceProjectQuota` hands back a raw Hono `Response` — `.status` is
-    // a plain `number` at the type level even though its only failure branch
-    // is a literal `403` (see `lib/access.ts`). This is the one place a
-    // `number` from an external `Response` crosses into
-    // `ProvisionResultStatus`; narrowed here instead of widening the field
-    // for every other, fully-literal return in this function.
-    return { status: provisionQuota.status as ProvisionResultStatus, body: await provisionQuota.json() };
+    // The body `enforceProjectQuota` sends as its 403 (see `lib/project-quota.ts`).
+    return { status: 403, body: provisionQuota };
   }
+  return null;
+}
 
+/** Create the managed repository upstream. */
+async function createManagedRepo(
+  emit: ProvisionEmit,
+  { provider, backend }: ProvisionRequest,
+  scope: ProvisionContext['scope'],
+  projectId: string,
+  repoSlug: string,
+  defaultBranch: string,
+): Promise<{ result: ProvisionResult } | { provisioned: ProvisionedRepo }> {
   emit('creating_repository');
-  let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
   try {
-    provisioned = await backend.createRepo({
+    const provisioned = await backend.createRepo({
       accountId: scope.accountId,
       projectId,
       slug: repoSlug,
       defaultBranch,
       isPrivate: true,
     });
+    return { provisioned };
   } catch (error) {
     // Loud, structured, and BEFORE the 502: this was silent from 2026-08-30 to
     // 2026-09-07 while every prod provision died here (a rotated managed-git
@@ -378,42 +562,29 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         ? { retry_after_seconds: error.retryAfterSeconds }
         : {}),
     });
-    return createRepoFailureResult(error);
+    return { result: createRepoFailureResult(error) };
   }
+}
 
-  const authMethod = provider === 'github' ? 'github_app' : 'managed';
-  const now = new Date();
-
-  // A PROJECT ALWAYS HAS A MANIFEST. Seeding is the DEFAULT, not an opt-in.
-  //
-  // `seed_starter` chooses WHO supplies the scaffold — the server here, or a
-  // client that is about to push its own `kortix init` output — never WHETHER
-  // the project gets one. It used to default to false, so a caller who said
-  // nothing (a bare `POST /v1/projects/provision`, an agent, any integration)
-  // got a repo with no kortix.yaml, no agents and no skills, recorded as
-  // `caller_opted_out` so the self-heal skipped it permanently. See
-  // ./managed-repo-seed.ts for the full rule.
-  //
-  // The one opt-out is an EXPLICIT `seed_starter: false` (`kortix ship`, which
-  // pushes its own history with a plain non-force push that a seeded repo would
-  // reject). Even that records `expected: true` with `client_owns_first_commit`,
-  // so a client that never pushes is repaired on next access by
-  // `shouldSelfHealManagedRepoSeed` instead of being left permanently blank —
-  // and the repair re-checks `remoteBranchExists`, so it is a no-op once the
-  // client HAS pushed.
-  //
-  // Resolved BEFORE the insert so the row records the INTENT: a crash between
-  // the insert and a verified seed leaves `{ expected: true, seeded: false }`,
-  // which the same repair path fixes.
-  const clientOwnsFirstCommit = body.seed_starter === false || body.seedStarter === false;
-  const seedStarter = !clientOwnsFirstCommit || !!sourceItemId;
-  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
-  const initialSeedState = buildManagedRepoSeedState(
-    seedStarter
-      ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
-      : { seeded: false, expected: true, reason: 'client_owns_first_commit', at: now.toISOString(), template: starterTemplate },
-  );
-
+/** Insert the project row. The loser of an idempotency-key race deletes the repo it minted. */
+async function insertProvisionedProject(
+  emit: ProvisionEmit,
+  { provider, backend, name, idempotencyKey, icon, iconGlyph }: ProvisionRequest,
+  scope: ProvisionContext['scope'],
+  {
+    projectId,
+    provisioned,
+    authMethod,
+    initialSeedState,
+    now,
+  }: {
+    projectId: string;
+    provisioned: ProvisionedRepo;
+    authMethod: 'github_app' | 'managed';
+    initialSeedState: ManagedRepoSeedState;
+    now: Date;
+  },
+): Promise<{ result: ProvisionResult } | { row: ProjectRow }> {
   const insertProjectRow = () => db
     .insert(projects)
     .values({
@@ -540,75 +711,53 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
     const winnerReplay = classifyProvisionReplay(winner, Date.now());
     if (winnerReplay.kind !== 'replay') {
       return {
-        status: 409,
-        body: { error: 'Another provision with this idempotency_key is in flight', code: 'provision_in_flight' },
+        result: {
+          status: 409,
+          body: { error: 'Another provision with this idempotency_key is in flight', code: 'provision_in_flight' },
+        },
       };
     }
     setContextField('projectId', winnerReplay.project.projectId);
     return {
-      status: 201,
-      body: provisionReplayResponse(
-        winnerReplay.project,
-        await provisionReplayAccess(winnerReplay.project.projectId, scope.userId),
-      ),
+      result: {
+        status: 201,
+        body: provisionReplayResponse(
+          winnerReplay.project,
+          await provisionReplayAccess(winnerReplay.project.projectId, scope.userId),
+        ),
+      },
     };
   }
-  setContextField('projectId', row.projectId);
+  return { row };
+}
 
-  await grantProjectRole({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    userId: scope.userId,
-    role: 'manager',
-    grantedBy: scope.userId,
-  });
-  await upsertProjectGitConnection({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    provider,
-    repoUrl: provisioned.upstreamUrl,
-    upstreamUrl: provisioned.upstreamUrl,
-    managed: true,
-    repoOwner: provisioned.repoOwner,
-    repoName: provisioned.repoName,
-    externalRepoId: provisioned.externalRepoId,
-    defaultBranch: provisioned.defaultBranch,
-    authMethod,
-    installationId: provisioned.installationId,
-    credentialRef: provisioned.credentialRef,
-    visibility: 'private',
-    status: 'connected',
-    // `seeded: false` used to be hard-coded here and never updated, so the
-    // connection row claimed every project was unseeded — including seeded
-    // ones. Record the seed INTENT instead; the authoritative, updated state
-    // lives on `projects.metadata.git.seed` (see managed-repo-seed.ts).
-    metadata: { seed_expected: initialSeedState.expected },
-  });
-  const connRef = buildConnectionRef(
+/** Push and verify the scaffold seed. A failed seed rolls back the repo and the project row. */
+async function seedProvisionedRepo(
+  emit: ProvisionEmit,
+  { backend, name, sourceItemId, starterTemplate }: ProvisionRequest,
+  scope: ProvisionContext['scope'],
+  {
+    seedStarter,
+    marketplaceItems,
+    repoSlug,
+    now,
     row,
-    getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
-  );
-
-  // Resolve a push credential for seeding / the CLI's first push. The managed
-  // GitHub backend mints an installation token.
-  let internalPushToken = provisioned.initialToken;
-  let exportablePushToken = provisioned.initialToken;
-  if (!internalPushToken) {
-    const resolved = await resolveProjectGitAuth(row);
-    internalPushToken = resolved.auth?.token ?? null;
-    exportablePushToken = resolved.authSource === 'pat'
-      ? null
-      : resolved.auth?.token ?? null;
-  }
-  const writeUpstream = internalPushToken
-    ? backend.buildUpstream(connRef, internalPushToken, 'write')
-    : null;
-  const exportableCredential = exportablePushToken
-    ? parseBasicAuthHeader(
-        backend.buildUpstream(connRef, exportablePushToken, 'write').headers.Authorization,
-      )
-    : null;
-
+    provisioned,
+    connRef,
+    writeUpstream,
+    internalPushToken,
+  }: {
+    seedStarter: boolean;
+    marketplaceItems: string[];
+    repoSlug: string;
+    now: Date;
+    row: ProjectRow;
+    provisioned: ProvisionedRepo;
+    connRef: GitConnectionRef;
+    writeUpstream: UpstreamGit | null;
+    internalPushToken: string | null;
+  },
+): Promise<{ result: ProvisionResult } | { seeded: boolean }> {
   // If seeding fails we roll back the orphan repo + project so we never leave a
   // half-created project behind — and, since #5871, "fails" includes "the
   // backend accepted the push but the default branch is not there". A project
@@ -708,7 +857,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
 
       // Same switch as the create-time hint (#6973): a seeded project's FIRST
       // session must already find its base tip + scaffold delta cached.
-      if (config.KORTIX_FAST_GIT_BOOT_ENABLED && writeUpstream) {
+      if (writeUpstream) {
         const hintTask = resolveFastBootGitHintWithCache(
           {
             projectId: row.projectId,
@@ -779,10 +928,12 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         );
       });
       return {
-        status: 502,
-        body: {
-          error: (error as Error).message || 'Failed to seed project repo',
-          code: stage === 'verify' ? 'seed_verification_failed' : 'seed_push_failed',
+        result: {
+          status: 502,
+          body: {
+            error: (error as Error).message || 'Failed to seed project repo',
+            code: stage === 'verify' ? 'seed_verification_failed' : 'seed_push_failed',
+          },
         },
       };
     }
@@ -793,29 +944,5 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       `[projects] provisioned managed repo WITHOUT a scaffold seed project=${row.projectId} account=${scope.accountId} repo=${connRef.repoName ?? connRef.upstreamUrl} — the caller must push the first commit (kortix ship); the project has no default branch yet`,
     );
   }
-
-  if (seeded) {
-    kickProjectTemplatePrebuilds(
-      {
-        projectId: row.projectId,
-        repoUrl: writeUpstream?.url ?? row.repoUrl,
-        defaultBranch: row.defaultBranch,
-        manifestPath: row.manifestPath,
-        gitAuthToken: internalPushToken,
-        gitAuthHeaders: writeUpstream?.headers ?? {},
-      },
-      { accountId: scope.accountId, source: 'project-create' },
-    );
-  }
-
-  return {
-    status: 201,
-    body: {
-      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      push_token: exportablePushToken,
-      git_username: exportableCredential?.username ?? null,
-      repo_id: provisioned.externalRepoId,
-      seeded,
-    },
-  };
+  return { seeded };
 }

@@ -182,6 +182,7 @@ export interface AdminAccountUser {
   providers: string[] | null;
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface AdminAccountSandbox {
   sandboxId: string;
   name: string | null;
@@ -620,7 +621,7 @@ export function useAdminAccountProjects(accountId: string | null) {
   });
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminAccountSandboxes(accountId: string | null) {
   return useRetiredQuery<{ sandboxes: AdminAccountSandbox[] }>('useAdminAccountSandboxes', ['admin', 'accounts', accountId, 'sandboxes'], !!accountId);
 }

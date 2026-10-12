@@ -1,10 +1,12 @@
 import { postTurnStream, relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
+import { flushSessionLogJournal } from '../shared/session-log-journal'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { flattenOpencodeError, type OpencodeTurnError } from './events'
 import { observeIdleForRunaway } from './runaway-turn-guard'
+import { opencodeSessionInFlight } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
@@ -163,6 +165,9 @@ export async function relayTurnEndToApi(
 
   // A credential the API has refused, repeatedly and without contradiction,
   if (sessionTokenPresumedDead()) return
+
+  // The turn's messages go to the session log first (at most 3 s), as on pi.
+  await flushSessionLogJournal()
 
   // This is the ONLY signal that finalizes a turn the agent ended without
   for (let attempt = 1; attempt <= 4; attempt++) {
@@ -335,6 +340,11 @@ export async function reconcileFinishedFirstTurn(
   // Only reconcile a turn that has actually completed; a still-running turn will
   // finalize via its own (now-subscribed) session.idle.
   if (turn.completedAt == null) return
+  // ASK, don't infer: a busy root is running a turn. After a steer the open
+  // step is parented on the steered message, so the scan above reads the step
+  // before it as a finished turn, and a reconnect inside that step ended a
+  // live turn (2026-10-10). Unreadable status keeps the transcript's answer.
+  if ((await opencodeSessionInFlight(opencode.getInternalUrl(), cfg.workspace, rootId)) === true) return
   logger.info('[opencode-events] reconciling turn that completed before subscribe', { rootId, completedAt: turn.completedAt })
   await relayTurnEndToApi(rootId, 'idle', opencode, cfg)
 }

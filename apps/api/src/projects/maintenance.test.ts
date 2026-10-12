@@ -71,7 +71,6 @@ mock.module('../billing/services/compute-metering', () => ({
   tickRunningComputeCharges: tracked({ settled: 0, reconciled: 0 }),
 }));
 mock.module('../snapshots/builder', () => ({
-  ensurePiWorkerImage: async () => undefined,
   reconcileStaleBuilds: tracked({ checked: 0, closedReady: 0, closedFailed: 0 }),
 }));
 mock.module('../snapshots/quota-gc', () => ({

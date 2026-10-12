@@ -91,28 +91,11 @@ describe('burstHasPendingPermission', () => {
 // ─── Entries ─────────────────────────────────────────────────────────────────
 
 describe('activitySheetEntries', () => {
-  test('a thought is listed as "Thinking"; its text is the detail a tap opens', () => {
-    const [entry] = entriesFor([reasoning('**Planning**\n\nFirst read the file.'), tool('bash', 'completed')]);
-    expect(entry).toEqual({
-      kind: 'thought',
-      key: entry.key,
-      title: 'Thinking',
-      body: '**Planning**\n\nFirst read the file.',
-      running: false,
-      openable: true,
-    });
-  });
-
-  test('thought fragments merge into one "Thinking" entry whose body keeps paragraphs', () => {
-    const entries = entriesFor([reasoning('one'), reasoning('two'), tool('bash', 'completed')]);
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({ kind: 'thought', title: 'Thinking', body: 'one\n\ntwo', openable: true });
-  });
-
-  test('a thought with no text yet does not open', () => {
-    const entries = entriesFor([reasoning('   '), tool('bash', 'completed')]);
-    const thought = entries.find((entry) => entry.kind === 'thought');
-    if (thought) expect(thought).toMatchObject({ title: 'Thinking', openable: false });
+  test('thoughts are never entries, whatever their text', () => {
+    const entries = entriesFor([reasoning('**Planning**\n\nFirst read the file.'), reasoning('   '), tool('bash', 'completed')]);
+    expect(entries).toHaveLength(1);
+    expect(entries.every((e) => e.kind === 'tool')).toBe(true);
+    expect(entriesFor([reasoning('only thinking')])).toEqual([]);
   });
 
   test('a same-family group expands into one entry per call', () => {
@@ -160,15 +143,6 @@ describe('activitySheetEntries', () => {
   test('a pending call in a settled turn is not running', () => {
     const entries = entriesFor([tool('bash', 'completed'), tool('bash', 'pending', { command: 'ls' })]);
     expect(entries[1]).toMatchObject({ title: 'Ran ls', running: false });
-  });
-
-  test('only the last thought of a live burst is running', () => {
-    const entries = entriesFor(
-      [reasoning('first', { start: 1 }), tool('bash', 'completed'), reasoning('second', { start: 3 })],
-      true,
-      true,
-    );
-    expect(entries.map((e) => e.running)).toEqual([false, false, true]);
   });
 
   test('a failed call is flagged', () => {

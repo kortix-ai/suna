@@ -39,7 +39,12 @@ describe('connector settings write path', () => {
 
   test('the danger row never mutates directly — only ConfirmDialog does', () => {
     // The visible Remove button only opens the dialog.
-    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
+    const removeButtonStart = source.lastIndexOf('<Button', source.indexOf('setConfirmDelete(true)'));
+    expect(removeButtonStart).toBeGreaterThan(-1);
+    const removeButtonBlock = source.slice(
+      removeButtonStart,
+      source.indexOf('</Button>', removeButtonStart),
+    );
     expect(removeButtonBlock).toContain('onClick={() => setConfirmDelete(true)}');
     expect(removeButtonBlock).not.toContain('remove.mutate()');
 
@@ -56,7 +61,12 @@ describe('connector settings write path', () => {
     // destructive. Scoped to the Remove `<Button>` element itself, not the
     // surrounding prose, which legitimately names "destructive" in a comment
     // explaining this exact rule.
-    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
+    const removeButtonStart = source.lastIndexOf('<Button', source.indexOf('setConfirmDelete(true)'));
+    expect(removeButtonStart).toBeGreaterThan(-1);
+    const removeButtonBlock = source.slice(
+      removeButtonStart,
+      source.indexOf('</Button>', removeButtonStart),
+    );
     expect(removeButtonBlock).not.toContain('variant="destructive"');
   });
 
@@ -94,5 +104,11 @@ describe('connector settings write path', () => {
       )
       .filter((name) => readFileSync(join(root, name), 'utf8').includes('deleteConnector('));
     expect(callers).toEqual(['connectors/detail/connector-settings.tsx']);
+  });
+
+  test('the name is edited here, through a form with a Save button', () => {
+    expect(source).toContain('setConnectorName(projectId, connector.slug, name.trim())');
+    // Save is inert until the name differs from the stored one.
+    expect(source).toContain('disabled={!nameChanged || rename.isPending}');
   });
 });

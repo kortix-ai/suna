@@ -189,6 +189,10 @@ export interface Detail {
   key: string;
   title: string;
   icon?: ReactNode;
+  /** Muted text after the title, such as a count. */
+  meta?: ReactNode;
+  /** Header buttons, placed just before Close. */
+  actions?: ReactNode;
   body: ReactNode;
   /**
    * Suppress the layer's own header. Some bodies bring their own toolbar (the
@@ -564,8 +568,12 @@ export function DetailLayer({
                       <span className="flex min-w-0 items-center gap-2.5">
                         {detail?.icon}
                         <span className="truncate">{detail?.title}</span>
+                        {detail?.meta && <span className="shrink-0 font-normal">{detail.meta}</span>}
                       </span>
-                      <CloseButton onClose={onBack} />
+                      <span className="flex shrink-0 items-center gap-1">
+                        {detail?.actions}
+                        <CloseButton onClose={onBack} />
+                      </span>
                     </DrawerTitle>
                   </DrawerHeader>
                 )}
@@ -680,8 +688,12 @@ export function DetailLayer({
                       <span className="text-foreground truncate text-sm font-semibold">
                         {detail.title}
                       </span>
+                      {detail.meta && <span className="shrink-0">{detail.meta}</span>}
                     </span>
-                    <CloseButton onClose={onBack} />
+                    <span className="flex shrink-0 items-center gap-1">
+                      {detail.actions}
+                      <CloseButton onClose={onBack} />
+                    </span>
                   </div>
                 )}
                 <div
@@ -790,11 +802,18 @@ export function ToolParts({
     (part) => (part.state as { status?: string } | undefined)?.status === 'error',
   );
 
+  // A lone `show` call IS the preview: `ToolPartRenderer` sizes it `h-full`
+  // (`fillsPanel`), and that height only resolves if this column has one too.
+  // Without it the preview's iframe fell back to the browser's 150px default.
+  const fillsPanel =
+    visible.length === 1 && (visible[0].tool === 'show' || visible[0].tool === 'show-user');
+
   return (
     <ToolSurfaceContext.Provider value="panel">
       <div
         className={cn(
           'flex min-w-0 flex-col gap-2',
+          fillsPanel && 'h-full',
           // Tool views cap their own scroll height for the inline chat, where
           // they're one item among many. Here the detail IS the tool — a web
           // search that shows 5 of its 20 results behind an inner scrollbar is

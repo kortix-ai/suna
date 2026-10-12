@@ -108,8 +108,8 @@ describe("keyless image signing", () => {
       'bash scripts/ci/cosign-sign-attest.sh "$REF" sbom.spdx.json',
     );
     expect(yaml).not.toContain("cosign attest --yes --type spdxjson");
-    expect(supplyChain).toContain("uses: actions/checkout@v7");
-    expect(supplyChain.indexOf("uses: actions/checkout@v7")).toBeLessThan(
+    expect(supplyChain).toContain("uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
+    expect(supplyChain.indexOf("uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")).toBeLessThan(
       supplyChain.indexOf("bash scripts/ci/cosign-sign-attest.sh"),
     );
   });
@@ -124,7 +124,7 @@ describe("keyless image signing", () => {
       yaml.indexOf("  supply-chain:"),
       yaml.indexOf("  migrate-db:"),
     );
-    const buildx = supplyChain.indexOf("uses: docker/setup-buildx-action@v4");
+    const buildx = supplyChain.indexOf("uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069");
     const resolve = supplyChain.indexOf("imagetools inspect \"$IMAGE\" --format '{{json .Manifest}}' | jq -r '.digest // empty'");
     expect(buildx).toBeGreaterThan(-1);
     expect(resolve).toBeGreaterThan(-1);

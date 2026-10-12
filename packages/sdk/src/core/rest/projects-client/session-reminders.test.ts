@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createKortix } from '../../client/kortix';
 import { configureKortix } from '../../http/config';
 import type { CreateSessionReminderInput, SessionReminder } from './session-reminders';
@@ -6,8 +6,10 @@ import {
   createSessionReminder,
   listProjectReminders,
   deleteSessionReminder,
+  deleteSessionReminders,
   listSessionReminders,
   updateSessionReminder,
+  updateSessionReminders,
 } from './session-reminders';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -110,4 +112,77 @@ test('listProjectReminders GETs every reminder in the project; the facade binds 
   const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   await kortix.project('p1').reminders.list();
   expect(last().url).toBe('http://test.local/projects/p1/reminders');
+});
+
+describe('reminder batches', () => {
+  const refs = Array.from({ length: 10 }, (_, i) => ({ sessionId: `s${i % 3}`, reminderId: `reminder.${i}` }));
+
+  /** A fetch that holds every request until released, counting how many are in flight. */
+  function heldFetch(fail: (url: string) => boolean = () => false) {
+    let inFlight = 0;
+    let peak = 0;
+    const seen: string[] = [];
+    globalThis.fetch = mock(async (url: unknown, opts: { method?: string } = {}) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      seen.push(`${opts.method} ${String(url)}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      const failed = fail(String(url));
+      return new Response(JSON.stringify(failed ? { error: 'gone' } : { ok: true }), {
+        status: failed ? 404 : 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    return { peak: () => peak, seen };
+  }
+
+  test('updateSessionReminders PATCHes each reminder, at most 4 at a time', async () => {
+    const net = heldFetch();
+    const result = await updateSessionReminders('p1', refs, { enabled: false });
+    expect(net.seen).toHaveLength(10);
+    expect(net.seen.every((call) => call.startsWith('PATCH http://test.local/projects/p1/sessions/s'))).toBe(true);
+    expect(net.seen).toContain('PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.4');
+    expect(net.peak()).toBe(4);
+    expect(result.done).toEqual(refs);
+    expect(result.failed).toEqual([]);
+  });
+
+  test('deleteSessionReminders keeps going past a failure and reports it', async () => {
+    const net = heldFetch((url) => url.endsWith('/reminder.3'));
+    const result = await deleteSessionReminders('p1', refs);
+    expect(net.seen).toHaveLength(10);
+    expect(net.seen.every((call) => call.startsWith('DELETE '))).toBe(true);
+    expect(result.done).toEqual(refs.filter((ref) => ref.reminderId !== 'reminder.3'));
+    expect(result.failed.map((f) => f.reminder)).toEqual([refs[3]!]);
+    expect(result.failed[0]!.error).toBeInstanceOf(Error);
+  });
+
+  test('an empty batch sends nothing', async () => {
+    const net = heldFetch();
+    expect(await deleteSessionReminders('p1', [])).toEqual({ done: [], failed: [] });
+    expect(net.seen).toEqual([]);
+  });
+});
+
+test('kortix.project(id).reminders batches a selection through the facade', async () => {
+  const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const reminders = [
+    { sessionId: 's1', reminderId: 'reminder.a' },
+    { sessionId: 's2', reminderId: 'reminder.b' },
+  ];
+  nextBody = REMINDER;
+  expect(await kortix.project('p1').reminders.updateMany(reminders, { enabled: false })).toEqual({
+    done: reminders,
+    failed: [],
+  });
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.a',
+    'PATCH http://test.local/projects/p1/sessions/s2/reminders/reminder.b',
+  ]);
+  expect(calls[0]!.body).toEqual({ enabled: false });
+  calls = [];
+  nextBody = { ok: true };
+  await kortix.project('p1').reminders.removeMany(reminders);
+  expect(calls.map((c) => c.method)).toEqual(['DELETE', 'DELETE']);
 });

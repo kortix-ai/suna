@@ -723,7 +723,7 @@ function SettingsTabPane({
     return <AppearanceTab />;
   }
   if (item.tab === 'sessions') {
-    return <SessionsTab />;
+    return <SessionsTab projectId={projectId} />;
   }
   if (item.tab === 'preferences') {
     return <PreferencesTab />;

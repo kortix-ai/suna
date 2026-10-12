@@ -160,8 +160,7 @@ export async function readTranscriptPages(
 
 export async function retryTranscriptCapture<T>(
   capture: () => Promise<T | null>,
-  wait: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
+  wait: (ms: number) => Promise<void> = Bun.sleep,
 ): Promise<T | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {

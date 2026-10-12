@@ -2,12 +2,12 @@
  * The activity sheet — what a burst's summary row opens on mobile.
  *
  * A `KortixBottomSheetModal` (40% of the screen, drag up to full) with a
- * timeline of everything the agent did in the burst (`activitySheetEntries`): a
- * thought is a small dot and the label "Thinking", never its content
- * (Jay, 2026-09-22); a tool call is a bordered icon tile and its step label. A
- * thin rail joins the markers. Tapping an entry pushes its detail inside the
- * same sheet: a thought shows its text, a tool call its body. Back returns to
- * the list.
+ * timeline of everything the agent did in the burst (`activitySheetEntries`):
+ * a tool call is a bordered icon tile and its step label. Thinking never
+ * shows. A thin rail joins the markers. A running entry's title shimmers; with
+ * parallel calls only the last running one sweeps, the others hold still.
+ * Tapping an entry pushes its detail, the call's body, inside the same sheet.
+ * Back returns to the list.
  *
  * The title row is the app's one (`SheetTitleRow`): close at the far left, the
  * title centred. In a detail, Back takes the close button's slot.
@@ -23,15 +23,13 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Pressable, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isToolPart, type ToolPart } from '@kortix/sdk';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
-import { TextShimmer } from '@/components/kortix/text-shimmer';
+import { LoopMotionContext, TextShimmer } from '@/components/kortix/text-shimmer';
 import { CodeBlockFullHeightContext } from '@/components/markdown/code-block';
 import { MarkdownActionsProvider, type MarkdownActions } from '@/components/markdown/inline-code';
 import { usePendingPermissions } from '@/lib/session/session-store';
@@ -65,12 +63,10 @@ const SHEET = {
   marker: 24,
   tileRadius: 7,
   tileIcon: 14,
-  dot: 8,
   // Marker to text 16pt (text starts at 58pt); 20pt between entries.
   markerGap: 16,
   entryGap: 20,
-  // Rail clearance from a marker's visible edge: 3pt, the same at a dot and at a
-  // tile. A thought gets no spacing of its own (Jay, 2026-09-22).
+  // Rail clearance from a marker's edge: 3pt.
   railGap: 3,
 } as const;
 
@@ -81,11 +77,6 @@ const SNAP_POINTS = ['40%', '100%'];
 
 function EntryMarker({ entry }: { entry: ActivitySheetEntry }) {
   const palette = useTurnPalette();
-  if (entry.kind === 'thought') {
-    return (
-      <View style={{ width: SHEET.dot, height: SHEET.dot, borderRadius: SHEET.dot / 2, backgroundColor: palette.muted30 }} />
-    );
-  }
   const Icon = ACTIVITY_ICONS[entry.icon];
   return (
     <View
@@ -105,26 +96,19 @@ function EntryMarker({ entry }: { entry: ActivitySheetEntry }) {
   );
 }
 
-/** Distance from the marker box edge to the marker's visible edge. */
-function markerInset(entry: ActivitySheetEntry): number {
-  return entry.kind === 'thought' ? (SHEET.marker - SHEET.dot) / 2 : 0;
-}
-
 const TOOL_TITLE = [TURN_TYPE.sheetEntry, { fontFamily: FONT_MEDIUM }];
 
 function EntryTitle({ entry }: { entry: ActivitySheetEntry }) {
   const palette = useTurnPalette();
-  const thought = entry.kind === 'thought';
-  const style = thought ? TURN_TYPE.sheetEntry : TOOL_TITLE;
   if (entry.running) {
     return (
-      <TextShimmer tone={thought ? 'muted' : 'default'} style={style} numberOfLines={2}>
+      <TextShimmer tone="default" style={TOOL_TITLE} numberOfLines={2}>
         {entry.title}
       </TextShimmer>
     );
   }
   return (
-    <Text numberOfLines={2} style={[style, { color: thought ? palette.mutedForeground : palette.foreground }]}>
+    <Text numberOfLines={2} style={[TOOL_TITLE, { color: palette.foreground }]}>
       {entry.title}
     </Text>
   );
@@ -162,8 +146,8 @@ function TimelineEntry({
               position: 'absolute',
               left: SHEET.marker / 2,
               width: 1,
-              top: SHEET.marker - markerInset(entry) + SHEET.railGap,
-              bottom: SHEET.railGap - markerInset(next),
+              top: SHEET.marker + SHEET.railGap,
+              bottom: SHEET.railGap,
               backgroundColor: palette.border,
             }}
           />
@@ -179,15 +163,6 @@ function TimelineEntry({
 // ─── Detail ──────────────────────────────────────────────────────────────────
 
 function EntryDetail({ entry, context }: { entry: ActivitySheetEntry; context: ActivityContextValue }) {
-  const { colorScheme } = useColorScheme();
-  // The list shows "Thinking"; the thought's text is this detail.
-  if (entry.kind === 'thought') {
-    return (
-      <SelectableMarkdownText isDark={colorScheme === 'dark'} isStreaming={entry.running}>
-        {entry.body}
-      </SelectableMarkdownText>
-    );
-  }
   if (!isToolPart(entry.part)) return null;
   return (
     <ToolDetailContext.Provider value="body">
@@ -299,6 +274,7 @@ function ActivitySheetImpl({
   }, [selectedKey, back, close]);
 
   const selected = selectedKey ? entries.find((entry) => entry.key === selectedKey) : undefined;
+  const lastRunning = entries.map((entry) => entry.running).lastIndexOf(true);
   const contentStyle = {
     paddingHorizontal: SHEET.padX,
     paddingTop: SHEET.padTop,
@@ -330,7 +306,10 @@ function ActivitySheetImpl({
             <ActivitySheetHeader title="Activity" onClose={close} />
             <BottomSheetScrollView contentContainerStyle={contentStyle}>
               {entries.map((entry, index) => (
-                <TimelineEntry key={entry.key} entry={entry} next={entries[index + 1]} onOpen={open} />
+                // Parallel calls run together: only the last running entry sweeps.
+                <LoopMotionContext.Provider key={entry.key} value={index === lastRunning}>
+                  <TimelineEntry entry={entry} next={entries[index + 1]} onOpen={open} />
+                </LoopMotionContext.Provider>
               ))}
             </BottomSheetScrollView>
           </Animated.View>

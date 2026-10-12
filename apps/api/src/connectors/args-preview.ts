@@ -271,10 +271,6 @@ export function buildArgsPreviewDetails(args: unknown): ArgsPreviewDetails {
   };
 }
 
-export function buildArgsPreview(args: unknown): Record<string, unknown> | null {
-  return buildArgsPreviewDetails(args).preview;
-}
-
 /**
  * Can a human actually judge this gated call from what the row recorded?
  *

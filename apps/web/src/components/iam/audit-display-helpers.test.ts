@@ -108,12 +108,6 @@ describe('audit HTTP route registry', () => {
       ).title,
     ).toBe('Updated connector secret binding');
     expect(
-      describeAuditAction(`GET /v1/git/${UID}/compiled-checkout`, testUiTranslator).title,
-    ).toBe('Downloaded compiled project checkout');
-    expect(describeAuditAction(`GET /v1/git/${UID}/compiled-runtime`, testUiTranslator).title).toBe(
-      'Downloaded compiled session runtime',
-    );
-    expect(
       describeAuditAction(`POST /v1/projects/${UID}/attachments`, testUiTranslator).title,
     ).toBe('Started attachment upload');
     expect(
