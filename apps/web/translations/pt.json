@@ -515,8 +515,8 @@
           "label": "Contas conectadas"
         },
         "browsers": {
-          "label": "Extensão do Chrome",
-          "description": "Deixe suas sessões usarem o Chrome, com seus logins. Conecte cada navegador em que a extensão do Kortix está instalada."
+          "label": "Kortix no Chrome",
+          "description": "Suas sessões usam o Chrome com os seus logins. Você vê cada passo."
         },
         "tokens": {
           "label": "Chaves de acesso pessoais",
@@ -1539,7 +1539,8 @@
       "account": "Conta",
       "loadError": "Não foi possível carregar os projetos",
       "createIn": "Criar um projeto em {account}",
-      "localComputer": "Seu computador"
+      "localComputer": "Seu computador",
+      "appsAndExtensions": "Apps e extensões"
     },
     "manifestUpgrade": {
       "title": "Atualizar para v2",
@@ -20268,12 +20269,20 @@
       "label": "Acesso",
       "always": "Sem perguntar",
       "ask": "Perguntar sempre",
-      "off": "Desativado"
+      "off": "Desativado",
+      "description": "Quando uma sessão pode usar este navegador."
     },
     "scope": {
       "label": "Abas",
       "own": "Só as abas que ela abre",
-      "all": "Todas as abas"
+      "all": "Todas as abas",
+      "description": "Quais guias uma sessão pode ver."
+    },
+    "how": {
+      "title": "Como funciona",
+      "group": "Cada sessão trabalha em seu próprio grupo de guias, com um brilho na página.",
+      "control": "Assumir ou Parar pela barra na página, a qualquer momento.",
+      "own": "Somente as suas próprias sessões podem usar o seu navegador."
     }
   },
   "computers": {
@@ -20648,5 +20657,48 @@
     "you": "Você",
     "manageFolderAccess": "Gerenciar acesso",
     "viewFolderAccess": "Ver acesso"
+  },
+  "appsModal": {
+    "title": "Faça mais com o Kortix, onde você trabalha",
+    "name": "Apps e extensões",
+    "mock": {
+      "group": "Kortix · Devolver meu pedido",
+      "button": "Iniciar devolução",
+      "working": "O Kortix está trabalhando",
+      "takeOver": "Assumir",
+      "stop": "Parar"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "description": "O Kortix abre páginas, clica e preenche formulários no seu próprio navegador, com os seus logins. Você vê cada passo.",
+      "add": "Adicionar ao Chrome",
+      "installedConnect": "Já instalou? Conectar",
+      "connect": "Conectar",
+      "connecting": "Conectando…",
+      "manage": "Gerenciar",
+      "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para adicioná-la."
+    },
+    "computer": {
+      "title": "Seu computador",
+      "thisComputer": "Este computador",
+      "thisComputerDescription": "As sessões usam seus arquivos e seu terminal.",
+      "connected": "Conectado",
+      "connect": "Conectar",
+      "manage": "Gerenciar",
+      "desktop": "App para desktop",
+      "desktopDescription": "O Kortix na sua própria máquina.",
+      "desktopRunning": "Você está usando.",
+      "download": "Baixar"
+    },
+    "developers": {
+      "title": "Desenvolvedores",
+      "cli": "Terminal (CLI)",
+      "cliDescription": "macOS e Linux, WSL no Windows",
+      "copy": "Copiar comando",
+      "copied": "Copiado",
+      "mcp": "MCP",
+      "mcpDescription": "Use o Kortix no Claude, Cursor ou Codex.",
+      "connect": "Conectar"
+    }
   }
 }

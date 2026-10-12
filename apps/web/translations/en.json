@@ -368,8 +368,8 @@
           "label": "Connected accounts"
         },
         "browsers": {
-          "label": "Chrome extension",
-          "description": "Let your sessions use Chrome, with your logins. Connect each browser where the Kortix extension is installed."
+          "label": "Kortix in Chrome",
+          "description": "Your sessions use Chrome with your logins. You see every step."
         },
         "tokens": {
           "label": "Personal access keys",
@@ -1539,7 +1539,8 @@
       "account": "Account",
       "loadError": "Failed to load projects",
       "createIn": "Create a project in {account}",
-      "localComputer": "Your computer"
+      "localComputer": "Your computer",
+      "appsAndExtensions": "Apps and extensions"
     },
     "manifestUpgrade": {
       "title": "Upgrade to v2",
@@ -20268,12 +20269,20 @@
       "label": "Access",
       "always": "Without asking",
       "ask": "Ask first",
-      "off": "Off"
+      "off": "Off",
+      "description": "When a session may use this browser."
     },
     "scope": {
       "label": "Tabs",
       "own": "Only tabs it opens",
-      "all": "All tabs"
+      "all": "All tabs",
+      "description": "Which tabs a session can see."
+    },
+    "how": {
+      "title": "How it works",
+      "group": "Each session works in its own tab group, with a glow on the page.",
+      "control": "Take over or Stop from the bar on the page at any time.",
+      "own": "Only your own sessions can use your browser."
     }
   },
   "computers": {
@@ -20648,5 +20657,48 @@
     "you": "You",
     "manageFolderAccess": "Manage access",
     "viewFolderAccess": "See access"
+  },
+  "appsModal": {
+    "title": "Do more with Kortix, everywhere you work",
+    "name": "Apps and extensions",
+    "mock": {
+      "group": "Kortix · Return my order",
+      "button": "Start return",
+      "working": "Kortix is working",
+      "takeOver": "Take over",
+      "stop": "Stop"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "description": "Kortix opens pages, clicks and fills forms in your own browser, with your logins. You see every step.",
+      "add": "Add to Chrome",
+      "installedConnect": "Installed it? Connect",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "manage": "Manage",
+      "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to add it."
+    },
+    "computer": {
+      "title": "Your computer",
+      "thisComputer": "This computer",
+      "thisComputerDescription": "Let sessions use your files and terminal.",
+      "connected": "Connected",
+      "connect": "Connect",
+      "manage": "Manage",
+      "desktop": "Desktop app",
+      "desktopDescription": "Kortix on your own machine.",
+      "desktopRunning": "You are using it.",
+      "download": "Download"
+    },
+    "developers": {
+      "title": "Developers",
+      "cli": "Terminal (CLI)",
+      "cliDescription": "macOS and Linux, WSL on Windows",
+      "copy": "Copy command",
+      "copied": "Copied",
+      "mcp": "MCP",
+      "mcpDescription": "Use Kortix from Claude, Cursor or Codex.",
+      "connect": "Connect"
+    }
   }
 }

@@ -368,8 +368,8 @@
           "label": "Повезани налози"
         },
         "browsers": {
-          "label": "Chrome проширење",
-          "description": "Дозволи да твоје сесије користе Chrome, са твојим пријавама. Повежи сваки прегледач у ком је инсталирано Kortix проширење."
+          "label": "Kortix у Chrome-у",
+          "description": "Твоје сесије користе Chrome са твојим пријавама. Видиш сваки корак."
         },
         "tokens": {
           "label": "Лични приступни кључеви",
@@ -1539,7 +1539,8 @@
       "account": "Налог",
       "loadError": "Учитавање пројеката није успело",
       "createIn": "Направи пројекат у {account}",
-      "localComputer": "Ваш рачунар"
+      "localComputer": "Ваш рачунар",
+      "appsAndExtensions": "Апликације и проширења"
     },
     "manifestUpgrade": {
       "title": "Надогради на v2",
@@ -20268,12 +20269,20 @@
       "label": "Приступ",
       "always": "Без питања",
       "ask": "Питај сваки пут",
-      "off": "Искључено"
+      "off": "Искључено",
+      "description": "Када сесија сме да користи овај претраживач."
     },
     "scope": {
       "label": "Картице",
       "own": "Само картице које отвара",
-      "all": "Све картице"
+      "all": "Све картице",
+      "description": "Које картице сесија може да види."
+    },
+    "how": {
+      "title": "Како функционише",
+      "group": "Свака сесија ради у својој групи картица, са сјајем на страници.",
+      "control": "Преузми контролу или Заустави са траке на страници, у било ком тренутку.",
+      "own": "Само твоје сесије могу да користе твој претраживач."
     }
   },
   "computers": {
@@ -20648,5 +20657,48 @@
     "you": "Ти",
     "manageFolderAccess": "Управљај приступом",
     "viewFolderAccess": "Прикажи приступ"
+  },
+  "appsModal": {
+    "title": "Уради више са Kortix-ом, где год радиш",
+    "name": "Апликације и проширења",
+    "mock": {
+      "group": "Kortix · Врати моју поруџбину",
+      "button": "Покрени повраћај",
+      "working": "Kortix ради",
+      "takeOver": "Преузми контролу",
+      "stop": "Заустави"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "description": "Kortix отвара странице, кликће и попуњава формуларе у твом претраживачу, са твојим пријавама. Видиш сваки корак.",
+      "add": "Додај у Chrome",
+      "installedConnect": "Већ инсталирано? Повежи",
+      "connect": "Повежи",
+      "connecting": "Повезивање…",
+      "manage": "Управљај",
+      "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га додаш."
+    },
+    "computer": {
+      "title": "Твој рачунар",
+      "thisComputer": "Овај рачунар",
+      "thisComputerDescription": "Сесије користе твоје датотеке и терминал.",
+      "connected": "Повезано",
+      "connect": "Повежи",
+      "manage": "Управљај",
+      "desktop": "Апликација за рачунар",
+      "desktopDescription": "Kortix на твом рачунару.",
+      "desktopRunning": "Користиш је.",
+      "download": "Преузми"
+    },
+    "developers": {
+      "title": "Програмери",
+      "cli": "Терминал (CLI)",
+      "cliDescription": "macOS и Linux, WSL на Windows-у",
+      "copy": "Копирај команду",
+      "copied": "Копирано",
+      "mcp": "MCP",
+      "mcpDescription": "Користи Kortix из Claude-а, Cursor-а или Codex-а.",
+      "connect": "Повежи"
+    }
   }
 }

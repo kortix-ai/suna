@@ -74,6 +74,7 @@ import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAppsModalStore } from '@/stores/apps-modal-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -83,6 +84,7 @@ import {
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
   PlusIcon,
+  PuzzlePieceIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -300,6 +302,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     the recipe every menu row in the design system uses for a
                     trailing keystroke. */}
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => useAppsModalStore.getState().setOpen(true))}
+                size="sm"
+              >
+                <PuzzlePieceIcon />
+                {t('workspace.appsAndExtensions')}
               </DropdownMenuItem>
 
               {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits

@@ -16,7 +16,8 @@ import {
 } from '@/components/ui/sidebar';
 import { NotificationBell } from '@/features/notifications/notification-bell';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
-import { BrowserConnectModal } from '@/features/browser/browser-connect';
+import { AppsModal } from '@/features/apps-and-extensions/apps-modal';
+import { useAppsModalStore } from '@/stores/apps-modal-store';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from '@/features/workspace/project-sidebar/footer/project-mcp-nav';
@@ -56,7 +57,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
   // Mounted outside <Sidebar>: the mobile sheet unmounts its content on close.
   const [computerConnectOpen, setComputerConnectOpen] = useState(false);
-  const [browserConnectOpen, setBrowserConnectOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
@@ -287,7 +287,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     onOpenConnect={() => setComputerConnectOpen(true)}
                   />
-                  <ProjectBrowserNavItem onOpenConnect={() => setBrowserConnectOpen(true)} />
+                  <ProjectBrowserNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
                 </SidebarMenu>
               </li>
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
@@ -306,7 +306,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       open={computerConnectOpen}
       onOpenChange={setComputerConnectOpen}
     />
-    <BrowserConnectModal open={browserConnectOpen} onOpenChange={setBrowserConnectOpen} />
+    <AppsModal
+      onOpenComputer={() => setComputerConnectOpen(true)}
+      onOpenMcp={() => setConnectMcpOpen(true)}
+    />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
     <CustomizeSidebarModal projectId={projectId} />
     </>

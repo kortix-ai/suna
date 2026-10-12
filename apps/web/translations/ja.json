@@ -515,8 +515,8 @@
           "label": "接続済みアカウント"
         },
         "browsers": {
-          "label": "Chrome 拡張機能",
-          "description": "セッションがあなたのログイン状態のまま Chrome を使えるようにします。Kortix 拡張機能をインストールしたブラウザーごとに接続します。"
+          "label": "Chrome の Kortix",
+          "description": "セッションがログイン状態のまま Chrome を使います。すべての操作が見えます。"
         },
         "tokens": {
           "label": "個人用アクセスキー",
@@ -1539,7 +1539,8 @@
       "account": "アカウント",
       "loadError": "プロジェクトを読み込めませんでした",
       "createIn": "{account} にプロジェクトを作成",
-      "localComputer": "あなたのコンピューター"
+      "localComputer": "あなたのコンピューター",
+      "appsAndExtensions": "アプリと拡張機能"
     },
     "manifestUpgrade": {
       "title": "v2 にアップグレード",
@@ -20268,12 +20269,20 @@
       "label": "アクセス",
       "always": "確認なし",
       "ask": "毎回確認する",
-      "off": "オフ"
+      "off": "オフ",
+      "description": "セッションがこのブラウザを使える条件。"
     },
     "scope": {
       "label": "タブ",
       "own": "自分で開いたタブのみ",
-      "all": "すべてのタブ"
+      "all": "すべてのタブ",
+      "description": "セッションが見られるタブ。"
+    },
+    "how": {
+      "title": "仕組み",
+      "group": "セッションごとに専用のタブグループで作業し、ページが光ります。",
+      "control": "ページ上のバーからいつでも引き継ぎまたは停止できます。",
+      "own": "あなたのブラウザを使えるのは、あなた自身のセッションだけです。"
     }
   },
   "computers": {
@@ -20648,5 +20657,48 @@
     "you": "あなた",
     "manageFolderAccess": "アクセスを管理",
     "viewFolderAccess": "アクセスを表示"
+  },
+  "appsModal": {
+    "title": "Kortix で、どこでもさらに活用",
+    "name": "アプリと拡張機能",
+    "mock": {
+      "group": "Kortix · 注文を返品する",
+      "button": "返品を開始",
+      "working": "Kortix が作業中",
+      "takeOver": "引き継ぐ",
+      "stop": "停止"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "description": "Kortix があなたのブラウザでページを開き、クリックし、フォームに入力します。ログイン状態はそのまま。すべての操作が見えます。",
+      "add": "Chrome に追加",
+      "installedConnect": "インストール済みですか？接続",
+      "connect": "接続",
+      "connecting": "接続中…",
+      "manage": "管理",
+      "unsupported": "追加するには、Chrome、Edge、Brave、Arc で Kortix を開いてください。"
+    },
+    "computer": {
+      "title": "あなたのコンピューター",
+      "thisComputer": "このコンピューター",
+      "thisComputerDescription": "セッションがあなたのファイルとターミナルを使えます。",
+      "connected": "接続済み",
+      "connect": "接続",
+      "manage": "管理",
+      "desktop": "デスクトップアプリ",
+      "desktopDescription": "あなた自身のマシンで動く Kortix。",
+      "desktopRunning": "使用中です。",
+      "download": "ダウンロード"
+    },
+    "developers": {
+      "title": "開発者",
+      "cli": "ターミナル (CLI)",
+      "cliDescription": "macOS と Linux、Windows は WSL",
+      "copy": "コマンドをコピー",
+      "copied": "コピーしました",
+      "mcp": "MCP",
+      "mcpDescription": "Claude、Cursor、Codex から Kortix を使えます。",
+      "connect": "接続"
+    }
   }
 }
