@@ -19,7 +19,10 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
-import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
+import {
+  acceptedInviteLandingPath,
+  inviteLandingPath,
+} from '@/features/workspace/project-selector/project-selector-model';
 import {
   acceptAccountInvite,
   declineAccountInvite,
@@ -107,7 +110,7 @@ export default function InvitePage() {
     // "wrong account" state instead. Auto-claimed invites (already accepted on
     // first sign-in) use the same destination as a manual accept.
     if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
-    router.replace(inviteLandingPath({ account_id: inv.account_id ?? null }));
+    router.replace(acceptedInviteLandingPath(inv));
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {

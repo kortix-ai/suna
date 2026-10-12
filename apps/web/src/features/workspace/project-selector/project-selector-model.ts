@@ -188,6 +188,23 @@ export function inviteLandingPath(accepted: {
 }
 
 /**
+ * Where a re-opened invite lands when it was accepted before (a second click
+ * on the email link, or an invite the account list claimed): the first project
+ * it names, else the joined account's door — where a fresh accept lands. The
+ * account door alone showed the selector to a project invitee whose account
+ * has several projects.
+ */
+export function acceptedInviteLandingPath(invite: {
+  account_id?: string | null;
+  projects?: ReadonlyArray<{ project_id: string }>;
+}): string {
+  return inviteLandingPath({
+    account_id: invite.account_id ?? null,
+    bootstrap_grants_applied: invite.projects,
+  });
+}
+
+/**
  * `/projects/start` — open a project directly, or show the selector.
  *
  * The selector is skipped only when there is exactly one obvious answer:
