@@ -25,7 +25,25 @@ import {
   sendPrompt,
   waitForAssistantText,
 } from '../fixtures/session-run';
-import { isKe2eRetryableError } from '../core/client';
+import { isKe2eRetryableError, transientRetryDelayMs } from '../core/client';
+
+/**
+ * `fetch` for the idempotent reads and descriptor mints of this file. Bun
+ * reuses a keep-alive socket the edge already closed and then fails with "The
+ * socket connection was closed unexpectedly" (CFG-2, CFG-8 on deployed
+ * staging); the request never reached a handler. Only a transport failure
+ * is repeated, three times at most; any HTTP answer goes back untouched.
+ */
+async function fetchRetryingTransport(url: string, init: RequestInit & { signal?: AbortSignal } = {}): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (attempt >= 3 || init.signal?.aborted) throw error;
+      await sleep(transientRetryDelayMs(attempt));
+    }
+  }
+}
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -382,7 +400,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return { sessionId, secret };
     },
     async descriptor(secret, sessionId, body = {}) {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
         method: 'POST',
         headers: {
           ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
@@ -425,7 +443,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
     async configState(sessionId) {
       const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
-      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(60_000),
       });
@@ -437,7 +455,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return { status: response.status, body: parsed };
     },
     async download(secret, treeId, query = '') {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
         headers: secret ? { Authorization: `Bearer ${secret}` } : {},
         redirect: 'manual',
         signal: AbortSignal.timeout(60_000),
@@ -446,7 +464,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
         // The daemon follows one redirect, with no credentials, to the store.
         const location = response.headers.get('location');
         if (!location) throw new Error('302 without a Location header');
-        const stored = await fetch(location, { signal: AbortSignal.timeout(60_000) });
+        const stored = await fetchRetryingTransport(location, { signal: AbortSignal.timeout(60_000) });
         return { status: stored.status, bytes: Buffer.from(await stored.arrayBuffer()), source: 'redirect' };
       }
       return {
