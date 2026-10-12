@@ -131,18 +131,21 @@ in `references/api-latency-baseline.md`.
 
 ## Your machine is the pre-merge gate
 
-A pull request into `main` runs **no** GitHub Actions job by itself. Every test
-for a change runs in the developer's own box before the merge. CI runs on a
-schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
-them) and on release pull requests into `staging`
-and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
-runs the lanes once (~20 min), `preview` deploys once (~7 min) with no tests. A push
-re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
-fails when a workflow other than the label-gated `tests.yml` and
-`deploy-preview.yml` triggers on a pull request into `main`: put a new check on
-`push: main` or on the release pull requests.
+A pull request into `dev` runs **no** GitHub Actions job by itself. Every test
+for a change runs in the developer's own box before the merge. After the merge,
+every push to `dev` runs all ten `Tests` lanes (queued: one run, at most one
+waiting). That run is the check before staging: a promotion takes only a `dev`
+SHA with a green run, and a red run comments the failing lanes and suspect
+commits once per new set of failing lanes. `CI` and `CodeQL` run weekly on
+`dev` and on release pull requests into `staging` and `prod`. In the rare case
+you want CI before a `dev` merge, add a label: `test` runs the lanes once
+(~20 min), `preview` deploys once (~7 min) with no tests. A push re-runs
+neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts` fails
+when a workflow other than the label-gated `tests.yml` and `deploy-preview.yml`
+triggers on a pull request into `dev`: put a new check on `push: dev` or on the
+release pull requests.
 
-Before a `main` merge, run the narrowest relevant command first, then
+Before a `dev` merge, run the narrowest relevant command first, then
 `pnpm test`. Add the local equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
