@@ -1,5 +1,5 @@
 {
-  "source_hash": "3afea1ac712eb0ed6a532eedeaba96a84b2a724f5c69bb6118cfe64162288e7e",
+  "source_hash": "fecf34325bf2288e67834b582b2c451c7d01b5332e7a6ecd5a3f2ff031931e61",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-presence.test.ts",
     "apps/api/src/projects/routes/session-presence.test.ts",
@@ -19,6 +19,8 @@
     "apps/web/src/features/session/composer/computer-awake.test.ts",
     "apps/web/src/features/session/composer/computer-awake.ts",
     "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/workspace/command-palette-search.test.ts",
+    "apps/web/src/lib/menu-registry.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
@@ -39,13 +41,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/sessions.flow.ts"
   ],
-  "diff_hash": "693b0880b44f4b6acc16f10165718f6065a6afdd791a25794ba7c05adf88b62f",
-  "head": "8f4d3bc3f6728f1ec37adeed23b2d7d79c156fb1",
+  "diff_hash": "34a9cbca6669e5a1b88a367c87b8e488883690650fdfb9b8d97ac6c6a1c478fd",
+  "head": "879693724bcb1644897be7f719a6aa40e2ec52e8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T17:41:50.311Z"
+  "at": "2026-10-12T18:18:23.793Z"
 }
