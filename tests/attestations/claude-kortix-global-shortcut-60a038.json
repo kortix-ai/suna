@@ -1,0 +1,35 @@
+{
+  "source_hash": "570d487f4d6f920fa88546802a4af4d0c83d0440ff17c806ae6ad8772602ae9c",
+  "diff_files": [
+    "apps/desktop-electron/README.md",
+    "apps/desktop-electron/assets/quick-entry.html",
+    "apps/desktop-electron/src/desktop-hardening.test.js",
+    "apps/desktop-electron/src/main.js",
+    "apps/desktop-electron/src/preload.js",
+    "apps/desktop-electron/src/quick-entry-preload.js",
+    "apps/desktop-electron/src/quick-entry-rules.js",
+    "apps/desktop-electron/src/quick-entry-rules.test.js",
+    "apps/desktop-electron/src/quick-entry.js",
+    "apps/web/content/docs/work/sessions.mdx",
+    "apps/web/src/app/[locale]/(app)/layout.tsx",
+    "apps/web/src/app/[locale]/(app)/projects/[id]/project-prefill-contract.test.ts",
+    "apps/web/src/components/desktop/desktop-quick-entry.test.ts",
+    "apps/web/src/components/desktop/desktop-quick-entry.tsx",
+    "apps/web/src/features/workspace/project-layout/project-home.test.tsx",
+    "apps/web/src/features/workspace/project-layout/project-home.tsx",
+    "apps/web/src/lib/desktop.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "apps/web/src/stores/composer-prefill-store.test.ts",
+    "apps/web/src/stores/composer-prefill-store.ts",
+    "tests/e2e/specs/27-desktop-parity.spec.ts"
+  ],
+  "diff_hash": "4626f65f5f6ed477246381ccf50482d6f6eda79010e57e74d80ab2fe435847b9",
+  "head": "453b74c24c26e7df9ba3af01563ee6727fa9313d",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T09:22:11.930Z"
+}
