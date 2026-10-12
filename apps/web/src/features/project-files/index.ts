@@ -46,7 +46,6 @@ export {
   deleteFile,
   downloadFile,
   findFiles,
-  findText,
   getCurrentProject,
   getServerHealth,
   isServerReachable,

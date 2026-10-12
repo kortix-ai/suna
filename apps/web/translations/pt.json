@@ -7903,7 +7903,11 @@
       "line267JsxTextCheckpointHistory": "Histórico de versões",
       "line285JsxTextCopyPath": "Copiar caminho",
       "line396JsxTextThisFolderIsEmpty": "Esta pasta está vazia",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui.",
+      "loadMoreItems": "Carregar mais itens",
+      "loadMoreFailed": "Não foi possível carregar mais itens. Tente novamente.",
+      "partialSortNote": "Mostrando {value0} itens. A ordenação se aplica quando todos os itens forem carregados.",
+      "showingFirstItems": "Mostrando os primeiros {value0} itens"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Clique duas vezes para editar o caminho",
@@ -7995,7 +7999,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Pesquisar arquivos...",
       "line124JsxTextTypeToSearchFiles": "Digite para pesquisar arquivos...",
-      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado"
+      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado",
+      "searchContents": "Pesquisar no conteúdo",
+      "firstMatches": "Mostrando as primeiras {value0} correspondências",
+      "searchContentsPlaceholder": "Pesquisar no conteúdo dos arquivos...",
+      "typeToSearchContents": "Digite para pesquisar no conteúdo dos arquivos...",
+      "noMatchingLines": "Nenhuma linha correspondente"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Já existe um arquivo ou uma pasta com esse nome",

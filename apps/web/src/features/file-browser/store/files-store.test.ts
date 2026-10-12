@@ -52,3 +52,33 @@ test('a store held to `/` (Files) opens any folder, and home is `/`, never /work
   store.getState().navigateToPath('');
   expect(store.getState().currentPath).toBe('/');
 });
+
+// KRTX-1723: a content-search hit opens its file at the matched line. The line
+// belongs to that one file: moving to another file must not scroll it there too.
+test('openFile keeps the target line until another file or the browser shows', () => {
+  const store = createFilesStore();
+  store.getState().openFile('/workspace/a.ts', 42);
+  expect(store.getState().targetLine).toBe(42);
+
+  store.getState().openFileWithList('/workspace/b.ts', ['/workspace/b.ts'], 0);
+  expect(store.getState().targetLine).toBeNull();
+
+  store.getState().openFile('/workspace/a.ts', 7);
+  store.getState().goBackToBrowser();
+  expect(store.getState().targetLine).toBeNull();
+});
+
+test('next and previous file drop the target line', () => {
+  const store = createFilesStore();
+  const list = ['/workspace/a.ts', '/workspace/b.ts'];
+  store.getState().openFileWithList(list[0], list, 0);
+  store.setState({ targetLine: 12 });
+  store.getState().nextFile();
+  expect(store.getState().selectedFilePath).toBe(list[1]);
+  expect(store.getState().targetLine).toBeNull();
+
+  store.setState({ targetLine: 12 });
+  store.getState().prevFile();
+  expect(store.getState().selectedFilePath).toBe(list[0]);
+  expect(store.getState().targetLine).toBeNull();
+});
