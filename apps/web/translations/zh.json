@@ -1632,7 +1632,19 @@
       "tooMany": "每个会话最多 20 个标签。"
     },
     "drive": "云盘",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "自定义侧边栏",
+    "customizeSidebarDescription": "在两个分组之间拖动项目。",
+    "resetSidebar": "恢复默认",
+    "reorderItem": "重新排序 {name}",
+    "reorderHint": "拖动以重新排序。也可按上下方向键；越过“更多”分隔线会将项目从侧边栏隐藏。",
+    "reorderAnnouncement": "{name}：{group}，第 {position} 位，共 {total} 位",
+    "more": "更多",
+    "inSidebar": "侧边栏",
+    "underMore": "更多",
+    "sidebarEmpty": "将项目拖到这里以在侧边栏中显示。",
+    "moreEmpty": "将项目拖到这里以移入“更多”。",
+    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。"
   },
   "dashboard": {
     "title": "仪表板",
@@ -19541,7 +19553,9 @@
       "text8d54763edcd8": "未挂载",
       "textffeb0c99532f": "快照保留 {value0} 天",
       "text6f52b07880a0": "立即创建快照",
-      "text91dc861375bc": "已查看移动端发布策略"
+      "text91dc861375bc": "已查看移动端发布策略",
+      "texta37dd5ef6ef2": "自定义侧边栏",
+      "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

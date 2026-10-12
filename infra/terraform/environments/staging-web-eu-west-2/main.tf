@@ -1,10 +1,11 @@
 # ── staging-web-eu-west-2 — staging's ECS web service in eu-west-2 ──────────
 #
-# Copy of ../staging-web in eu-west-2, next to ../staging-eu-west-2 and the
-# staging database. It reads that root's VPC (kortix-staging-euw2-vpc) and the
-# secret kortix-staging-euw2-web-env in eu-west-2. Its origin hostname is
-# staging-fe-ecs-euw2.kortix.com. staging-fe-ecs.kortix.com points at
-# ../staging-web until the switch-over in ../staging-eu-west-2/README.md.
+# Runs next to ../staging-eu-west-2 and the staging database. It reads that
+# root's VPC (kortix-staging-euw2-vpc) and the secret
+# kortix-staging-euw2-web-env in eu-west-2. Its origin hostname is
+# staging-fe-ecs-euw2.kortix.com. staging-fe-ecs.kortix.com is a CNAME that
+# Deploy Staging's publish-web-ecs-dns job points at this root's ALB
+# (infra/scripts/sync-web-dns.mjs).
 
 terraform {
   required_version = ">= 1.5"

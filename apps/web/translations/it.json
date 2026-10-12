@@ -1632,7 +1632,19 @@
       "tooMany": "Una sessione ha al massimo 20 etichette."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizza barra laterale",
+    "customizeSidebarDescription": "Trascina gli elementi tra i due gruppi.",
+    "resetSidebar": "Ripristina predefiniti",
+    "reorderItem": "Riordina {name}",
+    "reorderHint": "Trascina per riordinare. Oppure usa i tasti freccia su e giù; superare «Altro» nasconde l'elemento dalla barra laterale.",
+    "reorderAnnouncement": "{name}: {group}, posizione {position} di {total}",
+    "more": "Altro",
+    "inSidebar": "Barra laterale",
+    "underMore": "Altro",
+    "sidebarEmpty": "Trascina qui un elemento per mostrarlo nella barra laterale.",
+    "moreEmpty": "Trascina qui un elemento per spostarlo in Altro.",
+    "moreCaption": "Gli elementi in Altro si aprono dal menu Altro, sotto la navigazione."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19541,7 +19553,9 @@
       "text8d54763edcd8": "Non montato",
       "textffeb0c99532f": "Snapshot conservati {value0} giorni",
       "text6f52b07880a0": "Crea snapshot ora",
-      "text91dc861375bc": "Criteri di versione mobile visualizzati"
+      "text91dc861375bc": "Criteri di versione mobile visualizzati",
+      "texta37dd5ef6ef2": "Personalizza barra laterale",
+      "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -26,6 +26,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Conversation Density': 'textd0fffb7fa940',
   'Credits & usage': 'text23715dba027a',
   Customize: 'textc5276e27afba',
+  'Customize Sidebar': 'texta37dd5ef6ef2',
   'Dark Theme': 'text6f2a09157622',
   Dashboard: 'text67b696468610',
   Desktop: 'text9bd88f2485ac',
@@ -122,6 +123,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'service manager services orchestration process manager sandbox active restart reload':
     'text5844ecb027f7',
   'sessions runs threads conversations open': 'text390ae89f8320',
+  'sidebar customize reorder hide show navigation rows': 'text8c712bd7c1ec',
   'skills abilities': 'text871b6d3b6b19',
   'support help faq contact refund bug report issue question': 'text45a12827a72e',
   'switch workspace workspaces project projects change move open all list': 'text544792b85010',

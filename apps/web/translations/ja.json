@@ -1632,7 +1632,19 @@
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
     },
     "drive": "ドライブ",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "サイドバーをカスタマイズ",
+    "customizeSidebarDescription": "2つのグループ間で項目をドラッグします。",
+    "resetSidebar": "デフォルトに戻す",
+    "reorderItem": "{name} を並べ替え",
+    "reorderHint": "ドラッグして並べ替えます。上下の矢印キーでも移動でき、「その他」の区切りを越えるとサイドバーから非表示になります。",
+    "reorderAnnouncement": "{name}：{group}、{total} 件中 {position} 番目",
+    "more": "その他",
+    "inSidebar": "サイドバー",
+    "underMore": "その他",
+    "sidebarEmpty": "ここに項目をドラッグするとサイドバーに表示されます。",
+    "moreEmpty": "ここに項目をドラッグすると「その他」に移動します。",
+    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -19541,7 +19553,9 @@
       "text8d54763edcd8": "未マウント",
       "textffeb0c99532f": "スナップショットを {value0} 日保持",
       "text6f52b07880a0": "今すぐスナップショット",
-      "text91dc861375bc": "モバイルのリリースポリシーを表示しました"
+      "text91dc861375bc": "モバイルのリリースポリシーを表示しました",
+      "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
+      "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

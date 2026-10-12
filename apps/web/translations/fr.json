@@ -1632,7 +1632,19 @@
       "tooMany": "Une session a au plus 20 libellés."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personnaliser la barre latérale",
+    "customizeSidebarDescription": "Faites glisser les éléments d'un groupe à l'autre.",
+    "resetSidebar": "Rétablir par défaut",
+    "reorderItem": "Déplacer {name}",
+    "reorderHint": "Faites glisser pour réorganiser. Ou utilisez les flèches haut et bas ; dépasser « Plus » masque l'élément de la barre latérale.",
+    "reorderAnnouncement": "{name} : {group}, position {position} sur {total}",
+    "more": "Plus",
+    "inSidebar": "Barre latérale",
+    "underMore": "Plus",
+    "sidebarEmpty": "Déposez un élément ici pour l'afficher dans la barre latérale.",
+    "moreEmpty": "Déposez un élément ici pour le placer dans Plus.",
+    "moreCaption": "Les éléments dans Plus s'ouvrent depuis le menu Plus, sous la navigation."
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -19541,7 +19553,9 @@
       "text8d54763edcd8": "Non monté",
       "textffeb0c99532f": "Instantanés conservés {value0} jours",
       "text6f52b07880a0": "Prendre un instantané",
-      "text91dc861375bc": "Politique de version mobile consultée"
+      "text91dc861375bc": "Politique de version mobile consultée",
+      "texta37dd5ef6ef2": "Personnaliser la barre latérale",
+      "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
