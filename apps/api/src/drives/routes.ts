@@ -8,7 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { requireFeatureFlag } from '../feature-flags/gate';
-import { volumesEnabledForFresh } from '../platform/services/boot-mode-setting';
+import { ensureBootModePolicyFresh, volumesEnabledForFresh } from '../platform/services/boot-mode-setting';
 import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -350,6 +350,12 @@ drivesApp.use('*', combinedAuth);
 // A session's folders reach it as mounts; its sandbox token has no reason to
 // browse the project's Files over the API.
 drivesApp.use('*', rejectSandboxTokens);
+// Files is gated on the Volumes policy; read it fresh so an instance with a
+// stale or cold cache never answers "not enabled" right after a flip.
+drivesApp.use('*', async (_c, next) => {
+  await ensureBootModePolicyFresh();
+  await next();
+});
 drivesApp.use('*', async (c, next) => {
   if (c.get('authType') === 'pat' && c.get('sessionId')) fail(403, 'Session tokens cannot access Files');
   await next();
