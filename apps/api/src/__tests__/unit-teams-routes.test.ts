@@ -62,7 +62,7 @@ mock.module('../channels/teams/dispatch', () => ({
 /** The bring-your-own path's project: the endpoint answers only for a UUID. */
 const PROJECT = '11111111-2222-4333-8444-555555555555';
 
-await import('../channels/teams/routes');
+(await import('../channels/teams/routes')).registerTeamsWebhookRoutes();
 const { teamsWebhookApp } = await import('../channels/teams/app');
 
 beforeEach(() => {

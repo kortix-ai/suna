@@ -83,23 +83,3 @@ export function resolveEnablement(
   const byDefault = defaultEnabledFromCatalog(catalog, alwaysOn);
   return new Map(Object.keys(catalog).map((id) => [id, overrides[id] ?? byDefault.has(id)]));
 }
-
-/**
- * Models a routing policy points at, which the project is therefore configured
- * to route to. Hiding one of these would hide a model the project's own
- * routing rules produce.
- */
-export function routingReferencedModels(
-  policy: {
-    visionModel?: string | null;
-    defaultFallback?: { models: string[] } | null;
-    rules?: Array<{ model: string; fallbackModels: string[] }>;
-  } | null,
-): string[] {
-  if (!policy) return [];
-  return [
-    policy.visionModel,
-    ...(policy.defaultFallback?.models ?? []),
-    ...(policy.rules?.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
-  ].filter((model): model is string => !!model);
-}

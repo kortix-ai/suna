@@ -35,13 +35,14 @@ for (const View of [DriveGridView, DriveListView]) {
         const focus = mock();
         const select = mock();
         const range = mock();
+        const open = mock();
         const frames: FrameRequestCallback[] = [];
         const timers: (() => void)[] = [];
         globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
         globalThis.setTimeout = Object.assign((callback: TimerHandler) => { if (typeof callback === 'function') timers.push(() => callback()); return 1; }, { __promisify__: originalTimeout.__promisify__ });
         act(() => { renderer = create(
           <FilesStoreProvider><View elevatedDirs={[]} dirs={type === 'directory' ? [node] : []} files={type === 'file' ? [node] : []}
-            onNavigateToDir={noop} onOpenFile={noop} onPreviewFile={noop} onDownload={noop} onDownloadDir={noop}
+            onNavigateToDir={open} onOpenFile={open} onPreviewFile={open} onDownload={noop} onDownloadDir={noop}
             onRename={rename} onDelete={noop} onHistory={noop} onCopy={noop} onCut={noop} onDropMove={move} onDropUpload={upload}
             gitStatusMap={new Map()} isDirDownloading={() => false} readOnly={readOnly} /></FilesStoreProvider>,
           { createNodeMock: (element) => element.type === 'input' ? { value: node.name, focus, select, setSelectionRange: range } : null },
@@ -56,7 +57,7 @@ for (const View of [DriveGridView, DriveListView]) {
           expect(timers).toHaveLength(1);
           act(() => timers.shift()?.());
         };
-        return { rename, move, upload, focus, select, range, frames, row, input, start };
+        return { rename, move, upload, focus, select, range, open, frames, row, input, start };
       };
       test('delayed rename, double RAF, selection and drag/click suppression', () => {
         const s = setup(); s.start();
@@ -81,6 +82,21 @@ for (const View of [DriveGridView, DriveListView]) {
           });
         }
       }
+      test('Enter and the blur that follows rename once; Escape then blur renames nothing', () => {
+        const s = setup(); s.start();
+        act(() => s.input().props.onChange({ target: { value: 'changed' } }));
+        const { onKeyDown, onBlur } = s.input().props;
+        act(() => onKeyDown({ key: 'Enter', nativeEvent: { isComposing: false } }));
+        act(() => onBlur());
+        expect(s.rename.mock.calls).toEqual([[node, 'changed']]);
+
+        s.start();
+        act(() => s.input().props.onChange({ target: { value: 'other' } }));
+        const cancel = s.input().props;
+        act(() => cancel.onKeyDown({ key: 'Escape', nativeEvent: { isComposing: false } }));
+        act(() => cancel.onBlur());
+        expect(s.rename).toHaveBeenCalledTimes(1);
+      });
       test('IME Enter does not commit; Escape has the existing layout-specific IME guard', () => {
         const s = setup(); s.start();
         act(() => s.input().props.onChange({ target: { value: 'changed' } }));
@@ -90,6 +106,15 @@ for (const View of [DriveGridView, DriveListView]) {
         expect(renderer.root.findAllByType('input')).toHaveLength(View === DriveGridView ? 1 : 0);
         if (View === DriveGridView) act(() => s.input().props.onKeyDown({ key: 'Escape', nativeEvent: { isComposing: false } }));
         expect(s.rename).not.toHaveBeenCalled();
+      });
+      test('a click bubbling up from the menu portal does not also open the item', () => {
+        // React bubbles a portalled menu item's click through the tree: Remove
+        // used to open the preview over its own delete confirmation.
+        const s = setup();
+        act(() => s.row().props.onClick({ currentTarget: { contains: () => false }, target: {} }));
+        expect(s.open).not.toHaveBeenCalled();
+        act(() => s.row().props.onClick({ currentTarget: { contains: () => true }, target: {} }));
+        expect(s.open).toHaveBeenCalledTimes(1);
       });
       test('drag start sets both payloads and end clears opacity', () => {
         const s = setup(); const setData = mock(); const dataTransfer = { setData, effectAllowed: '' };

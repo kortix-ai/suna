@@ -4,7 +4,7 @@
  *
  * That split is load-bearing, not cosmetic. `routes/preview.ts` binds its
  * collaborators (`../projects/lib/sandbox-env-sync`, `session-token-grant`,
- * `opencode-session-snapshot`, `../../config`, `../backend`, `../../iam`, …) at
+ * `../../config`, `../backend`, `../../iam`, …) at
  * module-evaluation time, and every sibling proxy suite replaces exactly those
  * modules with `mock.module` before importing the route. Bun's module registry
  * is PROCESS-wide and a module evaluates once: any test file that imports
@@ -18,7 +18,8 @@
  * So this module holds the pure predicates and the injectable turn-start block,
  * and imports NOTHING that a proxy suite mocks as a value:
  *  - the four collaborators are `import type` only (erased at runtime) and are
- *    passed in as `PrePromptEnvSyncDeps` — the real set lives in the route;
+ *    passed in as `PrePromptEnvSyncDeps` — the real set lives in
+ *    `forward/turn-start.ts`;
  *  - `secret-grant`, `session-token-grant` (the error classes) and
  *    `session-title-generate` (`extractPromptInfo`) are imported for real, and
  *    no proxy suite mocks any of them.
@@ -36,7 +37,6 @@ import {
   SessionGrantRemintError,
   type remintGrantForAgentSwitch,
 } from '../projects/lib/session-token-grant';
-import type { scheduleOpencodeSnapshotSync } from '../projects/opencode-session-snapshot';
 import {
   extractPromptInfo,
   type generateSessionTitleFromFirstPrompt,
@@ -312,13 +312,12 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * silently blanked the real module for every sibling suite that ran after it in
  * the same process (4 unrelated `backend.test.ts` / `wake-deadline-guard.test.ts`
  * cases went red with `Received: 0` — their spies never fired). Passing the
- * collaborators in keeps the seam local to one call. Same pattern as
- * `scheduleOpencodeSnapshotSync`'s `options.loadRow ?? loadRow`.
+ * collaborators in keeps the seam local to one call.
  *
  * There is deliberately NO default value: a default would have to name the four
  * real modules here, and evaluating this file would then cache them before a
  * sibling suite's `mock.module` could replace them — the very contamination the
- * split exists to prevent. The REAL set is built in `routes/preview.ts`, which
+ * split exists to prevent. The REAL set is built in `forward/turn-start.ts`, which
  * every sibling re-evaluates under its own mocks.
  *
  * `extractPromptInfo` is deliberately NOT here. Whether a body yields prompt text
@@ -329,7 +328,6 @@ export interface PrePromptEnvSyncDeps {
   syncEnv: typeof syncSandboxEnvForPrompt;
   remintGrant: typeof remintGrantForAgentSwitch;
   bindTurnIdentity: typeof bindSessionTurnIdentity;
-  scheduleSnapshot: typeof scheduleOpencodeSnapshotSync;
   generateTitle: typeof generateSessionTitleFromFirstPrompt;
 }
 
@@ -400,15 +398,6 @@ export async function runPrePromptEnvSync(
       modelHint: prompt.model ?? undefined,
     });
   }
-  // `userId` is load-bearing, not decorative: without it the snapshot cannot
-  // pull the projection from the box, so a child spawned this turn never
-  // lands. See scheduleOpencodeSnapshotSync.
-  deps.scheduleSnapshot({
-    sessionId: record.sessionId,
-    projectId: record.projectId,
-    accountId: record.accountId,
-    userId,
-  });
   try {
     // NOT R2 material, on purpose — `command-env-sync.test.ts` ("Refused
     // BEFORE the grant re-mint — one switch never half-applies") pins this:

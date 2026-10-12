@@ -15,7 +15,6 @@ describe('billing mutation callback contract', () => {
   for (const [name, hook, failureKey] of [
     ['cancel', hooks.useCancelSubscription, 'text2b41749fceaa'],
     ['reactivate', hooks.useReactivateSubscription, 'text5051e9e23edf'],
-    ['schedule', hooks.useScheduleDowngrade, 'text645418722dbb'],
     ['cancel scheduled', hooks.useCancelScheduledChange, 'text9118f944fba6'],
   ] as const) {
     test(`${name}: invalidates and reports both response outcomes and errors`, () => {

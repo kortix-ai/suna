@@ -4,7 +4,8 @@
  * Driven through the hermetic CLI subprocess fixture (fixtures/cli.ts).
  *
  * Runnable-now (no live git backend needed):
- *   - SHIP-7  `ship -n/--dry-run`  → prints would-be calls, NO side effects.
+ *   - SHIP-7  `ship -n/--dry-run`  → prints would-be calls, NO side effects;
+ *             an 11 MiB file in Git → the `kortix validate` size warning.
  *             (Logged in; the managed first-ship dry-run resolves the account via
  *             GET /accounts/me then prints the plan and returns before any write.)
  *   - SHIP-8  guards: not a Kortix dir → error; not logged in → "run kortix login".
@@ -35,6 +36,9 @@
  * target with the git backend (and, for CR, sandbox/session) wired. Gated flows
  * are green-or-skipped locally and exercise the real path on dev-api.
  */
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { assert } from '../core/expect';
@@ -106,6 +110,22 @@ flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
           '',
           remote.stdout.toString().trim(),
         );
+      },
+    );
+
+    await ctx.step(
+      'ship -n with an 11 MiB file in Git → repository size warning naming it, exit 0',
+      async () => {
+        writeFileSync(join(sb.cwd, 'intro.mp4'), Buffer.alloc(11 * 1024 * 1024));
+        const r = await sb.run(['ship', '-n', '-y']);
+        checkExit('exit 0 (a warning never blocks)', r, 0);
+        check(
+          'warns about the large file',
+          r.all.includes('large static files are in Git') && r.all.includes('intro.mp4 (11.0 MiB)'),
+          true,
+          r.all.slice(0, 1_500),
+        );
+        check('recommends object storage', r.all.includes('object storage'), true, r.all.slice(0, 1_500));
       },
     );
   } finally {

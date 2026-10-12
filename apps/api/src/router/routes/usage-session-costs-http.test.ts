@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -79,8 +80,17 @@ mock.module('../../middleware/auth', () => ({
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../middleware/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
+}));
+
+// #9272: account-wide usage reads require `billing.read`. Record the check.
+const authorizedActions: string[] = [];
+mock.module('../../iam/authorize', () => ({
+  ...realAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    authorizedActions.push(action);
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -159,13 +169,14 @@ beforeEach(() => {
 
 describe('GET /v1/usage/session-costs', () => {
   test('uses pagination defaults and returns the complete list envelope', async () => {
+    // A project read resolves the account from the project (#9272).
     const response = await createTestApp().request(
-      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs?project_id=${PROJECT_ID}`,
     );
 
     expect(response.status).toBe(200);
     expect(listInput).toMatchObject({
-      accountId: ACCOUNT_ID,
+      accountId: SECONDARY_ACCOUNT_ID,
       projectId: PROJECT_ID,
       limit: 25,
       offset: 0,
@@ -427,12 +438,12 @@ describe('SESSION_COST_SORTS', () => {
 describe('GET /v1/usage/session-costs/{sessionId}', () => {
   test('passes account and project scope to the detail service', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/session-costs/${SESSION_ID}?account_id=${ACCOUNT_ID}&project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs/${SESSION_ID}?account_id=${SECONDARY_ACCOUNT_ID}&project_id=${PROJECT_ID}`,
     );
 
     expect(response.status).toBe(200);
     expect(detailInput).toEqual({
-      accountId: ACCOUNT_ID,
+      accountId: SECONDARY_ACCOUNT_ID,
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
     });
@@ -441,6 +452,15 @@ describe('GET /v1/usage/session-costs/{sessionId}', () => {
       model_usage: [],
       ledger_entries: [],
     });
+  });
+
+  test('returns 404 when account_id names another account than the project\'s (#9272)', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs/${SESSION_ID}?account_id=${ACCOUNT_ID}&project_id=${PROJECT_ID}`,
+    );
+
+    expect(response.status).toBe(404);
+    expect(detailInput).toBeNull();
   });
 
   test('returns 404 when the session is outside the resolved scope', async () => {

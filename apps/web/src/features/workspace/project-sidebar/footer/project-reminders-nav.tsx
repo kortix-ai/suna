@@ -1,13 +1,10 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import {
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { Badge } from '@/components/ui/badge';
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
+import type { SidebarNavVisibility } from '@/stores/sidebar-nav-store';
 import { useTranslations } from '@/i18n/use-translations';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon } from '@phosphor-icons/react';
@@ -15,14 +12,20 @@ import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
 /**
- * The Reminders entry. Present only while the `reminders` feature flag is on
- * and the project has a reminder that can
+ * The Reminders entry. Present only while the `reminders` feature flag is on.
+ * With the default `visibility="active"` it also needs a reminder that can
  * still fire (active or paused): a project that never uses reminders gets no
- * dead row. The badge counts active reminders — each one is a future model
- * turn, which is the thing worth seeing at a glance. Same `HoverPrefetchLink`
- * contract as the Files row.
+ * dead row. `always` lists it whenever the flag is on. The badge counts active reminders — each one is a future model
+ * turn, which is the thing worth seeing at a glance. The count is the same
+ * tinted tabular `Badge` as the Review row, in purple: "scheduled", not the
+ * Review row's amber "waiting on you". Same `HoverPrefetchLink` contract as
+ * the Files row.
  */
-export function ProjectRemindersNavItem() {
+export function ProjectRemindersNavItem({
+  visibility = 'active',
+}: {
+  visibility?: SidebarNavVisibility;
+}) {
   const t = useTranslations('sidebar');
   const pathname = usePathname();
   const projectId = useParams<{ id: string }>()?.id;
@@ -39,7 +42,8 @@ export function ProjectRemindersNavItem() {
   const list = reminders.data?.reminders ?? [];
   const activeCount = list.filter((reminder) => reminder.state === 'active').length;
   const live = list.some((reminder) => reminder.state !== 'done');
-  if (!projectId || !gate.enabled || (!live && !isActive)) return null;
+  if (!projectId || !gate.enabled || visibility === 'never') return null;
+  if (visibility === 'active' && !live && !isActive) return null;
 
   return (
     <SidebarMenuItem>
@@ -50,11 +54,23 @@ export function ProjectRemindersNavItem() {
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={`/projects/${projectId}/reminders`} prefetch onClick={handleClick}>
-          <AlarmIcon />
-          {t('reminders')}
+          <span className="shrink-0">
+            <AlarmIcon />
+          </span>
+          <span className="truncate">{t('reminders')}</span>
+          {activeCount > 0 ? (
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              <Badge
+                variant="transparent"
+                size="tabular"
+                className="bg-kortix-purple/15 text-current"
+              >
+                {activeCount > 99 ? '99+' : activeCount}
+              </Badge>
+            </span>
+          ) : null}
         </HoverPrefetchLink>
       </SidebarMenuButton>
-      {activeCount > 0 ? <SidebarMenuBadge>{activeCount}</SidebarMenuBadge> : null}
     </SidebarMenuItem>
   );
 }

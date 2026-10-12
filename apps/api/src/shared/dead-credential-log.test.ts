@@ -39,11 +39,11 @@ const { installHttpErrors } = await import('../http-errors');
 // What resolvePat throws for a dead credential: the typed deadCredential401
 // body, marked. middleware/auth.test.ts pins that deadCredential401 itself
 // marks; this file pins what the mark does at the error handler.
-function deadCredential401Like(): HTTPException {
+function deadCredential401Like(message = 'PAT not found or revoked'): HTTPException {
   const err = new HTTPException(401, {
-    message: 'PAT not found or revoked',
+    message,
     res: new Response(
-      JSON.stringify({ error: true, message: 'PAT not found or revoked', status: 401, code: 'session_token_revoked' }),
+      JSON.stringify({ error: true, message, status: 401, code: 'session_token_revoked' }),
       { status: 401, headers: { 'content-type': 'application/json' } },
     ),
   });
@@ -169,6 +169,24 @@ describe('dead-credential exceptions are marked and throttled at the error handl
       const response = await app.request(`/v1/projects/${projectId}/turn-stream`, { method: 'POST' });
       expect(response.status).toBe(401);
       expect((await response.json()).code).toBe('session_token_revoked');
+    }
+    expect(logged.slice(before).filter((entry) => entry.level === 'warn')).toHaveLength(1);
+  });
+
+  test('refusals naming different revoked tokens share one window (KRTX-1564)', async () => {
+    // The named refusal carries the dead row's id in the message. The throttle
+    // key must normalize it out — otherwise every revoked token shards its own
+    // bucket and the KRTX-1039 burst protection stops bounding the warn lines.
+    resetDeadCredentialLogForTests();
+    const app = new OpenAPIHono();
+    installHttpErrors(app);
+    app.post('/v1/projects/:projectId/turn-stream', () => {
+      throw deadCredential401Like(`project token ${crypto.randomUUID()} is revoked`);
+    });
+    const before = logged.length;
+    for (let i = 0; i < 15; i += 1) {
+      const res = await app.request('/v1/projects/p/turn-stream', { method: 'POST' });
+      expect(res.status).toBe(401);
     }
     expect(logged.slice(before).filter((entry) => entry.level === 'warn')).toHaveLength(1);
   });

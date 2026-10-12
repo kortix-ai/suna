@@ -12,7 +12,7 @@ import { newSessionCreateInput } from '@/lib/session/new-session-input';
 import { warmSessionPool } from '@/lib/session/warm-session-pool';
 import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
 import { getProjectSession } from '@kortix/sdk';
-import { newConfigPrompt } from '@kortix/shared';
+import { newConfigPrompt, splitPastedContent } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Crypto from 'expo-crypto';
 import type React from 'react';
@@ -152,7 +152,8 @@ export function useProjectHomeSend(
         setConnectingProjectSessionId(session.session_id);
         // The session holds the prompt now: drop the home's saved draft
         // (COR-143). Cancel hands the text back through `takeInitialDraft`.
-        clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), text);
+        // The saved draft is the typed text only: compare it without the paste tiles.
+        clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), splitPastedContent(text).text);
         // The first send asks for notification permission, once per install.
         void requestPushPermissionOnce();
         return true;

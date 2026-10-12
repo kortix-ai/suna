@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../__tests__/helpers/pg-client';
 import { reconcileAuditEvents } from './audit-reconciliation';
 import { runAuditReconciliationPage } from './audit-reconciliation-worker';
 
@@ -14,7 +14,7 @@ const SESSION = 'b7300000-0000-4000-a000-000000000001';
 const ACTOR = 'b7400000-0000-4000-a000-000000000001';
 const TUNNEL = 'b7500000-0000-4000-a000-000000000001';
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 
 async function cursorImmediatelyBefore(accountId: string): Promise<string | null> {
   const result = await client!.query<{ account_id: string }>(
@@ -30,7 +30,7 @@ async function cursorImmediatelyBefore(accountId: string): Promise<string | null
 
 describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: fixtureUrl });
+    client = new PgClient({ connectionString: fixtureUrl });
     await client.connect();
     // These append-only source ledgers intentionally have no account FK.
     // Remove fixtures from an interrupted previous test run before reseeding.

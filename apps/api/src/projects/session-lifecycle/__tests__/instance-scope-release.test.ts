@@ -54,7 +54,7 @@ mock.module('../../../shared/db', () => ({
           // turn that named a model; none here, so the prompt goes out as sent.
           orderBy: () => ({ limit: async () => [] }),
           limit: async () => {
-            if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
+            if (projection && 'result' in projection && 'payload' in projection) return [{ status: 'running', lockedBy: 'worker-x', result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
@@ -75,14 +75,14 @@ mock.module('../../../shared/db', () => ({
 mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => ({
     stage: 'ready',
     sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
     opencode_session_id: OC_SESSION_ID,
   }),
 }));
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

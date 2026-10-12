@@ -30,20 +30,7 @@ import {
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
-
-/** The preview hostname shape, as `GET /v1/p/config` describes it. */
-async function fetchPreviewTemplate(backendUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${backendUrl.replace(/\/+$/, '')}/p/config`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { preview_url_template?: string | null };
-    return typeof body?.preview_url_template === 'string' ? body.preview_url_template : null;
-  } catch {
-    return null;
-  }
-}
+import { loadPreviewUrlTemplate } from '@kortix/sdk';
 
 /**
  * True only for a URL on a hostname this deployment serves previews on.
@@ -111,7 +98,7 @@ function PreviewAuthorize() {
     let cancelled = false;
     (async () => {
       const backendUrl = getEnv().BACKEND_URL || '';
-      const template = await fetchPreviewTemplate(backendUrl);
+      const template = await loadPreviewUrlTemplate(backendUrl);
       if (cancelled) return;
 
       if (!isServablePreviewUrl(to, template)) {

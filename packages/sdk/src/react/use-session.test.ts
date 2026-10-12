@@ -1262,7 +1262,7 @@ describe('classifySendError — connector refusals', () => {
 // file read, anything below the hook's own actions) had to rebuild it. These
 // pin the resolution, including the part the raw field cannot be used for:
 // `runtime_url` is a RELATIVE path (`/p/<ext>/8000`, see
-// `apps/api/src/projects/routes/shared.ts:526`), never an absolute URL.
+// `apps/api/src/projects/session-open/index.ts:526`), never an absolute URL.
 
 describe('resolveSessionRuntimeUrl', () => {
   const sandbox = (externalId: string | null) =>

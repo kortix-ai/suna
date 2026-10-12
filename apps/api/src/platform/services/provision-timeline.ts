@@ -12,6 +12,8 @@
  * Overhead is negligible (a push + a subtraction per mark) so it's always on.
  */
 
+import { logger } from '../../lib/logger';
+
 export interface TimelineMark {
   label: string;
   /** ms since the timeline started. */
@@ -70,13 +72,18 @@ export class ProvisionTimeline {
     return { id: this.id, kind: this.kind, totalMs: this.totalMs, marks: [...this.marks] };
   }
 
-  /** One-line structured log: `[provision-timeline] <kind> <id> total=Xms a=+deltaMs(@t) ...`. */
+  /**
+   * One-line structured log: `[provision-timeline] <kind> <id> total=Xms a=+deltaMs(@t) ...`.
+   * Ships through the api logger — the logger patches only console.error/warn
+   * to Better Stack, so the console.log this used kept every timeline line off
+   * prod telemetry (0 rows in 8 days, KRTX-471).
+   */
   log(extra?: Record<string, unknown>): TimelineSummary {
     const summary = this.summary();
     const parts = summary.marks.map((m) => `${m.label}=+${m.deltaMs}ms(@${m.atMs})`).join(' ');
-    console.log(
+    logger.info(
       `[provision-timeline] ${this.kind} ${this.id.slice(0, 8)} total=${summary.totalMs}ms ${parts}`,
-      extra && Object.keys(extra).length ? extra : '',
+      extra && Object.keys(extra).length ? extra : undefined,
     );
     return summary;
   }
@@ -85,5 +92,5 @@ export class ProvisionTimeline {
 // Surfacing a timeline on the wire (the turn-latency spec (PR #7840) §5) is done via
 // `lib/server-timing.ts`'s `recordTurnStageMarks` — the SAME always-on
 // `Server-Timing` mechanism `total`/`auth`/`db`/`git`/`http`/`up`/`api` already
-// use, not a second header. See `sandbox-proxy/routes/preview.ts`'s call to
+// use, not a second header. See `sandbox-proxy/forward/upstream.ts`'s call to
 // `recordTurnStageMarks(provisionTimelineSummary.marks)`.

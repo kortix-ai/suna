@@ -205,7 +205,8 @@ async function createProjectForAccessTest(
  * repo link on it.
  */
 async function openRepositoriesSection(page: Page, projectId: string) {
-  await page.goto(`/projects/${projectId}/settings/workspace`, {
+  // Settings is a Customize tab now; "Git repo" is its `?section=git` pane.
+  await page.goto(`/projects/${projectId}/customize/settings?section=git`, {
     waitUntil: "domcontentloaded",
   });
   await dismissOnboarding(page);
@@ -623,7 +624,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       page.getByRole("button", { name: "Switch project" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "New session" }).first(),
+      page.getByRole("link", { name: "New session" }).first(),
     ).toBeVisible();
     await expect(
       page.getByText("Sessions", { exact: true }).first(),
@@ -658,7 +659,9 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     expect(projectRepoWebUrl).toContain("github.com/kortix-ai/");
 
     await selectAccountForUi(page, account.account_id);
-    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    // `/projects` is the selector now; the id-free door `/projects/start` opens
+    // the only project.
+    await page.goto("/projects/start", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(
       new RegExp(`/projects/${project.project_id}$`),
     );
@@ -678,7 +681,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       page.getByRole("heading", { name: "Members", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("complementary").getByText(accountName, { exact: true }),
+      page.getByText(accountName, { exact: true }).first(),
     ).toBeVisible();
     await expect(page.getByText(memberEmail)).toBeVisible();
     await expect(page.getByText(invitedEmail)).toBeVisible();
@@ -790,9 +793,9 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       .filter({ hasText: memberEmail })
       .first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
-    // The row's trailing slot carries the role label — "Member" — and its
+    // The row's trailing slot carries the role label — "Project member" — and its
     // meta says the member has no agent yet (deny-by-default).
-    await expect(memberAccessRow.getByText("Member", { exact: true })).toBeVisible();
+    await expect(memberAccessRow.getByText("Project member", { exact: true })).toBeVisible();
 
     // Initialize member auth before persisting the organization. Otherwise the
     // auth reset clears the selection and the personal account wins /projects.
@@ -864,7 +867,12 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       expect((await acceptAccountInviteResponse).status()).toBe(200);
     }
     await settleIamPropagation();
-    await expect(page).toHaveURL(/\/projects\/start$/);
+    // An account invite (no project) lands on the door for the joined account,
+    // then on its selector: never on a project remembered from another account
+    // (KRTX-1731).
+    await expect(page).toHaveURL(
+      new RegExp(`/projects(/start\\?account=${account.account_id})?$`),
+    );
     // The membership this user just accepted is the same cross-task IAM state
     // (see IAM_PROPAGATION_MS). A task that has not seen it answers
     // `GET /accounts/:id` with 403, and the hub then sits on its loading
@@ -902,7 +910,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       )
       .toBe(true);
     await expect(
-      page.getByRole("complementary").getByText(accountName, { exact: true }),
+      page.getByText(accountName, { exact: true }).first(),
     ).toBeVisible();
 
     const invitedAccounts = await api<AccountSummary[]>(

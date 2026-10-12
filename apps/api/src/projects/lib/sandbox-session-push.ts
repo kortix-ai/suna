@@ -2,8 +2,11 @@ import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+// Aliased: every push below binds a local `config` from the sandbox row, which
+// would shadow the app config import inside those function bodies.
+import { config as appConfig } from '../../config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import type { ProviderName } from '../../platform/providers';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
@@ -12,12 +15,8 @@ import {
 import { repositoryAccessFromSessionMetadata } from './session-sandbox-metadata';
 import { hasConfigReleaseCapability } from './session-config-release';
 import { resolveSandboxEnvSnapshot } from './sandbox-env-snapshot';
-import {
-  SANDBOX_SERVICE_PORT,
-  llmGatewayBaseUrlForProvider,
-  markSandboxLlmGatewayMode,
-  postEnvToDaemon,
-} from './sandbox-env-push';
+import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
+import { markSandboxLlmGatewayMode } from './sandbox-env-push';
 
 /**
  * A push target that exists but is not `active` is a control-plane DIVERGENCE,
@@ -59,11 +58,11 @@ function nonActiveSandboxSkip(
  *
  * This reads the box's STATE (`config.release_id`), not the binary's
  * `config.release.v1` capability. The capability is compiled in and is present
- * whatever the project chose, so gating on it withheld the push from every box
- * that runs NO release — `config_releases` off for the project, or a release
- * chain that stepped down to the image default. Those boxes are exactly the
- * pre-release case the push exists for. `releaseGovernanceActive` is the same
- * `running.release_id !== null` the daemon applies on its own side.
+ * on every current daemon, so gating on it withheld the push from every box
+ * that runs NO release — one that reverted to its workspace config, or a
+ * release chain that stepped down to the image default. Those boxes are
+ * exactly the pre-release case the push exists for. `releaseGovernanceActive`
+ * is the same `running.release_id !== null` the daemon applies on its own side.
  */
 export async function daemonHasConfigReleases(
   baseUrl: string,
@@ -335,7 +334,6 @@ export async function pushSessionScopeToSandbox(input: {
     const [row] = await db
       .select({
         externalId: sessionSandboxes.externalId,
-        provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
         status: sessionSandboxes.status,
       })
@@ -373,7 +371,7 @@ export async function pushSessionScopeToSandbox(input: {
       refreshModels: true,
       llmGatewayEnabled,
       llmGatewayBaseUrl: llmGatewayEnabled
-        ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
+        ? resolveLlmGatewayBaseUrl(appConfig.KORTIX_URL)
         : undefined,
     });
     await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);

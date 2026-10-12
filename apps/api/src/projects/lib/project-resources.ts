@@ -81,10 +81,6 @@ export function loadConfigWithFilesCached(
   return configWithFilesMemo(row);
 }
 
-export function __clearConfigWithFilesCacheForTests(): void {
-  configWithFilesMemo.clear();
-}
-
 export interface ProjectResourceItem {
   /** Stable grant key — agent name / skill slug. */
   id: string;
@@ -130,15 +126,23 @@ export function projectHasResource(
   return set.some((r) => r.id === resourceId);
 }
 
+/** The request context every resource-access read carries. */
+interface ResourceAccessContext {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  actingTokenId?: string;
+}
+
 /**
- * Return a copy of the config with `agents`/`skills` narrowed to the ones the
- * user may access (per-resource scoping). Owner/admins/SAs see the full lists.
- * One memoized grant load per type — no N×authorize round-trips.
+ * The agent ids / skill slugs a caller may access: one actor read, then both
+ * `filterAccessibleObjects` round-trips together. Agents key on their name,
+ * skills on their directory slug — the same ids the grant store keys on.
  */
-export async function filterConfigResourcesForUser(
+async function accessibleResourceSets(
   config: ProjectConfigSummary,
-  ctx: { userId: string; accountId: string; projectId: string; actingTokenId?: string },
-): Promise<ProjectConfigSummary> {
+  ctx: ResourceAccessContext,
+): Promise<{ okAgents: Set<string>; okSkills: Set<string> }> {
   const agentIds = (config.agents ?? []).map((a) => a.name);
   const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
   const actor = await actorForToken(ctx.userId, ctx.accountId, ctx.actingTokenId);
@@ -146,12 +150,23 @@ export async function filterConfigResourcesForUser(
     filterAccessibleObjects(actor, ctx.projectId, 'agent', agentIds),
     filterAccessibleObjects(actor, ctx.projectId, 'skill', skillIds),
   ]);
-  const okAgentSet = new Set(okAgents);
-  const okSkillSet = new Set(okSkills);
+  return { okAgents: new Set(okAgents), okSkills: new Set(okSkills) };
+}
+
+/**
+ * Return a copy of the config with `agents`/`skills` narrowed to the ones the
+ * user may access (per-resource scoping). Owner/admins/SAs see the full lists.
+ * One memoized grant load per type — no N×authorize round-trips.
+ */
+export async function filterConfigResourcesForUser(
+  config: ProjectConfigSummary,
+  ctx: ResourceAccessContext,
+): Promise<ProjectConfigSummary> {
+  const { okAgents, okSkills } = await accessibleResourceSets(config, ctx);
   return {
     ...config,
-    agents: (config.agents ?? []).filter((a) => okAgentSet.has(a.name)),
-    skills: (config.skills ?? []).filter((s) => okSkillSet.has(skillSlugFromPath(s.path) ?? s.name)),
+    agents: (config.agents ?? []).filter((a) => okAgents.has(a.name)),
+    skills: (config.skills ?? []).filter((s) => okSkills.has(skillSlugFromPath(s.path) ?? s.name)),
   };
 }
 
@@ -183,16 +198,10 @@ export interface ResourceDenier {
  */
 export async function denierFromConfig(
   config: ProjectConfigSummary,
-  ctx: { userId: string; accountId: string; projectId: string; actingTokenId?: string },
+  ctx: ResourceAccessContext,
 ): Promise<ResourceDenier | null> {
-  const agentIds = (config.agents ?? []).map((a) => a.name);
-  const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
-  const actor = await actorForToken(ctx.userId, ctx.accountId, ctx.actingTokenId);
-  const [okAgents, okSkills] = await Promise.all([
-    filterAccessibleObjects(actor, ctx.projectId, 'agent', agentIds),
-    filterAccessibleObjects(actor, ctx.projectId, 'skill', skillIds),
-  ]);
-  return buildResourceDenier(config, new Set(okAgents), new Set(okSkills));
+  const { okAgents, okSkills } = await accessibleResourceSets(config, ctx);
+  return buildResourceDenier(config, okAgents, okSkills);
 }
 
 /**
@@ -250,11 +259,7 @@ export function buildResourceDenier(
  * the airtight version is the git-proxy tier that stops the files reaching the
  * sandbox at all; /detail degrades identically during the same outage).
  */
-export async function resourceDenierForRequest(ctx: {
-  userId: string;
-  accountId: string;
-  projectId: string;
-  actingTokenId?: string;
+export async function resourceDenierForRequest(ctx: ResourceAccessContext & {
   row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string };
 }): Promise<ResourceDenier | null> {
   if (!(await hasAnyResourceGrants(ctx.projectId))) return null;

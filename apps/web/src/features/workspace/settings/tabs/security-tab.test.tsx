@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { FactorRow, SecurityTabView, totpQrSrc } from './security-tab';
+import { FactorRow, SecurityTabView, formatSecret, totpQrSrc } from './security-tab';
 
 const headings = (html: string): string[] =>
   [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
@@ -102,14 +102,39 @@ describe('SecurityTabView — two-factor list states', () => {
  * loud instead of leaving a silent gap under the section heading.
  */
 describe('SecurityTabView — devices list states', () => {
-  const devices = [{ label: 'This browser', detail: 'Signed in October 3, 2026' }];
+  const devices = [
+    { id: 's-here', label: 'Chrome on macOS', detail: 'Signed in October 3, 2026', current: true },
+    { id: 's-phone', label: 'Safari on iOS', detail: 'Last active Oct 5, 2026', mobile: true },
+  ];
 
-  test('a signed-in device renders as a row, with no empty-state banner', () => {
+  test('every signed-in device renders as a row, with no empty-state banner', () => {
     const out = renderToStaticMarkup(<SecurityTabView devices={devices} />);
-    expect(out).toContain('This browser');
+    expect(out).toContain('Chrome on macOS');
     expect(out).toContain('Signed in October 3, 2026');
-    expect(out).toContain('Active');
+    expect(out).toContain('Safari on iOS');
+    expect(out).toContain('Last active Oct 5, 2026');
     expect(out).not.toContain('No signed-in devices');
+  });
+
+  test('the current browser is badged; only the other devices offer a sign-out', () => {
+    const out = renderToStaticMarkup(<SecurityTabView devices={devices} />);
+    expect(out.match(/>This browser</g)).toHaveLength(1);
+    expect(out.match(/>Sign out</g)).toHaveLength(1);
+  });
+
+  test('the IP address is a copy button after the detail, and absent when unknown', () => {
+    const out = renderToStaticMarkup(
+      <SecurityTabView devices={[{ id: 's-ip', label: 'Chrome on macOS', detail: 'Last active Oct 5, 2026', ip: '198.51.100.24' }, ...devices]} />,
+    );
+    expect(out).toContain('Last active Oct 5, 2026 · <button type="button" aria-label="Copy IP address: 198.51.100.24"');
+    expect(out.match(/aria-label="Copy IP address/g)).toHaveLength(1);
+  });
+
+  test('a sign-out in flight disables every per-device sign-out', () => {
+    const out = renderToStaticMarkup(
+      <SecurityTabView devices={[...devices, { id: 's-tablet', label: 'Edge on Windows' }]} signingOutDeviceId="s-phone" />,
+    );
+    expect(out.match(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>).)*Sign out</g)).toHaveLength(2);
   });
 
   test('an in-flight device list shows a skeleton, not a blank gap', () => {
@@ -149,7 +174,7 @@ describe('totpQrSrc', () => {
 });
 
 describe('FactorRow', () => {
-  test('verified authenticator renders name, type, and verified badge', () => {
+  test('verified authenticator renders name and type, with no status badge', () => {
     const factorHtml = renderToStaticMarkup(
       <FactorRow
         factor={{ id: 'f1', friendly_name: 'My phone', factor_type: 'totp', status: 'verified' }}
@@ -157,7 +182,8 @@ describe('FactorRow', () => {
       />,
     );
     expect(factorHtml).toContain('My phone');
-    expect(factorHtml).toContain('verified');
+    expect(factorHtml).toContain('Authenticator app (TOTP)');
+    expect(factorHtml).not.toContain('>verified<');
     expect(factorHtml).toContain('Remove factor');
   });
 
@@ -170,5 +196,27 @@ describe('FactorRow', () => {
     );
     expect(factorHtml).toContain('Authenticator app');
     expect(factorHtml).toContain('unverified');
+  });
+});
+
+describe('formatSecret', () => {
+  test('groups a TOTP secret in fours', () => {
+    expect(formatSecret('JBSWY3DPEHPK3PXP')).toBe('JBSW Y3DP EHPK 3PXP');
+    expect(formatSecret('ABCDEF')).toBe('ABCD EF');
+    expect(formatSecret('GEMUX5K72V6OB2V2N3GNFH4O5U5NXCWS')).toBe(
+      'GEMU X5K7 2V6O B2V2\nN3GN FH4O 5U5N XCWS',
+    );
+  });
+});
+
+describe('two-factor row status', () => {
+  test('a verified factor shows the On status, never the old session badge', () => {
+    const out = renderToStaticMarkup(
+      <SecurityTabView
+        factors={[{ id: 'f1', friendly_name: 'My phone', factor_type: 'totp', status: 'verified' }]}
+      />,
+    );
+    expect(out).toContain('On · Asked at sign-in and before sensitive changes');
+    expect(out).not.toContain('Session verified');
   });
 });

@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  advanceTriggerScheduleSlot,
   initialTriggerScheduleSlot,
   nextTriggerScheduleSlot,
   triggerScheduleJitterMs,
@@ -93,7 +92,7 @@ describe('cron jitter', () => {
   test('advancing past a jittered slot lands on the NEXT day, never the same one', () => {
     const args = { jitterKey: 'project-a:harness-reflector', jitterWindowMs: WINDOW };
     const first = nextTriggerScheduleSlot(DAILY_3AM, AFTER, args)!;
-    const second = advanceTriggerScheduleSlot(DAILY_3AM, first, args)!;
+    const second = nextTriggerScheduleSlot(DAILY_3AM, first, args)!;
     expect(second.getTime()).toBeGreaterThan(first.getTime());
     expect(second.getTime() - first.getTime()).toBe(86_400_000);
   });

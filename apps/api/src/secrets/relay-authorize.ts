@@ -357,7 +357,7 @@ export async function authorizeSecretRelay(
   // purpose:
   //
   //  - `broker`/`kortix_fetch` — the agent calls the route itself
-  //    (`kortix secrets call`, the `secret_call` MCP tool).
+  //    (`kortix secrets call`).
   //  - `egress`/`network` — a network-boundary secret on a provider with no
   //    credential edge of its own. The in-guest shim terminates the guest's
   //    TLS and relays here, so the credential stays server-side exactly as it

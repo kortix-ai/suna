@@ -38,7 +38,7 @@ function useDownloadFile() {
 export const gitRefExplorerSource: FileExplorerSource = {
   capabilities: {
     write: false,
-    search: false,
+    search: true,
     hiddenToggle: false,
     gitStatusChip: false,
   },

@@ -18,8 +18,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import { isPlausibleServiceKey } from './heal-session-token';
 import {
-  isPlausibleServiceKey,
   reconcileServiceKeyFromBox,
   type ServiceKeyReconcileDeps,
 } from './service-key-reconcile';

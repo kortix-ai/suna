@@ -18,6 +18,8 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 export interface ApiClientOptions {
   baseUrl: string;
   token: string;
+  /** Proof for `/internal/*` at the public API edge (KORTIX_INTERNAL_EDGE_KEY). */
+  edgeKey?: string;
   fetchImpl?: FetchLike;
   timeoutMs?: number;
 }
@@ -99,6 +101,8 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
             headers: {
               'content-type': 'application/json',
               authorization: `Bearer ${opts.token}`,
+              // Edge proof for /internal/* on the public API host (api-router worker).
+              ...(opts.edgeKey ? { 'x-kortix-internal-edge-key': opts.edgeKey } : {}),
             },
             body: JSON.stringify(payload),
             signal,

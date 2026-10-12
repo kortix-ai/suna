@@ -7,7 +7,7 @@
 // decided in the content area (`CapabilityAccessGate`), and only on a denial
 // the engine returned. Each tab's body follows its own read leaf, with no
 // surface-wide leaf: a plain member (project.agent.read, project.trigger.read)
-// opens Agents and Triggers and gets a no-access body under every other tab.
+// opens Agents, Triggers and Files and gets a no-access body under every other tab.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +56,7 @@ describe('capabilityTabDenied', () => {
     );
     expect(CAPABILITY_TABS.map((t) => t.key).filter((k) => !deniedKeys(member).includes(k)).sort()).toEqual([
       'agent',
+      'files',
       'triggers',
     ]);
   });

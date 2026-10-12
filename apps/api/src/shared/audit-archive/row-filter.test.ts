@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuditFilterInput } from '../../accounts/audit-filters';
-import { normalizeInstant, rowMatches } from './row-filter';
+import { matchesLike, normalizeInstant, rowMatches } from './row-filter';
 
 const none: AuditFilterInput = { actor: null, actionPrefix: null, resourceType: null, sinceRaw: null, untilRaw: null, q: null };
 const row = {
@@ -64,10 +64,10 @@ describe('rowMatches mirrors the SQL filters of buildFilters', () => {
     expect(match({ untilRaw: '2026-07-07T10:00:00.123Z' })).toBe(false); // .123456 > .123
     expect(match({ untilRaw: '2026-07-07T10:00:00.124Z' })).toBe(true);
   });
-  test('q is a case-insensitive ILIKE: % and _ are wildcards, project id matches as text', () => {
+  test('q is a case-insensitive ILIKE substring: % and _ in the term are literal, project id matches as text', () => {
     expect(match({ q: 'res_id' })).toBe(true);
     expect(match({ q: 'RES_ID-1' })).toBe(true);
-    expect(match({ q: 'res%1' })).toBe(true);
+    expect(match({ q: 'res%1' })).toBe(false);
     expect(match({ q: 'nothing' })).toBe(false);
     expect(match({ q: row.project_id.slice(0, 8) })).toBe(true);
   });
@@ -86,10 +86,11 @@ describe('LIKE matching is linear (no regex built from user input)', () => {
     expect(performance.now() - started).toBeLessThan(250);
   });
 
-  test('LIKE semantics hold: % any run, _ one char, literal regex metacharacters, case-insensitive q', () => {
+  test('q terms are literal (no wildcards, no regex), case-insensitive; the matcher still honours % and _ in a pattern', () => {
     const row = { account_id: 'acct', occurred_at: '2026-07-01T00:00:00.000Z', action: 'iam.role.(create)+', resource_type: 'role' };
     expect(rowMatches(row, 'acct', { q: 'ROLE.(C' } as never)).toBe(true);
-    expect(rowMatches(row, 'acct', { q: 'r_le.(' } as never)).toBe(true);
+    expect(rowMatches(row, 'acct', { q: 'r_le.(' } as never)).toBe(false);
+    expect(matchesLike('role.(', 'r_le.%', true)).toBe(true);
     expect(rowMatches(row, 'acct', { q: 'role.x' } as never)).toBe(false);
     expect(rowMatches(row, 'acct', { actionPrefix: 'iam.' } as never)).toBe(true);
     expect(rowMatches(row, 'acct', { actionPrefix: 'Iam.' } as never)).toBe(false);
@@ -97,3 +98,14 @@ describe('LIKE matching is linear (no regex built from user input)', () => {
   });
 });
 
+
+describe('matchesLike escapes', () => {
+  test('a backslash makes `%` and `_` literal, and `\\\\` a literal backslash', () => {
+    expect(matchesLike('50%', '50\\%', false)).toBe(true);
+    expect(matchesLike('500', '50\\%', false)).toBe(false);
+    expect(matchesLike('a_b', 'a\\_b', false)).toBe(true);
+    expect(matchesLike('axb', 'a\\_b', false)).toBe(false);
+    expect(matchesLike('a\\b', 'a\\\\b', false)).toBe(true);
+    expect(matchesLike('anything', '%', false)).toBe(true);
+  });
+});

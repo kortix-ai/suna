@@ -82,7 +82,6 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
-import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
@@ -754,8 +753,9 @@ export function ProfileTab() {
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
-  const accountDeletionSupported =
-    isBillingEnabled() && (deletionStatus?.supported ?? !isCheckingDeletionStatus);
+  // The API decides: its deletion-status route answers on every deployment
+  // that deletes accounts, self-hosted ones included (billing on or off).
+  const accountDeletionSupported = deletionStatus?.supported ?? !isCheckingDeletionStatus;
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);

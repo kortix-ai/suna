@@ -21,6 +21,7 @@ import {
   type SandboxConnectionStatus,
 } from '../browser/stores/sandbox-connection-store';
 import { useServerStore } from '../browser/stores/server-store';
+import { isRuntimeGoneResponse, noteRuntimeGone } from '../core/session/runtime-gone';
 
 /**
  * Number of consecutive failures before marking as unreachable
@@ -353,6 +354,13 @@ export function useRuntimeReconnect() {
 
     async function check() {
       if (!alive) return;
+      // The session stream feeds the store from the server's own frames
+      // (R5.3): no probe while it does. The subscription below resumes the
+      // probe the moment the stream stops.
+      if (useSandboxConnectionStore.getState().streamDriven) {
+        scheduleNext();
+        return;
+      }
 
       let url: string | null;
       let token: string | null;
@@ -452,6 +460,10 @@ export function useRuntimeReconnect() {
             failed = true;
             immediateOffline = outcome.immediateOffline;
             hop = outcome.hop;
+            // The box behind this URL was deleted (an ephemeral stop, then a
+            // wake on a new box). Probing it again cannot succeed; the owner of
+            // the session's `/start` re-reads it and moves to the new box.
+            if (isRuntimeGoneResponse(result.status, result.body)) noteRuntimeGone(url);
             break;
           }
           case 'healthy': {
@@ -536,8 +548,12 @@ export function useRuntimeReconnect() {
     }
 
     check();
+    const unsubscribeStream = useSandboxConnectionStore.subscribe((state, previous) => {
+      if (previous.streamDriven && !state.streamDriven && alive) void check();
+    });
 
     return () => {
+      unsubscribeStream();
       alive = false;
       abortRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);

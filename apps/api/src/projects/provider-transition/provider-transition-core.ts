@@ -7,6 +7,8 @@
  * (provider-transition-worker.ts) call into these.
  */
 
+import { exponentialBackoffMs } from '../../shared/backoff';
+
 export type ProviderTransitionStatus =
   | 'pending'
   | 'building'
@@ -25,22 +27,6 @@ export const LIVE_TRANSITION_STATUSES = [
   'activating',
 ] as const satisfies readonly ProviderTransitionStatus[];
 
-/** Statuses that never change again. */
-export const TERMINAL_TRANSITION_STATUSES = [
-  'activated',
-  'failed',
-  'superseded',
-  'cancelled',
-] as const satisfies readonly ProviderTransitionStatus[];
-
-export function isLiveTransition(status: ProviderTransitionStatus): boolean {
-  return (LIVE_TRANSITION_STATUSES as readonly string[]).includes(status);
-}
-
-export function isTerminalTransition(status: ProviderTransitionStatus): boolean {
-  return (TERMINAL_TRANSITION_STATUSES as readonly string[]).includes(status);
-}
-
 /**
  * The resolved, buildable identity a transition prepares + verifies. Two
  * transitions with the same identity build the SAME image, so this is also the
@@ -55,23 +41,6 @@ export interface PrepIdentity {
   baseRuntimeIdentity: string;
   /** Resulting per-project ppwarm image name (perProjectWarmImageName). */
   snapshotName: string;
-}
-
-/**
- * Stable dedup key for a prep identity — repeated switch calls for the same
- * (project, target, commit, base runtime) must collapse onto ONE build. Mirrors
- * the DB's `uq_provider_transitions_live_identity` partial unique index, so the
- * in-process guard and the DB guard agree.
- */
-export function transitionDedupKey(
-  identity: Pick<PrepIdentity, 'projectId' | 'targetProvider' | 'commitSha' | 'baseRuntimeIdentity'>,
-): string {
-  return [
-    identity.projectId,
-    identity.targetProvider,
-    identity.commitSha,
-    identity.baseRuntimeIdentity,
-  ].join('|');
 }
 
 /**
@@ -251,40 +220,6 @@ export function isPermanentTransitionError(err: unknown): boolean {
   );
 }
 
-/**
- * Transient = worth a bounded, backed-off retry: network blips, timeouts, rate
- * limits (429), 5xx, staging/context disturbances (API restart mid-build), and
- * an INDETERMINATE provider state. Anything permanent (above) is excluded.
- */
-export function isTransientTransitionError(err: unknown): boolean {
-  if (isPermanentTransitionError(err)) return false;
-  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    m.includes('timeout') ||
-    m.includes('timed out') ||
-    m.includes('econnreset') ||
-    m.includes('econnrefused') ||
-    m.includes('network') ||
-    m.includes('gateway') ||
-    m.includes('socket') ||
-    m.includes(' 429') ||
-    m.includes('too many requests') ||
-    m.includes(' 502') ||
-    m.includes(' 503') ||
-    m.includes(' 504') ||
-    m.includes('staging incomplete') ||
-    m.includes('does not exist') ||
-    m.includes('no such file') ||
-    m.includes('s3 upload') ||
-    m.includes('unknown') ||
-    m.includes('indeterminate') ||
-    // Default: an unclassified error is treated as transient so a single odd
-    // failure gets a bounded retry rather than dead-lettering the transition —
-    // MAX_TRANSITION_ATTEMPTS still caps the total work.
-    true
-  );
-}
-
 export const MAX_TRANSITION_ATTEMPTS = 6;
 
 /**
@@ -298,8 +233,7 @@ export function transitionBackoffMs(
 ): number {
   const baseMs = opts.baseMs ?? 5_000;
   const maxMs = opts.maxMs ?? 5 * 60_000;
-  const exp = baseMs * 2 ** Math.max(0, attempts - 1);
-  return Math.min(exp, maxMs);
+  return exponentialBackoffMs({ attempt: attempts, baseMs, capMs: maxMs });
 }
 
 /**
@@ -327,11 +261,6 @@ export function classifyTransitionFailure(opts: {
 /** Normalize a raw provider value from the switch request. '' / null → null. */
 export function normalizeTargetProvider(raw: unknown): string | null {
   return raw === null || raw === undefined || raw === '' ? null : String(raw);
-}
-
-/** The next monotonic generation for a project, given the max already seen. */
-export function nextGeneration(maxExistingGeneration: number | null | undefined): number {
-  return (maxExistingGeneration ?? 0) + 1;
 }
 
 /**

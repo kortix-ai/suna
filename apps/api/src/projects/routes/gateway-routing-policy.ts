@@ -4,7 +4,7 @@ import {
   GatewayResolutionError,
   type AuthedPrincipal,
 } from '@kortix/llm-gateway';
-import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
+import { clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -104,219 +104,221 @@ const routingPolicyResponses = {
   ...errors(400, 403, 404),
 };
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/gateway/routing-policy',
-    tags: ['gateway'],
-    summary: 'Get the project model routing policy',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: routingPolicyResponses,
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const canWrite = await projectCapabilityAllowed(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_MODEL_READ,
-    );
-    return c.json(
-      await routingPolicyDocument(
-        {
-          projectId,
-          accountId: loaded.row.accountId,
-          userId: loaded.userId,
-        },
-        canWrite,
-      ),
-    );
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/gateway/routing-policy',
-    tags: ['gateway'],
-    summary: 'Set the project model routing policy',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: z.any() } } },
+export function registerGatewayRoutingPolicyRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/gateway/routing-policy',
+      tags: ['gateway'],
+      summary: 'Get the project model routing policy',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: routingPolicyResponses,
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const canWrite = await projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MODEL_READ,
+      );
+      return c.json(
+        await routingPolicyDocument(
+          {
+            projectId,
+            accountId: loaded.row.accountId,
+            userId: loaded.userId,
+          },
+          canWrite,
+        ),
+      );
     },
-    responses: routingPolicyResponses,
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
-    );
-    let policy;
-    try {
-      policy = parseProjectRoutingPolicyInput(await c.req.json());
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Invalid routing policy',
-          code: 'invalid_routing_policy',
-        },
-        400,
-      );
-    }
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const effectivePrimary =
-      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
-    if (effectivePrimary && !modelAccessAllows(readModelAccess(loaded.row.metadata), effectivePrimary)) {
-      return c.json({ error: 'Enable the default model and its provider before selecting it.', code: 'model_disabled' }, 409);
-    }
-    if (policy.defaultFallback?.models.includes(effectivePrimary)) {
-      return c.json(
-        {
-          error: `model "${effectivePrimary}" cannot fall back to itself`,
-          code: 'invalid_routing_policy',
-        },
-        400,
-      );
-    }
-    // Clamp every configured entry against the model's LIVE catalog
-    // capabilities before it's ever persisted — never store a temperature
-    // for a temperature:false model, a reasoning effort outside the model's
-    // own reasoning_options, or a max-output-tokens above its limit.output.
-    // An entry that clamps to nothing (every field dropped) is dropped
-    // entirely rather than stored as an empty object.
-    const clampedGenerationConfig = Object.fromEntries(
-      Object.entries(policy.modelGenerationConfig)
-        .map(
-          ([model, entry]) =>
-            [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
-        )
-        .filter(([, clamped]) => Object.keys(clamped).length > 0),
-    );
-    await setProjectRoutingPolicy({
-      projectId,
-      accountId: loaded.row.accountId,
-      updatedBy: loaded.userId,
-      policy: { ...policy, modelGenerationConfig: clampedGenerationConfig },
-    });
-    invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json(
-      await routingPolicyDocument(
-        {
-          projectId,
-          accountId: loaded.row.accountId,
-          userId: loaded.userId,
-        },
-        true,
-      ),
-    );
-  },
-);
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/gateway/routing-policy',
-    tags: ['gateway'],
-    summary: 'Remove the project model routing policy',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: routingPolicyResponses,
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
-    );
-    await resetProjectRoutingPolicy({ projectId, accountId: loaded.row.accountId });
-    invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json(
-      await routingPolicyDocument(
-        {
-          projectId,
-          accountId: loaded.row.accountId,
-          userId: loaded.userId,
-        },
-        true,
-      ),
-    );
-  },
-);
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/gateway/routing-policy',
+      tags: ['gateway'],
+      summary: 'Set the project model routing policy',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: z.any() } } },
+      },
+      responses: routingPolicyResponses,
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
+      );
+      let policy;
+      try {
+        policy = parseProjectRoutingPolicyInput(await c.req.json());
+      } catch (error) {
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : 'Invalid routing policy',
+            code: 'invalid_routing_policy',
+          },
+          400,
+        );
+      }
+      const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+      const effectivePrimary =
+        policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
+      if (effectivePrimary && !modelAccessAllows(readModelAccess(loaded.row.metadata), effectivePrimary)) {
+        return c.json({ error: 'Enable the default model and its provider before selecting it.', code: 'model_disabled' }, 409);
+      }
+      if (policy.defaultFallback?.models.includes(effectivePrimary)) {
+        return c.json(
+          {
+            error: `model "${effectivePrimary}" cannot fall back to itself`,
+            code: 'invalid_routing_policy',
+          },
+          400,
+        );
+      }
+      // Clamp every configured entry against the model's LIVE catalog
+      // capabilities before it's ever persisted — never store a temperature
+      // for a temperature:false model, a reasoning effort outside the model's
+      // own reasoning_options, or a max-output-tokens above its limit.output.
+      // An entry that clamps to nothing (every field dropped) is dropped
+      // entirely rather than stored as an empty object.
+      const clampedGenerationConfig = Object.fromEntries(
+        Object.entries(policy.modelGenerationConfig)
+          .map(
+            ([model, entry]) =>
+              [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+          )
+          .filter(([, clamped]) => Object.keys(clamped).length > 0),
+      );
+      await setProjectRoutingPolicy({
+        projectId,
+        accountId: loaded.row.accountId,
+        updatedBy: loaded.userId,
+        policy: { ...policy, modelGenerationConfig: clampedGenerationConfig },
+      });
+      invalidateAccountModelDefaults(loaded.row.accountId);
+      return c.json(
+        await routingPolicyDocument(
+          {
+            projectId,
+            accountId: loaded.row.accountId,
+            userId: loaded.userId,
+          },
+          true,
+        ),
+      );
+    },
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/gateway/routing-policy/preview',
-    tags: ['gateway'],
-    summary: 'Preview a model routing policy',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              requestedModel: z.string().trim().min(1).max(128),
-              imageInput: z.boolean().default(false),
-            }),
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}/gateway/routing-policy',
+      tags: ['gateway'],
+      summary: 'Remove the project model routing policy',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: routingPolicyResponses,
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
+      );
+      await resetProjectRoutingPolicy({ projectId, accountId: loaded.row.accountId });
+      invalidateAccountModelDefaults(loaded.row.accountId);
+      return c.json(
+        await routingPolicyDocument(
+          {
+            projectId,
+            accountId: loaded.row.accountId,
+            userId: loaded.userId,
+          },
+          true,
+        ),
+      );
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/gateway/routing-policy/preview',
+      tags: ['gateway'],
+      summary: 'Preview a model routing policy',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({
+                requestedModel: z.string().trim().min(1).max(128),
+                imageInput: z.boolean().default(false),
+              }),
+            },
           },
         },
       },
+      responses: routingPolicyResponses,
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const body = await c.req.json();
+      const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+      const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
+      const principal: AuthedPrincipal = {
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        projectId,
+        freeModelsOnly,
+        defaultModel: defaults.projects[projectId] ?? defaults.account ?? undefined,
+      };
+      const route = await resolveGatewayRoute(principal, {
+        requestedModel: body.requestedModel,
+        requires: { imageInput: body.imageInput === true },
+      });
+      const models = [route.primaryModel, ...(route.fallbackModels ?? [])];
+      // This is an AVAILABILITY PREVIEW, not a generation request: its whole
+      // contract is "tell me which of these models are usable right now",
+      // per-model. resolveCandidates THROWS a typed GatewayResolutionError
+      // (e.g. provider_not_connected) instead of returning [] when a model
+      // isn't servable — correct for an actual generation call, but here it
+      // must degrade to `available: false` for JUST that model rather than
+      // fail the whole Promise.all/response for every model in the list.
+      const availability = await Promise.all(
+        models.map(async (model) => {
+          try {
+            return { model, available: (await resolveCandidates(principal, model)).length > 0 };
+          } catch (err) {
+            if (err instanceof GatewayResolutionError) return { model, available: false };
+            throw err;
+          }
+        }),
+      );
+      return c.json({ version: 1, route, models: availability });
     },
-    responses: routingPolicyResponses,
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const body = await c.req.json();
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
-    const principal: AuthedPrincipal = {
-      userId: loaded.userId,
-      accountId: loaded.row.accountId,
-      projectId,
-      freeModelsOnly,
-      defaultModel: defaults.projects[projectId] ?? defaults.account ?? undefined,
-    };
-    const route = await resolveGatewayRoute(principal, {
-      requestedModel: body.requestedModel,
-      requires: { imageInput: body.imageInput === true },
-    });
-    const models = [route.primaryModel, ...(route.fallbackModels ?? [])];
-    // This is an AVAILABILITY PREVIEW, not a generation request: its whole
-    // contract is "tell me which of these models are usable right now",
-    // per-model. resolveCandidates THROWS a typed GatewayResolutionError
-    // (e.g. provider_not_connected) instead of returning [] when a model
-    // isn't servable — correct for an actual generation call, but here it
-    // must degrade to `available: false` for JUST that model rather than
-    // fail the whole Promise.all/response for every model in the list.
-    const availability = await Promise.all(
-      models.map(async (model) => {
-        try {
-          return { model, available: (await resolveCandidates(principal, model)).length > 0 };
-        } catch (err) {
-          if (err instanceof GatewayResolutionError) return { model, available: false };
-          throw err;
-        }
-      }),
-    );
-    return c.json({ version: 1, route, models: availability });
-  },
-);
+  );
+}

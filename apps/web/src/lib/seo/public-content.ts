@@ -378,8 +378,18 @@ function closesTag(text: string): boolean {
   return text.replace(/\{[^{}]*\}/g, '').includes('>');
 }
 
-const MDX_WRAPPER_TAGS = new Set(['Cards', 'CardGroup', 'KeyFacts', 'StatGrid', 'Steps']);
-const MDX_BLOCK_TAGS = new Set(['Callout', 'Card', 'Fact', 'Step']);
+const MDX_WRAPPER_TAGS = new Set([
+  'Accordion',
+  'Cards',
+  'CardGroup',
+  'CodeGroup',
+  'FileTree',
+  'KeyFacts',
+  'StatGrid',
+  'Steps',
+  'Tabs',
+]);
+const MDX_BLOCK_TAGS = new Set(['AccordionItem', 'Callout', 'Card', 'Fact', 'Step', 'Tab']);
 
 // `:::warning[Title]` opens a container directive; a bare `:::` closes it.
 // Agent-facing markdown has no directive syntax, so both render as a
@@ -475,6 +485,12 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
   if (tag === 'Step') {
     stack.push({ tag });
     return attrs.title ? `### ${attrs.title}` : null;
+  }
+  // A tab or an accordion item shows one of several panels. Markdown shows
+  // every panel in order, each under its label.
+  if (tag === 'Tab' || tag === 'AccordionItem') {
+    stack.push({ tag });
+    return attrs.title ? `**${attrs.title}**` : null;
   }
   if (tag === 'Fact') {
     stack.push({ tag });

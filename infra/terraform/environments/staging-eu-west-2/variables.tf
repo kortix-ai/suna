@@ -82,7 +82,7 @@ variable "api_environment" {
 }
 
 variable "api_secrets" {
-  description = "Secret env vars: name -> Secrets Manager ARN. Empty on purpose — see ../dev-us-east-2/variables.tf's api_secrets comment; this root relies entirely on secrets_blob_arn, same as ../staging does today."
+  description = "Secret env vars: name -> Secrets Manager ARN. Empty on purpose — see ../dev-us-east-2/variables.tf's api_secrets comment; this root relies entirely on secrets_blob_arn."
   type        = map(string)
   default     = {}
 }
@@ -100,11 +100,19 @@ variable "enable_https" {
 
 variable "manage_dns" {
   description = <<-EOT
-    Manage the SHADOW verification Cloudflare records (staging-api-euw2-shadow
-    / gateway-staging-euw2-shadow) that point at this root's ALBs. Does NOT
-    touch staging-api-ecs-fargate.kortix.com or
-    gateway-staging-ecs-fargate.kortix.com until the runbook's cutover step.
+    Manage this stack's origin records (staging-api-euw2 /
+    gateway-staging-euw2), which point at this root's ALBs.
   EOT
   type        = bool
   default     = true
+}
+
+variable "api_task_count" {
+  description = <<-EOT
+    API task floor (desired_count and min_capacity). 6 is staging's release
+    sizing. The staging database allows 120 connections and each API task
+    holds up to 9.
+  EOT
+  type        = number
+  default     = 6
 }

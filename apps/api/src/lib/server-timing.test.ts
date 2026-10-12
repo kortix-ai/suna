@@ -203,7 +203,7 @@ describe('Server-Timing header', () => {
  * second header. Each mark is namespaced `turnstage-<label>` so the benchmark
  * can recognize every entry belonging to the turn breakdown WITHOUT hardcoding
  * the current stage names — three concurrent branches are actively adding and
- * renaming `ptl.mark(...)` calls in `sandbox-proxy/routes/preview.ts`, and a
+ * renaming `ptl.mark(...)` calls in `sandbox-proxy/forward/`, and a
  * namespace prefix is what lets a new stage show up automatically instead of
  * silently being dropped by an allowlist.
  */

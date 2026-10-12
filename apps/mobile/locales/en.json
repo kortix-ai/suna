@@ -137,7 +137,16 @@
       "privacy": "Privacy Policy"
     },
     "signOutFailed": "Unable to sign out. Check your connection and try again.",
-    "signingOut": "Signing out…"
+    "signingOut": "Signing out…",
+    "mfa": {
+      "title": "Verify it’s you",
+      "enterCode": "Enter the 6-digit code from your authenticator app.",
+      "codeLabel": "6-digit code",
+      "verify": "Verify",
+      "verifying": "Verifying…",
+      "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
+      "verifyFailed": "Could not verify the code. Check your connection and try again."
+    }
   },
   "onboarding": {
     "welcome": "See what Kortix can do",
@@ -1190,5 +1199,11 @@
     "showMoreSubsessions_other": "Show {{count}} more",
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
+  },
+  "updateRequired": {
+    "title": "Update required",
+    "body": "This version of Kortix is no longer supported. Update the app to continue.",
+    "bodyNoStore": "This version of Kortix is no longer supported. Update the app from the App Store or Google Play to continue.",
+    "button": "Update"
   }
 }

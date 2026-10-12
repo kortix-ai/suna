@@ -73,7 +73,7 @@ mock.module('../lib/git', () => ({
   loadGitProject: async () => ({ row: {}, manifestPath: null }),
 }));
 
-await import('./marketplace-install-session');
+(await import('./marketplace-install-session')).registerMarketplaceInstallSessionRoutes();
 
 const post = () =>
   app.request(`/${projectId}/marketplace/install-session`, {

@@ -143,7 +143,7 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/agent-scope');
+(await import('../projects/routes/agent-scope')).registerAgentScopeRoutes();
 
 function buildApp() {
   const app = new Hono<{

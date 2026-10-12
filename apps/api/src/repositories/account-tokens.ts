@@ -90,6 +90,11 @@ export interface AccountTokenListEntry {
   name: string;
   status: string;
   projectId: string | null;
+  /** Non-null = a session connector token the runtime minted for one sandbox
+   *  (its `KORTIX_TOKEN`). Key-list surfaces filter these out the way
+   *  `listPersonalAccountTokens` does — they are session lifecycle plumbing,
+   *  not credentials a person manages. */
+  sessionId: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
@@ -219,16 +224,37 @@ export async function createAccountToken(
   };
 }
 
-/** List tokens for an account. If `projectId` is provided, narrows to
- *  tokens scoped to that project (useful for the per-project token
- *  management UI). Never returns secret data. */
+/**
+ * List the account's LIVE tokens — the rows a `tokens ls`-style listing may
+ * still act on. If `projectId` is provided, narrows to tokens scoped to that
+ * project (the per-project token management surface). Never returns secret
+ * data.
+ *
+ * Dead rows are excluded by the predicate every other reader of this table
+ * applies (`validateAccountToken`, `updateLastUsedThrottled`):
+ * `status='active'` AND `revoked_at IS NULL`. The two columns are not tied by
+ * any DB constraint, so a row can be revoked with its `status` still reading
+ * active — the auth middleware refuses such a row (2026-09-26: the
+ * release-gate sweep's direct `UPDATE … SET revoked_at` left 186 session
+ * tokens authenticating). Listing one would offer an operator a row whose
+ * revoke answers 404 "token not found or already revoked", which is exactly
+ * the reported defect: `kortix tokens ls` kept listing session tokens their
+ * deleted sessions had already revoked, and revoking each 404'd.
+ *
+ * Deliberately NOT narrowed: `listPersonalAccountTokens` (`?mine=true`, a
+ * person's own settings page) keeps returning revoked keys as history,
+ * explicitly marked — a person sees what happened to their own keys.
+ */
 export async function listAccountTokens(
   accountId: string,
   projectId?: string,
 ): Promise<AccountTokenListEntry[]> {
-  const filter = projectId
-    ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.projectId, projectId))
-    : eq(accountTokens.accountId, accountId);
+  const filter = and(
+    eq(accountTokens.accountId, accountId),
+    projectId ? eq(accountTokens.projectId, projectId) : undefined,
+    eq(accountTokens.status, 'active'),
+    isNull(accountTokens.revokedAt),
+  );
   return db
     .select({
       tokenId: accountTokens.tokenId,
@@ -236,6 +262,7 @@ export async function listAccountTokens(
       name: accountTokens.name,
       status: accountTokens.status,
       projectId: accountTokens.projectId,
+      sessionId: accountTokens.sessionId,
       expiresAt: accountTokens.expiresAt,
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
@@ -277,6 +304,7 @@ export async function listPersonalAccountTokens(
       name: accountTokens.name,
       status: accountTokens.status,
       projectId: accountTokens.projectId,
+      sessionId: accountTokens.sessionId,
       expiresAt: accountTokens.expiresAt,
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
@@ -456,6 +484,22 @@ export async function validateAccountTokenById(
   return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
 }
 
+/** The re-read row is genuinely dead: revoked by column OR by status. Anything
+ *  else (a row that flipped back to active between the two reads) is a race,
+ *  not a naming case, and keeps the generic refusal. */
+function isRevokedRow(row: { status: string; revokedAt: Date | null }): boolean {
+  return row.status === 'revoked' || row.revokedAt != null;
+}
+
+/** The refusal prose for a dead row: the id its token list shows, prefixed by
+ *  the scope that tells the customer WHICH list to look in. A session token is
+ *  also project-scoped, so sessionId decides first. */
+function deadTokenReason(row: { tokenId: string; projectId: string | null; sessionId: string | null }): string {
+  if (row.sessionId) return `session token ${row.tokenId} is revoked`;
+  if (row.projectId) return `project token ${row.tokenId} is revoked`;
+  return `token ${row.tokenId} is revoked`;
+}
+
 async function validateAccountTokenMatching(
   match: () => SQL,
 ): Promise<AccountTokenValidationResult> {
@@ -507,7 +551,29 @@ async function validateAccountTokenMatching(
       .limit(1);
 
     if (!row) {
-      return { isValid: false, error: 'PAT not found or revoked', credentialDead: true };
+      // KRTX-1564: name the dead row when there is one. A revoked project CLI
+      // token used to draw the kind-blind `PAT not found or revoked`, and the
+      // customer could not tell WHICH token the API rejected — the CLI's
+      // denial footer even named an unrelated session credential. One indexed
+      // re-read WITHOUT the active filters above answers it: the row the
+      // caller's secret hashes to, dead, named by the id its token list shows.
+      // Still dead for the caller either way — only the prose gets sharper.
+      const [dead] = await db
+        .select({
+          tokenId: accountTokens.tokenId,
+          projectId: accountTokens.projectId,
+          sessionId: accountTokens.sessionId,
+          status: accountTokens.status,
+          revokedAt: accountTokens.revokedAt,
+        })
+        .from(accountTokens)
+        .where(match())
+        .limit(1);
+      return {
+        isValid: false,
+        error: dead && isRevokedRow(dead) ? deadTokenReason(dead) : 'PAT not found or revoked',
+        credentialDead: true,
+      };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {

@@ -1,6 +1,5 @@
 import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
-
-import type { FlatModel } from './session-chat-input';
+import type { FlatModel } from '@kortix/sdk/react';
 
 const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 

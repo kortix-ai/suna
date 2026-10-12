@@ -28,7 +28,6 @@ import { eq, sql } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
 import * as realEnvSync from '../projects/lib/sandbox-env-sync';
 import * as realGrant from '../projects/lib/session-token-grant';
-import * as realSnapshot from '../projects/opencode-session-snapshot';
 // Spread the real modules and override only what this test must control: these
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
@@ -82,10 +81,6 @@ mock.module('../projects/lib/session-token-grant', () => ({
     return { action: 'skip' };
   },
 }));
-mock.module('../projects/opencode-session-snapshot', () => ({
-  ...realSnapshot,
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 mock.module('../sandbox-proxy/backend', () => ({
   ...realBackend,
   loadSandbox: async () => ({
@@ -108,14 +103,14 @@ mock.module('../sandbox-proxy/backend', () => ({
   wakeSandbox: async () => {},
 }));
 
-// `projects/routes/shared` is imported LAST, after every other stub is in
-// place. Its graph evaluates `sandbox-proxy/routes/preview.ts`, which binds
+// `projects/session-open/index` is imported LAST, after every other stub is in
+// place. Its graph evaluates `sandbox-proxy/forward/turn-start.ts`, which binds
 // `REAL_PRE_PROMPT_DEPS` (the env sync and token re-mint) by VALUE at module
 // evaluation. A static import here would evaluate it before `mock.module` ran,
 // and every prompt would hit the real re-mint (a git read of a repo that does
 // not exist → 503) instead of the stub.
-const realShared = await import('../projects/routes/shared');
-mock.module('../projects/routes/shared', () => ({
+const realShared = await import('../projects/session-open');
+mock.module('../projects/session-open', () => ({
   ...realShared,
   resumeStoppedSandboxByExternalId: async () => true,
 }));

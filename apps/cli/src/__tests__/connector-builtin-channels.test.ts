@@ -73,7 +73,6 @@ describe('kortix connectors — unknown subcommand', () => {
         rm: expect.any(String),
         accounts: expect.any(String),
         connect: expect.any(String),
-        mcp: 'kortix connectors mcp — run the optional stdio MCP compatibility server',
       },
     };
     expect(await runConnector(['definitely-not-a-subcommand'])).toBe(0);

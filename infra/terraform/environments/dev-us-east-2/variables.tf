@@ -53,7 +53,7 @@ variable "cloudflare_api_key" {
 }
 
 variable "api_image" {
-  description = "Container image for the API. deploy-dev.yml supplies the freshly built kortix/kortix-api:dev-<sha8> tag at apply time (same convention as ../dev)."
+  description = "Container image for the API. deploy-dev.yml supplies the freshly built kortix/kortix-api:dev-<sha8> tag at apply time."
   type        = string
   default     = "kortix/kortix-api:dev-latest"
 }
@@ -86,15 +86,12 @@ variable "api_secrets" {
   description = <<-EOT
     Secret env vars: name -> Secrets Manager ARN. Left empty on purpose.
 
-    ../dev commits a 67-entry literal map here, but modules/ecs-api only reads
-    var.secrets when secrets_blob_arn is unset (main.tf passes
-    secrets_blob_arn below, always), so that map has been INERT since it was
-    written — ecs-deploy.sh wires every key from the kortix-dev-env blob
-    itself at deploy time. Rather than hand-copy 67 ARNs whose account/secret
-    suffix cannot be verified without AWS access (and which would silently go
-    stale the next time a key is added to the secret), this root relies
-    entirely on secrets_blob_arn / data.aws_secretsmanager_secret.env, same as
-    ../staging already does.
+    modules/ecs-api reads var.secrets only when secrets_blob_arn is unset, and
+    main.tf always passes secrets_blob_arn. ecs-deploy.sh wires every key from
+    the kortix-dev-env blob at deploy time. A literal name -> ARN map here
+    would be inert and would go stale the next time a key is added to the
+    secret, so this root relies entirely on secrets_blob_arn /
+    data.aws_secretsmanager_secret.env.
   EOT
   type        = map(string)
   default     = {}
@@ -113,15 +110,8 @@ variable "enable_https" {
 
 variable "manage_dns" {
   description = <<-EOT
-    Manage the SHADOW verification Cloudflare records (dev-api-use2-shadow /
-    gateway-dev-use2-shadow) that point at this root's ALBs. false = leave DNS
-    untouched.
-
-    This does NOT touch dev-api-ecs-fargate.kortix.com or
-    gateway-dev-ecs-fargate.kortix.com (../dev still owns those, and the
-    dev-api Worker still routes to ../dev's ALB) until the runbook's cutover
-    step explicitly repoints them — see
-    the apply runbook in PR #7844.
+    Manage this stack's origin records (dev-api-use2 / gateway-dev-use2),
+    which point at this root's ALBs. false = leave DNS untouched.
   EOT
   type        = bool
   default     = true

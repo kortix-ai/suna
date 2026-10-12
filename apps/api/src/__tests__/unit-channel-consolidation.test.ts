@@ -7,7 +7,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  EMAIL_RESERVED_SLUG,
   extractConnectors,
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
@@ -26,10 +25,11 @@ function parse(body: string) {
 
 /* ─── parser: reserved slug ─────────────────────────────────────────────────── */
 
+const EMAIL_RESERVED_SLUG = 'kortix_email';
+
 describe('reserved kortix_slack slug', () => {
   test('the reserved set + canonical slug are what the rest of the code keys on', () => {
     expect(SLACK_RESERVED_SLUG).toBe('kortix_slack');
-    expect(EMAIL_RESERVED_SLUG).toBe('kortix_email');
     expect(RESERVED_CONNECTOR_SLUGS.has('slack')).toBe(true);
     expect(RESERVED_CONNECTOR_SLUGS.has('email')).toBe(true);
     expect(RESERVED_CONNECTOR_SLUGS.has('kortix_slack')).toBe(true);

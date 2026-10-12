@@ -178,6 +178,7 @@ describe('session reminders on the trigger tables', () => {
     const now = new Date();
     const sessionId = await seedSession();
     const author = crypto.randomUUID();
+    await insertIntoView(db, accountMembers, { accountId: ACCOUNT, userId: author, accountRole: 'member' });
     const { spec } = await seedReminder(sessionId, { prompt: 'Ping me', in: '1h' }, now, author);
 
     const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
@@ -186,6 +187,23 @@ describe('session reminders on the trigger tables', () => {
     const [command] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
     expect(command?.actorUserId).toBe(author);
     expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBe(true);
+  });
+
+  // KRTX-1722: removal stopped the sign-in and the grants, and the reminder
+  // kept firing as the person who had left.
+  test("a reminder whose author left the account queues nothing and pauses", async () => {
+    const now = new Date();
+    const sessionId = await seedSession();
+    const leaver = crypto.randomUUID();
+    const { spec } = await seedReminder(sessionId, { prompt: 'Ping me', every: '1h' }, now, leaver);
+
+    const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    expect(result).toMatchObject({ status: 'failed', errorCode: 'reminder_author_left' });
+    const commands = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
+    expect(commands).toHaveLength(0);
+    const row = await getSessionReminder(PROJECT, sessionId, spec.slug);
+    expect(row?.enabled).toBe(false);
   });
 
   test('a fire into a deleted session queues nothing and pauses the reminder', async () => {

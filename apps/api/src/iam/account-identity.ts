@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import { emailTrustedSql } from './email-trust';
@@ -25,7 +25,17 @@ export async function resolveAccountIdentityByEmail(
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail) return { userId: null, ambiguous: false };
 
-  const rows = (await db.execute(sql`
+  const rows = (await db.execute(accountIdentityCandidatesQuery(accountId, normalizedEmail))) as unknown as Array<{
+    user_id: string;
+  }>;
+  if (rows.length === 0) return { userId: null, ambiguous: false };
+  if (rows.length > 1) return { userId: null, ambiguous: true };
+  return { userId: rows[0]?.user_id ?? null, ambiguous: false };
+}
+
+/** The candidate query behind `resolveAccountIdentityByEmail`; `normalizedEmail` is trimmed and lower-case. */
+export function accountIdentityCandidatesQuery(accountId: string, normalizedEmail: string): SQL {
+  return sql`
     WITH candidates AS (
       SELECT u.id::text AS user_id,
         CASE
@@ -46,7 +56,12 @@ export async function resolveAccountIdentityByEmail(
         AND lower(trim(directory.user_name))=${normalizedEmail}
       LEFT JOIN kortix.account_memberships membership
         ON membership.account_id=${accountId}::uuid AND membership.user_id=u.id
-      WHERE lower(trim(u.email))=${normalizedEmail}
+      -- GoTrue's own lookup shape, so users_instance_id_email_idx serves it.
+      -- lower(trim(email)) matched no index and read all of auth.users per call
+      -- (410k rows in prod). GoTrue stores emails trimmed and writes the nil
+      -- instance id; NULL covers rows written outside GoTrue.
+      WHERE lower(u.email::text)=${normalizedEmail}
+        AND (u.instance_id='00000000-0000-0000-0000-000000000000'::uuid OR u.instance_id IS NULL)
         AND ${emailTrustedSql(sql`u`, accountId)}
     ), best AS (
       SELECT min(priority) AS priority FROM candidates
@@ -55,10 +70,7 @@ export async function resolveAccountIdentityByEmail(
     FROM candidates, best
     WHERE candidates.priority=best.priority
     ORDER BY candidates.user_id
-  `)) as unknown as Array<{ user_id: string }>;
-  if (rows.length === 0) return { userId: null, ambiguous: false };
-  if (rows.length > 1) return { userId: null, ambiguous: true };
-  return { userId: rows[0]?.user_id ?? null, ambiguous: false };
+  `;
 }
 
 async function transferProviderConnections(
@@ -160,6 +172,53 @@ async function transferProviderConnections(
         )
     `);
   }
+}
+
+/**
+ * Move the source's notification rows in this account to the target
+ * (KRTX-1742): inbox rows, and session and trigger watcher rows. A row the
+ * target already holds (same dedupe key, same session, same trigger) wins;
+ * the source's leftovers are deleted.
+ */
+async function moveNotificationRows(accountId: string, sourceUserId: string, targetUserId: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE kortix.notifications source SET user_id=${targetUserId}::uuid
+    WHERE source.account_id=${accountId}::uuid AND source.user_id=${sourceUserId}::uuid
+      AND NOT EXISTS (
+        SELECT 1 FROM kortix.notifications target
+        WHERE target.user_id=${targetUserId}::uuid AND target.dedupe_key=source.dedupe_key
+      )
+  `);
+  await db.execute(sql`
+    DELETE FROM kortix.notifications
+    WHERE account_id=${accountId}::uuid AND user_id=${sourceUserId}::uuid
+  `);
+  await db.execute(sql`
+    INSERT INTO kortix.notification_watchers (project_id, session_id, user_id, muted, created_at, updated_at)
+    SELECT watcher.project_id, watcher.session_id, ${targetUserId}::uuid, watcher.muted, watcher.created_at, now()
+    FROM kortix.notification_watchers watcher
+    JOIN kortix.projects project_row ON project_row.project_id=watcher.project_id
+    WHERE project_row.account_id=${accountId}::uuid AND watcher.user_id=${sourceUserId}::uuid
+    ON CONFLICT (session_id, user_id) DO NOTHING
+  `);
+  await db.execute(sql`
+    DELETE FROM kortix.notification_watchers watcher USING kortix.projects project_row
+    WHERE project_row.project_id=watcher.project_id AND project_row.account_id=${accountId}::uuid
+      AND watcher.user_id=${sourceUserId}::uuid
+  `);
+  await db.execute(sql`
+    INSERT INTO kortix.trigger_watchers (project_id, slug, user_id, muted, created_at, updated_at)
+    SELECT watcher.project_id, watcher.slug, ${targetUserId}::uuid, watcher.muted, watcher.created_at, now()
+    FROM kortix.trigger_watchers watcher
+    JOIN kortix.projects project_row ON project_row.project_id=watcher.project_id
+    WHERE project_row.account_id=${accountId}::uuid AND watcher.user_id=${sourceUserId}::uuid
+    ON CONFLICT (project_id, slug, user_id) DO NOTHING
+  `);
+  await db.execute(sql`
+    DELETE FROM kortix.trigger_watchers watcher USING kortix.projects project_row
+    WHERE project_row.project_id=watcher.project_id AND project_row.account_id=${accountId}::uuid
+      AND watcher.user_id=${sourceUserId}::uuid
+  `);
 }
 
 async function reconcileOneAccountIdentity(
@@ -325,6 +384,7 @@ async function reconcileOneAccountIdentity(
       AND participant.user_id=${sourceUserId}::uuid
   `);
 
+  await moveNotificationRows(accountId, sourceUserId, targetUserId);
   await transferProviderConnections(sourceUserId, targetUserId, accountId);
   await db.execute(sql`
     UPDATE kortix.connection_credentials credential SET user_id=${targetUserId}::uuid, updated_at=now()

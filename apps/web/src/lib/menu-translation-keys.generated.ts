@@ -26,6 +26,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Conversation Density': 'textd0fffb7fa940',
   'Credits & usage': 'text23715dba027a',
   Customize: 'textc5276e27afba',
+  'Customize Sidebar': 'texta37dd5ef6ef2',
   'Dark Theme': 'text6f2a09157622',
   Dashboard: 'text67b696468610',
   Desktop: 'text9bd88f2485ac',
@@ -55,6 +56,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Settings · General': 'textaf7dbdd174f2',
   'Settings · Sandbox templates': 'text56c63e70bc99',
   'Settings · Upgrades': 'text8938f078dd1e',
+  'Shared files': 'text5d1ac5e7432c',
   Skills: 'text66d0f523a379',
   Support: 'textbe91940b79f4',
   'Switch to Advanced View': 'text5f7c8d97889a',
@@ -90,6 +92,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'desktop selkies novnc full screen xfce sandbox vnc remote': 'text3ae19e194379',
   'easy advanced simple panel session detail mode view': 'text726d0a8ba362',
   'files explorer workspace session': 'text9a1647988c99',
+  'files folders drive shared company my folder access share': 'text991f9b694b39',
   'files repository drive browser explorer': 'text6fdcee27400f',
   'general organization org company name sign in rules teams manage security mfa danger zone rename delete':
     'text2f13c3b24e4f',
@@ -120,6 +123,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'service manager services orchestration process manager sandbox active restart reload':
     'text5844ecb027f7',
   'sessions runs threads conversations open': 'text390ae89f8320',
+  'sidebar customize reorder hide show navigation rows': 'text8c712bd7c1ec',
   'skills abilities': 'text871b6d3b6b19',
   'support help faq contact refund bug report issue question': 'text45a12827a72e',
   'switch workspace workspaces project projects change move open all list': 'text544792b85010',

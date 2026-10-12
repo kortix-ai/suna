@@ -155,3 +155,107 @@ flow(
     });
   },
 );
+
+// PSKILL-1 — POST /v1/projects/:projectId/skills commits skills/<slug>/SKILL.md
+// onto the default branch: the model-free form path behind Customize → Skills →
+// New ("Create with a form"). The chat path needs a model — on a fresh free
+// account it was a dead end ("requires a paid plan", no model to pick) — so
+// this route must not need one. Maps to spec §26 (PSKILL-1).
+// Mutating + git commit → serial.
+flow(
+  'PSKILL-1',
+  {
+    domain: 'skills',
+    serial: true,
+    routes: [
+      'POST /v1/projects/:projectId/skills',
+      'GET /v1/projects/:projectId/detail',
+      'GET /v1/projects/:projectId/files/content',
+    ],
+  },
+  async (ctx) => {
+    // seed: a real local repo — the route commits onto its default branch.
+    const p = await ctx.fixtures.project({ seed: true });
+
+    await ctx.step('ANON cannot create a skill', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/projects/:projectId/skills', { name: 'Anon Skill' }, { params: { projectId: p.id } });
+      r.status(401);
+    });
+
+    await ctx.step('a non-member cannot create a skill', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post('/v1/projects/:projectId/skills', { name: 'Outsider Skill' }, { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+
+    const slug = 'release-notes';
+    await ctx.step('create → 201 names the committed path', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/skills',
+          { name: 'Release Notes', description: 'Draft the weekly "release notes": go' },
+          { params: { projectId: p.id } },
+        );
+      if (r.statusCode !== 201) {
+        throw new Error(`create → ${r.statusCode}: ${r.text().slice(0, 400)}`);
+      }
+      r.status(201).body().has('$.ok', true).exists('$.slug').exists('$.path');
+      const body = r.json<{ ok: boolean; slug: string; path: string }>();
+      if (!body.slug.startsWith('release-notes')) {
+        throw new Error(`slug must derive from the name, got "${body.slug}"`);
+      }
+      if (body.path !== `skills/${body.slug}/SKILL.md`) {
+        throw new Error(`path must be skills/<slug>/SKILL.md, got "${body.path}"`);
+      }
+    });
+
+    await ctx.step('a quoted description round-trips through the frontmatter reader', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/detail', {
+        params: { projectId: p.id },
+      });
+      r.status(200);
+      const config = r.json<any>().config;
+      const skills = (config?.skills ?? []) as Array<{ name: string; path: string; description: string | null }>;
+      const skill = skills.find((s) => s.path === `skills/${slug}/SKILL.md`);
+      if (!skill) {
+        throw new Error(`the created skill is missing from the catalog: ${JSON.stringify(skills.map((s) => s.path))}`);
+      }
+      if (skill.name !== 'Release Notes') throw new Error(`frontmatter name read back as "${skill.name}"`);
+      if (skill.description !== 'Draft the weekly "release notes": go') {
+        throw new Error(`frontmatter description read back as "${skill.description}"`);
+      }
+    });
+
+    await ctx.step('the committed file reads back with frontmatter and body', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+        params: { projectId: p.id },
+        query: { path: `skills/${slug}/SKILL.md` },
+      });
+      r.status(200);
+      const content = r.json<any>().content as string;
+      if (!content?.startsWith('---\n')) throw new Error('the committed skill must start with frontmatter');
+      if (!/^name: .+$/m.test(content)) {
+        throw new Error(`frontmatter must carry the name, got:\n${content.split('\n').slice(0, 4).join('\n')}`);
+      }
+      if (!/# Release Notes/.test(content)) throw new Error('the body must start with the skill title');
+    });
+
+    await ctx.step('the same slug again → 409', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/skills', { name: 'Release Notes' }, { params: { projectId: p.id } });
+      r.status(409);
+    });
+
+    await ctx.step('a blank name → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/skills', { name: '   ' }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+  },
+);

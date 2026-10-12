@@ -58,25 +58,19 @@ describe('release preparation', () => {
     }
   })
 
-  test('every release staging site prepares with preparePlatformConfigDir', () => {
+  test('every release staging site prepares the release with prepareRelease', () => {
     // Both the convergence and the one boot path materialize releases.
-    const source = [
-      readFileSync(join(import.meta.dir, '../harness/open-code/config-release.ts'), 'utf8'),
-      readFileSync(join(import.meta.dir, '../harness/open-code/boot-config-path.ts'), 'utf8'),
-    ].join('\n')
-    // `prepare` of each materializeRelease call builds a release staging dir.
-    const stagingPrepares = source.match(/prepare: [^\n]*\(staged\)[^\n]*/g) ?? []
-    expect(stagingPrepares.length).toBe(2)
-    // Either by name, or through the boot path's injectable seam with
-    // `platformOwned: true` — never the working-tree preparation.
-    for (const line of stagingPrepares) {
-      expect(line.includes('preparePlatformConfigDir(staged') || line.includes('(staged, true)')).toBe(true)
-      expect(line).not.toContain('prepareConfigDir(staged')
+    for (const file of ['../harness/open-code/config-release.ts', '../harness/open-code/boot-config-path.ts']) {
+      const source = readFileSync(join(import.meta.dir, file), 'utf8')
+      expect(source).toContain('prepareRelease(staged, manifest.config_dir')
+      expect(source).not.toContain('prepareConfigDir(staged')
     }
-    // …and that seam really maps `true` to the platform-owned preparation.
+    // The boot path's injectable seam is handed `platformOwned: true`.
     const bootPath = readFileSync(join(import.meta.dir, '../harness/open-code/boot-config-path.ts'), 'utf8')
-    const seam = bootPath.slice(bootPath.indexOf('function defaultPrepare('))
-    expect(seam.slice(0, seam.indexOf('\n}')))
-      .toContain('platformOwned\n      ? preparePlatformConfigDir(dir, input.managedSkillsDir)')
+    expect(bootPath).toContain('input.prepare(manifest.config_dir ? join(staged, manifest.config_dir) : staged, true)')
+    // …and a release's config dir gets the platform-owned dependency pass.
+    const converge = readFileSync(join(import.meta.dir, '../harness/open-code/config-release.ts'), 'utf8')
+    const body = converge.slice(converge.indexOf('export async function prepareRelease('))
+    expect(body.slice(0, body.indexOf('\n}'))).toContain('ensureOpencodeConfigDeps(dir, { ...depsOptions, platformOwned: true })')
   })
 })

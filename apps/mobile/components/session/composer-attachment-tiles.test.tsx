@@ -10,13 +10,18 @@ const tileRenders: Record<string, number> = {};
 const rings: Record<string, number | undefined> = {};
 const removeButtons: Record<string, () => void> = {};
 const scrims: Record<string, (() => void) | undefined> = {};
+const tileOrder: string[] = [];
+const tileProps: Record<string, any> = {};
 
 mock.module('react-native', () => ({
   ScrollView: ({ children }: any) => children,
   View: ({ children }: any) => children,
 }));
 mock.module('./attachment-tile', () => ({
-  AttachmentTile: ({ filename, corner, overlay }: any) => {
+  AttachmentTile: (props: any) => {
+    const { filename, corner, overlay } = props;
+    tileOrder.push(filename);
+    tileProps[filename] = props;
     tileRenders[filename] = (tileRenders[filename] ?? 0) + 1;
     rings[filename] = corner?.props.value;
     scrims[filename] = overlay ? (overlay.props.onRetry ?? (() => {})) : undefined;
@@ -36,7 +41,8 @@ beforeAll(async () => {
   ({ ComposerAttachmentTiles } = await import('./composer-attachment-tiles'));
 });
 beforeEach(() => {
-  for (const record of [tileRenders, rings, removeButtons, scrims]) for (const key of Object.keys(record)) delete record[key];
+  for (const record of [tileRenders, rings, removeButtons, scrims, tileProps]) for (const key of Object.keys(record)) delete record[key];
+  tileOrder.length = 0;
 });
 
 const files = [
@@ -103,5 +109,40 @@ test('a failed entry shows the scrim with its Retry and no ring', async () => {
   expect(rings['a.pdf']).toBeUndefined();
   scrims['a.pdf']?.();
   expect(retried).toBe(1);
+  await act(async () => tree.unmount());
+});
+
+test('a paste draws first, previews its text, and opens and removes by its id', async () => {
+  const paste = { id: 'abcd1234', text: 'first line\nsecond line' };
+  const opened: unknown[] = [];
+  const removed: string[] = [];
+  let tree: any;
+  await act(async () => {
+    tree = create(
+      <ComposerAttachmentTiles
+        files={[files[0]]}
+        onRemove={() => {}}
+        pastes={[paste]}
+        onOpenPaste={(p) => opened.push(p)}
+        onRemovePaste={(id) => removed.push(id)}
+      />,
+    );
+  });
+  expect(tileOrder).toEqual(['Pasted text', 'a.pdf']);
+  expect(tileProps['Pasted text'].preview).toBe(paste.text);
+  tileProps['Pasted text'].onPress();
+  expect(opened).toEqual([paste]);
+  removeButtons['pasted text']();
+  expect(removed).toEqual(['abcd1234']);
+  await act(async () => tree.unmount());
+});
+
+test('pastes alone still draw the row; without onOpenPaste the tile is inert', async () => {
+  let tree: any;
+  await act(async () => {
+    tree = create(<ComposerAttachmentTiles files={[]} onRemove={() => {}} pastes={[{ id: 'p1', text: 'x' }]} />);
+  });
+  expect(tileOrder).toEqual(['Pasted text']);
+  expect(tileProps['Pasted text'].onPress).toBeUndefined();
   await act(async () => tree.unmount());
 });

@@ -15,7 +15,7 @@
 // Runs in the `db-suites` lane of `pnpm test` (one throwaway database per
 // file). It writes and deletes rows with fixed ids.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { interleave } from './helpers/interleave';
 
 const SANDBOX_ID = '00000000-0000-4000-a000-00000000e9a1';
@@ -31,7 +31,7 @@ const RESTART_CLAIM = {
   runtimeWakeStartedAt: '2026-09-22T10:00:00.000Z',
 };
 
-let admin: pg.Client;
+let admin: PgClient;
 
 /**
  * The identity-immutability trigger refuses to delete a row that carries an
@@ -84,7 +84,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
   beforeAll(async () => {
     // The modules under test read `config.DATABASE_URL` at import time.
     process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-    admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    admin = new PgClient({ connectionString: process.env.TEST_DATABASE_URL });
     await admin.connect();
     await ensureParents();
   });
@@ -206,7 +206,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write from a row read before the claim does not erase it', async () => {
-      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../projects/session-open');
       const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
@@ -220,7 +220,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write merges its clocks and keeps keys written after its read', async () => {
-      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../projects/session-open');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb
@@ -240,7 +240,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start wake mark from a row read before the claim does not erase it', async () => {
-      const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
+      const { markRuntimeWakeStarted } = await import('../projects/session-open');
       const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
@@ -256,7 +256,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start wake mark merges and keeps keys written after its read', async () => {
-      const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
+      const { markRuntimeWakeStarted } = await import('../projects/session-open');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb

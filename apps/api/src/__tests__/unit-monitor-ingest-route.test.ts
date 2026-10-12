@@ -100,7 +100,7 @@ mock.module('../feature-flags/registry', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/monitors');
+(await import('../projects/routes/monitors')).registerMonitorsRoutes();
 
 function buildApp() {
   const app = new Hono();

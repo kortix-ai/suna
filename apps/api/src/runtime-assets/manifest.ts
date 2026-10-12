@@ -13,11 +13,13 @@
  * (apps/api/Dockerfile:234), so the manifest describes that too and a box can
  * converge the daemon itself — not only what the daemon manages.
  *
- * All digests are computed once and memoized. No input can change for the
- * lifetime of a process: the binaries are baked into immutable image layers, and
- * the templates are a compiled-in package. The one exception is `policy`, which
- * is read live from the env on every call so a kill switch never waits on a
- * deploy — see agentSelfUpdateEnabled().
+ * Digests are computed once per binary generation and memoized. A deployed
+ * image never changes its binaries, but a checkout that rebuilds them under a
+ * running API does: the memo is keyed by each binary's stat (see
+ * binariesFingerprint), so the manifest never advertises a digest for bytes the
+ * payload routes no longer serve. The one input read live on every call is
+ * `policy`, so a kill switch never waits on a deploy — see
+ * agentSelfUpdateEnabled().
  */
 
 import { createHash } from 'node:crypto';
@@ -259,13 +261,43 @@ export interface RuntimeAssetsManifest {
 }
 
 /**
- * Everything in the manifest that costs a hash or a stat. Memoized; the inputs
- * cannot change for the lifetime of a process (immutable image layers).
- * `policy` is deliberately NOT in here — see agentSelfUpdateEnabled().
+ * Everything in the manifest that costs a hash. Memoized per binary generation
+ * (binariesFingerprint). `policy` is deliberately NOT in here — see
+ * agentSelfUpdateEnabled().
  */
 type RuntimeAssetsDigests = Omit<RuntimeAssetsManifest, 'policy'>;
 
-let manifestPromise: Promise<RuntimeAssetsDigests> | null = null;
+let manifestMemo: { fingerprint: string; promise: Promise<RuntimeAssetsDigests> } | null = null;
+
+/**
+ * Which bytes the payload routes would serve right now: path, size, mtime and
+ * inode of every hashed file. Three stats per manifest read, against a ~200 MB
+ * re-hash.
+ *
+ * The routes stream the file at the path, not the bytes that were hashed. A
+ * memo that outlived a rebuild (a local checkout recompiling the daemon under a
+ * running API) advertised the old digest while `/agent` served the new bytes,
+ * so every box's download failed its digest check: the box was judged stale,
+ * the repair re-downloaded, failed the same check, and the session open waited
+ * on that repair for minutes.
+ */
+async function binariesFingerprint(paths: readonly string[]): Promise<string> {
+  const parts = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const s = await stat(path);
+        return `${path}:${s.size}:${s.mtimeMs}:${s.ino}`;
+      } catch {
+        return `${path}:absent`;
+      }
+    }),
+  );
+  return parts.join('|');
+}
+
+function hashedBinaryPaths(): string[] {
+  return [runtimeCliBinaryPath(), `${runtimeCliBinaryPath()}.version`, runtimeAgentBinaryPath(), runtimeEntrypointPath()];
+}
 let overlayCache: { files: ManagedSkillOverlayFile[]; hash: string } | null = null;
 
 export function managedSkillOverlay(): { files: ManagedSkillOverlayFile[]; hash: string } {
@@ -364,16 +396,21 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
   };
 }
 
-function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
-  if (!manifestPromise) {
+async function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
+  const fingerprint = await binariesFingerprint(hashedBinaryPaths());
+  if (!manifestMemo || manifestMemo.fingerprint !== fingerprint) {
     // Store the promise, not the value: two concurrent first requests must not
     // both hash a 100 MB binary.
-    manifestPromise = computeManifest().catch((error) => {
-      manifestPromise = null;
-      throw error;
-    });
+    const memo: { fingerprint: string; promise: Promise<RuntimeAssetsDigests> } = {
+      fingerprint,
+      promise: computeManifest().catch((error) => {
+        if (manifestMemo === memo) manifestMemo = null;
+        throw error;
+      }),
+    };
+    manifestMemo = memo;
   }
-  return manifestPromise;
+  return manifestMemo.promise;
 }
 
 export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
@@ -440,7 +477,7 @@ interface ChunkIndex {
   sources: Map<string, ChunkSource>;
 }
 
-let chunkIndexPromise: Promise<ChunkIndex> | null = null;
+let chunkIndexMemo: { fingerprint: string; promise: Promise<ChunkIndex> } | null = null;
 
 /**
  * Hash one binary chunk by chunk without ever holding it in memory.
@@ -486,11 +523,14 @@ async function indexBinary(
   }
 }
 
-function chunkIndex(): Promise<ChunkIndex> {
-  if (!chunkIndexPromise) {
-    // Same memo discipline as the digest manifest: store the PROMISE, so a
-    // post-deploy burst of converging boxes hashes ~210 MB once, not N times.
-    chunkIndexPromise = (async () => {
+async function chunkIndex(): Promise<ChunkIndex> {
+  // Same memo discipline as the digest manifest: store the PROMISE, so a
+  // post-deploy burst of converging boxes hashes ~210 MB once, not N times,
+  // and key it by the binaries' stat so a rebuild is re-indexed.
+  const fingerprint = await binariesFingerprint([runtimeCliBinaryPath(), runtimeAgentBinaryPath()]);
+  if (!chunkIndexMemo || chunkIndexMemo.fingerprint !== fingerprint) {
+    const memo: { fingerprint: string; promise: Promise<ChunkIndex> } = { fingerprint, promise: null as never };
+    memo.promise = (async () => {
       const sources = new Map<string, ChunkSource>();
       // Sequential, not concurrent: each pass holds one 1 MiB buffer and this
       // is a cold-start cost paid once per process.
@@ -501,11 +541,12 @@ function chunkIndex(): Promise<ChunkIndex> {
       if (agent) manifests.agent = agent;
       return { manifests, sources };
     })().catch((error) => {
-      chunkIndexPromise = null;
+      if (chunkIndexMemo === memo) chunkIndexMemo = null;
       throw error;
     });
+    chunkIndexMemo = memo;
   }
-  return chunkIndexPromise;
+  return chunkIndexMemo.promise;
 }
 
 /** The chunk manifest for one component, or null when the image carries no such binary. */
@@ -575,9 +616,9 @@ export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> 
 
 /** Test-only: drop both memos so a case can recompute against a mutated fixture. */
 export function _resetRuntimeAssetsCache(): void {
-  manifestPromise = null;
+  manifestMemo = null;
   overlayCache = null;
-  chunkIndexPromise = null;
+  chunkIndexMemo = null;
 }
 
 // ---------------------------------------------------------------------------

@@ -129,7 +129,7 @@ export function projectConnectSteps(
   };
 }
 
-const sdkProjectConnectDeps: ProjectConnectDeps = {
+export const sdkProjectConnectDeps: ProjectConnectDeps = {
   reconcile: reconcileConnection,
   connectConnection: pipedreamConnectConnection,
   finalizeConnection: pipedreamFinalizeConnection,

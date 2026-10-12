@@ -15,10 +15,10 @@ import { FolderIcon as Folder } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ProjectGetTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const name = (input.name as string) || '';
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it; this
   // row re-ran that on every render, open or collapsed.

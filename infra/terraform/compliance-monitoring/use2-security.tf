@@ -44,6 +44,11 @@ locals {
       dimension = replace(arn, "/^.*:loadbalancer\\//", "")
     }
   }
+  # environments/dev-web-us-east-2 associates its own ALB with this WAF.
+  use2_compliance_waf_albs = {
+    for arn, alb in local.use2_albs : arn => alb
+    if alb.name != "kortix-dev-use2-web-alb"
+  }
 }
 
 # ── Regional alert delivery ──────────────────────────────────────────────────
@@ -381,7 +386,7 @@ resource "aws_wafv2_web_acl" "use2" {
 
 resource "aws_wafv2_web_acl_association" "use2" {
   provider     = aws.use2
-  for_each     = local.use2_albs
+  for_each     = local.use2_compliance_waf_albs
   resource_arn = each.key
   web_acl_arn  = aws_wafv2_web_acl.use2.arn
 }
@@ -510,6 +515,15 @@ resource "aws_cloudwatch_metric_alarm" "use2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.use2_alerts.arn]
   tags                = local.alarm_tags
+
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
 }
 
 # ── Backup failure monitoring ─────────────────────────────────────────────────

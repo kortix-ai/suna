@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 
 /**
  * The nav contract: clicking an in-app menu item must never reload the page.
@@ -58,15 +59,30 @@ function candidateFiles(): string[] {
 type LintMessage = { ruleId: string | null; line: number; message: string };
 type LintResult = { filePath: string; messages: LintMessage[] };
 
-function lintNavRules(files: string[]): string[] {
+const execFileAsync = promisify(execFile);
+
+/**
+ * ESLint over every candidate takes 16-20 s alone and minutes on a loaded
+ * packages lane. A synchronous call blocked the test worker for all of it, so
+ * the 120 s timeout could not fire and the lane saw a hung worker. Awaiting
+ * the child keeps the worker's event loop free.
+ */
+async function lintNavRules(files: string[]): Promise<string[]> {
   if (files.length === 0) return [];
-  const raw = execFileSync('npx', ['eslint', '--format', 'json', ...files], {
-    cwd: WEB_ROOT,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    // eslint exits non-zero when it reports anything; we read the JSON either way.
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
+  let raw: string;
+  try {
+    raw = (
+      await execFileAsync('npx', ['eslint', '--format', 'json', ...files], {
+        cwd: WEB_ROOT,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      })
+    ).stdout;
+  } catch (error) {
+    // eslint exits 1 when it reports problems; the JSON is still on stdout.
+    raw = (error as { stdout?: string }).stdout ?? '';
+    if (!raw) throw error;
+  }
   const results = JSON.parse(raw) as LintResult[];
   return results.flatMap((r) =>
     r.messages
@@ -76,24 +92,8 @@ function lintNavRules(files: string[]): string[] {
 }
 
 describe('nav contract — no full page reload on an in-app navigation', () => {
-  test('no nav control reaches a static internal href through router.push or window.location', () => {
-    let violations: string[];
-    try {
-      violations = lintNavRules(candidateFiles());
-    } catch (error) {
-      // eslint exits 1 when it reports problems. execFileSync throws, but the
-      // JSON is still on stdout.
-      const stdout = (error as { stdout?: string }).stdout;
-      if (!stdout) throw error;
-      const results = JSON.parse(stdout) as LintResult[];
-      violations = results.flatMap((r) =>
-        r.messages
-          .filter((m) => m.ruleId !== null && NAV_RULES.includes(m.ruleId))
-          .map((m) => `${r.filePath.replace(`${WEB_ROOT}/`, '')}:${m.line}  [${m.ruleId}]`),
-      );
-    }
-
-    expect(violations).toEqual([]);
+  test('no nav control reaches a static internal href through router.push or window.location', async () => {
+    expect(await lintNavRules(candidateFiles())).toEqual([]);
   }, 120_000);
 
   test('both rules are wired at error level, not warn', () => {

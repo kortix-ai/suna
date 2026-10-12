@@ -6,7 +6,9 @@ import {
   piConfigDirCandidates,
   safeAgentFile,
   safeRepoPath,
+  safeToolFile,
   skillDirs,
+  TOOL_FILE_PATTERN,
   validateManifest,
 } from '../index';
 
@@ -53,6 +55,32 @@ describe('safeAgentFile and AGENT_FILE_PATTERN agree', () => {
   for (const [value, valid] of cases) {
     test(`${JSON.stringify(value)} → ${valid}`, () => {
       expect(safeAgentFile(value) !== null).toBe(valid);
+      expect(pattern.test(value)).toBe(valid);
+    });
+  }
+});
+
+describe('safeToolFile and TOOL_FILE_PATTERN agree', () => {
+  const pattern = new RegExp(TOOL_FILE_PATTERN, 'u');
+  const cases: Array<[string, boolean]> = [
+    ['tools/lookup_order.ts', true],
+    ['ping.js', true],
+    ['integrations/crm/note.mjs', true],
+    ['lib/tool.mts', true],
+    ['tools/README.md', false],
+    ['tools/.ts', false],
+    ['tools/', false],
+    ['/tools/a.ts', false],
+    ['-tools/a.ts', false],
+    ['../a.ts', false],
+    ['tools/../a.ts', false],
+    ['./a.ts', false],
+    ['tools//a.ts', false],
+    ['tools/*.ts', false],
+  ];
+  for (const [value, valid] of cases) {
+    test(`${JSON.stringify(value)} → ${valid}`, () => {
+      expect(safeToolFile(value) !== null).toBe(valid);
       expect(pattern.test(value)).toBe(valid);
     });
   }

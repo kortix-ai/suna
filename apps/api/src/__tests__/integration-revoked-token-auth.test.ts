@@ -76,7 +76,9 @@ describe('a revoked_at-stamped token stops authenticating', () => {
 
     const after = await validateAccountToken(secretKey);
     expect(after.isValid).toBe(false);
-    expect(after.error).toBe('PAT not found or revoked');
+    // KRTX-1564: the refusal names the dead row — an account-level token has
+    // no project/session scope to prefix, so the bare id names it.
+    expect(after.error).toBe(`token ${tokenId} is revoked`);
   });
 
   test('the row really is still status=active — status alone would have let it through', async () => {
@@ -104,7 +106,13 @@ describe('a revoked_at-stamped token stops authenticating', () => {
     expect(after.status).toBe(401);
     // KRTX-446: the gate marks the refusal so a retrying client can stop.
     // The sandbox daemon's dead-credential breaker classifies this code.
-    expect((await after.json()).code).toBe('session_token_revoked');
+    expect((await after.json())).toEqual({
+      error: true,
+      // KRTX-1564: the body names the dead row the secret hashes to.
+      message: `token ${tokenId} is revoked`,
+      status: 401,
+      code: 'session_token_revoked',
+    });
   });
 
   test('a token revoked the ordinary way (both columns) is still refused', async () => {

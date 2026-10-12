@@ -38,6 +38,13 @@ const COMMIT = {
 
 const routes: Parameters<typeof startFakeApi>[0] = (req, url) => {
   const p = url.pathname;
+  if (p === `${BASE}/files` && req.method === 'GET' && url.searchParams.get('path') === 'big') {
+    // The server's recursive list stops at 1,000 files and says so (KRTX-1723).
+    return Response.json(
+      Array.from({ length: 1000 }, (_, i) => ({ path: `big/f${i}.txt`, type: 'file', size: 1 })),
+      { headers: { 'x-kortix-truncated': '1' } },
+    );
+  }
   if (p === `${BASE}/files` && req.method === 'GET') {
     return Response.json([
       { path: 'src/main.ts', type: 'file', size: 2048 },
@@ -161,6 +168,16 @@ describe('kortix files', () => {
 
     const j = await run(['ls', '--json']);
     expect(JSON.parse(j.stdout)).toHaveLength(2);
+    expect(r.stdout).not.toContain('stops at');
+  });
+
+  test('ls says when the list stops at 1,000 files instead of presenting it as complete', async () => {
+    boot();
+    const r = await run(['ls', 'big']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('1000 files');
+    expect(r.stdout).toContain('The list stops at 1,000 files');
+    expect(r.stdout).toContain('kortix files search');
   });
 
   test('cat prints file contents', async () => {

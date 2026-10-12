@@ -1,12 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 
-import {
-  TokenBucketRateLimiter,
-  createProjectSecretWriteRateLimitMiddleware,
-  createProjectWebhookRateLimitMiddleware,
-  resetRateLimiters,
-} from './rate-limit';
+import { TokenBucketRateLimiter } from './rate-limit';
+import { createProjectSecretWriteRateLimitMiddleware, createProjectWebhookRateLimitMiddleware, resetRateLimiters } from '../middleware/rate-limit';
 import { config } from '../config';
 
 describe('TokenBucketRateLimiter bounded buckets', () => {

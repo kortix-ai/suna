@@ -6,11 +6,11 @@
  * `GET /:projectId/secrets` reads the same list for `secret` grants.
  */
 import type { ConnectionShare } from '@kortix/api-contract';
-import { accountGroups } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { loadObjectGrants } from '../../iam/authorize';
 import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
+import { accountGroupNamesAmong } from '../../iam/group-read';
 import { lookupEmailsByUserIds } from './access';
 
 export async function loadConnectionSharing(input: {
@@ -41,12 +41,7 @@ export async function loadConnectionSharing(input: {
   const [emailByUser, groupRows] = await Promise.all([
     memberIds.length ? lookupEmailsByUserIds(memberIds) : new Map<string, string | null>(),
     groupIds.length
-      ? db
-          .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-          .from(accountGroups)
-          .where(
-            and(eq(accountGroups.accountId, input.accountId), inArray(accountGroups.groupId, groupIds)),
-          )
+      ? accountGroupNamesAmong(input.accountId, groupIds)
       : Promise.resolve([] as Array<{ groupId: string; name: string }>),
   ]);
   const groupNameById = new Map(groupRows.map((g) => [g.groupId, g.name] as const));

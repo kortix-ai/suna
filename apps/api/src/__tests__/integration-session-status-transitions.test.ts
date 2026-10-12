@@ -69,7 +69,7 @@ mock.module('../projects/lib/sandbox-runtime-refresh', () => ({
 }));
 
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../projects/session-open');
 const {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -889,6 +889,41 @@ describe('manual stop (stopSession)', () => {
       stoppedBy: 'user-1',
       lastAliveAt: 'during-stop',
     });
+  });
+
+  // A queued prompt must not wake the box the user just stopped: the abort's
+  // turn end would promote it, and a prompt parked on an unreachable runtime
+  // re-arms on its backoff (on the rig, one resumed a stopped box 8 min later).
+  test('holds the session\'s queued prompts until the user sends again', async () => {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    const { enqueueContinueSessionCommand } = await import('../projects/session-lifecycle/store');
+    const { row } = await enqueueContinueSessionCommand({
+      source: 'ui',
+      projectId: project.project_id,
+      accountId: project.account_id,
+      sessionId: f.sessionId,
+      actorUserId: crypto.randomUUID(),
+      text: 'queued before the stop',
+      idempotencyKey: `prompt:${f.sessionId}:q_before_stop`,
+      clientMessageId: 'q_before_stop',
+      parts: [{ type: 'text', text: 'queued before the stop' }],
+    });
+
+    const result = await stopSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    expect(result.status).toBe(200);
+
+    const [prompt] = rows(
+      await db.execute(sql`
+        select status, result from kortix.session_lifecycle_commands where command_id = ${row.commandId}`),
+    );
+    expect(prompt!.status).toBe('queued');
+    expect((prompt!.result as Row | null)?.held).toBe(true);
+    await db.execute(sql`delete from kortix.session_lifecycle_commands where session_id = ${f.sessionId}`);
   });
 
   // The row is already `stopped` while a wake is in flight. The stop cancels

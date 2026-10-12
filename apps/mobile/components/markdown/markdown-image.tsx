@@ -33,8 +33,7 @@ import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
 import { ImageIcon } from '@/lib/icons';
 import { describeMarkdownImage, type MarkdownImageRef } from '@/lib/markdown/markdown-image';
 import { RADIUS } from '@/lib/markdown/markdown-layout';
-import { isSafeExternalLink } from '@/lib/markdown/safe-link';
-import { openLink } from '@/lib/utils/open-link';
+import { openExternalLink } from '@/components/markdown/markdown-text';
 
 export type MarkdownRemoteImages = 'load' | 'placeholder';
 
@@ -57,11 +56,6 @@ function imageSource(src: string): ImageSource {
   if (!source || ANY_SCHEME.test(source)) return { kind: 'none' };
   const path = source.replace(/^\.\//, '');
   return { kind: 'sandbox', path: path.startsWith('/') ? path : `/workspace/${path}` };
-}
-
-function openExternalLink(href: unknown) {
-  if (!isSafeExternalLink(href)) return;
-  openLink(href).catch(() => {});
 }
 
 /**

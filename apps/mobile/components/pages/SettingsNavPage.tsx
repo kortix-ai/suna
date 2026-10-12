@@ -428,7 +428,7 @@ export function SettingsNavPage({
 
   const openCustomizeOnWeb = () => {
     haptics.tap();
-    WebBrowser.openBrowserAsync(projectCustomizeWebUrl(KORTIX_WEB_URL, projectId)).catch((error) => {
+    openLink(projectCustomizeWebUrl(KORTIX_WEB_URL, projectId)).catch((error) => {
       log.error('Error opening project customize page:', error);
     });
   };

@@ -3,15 +3,13 @@
 // Translation catalogs: `apps/web/translations/<locale>.json`.
 //
 // Key order is part of a catalog. Nothing at runtime reads it, but everything
-// that edits a catalog does: a merge, a review diff, and the starter-prompt
-// contract (`starterPrompts.items` follows `STARTER_PROMPTS`, asserted by
-// `src/lib/starter-prompts.test.ts`). Each catalog is ~1.5 MB and nearly every
+// that edits a catalog does: a merge and a review diff. Each catalog is ~1.5 MB and nearly every
 // feature adds keys to all nine, so they conflict on almost every merge of
 // `main`. On 2026-09-22 one such conflict was resolved by a program that
 // rebuilt every object through an unordered key set (merge `aba5055432`,
 // landed in `ea09f2f6a8`): 473 of 840 objects in every catalog changed order,
 // each file's diff was ~38,500 lines, 4 deleted keys came back, and
-// `starter-prompts.test.ts` turned the packages lane red on `main`.
+// the packages lane turned red on `main`.
 //
 // This file owns the three things that stop a repeat:
 //
@@ -421,7 +419,7 @@ function runCheck(flags) {
         'A catalog keeps the order its keys were added in. A merge or script that',
         'rebuilt it reordered keys. Repair it without changing a value:',
         `  node apps/web/scripts/i18n-catalogs.mjs restore-order --from=${from} [--from=<your branch before the merge>]`,
-        'If the reorder is intentional (for example STARTER_PROMPTS changed order),',
+        'If the reorder is intentional (for example a deliberate key regroup),',
         `commit it with I18N_REORDER=1 and the trailer \`${REORDER_TRAILER}\`,`,
         `or label a release pull request \`${REORDER_LABEL}\`.`,
       ].join('\n'),

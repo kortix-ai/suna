@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { serializePromptWithPastes } from '@kortix/shared';
 
 import {
   WEB_SPACING_PX,
   buildSessionRefsBlock,
   commandMessageText,
+  editResendAttachments,
   extractReplyContexts,
   interruptedTurnIds,
   isUserMessageEdited,
@@ -12,6 +14,7 @@ import {
   queuedPromptStatusLabel,
   quoteMarginBottom,
   rewindHiddenMessageIds,
+  userMessageCopyText,
   userMessageSentLabel,
   webSpace,
 } from './user-message';
@@ -413,7 +416,9 @@ describe('parseUserMessageText returns exactly what the regex version returned',
       const length = Math.floor(next() * 18);
       for (let j = 0; j < length; j++) text += tokens[Math.floor(next() * tokens.length)];
       const expected = legacyParse(text);
-      expect(parseUserMessageText(text)).toEqual(expected);
+      const { pasted, ...parsed } = parseUserMessageText(text);
+      expect(pasted).toEqual([]);
+      expect(parsed).toEqual(expected);
       if (expected.text !== text.trim()) tagged++;
     }
     expect(tagged).toBeGreaterThan(1500);
@@ -478,11 +483,152 @@ describe('parseUserMessageParts', () => {
     ];
     expect(parseUserMessageParts(parts as Parameters<typeof parseUserMessageParts>[0])).toEqual({
       rawText: 'hello\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>',
-      content: { text: 'hello', quotes: [], sessions: [], files: [{ path: '/w/a.png', mime: 'image/png', filename: 'a.png' }] },
+      content: { text: 'hello', quotes: [], sessions: [], files: [{ path: '/w/a.png', mime: 'image/png', filename: 'a.png' }], pasted: [] },
       attachments: [
-        { key: 'upload:0:/w/a.png', filename: 'a.png', mime: 'image/png', src: '/w/a.png' },
+        { key: 'upload:0:/w/a.png', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png' },
         { key: 'file-1', filename: 'other.pdf', mime: 'application/pdf', src: 'https://example.test/file', localUri: 'file:///tmp/other.pdf' },
       ],
     });
+  });
+});
+
+// Synthetic ids only.
+const SAVED_COPY =
+  'kortix-attachment://00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000003';
+
+describe('parseUserMessageParts — an upload ref keeps its path and saved copy', () => {
+  test('the tile carries the workspace path and the kortix-attachment ref; src stays the path', () => {
+    const text = `<file path="/workspace/uploads/.kortix-inbox/a.png" mime="image/png" filename="a.png" attachment="${SAVED_COPY}">x</file>`;
+    const { attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    expect(attachments).toEqual([
+      {
+        key: 'upload:0:/workspace/uploads/.kortix-inbox/a.png',
+        filename: 'a.png',
+        mime: 'image/png',
+        src: '/workspace/uploads/.kortix-inbox/a.png',
+        path: '/workspace/uploads/.kortix-inbox/a.png',
+        attachment: SAVED_COPY,
+      },
+    ]);
+  });
+});
+
+describe('editResendAttachments — what an edited prompt sends again (KRTX-962)', () => {
+  const savedCopy = { key: 'u0', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png', attachment: SAVED_COPY };
+  const pathOnly = { key: 'u1', filename: 'b.pdf', mime: 'application/pdf', src: '/w/b.pdf', path: '/w/b.pdf' };
+  const PATH_ONLY_REF = '<file path="/w/b.pdf" mime="application/pdf" filename="b.pdf">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const nativePart = { key: 'f1', filename: 'c.txt', mime: 'text/plain', src: 'https://example.test/c.txt' };
+
+  test('a saved copy resends as a URL part with the kortix-attachment ref', () => {
+    expect(editResendAttachments([savedCopy], '')).toEqual({
+      fileParts: [{ type: 'file', mime: 'image/png', url: SAVED_COPY, filename: 'a.png' }],
+      text: '',
+    });
+  });
+
+  test('a native file part resends as a URL part with its own url', () => {
+    expect(editResendAttachments([nativePart], '')).toEqual({
+      fileParts: [{ type: 'file', mime: 'text/plain', url: 'https://example.test/c.txt', filename: 'c.txt' }],
+      text: '',
+    });
+  });
+
+  test('a path-only upload resends its <file> ref as text', () => {
+    expect(editResendAttachments([pathOnly], '')).toEqual({
+      fileParts: [],
+      text: PATH_ONLY_REF,
+    });
+  });
+
+  test('the text joins the refs: unchanged with none, trimmed text first, refs alone for blank text', () => {
+    expect(editResendAttachments([], '  hi  ').text).toBe('  hi  ');
+    expect(editResendAttachments([pathOnly], ' hi ').text).toBe(`hi\n\n${PATH_ONLY_REF}`);
+    expect(editResendAttachments([pathOnly], '   ').text).toBe(PATH_ONLY_REF);
+    expect(editResendAttachments([pathOnly], '').text).toBe(PATH_ONLY_REF);
+  });
+
+  test('a tile with no source has nothing to resend; a missing mime falls back to octet-stream', () => {
+    expect(editResendAttachments([{ key: 'x', filename: 'x', localUri: 'file:///x' }], '')).toEqual({ fileParts: [], text: '' });
+    expect(editResendAttachments([{ key: 'y', filename: 'y.bin', mime: '', src: 'https://example.test/y' }], '').fileParts).toEqual([
+      { type: 'file', mime: 'application/octet-stream', url: 'https://example.test/y', filename: 'y.bin' },
+    ]);
+  });
+
+  test('a removed tile is not sent: only the kept ones go, in order', () => {
+    const all = [savedCopy, pathOnly, nativePart];
+    const kept = all.filter((tile) => tile.key !== 'u0');
+    const { fileParts, text } = editResendAttachments(kept, '');
+    expect(fileParts.map((part) => part.url)).toEqual(['https://example.test/c.txt']);
+    expect(text).toContain('path="/w/b.pdf"');
+    expect(text).not.toContain('a.png');
+    expect(editResendAttachments([], 'hi')).toEqual({ fileParts: [], text: 'hi' });
+  });
+});
+
+// Synthetic paste only.
+const PASTE = { id: '0a1b2c3d', text: 'line one\nline two\n<file path="/w/x.png" mime="image/png" filename="x.png">x</file>' };
+
+describe('pasted text — `<pasted_content>` blocks become tiles', () => {
+  test('parseUserMessageText takes the pastes out first; a tag inside a paste stays paste text', () => {
+    const parsed = parseUserMessageText(serializePromptWithPastes('my question', [PASTE]));
+    expect(parsed.text).toBe('my question');
+    expect(parsed.pasted).toEqual([PASTE]);
+    expect(parsed.files).toEqual([]);
+  });
+
+  test('a pastes-only message has no text', () => {
+    const parsed = parseUserMessageText(serializePromptWithPastes('', [PASTE]));
+    expect(parsed).toMatchObject({ text: '', pasted: [PASTE] });
+  });
+
+  test('a tag the user typed (neutralized on send) stays text, not a tile', () => {
+    const parsed = parseUserMessageText(serializePromptWithPastes('<pasted_content id="x" chars="1">\na\n</pasted_content>', []));
+    expect(parsed.pasted).toEqual([]);
+    expect(parsed.text).toBe('<pasted_content id="x" chars="1">\na\n</pasted_content>');
+  });
+
+  test('a typed tag shows as typed and resends escaped, with or without pastes', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    expect(parseUserMessageText(serializePromptWithPastes(typed, [])).text).toBe(typed);
+    expect(parseUserMessageText(serializePromptWithPastes(typed, [PASTE])).text).toBe(typed);
+    expect(editResendAttachments([], typed).text).toBe(serializePromptWithPastes(typed, []));
+    expect(userMessageCopyText(typed, [PASTE])).toBe(`${PASTE.text}\n\n${typed}`);
+  });
+
+  test('parseUserMessageParts draws each paste as a tile ahead of the files', () => {
+    const text = `${serializePromptWithPastes('hi', [PASTE])}\n\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>`;
+    const { content, attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    expect(content.text).toBe('hi');
+    expect(attachments.map((a) => a.key)).toEqual(['pasted:0a1b2c3d', 'upload:0:/w/a.png']);
+    expect(attachments[0]).toEqual({ key: 'pasted:0a1b2c3d', filename: 'Pasted text', pasted: PASTE });
+  });
+
+  test('a paste repeated (a command template repeats its args) is one tile, sent once on edit', () => {
+    const block = serializePromptWithPastes('', [PASTE]);
+    const text = `${block}\n\nrun it\n\n${block}`;
+    const { content, attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    expect(content.pasted).toEqual([PASTE]);
+    expect(attachments.map((a) => a.key)).toEqual(['pasted:0a1b2c3d']);
+    expect(editResendAttachments(attachments, 'run it').text).toBe(serializePromptWithPastes('run it', [PASTE]));
+  });
+
+  test('Copy writes each paste as its text, then the typed text', () => {
+    expect(userMessageCopyText('my question', [PASTE])).toBe(`${PASTE.text}\n\nmy question`);
+    expect(userMessageCopyText('', [PASTE])).toBe(PASTE.text);
+    expect(userMessageCopyText('plain', [])).toBe('plain');
+  });
+
+  test('an edit resends a kept paste as its block ahead of the text; a removed one is gone', () => {
+    const tile = { key: 'pasted:0a1b2c3d', filename: 'Pasted text', pasted: PASTE };
+    expect(editResendAttachments([tile], 'edited')).toEqual({
+      fileParts: [],
+      text: serializePromptWithPastes('edited', [PASTE]),
+    });
+    expect(editResendAttachments([], 'edited').text).toBe('edited');
+  });
+
+  test('a command body never shows the paste XML', () => {
+    const result = commandMessageText('review', serializePromptWithPastes('run it', [PASTE]));
+    expect(result).toEqual({ body: 'run it', prompt: '/review run it' });
   });
 });

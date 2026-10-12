@@ -14,8 +14,9 @@ const source = files.map((file) => readFileSync(`${import.meta.dir}/${file}`, 'u
 const host = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
 const Empty = () => null;
 
-const renders = { mark: 0, children: 0, legacy: 0 };
+const renders = { mark: 0, children: 0 };
 let childrenProps: any[] = [];
+let navPills: any[] = [];
 let paged: Record<string, any> = {};
 const VirtualList = (props: any) => {
   // A virtualised list renders each cell as a PureComponent: a cell re-renders
@@ -47,11 +48,11 @@ const fakes: Record<string, Record<string, unknown>> = {
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   '@/components/ui/text': { Text: host('Text') },
+  './DrawerNavRows': { NavPill: (props: any) => { navPills.push(props); return null; } },
   '@/components/session/SessionStatusMark': { SessionStatusMark: () => { renders.mark++; return null; } },
   '@/components/session/SessionTreeParts': {
     SessionChildren: (props: any) => { renders.children++; childrenProps.push(props); return null; },
   },
-  '@/components/menu/LegacyChatsSection': { LegacyChatsSection: () => { renders.legacy++; return null; } },
   '@/lib/projects/hooks': {
     useProject: () => ({ data: { name: 'Project', account_id: 'a-1' } }),
     useAccounts: () => ({ data: [] }),
@@ -119,8 +120,9 @@ const row = (id: string, extra: Record<string, unknown> = {}) => ({ session_id: 
 
 let tree: any;
 beforeEach(() => {
-  renders.mark = renders.children = renders.legacy = 0;
+  renders.mark = renders.children = 0;
   childrenProps = [];
+  navPills = [];
   // `p-1` is expanded below: its children block shows.
   paged = {
     me: page([row('s-1'), row('s-2'), row('p-1', { child_count: 2 })]),
@@ -133,11 +135,14 @@ afterEach(async () => {
   tree = undefined;
 });
 
+const navigated: unknown[][] = [];
 const handlers = {
   onNewSession() {},
   onOpenProjectSession() {},
   onOpenSubsession() {},
-  onNavigateRoute() {},
+  onNavigateRoute(...args: unknown[]) {
+    navigated.push(args);
+  },
   onSessionActions() {},
   onOpenSwitcher() {},
   onClose() {},
@@ -159,12 +164,10 @@ describe('ProjectLeftDrawer renders', () => {
     const before = { ...renders };
     await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: true })));
     expect(renders.mark).toBe(before.mark);
-    expect(renders.legacy).toBe(before.legacy);
     // The children block's loader follows `open`.
     expect(childrenProps.at(-1).showLoader).toBe(true);
     await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: false })));
     expect(renders.mark).toBe(before.mark);
-    expect(renders.legacy).toBe(before.legacy);
     expect(childrenProps.at(-1).showLoader).toBe(false);
   });
 
@@ -209,5 +212,46 @@ describe('ProjectLeftDrawer renders', () => {
       .map((node: any) => node.props.accessibilityLabel);
     expect(selected).toHaveLength(1);
     expect(selected[0]).toStartWith('Child 6, sub-session of ');
+  });
+
+  test('notification_center off: the pills from before KRTX-1742, no Notifications', async () => {
+    await act(async () => {
+      tree = create(
+        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsUnreadCount: 3 })
+      );
+    });
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Apps']);
+  });
+
+  test('the Notifications pill shows the unread count and opens the inbox', async () => {
+    navigated.length = 0;
+    await act(async () => {
+      tree = create(
+        React.createElement(Drawer.ProjectLeftDrawer, {
+          projectId: 'proj',
+          ...handlers,
+          open: true,
+          notificationsEnabled: true,
+          notificationsUnreadCount: 3,
+        })
+      );
+    });
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Notifications', 'Apps']);
+    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
+    expect(pill.accessibilityLabel).toBe('Notifications, 3 unread');
+    expect(pill.trailing.props.count).toBe(3);
+    await act(async () => pill.onPress());
+    expect(navigated).toEqual([['inbox']]);
+  });
+
+  test('with nothing unread the pill reads its name alone', async () => {
+    await act(async () => {
+      tree = create(
+        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsEnabled: true })
+      );
+    });
+    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
+    expect(pill.accessibilityLabel).toBe('Notifications');
+    expect(pill.trailing.props.count).toBe(0);
   });
 });

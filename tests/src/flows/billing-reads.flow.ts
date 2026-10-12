@@ -106,6 +106,14 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/credit-breakdown");
       r.status(OWNER_READ);
     });
+    await ctx.step("a team member with no credit row of their own reads an all-zero breakdown, not an error", async () => {
+      const team = await ctx.fixtures.team();
+      const member = await team.addMember("member");
+      const r = await ctx.client.as(member).get("/v1/billing/credit-breakdown");
+      r.status(OWNER_READ);
+      if (r.statusCode !== 200) return;
+      r.body().has("$.total", 0).has("$.expiring", 0).has("$.non_expiring", 0).has("$.daily", 0);
+    });
     await ctx.step("ANON cannot read the credit breakdown → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/credit-breakdown");
       r.status(401);
@@ -120,9 +128,16 @@ flow(
       r.status(401);
     });
 
-    await ctx.step("OWNER reads the visible tier configurations", async () => {
+    await ctx.step("OWNER reads the visible tiers: free and pro listed, the internal none tier hidden", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/tier-configurations");
       r.status(OWNER_READ);
+      if (r.statusCode !== 200) return;
+      const tiers = r.json<{ tiers: Array<{ name: string; display_name: string; monthly_price: number }> }>().tiers;
+      const names = tiers.map((t) => t.name);
+      if (!names.includes("free") || !names.includes("pro")) throw new Error(`expected free and pro, got ${JSON.stringify(names)}`);
+      if (names.includes("none")) throw new Error("the internal `none` tier is listed");
+      const pro = tiers.find((t) => t.name === "pro")!;
+      if (pro.display_name !== "Pro" || pro.monthly_price !== 20) throw new Error(`unexpected pro tier: ${JSON.stringify(pro)}`);
     });
     await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/tier-configurations");
@@ -149,58 +164,3 @@ flow(
   },
 );
 
-// BILL-7 — /deduct and /deduct-usage (credits.ts). These are NOT internal-
-// cron-only: they sit behind the SAME plain supabaseAuth gate as every other
-// billing route here (billingApp's wildcard auth middleware only special-cases
-// /webhook and /cron/ paths) and resolve accountId directly from the caller's
-// own userId — i.e. any authenticated user can call these on themselves. Both
-// handlers short-circuit to a real, genuine 200 with NO ledger write whenever
-// the computed cost/amount is <= 0 (see credits.ts: `if (cost <= 0) return
-// {success:true, cost:0, ...}` / `if (!amount || amount <= 0) return
-// {success:true, cost:0, ...}`), so a zero-cost call exercises the real route
-// and real response shape without touching the account's actual credit
-// balance.
-flow(
-  "BILL-7",
-  {
-    domain: "billing",
-    routes: ["POST /v1/billing/deduct", "POST /v1/billing/deduct-usage"],
-  },
-  async (ctx) => {
-    await ctx.step("ANON cannot deduct → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post("/v1/billing/deduct", {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          model: "glm-5.3-flash",
-        });
-      r.status(401);
-    });
-    await ctx.step("OWNER: zero-token deduct is a real no-op 200 (no balance change)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/billing/deduct", {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          model: "glm-5.3-flash",
-        });
-      r.status([200, 404]);
-      if (r.statusCode === 200) {
-        r.body().has("$.success", true).has("$.cost", 0);
-      }
-    });
-
-    await ctx.step("ANON cannot deduct-usage → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/deduct-usage", { amount: 0 });
-      r.status(401);
-    });
-    await ctx.step("OWNER: zero-amount deduct-usage is a real no-op 200 (no balance change)", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/deduct-usage", { amount: 0 });
-      r.status([200, 404]);
-      if (r.statusCode === 200) {
-        r.body().has("$.success", true).has("$.cost", 0);
-      }
-    });
-  },
-);

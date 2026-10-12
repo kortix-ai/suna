@@ -6,11 +6,7 @@ import {
   auditLabelForRoute,
   UNMATCHED_ROUTE_LABEL,
 } from '@kortix/shared/audit-labels';
-import type { Context, Next } from 'hono';
-import { matchedRoutes } from 'hono/route';
-import { getRequestContext, runWithContext } from '../lib/request-context';
-import type { AppEnv } from '../types';
-import { credentialFromContext } from './audit-credential';
+import { getRequestContext } from '../lib/request-context';
 import { type AuditRow, getAuditQueue } from './audit-queue';
 import { AnonymousAuditBudget, type AnonymousAuditSummary } from './audit-anonymous-budget';
 import {
@@ -18,9 +14,7 @@ import {
   type HonoIdentitySnapshot,
   type InboundAuditScope,
   type InboundEntrypoint,
-  attachInboundAuditScope,
   currentInboundAuditScope,
-  isUnauditedInbound,
 } from './audit-scope';
 import { db } from './db';
 import { auditDb } from './audit-db';
@@ -85,8 +79,6 @@ export interface AuditEventInput {
   metadata?: Record<string, unknown>;
 }
 
-type AuditContext = Context<AppEnv>;
-
 function pathIds(path: string): { projectId: string | null; sessionId: string | null } {
   const projectMatch = path.match(/\/projects\/([^/]+)/);
   const sessionMatch = path.match(/\/projects\/[^/]+\/sessions\/([^/]+)/);
@@ -118,42 +110,6 @@ function inferResource(path: string): { resourceType: string; resourceId: string
     // setup links, public shares, device codes). Preserve UUID identifiers;
     // the matched route template in `action` still identifies every endpoint.
     resourceId: isUuid(id) ? id : null,
-  };
-}
-
-function inferAccountId(c: AuditContext): string | null {
-  const parts = c.req.path.split('/').filter(Boolean);
-  const accountPathCandidate = parts[0] === 'v1' && parts[1] === 'accounts' ? parts[2] : null;
-  const accountPathId = isUuid(accountPathCandidate) ? accountPathCandidate : null;
-  return (
-    c.get('accountId') ||
-    getRequestContext()?.accountId ||
-    c.req.query('account_id') ||
-    c.req.query('accountId') ||
-    accountPathId ||
-    null
-  );
-}
-
-/**
- * What the Hono auth middleware put on the context, captured once after the
- * handler ran. The rules below turn it into actor fields; they are the rules
- * the request audit has always applied.
- */
-function honoIdentitySnapshot(c: AuditContext): HonoIdentitySnapshot {
-  const request = getRequestContext();
-  const get = (key: string): unknown => (c as unknown as { get(key: string): unknown }).get(key);
-  return {
-    tokenUserId: c.get('userId') ?? request?.userId ?? null,
-    accountId: inferAccountId(c),
-    authType: c.get('authType'),
-    apiKeyType: c.get('apiKeyType'),
-    sessionIdVar: c.get('sessionId') ?? null,
-    hasAgentGrant: c.get('agentGrant') != null,
-    actor: get('actor'),
-    credential: credentialFromContext(get),
-    onBehalfOfUserIdVar: get('onBehalfOfUserId') as string | null | undefined,
-    path: c.req.path,
   };
 }
 
@@ -189,8 +145,9 @@ function auditSourceFor(authType: string | undefined, actorType: AuditActorType 
   return 'api';
 }
 
-export function inferAuditSource(c: AuditContext, actorType: AuditActorType | null): string {
-  return auditSourceFor(c.get('authType'), actorType);
+/** The audit `source` for a request that authenticated as `authType` (the `authType` context value). */
+export function inferAuditSource(authType: string | undefined, actorType: AuditActorType | null): string {
+  return auditSourceFor(authType, actorType);
 }
 
 function outcomeForStatus(status: number): AuditOutcome {
@@ -199,17 +156,6 @@ function outcomeForStatus(status: number): AuditOutcome {
   // 101: a WebSocket handshake that completed. The socket is open.
   if (status === 101 || (status >= 200 && status < 400)) return 'success';
   return 'failure';
-}
-
-function errorStatus(error: unknown): number {
-  if (
-    error &&
-    typeof error === 'object' &&
-    typeof (error as { status?: unknown }).status === 'number'
-  ) {
-    return (error as { status: number }).status;
-  }
-  return 500;
 }
 
 function uuidOrNull(value: string | null | undefined): string | null {
@@ -684,29 +630,6 @@ function routeLabel(scope: InboundAuditScope): AuditRouteLabel | null {
 }
 
 /**
- * The route template of the endpoint Hono matched, or null when none did.
- *
- * Not `routePath`: that is the handler Hono stopped at, so a request an auth
- * middleware refused was recorded under the middleware's `/v1/projects/*`
- * instead of the endpoint it asked for. The router matches the whole handler
- * stack up front, so the endpoint is known even when it never ran: the last
- * method route, or else a catch-all handler (`app.all`) the catalog labels.
- * Everything else that matches with method ALL is middleware.
- */
-function matchedEndpointRoute(c: AuditContext): string | null {
-  const routes = matchedRoutes(c);
-  for (let i = routes.length - 1; i >= 0; i -= 1) {
-    const route = routes[i];
-    if (route && route.method !== 'ALL') return route.path;
-  }
-  for (let i = routes.length - 1; i >= 0; i -= 1) {
-    const route = routes[i];
-    if (route && auditLabelForRoute('ALL', route.path)) return route.path;
-  }
-  return null;
-}
-
-/**
  * The row for one inbound request. Precedence, per field: what an
  * authenticator bound or a handler annotated, then what the Hono auth
  * middleware put on the context, then the request context. A request with no
@@ -868,65 +791,3 @@ export async function emitInboundAuditRow(scope: InboundAuditScope, status: numb
     console.error('[audit] Failed to record inbound request:', error);
   }
 }
-
-/**
- * The request audit for the Hono app.
- *
- * Mounted on `*`. When `Bun.serve.fetch` already opened the request's scope
- * (production), this stamps what only Hono knows — the matched route
- * template, the handler's status, the auth middleware's identity — and leaves
- * the write to the edge. When nothing opened a scope (a test driving the app
- * directly), it opens one and writes the row itself.
- *
- * Either way every request gets exactly one row. There is no identity gate:
- * a request nobody authenticated is written as `anonymous`.
- */
-export async function auditApiRequest(c: AuditContext, next: Next): Promise<void> {
-  if (isUnauditedInbound(c.req.method, c.req.path)) {
-    await next();
-    return;
-  }
-  if (!getRequestContext()) {
-    // A bare Hono app has no request context. Open one, so an authenticator's
-    // binding has a scope to land in. Run the body directly — never recurse
-    // into this check, which a mocked request context could fail forever.
-    await runWithContext(
-      c.req.method,
-      c.req.path,
-      () => auditRequestInScope(c, next),
-      c.req.header('traceparent'),
-    );
-    return;
-  }
-  await auditRequestInScope(c, next);
-}
-
-async function auditRequestInScope(c: AuditContext, next: Next): Promise<void> {
-  let url: URL | null = null;
-  try {
-    url = new URL(c.req.url);
-  } catch {
-    url = null;
-  }
-  const scope = attachInboundAuditScope({
-    owner: 'hono',
-    method: c.req.method,
-    headers: c.req.raw.headers,
-    url,
-  });
-
-  let thrown: unknown;
-  try {
-    await next();
-  } catch (error) {
-    thrown = error;
-    throw error;
-  } finally {
-    if (scope.entrypoint === 'http') scope.route = matchedEndpointRoute(c);
-    scope.status = thrown ? errorStatus(thrown) : c.res.status;
-    scope.hono = honoIdentitySnapshot(c);
-    if (scope.owner === 'hono') await emitInboundAuditRow(scope, scope.status);
-  }
-}
-
-export const auditStateChangingRequest = auditApiRequest;

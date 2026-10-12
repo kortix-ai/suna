@@ -50,6 +50,12 @@ describe('startErrorMessage, bound to Teams', () => {
     expect(m).not.toContain('Give it a moment');
   });
 
+  test('project_archived says the workspace was deleted, not "it may have moved"', () => {
+    const m = teams(404, { code: 'project_archived', error: 'This workspace was deleted' });
+    expect(m).toContain('workspace was deleted');
+    expect(m).not.toContain('may have been moved');
+  });
+
   test('WORKSPACE_MODE_UNAVAILABLE explains the config change, not a login', () => {
     const m = teams(409, { code: 'WORKSPACE_MODE_UNAVAILABLE', error: 'read mode' });
     expect(m).toContain('`runtime` or `branch`');

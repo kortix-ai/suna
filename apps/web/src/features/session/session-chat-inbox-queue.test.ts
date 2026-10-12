@@ -20,6 +20,10 @@ const shellSend = readFileSync(
   fileURLToPath(new URL('./use-instant-session-send.ts', import.meta.url)),
   'utf8',
 );
+const queueList = readFileSync(
+  fileURLToPath(new URL('./composer/queued-prompt-list.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -158,7 +162,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     const detachedSend = between(shellSend, 'function deliverDetached(', 'async function deliverInChain(');
     const chainSend = between(shellSend, 'async function deliverInChain(', 'interface FirstPromptSourcesProps');
     const post = between(shellSend, 'function buildPost(', 'function deliverDetached(');
-    const send = between(shellSend, 'const handleSend = useCallback(', 'return { submitted, effectiveSubmission, extraSends, handleSend };');
+    const send = between(shellSend, 'const handleSend = useCallback(', 'const forgetExtraSend = useCallback(');
     expect(paint).toContain('setSubmission({ text, files: files ?? [] });');
     expect(send).toContain('paintSend(send, env);');
     expect(send).toContain('deliverDetached(send, env, post);');
@@ -266,7 +270,7 @@ describe('stop reaches the queue that actually holds the messages', () => {
     // of behind an earlier Send still waiting in the session's delivery chain.
     expect(rewind).toContain('const editSend = { commitsRewind: true };');
     const sendAt = rewind.indexOf(
-      'await handleSend(text, undefined, undefined, undefined, editSend)',
+      'await handleSend(sendText, resend, undefined, undefined, editSend)',
     );
     const commitAt = rewind.indexOf('.commitSessionRevert(');
     expect(sendAt).toBeGreaterThan(-1);
@@ -294,9 +298,28 @@ describe('stop reaches the queue that actually holds the messages', () => {
 });
 
 describe('queue row actions address the inbox that holds the row', () => {
-  test('there is no per-row "send now": reordering is a non-goal, and Resume releases the hold', () => {
+  test('"Send now" reuses the one retry handler; the interrupting stop-then-send orchestration stays gone', () => {
+    // The row affordance lives in `QueuedPromptList` and is asserted
+    // behaviourally in `queued-prompt-list.test.tsx`. The chat keeps ONE client
+    // side path: the SAME `handleRetryQueuedMessage` → `promptInbox.retry`
+    // primitive answers a failed row's "Retry" and a queued row's "Send now"
+    // (the server promotes the row past the ordering gate — its own route
+    // comment names the two labels one primitive). The removed
+    // `stopThenSendNow` (stop the turn, then send) stays out: "Stop and send"
+    // is the server's interrupt primitive, named as the stop it is.
     expect(chat).not.toContain('handleQueueSendNow');
     expect(chat).not.toContain('stopThenSendNow');
+    expect(chat).toContain('onRetry={handleRetryQueuedMessage}');
+    // And the affordance itself is this PR's decision (KRTX-1587): the list
+    // row's Send now branch exists and is gated to rows the viewer owns that
+    // the running turn has not already taken (`steer` with no fallback is
+    // already being read at the next step — nothing to hurry). The test-source
+    // reader inlines the catalog value after each `copy.raw('key')`, so the
+    // assertions match on the keys and the gate fragments.
+    expect(queueList).toContain("copy.raw('text588032878324')");
+    expect(queueList).toMatch(/row\.state === 'queued'/);
+    expect(queueList).toContain('!row.fromAnotherMember');
+    expect(queueList).toContain('!(row.steer && !row.steerFallback)');
     const resume = between(chat, 'const handleResumeQueue = useCallback(', '}, [promptInbox.hold]);');
     expect(resume).toContain('promptInbox.hold(false)');
     expect(resume).toContain('setResumePending(false)');
@@ -440,32 +463,48 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
 });
 
 describe('Up and the pencil edit a queued entry in place', () => {
-  test('opening an edit sends no request: the row stays queued, the words arrive at once', () => {
-    const takeBack = between(
-      chat,
-      'const handleTakeBackQueue = useCallback(',
-      'const handleCancelQueueEdit = useCallback(',
-    );
-    expect(takeBack).toContain('row.takeBackEligible');
-    expect(takeBack).toContain(".setPrefill(sessionId, target.editText, undefined, 'replace')");
-    expect(takeBack).not.toContain('promptInbox.');
-    expect(takeBack).not.toContain('await ');
+  // The edit itself (no request on open, a PATCH that keeps the row's files on
+  // Submit, nothing on Cancel) is `queued-prompt-edit.ts`, tested on its own in
+  // `queued-prompt-edit.test.ts`. These pin that BOTH surfaces drawing the
+  // queue use it: the boot shell used to delete the row and refill the
+  // composer with its text parts only, losing every file on the message.
+  test('the chat and the boot shell share one edit, keyed by the project session', () => {
+    expect(chat).toContain('const queueEdit = useQueuedPromptEdit({');
+    expect(chat).toContain('key: projectSessionId ?? sessionId,');
+    expect(shell).toContain('const queueEdit = useQueuedPromptEdit({');
+    expect(shell).toContain('key: sessionId,');
+  });
+
+  test('Edit never deletes the queued row, so its files stay on it', () => {
+    for (const source of [chat, shell]) {
+      const onEdit = between(source, 'onEdit={(id) => {', '}}');
+      expect(onEdit).toContain('queueEdit.takeBack(id)');
+      expect(onEdit).not.toContain('.remove(');
+      expect(source).toContain('editing={queueEdit.editing}');
+      expect(source).toContain('onCancelEdit={queueEdit.cancel}');
+    }
   });
 
   test('Submit while editing saves into the same row and never sends', () => {
-    const save = between(
-      chat,
-      'const handleSaveQueueEdit = useCallback(',
-      '// ---- Triple-ESC to stop ----',
+    expect(chat).toContain('if (await queueEdit.save(text)) return;');
+    const shellSubmit = between(
+      shell,
+      'onSend={async (text, files, options, attachments) => {',
+      'onCommand={handleCommand}',
     );
-    expect(save).toContain('promptInbox.edit(edit.promptId, next)');
-    expect(save).not.toContain('promptInbox.enqueue');
-    expect(save).not.toContain('handleSend(');
-    expect(chat).toContain('await handleSaveQueueEdit(edit, text);');
+    expect(shellSubmit.indexOf('if (await queueEdit.save(text)) return;')).toBeGreaterThan(-1);
+    expect(shellSubmit.indexOf('if (await queueEdit.save(text)) return;')).toBeLessThan(
+      shellSubmit.indexOf('await handleSend('),
+    );
+    for (const source of [chat, shell]) {
+      // The boot shell shows a disabled Stop while the box boots; editing must
+      // still be submittable.
+      expect(source).toContain("submitLabel={queueEdit.editing ? tQueue('submitEdit') : null}");
+      expect(source).toContain('onArrowUpAtStart={() => queueEdit.takeBack()}');
+    }
   });
 
-  test('the composer gets the key handler and the hint', () => {
-    expect(chat).toContain('onArrowUpAtStart={() => handleTakeBackQueue()}');
+  test('the chat composer shows the Up hint while something is editable', () => {
     // The hint shows only while there is something Up would take back.
     expect(chat).toMatch(/hint=\{\s*canTakeBackQueue \?/);
   });

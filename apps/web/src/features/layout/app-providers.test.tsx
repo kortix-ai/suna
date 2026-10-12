@@ -29,6 +29,7 @@ stub('@/features/connectors/connector-connection-gate-dialog', {
   ConnectorConnectionGateDialog: Named,
 });
 stub('@/lib/storage/managed-storage', { pruneAllRegisteredCaches: () => {} });
+stub('@/lib/device-caches', { sweepRetiredDeviceCaches: () => {} });
 stub('@/components/ui/sidebar-width', { SIDEBAR_MAX_WIDTH_PX: 416 });
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => false }));
 mock.module('@/stores/onboarding-mode-store', () => ({

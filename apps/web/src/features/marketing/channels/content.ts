@@ -67,7 +67,7 @@ export const hero = {
   ctaPrimary: 'Connect Slack',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
-  ctaSecondaryHref: '/docs/connect/slack',
+  ctaSecondaryHref: '/docs/connect/channels#slack',
   microline: 'Slack and Teams today · email experimental, per project',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
@@ -349,7 +349,7 @@ export const closing = {
   ctaPrimary: 'Connect Slack',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the channel docs',
-  ctaSecondaryHref: '/docs/connect/slack',
+  ctaSecondaryHref: '/docs/connect/channels#slack',
 } as const;
 
 export function getLocalizedChannelsContent(tI18nComplete: UiTranslator) {

@@ -61,8 +61,11 @@ import { logger } from '../log/logger'
  */
 // Keep terminal credential-state reasons aligned with validateToken in
 // apps/api/src/repositories/account-tokens.ts. Other responses reset the streak.
+// KRTX-1564: a dead row is now NAMED in the refusal (`project token <id> is
+// revoked`); the bare `<kind> token <id> is revoked` form classifies the same
+// terminal state — a message-shape change is not a change in terminality.
 const SESSION_TOKEN_DEAD_PATTERN =
-  /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity/i
+  /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity|token [0-9a-f-]{36} is revoked/i
 
 /** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5

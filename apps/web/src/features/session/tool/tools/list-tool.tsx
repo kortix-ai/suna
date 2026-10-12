@@ -23,11 +23,11 @@ import { useCallback, useContext, useMemo } from 'react';
 
 const NO_PATHS: string[] = [];
 
-export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ListTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled } = useToolNavigation();
   const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();

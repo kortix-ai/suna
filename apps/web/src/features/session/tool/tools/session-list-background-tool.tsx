@@ -15,34 +15,20 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { parseBackgroundWorkers } from '@kortix/shared/tool-output';
 import { useMemo } from 'react';
 
-export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionListBackgroundTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const project = (input.project as string) || '';
 
-  const workers = useMemo(() => {
-    if (!output) return [];
-    const entries: Array<{
-      id: string;
-      status: string;
-      project: string;
-      prompt: string;
-    }> = [];
-    const re = /\*\*(ses_\S+)\*\*.*?status:\s*(\w+).*?project:\s*(\S+)/gi;
-    let m;
-    while ((m = re.exec(output)) !== null) {
-      entries.push({ id: m[1], status: m[2], project: m[3], prompt: '' });
-    }
-    return entries;
-  }, [output]);
+  const workers = useMemo(() => parseBackgroundWorkers(output), [output]);
 
   // Both scan the full output — `includes` walks it, `isErrorOutput` trims a
-  // copy of it and runs `JSON.parse`. Neither depends on render state, and the
-  // error branch below is the one taken whenever the regex above finds nothing.
+  // copy of it and runs `JSON.parse`. Neither depends on render state.
   const mentionsSession = useMemo(() => output.includes('ses_'), [output]);
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
 

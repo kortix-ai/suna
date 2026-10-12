@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
-import type { SessionDeliveryOutcome } from '../projects/session-lifecycle';
+import type { FollowUpOutcome } from '../projects/session-lifecycle';
 
 // Persist the headline invariant of the Slack channel refactor: a known thread
 // maps PERMANENTLY to exactly one session. A follow-up routes into that session
@@ -96,14 +96,14 @@ mock.module('../channels/slack/model-choice', () => ({
 }));
 
 // ─── Lifecycle delivery: the outcome under test ───────────────────────────────
-let deliverOutcome: SessionDeliveryOutcome = 'delivered';
+let deliverOutcome: FollowUpOutcome = 'delivered';
 let deliverCalls = 0;
 
 // ─── lifecycle seam: spy on createSession (the "second session") ─────────────
 let createSessionCalls = 0;
 let createSessionInputs: any[] = [];
 mock.module('../projects/session-lifecycle', () => ({
-  continueSession: async () => {
+  deliverThroughQueue: async () => {
     deliverCalls++;
     return deliverOutcome;
   },
@@ -230,7 +230,7 @@ beforeEach(() => {
   createSessionInputs = [];
   deliverCalls = 0;
   setSlackSessionLifecycleForTest({
-    continueSession: async () => {
+    deliverFollowUp: async () => {
       deliverCalls++;
       return deliverOutcome;
     },
@@ -502,12 +502,14 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
     });
   });
 
-  test('pending (session waking) → keep mapping, NEVER recreate', async () => {
-    deliverOutcome = 'pending';
+  test('queued (durable, box waking) → keep mapping, keep the turn open, NEVER recreate', async () => {
+    deliverOutcome = 'queued';
     dbResults = [[project], [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }]];
+    const finalizedBefore = finalizeCalls.length;
     await spawnAgentTurn('proj-1', envelope, event);
     expect(createSessionCalls).toBe(0);
-    expect(finalizeCalls.at(-1)?.error).toContain('waking');
+    // No "send that again" card: the queue delivers the reply itself.
+    expect(finalizeCalls.length).toBe(finalizedBefore);
   });
 
   test('failed (genuine error) → surface it ONCE with a session link, keep mapping, NEVER recreate', async () => {

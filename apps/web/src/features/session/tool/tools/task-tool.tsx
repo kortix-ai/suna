@@ -1,15 +1,19 @@
 'use client';
 
+import { toolCallBlock } from '@kortix/sdk';
+
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
   firstMeaningfulLine,
   partInput,
   partStatus,
+  partError,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ToolError } from '@/features/session/tool/tool-error';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
@@ -99,10 +103,10 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
  * that button was the sole occupant of the body of a just-started sub-agent,
  * which is what kept the empty case from being empty.
  */
-export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const status = partStatus(call);
 
   const subagentType = (input.subagent_type as string) || 'general';
   // `firstMeaningfulLine` splits its argument on every newline and trims each
@@ -116,7 +120,7 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     [input],
   );
 
-  const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
+  const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
 
   const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
 
@@ -131,10 +135,16 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
 
+  // The task tool's failure reason, drawn in the body. The renderer routes
+  // errored dispatches back here (they keep their row and their child thread),
+  // and this row must still say WHY it failed — before it only announced the
+  // dispatch, never the error (KRTX-1746).
+  const errorText = partError(call);
+
   const lastActivity = useMemo(() => {
     if (childToolParts.length === 0) return null;
     const last = childToolParts[childToolParts.length - 1];
-    const info = getToolInfo(last.tool, partInput(last) as Record<string, any>);
+    const info = getToolInfo(last.tool, partInput(toolCallBlock(last)) as Record<string, any>);
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 
@@ -175,10 +185,19 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         // plain button onto the full view — the same destination the `View`
         // action carries, so the row and its action never disagree. Without
         // this the reader met a row that looked openable and was not.
-        onClick={childSessionId && !hasInlineSteps ? openModal : undefined}
+        // A FAILED dispatch keeps the disclosure instead: its body is the
+        // failure reason, which `ClickableToolRow` would drop, and the reason
+        // must stay readable on the row exactly as the generic error card
+        // showed it (KRTX-1746). The child thread stays one `View` away.
+        onClick={childSessionId && !hasInlineSteps && !errorText ? openModal : undefined}
       >
-        {hasInlineSteps ? (
-          <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+        {(errorText || hasInlineSteps) ? (
+          <>
+            {errorText ? <ToolError error={errorText} toolName={call.name} /> : undefined}
+            {hasInlineSteps ? (
+              <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+            ) : undefined}
+          </>
         ) : undefined}
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />

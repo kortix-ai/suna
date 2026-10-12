@@ -1,9 +1,9 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { platinumJson, platinumJsonResponse, isPlatinumConfigured } from '../../shared/platinum';
-import { normalizeExistingProviderState } from './state';
 import type { BuildLogTap } from './index';
 import { shortLivedObservation } from '../observation-cache';
 import { classifyPlatinumPollError, isTerminalPollError, retryAfterMsFromError } from './platinum-poll-classify';
+import { exponentialBackoffMs } from '../../shared/backoff';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -14,6 +14,81 @@ export interface PlatinumTemplate {
   state?: string;
   /** Echoed by /from-build since Platinum #1326; absent on an older API. */
   kernel_modules?: string;
+  /** Redacted podman output. Only on the by-id detail row (the list strips it);
+   *  a failed build ends it with `[build failed] <reason>`. */
+  build_logs?: string | null;
+  buildLogs?: string | null;
+}
+
+/**
+ * Platinum reported `state: failed` for a template build. Carries the failing
+ * lines of the build log so the error a user sees (`kortix sandboxes builds`,
+ * the dashboard) names the step that broke instead of a bare "build failed" —
+ * Platinum always had the cause in `build_logs`; we dropped it.
+ *
+ * A genuine build failure is deterministic, so this is NEVER retried (see
+ * isRetryablePlatinumBuildError). The type — and the message prefix, for a
+ * re-wrapped copy — is what keeps the appended log text (which may contain
+ * words like "timeout" or "no such file") from flipping that decision.
+ */
+export class PlatinumTemplateBuildFailedError extends Error {
+  readonly templateName: string;
+  readonly detail: string;
+  constructor(templateName: string, detail: string) {
+    super(`Platinum template ${templateName} build failed${detail ? `: ${detail}` : ''}`);
+    this.name = 'PlatinumTemplateBuildFailedError';
+    this.templateName = templateName;
+    this.detail = detail;
+  }
+}
+
+/** Matches a (possibly re-wrapped) PlatinumTemplateBuildFailedError message. */
+export const PLATINUM_BUILD_FAILED_RE = /platinum template \S+ build failed/i;
+
+const FAILURE_DETAIL_MAX = 1_200;
+const FAILURE_LINE_MAX = 400;
+const ERRORISH_LINE = /\b(error|errors|failed|fatal|denied|cannot|can't|not found|no such|unable|invalid|exit status|exit code|killed|panic)\b/i;
+
+/**
+ * The few lines of a Platinum build log that explain a failure: the
+ * error-looking lines just before Platinum's `[build failed] <reason>` trailer,
+ * plus the trailer itself. Bounded (each line and the whole) because the
+ * result becomes an error message stored on the build row and shown in UIs.
+ */
+export function summarizePlatinumBuildFailure(logs: string | null | undefined): string {
+  const text = (logs ?? '').replace(/\r/g, '');
+  if (!text.trim()) return '';
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const clip = (l: string) => (l.length > FAILURE_LINE_MAX ? `${l.slice(0, FAILURE_LINE_MAX)}…` : l);
+  let trailer = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i]!.startsWith('[build failed]')) { trailer = i; break; }
+  }
+  const end = trailer >= 0 ? trailer : lines.length;
+  const window = lines.slice(Math.max(0, end - 25), end);
+  // The giant "Error: building at STEP …" echo repeats the whole RUN line; the
+  // trailer already names the step, so prefer the shorter, causal error lines.
+  let picked = window.filter((l) => ERRORISH_LINE.test(l) && !/^Error: building at STEP/.test(l)).slice(-4);
+  if (picked.length === 0) picked = window.slice(-3);
+  const parts = [...picked, ...(trailer >= 0 ? [lines[trailer]!] : [])].map(clip);
+  const joined = parts.join(' | ');
+  return joined.length > FAILURE_DETAIL_MAX ? `${joined.slice(0, FAILURE_DETAIL_MAX)}…` : joined;
+}
+
+/** Best-effort: the failing build's log tail, from the polled row or its detail. */
+async function failedBuildLogs(
+  tpl: PlatinumTemplate | null,
+  client: PlatinumClient,
+): Promise<string> {
+  const inline = tpl?.build_logs ?? tpl?.buildLogs;
+  if (inline) return inline;
+  if (!tpl?.id) return '';
+  try {
+    const detail = await findTemplateById(tpl.id, client);
+    return detail?.build_logs ?? detail?.buildLogs ?? '';
+  } catch {
+    return ''; // the failure itself is already certain; the detail is a courtesy
+  }
 }
 
 /**
@@ -226,7 +301,7 @@ const POLL_BACKOFF_MAX_MS = 30_000;
 
 /** Exponential backoff with full jitter for transient poll errors. */
 function pollBackoffMs(streak: number): number {
-  const ceil = Math.min(POLL_BACKOFF_MAX_MS, POLL_BACKOFF_BASE_MS * 2 ** Math.max(0, streak - 1));
+  const ceil = exponentialBackoffMs({ attempt: streak, baseMs: POLL_BACKOFF_BASE_MS, capMs: POLL_BACKOFF_MAX_MS });
   return Math.floor(Math.random() * ceil);
 }
 
@@ -298,7 +373,15 @@ export async function waitForActive(
     const state = (tpl?.state ?? 'missing').toLowerCase();
     if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
     if (state === 'ready') return;
-    if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
+    if (state === 'failed') {
+      const logs = await failedBuildLogs(tpl, client);
+      if (logs) {
+        for (const line of logs.replace(/\r/g, '').split('\n').filter((l) => l.trim()).slice(-40)) {
+          tap?.onLine?.(line);
+        }
+      }
+      throw new PlatinumTemplateBuildFailedError(name, summarizePlatinumBuildFailure(logs));
+    }
     // building / pending / missing(=not-visible-yet) → healthy waiting.
     await new Promise((r) => setTimeout(r, POLL_MS));
   }

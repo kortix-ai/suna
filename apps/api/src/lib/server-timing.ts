@@ -124,7 +124,7 @@ export function formatStageEntries(stages: Partial<Record<TimingStage, StageSnap
 // provision-timeline.ts` records one mark per stage of the send path
 // (`load-sandbox`, `agent-switch`, `config-converge`, `model-catalog-converge`,
 // `ingress`, `env-sync`, `wire-id-read`, `turn-begin`, `upstream`,
-// `turn-accept` — see `sandbox-proxy/routes/preview.ts`). Unlike the stages
+// `turn-accept` — see `sandbox-proxy/forward/upstream.ts`). Unlike the stages
 // above, these are a finished, ORDERED SEQUENCE of milestones from one call,
 // not an accumulating count of same-shaped operations — there is nothing to
 // "begin" and "end", so `recordTurnStageMarks` takes the whole list at once.

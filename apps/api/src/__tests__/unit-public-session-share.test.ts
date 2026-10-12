@@ -15,6 +15,7 @@ let shareRow: any;
 let personalBindingRow: { connectionId: string } | null;
 let updateCalls = 0;
 let fetchUrls: string[] = [];
+let fetchInits: RequestInit[] = [];
 let ingressResolves = 0;
 let invalidations = 0;
 let wakes = 0;
@@ -101,11 +102,13 @@ beforeEach(() => {
   personalBindingRow = null;
   updateCalls = 0;
   fetchUrls = [];
+  fetchInits = [];
   ingressResolves = 0;
   invalidations = 0;
   wakes = 0;
-  globalThis.fetch = (async (url: RequestInfo | URL) => {
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
     fetchUrls.push(String(url));
+    fetchInits.push(init ?? {});
     return new Response('ok', { status: 200 });
   }) as unknown as typeof fetch;
 });
@@ -337,5 +340,47 @@ describe('public shares of a deleted session', () => {
       const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
       expect(res.status).toBe(410);
     }
+  });
+});
+
+// The public origin is derived from the client-facing request, not from the
+// hop that reached the API. A chained proxy appends to `x-forwarded-proto`
+// ("https, http"); the scheme is its FIRST value, never the raw header value.
+// The no-header URL-scheme fallback is pinned by the first test of this file.
+describe('public share origin across chained proxies', () => {
+  test('a single x-forwarded-proto value becomes the scheme', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`, {
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.share.public_url).toBe(`https://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+  });
+
+  test('a plain-http value keeps the http scheme', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`, {
+      headers: { 'x-forwarded-proto': 'http' },
+    });
+    const body = await res.json() as any;
+    expect(body.share.public_url).toBe(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+  });
+
+  test('a chained proxy that appended to x-forwarded-proto gets the first value', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`, {
+      headers: { 'x-forwarded-proto': 'https, http' },
+    });
+    const body = await res.json() as any;
+    expect(body.share.public_url).toBe(`https://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+  });
+
+  test('the X-Forwarded-Prefix handed to the sandbox app carries the first proto value too', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`, {
+      headers: { 'x-forwarded-proto': 'https, http' },
+    });
+    expect(res.status).toBe(200);
+    const headers = fetchInits.at(-1)?.headers as Headers | undefined;
+    expect(headers?.get('x-forwarded-prefix')).toBe(
+      `https://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000`,
+    );
   });
 });

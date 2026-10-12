@@ -963,19 +963,24 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
     'agentmail_email',
     'apps',
-    'config_releases',
     'connectors_api_discover',
+    'drives',
+    'ephemeral_sandboxes',
     'llm_gateway',
     'marketplace',
     'meta_agent',
     'monitors',
     'reminders',
     'secrets_egress',
-    'pi_worker',
     'pooled_provider_secrets',
     'pi_harness',
     'us_region',
+    'event_triggers',
     'warm_sessions',
+    'notification_center',
+    'session_log',
+    'volumes',
+    'stateless_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);
@@ -1025,6 +1030,13 @@ test('teams graduated: Microsoft Teams needs no flag, the key still typechecks',
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
+test('pi_worker withdrawn: sessions run pi only in the sandbox, the key still typechecks', () => {
+  // The worker/environment split left the product. The API no longer lists,
+  // resolves, or accepts `pi_worker`; `pi_harness` is the pi path.
+  const withdrawn: FeatureFlagKey = 'pi_worker';
+  expect(FEATURE_FLAG_KEYS).not.toContain(withdrawn);
+});
+
 test('FeatureFlagView stability accepts stable, beta, and experimental', () => {
   const stabilities: FeatureFlagView['stability'][] = ['experimental', 'beta', 'stable'];
   expect(stabilities).toHaveLength(3);
@@ -1043,6 +1055,22 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
   };
   const canonical: FeatureFlagView = legacy;
   expect(canonical.key).toBe('apps');
+});
+
+test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
+  const managed: FeatureFlagView = {
+    key: 'apps',
+    name: 'Apps',
+    description: 'x',
+    stability: 'experimental',
+    available: true,
+    enabled: true,
+    overridden: true,
+    operator_only: true,
+  };
+  const legacy: FeatureFlagView = { ...managed, key: 'monitors', operator_only: undefined };
+  expect(managed.operator_only).toBe(true);
+  expect(legacy.operator_only).toBeUndefined();
 });
 
 async function captureFeatureCall(

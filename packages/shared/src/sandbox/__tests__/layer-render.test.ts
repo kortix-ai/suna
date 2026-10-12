@@ -283,10 +283,11 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
     expect(rendered).toContain(`PATH=${KORTIX_USER_PATH_DIRS}:$PATH`);
   });
 
-  test('carries ONLY the two temporary Platinum mitigations, before the privilege drop, each best-effort', () => {
+  test('carries ONLY the three temporary Platinum mitigations, before the privilege drop, each best-effort', () => {
     const dropAt = entrypoint.indexOf('setpriv --reuid kortix');
     const mitigations = [
       'mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm',
+      'chmod 644 /etc/hosts',
       'ulimit -Hn 1048576',
       'ulimit -Sn 1048576',
     ];
@@ -296,10 +297,10 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
       expect(at).toBeLessThan(dropAt);
     }
     expect(entrypoint).toContain('chmod 1777 /dev/shm 2>/dev/null || true');
+    expect(entrypoint).toContain('chmod 644 /etc/hosts 2>/dev/null || true');
     expect(entrypoint).toContain('ulimit -Hn 1048576 2>/dev/null || true');
     expect(entrypoint).toContain('ulimit -Sn 1048576 2>/dev/null || true');
     expect(entrypoint).not.toContain('machine-id');
-    expect(entrypoint).not.toContain('/etc/hosts');
     expect(entrypoint).not.toContain('/dev/stdin');
     expect(entrypoint).not.toContain('LANG');
   });
@@ -307,13 +308,6 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
   test('the staged entrypoint is valid bash', () => {
     const proc = Bun.spawnSync(['bash', '-n'], { stdin: Buffer.from(entrypoint), stderr: 'pipe' });
     expect(proc.exitCode).toBe(0);
-  });
-
-  test('compiled boot verifies server.mjs before launch and preserves prefer fallback', () => {
-    expect(entrypoint).toContain('install-compiled-runtime')
-    expect(entrypoint).toContain('node "${COMPILED_RUNTIME_PATH}"')
-    expect(entrypoint).toContain('compiled runtime is required but unavailable')
-    expect(entrypoint).toContain('compiled runtime rejected launch; falling back to baked agent')
   });
 
   test('build verifies entrypoint syntax before wiring it as the entrypoint', () => {

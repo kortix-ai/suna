@@ -36,3 +36,15 @@ export function platformDefaultModelId(): string {
     SERVED_MANAGED_MODELS,
   );
 }
+
+/**
+ * Whether a bare managed model id is this deployment's platform default — the
+ * ONE managed model every tier may use, free included. `/model-defaults`
+ * advertises that default alongside `freeTier: true`, so hiding it from the
+ * picker and refusing it at resolution time left every fresh free account a
+ * dead composer (KRTX-1067). Every other managed model keeps its plan gates.
+ */
+export function isPlatformDefaultModelId(id: string): boolean {
+  const platform = platformDefaultModelId();
+  return platform.length > 0 && id === platform;
+}

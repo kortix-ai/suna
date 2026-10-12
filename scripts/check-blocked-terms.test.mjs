@@ -17,6 +17,9 @@ function repo() {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 't@example.com');
   git('config', 'user.name', 't');
+  // A developer's global attributes file can map `.env*` to a clean filter
+  // (dotenvx's global install does), which refuses the plaintext fixture below.
+  git('config', 'core.attributesfile', '/dev/null');
   writeFileSync(join(dir, 'a.txt'), 'one\ntwo\n');
   git('add', '.');
   git('commit', '-q', '-m', 'init');

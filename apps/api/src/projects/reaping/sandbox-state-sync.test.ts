@@ -275,7 +275,7 @@ describe('applyStoppedState', () => {
 
   // The lost update: a whole-object write assembled from a stale SELECT drops
   // whatever a concurrent writer put in the column in between — the
-  // `runtimeWakeId` wake fence (projects/routes/shared.ts) and, one table over,
+  // `runtimeWakeId` wake fence (projects/session-open/index.ts) and, one table over,
   // the `lastAliveAt` stamp the compute clamp bills against.
   //
   // The fixture deliberately avoids a `stopReason` key inside `metadata` here:
@@ -544,7 +544,7 @@ describe('reconcileSandboxStoppedByExternalId', () => {
   });
 
   // Account deletion, the orphan-box sweep, and the access path in
-  // projects/routes/shared.ts all call this AFTER stopping the box themselves.
+  // projects/session-open/index.ts all call this AFTER stopping the box themselves.
   // Making those wait for a second observation would leave the row `active`
   // against a box that is off — still billing — and shared.ts reads the row back
   // expecting `stopped` before it resumes it, so a deferred park breaks session

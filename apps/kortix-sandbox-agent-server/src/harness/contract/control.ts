@@ -91,7 +91,10 @@ export interface HarnessAbortAfterToolInput {
 export interface HarnessConfigReleaseReport {
   release_id: string | null
   desired_release_id: string | null
-  /** `workspace` only while `config_releases` is off for the project. */
+  /**
+   * `workspace` only when the box has no Kortix API to ask, or an API from
+   * before config releases graduated answered `403 feature_disabled`.
+   */
   source: 'release' | 'workspace' | 'image-default'
   /** Null before the first convergence; `follow-base` is the only mode. */
   mode: 'follow-base' | null

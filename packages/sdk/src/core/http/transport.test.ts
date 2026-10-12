@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { backendApi, setAdminBypass } from './api-client';
 import { ApiError, AuthError, BillingError } from './api/errors';
-import { authenticatedFetch } from './auth';
+import { authenticatedFetch, getSupabaseAccessToken, invalidateTokenCache } from './auth';
 import { configureKortix } from './config';
 import { clearImpersonationSession, setImpersonationSession } from './impersonation';
 import { send } from './transport';
@@ -226,6 +226,54 @@ describe('send: 401 replay', () => {
   });
 });
 
+describe('send: 401 recovery with a host that implements invalidate', () => {
+  function configureWithInvalidate(rotate: () => void, rejected: string[]) {
+    let current = 'old';
+    const getToken = Object.assign(async () => current, {
+      invalidate: (token: string) => {
+        rejected.push(token);
+        rotate();
+        current = 'new';
+      },
+    });
+    configureKortix({
+      backendUrl: 'http://backend.test/v1',
+      getToken,
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const auth = new Headers(init?.headers).get('authorization');
+        seen.push({ url: String(input), headers: new Headers(init?.headers), body: null, signal: null });
+        return new Response('{}', { status: auth === 'Bearer new' ? 200 : 401 });
+      },
+    });
+  }
+
+  test('a 401 invalidates the rejected token and replays once with the fresh one', async () => {
+    const rejected: string[] = [];
+    configureWithInvalidate(() => {}, rejected);
+    const response = await send('http://backend.test/v1/x');
+    expect(response.status).toBe(200);
+    expect(rejected).toEqual(['old']);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual(['Bearer old', 'Bearer new']);
+  });
+
+  test('concurrent 401s on one token refresh it once (single flight)', async () => {
+    const rejected: string[] = [];
+    configureWithInvalidate(() => {}, rejected);
+    const responses = await Promise.all([1, 2, 3, 4, 5].map(() => send('http://backend.test/v1/x')));
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(rejected).toEqual(['old']);
+  });
+
+  test('invalidateTokenCache() reaches the host with the last token the SDK handed out', async () => {
+    const rejected: string[] = [];
+    configureWithInvalidate(() => {}, rejected);
+    expect(await getSupabaseAccessToken()).toBe('old');
+    invalidateTokenCache();
+    expect(rejected).toEqual(['old']);
+    expect(await getSupabaseAccessToken()).toBe('new');
+  });
+});
+
 describe('send: deadline', () => {
   test('timeoutMs: null leaves the caller signal as the only deadline', async () => {
     const abort = new AbortController();
@@ -312,7 +360,7 @@ describe('error typing', () => {
       backendUrl: 'http://backend.test/v1',
       getToken: async () => 'tok1',
       fetch: async () =>
-        new Response(JSON.stringify({ error: 'Budget exceeded', code: 'app_budget_exceeded', balance: 0 }), {
+        new Response(JSON.stringify({ error: 'Account unfunded', code: 'app_account_unfunded', balance: 0 }), {
           status: 402,
           headers: { 'content-type': 'application/json' },
         }),
@@ -321,8 +369,8 @@ describe('error typing', () => {
     expect(error).toBeInstanceOf(BillingError);
     expect(error).toBeInstanceOf(ApiError);
     expect(error?.status).toBe(402);
-    expect(error?.code).toBe('app_budget_exceeded');
-    expect(error?.message).toBe('Budget exceeded');
+    expect(error?.code).toBe('app_account_unfunded');
+    expect(error?.message).toBe('Account unfunded');
   });
 
   test('a non-JSON error body is still a typed ApiError with its status', async () => {

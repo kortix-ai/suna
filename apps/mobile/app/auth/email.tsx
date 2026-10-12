@@ -24,6 +24,7 @@ import { CaretLeftIcon as ChevronLeft } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 
 import { PillInput } from '@/components/kortix/pill-input';
+import { SettingsGroup } from '@/components/kortix/settings-list';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
@@ -31,6 +32,18 @@ import { supabase } from '@/api/supabase';
 import { useAuthContext } from '@/contexts';
 import { magicLinkEnabled, passwordEnabled, type AuthMethod } from '@/lib/auth/auth-config';
 import { log } from '@/lib/logger';
+
+/**
+ * Email and password sit in one settings group (Jay, 2026-10-08): each field is
+ * a `SettingsGroup` row tile, so the pill input drops its own fill and radius
+ * and takes a settings row's height (`py-3` around 16px text) and inset.
+ */
+const FIELD_ROW_STYLE = {
+  height: 48,
+  borderRadius: 0,
+  backgroundColor: 'transparent',
+  paddingHorizontal: 16,
+} as const;
 
 /** Supabase email OTP length; the code field submits itself at this length. */
 const OTP_LENGTH = 6;
@@ -67,7 +80,9 @@ export default function EmailAuthScreen() {
   const ssoOnly = useLocalSearchParams<{ method?: string }>().method === 'sso';
 
   const [mode, setMode] = React.useState<'signin' | 'signup'>('signin');
-  const [method, setMethod] = React.useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
+  // Password first, like web (#9103): typing a password costs no auth email,
+  // and the email code stays one tap away ("Use email code").
+  const [method, setMethod] = React.useState<AuthMethod>(passwordEnabled ? 'password' : 'magic');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -411,8 +426,9 @@ export default function EmailAuthScreen() {
           ) : (
             /* ── Sign in / Create account ── */
             <View>
-              <View className="gap-3">
+              <SettingsGroup>
                 <PillInput
+                  style={FIELD_ROW_STYLE}
                   value={email}
                   onChangeText={(value) => {
                     setEmail(value);
@@ -421,8 +437,11 @@ export default function EmailAuthScreen() {
                   placeholder={ssoOnly ? 'Work email' : 'Email address'}
                   accessibilityLabel="Email address"
                   keyboardType="email-address"
-                  textContentType="emailAddress"
-                  autoComplete="email"
+                  // `username`, not `emailAddress`/`email`: iOS AutoFill and
+                  // Android password managers pair a saved password with the
+                  // field marked as the account name, even when it is an email.
+                  textContentType="username"
+                  autoComplete="username"
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!busy}
@@ -437,6 +456,7 @@ export default function EmailAuthScreen() {
                 {showPasswordField && (
                   <PillInput
                     ref={passwordRef}
+                    style={FIELD_ROW_STYLE}
                     value={password}
                     onChangeText={(value) => {
                       setPassword(value);
@@ -454,7 +474,7 @@ export default function EmailAuthScreen() {
                     onSubmitEditing={() => void submit()}
                   />
                 )}
-              </View>
+              </SettingsGroup>
 
               {messageText}
 

@@ -126,13 +126,13 @@ describe('splitUrlForDisplay — the hostname highlight split', () => {
 });
 
 describe('SandboxAddressBar — the shared toolbar', () => {
-  test('renders exactly the back / forward / reload controls, in order', () => {
+  test('renders back / forward, then Reload inside the address pill, in order', () => {
     intlErrors.length = 0;
     const html = render(bar());
     expect(intlErrors).toEqual([]);
     const back = icon(<ArrowLeft className="size-4" />);
     const forward = icon(<ArrowRight className="size-4" />);
-    const reload = icon(<GrRefresh className="size-4" />);
+    const reload = icon(<GrRefresh className="size-3.5" />);
     expect(html).toContain(back);
     expect(html).toContain(forward);
     expect(html).toContain(reload);
@@ -261,7 +261,11 @@ describe('the two surfaces render the shared chrome', () => {
       ['browser-panel', browserPanelSource],
       ['app-preview', appPreviewSource],
     ] as const) {
-      expect(source, name).not.toContain("Hint label={t");
+      // Back, forward and reload live in `SandboxAddressBar` only. Other
+      // controls (AppPreview's "Open in a new tab") may still carry a Hint.
+      for (const navKey of ['text76900f1bfd16', 'textf1c65e14817e', 'text0e9161011702']) {
+        expect(source, name).not.toContain(navKey);
+      }
       expect(source, name).not.toContain('/^\\d{1,5}(?:[/?#]|$)/');
       expect(source, name).not.toContain('splitUrlForDisplay');
     }

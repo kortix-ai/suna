@@ -19,39 +19,14 @@ const key = (scope: SessionAttachmentScope) => {
   return `${scope.projectId}/${scope.sessionId}/${scope.attachmentId}`;
 };
 
+/**
+ * The private `session-attachments` bucket. A migration creates it
+ * (20261011231931109_session_attachments_bucket.sql); this store never creates
+ * a bucket or changes its settings.
+ */
 export function createSessionAttachmentStore(
   storage: SupabaseClient["storage"],
 ) {
-  let bucketReady: Promise<void> | undefined;
-  const ensureBucket = () =>
-    (bucketReady ??= (async () => {
-      const { data, error } = await storage.getBucket(BUCKET);
-      if (data) {
-        if (data.public)
-          throw new Error("Session attachment storage must be private");
-        if (typeof data.file_size_limit === 'number' && data.file_size_limit < MAX_SESSION_ATTACHMENT_BYTES) {
-          const updated = await storage.updateBucket(BUCKET, { public: false, fileSizeLimit: MAX_SESSION_ATTACHMENT_BYTES });
-          if (updated.error) throw updated.error;
-        }
-        return;
-      }
-      if (error && !missing(error)) throw error;
-      const created = await storage.createBucket(BUCKET, {
-        public: false,
-        fileSizeLimit: MAX_SESSION_ATTACHMENT_BYTES,
-      });
-      if (created.error && !/already exists/i.test(created.error.message))
-        throw created.error;
-      if (created.error) {
-        const checked = await storage.getBucket(BUCKET);
-        if (checked.error || !checked.data || checked.data.public)
-          throw new Error("Session attachment storage must be private");
-      }
-    })().catch((error) => {
-      bucketReady = undefined;
-      throw error;
-    }));
-
   const read = async (scope: SessionAttachmentScope): Promise<Blob | null> => {
     const result = await storage.from(BUCKET).download(key(scope));
     if (result.error) {
@@ -71,7 +46,6 @@ export function createSessionAttachmentStore(
     ) {
       if (input.bytes.byteLength > MAX_SESSION_ATTACHMENT_BYTES)
         throw new Error("Attachments must be 50 MiB or smaller.");
-      await ensureBucket();
       const result = await storage
         .from(BUCKET)
         .upload(key(input), input.bytes, {
@@ -114,21 +88,51 @@ export function createSessionAttachmentStore(
         sessionId,
         attachmentId: "00000000-0000-0000-0000-000000000000",
       });
-      const prefix = `${projectId}/${sessionId}`;
+      await removePrefix(`${projectId}/${sessionId}`);
+    },
+    /**
+     * Every session's files under one project. Storage lists one level, and
+     * each session is one folder under the project, so this lists the project
+     * and empties each folder it names.
+     */
+    async removeProject(projectId: string) {
+      let previous = '';
       for (;;) {
-        const listed = await storage.from(BUCKET).list(prefix, { limit: 100 });
+        const listed = await storage.from(BUCKET).list(projectId, { limit: 100 });
         if (listed.error) {
           if (missing(listed.error)) return;
           throw listed.error;
         }
         if (!listed.data?.length) return;
-        const removed = await storage
-          .from(BUCKET)
-          .remove(listed.data.map((file) => `${prefix}/${file.name}`));
-        if (removed.error) throw removed.error;
+        const names = listed.data.map((entry) => entry.name).join('\n');
+        // A folder that did not empty would list again forever.
+        if (names === previous) throw new Error(`Could not delete the session files of project ${projectId}`);
+        previous = names;
+        for (const entry of listed.data) await removePrefix(`${projectId}/${entry.name}`);
       }
     },
   };
+
+  /** Delete every object one level under `prefix`, a page at a time. */
+  async function removePrefix(prefix: string) {
+    let previous = '';
+    for (;;) {
+      const listed = await storage.from(BUCKET).list(prefix, { limit: 100 });
+      if (listed.error) {
+        if (missing(listed.error)) return;
+        throw listed.error;
+      }
+      if (!listed.data?.length) return;
+      const names = listed.data.map((file) => file.name).join('\n');
+      // A page that lists again after its remove would loop forever.
+      if (names === previous) throw new Error(`Could not delete the files under ${prefix}`);
+      previous = names;
+      const removed = await storage
+        .from(BUCKET)
+        .remove(listed.data.map((file) => `${prefix}/${file.name}`));
+      if (removed.error) throw removed.error;
+    }
+  }
 }
 
 let store: ReturnType<typeof createSessionAttachmentStore> | undefined;

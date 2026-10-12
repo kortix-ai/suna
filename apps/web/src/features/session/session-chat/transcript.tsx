@@ -15,7 +15,7 @@ import { isQuestionTool } from '../session-activity-groups';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useTranslations } from '@/i18n/use-translations';
-import { type SessionMessageAuthor, type SessionPrompt, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, toolKind } from '@kortix/sdk';
+import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, splitTurnWork, toolKind } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CheckCircleIcon as CheckCircle,
@@ -30,7 +30,8 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from '../message-parsing';
-import { ActivityBurst } from '../turn/activity-burst';
+import { ActivityBurst, burstSteps } from '../turn/activity-burst';
+import { TurnWorkAccordion } from '../turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
 import { compactionTurnInfo, type CompactionTurnInfo } from '../turn/compaction-state';
 import { ExpandableOutput } from '../turn/expandable-output';
@@ -57,7 +58,11 @@ import { ConnectProviderDialog } from '@/features/session/model-selector';
 import { TurnOutcomes } from '@/features/session/outcomes/turn-outcomes';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import type {
+  AttachmentUploadStatus,
+  NormalizedAttachment,
+} from '@/features/session/turn/user-message';
+import type { TurnServedModel } from '@/features/session/turn/served-model';
 import { SessionBusyIndicator } from '../session-busy-indicator';
 import { SessionTurnMeta } from '../session-turn-meta';
 import {
@@ -390,6 +395,9 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
+  /** The models that answered this turn and what Kortix billed for it, from
+   *  the gateway's request record. Keep its identity stable: the row is memoized. */
+  servedModel?: TurnServedModel;
   /** What the control plane recorded about how THIS session's turns ended. */
   turnOutcome: SessionTurnOutcome;
   /**
@@ -458,6 +466,10 @@ interface SessionTurnProps {
   pendingPrompt?: SessionPrompt;
   onRetryQueued?: (id: string) => void;
   onRemoveQueued?: (id: string) => void;
+  /** Who is looking. A prompt runs as its author, so Retry is the author's
+   *  and Remove the author's or a session manager's (`sessionPromptActions`).
+   *  Omitted: the viewer's own. Keep it referentially stable (memo). */
+  queuedPromptViewer?: SessionPromptViewer;
   /** The files this turn's Send carried, by identity — see `UserMessage`. */
   pendingAttachments?: ReadonlyArray<SentAttachment>;
   uploadStatus?: AttachmentUploadStatus;
@@ -478,6 +490,9 @@ interface SessionTurnProps {
    * messages. Absent → the marker keeps its inline-disclosure fallback.
    */
   onOpenCompactionSummary?: (turnId: string, summary: string) => void;
+  /** Open a sent paste's full text in the panel's detail view, provided like
+   *  `onOpenCompactionSummary`. Absent → the paste tile is inert. */
+  onOpenPastedContent?: (id: string, text: string) => void;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
   /** Map of user message IDs to command info for rendering command pills */
@@ -500,8 +515,8 @@ interface SessionTurnProps {
   /** The staged rewind + replacement send is in flight. */
   editPending?: boolean;
   onEditCancel?: () => void;
-  /** Commit the edit: rewind the session at `messageId` and send `text`. */
-  onEditSend?: (messageId: string, text: string) => void;
+  /** Commit the edit: rewind the session at `messageId`, send `text` and the `kept` attachments. */
+  onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
 }
 
 /**
@@ -1521,7 +1536,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
 /** The user side of a turn: the report card, the system-pill line, and the
  *  user bubble (hidden for notification-only turns). */
 function TurnUserBlock(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'queuedPromptViewer' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend' | 'onOpenPastedContent'> & {
     model: TurnModelState;
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
@@ -1543,7 +1558,7 @@ function TurnUserBlock(
 
 /** The user message bubble — dimmed while the prompt waits in the queue. */
 function TurnUserBubble(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'queuedPromptViewer' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend' | 'onOpenPastedContent'> & {
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
   },
@@ -1554,9 +1569,13 @@ function TurnUserBubble(
     pendingAttachments, uploadStatus, pendingText, agentNames,
     commandMessages, commands, sessionId, ownsPlan, onRewind, rewindDisabled,
     editingText, editPending, onEditCancel, onEditSend,
-    onRetryQueued, onRemoveQueued,
+    onRetryQueued, onRemoveQueued, queuedPromptViewer, onOpenPastedContent,
   } = props;
   const { queueState, queuedStatus } = props.queueTone;
+  const promptActions =
+    pendingPrompt && queuedPromptViewer
+      ? sessionPromptActions(pendingPrompt, queuedPromptViewer)
+      : { own: true, removable: true };
   return (
     <>
     {/* ── User message ── */}
@@ -1588,17 +1607,18 @@ function TurnUserBubble(
           editPending={editPending}
           onEditCancel={onEditCancel}
           onEditSend={onEditSend}
-          leadingStatus={
+          onOpenPastedContent={onOpenPastedContent}
+          deliveryStatus={
             queuedStatus === 'failed' ? (
               <QueuedPromptFailure
                 lastError={pendingPrompt?.last_error}
                 onRetry={
-                  pendingPrompt && onRetryQueued
+                  pendingPrompt && onRetryQueued && promptActions.own
                     ? () => onRetryQueued(pendingPrompt.prompt_id)
                     : undefined
                 }
                 onRemove={
-                  pendingPrompt && onRemoveQueued
+                  pendingPrompt && onRemoveQueued && promptActions.removable
                     ? () => onRemoveQueued(pendingPrompt.prompt_id)
                     : undefined
                 }
@@ -1621,13 +1641,45 @@ function TurnToolBlocks(
     model: TurnModelState;
     segments: TurnSegments;
     conversationDensity: ConversationDensity;
+    /** False keeps today's flat render (inline text-and-questions mode). */
+    fold: boolean;
+    durationMs: number | null;
   },
 ) {
   const {
     turn, sessionId, permissions, onPermissionReply, disableToolNavigation,
-    model, segments, conversationDensity,
+    model, segments, conversationDensity, fold, durationMs,
   } = props;
   const { working, hasSteps, hasReasoning } = model;
+  // KRTX-2113: a settled turn folds its work behind one "Worked for" row and
+  // keeps the `show` deliverables and the final text below it. Segments that
+  // render nothing (a hidden tool, a plumbing-only burst) are dropped first,
+  // so they can neither be the only "work" nor stand between the final text
+  // and the end of the turn.
+  // Settled turns only: while working the split is null anyway, and the
+  // filter re-runs `burstSteps` on every SSE frame.
+  const split = useMemo(
+    () => (fold && !working ? splitTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
+    [fold, segments, working],
+  );
+  const renderSegment = (segment: TurnSegments[number]) => {
+    const key = turnSegmentKey(segment);
+    if (key === null) return null;
+    return (
+      <TurnSegment
+        key={key}
+        segment={segment}
+        isTrailing={segment === segments[segments.length - 1]}
+        working={working}
+        hasSteps={hasSteps}
+        sessionId={sessionId}
+        permissions={permissions}
+        onPermissionReply={onPermissionReply}
+        disableNavigation={disableToolNavigation}
+        conversationDensity={conversationDensity}
+      />
+    );
+  };
   return (
     <>
     {/* ── Assistant parts content ──
@@ -1656,24 +1708,21 @@ function TurnToolBlocks(
       // See `TurnLiveContext`.
       <TurnLiveContext.Provider value={working}>
         <div className="space-y-3">
-          {segments.map((segment, index) => {
-            const key = turnSegmentKey(segment);
-            if (key === null) return null;
-            return (
-              <TurnSegment
-                key={key}
-                segment={segment}
-                isTrailing={index === segments.length - 1}
-                working={working}
-                hasSteps={hasSteps}
-                sessionId={sessionId}
-                permissions={permissions}
-                onPermissionReply={onPermissionReply}
-                disableNavigation={disableToolNavigation}
-                conversationDensity={conversationDensity}
-              />
-            );
-          })}
+          {/* One keyed array in both states, so the hoisted deliverables and
+              the final text keep their instances at settle: a `show` iframe
+              does not reload and the final markdown does not re-parse. While
+              working (or settled with nothing to fold) it is the plain stream.
+              Settled, the work leaves for the "Worked for" row, which mounts
+              closed. The cost: the work disappears at once, not in a fold. */}
+          {split
+            ? [
+                <TurnWorkAccordion key="turn-work" durationMs={durationMs}>
+                  {split.work.map(renderSegment)}
+                </TurnWorkAccordion>,
+                ...split.hoisted.map(renderSegment),
+                ...split.final.map(renderSegment),
+              ]
+            : segments.map(renderSegment)}
         </div>
       </TurnLiveContext.Provider>
     )}
@@ -1694,6 +1743,11 @@ function turnSegmentKey(segment: TurnSegments[number]): string | null {
     return visible.length > 0 ? visible[0].id : null;
   }
   return segment.part.id;
+}
+
+function segmentRendersSomething(segment: TurnSegments[number]): boolean {
+  if (segment.kind === 'burst') return burstSteps(segment.parts).length > 0;
+  return turnSegmentKey(segment) !== null;
 }
 
 function TurnSegment({
@@ -1926,7 +1980,7 @@ function TurnSettledResponse({
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, and the connect-provider dialog. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1940,7 +1994,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -1972,6 +2026,8 @@ function TurnFooter(
         Gated on `!working` for the same reason the action bar is — an
         outcome is a settled fact, and a card that appears mid-stream would
         claim a change request exists before the server has one. */}
+      {!working && <TurnOutcomes turnKey={turn.userMessage.info.id} />}
+
       {/* ── Action bar (copy + turn meta) ──
           Gated on `!working` only. A turn that ends in tool calls has no closing
           prose, but its finished-at / duration / cost are still turn facts —
@@ -1990,6 +2046,7 @@ function TurnFooter(
           turnEndedAt={turnEndedAt}
           turnDurationMs={turnDurationMs}
           costInfo={costInfo}
+          servedModel={servedModel}
           tHardcodedUi={tHardcodedUi}
         />
       )}
@@ -2058,6 +2115,7 @@ function TurnActionBar({
   turnEndedAt,
   turnDurationMs,
   costInfo,
+  servedModel,
   tHardcodedUi,
 }: {
   response: string;
@@ -2065,6 +2123,7 @@ function TurnActionBar({
   turnEndedAt: TurnSettledMeta['turnEndedAt'];
   turnDurationMs: TurnSettledMeta['turnDurationMs'];
   costInfo: TurnSettledMeta['costInfo'];
+  servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
 }) {
   const [copied, setCopied] = useState(false);
@@ -2119,6 +2178,7 @@ const handleCopy = async () => {
           endedAt={turnEndedAt}
           durationMs={turnDurationMs}
           cost={costInfo}
+          served={servedModel}
           className="flex items-center justify-center"
         />
     </div>
@@ -2194,7 +2254,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
-      <TurnToolBlocks {...props} model={model} segments={segments} conversationDensity={conversationDensity} />
+      <TurnToolBlocks
+        {...props}
+        model={model}
+        segments={segments}
+        conversationDensity={conversationDensity}
+        fold={!answered.shouldUseInlineContent}
+        durationMs={meta.turnDurationMs}
+      />
       <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
       <TurnFooter {...props} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
     </div>
