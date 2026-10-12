@@ -391,7 +391,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 | Files and previews | `files.list` · `.read` · `.readBlob` · `.status` · `.findFiles` · `.findText` · `.upload` · `.write` · `.create` · `.copy` · `.remove` · `.mkdir` · `.rename`, `previews()`, `previewUrl(port, path?)`, `proxyUrl(url)`, `sandboxPortUrl(port)`, `attachments.upload` · `.read` |
 | Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
 | Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |
-| Sharing and people | `setSharing(intent)`, `publicShares.list` · `.create` · `.revoke`, `participants()`, `watch()`, `setWatch(watching)`, `presence({ tab_id, active, alerts? }, { keepalive? })` |
+| Sharing and people | `setSharing(intent)`, `publicShares.list` · `.create` · `.revoke`, `participants()`, `watch()`, `setWatch(watching)`, `presence({ tab_id, active, alerts? }, { keepalive? })` (answers `awake_until` and `awake_cap_at`) |
 | Git and reminders | `commit(input?)`, `reminders.list` · `.create` · `.update` · `.remove` |
 
 ## Framework-free modules
