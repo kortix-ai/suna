@@ -105,7 +105,7 @@ Project roles in an invite apply to `member` invites only. Kortix ignores them o
 
 ### Accept an invite
 
-The invitee opens the link in the email and signs in or signs up with the invited address. Then they select accept or decline.
+The invitee opens the link in the email and signs in or signs up with the invited address. Then they select accept or decline. Accept opens the first project the invite grants, or the account they joined.
 
 | Response | Meaning |
 | --- | --- |
@@ -113,6 +113,8 @@ The invitee opens the link in the email and signs in or signs up with the invite
 | `410` | The invite expired, or it was already used. Ask for a new one. |
 | `409` | Another login already accepted this invite. |
 | `403` `sso_email_domain_unverified` | The invitee signed in through an SSO provider that has not verified their email's domain. Sign in with the email address instead. |
+
+In the mobile app, the project switcher lists pending invites under **Invites**. With no project to reopen, the app opens a pending invite first.
 
 ### Manage invites and members
 

@@ -22,8 +22,12 @@
  * drops fields this API does not know, and the record would lose them (the same
  * rule as `upcast`). One exception, F3: a text over 256 kB is stored as a
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
- * are written before the transaction. `content_hash` is always the hash of the
- * record as sent, so the manifest the daemon reconciles against does not change.
+ * are written before the transaction. `content_hash` is the hash of the record
+ * as stored — the sanitized form — so the stored record and its hash describe
+ * each other; the daemon reconciles by rev/seq, not by hash. A second
+ * exception: a NUL and lone UTF-16 surrogates are replaced with U+FFFD
+ * (`jsonbSafeValue`), because Postgres jsonb and text columns reject them
+ * outright.
  *
  * Two writers, one apply path (`applyBatch`):
  * - The journal. Its first committed batch with a put or a tombstone sets
@@ -112,14 +116,26 @@ async function sessionExists(scope: SessionLogScope): Promise<boolean> {
 export const sessionLogContentHash = (message: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(message)).digest('hex')}`;
 
-/** `content_hash` is computed from the record as sent (`sessionLogContentHash` reads `put.message`, never the sanitized copy), so the manifest reconcile contract survives. */
+/**
+ * Postgres jsonb and text columns reject a string carrying U+0000 or an
+ * unpaired surrogate (`unsupported Unicode escape sequence`, 22P05; a raw NUL
+ * byte in a text parameter, 22021): a harness reading binary output emits
+ * UTF-16LE-like NUL padding or gzip bytes in tool text, JSON keeps them as
+ * escapes, and ONE poisoned record failed the whole INSERT — which the daemon
+ * then re-sent forever (243 5xx in a day, one 730 kB batch retried 171 times,
+ * KRTX-211; the same shape with NULs, KRTX-2178). Replace every bad code unit
+ * with U+FFFD before anything is hashed or written, the way a terminal renders
+ * it. `jsonbSafeValue` (`lib/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
+ * the transcript mirror shares; unlike `toWellFormed`, it also strips NUL,
+ * which is a well-formed string Postgres still refuses.
+ */
 
 /** Apply one journal batch. `batch` is the request body as sent, already validated by `SessionLogJournalRequestSchema`. */
 export async function ingestSessionLogJournal(
   scope: SessionLogScope,
-  batch: SessionLogJournalRequest,
+  request: SessionLogJournalRequest,
 ): Promise<SessionLogJournalOutcome> {
-  return (await applyBatch(scope, batch, null)) as SessionLogJournalOutcome;
+  return (await applyBatch(scope, request, null)) as SessionLogJournalOutcome;
 }
 
 /**
@@ -137,13 +153,14 @@ export async function writeCapturedSessionLog(
 
 async function applyBatch(
   scope: SessionLogScope,
-  batch: SessionLogJournalRequest,
+  request: SessionLogJournalRequest,
   capture: CaptureWrite | null,
 ): Promise<SessionLogJournalOutcome | 'skipped'> {
+  const batch = jsonbSafeValue(request);
   if (!(await sessionExists(scope))) return NO_SESSION;
   // One put at a time: at most one large text is in memory twice.
   const records: SessionLogPut['message'][] = [];
-  for (const put of batch.puts) records.push(await offloadLargeTexts(scope, jsonbSafeValue(put.message)));
+  for (const put of batch.puts) records.push(await offloadLargeTexts(scope, put.message));
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
@@ -207,7 +224,7 @@ async function upsertSession(
   // the capture keeps writing until a message arrives.
   const writes = batch.puts.length + batch.tombstones.length > 0;
   if (row && batch.generation < row.generation) return row.generation;
-  const patch = jsonbSafeValue(batch.session);
+  const patch = batch.session;
   if (!row) {
     await tx.insert(sessionLogs).values({
       sessionId: scope.sessionId,
@@ -217,7 +234,7 @@ async function upsertSession(
       v: patch?.v ?? SESSION_LOG_MINOR,
       // A first batch without a session patch still needs the NOT NULL columns;
       // the next patch overwrites them.
-      harnessCurrent: patch?.harness?.current ?? jsonbSafeValue(batch.puts[0]?.message.producer.harness) ?? 'unknown',
+      harnessCurrent: patch?.harness?.current ?? batch.puts[0]?.message.producer.harness ?? 'unknown',
       restoreGrade: patch?.restore_grade ?? 'native',
       gradeCounts: patch?.grade_counts ?? null,
       record: (patch ?? {}) as Record<string, unknown>,
@@ -255,7 +272,7 @@ async function upsertThreads(tx: Tx, sessionId: string, batch: SessionLogJournal
         threadId: t.thread_id,
         parentThreadId: t.parent_thread_id,
         v: t.v,
-        record: jsonbSafeValue(t) as unknown as Record<string, unknown>,
+        record: t as unknown as Record<string, unknown>,
       })),
     )
     .onConflictDoUpdate({
@@ -310,7 +327,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         // it, the column (an ordering aid) takes the ingest time.
         createdAt: Number.isFinite(createdAt) ? new Date(createdAt) : new Date(),
         v: m.v,
-        producer: jsonbSafeValue(m.producer),
+        producer: m.producer,
         generation,
         rev: put.rev,
         contentHash: sessionLogContentHash(m),

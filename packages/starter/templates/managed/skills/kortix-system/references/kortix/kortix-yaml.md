@@ -617,7 +617,7 @@ harnesses:
       - source: npm:pi-mcp-adapter@2.36.0
         extensions: ["extensions/*.ts"]     # load only these files of the package
         skills: []                          # load none of its skills
-      - ./harnesses/pi/audit.ts             # an extension file in this repository
+      - ./extensions/audit.ts               # one extension file, anywhere in this repository
 agents:
   researcher:
     harnesses:
@@ -641,6 +641,13 @@ in this repository, or `{ source, extensions, skills, prompts, themes }` with
 pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
 version range, a missing version or a Git source fails validation. Kortix
 builds each distinct package list once, when the change request merges.
+
+A `./` path to a `.ts` or `.js` file is one pi extension. It can live anywhere
+in the repository, so a project needs no `harnesses/pi/` folder. It loads from
+the session's config release, as a project tool does, and a release that
+changes a file in its folder restarts the pi runtime. The package list itself
+is read when the session starts: a running session keeps the list it started
+with.
 
 ## `tools:` in version 2
 

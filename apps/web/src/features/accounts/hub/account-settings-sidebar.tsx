@@ -17,7 +17,6 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import {
-  ArrowLeftIcon,
   BookOpenIcon,
   MagnifyingGlassIcon,
   QuestionIcon,
@@ -26,6 +25,7 @@ import {
 import { Fragment, Suspense, useMemo, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
 import Hint from '@/components/ui/hint';
 import {
   Sidebar,
@@ -45,13 +45,13 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
 import { closeAccountPanel, hubTarget, type HubTarget } from '@/stores/account-panel-store';
 
 import { HubLink, useAccountPanelId } from './account-hub-location';
 import { localizedAccountNavGroups, type AccountNavItem } from './sections';
 import { useAccountHubSection } from './use-account-hub-access';
 import { useAccountMembers } from './use-account-members';
+import { CountBadge } from '@/components/ui/count-badge';
 
 /**
  * One row dialect for every entry. Ink text on a translucent selected fill;
@@ -59,8 +59,10 @@ import { useAccountMembers } from './use-account-members';
  * a sidebar row is hit tens of times a day and the highlight must not lag
  * the pointer.
  */
+// The project sidebar's nav-row type: medium label, icon in the label colour
+// (bold from IconProvider). Rows rest at 75% and the active one is full ink.
 const ROW_CLASS =
-  'text-foreground hover:bg-hover hover:text-foreground data-[active=true]:bg-active data-[active=true]:text-foreground [&_svg]:text-muted-foreground [&[data-active=true]_svg]:text-foreground';
+  'text-sidebar-foreground/75 font-medium hover:bg-hover hover:text-sidebar-foreground data-[active=true]:bg-active data-[active=true]:text-sidebar-foreground';
 
 // Reference destinations, read in a new tab so the settings you were editing
 // stay put. Same two targets the user menu's Help group lists first.
@@ -91,12 +93,7 @@ function NavRow({ entry }: { entry: NavEntry }) {
             // The mobile sidebar is a sheet over the page; a pick closes it.
             if (isMobile) setOpenMobile(false);
           }}
-          className={cn(
-            'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
-            'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
-            'data-[state=active]:bg-active data-[state=active]:font-medium',
-            '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
-          )}
+          className="gap-2 px-2.5 py-1 font-medium transition-none has-[>svg]:px-2.5"
         >
           {Glyph ? <Glyph className="size-4 shrink-0" /> : null}
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
@@ -167,7 +164,7 @@ function SettingsNav() {
     active: item.id === activeSection,
     trailing:
       item.id === 'members' && memberCount !== null ? (
-        <span className="text-muted-foreground ml-auto text-xs tabular-nums">{memberCount}</span>
+        <CountBadge count={memberCount} className="ml-auto" />
       ) : undefined,
   });
 
@@ -239,11 +236,10 @@ function BackToApp({ label }: { label: string }) {
     <Button
       variant="ghost"
       size="xs"
-      className="text-muted-foreground hover:text-foreground gap-1 text-xs"
+      className={backPillClass()}
       onClick={() => closeAccountPanel()}
     >
-      <ArrowLeftIcon className="size-4 shrink-0" />
-      {label}
+      <BackPillBody label={label} />
     </Button>
   );
 }

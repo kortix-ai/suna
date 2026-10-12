@@ -1632,7 +1632,19 @@
       "tooMany": "Una sessione ha al massimo 20 etichette."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizza barra laterale",
+    "customizeSidebarDescription": "Trascina gli elementi tra i due gruppi.",
+    "resetSidebar": "Ripristina predefiniti",
+    "reorderItem": "Riordina {name}",
+    "reorderHint": "Trascina per riordinare. Oppure usa i tasti freccia su e giù; superare «Altro» nasconde l'elemento dalla barra laterale.",
+    "reorderAnnouncement": "{name}: {group}, posizione {position} di {total}",
+    "more": "Altro",
+    "inSidebar": "Barra laterale",
+    "underMore": "Altro",
+    "sidebarEmpty": "Trascina qui un elemento per mostrarlo nella barra laterale.",
+    "moreEmpty": "Trascina qui un elemento per spostarlo in Altro.",
+    "moreCaption": "Gli elementi in Altro si aprono dal menu Altro, sotto la navigazione."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -7903,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Cronologia delle versioni",
       "line285JsxTextCopyPath": "Copia percorso",
       "line396JsxTextThisFolderIsEmpty": "Questa cartella è vuota",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tutto ciò che i tuoi agenti salvano e i file di questo progetto appariranno qui."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tutto ciò che i tuoi agenti salvano e i file di questo progetto appariranno qui.",
+      "loadMoreItems": "Carica altri elementi",
+      "loadMoreFailed": "Impossibile caricare altri elementi. Riprova.",
+      "partialSortNote": "Vengono mostrati {value0} elementi. L’ordinamento si applica quando tutti gli elementi sono caricati.",
+      "showingFirstItems": "Vengono mostrati i primi {value0} elementi"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Fai doppio clic per modificare il percorso",
@@ -7995,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Cerca file...",
       "line124JsxTextTypeToSearchFiles": "Digita per cercare file...",
-      "line136JsxTextNoFilesFound": "Nessun file trovato"
+      "line136JsxTextNoFilesFound": "Nessun file trovato",
+      "searchContents": "Cerca nei contenuti",
+      "firstMatches": "Vengono mostrate le prime {value0} corrispondenze",
+      "searchContentsPlaceholder": "Cerca nel contenuto dei file...",
+      "typeToSearchContents": "Digita per cercare nel contenuto dei file...",
+      "noMatchingLines": "Nessuna riga corrispondente"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Esiste già un file o una cartella con questo nome",
@@ -19208,6 +19229,12 @@
       "servedModelInPlaceOf": "Al posto di",
       "servedModelBadge": "In esecuzione su {model}",
       "servedModelBarDescription": "{requested} non ha risposto all’ultima richiesta",
+      "computerAwakeStays": "La sandbox resta accesa finché sei qui · fino a {duration}",
+      "computerAwakeStops": "La sandbox si ferma tra {duration}. Invia un messaggio per tenerla accesa.",
+      "computerAwakeStopsSoon": "La sandbox si ferma a breve. Invia un messaggio per tenerla accesa.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Prompt della sessione in coda modificato",
       "text52867b778586": "Un solo kortix.yaml.",
       "textd0dfd435b2f4": "La tua forza lavoro IA, come codice.",
@@ -19541,7 +19568,9 @@
       "text8d54763edcd8": "Non montato",
       "textffeb0c99532f": "Snapshot conservati {value0} giorni",
       "text6f52b07880a0": "Crea snapshot ora",
-      "text91dc861375bc": "Criteri di versione mobile visualizzati"
+      "text91dc861375bc": "Criteri di versione mobile visualizzati",
+      "texta37dd5ef6ef2": "Personalizza barra laterale",
+      "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20168,9 +20197,8 @@
     "calendarNextWeek": "Settimana successiva",
     "calendarPreviousMonth": "Mese precedente",
     "calendarNextMonth": "Mese successivo",
-    "calendarAllWeek": "Tutta la settimana",
-    "calendarAllDay": "Tutto il giorno",
-    "calendarEvery": "ogni {period}",
+    "calendarMore": "+{count} altri",
+    "calendarMoreOn": "{count, plural, one {# altro promemoria} other {altri # promemoria}} il {date}",
     "calendarSession": "Sessione",
     "calendarEmptyWeek": "Nessuna attivazione questa settimana",
     "calendarEmptyDay": "Nessuna attivazione in questo giorno",

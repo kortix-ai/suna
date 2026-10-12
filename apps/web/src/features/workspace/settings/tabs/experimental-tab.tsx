@@ -54,7 +54,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * in `settings-panel.tsx` guarantees happens only while this tab is active.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -72,6 +72,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useProjectCan } from '@/lib/use-project-can';
+import { useSlashFocus } from '@/hooks/utils';
 import {
   getProject,
   updateFeatureFlag,
@@ -315,6 +316,8 @@ export function ExperimentalTabView({
   const pendingKeySet = new Set(pendingKeys);
   // Stateless sessions run on Volumes; with Volumes off the switch is dead.
   const volumesOff = !volumesEnabled;
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef, !isLoading && !isError && showSearch);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -327,6 +330,7 @@ export function ExperimentalTabView({
               <Search />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
+              ref={searchRef}
               placeholder={copy.search}
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}

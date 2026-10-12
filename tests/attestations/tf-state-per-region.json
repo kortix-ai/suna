@@ -1,0 +1,20 @@
+{
+  "source_hash": "4067e22f5804da20018ed4bdce855fd2dc24017acd131a960bfb57221ed0a055",
+  "diff_files": [
+    "infra/terraform/compliance-monitoring/README.md",
+    "infra/terraform/security-baseline/README.md",
+    "infra/terraform/security-baseline/iam-gha-tf-plan.tf",
+    "infra/terraform/security-baseline/imports.tf",
+    "infra/terraform/security-baseline/main.tf",
+    "infra/terraform/security-baseline/terraform-state-euw2.tf"
+  ],
+  "diff_hash": "611ff005e5cfab0b78de08dc58f94ce7f8a193832a6188a3b9347a6d1d31e564",
+  "head": "3c883f491a7c6dc52471d27c27fd4defb386f2a4",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T20:18:44.171Z"
+}
