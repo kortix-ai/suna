@@ -62,6 +62,14 @@ mock.module('@/features/contact/request-demo-provider', () => ({
   useRequestDemo: () => () => undefined,
 }));
 
+// The per-link branch lives inside SiteLink: static paths (`/docs`, the Blume
+// Astro build) must render a plain anchor, app paths a soft link. This mock
+// marks every soft link so the tests can tell the two apart.
+mock.module('next/link', () => ({
+  default: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+    React.createElement('a', { 'data-next-link': 'true', ...props }, children),
+}));
+
 const { Navbar } = await import('./navbar');
 
 let root: Root | undefined;
@@ -134,6 +142,35 @@ test('a drawer row click closes the drawer and unlocks body scroll', async () =>
     lib.click(row!);
   });
   // The drawer closed either way.
+  expect(win.document.body.style.overflow).toBe('');
+});
+
+test('the drawer docs row renders a plain anchor: the Astro docs load directly, same tab', async () => {
+  (win as unknown as { innerWidth: number }).innerWidth = 480;
+  await mountNavbar();
+  const open = container!.querySelector('[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]');
+  await act(async () => {
+    lib.click(open!);
+  });
+  const drawer = container!.querySelector('.bg-background.fixed.inset-0');
+  expect(drawer).not.toBeNull();
+  const docs = drawer!.querySelector<HTMLAnchorElement>('a[href="/docs"]');
+  expect(docs).not.toBeNull();
+  // /docs is the static Astro build, not an App Router route: the row
+  // deliberately performs a document load instead of a soft navigation that
+  // cannot succeed (KRTX-1592).
+  expect(docs!.hasAttribute('data-next-link')).toBe(false);
+  expect(docs!.hasAttribute('target')).toBe(false);
+  // The in-app rows render through next/link; external rows keep target=_blank.
+  expect(
+    drawer!.querySelector<HTMLAnchorElement>('a[href="/pricing"]')!.hasAttribute('data-next-link'),
+  ).toBe(true);
+  const x = drawer!.querySelector<HTMLAnchorElement>('a[href="https://x.com/kortix"]');
+  expect(x!.getAttribute('target')).toBe('_blank');
+  // The click closes the drawer and lets the document load proceed.
+  await act(async () => {
+    lib.click(docs!);
+  });
   expect(win.document.body.style.overflow).toBe('');
 });
 
