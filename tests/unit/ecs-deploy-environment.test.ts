@@ -73,7 +73,6 @@ describe('ECS task environment overrides', () => {
   it('maps every permanent API environment to its standalone gateway origin', () => {
     const targets = {
       prod: 'https://gateway-ecs-fargate.kortix.com',
-      'prod-use2-shadow': 'https://gateway-use2-shadow.kortix.com',
       'dev-use2': 'https://gateway-dev-use2.kortix.com',
       'staging-euw2': 'https://gateway-staging-euw2.kortix.com',
     };
@@ -92,6 +91,8 @@ describe('ECS task environment overrides', () => {
     // The us-west-2 targets were destroyed on 2026-10-12.
     expect(gatewayTarget('dev').status).toBe(2);
     expect(gatewayTarget('staging').status).toBe(2);
+    // The us-east-2 prod shadow was removed on 2026-10-12.
+    expect(gatewayTarget('prod-use2-shadow').status).toBe(2);
   });
 
   it('places each environment in its region, its stack, and its secret', () => {
@@ -108,7 +109,6 @@ describe('ECS task environment overrides', () => {
       );
     const expected = {
       prod: 'eu-west-2 kortix-prod kortix-prod-env',
-      'prod-use2-shadow': 'us-east-2 kortix-prod-use2 kortix-prod-us-east-2-env',
       // The dev and staging stacks keep the environment's secret NAME.
       'dev-use2': 'us-east-2 kortix-dev-use2 kortix-dev-env',
       'staging-euw2': 'eu-west-2 kortix-staging-euw2 kortix-staging-env',
