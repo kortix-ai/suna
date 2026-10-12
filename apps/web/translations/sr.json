@@ -367,6 +367,10 @@
         "connected": {
           "label": "Повезани налози"
         },
+        "browsers": {
+          "label": "Прегледачи",
+          "description": "Прегледачи које си повезао, да би их сесија могла користити."
+        },
         "tokens": {
           "label": "Лични приступни кључеви",
           "description": "API кључеви који делују у ваше име — за CLI, скрипту или CI задатак."
@@ -20185,6 +20189,63 @@
     "calendarFailed": "Neuspešno",
     "calendarEstimatedSr": "Прошло активирање, процењено на основу распореда",
     "calendarUpcomingSr": "Предстојеће"
+  },
+  "browsers": {
+    "pill": "Твој прегледач",
+    "connectTitle": "Повежи свој прегледач",
+    "connectDescription": "Дозволи да Kortix сесија користи твој Chrome. Видиш шта ради и можеш да је зауставиш кад год хоћеш.",
+    "connectYourBrowser": "Повежи свој прегледач",
+    "dismissPromo": "Одбаци",
+    "steps": {
+      "install": {
+        "title": "Додај Kortix у Chrome",
+        "description": "Из Chrome Web Store-а.",
+        "done": "Kortix је у Chrome-у."
+      },
+      "connect": {
+        "title": "Повежи",
+        "description": "Пријави се на Kortix из проширења.",
+        "done": "Пријављен си."
+      },
+      "done": {
+        "title": "Повезано",
+        "description": "Чека се твој прегледач."
+      }
+    },
+    "addToChrome": "Додај у Chrome",
+    "finishInChrome": "Chrome је отворио Kortix картицу. Тамо кликни Повежи.",
+    "connect": "Повежи",
+    "connecting": "Повезивање…",
+    "done": "Готово",
+    "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га повежеш.",
+    "openStore": "Отвори Chrome Web Store",
+    "connectFailed": "Повезивање прегледача није успело. Покушајте поново.",
+    "online": "На мрежи",
+    "offline": "Ван мреже",
+    "lastSeen": "Последњи пут виђен {time}",
+    "usedBy": "{count, plural, one {Тренутно га користи # сесија} other {Тренутно га користи # сесија}}",
+    "connectAnother": "Повежи други прегледач",
+    "rename": "Преименуј {name}",
+    "renameLabel": "Назив прегледача",
+    "disconnect": "Прекини везу",
+    "disconnectTitle": "Прекинути везу са {name}?",
+    "disconnectDescription": "Сесије које га користе се заустављају. Да би га поново користио, повежи га из Chrome-а.",
+    "disconnected": "Веза са прегледачем је прекинута",
+    "disconnectFailed": "Није могуће прекинути везу са прегледачем. Покушајте поново.",
+    "updateFailed": "Није могуће сачувати измену. Покушајте поново.",
+    "loadFailed": "Није могуће учитати твоје прегледаче.",
+    "retry": "Покушајте поново",
+    "access": {
+      "label": "Приступ",
+      "always": "Без питања",
+      "ask": "Питај сваки пут",
+      "off": "Искључено"
+    },
+    "scope": {
+      "label": "Картице",
+      "own": "Сопствене картице",
+      "all": "Све картице"
+    }
   },
   "computers": {
     "connectYourComputer": "Повежите свој рачунар",

@@ -514,6 +514,10 @@
         "connected": {
           "label": "Comptes connectés"
         },
+        "browsers": {
+          "label": "Navigateurs",
+          "description": "Les navigateurs que vous avez connectés, pour qu’une session puisse les utiliser."
+        },
         "tokens": {
           "label": "Clés d’accès personnelles",
           "description": "Clés API qui agissent en votre nom — pour la CLI, un script ou une tâche CI."
@@ -20185,6 +20189,63 @@
     "calendarFailed": "Échec",
     "calendarEstimatedSr": "Déclenchement passé, estimé à partir de la planification",
     "calendarUpcomingSr": "À venir"
+  },
+  "browsers": {
+    "pill": "Votre navigateur",
+    "connectTitle": "Connecter votre navigateur",
+    "connectDescription": "Laissez une session Kortix utiliser votre Chrome. Vous voyez ce qu’elle fait et pouvez l’arrêter à tout moment.",
+    "connectYourBrowser": "Connecter votre navigateur",
+    "dismissPromo": "Fermer",
+    "steps": {
+      "install": {
+        "title": "Ajouter Kortix à Chrome",
+        "description": "Depuis le Chrome Web Store.",
+        "done": "Kortix est dans Chrome."
+      },
+      "connect": {
+        "title": "Connecter",
+        "description": "Connectez-vous à Kortix depuis l’extension.",
+        "done": "Connecté."
+      },
+      "done": {
+        "title": "Connecté",
+        "description": "En attente de votre navigateur."
+      }
+    },
+    "addToChrome": "Ajouter à Chrome",
+    "finishInChrome": "Chrome a ouvert un onglet Kortix. Cliquez sur Connecter dans cet onglet.",
+    "connect": "Connecter",
+    "connecting": "Connexion…",
+    "done": "OK",
+    "unsupported": "Ouvrez Kortix dans Chrome, Edge, Brave ou Arc pour le connecter.",
+    "openStore": "Ouvrir le Chrome Web Store",
+    "connectFailed": "Impossible de connecter le navigateur. Réessayez.",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "lastSeen": "Vu pour la dernière fois {time}",
+    "usedBy": "{count, plural, one {Utilisé par # session en ce moment} other {Utilisé par # sessions en ce moment}}",
+    "connectAnother": "Connecter un autre navigateur",
+    "rename": "Renommer {name}",
+    "renameLabel": "Nom du navigateur",
+    "disconnect": "Déconnecter",
+    "disconnectTitle": "Déconnecter {name} ?",
+    "disconnectDescription": "Les sessions qui l’utilisent s’arrêtent. Pour le réutiliser, reconnectez-le depuis Chrome.",
+    "disconnected": "Navigateur déconnecté",
+    "disconnectFailed": "Impossible de déconnecter le navigateur. Réessayez.",
+    "updateFailed": "Impossible d’enregistrer la modification. Réessayez.",
+    "loadFailed": "Impossible de charger vos navigateurs.",
+    "retry": "Réessayer",
+    "access": {
+      "label": "Accès",
+      "always": "Sans demander",
+      "ask": "Demander à chaque fois",
+      "off": "Désactivé"
+    },
+    "scope": {
+      "label": "Onglets",
+      "own": "Onglets propres",
+      "all": "Tous les onglets"
+    }
   },
   "computers": {
     "connectYourComputer": "Connecter votre ordinateur",

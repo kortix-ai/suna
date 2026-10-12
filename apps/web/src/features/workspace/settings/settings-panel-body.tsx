@@ -61,6 +61,7 @@ import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
 import { TokensTab } from './tabs/tokens-tab';
+import { BrowsersTab } from '@/features/browser/browsers-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
 
@@ -86,6 +87,8 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'connected',
+  // The browsers a person connected are theirs, in any project or none.
+  'browsers',
   // Your own API keys are yours in ONE account (the read is account-scoped —
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
@@ -730,6 +733,9 @@ function SettingsTabPane({
   }
   if (item.tab === 'connected') {
     return <ConnectedAccountsTab accountId={accountId} />;
+  }
+  if (item.tab === 'browsers') {
+    return <BrowsersTab />;
   }
   if (item.tab === 'tokens') {
     return <TokensTab accountId={accountId} />;

@@ -5,6 +5,7 @@ import {
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
+  GlobeIcon as Globe,
   KeyIcon as Key,
   LinkIcon as Link,
   PaletteIcon as Palette,
@@ -87,6 +88,12 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         label: 'Language & shortcuts',
         description: 'Language and keyboard shortcuts.',
         icon: SlidersHorizontal,
+      },
+      {
+        tab: 'browsers',
+        label: 'Browsers',
+        description: 'Browsers you connected, so a session can use them.',
+        icon: Globe,
       },
       // Labelled "API keys", routed at `/settings/tokens`. The id has to be
       // `tokens` — it is the URL segment, and the account page already spends

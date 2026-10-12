@@ -367,6 +367,10 @@
         "connected": {
           "label": "Connected accounts"
         },
+        "browsers": {
+          "label": "Browsers",
+          "description": "Browsers you connected, so a session can use them."
+        },
         "tokens": {
           "label": "Personal access keys",
           "description": "API keys that act as you — for the CLI, a script, or a CI job."
@@ -20185,6 +20189,63 @@
     "calendarFailed": "Failed",
     "calendarEstimatedSr": "Past fire, estimated from the schedule",
     "calendarUpcomingSr": "Upcoming"
+  },
+  "browsers": {
+    "pill": "Your browser",
+    "connectTitle": "Connect your browser",
+    "connectDescription": "Let a Kortix session use your own Chrome. You see what it does and can stop it at any time.",
+    "connectYourBrowser": "Connect your browser",
+    "dismissPromo": "Dismiss",
+    "steps": {
+      "install": {
+        "title": "Add Kortix to Chrome",
+        "description": "From the Chrome Web Store.",
+        "done": "Kortix is in Chrome."
+      },
+      "connect": {
+        "title": "Connect",
+        "description": "Sign in to Kortix from the extension.",
+        "done": "Signed in."
+      },
+      "done": {
+        "title": "Connected",
+        "description": "Waiting for your browser."
+      }
+    },
+    "addToChrome": "Add to Chrome",
+    "finishInChrome": "Chrome opened a Kortix tab. Click Connect there.",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "done": "Done",
+    "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to connect it.",
+    "openStore": "Open the Chrome Web Store",
+    "connectFailed": "Could not connect the browser. Try again.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Last seen {time}",
+    "usedBy": "{count, plural, one {Used by # session now} other {Used by # sessions now}}",
+    "connectAnother": "Connect another browser",
+    "rename": "Rename {name}",
+    "renameLabel": "Browser name",
+    "disconnect": "Disconnect",
+    "disconnectTitle": "Disconnect {name}?",
+    "disconnectDescription": "Sessions that use it stop. To use it again, connect it from Chrome.",
+    "disconnected": "Browser disconnected",
+    "disconnectFailed": "Could not disconnect the browser. Try again.",
+    "updateFailed": "Could not save the change. Try again.",
+    "loadFailed": "Could not load your browsers.",
+    "retry": "Try again",
+    "access": {
+      "label": "Access",
+      "always": "Without asking",
+      "ask": "Ask first",
+      "off": "Off"
+    },
+    "scope": {
+      "label": "Tabs",
+      "own": "Own tabs",
+      "all": "All tabs"
+    }
   },
   "computers": {
     "connectYourComputer": "Connect your computer",

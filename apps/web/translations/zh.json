@@ -514,6 +514,10 @@
         "connected": {
           "label": "关联账户"
         },
+        "browsers": {
+          "label": "浏览器",
+          "description": "你已连接的浏览器，供会话使用。"
+        },
         "tokens": {
           "label": "个人访问密钥",
           "description": "以您的身份操作的 API 密钥 — 用于 CLI、脚本或 CI 作业。"
@@ -20185,6 +20189,63 @@
     "calendarFailed": "失败",
     "calendarEstimatedSr": "过去的触发，根据计划推算",
     "calendarUpcomingSr": "即将触发"
+  },
+  "browsers": {
+    "pill": "你的浏览器",
+    "connectTitle": "连接你的浏览器",
+    "connectDescription": "让 Kortix 会话使用你自己的 Chrome。你可以看到它的操作，并随时停止。",
+    "connectYourBrowser": "连接你的浏览器",
+    "dismissPromo": "关闭",
+    "steps": {
+      "install": {
+        "title": "将 Kortix 添加到 Chrome",
+        "description": "来自 Chrome Web Store。",
+        "done": "Kortix 已在 Chrome 中。"
+      },
+      "connect": {
+        "title": "连接",
+        "description": "在扩展程序中登录 Kortix。",
+        "done": "已登录。"
+      },
+      "done": {
+        "title": "已连接",
+        "description": "正在等待你的浏览器。"
+      }
+    },
+    "addToChrome": "添加到 Chrome",
+    "finishInChrome": "Chrome 已打开一个 Kortix 标签页。请在该标签页中点击“连接”。",
+    "connect": "连接",
+    "connecting": "正在连接…",
+    "done": "完成",
+    "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来连接。",
+    "openStore": "打开 Chrome Web Store",
+    "connectFailed": "无法连接浏览器，请重试。",
+    "online": "在线",
+    "offline": "离线",
+    "lastSeen": "最后在线：{time}",
+    "usedBy": "{count, plural, other {当前有 # 个会话在使用}}",
+    "connectAnother": "连接另一个浏览器",
+    "rename": "重命名 {name}",
+    "renameLabel": "浏览器名称",
+    "disconnect": "断开连接",
+    "disconnectTitle": "断开 {name}？",
+    "disconnectDescription": "正在使用它的会话将停止。要再次使用，请从 Chrome 重新连接。",
+    "disconnected": "浏览器已断开",
+    "disconnectFailed": "无法断开浏览器。请重试。",
+    "updateFailed": "无法保存更改。请重试。",
+    "loadFailed": "无法加载你的浏览器。",
+    "retry": "重试",
+    "access": {
+      "label": "访问",
+      "always": "无需询问",
+      "ask": "每次询问",
+      "off": "关闭"
+    },
+    "scope": {
+      "label": "标签页",
+      "own": "自己的标签页",
+      "all": "所有标签页"
+    }
   },
   "computers": {
     "connectYourComputer": "连接你的电脑",

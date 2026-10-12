@@ -54,6 +54,10 @@ export function extractPreviewSandboxId(path: string): string | null {
 const SESSION_BOUND_PLATFORM_SINKS = new Set([
   '/v1/platform/runtime-projection',
   '/v1/platform/boot-timeline',
+  // Kortix Browser: the session asks for the owner's Chrome. The handler checks
+  // isSessionSandboxCredential and resolves the owner from the token.
+  '/v1/browser/attach',
+  '/v1/browser/release',
 ]);
 
 /**
@@ -86,6 +90,8 @@ export async function enforceTokenProjectScope(
   // account ∧ live) via isSessionSandboxCredential, so this gate is
   // authentication, not the authorization boundary.
   if (opts.sessionBound && SESSION_BOUND_PLATFORM_SINKS.has(path)) return;
+  // `kortix browser ls` inside a sandbox lists the owner's browsers.
+  if (opts.sessionBound && c.req.method === 'GET' && path === '/v1/browsers') return;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm

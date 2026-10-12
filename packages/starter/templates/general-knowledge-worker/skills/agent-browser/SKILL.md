@@ -16,6 +16,14 @@ browser is pre-wired via `AGENT_BROWSER_EXECUTABLE_PATH`, so `agent-browser open
 works out of the box. (For reference, outside this sandbox it installs with
 `npm i -g agent-browser && agent-browser install`.)
 
+## The user's own browser
+
+This sandbox browser is a fresh, logged-out cloud Chrome. To work in the
+**user's own Chrome** (their logins, their real session, sites that block cloud
+browsers), load the `kortix-browser` skill: run `kortix browser use`, then add
+`--cdp 9333` to every `agent-browser` command, and run `kortix browser release`
+when done.
+
 ## Start here
 
 This file is a discovery stub, not the usage guide. Before running any

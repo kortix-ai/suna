@@ -1,0 +1,47 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); color: var(--foreground); font: var(--text-sm)/1.4 var(--font-sans-system); }
+h1 { font-size: var(--text-xl); line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); margin: 0 0 calc(var(--spacing) * 2); font-weight: 600; }
+h2 { font-size: var(--text-xs); color: var(--muted-foreground); font-weight: 500; margin: 0 0 calc(var(--spacing) * 2); }
+p { margin: 0 0 calc(var(--spacing) * 4); color: var(--muted-foreground); line-height: var(--leading-snug); }
+[hidden] { display: none !important; }
+.symbol { width: 28px; height: auto; margin-bottom: calc(var(--spacing) * 5); display: block; }
+button, .btn { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--secondary); color: var(--secondary-foreground);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4); border-radius: var(--radius-md); text-decoration: none; display: inline-block; }
+button:hover, .btn:hover { background: var(--muted); }
+button.primary, .btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+button.primary:hover, .btn.primary:hover { opacity: .88; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+input[type=text], input[type=url] { width: 100%; font: inherit; color: inherit; background: var(--input); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3); }
+label.field { display: block; margin-bottom: calc(var(--spacing) * 4); }
+label.field > span { display: block; color: var(--muted-foreground); font-size: var(--text-xs); margin-bottom: calc(var(--spacing) * 1.5); }
+.choice { display: flex; gap: calc(var(--spacing) * 2.5); align-items: flex-start; padding: calc(var(--spacing) * 3); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); margin-bottom: calc(var(--spacing) * 2); cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--foreground); }
+.err { color: var(--destructive); margin: calc(var(--spacing) * 3) 0 0; }
+.row { display: flex; align-items: center; gap: calc(var(--spacing) * 2); justify-content: space-between; }
+.actions { display: flex; gap: calc(var(--spacing) * 2); justify-content: flex-end; margin-top: calc(var(--spacing) * 5); flex-wrap: wrap; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground); margin-right: 6px; }
+.dot.on { background: var(--kortix-green); }
+details { margin-top: calc(var(--spacing) * 4); color: var(--muted-foreground); }
+summary { cursor: pointer; }
+details input { margin-top: calc(var(--spacing) * 2); }
+.page { max-width: 440px; margin: 12vh auto 0; padding: 0 calc(var(--spacing) * 5); }
+/* popup */
+.popup { width: 340px; padding: calc(var(--spacing) * 4); }
+.popup .head { display: flex; align-items: center; gap: calc(var(--spacing) * 2.5); margin-bottom: calc(var(--spacing) * 4); }
+.popup .head .symbol { width: 20px; margin: 0; }
+.popup .name { font-weight: 600; }
+.popup .sub { color: var(--muted-foreground); font-size: var(--text-xs); }
+.seg { display: flex; background: var(--muted); border-radius: var(--radius-md); padding: 2px; margin-bottom: calc(var(--spacing) * 3); }
+.seg button { flex: 1; border: 0; background: transparent; padding: calc(var(--spacing) * 1.5) 0; }
+.seg button[aria-pressed=true] { background: var(--background); box-shadow: var(--shadow-xs); }
+.section { margin-bottom: calc(var(--spacing) * 4); }
+.session { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2) 0; border-top: 1px solid var(--border); }
+.session .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session button { padding: calc(var(--spacing) * 1) calc(var(--spacing) * 2.5); font-size: var(--text-xs); }
+.foot { display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: calc(var(--spacing) * 3); font-size: var(--text-xs); }
+.foot a, .foot button { color: var(--muted-foreground); background: none; border: 0; padding: 0; text-decoration: none; }
+.foot a:hover, .foot button:hover { color: var(--foreground); background: none; }
+.consent { padding: calc(var(--spacing) * 6); }

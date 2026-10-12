@@ -125,6 +125,10 @@ const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [
   // this entry means the guard does not depend on the CLIENT setting a header
   // correctly — a curl without `-H accept:` must not be the reason a stream dies.
   { method: 'GET', path: /\/sessions\/[^/]+\/stream$/ },
+  // Kortix Browser attach. It waits for the person to answer a prompt in Chrome,
+  // up to CONSENT_TIMEOUT_MS (browser/logic.ts, 90 s, under Cloudflare's 100 s
+  // proxy timeout). It bounds itself, and answers 408 on timeout.
+  { method: 'POST', path: /^\/v1\/browser\/attach$/ },
   // The ws UPGRADE needs no entry — `isExempt` returns true for any request
   // carrying `Upgrade: websocket` before it reaches these lists.
 ];

@@ -1,0 +1,95 @@
+---
+title: Browser
+description: Connect your own Chrome to Kortix so a session can open pages, read them and click, with your logins, while you watch and can stop it.
+---
+
+Kortix Browser connects your own browser to Kortix. You add the Kortix extension to Chrome and sign in once. After that, any of your sessions can drive that browser, including the sites you are already signed in to. This page is for members who connect a browser, decide what agents may reach, and stop an agent that uses it.
+
+Kortix Browser is not a sandbox browser and not [a computer](/docs/connect/computers). The pages open in your real browser, as you. It works in Chrome, Edge, Brave and Arc on a computer. Safari, Firefox, the Kortix desktop app and phones cannot run the extension.
+
+## Connect a browser
+
+1. Select **Connect your browser** in the sidebar, or open **Settings → Browsers**. In Chrome, Edge, Brave or Arc, the dialog shows three steps.
+2. **Add Kortix to Chrome.** Select **Add to Chrome**. The Chrome Web Store opens. Add the extension. If the dialog does not notice it, select **Added it? Reload to continue**.
+3. **Connect.** Select **Connect**. A Chrome window opens the Kortix sign-in page. Approve the extension.
+4. **Connected.** The browser appears with an online dot. Select **Done**.
+
+The extension stays signed in. If you open the dialog in a browser that cannot run the extension, it tells you to open Kortix in Chrome, Edge, Brave or Arc.
+
+A browser belongs to you. Each browser you connect appears under **Settings → Browsers**, and only your own sessions can use it.
+
+## Manage your browsers
+
+**Settings → Browsers** lists every browser you connected. Each row shows the name, the browser and operating system, when it was last seen, and how many sessions use it now.
+
+| Setting | Values | Effect |
+| --- | --- | --- |
+| **Name** | Any text, up to 255 characters | Select the name to rename the browser. A session selects a browser by this name. |
+| **Access** | **Without asking**, **Ask first**, **Off** | **Without asking** lets a session attach at once. **Ask first** shows a prompt in Chrome for each session. **Off** refuses every session. |
+| **Tabs** | **Own tabs**, **All tabs** | The tabs a session can reach. See [What agents can reach](#what-agents-can-reach). |
+
+Select **Connect another browser** to add a second browser or profile. Select **Disconnect** to remove a browser. Disconnecting ends every session that uses it. To use the browser again, connect it from Chrome.
+
+## What agents can reach
+
+A session drives a browser in one of two scopes:
+
+- **Own tabs** (the default). The session reaches only the tabs in its own tab group: tabs it opened, tabs you shared into the group, and tabs those tabs opened. Your other tabs are invisible to it.
+- **All tabs.** The session reaches every `http`, `https` and `file` tab in the browser, and blank tabs.
+
+In both scopes, these are never reachable:
+
+- `chrome://` pages
+- the Chrome Web Store
+- extension pages
+
+A session never resizes or closes your browser. The extension uses the Chrome debugger to control tabs, so Chrome shows its debugging notice while a session is attached.
+
+## Consent and Stop
+
+You always see when a session uses your browser:
+
+- Each session gets one tab group named **Kortix · &lt;session title&gt;**.
+- Every tab in the group shows a glow, the agent's cursor, and a control bar.
+- **Take over** pauses the agent on that tab, so you can use it yourself. The agent's input commands fail until you resume it.
+- **Stop** ends the session's access at once. The Chrome notice's **Cancel** does the same.
+
+With **Ask first**, Chrome asks before a session attaches. You answer for this session, for every session in the project, or **Deny**. With **Without asking**, a session attaches without a prompt, unless it asks for one.
+
+After you press **Stop** or **Deny**, that session cannot attach again unless it asks again. The next attach then shows a fresh prompt in Chrome. If nobody answers a prompt within 120 seconds, the attach fails.
+
+## Use it from a session
+
+A session attaches a browser with the `kortix browser` command in its sandbox:
+
+```bash
+kortix browser ls                 # your connected browsers
+kortix browser use                # attach your most recently seen online browser
+kortix browser use "Chrome · Work"   # attach one by name or id
+kortix browser use --ask          # force a fresh prompt in Chrome
+kortix browser status             # is a browser attached?
+kortix browser release            # detach when the task is done
+```
+
+Every subcommand takes `--json`. After `kortix browser use`, the browser answers on port `9333` inside the sandbox, and any Chrome DevTools Protocol client can drive it. With `agent-browser`:
+
+```bash
+agent-browser --cdp 9333 open https://example.com
+agent-browser --cdp 9333 snapshot -i
+agent-browser --cdp 9333 click @e3
+```
+
+Ask the agent in plain words, for example "Use my browser to check the invoices in my billing dashboard." The agent runs `kortix browser use` itself. If you have no connected browser, the command fails and links to **Settings → Browsers**.
+
+## Troubleshooting
+
+| Message | Meaning | Fix |
+| --- | --- | --- |
+| `browser_not_connected` | You have no connected browser. | Connect one in **Settings → Browsers**. |
+| `browser_offline` | The browser is connected but did not answer in the last 75 seconds. Chrome may be closed or asleep. | Open Chrome and check that the extension is signed in. |
+| `browser_access_off` | **Access** for this browser is **Off**. | Set **Access** to **Without asking** or **Ask first**. |
+| `browser_denied` | You selected **Deny** or **Stop** for this session. | Run `kortix browser use --ask` to get a fresh prompt. |
+| `browser_consent_timeout` | Nobody answered the prompt in Chrome within 120 seconds. | Run `kortix browser use --ask` and answer in Chrome. |
+| `browser_not_found` | No connected browser has that name. | Run `kortix browser ls` and pass a listed name. |
+
+If the dialog never notices the extension, reload the Kortix page after you add it. If **Connect** opens a sign-in window you close, select **Connect** again.

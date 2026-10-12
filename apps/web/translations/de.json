@@ -514,6 +514,10 @@
         "connected": {
           "label": "Verbundene Konten"
         },
+        "browsers": {
+          "label": "Browser",
+          "description": "Browser, die du verbunden hast, damit eine Sitzung sie nutzen kann."
+        },
         "tokens": {
           "label": "Persönliche Zugriffsschlüssel",
           "description": "API-Schlüssel, die in Ihrem Namen handeln – für die CLI, ein Skript oder einen CI-Auftrag."
@@ -20185,6 +20189,63 @@
     "calendarFailed": "Fehlgeschlagen",
     "calendarEstimatedSr": "Vergangene Ausführung, aus dem Zeitplan geschätzt",
     "calendarUpcomingSr": "Bevorstehend"
+  },
+  "browsers": {
+    "pill": "Dein Browser",
+    "connectTitle": "Deinen Browser verbinden",
+    "connectDescription": "Lass eine Kortix-Sitzung dein eigenes Chrome nutzen. Du siehst, was sie tut, und kannst sie jederzeit stoppen.",
+    "connectYourBrowser": "Deinen Browser verbinden",
+    "dismissPromo": "Ausblenden",
+    "steps": {
+      "install": {
+        "title": "Kortix zu Chrome hinzufügen",
+        "description": "Aus dem Chrome Web Store.",
+        "done": "Kortix ist in Chrome."
+      },
+      "connect": {
+        "title": "Verbinden",
+        "description": "Melde dich über die Erweiterung bei Kortix an.",
+        "done": "Angemeldet."
+      },
+      "done": {
+        "title": "Verbunden",
+        "description": "Warte auf deinen Browser."
+      }
+    },
+    "addToChrome": "Zu Chrome hinzufügen",
+    "finishInChrome": "Chrome hat einen Kortix-Tab geöffnet. Klicke dort auf Verbinden.",
+    "connect": "Verbinden",
+    "connecting": "Wird verbunden…",
+    "done": "Fertig",
+    "unsupported": "Öffne Kortix in Chrome, Edge, Brave oder Arc, um den Browser zu verbinden.",
+    "openStore": "Chrome Web Store öffnen",
+    "connectFailed": "Der Browser konnte nicht verbunden werden. Versuche es erneut.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Zuletzt gesehen {time}",
+    "usedBy": "{count, plural, one {Wird gerade von # Sitzung genutzt} other {Wird gerade von # Sitzungen genutzt}}",
+    "connectAnother": "Weiteren Browser verbinden",
+    "rename": "{name} umbenennen",
+    "renameLabel": "Browsername",
+    "disconnect": "Trennen",
+    "disconnectTitle": "{name} trennen?",
+    "disconnectDescription": "Sitzungen, die ihn nutzen, werden gestoppt. Verbinde ihn über Chrome erneut, um ihn wieder zu nutzen.",
+    "disconnected": "Browser getrennt",
+    "disconnectFailed": "Der Browser konnte nicht getrennt werden. Versuche es erneut.",
+    "updateFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+    "loadFailed": "Deine Browser konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "access": {
+      "label": "Zugriff",
+      "always": "Ohne Nachfrage",
+      "ask": "Jedes Mal fragen",
+      "off": "Aus"
+    },
+    "scope": {
+      "label": "Tabs",
+      "own": "Eigene Tabs",
+      "all": "Alle Tabs"
+    }
   },
   "computers": {
     "connectYourComputer": "Deinen Computer verbinden",

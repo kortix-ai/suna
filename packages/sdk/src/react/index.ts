@@ -183,6 +183,7 @@ export * from './use-admin-billing';
 export * from './use-impersonation';
 export * from './use-teams-installations';
 export * from './use-tunnel';
+export * from './use-browsers';
 export * from './use-admin-sandboxes';
 export * from './use-authenticated-preview-url';
 export * from './use-static-file-preview';

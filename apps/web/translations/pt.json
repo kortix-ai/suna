@@ -514,6 +514,10 @@
         "connected": {
           "label": "Contas conectadas"
         },
+        "browsers": {
+          "label": "Navegadores",
+          "description": "Navegadores que você conectou, para uma sessão poder usá-los."
+        },
         "tokens": {
           "label": "Chaves de acesso pessoais",
           "description": "Chaves de API que agem em seu nome — para a CLI, um script ou uma tarefa de CI."
@@ -20185,6 +20189,63 @@
     "calendarFailed": "Falhou",
     "calendarEstimatedSr": "Disparo passado, estimado a partir do agendamento",
     "calendarUpcomingSr": "Próximo"
+  },
+  "browsers": {
+    "pill": "Seu navegador",
+    "connectTitle": "Conectar seu navegador",
+    "connectDescription": "Deixe uma sessão do Kortix usar o seu Chrome. Você vê o que ela faz e pode pará-la a qualquer momento.",
+    "connectYourBrowser": "Conectar seu navegador",
+    "dismissPromo": "Dispensar",
+    "steps": {
+      "install": {
+        "title": "Adicionar o Kortix ao Chrome",
+        "description": "Pela Chrome Web Store.",
+        "done": "O Kortix está no Chrome."
+      },
+      "connect": {
+        "title": "Conectar",
+        "description": "Entre no Kortix pela extensão.",
+        "done": "Login feito."
+      },
+      "done": {
+        "title": "Conectado",
+        "description": "Aguardando seu navegador."
+      }
+    },
+    "addToChrome": "Adicionar ao Chrome",
+    "finishInChrome": "O Chrome abriu uma aba do Kortix. Clique em Conectar nela.",
+    "connect": "Conectar",
+    "connecting": "Conectando…",
+    "done": "Pronto",
+    "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para conectá-lo.",
+    "openStore": "Abrir a Chrome Web Store",
+    "connectFailed": "Não foi possível conectar o navegador. Tente novamente.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Visto por último {time}",
+    "usedBy": "{count, plural, one {Em uso por # sessão agora} other {Em uso por # sessões agora}}",
+    "connectAnother": "Conectar outro navegador",
+    "rename": "Renomear {name}",
+    "renameLabel": "Nome do navegador",
+    "disconnect": "Desconectar",
+    "disconnectTitle": "Desconectar {name}?",
+    "disconnectDescription": "As sessões que o usam são interrompidas. Para usá-lo de novo, conecte-o pelo Chrome.",
+    "disconnected": "Navegador desconectado",
+    "disconnectFailed": "Não foi possível desconectar o navegador. Tente novamente.",
+    "updateFailed": "Não foi possível salvar a alteração. Tente novamente.",
+    "loadFailed": "Não foi possível carregar seus navegadores.",
+    "retry": "Tentar de novo",
+    "access": {
+      "label": "Acesso",
+      "always": "Sem perguntar",
+      "ask": "Perguntar sempre",
+      "off": "Desativado"
+    },
+    "scope": {
+      "label": "Abas",
+      "own": "Abas próprias",
+      "all": "Todas as abas"
+    }
   },
   "computers": {
     "connectYourComputer": "Conectar seu computador",

@@ -1,0 +1,72 @@
+---
+name: kortix-browser
+description: Drive the USER'S OWN Chrome (their real logged-in session) from a Kortix session, over CDP, through the Kortix Chrome extension. Load this when the task needs the user's logins or real browser state ("my browser", "my Chrome", "while I'm logged in", "check my inbox / dashboard / account", a site that needs the user's login, 2FA or cookies), or when a site blocks or captchas the sandbox's cloud browser. For public pages and anything that needs no login, use the sandbox browser (the `agent-browser` skill) instead.
+---
+
+<skill name="kortix-browser">
+
+<overview>
+The user installs the Kortix extension in Chrome once. `kortix browser use`
+then attaches that Chrome to this session, and `agent-browser` drives it
+through a CDP endpoint on `127.0.0.1:9333`. It is the user's real browser:
+their cookies, logins and extensions.
+
+Use the sandbox browser (`agent-browser` with no `--cdp`) when no login is
+needed. Use the user's browser when the user says "my browser" or "my Chrome",
+or the task needs their logged-in state.
+</overview>
+
+<flow>
+1. `kortix browser use` (add a name if the user has several: `kortix browser use Work`).
+   Success prints `✓ Using Chrome · Work (macOS)`.
+2. Drive it with the usual commands plus `--cdp 9333`:
+   `agent-browser --cdp 9333 open https://example.com`
+   `agent-browser --cdp 9333 snapshot`
+   `agent-browser --cdp 9333 click @e3`
+   Load `agent-browser skills get core` for the command set.
+3. `kortix browser release` when the task is done. Always release.
+
+`kortix browser status` shows whether a browser is attached. `kortix browser ls`
+lists the user's browsers.
+</flow>
+
+<what_the_user_sees>
+Chrome opens a tab group named after this session, with a glow around its tabs
+and a control bar with **Take over** and **Stop**. You only reach tabs in that
+group: open new ones with `open` or `tab new`. The user may pause you (Take over)
+or end your access to the browser (Stop) at any time. Input commands fail while they have
+control; wait and retry.
+
+The user picks the access mode in the extension or in Kortix settings: *without
+asking*, *ask first* (your first `use` shows a prompt in Chrome and waits up to
+90 seconds), or *off*.
+</what_the_user_sees>
+
+<errors>
+- **No browser connected** (`browser_not_connected`, `browser_offline`): the CLI
+  prints a connect link. Send the user ONE line, for example: "I need your
+  Chrome for this. Install the Kortix extension here: <link>. Tell me when it
+  shows Connected." Then wait. Do not fall back to the sandbox browser for a task
+  that needs their login.
+- **Denied or stopped** (`browser_denied`): the user said no, or pressed Stop. Do
+  not retry on your own. Ask the user. If they agree, run `kortix browser use --ask`.
+- **Access off** (`browser_access_off`): tell the user to switch the browser to
+  "Without asking" or "Ask first" in Kortix settings (Settings → Browsers), then wait.
+- **Timeout** (`browser_consent_timeout`): nobody answered the prompt in Chrome.
+  Tell the user to look at Chrome, then run `kortix browser use --ask` again.
+- **`browser_dial_failed`**: Chrome did not connect. Ask the user to check that
+  Chrome is open and the extension is signed in.
+- **`No browser attached. Run: kortix browser use`** from agent-browser: the
+  browser was released or disconnected. Run `kortix browser use` again.
+</errors>
+
+<rules>
+- Act only on what the task needs. This is the user's real account: never send,
+  buy, delete or post unless the user asked for that exact action.
+- Do not read or copy cookies, tokens or passwords out of the browser.
+- Release the browser when you finish, and before you ask the user a question
+  that will take a while.
+- `chrome://` pages, the Web Store and extension pages are out of reach.
+</rules>
+
+</skill>

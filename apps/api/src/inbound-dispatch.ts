@@ -95,6 +95,13 @@ export async function dispatchInbound(
     if (tunnelResult !== false) return tunnelResult;
   }
 
+  // ── Kortix Browser control socket ───────────────────────────────────
+  // The extension connects, then authenticates with its first frame. The token
+  // is never in the URL, and there is no Origin check: the token is the gate.
+  if (isWsUpgrade && url.pathname === '/v1/browser/ws') {
+    return upgradeBrowserWs(req, server);
+  }
+
   // ── Preview WebSocket proxy ─────────────────────────────────────────
   // Path-based preview upgrades (`/v1/p/{sandboxId}/{port}/...`) — today the
   // xterm PTY terminal. Authenticate via the `?token=` query param (browsers
@@ -149,6 +156,29 @@ async function upgradeAppOriginWs(req: Request, url: URL, server: any): Promise<
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
+}
+
+async function upgradeBrowserWs(req: Request, server: any): Promise<Response | undefined> {
+  setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/browser/ws');
+  if (!schemaReady) {
+    return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
+    });
+  }
+  const { prepareBrowserUpgrade } = await import('./browser/ws');
+  const prepared = prepareBrowserUpgrade(req.headers);
+  if (!prepared.ok) {
+    return new Response(JSON.stringify({ error: prepared.message }), {
+      status: prepared.status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  if (server.upgrade(req, { data: prepared.data })) return undefined;
+  return new Response(JSON.stringify({ error: 'Browser WebSocket upgrade failed' }), {
+    status: 500,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 async function upgradePreviewHostWs(req: Request, url: URL, server: any): Promise<Response | undefined> {

@@ -514,6 +514,10 @@
         "connected": {
           "label": "Account collegati"
         },
+        "browsers": {
+          "label": "Browser",
+          "description": "I browser che hai collegato, così una sessione può usarli."
+        },
         "tokens": {
           "label": "Chiavi di accesso personali",
           "description": "Chiavi API che agiscono a tuo nome — per la CLI, uno script o un processo CI."
@@ -20185,6 +20189,63 @@
     "calendarFailed": "Non riuscito",
     "calendarEstimatedSr": "Attivazione passata, stimata dalla pianificazione",
     "calendarUpcomingSr": "In arrivo"
+  },
+  "browsers": {
+    "pill": "Il tuo browser",
+    "connectTitle": "Collega il tuo browser",
+    "connectDescription": "Lascia che una sessione Kortix usi il tuo Chrome. Vedi cosa fa e puoi fermarla in qualsiasi momento.",
+    "connectYourBrowser": "Collega il tuo browser",
+    "dismissPromo": "Chiudi",
+    "steps": {
+      "install": {
+        "title": "Aggiungi Kortix a Chrome",
+        "description": "Dal Chrome Web Store.",
+        "done": "Kortix è in Chrome."
+      },
+      "connect": {
+        "title": "Collega",
+        "description": "Accedi a Kortix dall'estensione.",
+        "done": "Accesso effettuato."
+      },
+      "done": {
+        "title": "Collegato",
+        "description": "In attesa del tuo browser."
+      }
+    },
+    "addToChrome": "Aggiungi a Chrome",
+    "finishInChrome": "Chrome ha aperto una scheda Kortix. Fai clic su Collega lì.",
+    "connect": "Collega",
+    "connecting": "Connessione…",
+    "done": "Fatto",
+    "unsupported": "Apri Kortix in Chrome, Edge, Brave o Arc per collegarlo.",
+    "openStore": "Apri il Chrome Web Store",
+    "connectFailed": "Impossibile collegare il browser. Riprova.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Ultimo accesso {time}",
+    "usedBy": "{count, plural, one {Usato da # sessione ora} other {Usato da # sessioni ora}}",
+    "connectAnother": "Collega un altro browser",
+    "rename": "Rinomina {name}",
+    "renameLabel": "Nome del browser",
+    "disconnect": "Disconnetti",
+    "disconnectTitle": "Disconnettere {name}?",
+    "disconnectDescription": "Le sessioni che lo usano si fermano. Per usarlo di nuovo, collegalo da Chrome.",
+    "disconnected": "Browser disconnesso",
+    "disconnectFailed": "Impossibile disconnettere il browser. Riprova.",
+    "updateFailed": "Impossibile salvare la modifica. Riprova.",
+    "loadFailed": "Impossibile caricare i tuoi browser.",
+    "retry": "Riprova",
+    "access": {
+      "label": "Accesso",
+      "always": "Senza chiedere",
+      "ask": "Chiedi ogni volta",
+      "off": "Disattivato"
+    },
+    "scope": {
+      "label": "Schede",
+      "own": "Schede proprie",
+      "all": "Tutte le schede"
+    }
   },
   "computers": {
     "connectYourComputer": "Collega il tuo computer",

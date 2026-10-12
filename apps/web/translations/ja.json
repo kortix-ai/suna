@@ -514,6 +514,10 @@
         "connected": {
           "label": "接続済みアカウント"
         },
+        "browsers": {
+          "label": "ブラウザー",
+          "description": "接続したブラウザーです。セッションが使えます。"
+        },
         "tokens": {
           "label": "個人用アクセスキー",
           "description": "あなたとして動作する API キー — CLI、スクリプト、CI ジョブ用。"
@@ -20185,6 +20189,63 @@
     "calendarFailed": "失敗",
     "calendarEstimatedSr": "過去の実行（スケジュールからの推定）",
     "calendarUpcomingSr": "予定"
+  },
+  "browsers": {
+    "pill": "あなたのブラウザー",
+    "connectTitle": "ブラウザーを接続",
+    "connectDescription": "Kortix のセッションがあなたの Chrome を使えるようにします。操作は画面で確認でき、いつでも止められます。",
+    "connectYourBrowser": "ブラウザーを接続",
+    "dismissPromo": "閉じる",
+    "steps": {
+      "install": {
+        "title": "Kortix を Chrome に追加",
+        "description": "Chrome Web Store から追加します。",
+        "done": "Kortix が Chrome に追加されました。"
+      },
+      "connect": {
+        "title": "接続",
+        "description": "拡張機能から Kortix にサインインします。",
+        "done": "サインインしました。"
+      },
+      "done": {
+        "title": "接続済み",
+        "description": "ブラウザーを待っています。"
+      }
+    },
+    "addToChrome": "Chrome に追加",
+    "finishInChrome": "ChromeでKortixのタブが開きました。そのタブで「接続」をクリックしてください。",
+    "connect": "接続",
+    "connecting": "接続中…",
+    "done": "完了",
+    "unsupported": "Chrome、Edge、Brave、Arc のいずれかで Kortix を開いて接続してください。",
+    "openStore": "Chrome Web Store を開く",
+    "connectFailed": "ブラウザーを接続できませんでした。もう一度お試しください。",
+    "online": "オンライン",
+    "offline": "オフライン",
+    "lastSeen": "最終確認 {time}",
+    "usedBy": "{count, plural, other {現在 # 件のセッションが使用中}}",
+    "connectAnother": "別のブラウザーを接続",
+    "rename": "{name} の名前を変更",
+    "renameLabel": "ブラウザー名",
+    "disconnect": "接続を解除",
+    "disconnectTitle": "{name} の接続を解除しますか?",
+    "disconnectDescription": "使用中のセッションは停止します。再び使うには、Chrome から接続してください。",
+    "disconnected": "ブラウザーの接続を解除しました",
+    "disconnectFailed": "ブラウザーの接続を解除できませんでした。もう一度お試しください。",
+    "updateFailed": "変更を保存できませんでした。もう一度お試しください。",
+    "loadFailed": "ブラウザーを読み込めませんでした。",
+    "retry": "もう一度",
+    "access": {
+      "label": "アクセス",
+      "always": "確認なし",
+      "ask": "毎回確認する",
+      "off": "オフ"
+    },
+    "scope": {
+      "label": "タブ",
+      "own": "自分のタブ",
+      "all": "すべてのタブ"
+    }
   },
   "computers": {
     "connectYourComputer": "コンピューターを接続",

@@ -51,6 +51,7 @@ export * from './apps';
 export * from './apps-fleet';
 export * from './drives';
 export * from './notifications';
+export * from './browsers';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

@@ -7338,3 +7338,67 @@ export const feedback = kortixSchema.table('feedback', {
   check('feedback_source', sql`${table.source} in ('cli', 'agent', 'web')`),
   check('feedback_kind', sql`${table.kind} in ('bug', 'idea', 'friction')`),
 ]);
+
+/**
+ * Kortix Browser: a person's own Chrome, connected to Kortix through the
+ * extension's control socket (apps/api/src/browser). One row per browser
+ * profile. `last_seen_at` is the liveness clock: online means not revoked and
+ * seen in the last 75 s. Protocol: .agents/skills/kortix-browser/references/protocol.md.
+ */
+export const browserConnections = kortixSchema.table('browser_connections', {
+  browserId: uuid('browser_id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  brand: text('brand').notNull(),
+  os: text('os').notNull(),
+  profileLabel: text('profile_label'),
+  extensionVersion: text('extension_version'),
+  /** always | ask | off */
+  accessMode: text('access_mode').default('always').notNull(),
+  /** own | all */
+  tabScope: text('tab_scope').default('own').notNull(),
+  relayOwnerId: text('relay_owner_id'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_browser_connections_user').on(table.userId),
+  check('browser_connections_access_mode', sql`${table.accessMode} in ('always', 'ask', 'off')`),
+  check('browser_connections_tab_scope', sql`${table.tabScope} in ('own', 'all')`),
+]);
+
+/** A remembered consent decision. `session_id` null means the whole project. */
+export const browserGrants = kortixSchema.table('browser_grants', {
+  grantId: uuid('grant_id').defaultRandom().primaryKey(),
+  browserId: uuid('browser_id').notNull(),
+  projectId: text('project_id').notNull(),
+  sessionId: text('session_id'),
+  /** allow | deny */
+  decision: text('decision').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'browser_grants_browser_fk', columns: [table.browserId], foreignColumns: [browserConnections.browserId] }).onDelete('cascade'),
+  index('idx_browser_grants_browser').on(table.browserId, table.sessionId),
+  check('browser_grants_decision', sql`${table.decision} in ('allow', 'deny')`),
+]);
+
+/** One session's use of one browser. */
+export const browserAttachments = kortixSchema.table('browser_attachments', {
+  attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+  browserId: uuid('browser_id').notNull(),
+  userId: uuid('user_id'),
+  projectId: text('project_id'),
+  sessionId: text('session_id').notNull(),
+  /** pending | granted | connected | denied | ended | failed */
+  status: text('status').notNull(),
+  endReason: text('end_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'browser_attachments_browser_fk', columns: [table.browserId], foreignColumns: [browserConnections.browserId] }).onDelete('cascade'),
+  index('idx_browser_attachments_browser').on(table.browserId, table.status),
+  index('idx_browser_attachments_session').on(table.sessionId),
+  check('browser_attachments_status', sql`${table.status} in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')`),
+]);

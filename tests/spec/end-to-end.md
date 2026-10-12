@@ -807,6 +807,18 @@ returned digest and persisted bytes. Same-length corrupted bytes with the source
 checksum fail without replacing the destination. Malformed base64 returns 400.
 Cleanup removes the machine and temporary files.
 
+### Kortix Browser (a person's own Chrome, driven from a session sandbox)
+
+Protocol: `.agents/skills/kortix-browser/references/protocol.md`. The extension signs in with OAuth (public client, PKCE, scope `kortix`) and holds a control socket at `wss://<api>/v1/browser/ws`. A flow plays the extension: it opens the socket, sends the first-frame `auth`, and answers `attach` frames. User routes (`/v1/browsers*`) take a JWT, `kortix_pat_` or `kortix_oat_`. Sandbox routes (`/v1/browser/attach|release`) take only a session-scoped sandbox credential.
+
+`BRW-1` `GET /browsers`: `ANON` → 401; a user with no browser → 200 `[]`.
+`BRW-2` Control socket auth. A bad token, a `kortix_oat_` without the `kortix` scope, and a first frame other than `auth` each close the socket `4001`. A `kortix`-scoped `kortix_oat_` → `auth_ok` with a new `Browser` (`accessMode:"always"`, `tabScope:"own"`). `ping` → `pong`, and `GET /browsers` lists the browser with `online:true` and `lastSeenAt`. The same OAuth token lists it over REST. A second `auth` with the stored `browserId` reuses the row and closes the first socket. A user `kortix_pat_` that is not session-scoped authenticates too and, with `browserId:null`, creates a new row.
+`BRW-3` `PATCH /browsers/:id {name?, accessMode?: always|ask|off, tabScope?: own|all}` → 200 `Browser`, and the extension gets `{"type":"browser"}`. `GET` reads it back. A bad enum value, an empty name or an unknown key → 400. `ANON` → 401. A non-uuid id → 404 `browser_not_found`.
+`BRW-4` `DELETE /browsers/:id` → 204; the control socket closes `4003`; the list drops the row; a second `DELETE` → 404. A later `auth` with the revoked `browserId` creates a new row.
+`BRW-5` `POST /browser/attach` and `/browser/release`: `ANON` → 401. A signed-in user and a `kortix_oat_` (neither is a session sandbox credential) → 403.
+`BRW-6` Owner isolation. Another user's list lacks the browser. Their `PATCH` and `DELETE` → 404 and leave it untouched. Their `auth` with the first user's `browserId` creates their own new row.
+`BRW-7` The full attach arc with a session's own sandbox credential. Mode `always`: attach → 200 `{attachmentId, browser}`; the socket gets `attach` with `consent:false`, the session title, the project id, and `bridgePath` `/v1/p/<id>/8000/kortix/browser/bridge?ticket=<ticket>`. After `attached`, `GET /browsers` lists the session under `activeSessions` with its title. `release` → 204 and the socket gets `detach`. Mode `ask`: attach waits; the socket gets `attach` with `consent:true`; `consent:"session"` → 200; the next attach needs no prompt. `detached` `stopped` denies the session: the next attach → 403 `browser_denied` with `connectUrl` ending `/settings/browsers`. `ask:true` prompts again; `consent:"deny"` → 403 `browser_denied`. Mode `off` → 403 `browser_access_off`. No `ticket` → 400; an unknown browser name → 404 `browser_not_found`; after `DELETE /browsers/:id` → 404 `browser_not_connected`. `browser_offline` (409) is proved by `apps/api/src/browser/service.integration.test.ts`. The `browser_consent_timeout` (408) answers after 90 s, not the protocol's 120 s, because Cloudflare cuts a request at 100 s. It is proved only for its status and body (`logic.test.ts`): a flow would wait 90 s.
+
 ### Ops (platform admin)
 
 `OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200 with `api`, `totals`, `sessions`, `sandboxes`, `queues`, `audit`, `usage`, `observability`, `migrations`; derived counts agree with their maps; ANON → 401; non-admin → 403.

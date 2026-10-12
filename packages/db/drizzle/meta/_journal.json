@@ -1044,6 +1044,13 @@
       "when": 1791766778285,
       "tag": "20261012005938_session_logs_journal_seen_at",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1791820898938,
+      "tag": "20261012160138_browser_connections",
+      "breakpoints": true
     }
   ]
 }

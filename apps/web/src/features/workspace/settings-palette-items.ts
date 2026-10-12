@@ -48,6 +48,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'connected',
+  'browsers',
   'tokens',
   'credits',
   'plan',
@@ -116,6 +117,8 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   sessions: 'sessions sounds audio volume notification notifications sound effects mute alerts',
   preferences: 'preferences language locale translation shortcuts keyboard hotkeys keybindings',
   connected: 'connected accounts linked oauth google github identities social sign in providers',
+  browsers:
+    'browsers browser chrome extension edge brave arc connect tabs web page automation control cdp',
   // The words a person types when they want to sign the CLI in. `pat` and
   // `personal access token` came off `nav:account-tokens` in
   // `lib/menu-registry.ts` and landed here, because this is the pane that

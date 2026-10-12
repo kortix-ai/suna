@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 792,
+  "count": 797,
   "routes": [
     {
       "method": "GET",
@@ -997,6 +997,26 @@
     {
       "method": "POST",
       "path": "/v1/billing/webhooks/stripe"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/browser/attach"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/browser/release"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/browsers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/browsers/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/browsers/:id"
     },
     {
       "method": "POST",

@@ -19,9 +19,11 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
+import { BrowserConnectModal } from '@/features/browser/browser-connect';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from '@/features/workspace/project-sidebar/footer/project-mcp-nav';
+import { ProjectBrowserNavItem } from '@/features/workspace/project-sidebar/footer/project-browser-nav';
 import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
 import { ProjectRemindersNavItem } from './footer/project-reminders-nav';
@@ -58,6 +60,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
   // Mounted outside <Sidebar>: the mobile sheet unmounts its content on close.
   const [computerConnectOpen, setComputerConnectOpen] = useState(false);
+  const [browserConnectOpen, setBrowserConnectOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
@@ -280,6 +283,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     onOpenConnect={() => setComputerConnectOpen(true)}
                   />
+                  <ProjectBrowserNavItem onOpenConnect={() => setBrowserConnectOpen(true)} />
                 </SidebarMenu>
               </li>
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
@@ -298,6 +302,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       open={computerConnectOpen}
       onOpenChange={setComputerConnectOpen}
     />
+    <BrowserConnectModal open={browserConnectOpen} onOpenChange={setBrowserConnectOpen} />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
     </>
   );
