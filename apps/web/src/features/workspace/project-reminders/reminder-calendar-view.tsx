@@ -179,7 +179,12 @@ const CalendarRange = memo(function CalendarRange({
       {range === 'month' ? (
         <CalendarMonth {...grid} onOpenDay={onOpenDay} />
       ) : (
-        <CalendarWeek {...grid} now={minute} daysInView={range === 'day' ? 1 : 7} />
+        <CalendarWeek
+          {...grid}
+          now={minute}
+          daysInView={range === 'day' ? 1 : 7}
+          onOpenDay={onOpenDay}
+        />
       )}
       {loading ? null : (
         <RangeHint range={range} model={model} reminders={reminders} today={today} />
