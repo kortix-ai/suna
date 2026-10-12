@@ -7915,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "版本历史",
       "line285JsxTextCopyPath": "复制路径",
       "line396JsxTextThisFolderIsEmpty": "此文件夹为空",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。",
+      "loadMoreItems": "加载更多项目",
+      "loadMoreFailed": "无法加载更多项目。请重试。",
+      "partialSortNote": "显示 {value0} 个项目。全部加载后才会应用排序。",
+      "showingFirstItems": "显示前 {value0} 个项目"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "双击以编辑路径",
@@ -8007,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "搜索文件...",
       "line124JsxTextTypeToSearchFiles": "输入以搜索文件...",
-      "line136JsxTextNoFilesFound": "未找到文件"
+      "line136JsxTextNoFilesFound": "未找到文件",
+      "searchContents": "搜索内容",
+      "firstMatches": "显示前 {value0} 个匹配项",
+      "searchContentsPlaceholder": "搜索文件内容...",
+      "typeToSearchContents": "输入以搜索文件内容...",
+      "noMatchingLines": "没有匹配的行"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "已存在同名文件或文件夹",
@@ -20188,9 +20197,8 @@
     "calendarNextWeek": "下一周",
     "calendarPreviousMonth": "上个月",
     "calendarNextMonth": "下个月",
-    "calendarAllWeek": "整周",
-    "calendarAllDay": "全天",
-    "calendarEvery": "每 {period}",
+    "calendarMore": "还有 {count} 个",
+    "calendarMoreOn": "{date} 还有 {count} 个提醒",
     "calendarSession": "会话",
     "calendarEmptyWeek": "本周没有触发",
     "calendarEmptyDay": "这一天没有触发",
