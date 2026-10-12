@@ -6,8 +6,9 @@
  * credential a session sandbox holds as `KORTIX_TOKEN`) and a gzipped body,
  * the way the daemon sends it. The assertions read the rows back.
  */
+import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accountMembers, accounts, projectSessions, projects, sessionLogMessages, sessionLogs, sessionSandboxes, sessionTurns } from '@kortix/db';
+import { accountMembers, accounts, projectSessions, projects, sessionLogMessages, sessionLogThreads, sessionLogs, sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -199,6 +200,81 @@ describe('journal', () => {
     expect(log!.record).toMatchObject({ title: 'Renamed', session_id: SESSION, restore_grade: 'partial' });
   });
 
+  test('tool output with NUL and lone surrogates stores with each as U+FFFD, and content_hash stays the record as sent', async () => {
+    // A harness tool read a binary file: its result text carries NUL (\u0000) and lone
+    // surrogate code units. Postgres jsonb refuses both (22P05, the prod incident:
+    // `insert into "kortix"."session_log_messages"` fails and the daemon retries the
+    // batch forever), so the ingest replaces each bad unit with U+FFFD in the stored
+    // copy instead of answering 500 to the whole batch. A valid surrogate pair (an
+    // emoji) survives.
+    const put = {
+      rev: REV + 60,
+      message: message('msg_bin', 6, {
+        role: 'assistant',
+        blocks: [
+          {
+            type: 'tool_call',
+            id: 'blk_bin',
+            call_id: 'call_bin',
+            name: 'read',
+            kind: 'read',
+            status: 'complete',
+            result: { content: [{ type: 'text', text: 'HTTP 200 2346\n \u0000,\u0000Q\u0000I\u0000H\u0000U\u0000H\u0000 end \uD83D tail' }], is_error: false, details: { note: 'nul\u0000' } },
+            ext: { raw: { version: '1', data: 'x\u0000y' } },
+          },
+        ],
+        ext: { out: { version: '1', data: 'ok \uD83D\uDE00 pair \uDE00 lone' } },
+      }),
+    };
+    const res = await journal(batch({ generation: 2, puts: [put] }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ acked: [{ message_id: 'msg_bin', rev: REV + 60 }] });
+
+    const row = await stored('msg_bin');
+    // The manifest hash is the record as sent, NUL included: the daemon's reconcile
+    // compares against what it sent, not what the API stored.
+    expect(row?.hash).toBe(`sha256:${createHash('sha256').update(JSON.stringify(put.message)).digest('hex')}`);
+    const record = row!.record as {
+      blocks: Array<{ result?: { content: Array<{ type: string; text: string }>; details?: unknown }; ext?: Record<string, unknown> }>;
+      ext?: Record<string, unknown>;
+    };
+    expect(record.blocks[0]!.result!.content[0]).toEqual({ type: 'text', text: 'HTTP 200 2346\n \uFFFD,\uFFFDQ\uFFFDI\uFFFDH\uFFFDU\uFFFDH\uFFFD end \uFFFD tail' });
+    expect(record.blocks[0]!.result!.details).toEqual({ note: 'nul\uFFFD' });
+    expect(record.blocks[0]!.ext).toEqual({ raw: { version: '1', data: 'x\uFFFDy' } });
+    expect(record.ext).toEqual({ out: { version: '1', data: 'ok \uD83D\uDE00 pair \uFFFD lone' } });
+    // Nothing jsonb refuses reached the row: Postgres renders a NUL as \u0000 and a
+    // lone surrogate is not storable at all.
+    const [text_row] = await db.execute(sql`select record::text as r from kortix.session_log_messages where session_id = ${SESSION} and message_id = 'msg_bin'`);
+    expect((text_row as { r: string }).r).not.toContain('\\u0000');
+    expect((text_row as { r: string }).r).not.toContain('\\ud83d');
+    expect((text_row as { r: string }).r).not.toContain('\\ude00');
+
+    const [log] = await db.select({ harnessCurrent: sessionLogs.harnessCurrent }).from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log?.harnessCurrent).toBe('opencode');
+  });
+
+  test('a session patch and thread the stored columns cannot hold (a NUL) store as U+FFFD', async () => {
+    // `harness_current` is a text column: a raw NUL byte fails the UPDATE with 22021
+    // the way jsonb fails a \u0000 escape with 22P05. The patch record and the thread
+    // record are jsonb; all three store sanitized.
+    const res = await journal(
+      batch({
+        generation: 2,
+        session: { title: 'read \u0000bin', harness: { current: 'opencode\u0000', history: [] } },
+        threads: [{ ...thread('bin2'), ext: { note: { version: '1', data: 't\u0000' } } }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [log] = await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log).toMatchObject({ harnessCurrent: 'opencode\uFFFD' });
+    expect(log!.record).toMatchObject({ title: 'read \uFFFDbin' });
+    const [thread_row] = await db
+      .select({ record: sessionLogThreads.record })
+      .from(sessionLogThreads)
+      .where(and(eq(sessionLogThreads.sessionId, SESSION), eq(sessionLogThreads.threadId, 'bin2')));
+    expect(thread_row?.record).toEqual({ ...thread('bin2'), ext: { note: { version: '1', data: 't\uFFFD' } } });
+  });
+
   test('bodies: invalid JSON shape 400, over 2 MB gzipped 413, over 16 MB raw 413', async () => {
     expect((await journal(batch({ puts: [{ rev: -1, message: {} }] }))).status).toBe(400);
     expect((await journal(new Uint8Array(2 * 1024 * 1024 + 1))).status).toBe(413);
@@ -225,6 +301,7 @@ describe('manifest', () => {
       ['msg_a1', REV + 20, true],
       ['msg_u2', REV + 11, false],
       ['msg_u3', REV + 40, false],
+      ['msg_bin', REV + 60, false],
     ]);
     expect(body.messages[0]!.content_hash).toBe((await stored('msg_u1'))!.hash);
   });
