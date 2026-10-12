@@ -5,7 +5,8 @@ const CUSTOM = 'custom';
 const connect = $<HTMLButtonElement>('connect'), server = $<HTMLSelectElement>('server'), api = $<HTMLInputElement>('api');
 const step = (id: string) => ['start', 'setup', 'done'].forEach((s) => ($(s).hidden = s !== id));
 
-for (const s of SERVERS) server.add(new Option(s.web, s.api));
+// Only kortix.com by name; any other server (a test environment, self-host) is "Another server".
+server.add(new Option(SERVERS[0].web, SERVERS[0].api));
 server.add(new Option('Another server…', CUSTOM));
 const syncCustom = () => ($('custom-row').hidden = server.value !== CUSTOM);
 server.onchange = syncCustom;
@@ -29,7 +30,7 @@ if (back.has('code') || back.has('error')) {
     connect.textContent = 'Connect to Kortix';
   });
 } else rpc<Status>({ kortix: 'status' }).then((s) => {
-  const known = SERVERS.some((x) => x.api === s.apiUrl);
+  const known = s.apiUrl === SERVERS[0].api;
   server.value = known ? s.apiUrl : s.apiUrl && s.apiUrl !== DEFAULT_API_URL ? CUSTOM : DEFAULT_API_URL;
   if (server.value === CUSTOM) api.value = s.apiUrl;
   syncCustom();
@@ -58,15 +59,18 @@ function setup(s: Status) {
   $('setup-server').textContent = serverLabel(s.apiUrl);
   $<HTMLInputElement>('name').value = s.browser?.name ?? '';
   const mode = s.browser?.accessMode === 'ask' ? 'ask' : 'always';
-  ($(`setup`).querySelector(`input[value=${mode}]`) as HTMLInputElement).checked = true;
+  ($(`setup`).querySelector(`input[name=mode][value=${mode}]`) as HTMLInputElement).checked = true;
+  const scope = s.browser?.tabScope === 'own' ? 'own' : 'all';
+  ($(`setup`).querySelector(`input[name=scope][value=${scope}]`) as HTMLInputElement).checked = true;
   step('setup');
 }
 
 $('finish').onclick = async () => {
   const name = $<HTMLInputElement>('name').value.trim();
   const accessMode = (document.querySelector('input[name=mode]:checked') as HTMLInputElement).value as 'always' | 'ask';
+  const tabScope = (document.querySelector('input[name=scope]:checked') as HTMLInputElement).value as 'all' | 'own';
   try {
-    await rpc({ kortix: 'patch', body: { ...(name ? { name } : {}), accessMode } });
+    await rpc({ kortix: 'patch', body: { ...(name ? { name } : {}), accessMode, tabScope } });
     $('done-name').textContent = name || current?.browser?.name || 'This browser';
     $<HTMLAnchorElement>('open').href = current?.webUrl ?? 'https://kortix.com';
     step('done');

@@ -11,7 +11,7 @@ export type AttachFrame = {
   projectName: string; bridgePath: string; ticket: string; consent: boolean;
 };
 /** Persisted in chrome.storage.session so a worker restart re-dials the bridge. */
-export type AttachmentRecord = Omit<AttachFrame, 'type' | 'consent' | 'ticket'> & { groupId: number };
+export type AttachmentRecord = Omit<AttachFrame, 'type' | 'consent' | 'ticket'> & { groupId: number; tabIds?: number[] };
 /** chrome.storage.local */
 export type Stored = {
   apiUrl?: string; token?: string; refreshToken?: string; expiresAt?: number;
@@ -24,6 +24,7 @@ export type PageMessage =
   | { kortix: 'signin'; apiUrl?: string }
   | { kortix: 'oauth-done'; url: string }
   | { kortix: 'signout' }
+  | { kortix: 'whoami' }
   | { kortix: 'patch'; body: { name?: string; accessMode?: AccessMode; tabScope?: TabScope } }
   | { kortix: 'stop'; attachmentId: string }
   | { kortix: 'add-tab'; attachmentId: string; tabId: number }
@@ -33,10 +34,10 @@ export type PageMessage =
   | { kortix: 'overlay-stop' };
 export type Status = {
   signedIn: boolean; online: boolean; apiUrl: string; webUrl: string; browser?: Browser;
-  attachments: { attachmentId: string; sessionId: string; title: string; paused: boolean }[];
+  attachments: { attachmentId: string; sessionId: string; projectId: string; title: string; paused: boolean }[];
 };
 export const DEFAULT_API_URL = 'https://api.kortix.com';
-/** The Kortix web apps and the API each one signs in to. The welcome page offers them by web host. */
+/** The Kortix web apps and the API each one signs in to. Only `kortix.com` is offered by name. */
 export const SERVERS: { web: string; api: string }[] = [
   { web: 'kortix.com', api: 'https://api.kortix.com' },
   { web: 'dev.kortix.com', api: 'https://dev-api.kortix.com' },

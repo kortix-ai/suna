@@ -853,10 +853,8 @@ const nextConfig = (): NextConfig => ({
             key: 'Content-Security-Policy-Report-Only',
             value: reportOnlyContentSecurityPolicy(),
           },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
-          },
+          // No X-Frame-Options: it cannot allowlist the Kortix extension's side panel.
+          // CSP frame-ancestors above is the framing gate.
           {
             key: 'X-Content-Type-Options',
             value: 'nosniff',

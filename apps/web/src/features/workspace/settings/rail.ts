@@ -1,11 +1,11 @@
 import {
+  type Icon,
   ArrowCircleUpIcon as ArrowUpCircle,
   ChatCircleIcon as ChatCircle,
   CoinsIcon as Coins,
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
-  GlobeIcon as Globe,
   KeyIcon as Key,
   LinkIcon as Link,
   PaletteIcon as Palette,
@@ -14,6 +14,8 @@ import {
   SquaresFourIcon as SquaresFour,
   UserIcon as User,
 } from '@phosphor-icons/react';
+
+import { ChromeRailIcon } from '@/features/browser/browser-icon';
 
 import type { SettingsTab } from './settings-tabs';
 import type { RailGroup, RailItem } from './type';
@@ -91,9 +93,10 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
       },
       {
         tab: 'browsers',
-        label: 'Browsers',
-        description: 'Browsers you connected, so a session can use them.',
-        icon: Globe,
+        label: 'Chrome extension',
+        description: 'Let your sessions use Chrome, with your logins. Connect each browser where the Kortix extension is installed.',
+        // Monochrome like its neighbours; `ChromeRailIcon` takes only `className`.
+        icon: ChromeRailIcon as unknown as Icon,
       },
       // Labelled "API keys", routed at `/settings/tokens`. The id has to be
       // `tokens` — it is the URL segment, and the account page already spends

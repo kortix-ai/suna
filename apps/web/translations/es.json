@@ -515,8 +515,8 @@
           "label": "Cuentas conectadas"
         },
         "browsers": {
-          "label": "Navegadores",
-          "description": "Navegadores que conectaste, para que una sesión pueda usarlos."
+          "label": "Extensión de Chrome",
+          "description": "Deja que tus sesiones usen Chrome, con tus inicios de sesión. Conecta cada navegador donde esté instalada la extensión de Kortix."
         },
         "tokens": {
           "label": "Claves de acceso personales",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "Próxima"
   },
   "browsers": {
-    "pill": "Tu navegador",
-    "connectTitle": "Conectar tu navegador",
-    "connectDescription": "Deja que una sesión de Kortix use tu propio Chrome. Ves lo que hace y puedes detenerla en cualquier momento.",
-    "connectYourBrowser": "Conectar tu navegador",
+    "pill": "Extensión de Chrome",
+    "connectTitle": "Añadir Kortix a Chrome",
+    "connectDescription": "Deja que tus sesiones usen Chrome, con tus inicios de sesión. Ves lo que hacen y puedes detenerlas en cualquier momento.",
+    "promoLabel": "Extensión de Chrome",
     "dismissPromo": "Descartar",
     "steps": {
       "install": {
-        "title": "Añadir Kortix a Chrome",
+        "title": "Añade la extensión",
         "description": "Desde Chrome Web Store.",
         "done": "Kortix está en Chrome."
       },
       "connect": {
-        "title": "Conectar",
+        "title": "Inicia sesión",
         "description": "Inicia sesión en Kortix desde la extensión.",
         "done": "Sesión iniciada."
       },
@@ -20224,7 +20224,8 @@
     "offline": "Sin conexión",
     "lastSeen": "Visto por última vez {time}",
     "usedBy": "{count, plural, one {Usado por # sesión ahora} other {Usado por # sesiones ahora}}",
-    "connectAnother": "Conectar otro navegador",
+    "connectAnother": "Añadir otro navegador",
+    "listTitle": "Navegadores conectados",
     "rename": "Cambiar el nombre de {name}",
     "renameLabel": "Nombre del navegador",
     "disconnect": "Desconectar",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "Pestañas",
-      "own": "Pestañas propias",
+      "own": "Solo pestañas que abre",
       "all": "Todas las pestañas"
     }
   },

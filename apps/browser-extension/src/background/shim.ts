@@ -18,6 +18,8 @@ export interface ShimHost {
   getTab(tabId: number): Promise<TabInfo | undefined>;
   /** Scope check (own group or all), including the url scheme rule. */
   inScope(tab: TabInfo): boolean;
+  /** The session opened this tab, or the user shared it into the session. */
+  owns(tab: TabInfo): boolean;
   /** Create a tab in the session group. The first one is active. */
   createTab(url: string): Promise<TabInfo>;
   closeTab(tabId: number): Promise<void>;
@@ -54,6 +56,9 @@ export class CdpError extends Error {
 const PAUSED_MSG = 'The user took over this tab. Wait for them, then retry.';
 const BROWSER_CONTEXT = 'kortix';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** How long a client gets to answer a page dialog itself before the shim answers OK. */
+export const DIALOG_GRACE_MS = 1000;
 
 export class Shim {
   private clients = new Map<string, ClientState>();
@@ -118,16 +123,13 @@ export class Shim {
       case 'Target.setDiscoverTargets': {
         cl.discover = !!p.discover;
         if (cl.discover) {
-          const tabs = (await this.host.listTabs()).filter((t) => this.host.inScope(t));
+          const tabs = await this.scopedTabs();
           queueMicrotask(() => void this.announceAll(c, cl, tabs));
         }
         return {};
       }
-      case 'Target.getTargets': {
-        let tabs = (await this.host.listTabs()).filter((t) => this.host.inScope(t));
-        if (!tabs.length) tabs = [await this.host.createTab('about:blank')];
-        return { targetInfos: await this.infos(cl, tabs) };
-      }
+      case 'Target.getTargets':
+        return { targetInfos: await this.infos(cl, await this.scopedTabs()) };
       case 'Target.createTarget': {
         const tab = await this.host.createTab(p.url || 'about:blank');
         const [info] = await this.infos(cl, [tab]);
@@ -181,7 +183,55 @@ export class Shim {
     // Awaited: the page hit-tests the event, and the control bar must not take an agent click.
     if (method === 'Input.dispatchMouseEvent') await this.host.pointer(tabId, params ?? {});
     if (method === 'Page.captureScreenshot') await this.host.activateTab(tabId);
-    return this.host.send(tabId, child, method, params);
+    if (method === 'Kortix.setFileInputFiles') return this.setFiles(tabId, child, params);
+    this.inflight.set(tabId, (this.inflight.get(tabId) ?? 0) + 1);
+    try {
+      return await this.host.send(tabId, child, method, params);
+    } finally {
+      this.inflight.set(tabId, (this.inflight.get(tabId) ?? 1) - 1);
+    }
+  }
+
+  /**
+   * The tabs a client may see, the session's own first. A CDP client attaches
+   * to the first page it is given and `open` navigates it, so with "All tabs"
+   * the agent must start in a tab of its own, never in one the user is reading.
+   */
+  private async scopedTabs(): Promise<TabInfo[]> {
+    const tabs = (await this.host.listTabs()).filter((t) => this.host.inScope(t));
+    const own = tabs.filter((t) => this.host.owns(t));
+    if (!own.length) own.push(await this.host.createTab('about:blank'));
+    return [...own, ...tabs.filter((t) => !own.some((o) => o.id === t.id))];
+  }
+
+  /**
+   * The sandbox sent the file bytes (kortixd rewrites DOM.setFileInputFiles):
+   * build real File objects in the page and select them on the input, then fire
+   * input + change like a person choosing files.
+   */
+  private async setFiles(tabId: number, child: string | undefined, p: any) {
+    let objectId: string | undefined = p?.objectId;
+    if (!objectId) {
+      const r = (await this.host.send(tabId, child, 'DOM.resolveNode', { nodeId: p?.nodeId, backendNodeId: p?.backendNodeId })) as any;
+      objectId = r?.object?.objectId;
+    }
+    if (!objectId) throw new CdpError(-32000, 'Could not find the file input');
+    await this.host.send(tabId, child, 'Runtime.callFunctionOn', {
+      objectId,
+      arguments: [{ value: p?.files ?? [] }],
+      awaitPromise: true,
+      functionDeclaration: `function (files) {
+        const dt = new DataTransfer();
+        for (const f of files) {
+          const bytes = Uint8Array.from(atob(f.data), (ch) => ch.charCodeAt(0));
+          dt.items.add(new File([bytes], f.name, { type: f.type || 'application/octet-stream' }));
+        }
+        this.files = dt.files;
+        this.dispatchEvent(new Event('input', { bubbles: true }));
+        this.dispatchEvent(new Event('change', { bubbles: true }));
+      }`,
+    });
+    return {};
   }
 
   // ─── tabs and sessions ─────────────────────────────────────────────────────
@@ -257,7 +307,34 @@ export class Shim {
   // ─── events in ─────────────────────────────────────────────────────────────
 
   /** `chrome.debugger.onEvent`. `child` is `source.sessionId`. */
+  /**
+   * A page dialog (alert/confirm/prompt/beforeunload) freezes the page. A client
+   * whose click is still waiting on the frozen page, and that queues its
+   * "accept" behind that click, deadlocks (agent-browser 0.27). If a command to
+   * the tab is still in flight DIALOG_GRACE_MS after the dialog opened, answer
+   * it: OK, with the default text for a prompt. A client that is not stuck
+   * decides itself (`dialog accept|dismiss`).
+   */
+  private dialogs = new Map<number, ReturnType<typeof setTimeout>>();
+  private inflight = new Map<number, number>();
+  private onDialog(tabId: number, child: string | undefined, method: string, params: any) {
+    if (method === 'Page.javascriptDialogClosed') {
+      clearTimeout(this.dialogs.get(tabId));
+      this.dialogs.delete(tabId);
+    } else if (method === 'Page.javascriptDialogOpening') {
+      clearTimeout(this.dialogs.get(tabId));
+      this.dialogs.set(tabId, setTimeout(() => {
+        this.dialogs.delete(tabId);
+        if (!this.inflight.get(tabId)) return; // nothing is stuck: the client decides
+        void this.host
+          .send(tabId, child, 'Page.handleJavaScriptDialog', { accept: true, ...(params?.type === 'prompt' ? { promptText: params?.defaultPrompt ?? '' } : {}) })
+          .catch(() => {}); // already closed by the user or a client
+      }, DIALOG_GRACE_MS));
+    }
+  }
+
   onDebuggerEvent(tabId: number, child: string | undefined, method: string, params: any) {
+    if (method.startsWith('Page.javascriptDialog')) this.onDialog(tabId, child, method, params);
     if (method === 'Target.attachedToTarget' && params?.sessionId) this.children.set(params.sessionId, tabId);
     if (method === 'Target.detachedFromTarget' && params?.sessionId) this.children.delete(params.sessionId);
     for (const [c, cl] of this.clients) {

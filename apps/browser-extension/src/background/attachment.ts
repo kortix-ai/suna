@@ -32,15 +32,16 @@ export class Attachment {
   private ping?: ReturnType<typeof setInterval>;
   private ended = false;
   private retries = 0;
-  scope: TabScope = 'own';
+  scope: TabScope = 'all';
 
   constructor(public rec: AttachmentRecord, private env: AttachmentEnv) {
     this.groupId = rec.groupId >= 0 ? rec.groupId : undefined;
+    for (const id of rec.tabIds ?? []) this.touched.add(id);
     this.shim = new Shim(this.host(), (c, m) => this.send({ c, m }));
   }
 
   get title() { return this.rec.sessionTitle; }
-  record(): AttachmentRecord { return { ...this.rec, groupId: this.groupId ?? -1 }; }
+  record(): AttachmentRecord { return { ...this.rec, groupId: this.groupId ?? -1, tabIds: [...this.touched] }; }
 
   // ─── bridge ────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,10 @@ export class Attachment {
     const inGroup = tabs.filter((t) => this.groupId !== undefined && t.groupId === this.groupId).map((t) => t.id!);
     for (const id of new Set([...inGroup, ...this.touched])) this.env.overlay(id, this);
     if (inGroup.length) await chrome.tabs.ungroup(inGroup as [number, ...number[]]).catch(() => {});
+    // The blank tab a session started in, never used: close it, so sessions leave no clutter.
+    // Pages it opened stay, so the user can read what it did.
+    const blank = tabs.filter((t) => this.touched.has(t.id!) && (t.url || t.pendingUrl || 'about:blank') === 'about:blank').map((t) => t.id!);
+    if (blank.length) await chrome.tabs.remove(blank).catch(() => {});
     this.env.onEnded(this, reason);
   }
 
@@ -116,15 +121,25 @@ export class Attachment {
 
   private groupTitle() { return `Kortix · ${this.rec.sessionTitle}`.slice(0, 48); }
 
+  /**
+   * The tab belongs to this session from now on. The tab group is decoration:
+   * some Chromium browsers (Arc, Dia) do not implement chrome.tabGroups, so a
+   * failure here never fails the agent's command.
+   */
   async addToGroup(tabId: number, windowId?: number) {
-    if (this.groupId !== undefined) {
-      try {
-        await chrome.tabs.group({ groupId: this.groupId, tabIds: [tabId] });
-        return;
-      } catch { this.groupId = undefined; } // the group is gone
+    this.touched.add(tabId);
+    try {
+      if (this.groupId !== undefined) {
+        try {
+          await chrome.tabs.group({ groupId: this.groupId, tabIds: [tabId] });
+          return;
+        } catch { this.groupId = undefined; } // the group is gone
+      }
+      this.groupId = await chrome.tabs.group({ tabIds: [tabId], ...(windowId ? { createProperties: { windowId } } : {}) });
+      await chrome.tabGroups.update(this.groupId, { title: this.groupTitle(), color: 'blue', collapsed: false });
+    } catch {
+      this.groupId = undefined;
     }
-    this.groupId = await chrome.tabs.group({ tabIds: [tabId], ...(windowId ? { createProperties: { windowId } } : {}) });
-    await chrome.tabGroups.update(this.groupId, { title: this.groupTitle(), color: 'blue', collapsed: false });
     this.env.onGroup(this);
   }
 
@@ -153,13 +168,13 @@ export class Attachment {
       },
       inScope: (t) =>
         inScopeUrl(t.url) &&
-        ((this.env.browser()?.tabScope ?? this.scope) === 'all' || (hasGroup() && t.groupId === this.groupId)),
+        ((this.env.browser()?.tabScope ?? this.scope) === 'all' || this.touched.has(t.id) || (hasGroup() && t.groupId === this.groupId)),
+      owns: (t) => this.touched.has(t.id) || (hasGroup() && t.groupId === this.groupId),
       createTab: async (url) => {
-        const first = !hasGroup();
-        const windowId = await this.sessionWindow();
-        const tab = await chrome.tabs.create({ url, active: first, windowId });
+        const first = this.touched.size === 0;
+        const windowId = await this.sessionWindow().catch(() => undefined);
+        const tab = await chrome.tabs.create({ url, active: first, windowId }).catch(() => chrome.tabs.create({ url, active: first }));
         await this.addToGroup(tab.id!, tab.windowId);
-        this.touched.add(tab.id!);
         return toTabInfo(await chrome.tabs.get(tab.id!));
       },
       closeTab: (id) => chrome.tabs.remove(id),

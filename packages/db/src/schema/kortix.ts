@@ -7357,7 +7357,7 @@ export const browserConnections = kortixSchema.table('browser_connections', {
   /** always | ask | off */
   accessMode: text('access_mode').default('always').notNull(),
   /** own | all */
-  tabScope: text('tab_scope').default('own').notNull(),
+  tabScope: text('tab_scope').default('all').notNull(),
   relayOwnerId: text('relay_owner_id'),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),

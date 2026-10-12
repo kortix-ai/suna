@@ -16,7 +16,7 @@ const results = await Promise.all([
     ...common, format: 'iife', entrypoints: [join(app, 'src/overlay.ts')], naming: 'overlay.js',
     define: { __TOKENS_CSS__: JSON.stringify(readFileSync(tokens, 'utf8')) },
   }),
-  ...['popup', 'welcome', 'consent'].map((p) =>
+  ...['popup', 'welcome', 'consent', 'sidepanel', 'options'].map((p) =>
     Bun.build({ ...common, entrypoints: [join(app, `src/pages/${p}.ts`)], naming: `${p}.js` })),
 ]);
 for (const r of results) if (!r.success) { console.error(r.logs.join('\n')); process.exit(1); }
@@ -24,6 +24,6 @@ for (const r of results) if (!r.success) { console.error(r.logs.join('\n')); pro
 cpSync(tokens, join(dist, 'tokens.css'));
 cpSync(join(app, 'src/pages/pages.css'), join(dist, 'pages.css'));
 cpSync(join(app, 'icons'), join(dist, 'icons'), { recursive: true });
-for (const p of ['popup', 'welcome', 'consent']) cpSync(join(app, `src/pages/${p}.html`), join(dist, `${p}.html`));
+for (const p of ['popup', 'welcome', 'consent', 'sidepanel', 'options']) cpSync(join(app, `src/pages/${p}.html`), join(dist, `${p}.html`));
 writeFileSync(join(dist, 'manifest.json'), readFileSync(join(app, 'src/manifest.json')));
 console.log('built', dist);

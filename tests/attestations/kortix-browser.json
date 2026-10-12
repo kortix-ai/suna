@@ -1,5 +1,5 @@
 {
-  "source_hash": "29d6f2eed76e350856cc3244b56f8b6f2519d55bc96195a161c879ccabf76f52",
+  "source_hash": "5cb153b1147dc9bbcd37203a5ce8bfc883961a44494fb29f6d1777f0d829a173",
   "diff_files": [
     ".agents/skills/kortix-browser/SKILL.md",
     ".agents/skills/kortix-browser/references/protocol.md",
@@ -64,6 +64,8 @@
     "apps/cli/src/commands/browser.test.ts",
     "apps/cli/src/commands/browser.ts",
     "apps/cli/src/index.ts",
+    "apps/kortix-sandbox-agent-server/ARCHITECTURE.md",
+    "apps/kortix-sandbox-agent-server/eslint.config.mjs",
     "apps/kortix-sandbox-agent-server/src/app/server.ts",
     "apps/kortix-sandbox-agent-server/src/routes/kortix/browser.ts",
     "apps/kortix-sandbox-agent-server/src/services/browser/browser-bridge.test.ts",
@@ -116,13 +118,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/browser.flow.ts"
   ],
-  "diff_hash": "2f25d2382270809fbeacdfb3296112934f467aca29224b60a247f67b8303c322",
-  "head": "ab61a77c2d480becb2c3c26c790d2c1cb973a173",
+  "diff_hash": "2ae6f75e2f950ec451068c43da845bdf241d6d6c2adc3229933614cb5d53afea",
+  "head": "180e9a5dd75495dc736828a4c22cffa8c3f5e63b",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "fail"
   },
-  "at": "2026-10-12T18:13:26.473Z"
+  "at": "2026-10-12T19:42:40.277Z"
 }

@@ -72,6 +72,9 @@ export function browserLabel(b: BrowserInfo): string {
 export function formatUsed(b: BrowserInfo, port = CDP_PORT): string {
   return [
     status.ok(`Using ${browserLabel(b)}`),
+    b.tabScope === 'own'
+      ? `     ${C.dim}Tabs:${C.reset} only the tabs you open (the user chose this; their other tabs are hidden)`
+      : `     ${C.dim}Tabs:${C.reset} all of the user's tabs, every window (\`agent-browser --cdp ${port} tab list\`); you start in a tab of your own`,
     `     ${C.dim}Drive it:${C.reset} agent-browser --cdp ${port} open https://example.com`,
   ].join('\n');
 }
@@ -95,7 +98,7 @@ export function formatBrowserList(list: BrowserInfo[], connectUrl?: string): str
     ].join('\n');
   }
   return list
-    .map((b) => `  ${b.online ? C.green + '●' : C.dim + '○'}${C.reset}  ${browserLabel(b)}  ${C.dim}${b.online ? 'online' : 'offline'} · ${b.accessMode ?? 'always'} · ${b.tabScope ?? 'own'} tabs${C.reset}`)
+    .map((b) => `  ${b.online ? C.green + '●' : C.dim + '○'}${C.reset}  ${browserLabel(b)}  ${C.dim}${b.online ? 'online' : 'offline'} · ${b.accessMode ?? 'always'} · ${b.tabScope === 'own' ? 'own' : 'all'} tabs${C.reset}`)
     .join('\n');
 }
 

@@ -15,6 +15,31 @@ import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/korti
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { logger } from '@/lib/log/logger'
 
+type CdpMessage = { id?: number; method?: string; params?: Record<string, unknown>; sessionId?: string }
+
+/** Upload limit across one `DOM.setFileInputFiles`, the same order as a mail attachment. */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+/**
+ * `DOM.setFileInputFiles` names files on the machine that runs the browser. Here
+ * that is the user's computer, and the files live in this sandbox. Read them and
+ * send their bytes as `Kortix.setFileInputFiles`, which the extension turns into
+ * a real file selection in the page.
+ */
+export async function withSandboxFiles(m: CdpMessage): Promise<CdpMessage> {
+  const { files, ...target } = (m.params ?? {}) as { files?: string[] } & Record<string, unknown>
+  let total = 0
+  const out: { name: string; type: string; data: string }[] = []
+  for (const path of files ?? []) {
+    const file = Bun.file(path)
+    if (!(await file.exists())) throw new Error(`No such file in the sandbox: ${path}`)
+    total += file.size
+    if (total > MAX_UPLOAD_BYTES) throw new Error(`Upload too large: the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB in total`)
+    out.push({ name: path.split('/').pop() ?? 'file', type: file.type, data: Buffer.from(await file.arrayBuffer()).toString('base64') })
+  }
+  return { ...m, method: 'Kortix.setFileInputFiles', params: { ...target, files: out } }
+}
+
 export const KORTIX_BROWSER_BRIDGE_PATH = '/kortix/browser/bridge'
 export const CDP_PORT = 9333
 export const NO_BROWSER_REASON = 'No browser attached. Run: kortix browser use'
@@ -134,11 +159,18 @@ export function createBrowserBridge(opts: BridgeOptions = {}) {
         message(ws, message) {
           const id = ws.data.id
           if (!id || !bridge) return
+          let m: CdpMessage
           try {
-            sendBridge({ c: id, m: JSON.parse(typeof message === 'string' ? message : message.toString()) })
+            m = JSON.parse(typeof message === 'string' ? message : message.toString())
           } catch {
-            // Not JSON: not a CDP command. Drop it.
+            return // Not JSON: not a CDP command. Drop it.
           }
+          if (m.method !== 'DOM.setFileInputFiles') return sendBridge({ c: id, m })
+          // The paths are sandbox paths; the browser runs on the user's machine.
+          void withSandboxFiles(m).then(
+            (out) => sendBridge({ c: id, m: out }),
+            (err: Error) => ws.send(JSON.stringify({ id: m.id, ...(m.sessionId ? { sessionId: m.sessionId } : {}), error: { code: -32000, message: err.message } })),
+          )
         },
         close(ws) {
           const id = ws.data.id

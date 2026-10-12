@@ -515,8 +515,8 @@
           "label": "Account collegati"
         },
         "browsers": {
-          "label": "Browser",
-          "description": "I browser che hai collegato, così una sessione può usarli."
+          "label": "Estensione Chrome",
+          "description": "Lascia che le tue sessioni usino Chrome, con i tuoi accessi. Collega ogni browser in cui è installata l'estensione Kortix."
         },
         "tokens": {
           "label": "Chiavi di accesso personali",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "In arrivo"
   },
   "browsers": {
-    "pill": "Il tuo browser",
-    "connectTitle": "Collega il tuo browser",
-    "connectDescription": "Lascia che una sessione Kortix usi il tuo Chrome. Vedi cosa fa e puoi fermarla in qualsiasi momento.",
-    "connectYourBrowser": "Collega il tuo browser",
+    "pill": "Estensione Chrome",
+    "connectTitle": "Aggiungi Kortix a Chrome",
+    "connectDescription": "Lascia che le tue sessioni usino Chrome, con i tuoi accessi. Vedi cosa fanno e puoi fermarle in qualsiasi momento.",
+    "promoLabel": "Estensione Chrome",
     "dismissPromo": "Chiudi",
     "steps": {
       "install": {
-        "title": "Aggiungi Kortix a Chrome",
+        "title": "Aggiungi l'estensione",
         "description": "Dal Chrome Web Store.",
         "done": "Kortix è in Chrome."
       },
       "connect": {
-        "title": "Collega",
+        "title": "Accedi",
         "description": "Accedi a Kortix dall'estensione.",
         "done": "Accesso effettuato."
       },
@@ -20224,7 +20224,8 @@
     "offline": "Offline",
     "lastSeen": "Ultimo accesso {time}",
     "usedBy": "{count, plural, one {Usato da # sessione ora} other {Usato da # sessioni ora}}",
-    "connectAnother": "Collega un altro browser",
+    "connectAnother": "Aggiungi un altro browser",
+    "listTitle": "Browser collegati",
     "rename": "Rinomina {name}",
     "renameLabel": "Nome del browser",
     "disconnect": "Disconnetti",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "Schede",
-      "own": "Schede proprie",
+      "own": "Solo le schede che apre",
       "all": "Tutte le schede"
     }
   },

@@ -5816,7 +5816,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'own'"
+          "default": "'all'"
         },
         "relay_owner_id": {
           "name": "relay_owner_id",

@@ -19,6 +19,11 @@ const boot = (async () => {
   await control.connect();
 })();
 
+// The toolbar icon opens the side panel. Chromium builds without it keep the popup.
+// Runs on every worker start, which covers install and startup: setPopup does not persist.
+if (chrome.sidePanel) void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+else void chrome.action.setPopup({ popup: 'popup.html' });
+
 chrome.alarms.create('keepalive', { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(() => void boot.then(() => control.connect()));
 chrome.runtime.onStartup.addListener(() => void boot);
@@ -68,7 +73,7 @@ async function status(): Promise<Status> {
     webUrl: s.webUrl ?? 'https://kortix.com',
     browser: hub.browser ?? s.browser,
     attachments: [...hub.all.values()].map((a) => ({
-      attachmentId: a.rec.attachmentId, sessionId: a.rec.sessionId, title: a.title, paused: a.paused,
+      attachmentId: a.rec.attachmentId, sessionId: a.rec.sessionId, projectId: a.rec.projectId, title: a.title, paused: a.paused,
     })),
   };
 }
@@ -89,6 +94,10 @@ chrome.runtime.onMessage.addListener((m: PageMessage, sender, reply) => {
     await boot;
     switch (m.kortix) {
       case 'status': return status();
+      case 'whoami': {
+        const me = (await api('/accounts/me')) as { user_id: string; email: string };
+        return { userId: me.user_id, email: me.email };
+      }
       case 'signin': return void (await startSignIn(m.apiUrl, sender.tab?.id));
       case 'oauth-done': return connectFlow(m.url);
       case 'signout': {

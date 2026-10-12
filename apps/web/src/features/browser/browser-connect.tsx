@@ -4,7 +4,6 @@ import type { KortixBrowser } from '@kortix/sdk';
 import { useBrowsers } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
-  GlobeIcon,
   PlugsConnectedIcon,
   PuzzlePieceIcon,
   type Icon,
@@ -22,6 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { isDesktop } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
+import { BrowserIcon, BrowserLogoTile } from './browser-icon';
 import {
   apiOrigin,
   connectExtension,
@@ -98,7 +98,14 @@ export function useBrowserConnect() {
   };
 }
 
-function StepTile({ done, icon: StepIcon }: { done: boolean; icon: Icon }) {
+/** The Chrome mark on a small white tile, for a button label. */
+export function ChromeButtonMark() {
+  return <BrowserLogoTile brand="chrome" className="size-5 shrink-0 ring-0" iconClassName="size-3.5" />;
+}
+
+function StepTile({ done, icon: StepIcon, brand }: { done: boolean; icon: Icon; brand?: string }) {
+  // The last step shows the connected browser's own mark.
+  if (done && brand) return <BrowserLogoTile brand={brand} className="size-10" />;
   return (
     <span
       className={cn(
@@ -129,7 +136,7 @@ export function BrowserOnlineDot({ online, className }: { online: boolean; class
 /**
  * The three steps and the one action that moves them: Add to Chrome, Connect,
  * Done. Used in the connect dialog and, with no browser connected yet, inline
- * in Settings › Browsers.
+ * in Settings › Chrome extension.
  */
 export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
   const t = useTranslations('browsers');
@@ -150,7 +157,13 @@ export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
     );
   }
 
-  const steps: { key: 'install' | 'connect' | 'done'; icon: Icon; done: boolean; description: React.ReactNode }[] = [
+  const steps: {
+    key: 'install' | 'connect' | 'done';
+    icon: Icon;
+    done: boolean;
+    brand?: string;
+    description: React.ReactNode;
+  }[] = [
     {
       key: 'install',
       icon: PuzzlePieceIcon,
@@ -165,8 +178,9 @@ export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
     },
     {
       key: 'done',
-      icon: GlobeIcon,
+      icon: PlugsConnectedIcon,
       done: Boolean(connected),
+      brand: connected?.brand,
       description: connected ? (
         <span className="flex min-w-0 items-center gap-1.5">
           <BrowserOnlineDot online={connected.online} />
@@ -181,9 +195,9 @@ export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
   return (
     <>
       <ol className="divide-border divide-y">
-        {steps.map(({ key, icon, done, description }) => (
+        {steps.map(({ key, icon, done, brand, description }) => (
           <li key={key} className="flex items-center gap-3 py-3">
-            <StepTile done={done} icon={icon} />
+            <StepTile done={done} icon={icon} brand={brand} />
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="text-sm font-medium">{t(`steps.${key}.title`)}</p>
               <div className="text-muted-foreground truncate text-xs">{description}</div>
@@ -213,7 +227,7 @@ export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
           <>
             {checking ? (
               <Button size="lg" className="w-full" disabled>
-                <ArrowSquareOutIcon className="size-4 shrink-0" />
+                <ChromeButtonMark />
                 {t('addToChrome')}
               </Button>
             ) : (
@@ -224,7 +238,7 @@ export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
                   rel="noreferrer"
                   onClick={() => setOpenedStore(true)}
                 >
-                  <ArrowSquareOutIcon className="size-4 shrink-0" />
+                  <ChromeButtonMark />
                   {t('addToChrome')}
                 </a>
               </Button>
@@ -240,7 +254,7 @@ export function BrowserConnectSteps({ onDone }: { onDone?: () => void }) {
 }
 
 /**
- * "Connect your browser": add the Kortix extension to Chrome, sign it in, and
+ * "Add Kortix to Chrome": add the Kortix extension to Chrome, sign it in, and
  * watch the browser appear. Same frame as `ComputerConnectModal`.
  */
 export function BrowserConnectModal({
@@ -266,7 +280,7 @@ export function BrowserConnectModal({
           >
             <BeamsShader />
             <span className="bg-foreground text-background relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium">
-              <GlobeIcon className="size-4 shrink-0" />
+              <BrowserIcon brand="chrome" tone="current" className="size-4" />
               {t('pill')}
             </span>
           </div>

@@ -515,8 +515,8 @@
           "label": "Verbundene Konten"
         },
         "browsers": {
-          "label": "Browser",
-          "description": "Browser, die du verbunden hast, damit eine Sitzung sie nutzen kann."
+          "label": "Chrome-Erweiterung",
+          "description": "Lass deine Sitzungen Chrome mit deinen Logins nutzen. Verbinde jeden Browser, in dem die Kortix-Erweiterung installiert ist."
         },
         "tokens": {
           "label": "Persönliche Zugriffsschlüssel",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "Bevorstehend"
   },
   "browsers": {
-    "pill": "Dein Browser",
-    "connectTitle": "Deinen Browser verbinden",
-    "connectDescription": "Lass eine Kortix-Sitzung dein eigenes Chrome nutzen. Du siehst, was sie tut, und kannst sie jederzeit stoppen.",
-    "connectYourBrowser": "Deinen Browser verbinden",
+    "pill": "Chrome-Erweiterung",
+    "connectTitle": "Kortix zu Chrome hinzufügen",
+    "connectDescription": "Lass deine Sitzungen Chrome mit deinen Logins nutzen. Du siehst, was sie tun, und kannst sie jederzeit stoppen.",
+    "promoLabel": "Chrome-Erweiterung",
     "dismissPromo": "Ausblenden",
     "steps": {
       "install": {
-        "title": "Kortix zu Chrome hinzufügen",
+        "title": "Erweiterung hinzufügen",
         "description": "Aus dem Chrome Web Store.",
         "done": "Kortix ist in Chrome."
       },
       "connect": {
-        "title": "Verbinden",
+        "title": "Anmelden",
         "description": "Melde dich über die Erweiterung bei Kortix an.",
         "done": "Angemeldet."
       },
@@ -20224,7 +20224,8 @@
     "offline": "Offline",
     "lastSeen": "Zuletzt gesehen {time}",
     "usedBy": "{count, plural, one {Wird gerade von # Sitzung genutzt} other {Wird gerade von # Sitzungen genutzt}}",
-    "connectAnother": "Weiteren Browser verbinden",
+    "connectAnother": "Weiteren Browser hinzufügen",
+    "listTitle": "Verbundene Browser",
     "rename": "{name} umbenennen",
     "renameLabel": "Browsername",
     "disconnect": "Trennen",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "Tabs",
-      "own": "Eigene Tabs",
+      "own": "Nur selbst geöffnete Tabs",
       "all": "Alle Tabs"
     }
   },

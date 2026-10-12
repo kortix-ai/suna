@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Shim, type ShimHost, type TabInfo } from './shim';
+import { DIALOG_GRACE_MS, Shim, type ShimHost, type TabInfo } from './shim';
 
 type Out = Record<string, any>;
 function fake() {
@@ -8,6 +8,7 @@ function fake() {
   const log = { attached: [] as number[], detached: [] as number[], pointer: [] as any[], activated: [] as number[], closed: [] as number[] };
   let next = 1;
   let scope: 'own' | 'all' = 'own';
+  const hang = new Set<string>();
   let paused = false;
   const add = (url: string, groupId = 7): TabInfo => {
     const t = { id: next++, windowId: 1, url, title: `t${next}`, groupId };
@@ -19,6 +20,7 @@ function fake() {
     listTabs: async () => [...tabs.values()],
     getTab: async (id) => tabs.get(id),
     inScope: (t) => /^(https?:|about:blank)/.test(t.url) && (scope === 'all' || t.groupId === 7),
+    owns: (t) => t.groupId === 7,
     createTab: async (url) => add(url),
     closeTab: async (id) => { log.closed.push(id); },
     activateTab: async (id) => { log.activated.push(id); },
@@ -28,7 +30,9 @@ function fake() {
     detach: async (id) => { log.detached.push(id); },
     send: async (tabId, child, method, params) => {
       sends.push({ tabId, child, method, params });
+      if (hang.has(method)) return new Promise(() => {}); // a command the frozen page never answers
       if (method === 'Runtime.evaluate' && (params as any)?.expression === 'boom') throw new Error('Cannot find context');
+      if (method === 'DOM.resolveNode' && (params as any)?.backendNodeId === 9) return { object: { objectId: 'node-1' } };
       return { ok: method };
     },
     paused: () => paused,
@@ -42,7 +46,7 @@ function fake() {
     await shim.handle(c, { id, method, params, sessionId });
     return out[c]!.find((m) => m.id === id)!;
   };
-  return { shim, add, tabs, sends, log, out, call, setScope: (s: 'own' | 'all') => (scope = s), setPaused: (p: boolean) => (paused = p) };
+  return { shim, add, tabs, sends, log, out, call, hang, setScope: (s: 'own' | 'all') => (scope = s), setPaused: (p: boolean) => (paused = p) };
 }
 
 let f: ReturnType<typeof fake>;
@@ -66,12 +70,22 @@ describe('browser-level methods', () => {
     expect(r.result.targetInfos).toHaveLength(1);
     expect(r.result.targetInfos[0].url).toBe('about:blank');
   });
+  test('scope all: the session tab comes first, so a client never starts in a tab the user is reading', async () => {
+    f.setScope('all');
+    f.add('https://inbox.test', -1);
+    f.add('https://docs.test', -1);
+    const r = await f.call('1', 'Target.getTargets');
+    const urls = r.result.targetInfos.map((t: any) => t.url);
+    expect(urls[0]).toBe('about:blank'); // created for the session
+    expect(urls.slice(1).sort()).toEqual(['https://docs.test', 'https://inbox.test']);
+  });
   test('scope all includes tabs outside the group, never chrome://', async () => {
     f.add('https://other.test', -1);
     f.add('chrome://settings', -1);
     f.setScope('all');
     const r = await f.call('1', 'Target.getTargets');
-    expect(r.result.targetInfos.map((t: any) => t.url)).toEqual(['https://other.test']);
+    // The session's own tab first (created on demand), then the user's tab; chrome:// never.
+    expect(r.result.targetInfos.map((t: any) => t.url)).toEqual(['about:blank', 'https://other.test']);
   });
   test('Target.createTarget returns the new targetId', async () => {
     const r = await f.call('1', 'Target.createTarget', { url: 'https://new.test' });
@@ -286,5 +300,43 @@ describe('visible state hooks', () => {
     await f.call('1', 'Target.attachToTarget', { targetId: 'T1' });
     f.shim.closeAll();
     expect(f.log.detached).toEqual([1]);
+  });
+});
+
+describe('page dialogs', () => {
+  test('a confirm that blocks an in-flight command gets OK after the grace period', async () => {
+    f.add('https://a.test');
+    const t = await f.call('1', 'Target.getTargets');
+    const a = await f.call('1', 'Target.attachToTarget', { targetId: t.result.targetInfos[0].targetId, flatten: true });
+    const tabId = Number(String(t.result.targetInfos[0].targetId).slice(1)); // fake target ids are T<tabId>
+    f.hang.add('Input.dispatchMouseEvent'); // the click waits on the frozen page (agent-browser 0.27 deadlock)
+    void f.call('1', 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: 1, y: 1 }, a.result.sessionId);
+    f.shim.onDebuggerEvent(tabId, undefined, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'Sure?' });
+    await new Promise((r) => setTimeout(r, DIALOG_GRACE_MS + 150));
+    const h = f.sends.find((s) => s.method === 'Page.handleJavaScriptDialog');
+    expect(h?.tabId).toBe(tabId);
+    expect(h?.params).toEqual({ accept: true });
+  });
+  test('a dialog nothing is stuck on is left to the client', async () => {
+    f.shim.onDebuggerEvent(2, undefined, 'Page.javascriptDialogOpening', { type: 'prompt', defaultPrompt: 'abc' });
+    await new Promise((r) => setTimeout(r, DIALOG_GRACE_MS + 150));
+    expect(f.sends.some((s) => s.method === 'Page.handleJavaScriptDialog')).toBe(false);
+  });
+});
+
+describe('uploads', () => {
+  test('Kortix.setFileInputFiles resolves the input and sets the files in the page', async () => {
+    f.add('https://a.test');
+    const t = await f.call('1', 'Target.getTargets');
+    const targetId = t.result.targetInfos[0].targetId;
+    const a = await f.call('1', 'Target.attachToTarget', { targetId, flatten: true });
+    const sid = a.result.sessionId;
+    f.sends.length = 0;
+    const files = [{ name: 'a.txt', type: 'text/plain', data: 'aGk=' }];
+    const r = await f.call('1', 'Kortix.setFileInputFiles', { backendNodeId: 9, files }, sid);
+    expect(r.error).toBeUndefined();
+    expect(f.sends[0].method).toBe('DOM.resolveNode');
+    expect(f.sends[1].method).toBe('Runtime.callFunctionOn');
+    expect((f.sends[1].params as any).arguments).toEqual([{ value: files }]);
   });
 });

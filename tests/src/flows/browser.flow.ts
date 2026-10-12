@@ -211,7 +211,7 @@ flow(
         browserId = browser.id;
         if (!/^[0-9a-f-]{36}$/.test(browserId)) throw new Error(`browser id: ${browserId}`);
         if (browser.brand !== 'Chrome' || browser.os !== 'macOS') throw new Error(`browser: ${JSON.stringify(browser)}`);
-        if (browser.accessMode !== 'always' || browser.tabScope !== 'own') throw new Error(`defaults: ${JSON.stringify(browser)}`);
+        if (browser.accessMode !== 'always' || browser.tabScope !== 'all') throw new Error(`defaults: ${JSON.stringify(browser)}`);
         if (!Array.isArray(browser.activeSessions)) throw new Error('activeSessions missing');
       });
 

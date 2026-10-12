@@ -4,5 +4,8 @@
 <h1>Smoke form</h1>
 <label>Name <input id="name" type="text" aria-label="Name"></label>
 <button id="go" type="button" onclick="document.getElementById('out').textContent='Hello ' + document.getElementById('name').value">Greet</button>
+<button id="ask" type="button" onclick="document.getElementById('out').textContent = confirm('Delete it?') ? 'confirmed' : 'cancelled'">Delete</button>
+<input id="file" type="file" aria-label="File" onchange="const f=this.files[0];document.getElementById('picked').textContent=f.name+':'+f.size">
+<p id="picked">none</p>
 <p id="out">waiting</p>
 </body></html>

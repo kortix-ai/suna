@@ -1,7 +1,7 @@
 'use client';
 
 import { useBrowsers } from '@kortix/sdk/react';
-import { GlobeIcon, XIcon } from '@phosphor-icons/react';
+import { XIcon } from '@phosphor-icons/react';
 import { useCallback, useState } from 'react';
 
 import {
@@ -11,6 +11,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { BrowserIcon } from '@/features/browser/browser-icon';
 import { useIsMobile } from '@/hooks/utils';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -25,7 +26,7 @@ function readDismissed(): boolean {
 }
 
 /**
- * "Connect your browser": an advertisement, not a status widget. It shows
+ * "Chrome extension": an advertisement, not a status widget. It shows
  * until the caller connected a browser or dismisses it. The sidebar owns the
  * connect dialog, not this row: on a phone the row lives in the sidebar sheet,
  * and closing the sheet unmounts it together with anything it renders.
@@ -74,8 +75,8 @@ function BrowserPromo({
           if (isMobile) setOpenMobile(false);
         }}
       >
-        <GlobeIcon className="text-muted-foreground size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{t('connectYourBrowser')}</span>
+        <BrowserIcon brand="chrome" tone="current" className="text-muted-foreground size-4" />
+        <span className="min-w-0 flex-1 truncate">{t('promoLabel')}</span>
       </SidebarMenuButton>
       {/* Same slot as the dismiss action: the badge gives way to it on hover
           and focus, and on a phone, where the action is always shown. */}

@@ -120,9 +120,10 @@ export class Hub {
 
   async onTabCreated(tab: chrome.tabs.Tab) {
     for (const a of this.all.values()) {
-      if (a.groupId !== undefined && tab.openerTabId !== undefined && tab.groupId !== a.groupId) {
+      // A tab opened from a session tab (a link with target=_blank) joins the session.
+      if (tab.openerTabId !== undefined && !a.touched.has(tab.id!)) {
         const opener = await chrome.tabs.get(tab.openerTabId).catch(() => undefined);
-        if (opener?.groupId === a.groupId) await a.addToGroup(tab.id!).catch(() => {});
+        if (opener && a.owns(opener.id!, opener.groupId ?? -1)) await a.addToGroup(tab.id!).catch(() => {});
       }
       a.shim.onTabCreated(toTabInfo(await chrome.tabs.get(tab.id!).catch(() => tab)));
     }

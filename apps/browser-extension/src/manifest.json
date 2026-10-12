@@ -6,9 +6,14 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmUk5wVZuybiXqt+Oxvm3UoMAoQvJNf7vL0LD0x+ohjIiIrHh0hmDjVVPPG15j0gPWoIiP4U5uLzjxBWTOZspSyORnk7otwvPuZ/yi7MPArA5xgdaeiLxgY6fIkeBzIa/FWKf3btum9xjUAPLmn6k3GYJWpy/9pltZRHN70Yy249ytq2O37vBpfwFY8FPlSaPykUx3pmrDHhwXGdc5lIx6ArdbiILeB87u0BibpDvte80wa6XSnBiXMxYdIlvu/YUf2RwEy7PxFqMb+JJJTpKR/w7WbUi4aGFBNHo+LU1dH3Grw4N9WZGYDvfVWeaCH3Ac530RQzyw5WEMynzMlm4/QIDAQAB",
   "minimum_chrome_version": "125",
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
-  "action": { "default_title": "Kortix", "default_popup": "popup.html", "default_icon": { "16": "icons/16.png", "32": "icons/32.png" } },
+  "action": { "default_title": "Kortix", "default_icon": { "16": "icons/16.png", "32": "icons/32.png" } },
   "background": { "service_worker": "background.js", "type": "module" },
-  "permissions": ["debugger", "tabs", "tabGroups", "scripting", "storage", "alarms"],
+  "permissions": ["debugger", "tabs", "tabGroups", "scripting", "storage", "alarms", "sidePanel"],
+  "side_panel": { "default_path": "sidepanel.html" },
+  "options_page": "options.html",
+  "commands": {
+    "_execute_action": { "suggested_key": { "default": "Alt+K", "mac": "Alt+K" }, "description": "Open Kortix" }
+  },
   "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [
     { "resources": ["welcome.html"], "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"] }

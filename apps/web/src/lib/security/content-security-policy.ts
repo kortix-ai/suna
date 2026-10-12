@@ -5,7 +5,7 @@
  * Two headers, on purpose:
  *
  * - `Content-Security-Policy` (enforced) holds only directives that no page
- *   needs to break: `frame-ancestors 'self'` (unchanged), `object-src 'none'`
+ *   needs to break: `frame-ancestors` (this origin and the Kortix extension), `object-src 'none'`
  *   (no page embeds plugins) and `base-uri 'self'` (no page sets `<base>`).
  *
  * - `Content-Security-Policy-Report-Only` holds the `script-src` allowlist.
@@ -17,6 +17,8 @@
  *   `/api/csp-report`; once those reports are clean for a release cycle, move
  *   `script-src` into the enforced header (with nonces for the inline scripts).
  */
+
+import { KORTIX_EXTENSION_ID } from '../../features/browser/extension';
 
 export const CSP_REPORT_PATH = '/api/csp-report';
 
@@ -42,7 +44,13 @@ export const SCRIPT_SRC_HOSTS = [
 ] as const;
 
 export function enforcedContentSecurityPolicy(): string {
-  return ["frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
+  // The Kortix browser extension frames the app in its side panel. X-Frame-Options
+  // cannot allowlist an origin, so the app sends no XFO and this directive is the only gate.
+  return [
+    `frame-ancestors 'self' chrome-extension://${KORTIX_EXTENSION_ID}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+  ].join('; ') + ';';
 }
 
 export function reportOnlyContentSecurityPolicy(): string {

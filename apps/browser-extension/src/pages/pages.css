@@ -100,3 +100,45 @@ select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .example { color: var(--foreground); font-size: var(--text-base); border-left: 2px solid var(--border); padding-left: calc(var(--spacing) * 3); }
 .next { padding-left: calc(var(--spacing) * 5); margin: 0 0 calc(var(--spacing) * 6); color: var(--muted-foreground); display: grid; gap: calc(var(--spacing) * 2); line-height: var(--leading-snug); }
 main:has(#done:not([hidden])) > .symbol { display: none; }
+.welcome .choice + .label { margin-top: calc(var(--spacing) * 4); }
+
+/* side panel */
+body.panel { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.panel-in { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.panel-out { padding: calc(var(--spacing) * 5); }
+.panel .head { display: flex; align-items: center; gap: calc(var(--spacing) * 2.5); margin-bottom: calc(var(--spacing) * 4); }
+.panel .head .symbol { width: 20px; margin: 0; }
+.panel .name { font-weight: 600; }
+.bar { height: 48px; flex: none; display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: 0 calc(var(--spacing) * 3); border-bottom: 1px solid var(--border); }
+.bar .symbol { width: 18px; margin: 0; flex: none; }
+.bar-name { color: var(--muted-foreground); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bar .dot { margin: 0; flex: none; }
+.grow { flex: 1; }
+.bar-btn { padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 3); font-size: var(--text-xs); white-space: nowrap; }
+.icon-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-color: transparent; background: transparent; }
+.icon-btn svg { width: 14px; height: 14px; }
+.menu-wrap { position: relative; }
+.menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 170px; z-index: 10; padding: 4px; background: var(--popover); color: var(--popover-foreground);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; }
+.menu button:hover { background: var(--muted); }
+.chips { flex: none; border-bottom: 1px solid var(--border); padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 3); display: grid; gap: calc(var(--spacing) * 1.5); }
+.chip { display: flex; align-items: center; gap: calc(var(--spacing) * 2); }
+.chip-open { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px;
+  border-color: color-mix(in srgb, var(--kortix-base) 50%, var(--border)); font-size: var(--text-xs); padding: calc(var(--spacing) * 1) calc(var(--spacing) * 3); }
+.chip-stop { font-size: var(--text-xs); padding: calc(var(--spacing) * 1) calc(var(--spacing) * 2.5); }
+.warn { flex: none; display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  background: var(--muted); border-bottom: 1px solid var(--border); font-size: var(--text-xs); }
+.warn span { flex: 1; min-width: 0; }
+.warn button { font-size: var(--text-xs); padding: calc(var(--spacing) * 1) calc(var(--spacing) * 2.5); }
+#app { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--background); }
+
+/* options */
+.opt { max-width: 560px; margin: 8vh auto calc(var(--spacing) * 16); padding: 0 calc(var(--spacing) * 5); }
+.opt .symbol { width: 24px; margin-bottom: calc(var(--spacing) * 4); }
+.card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: calc(var(--spacing) * 4); margin-bottom: calc(var(--spacing) * 4); background: var(--card); }
+.card .row { padding: calc(var(--spacing) * 1.5) 0; }
+.card .actions { margin-top: calc(var(--spacing) * 3); justify-content: flex-start; }
+.hint { font-size: var(--text-xs); margin: 0 0 calc(var(--spacing) * 3); }
+kbd { font: inherit; font-size: var(--text-xs); padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--muted); }
+.card a { color: var(--foreground); }

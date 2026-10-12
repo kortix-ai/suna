@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kortix</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="pages.css"></head>
+<body class="panel">
+<section id="out" class="panel-out" hidden>
+  <div class="head"><svg class="symbol" viewBox="0 0 30 25" fill="currentColor" aria-hidden="true"><path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z"/></svg><div class="name">Kortix</div></div>
+  <p>Connect this browser so Kortix agents can use it, with you watching.</p>
+  <button id="connect" class="primary">Connect to Kortix</button>
+</section>
+<section id="in" class="panel-in" hidden>
+  <header class="bar">
+    <svg class="symbol" viewBox="0 0 30 25" fill="currentColor" aria-hidden="true"><path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z"/></svg>
+    <span class="bar-name" id="bname"></span><span class="dot" id="dot" title="Offline"></span>
+    <span class="grow"></span>
+    <button id="open" class="bar-btn">Open in Kortix</button>
+    <div class="menu-wrap">
+      <button id="menu-btn" class="icon-btn" aria-label="More" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="3" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="8" cy="13" r="1.4"/></svg></button>
+      <div id="menu" class="menu" role="menu" hidden>
+        <button role="menuitem" id="m-settings">Settings</button>
+        <button role="menuitem" id="m-manage">Manage browsers</button>
+        <button role="menuitem" id="m-signout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <div id="chips" class="chips" hidden></div>
+  <div id="warn" class="warn" role="alert" hidden><span id="warn-text"></span><button id="reload">Reload</button></div>
+  <iframe id="app" title="Kortix" allow="clipboard-read; clipboard-write"></iframe>
+</section>
+<script type="module" src="sidepanel.js"></script></body></html>

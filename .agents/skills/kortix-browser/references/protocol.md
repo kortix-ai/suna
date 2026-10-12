@@ -43,7 +43,7 @@ browser_connections
   name varchar(255) not null, brand text not null, os text not null,
   profile_label text, extension_version text,
   access_mode text not null default 'always'   -- always | ask | off
-  tab_scope   text not null default 'own'      -- own | all
+  tab_scope   text not null default 'all'      -- all | own
   relay_owner_id text, last_seen_at timestamptz, revoked_at timestamptz,
   created_at, updated_at
 browser_grants
@@ -189,9 +189,12 @@ Events from `chrome.debugger.onEvent` go to every client session on that tab.
 Child sessions (`source.sessionId`) keep their own id. `targetId` is the real
 CDP id from `chrome.debugger.getTargets()`.
 
-**Scope.** `own`: tabs in the session's tab group (created by it, or shared into
-it, or opened from it). `all`: every `http`, `https`, `file` and `about:blank`
-tab. `chrome://`, the Web Store and extension pages are never in scope.
+**Scope.** `all` (default): every `http`, `https`, `file` and `about:blank` tab in
+every window. `own`: the tabs the session opened, shared into it, or opened from
+them. Either way the session's own tabs come first in `Target.getTargets` (one
+is created if it has none), so a CDP client starts in a tab of its own and never
+navigates a tab the user is reading. Tab groups are decoration: a browser
+without `chrome.tabGroups` (Arc, Dia) works the same. `chrome://`, the Web Store and extension pages are never in scope.
 
 **Visible state.** Each attachment has one tab group `Kortix · <sessionTitle>`
 (color `blue`). The overlay (glow, agent cursor at each
@@ -201,6 +204,17 @@ tab in its own window. Take over pauses: `Input.*` returns `-32000 "The user too
 over this tab. Wait for them, then retry."` until Resume. Stop and the Chrome
 infobar's Cancel detach the debugger from the group, close the bridge, and send
 `detached`.
+
+**Page dialogs.** If a command to a tab is still in flight 1 s after
+`Page.javascriptDialogOpening`, the shim sends `Page.handleJavaScriptDialog`
+`{accept:true}` (plus `promptText: defaultPrompt` for a prompt). A client that is
+not stuck answers the dialog itself.
+
+**Uploads.** kortixd rewrites a client's `DOM.setFileInputFiles` (sandbox paths)
+into `Kortix.setFileInputFiles` `{nodeId|backendNodeId|objectId, files:[{name,
+type, data(base64)}]}`, at most 10 MB in total; a missing file answers the client
+with a CDP error at once. The shim resolves the node and sets a `DataTransfer` of
+real `File`s on the input, then fires `input` and `change`.
 
 ## 8. kortixd local routes (for the CLI)
 

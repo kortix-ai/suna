@@ -1,4 +1,5 @@
 import type { AccessMode, Status, TabScope } from '../background/types';
+import { markSegment, openWelcome } from './common';
 import { $, rpc, show } from './rpc';
 
 let status: Status;
@@ -15,7 +16,7 @@ async function refresh() {
   $('server').textContent = new URL(status.apiUrl).host;
   $<HTMLAnchorElement>('manage').href = `${status.webUrl}/settings/browsers`;
   for (const [id, v] of [['mode', b?.accessMode], ['scope', b?.tabScope]] as const) {
-    $(id).querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === v)));
+    markSegment($(id), v);
   }
   const list = $('sessions');
   list.replaceChildren();
@@ -43,8 +44,7 @@ const patch = (body: { accessMode?: AccessMode; tabScope?: TabScope }) =>
 $('mode').onclick = (e) => { const v = (e.target as HTMLElement).dataset.v; if (v) void patch({ accessMode: v as AccessMode }); };
 $('scope').onclick = (e) => { const v = (e.target as HTMLElement).dataset.v; if (v) void patch({ tabScope: v as TabScope }); };
 $('signout').onclick = () => rpc({ kortix: 'signout' }).then(refresh);
-// Sign-in lives on the welcome page: it is the one place to pick the server.
-$('connect').onclick = () => void chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') }).then(() => window.close());
+$('connect').onclick = () => void openWelcome().then(() => window.close());
 
 void refresh();
 setInterval(() => void refresh(), 2000);

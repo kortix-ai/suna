@@ -21,7 +21,23 @@ async function until<T>(what: string, fn: () => T | undefined | Promise<T | unde
 }
 
 // ─── static page ─────────────────────────────────────────────────────────────
-const web = Bun.serve({ port: 0, fetch: () => new Response(Bun.file(join(app, 'scripts/fixtures/form.html')), { headers: { 'content-type': 'text/html' } }) });
+// /seed logs a top-level page in (cookie + localStorage); /projects/** stands in for the Kortix web app inside the side panel.
+const serverSaw: string[] = [];
+const probes: { cookie: string; ls: string }[] = [];
+const html = (body: string, headers: Record<string, string> = {}) => new Response(body, { headers: { 'content-type': 'text/html', ...headers } });
+const web = Bun.serve({
+  port: 0,
+  fetch(req) {
+    const u = new URL(req.url);
+    if (u.pathname === '/seed') return html(`<script>localStorage.setItem('login','yes')</script>seeded`, { 'set-cookie': ['login=yes; Path=/', 'none=yes; Path=/; SameSite=None; Secure'] as unknown as string });
+    if (u.pathname === '/report') { probes.push({ cookie: u.searchParams.get('c') ?? '', ls: u.searchParams.get('ls') ?? '' }); return new Response('ok'); }
+    if (u.pathname.startsWith('/projects')) { serverSaw.push(req.headers.get('cookie') ?? ''); return html(`<script>
+      fetch('/report?c=' + encodeURIComponent(document.cookie) + '&ls=' + encodeURIComponent(localStorage.getItem('login') ?? ''));
+      parent.postMessage({ type: 'kortix.identity', userId: 'u-web', email: 'web@example.test' }, '*');
+    </script>app ${u.pathname}`); }
+    return new Response(Bun.file(join(app, 'scripts/fixtures/form.html')), { headers: { 'content-type': 'text/html' } });
+  },
+});
 
 // ─── fake API (control socket + bridge) and fake kortixd CDP endpoint ────────
 const frames: any[] = [];
@@ -37,6 +53,7 @@ const api = Bun.serve<{ kind: string }>({
       if (u.searchParams.get('token') !== 'test' || u.searchParams.get('ticket') !== 'T1') return new Response('no', { status: 401 });
       if (srv.upgrade(req, { data: { kind: 'bridge' } })) return;
     }
+    if (u.pathname === '/v1/accounts/me' && req.headers.get('authorization') === 'Bearer test') return Response.json({ user_id: 'u-ext', email: 'ext@example.test' });
     return new Response('not found', { status: 404 });
   },
   websocket: {
@@ -47,7 +64,7 @@ const api = Bun.serve<{ kind: string }>({
         frames.push(f);
         if (f.type === 'auth') {
           if (f.token !== 'test') return ws.close(4001);
-          ws.send(JSON.stringify({ type: 'auth_ok', webUrl: 'https://kortix.test', browser: {
+          ws.send(JSON.stringify({ type: 'auth_ok', webUrl: `http://127.0.0.1:${web.port}`, browser: {
             id: 'b1', name: `${f.info.brand} · ${f.info.os}`, brand: f.info.brand, os: f.info.os, profileLabel: null,
             extensionVersion: f.info.extensionVersion, accessMode: 'always', tabScope: 'own', online: true, lastSeenAt: null,
             createdAt: new Date().toISOString(), activeSessions: [] } }));
@@ -78,7 +95,16 @@ const cdp: ReturnType<typeof Bun.serve<{ c: string }>> = Bun.serve<{ c: string }
       clients.set(ws.data.c, ws);
       bridge.send(JSON.stringify({ c: ws.data.c, open: true }));
     },
-    message(ws, raw) { bridge?.send(JSON.stringify({ c: ws.data.c, m: JSON.parse(String(raw)) })); },
+    async message(ws, raw) {
+      let m = JSON.parse(String(raw));
+      // What kortixd does (services/browser withSandboxFiles): sandbox paths become file bytes.
+      if (m.method === 'DOM.setFileInputFiles') {
+        const { files, ...target } = m.params;
+        const out = await Promise.all((files as string[]).map(async (p) => ({ name: p.split('/').pop(), type: Bun.file(p).type, data: Buffer.from(await Bun.file(p).arrayBuffer()).toString('base64') })));
+        m = { ...m, method: 'Kortix.setFileInputFiles', params: { ...target, files: out } };
+      }
+      bridge?.send(JSON.stringify({ c: ws.data.c, m }));
+    },
     close(ws) { clients.delete(ws.data.c); bridge?.send(JSON.stringify({ c: ws.data.c, close: true })); },
   },
 });
@@ -218,8 +244,8 @@ try {
   check('popup: browser name, online, and the session with Stop', (await pp.eval(`document.getElementById('bname').textContent`)).includes('·')
     && (await pp.eval(`document.getElementById('state').textContent`)) === 'Online'
     && (await pp.eval(`!!document.querySelector('#sessions .session button')`)) === true);
-  check('popup: access mode "Always" and tabs "Own tabs" pressed', (await pp.eval(
-    `document.querySelector('#mode [aria-pressed=true]').textContent + '/' + document.querySelector('#scope [aria-pressed=true]').textContent`)) === 'Always/Own tabs');
+  check('popup: access mode "Always" and tabs "Only its own" pressed', (await pp.eval(
+    `document.querySelector('#mode [aria-pressed=true]').textContent + '/' + document.querySelector('#scope [aria-pressed=true]').textContent`)) === 'Always/Only its own');
   pp.close();
   await fetch(`http://127.0.0.1:${port}/json/close/${pop.id}`);
 
@@ -269,6 +295,116 @@ try {
   await until('deny frame', () => frames.find((f) => f.type === 'consent'));
   await sleep(500);
   check('consent: Deny sends consent{deny} and never attaches', frames.find((f) => f.type === 'consent').decision === 'deny' && !frames.some((f) => f.type === 'attached'));
+
+  // All tabs, two windows, and a browser whose chrome.tabs.group fails the way
+  // Dia's does ("Tab not found for session ID"): the session must still work,
+  // see the user's tabs, start in a tab of its own, and never navigate theirs.
+  const patched = await sw.eval(`(() => {
+    const fail = () => Promise.reject(new Error('Tab not found for session ID: TabSessionID(value: 1)'));
+    try { chrome.tabs.group = fail; } catch {}
+    if (chrome.tabs.group !== fail) Object.defineProperty(chrome.tabs, 'group', { value: fail, configurable: true });
+    return chrome.tabs.group === fail;
+  })()`);
+  check('setup: chrome.tabs.group fails like Dia', patched === true);
+  const userA = `http://127.0.0.1:${web.port}/form.html?user=inbox`;
+  const userB = `http://127.0.0.1:${web.port}/form.html?user=docs`;
+  const userIds: number[] = await sw.eval(`Promise.all([chrome.windows.create({ url: '${userA}' }), chrome.windows.create({ url: '${userB}' })]).then((ws) => ws.map((w) => w.tabs[0].id))`);
+  const stored = await sw.eval(`chrome.storage.local.get('browser').then((r) => r.browser)`);
+  control.send(JSON.stringify({ type: 'browser', browser: { ...stored, tabScope: 'all' } }));
+  await sleep(300);
+  frames.length = 0;
+  control.send(JSON.stringify({ type: 'attach', attachmentId: 'a3', sessionId: 's3', sessionTitle: 'All tabs', projectId: 'p1',
+    projectName: 'Smoke project', bridgePath: '/v1/p/x/8000/kortix/browser/bridge?ticket=T1', ticket: 'T1', consent: false }));
+  await until('attached a3', () => frames.find((f) => f.type === 'attached' && f.attachmentId === 'a3'));
+  opened = true;
+  r = await ab('tab', 'list');
+  check('all tabs: tab list shows the user tabs in both windows', r.out.includes('user=inbox') && r.out.includes('user=docs'), r.out);
+  const current = r.out.split('\n').find((l) => l.includes('→')) ?? '';
+  check('all tabs: the agent starts in a tab of its own', current !== '' && !current.includes('user='), r.out);
+  r = await ab('open', `${url}?agent=1`);
+  check('no tab groups: open still works', r.code === 0, r.out);
+  const after: string[] = await sw.eval(`Promise.all(${JSON.stringify(userIds)}.map((id) => chrome.tabs.get(id))).then((ts) => ts.map((t) => t.url))`);
+  check('all tabs: open never navigates a user tab', after[0] === userA && after[1] === userB, JSON.stringify(after));
+  r = await ab('tab', 'list');
+  const docs = /\[(t\d+)\][^\n]*user=docs/.exec(r.out)?.[1];
+  if (docs) await ab('tab', docs);
+  r = await ab('get', 'url');
+  check('all tabs: the agent can switch to and read a user tab', r.out.includes('user=docs'), r.out);
+  const groupCount = await sw.eval(`chrome.tabGroups.query({}).then((g) => g.length)`);
+  check('no tab groups: nothing was grouped, nothing failed', groupCount === 0, String(groupCount));
+  await ab('close');
+  opened = false;
+  control.send(JSON.stringify({ type: 'detach', attachmentId: 'a3' }));
+  await until('detached a3', () => frames.find((f) => f.type === 'detached' && f.attachmentId === 'a3'));
+
+  // ─── side panel ─────────────────────────────────────────────────────────────
+  const webOrigin = `http://127.0.0.1:${web.port}`;
+  const openTab = async (u: string, match: string) => {
+    await sw!.eval(`chrome.tabs.create({ url: '${u}', active: false })`);
+    const t = await until(`tab ${match}`, async () => (await targets()).find((x) => x.type === 'page' && x.url.startsWith(match)));
+    return Cdp.open(t.webSocketDebuggerUrl);
+  };
+  (await openTab(`${webOrigin}/seed`, `${webOrigin}/seed`)).close();
+  control.send(JSON.stringify({ type: 'attach', attachmentId: 'a4', sessionId: 's4', sessionTitle: 'Panel test', projectId: 'p4',
+    projectName: 'Smoke project', bridgePath: '/v1/p/x/8000/kortix/browser/bridge?ticket=T1', ticket: 'T1', consent: false }));
+  await until('attached a4', () => frames.find((f) => f.type === 'attached' && f.attachmentId === 'a4'));
+  const panel = await openTab(`chrome-extension://${EXT_ID}/sidepanel.html`, `chrome-extension://${EXT_ID}/sidepanel.html`);
+  await until('panel header', async () => (await panel.tryEval(`document.getElementById('bname').textContent`)) !== '' ? true : undefined);
+  const bname = await panel.eval(`document.getElementById('bname').textContent`);
+  check('panel: header shows the browser name', /·/.test(bname), bname);
+  check('panel: online dot is on', (await panel.eval(`document.getElementById('dot').classList.contains('on')`)) === true);
+  const src = await panel.eval(`document.getElementById('app').src`);
+  check('panel: iframe points at webUrl + /projects', src === `${webOrigin}/projects`, src);
+  const probe = await until('iframe probe', () => probes[0]);
+  console.log(`  storage partitioning probe (iframe in extension page): cookie="${probe.cookie}" localStorage="${probe.ls}"`);
+  console.log(`  server saw Cookie header on the iframe request: "${serverSaw[0]}"`);
+  check('panel: iframe shares the top-level login (cookie + localStorage, not partitioned)', probe.cookie.includes('login=yes') && probe.ls === 'yes', JSON.stringify(probe));
+  await until('chip', async () => (await panel.eval(`document.querySelector('.chip-open')?.textContent`)) === 'Open Panel test' ? true : undefined);
+  check('panel: chip "Open Panel test" shows while a session is attached', true);
+  await panel.eval(`document.querySelector('.chip-open').click()`);
+  check('panel: chip opens the session in the iframe', (await panel.eval(`document.getElementById('app').src`)) === `${webOrigin}/projects/p4/sessions/s4`);
+  await until('account warning', async () => (await panel.eval(`!document.getElementById('warn').hidden`)) ? true : undefined);
+  check('panel: different web account shows the warning with Reload', /web@example\.test/.test(await panel.eval(`document.getElementById('warn-text').textContent`)) && (await panel.eval(`!!document.getElementById('reload')`)));
+  await panel.eval(`document.getElementById('menu-btn').click()`);
+  check('panel: menu lists Settings, Manage browsers, Sign out', (await panel.eval(`[...document.querySelectorAll('#menu button')].map((b) => b.textContent).join('|')`)) === 'Settings|Manage browsers|Sign out');
+  panel.close();
+  control.send(JSON.stringify({ type: 'detach', attachmentId: 'a4' }));
+  await until('detached a4', () => frames.find((f) => f.type === 'detached' && f.attachmentId === 'a4'));
+  const opts = await openTab(`chrome-extension://${EXT_ID}/options.html`, `chrome-extension://${EXT_ID}/options.html`);
+  await until('options email', async () => (await opts.tryEval(`document.getElementById('email').textContent`)) === 'ext@example.test' ? true : undefined);
+  check('options: shows the signed-in email, access modes and shortcut', (await opts.eval(`[...document.querySelectorAll('#mode button')].map((b) => b.textContent).join('|') + '/' + document.getElementById('key').textContent.length`)).startsWith('Without asking|Ask first|Off/'));
+  opts.close();
+
+  // F1: a confirm() the agent opens must not deadlock agent-browser.
+  frames.length = 0;
+  control.send(JSON.stringify({ type: 'attach', attachmentId: 'a5', sessionId: 's4', sessionTitle: 'Dialogs and tabs', projectId: 'p1',
+    projectName: 'Smoke project', bridgePath: '/v1/p/x/8000/kortix/browser/bridge?ticket=T1', ticket: 'T1', consent: false }));
+  await until('attached a5', () => frames.find((f) => f.type === 'attached' && f.attachmentId === 'a5'));
+  opened = true;
+  r = await ab('open', `${url}?dialog=1`);
+  const t0 = Date.now();
+  r = await ab('click', '#ask');
+  check('dialogs: clicking a confirm() returns (no deadlock)', r.code === 0 && Date.now() - t0 < 15000, `${Date.now() - t0} ms: ${r.out}`);
+  r = await ab('dialog', 'accept');
+  r = await ab('get', 'text', '#out');
+  check('dialogs: the agent answers the confirm() itself (dialog accept)', r.out.includes('confirmed'), r.out);
+  // F2: back-to-back tab creation, the race Dia showed.
+  const created = await Promise.all([1, 2, 3, 4].map(async (i) => (await ab('tab', 'new', `${url}?rapid=${i}`)).code));
+  check('tabs: 4 back-to-back `tab new` all succeed', created.every((c) => c === 0), JSON.stringify(created));
+  r = await ab('tab', 'list');
+  check('tabs: all 4 are tracked afterwards', [1, 2, 3, 4].every((i) => r.out.includes(`rapid=${i}`)), r.out);
+  // F7: a sandbox file reaches the page's file input as a real selection.
+  const upPath = join(profile, 'kb-upload.txt');
+  await Bun.write(upPath, 'hello-from-sandbox');
+  r = await ab('open', `${url}?upload=1`);
+  r = await ab('upload', '#file', upPath);
+  check('upload: agent-browser upload succeeds', r.code === 0, r.out);
+  r = await ab('get', 'text', '#picked');
+  check('upload: the page received the file with its bytes', r.out.includes('kb-upload.txt:18'), r.out);
+  await ab('close');
+  opened = false;
+  control.send(JSON.stringify({ type: 'detach', attachmentId: 'a5' }));
+  await until('detached a5', () => frames.find((f) => f.type === 'detached' && f.attachmentId === 'a5'));
 } catch (e) {
   failures++;
   console.log(`FAIL  ${(e as Error).message}`);

@@ -368,8 +368,8 @@
           "label": "Повезани налози"
         },
         "browsers": {
-          "label": "Прегледачи",
-          "description": "Прегледачи које си повезао, да би их сесија могла користити."
+          "label": "Chrome проширење",
+          "description": "Дозволи да твоје сесије користе Chrome, са твојим пријавама. Повежи сваки прегледач у ком је инсталирано Kortix проширење."
         },
         "tokens": {
           "label": "Лични приступни кључеви",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "Предстојеће"
   },
   "browsers": {
-    "pill": "Твој прегледач",
-    "connectTitle": "Повежи свој прегледач",
-    "connectDescription": "Дозволи да Kortix сесија користи твој Chrome. Видиш шта ради и можеш да је зауставиш кад год хоћеш.",
-    "connectYourBrowser": "Повежи свој прегледач",
+    "pill": "Chrome проширење",
+    "connectTitle": "Додај Kortix у Chrome",
+    "connectDescription": "Дозволи да твоје сесије користе Chrome, са твојим пријавама. Видиш шта раде и можеш да их зауставиш кад год хоћеш.",
+    "promoLabel": "Chrome проширење",
     "dismissPromo": "Одбаци",
     "steps": {
       "install": {
-        "title": "Додај Kortix у Chrome",
+        "title": "Додај проширење",
         "description": "Из Chrome Web Store-а.",
         "done": "Kortix је у Chrome-у."
       },
       "connect": {
-        "title": "Повежи",
+        "title": "Пријави се",
         "description": "Пријави се на Kortix из проширења.",
         "done": "Пријављен си."
       },
@@ -20224,7 +20224,8 @@
     "offline": "Ван мреже",
     "lastSeen": "Последњи пут виђен {time}",
     "usedBy": "{count, plural, one {Тренутно га користи # сесија} other {Тренутно га користи # сесија}}",
-    "connectAnother": "Повежи други прегледач",
+    "connectAnother": "Додај други прегледач",
+    "listTitle": "Повезани прегледачи",
     "rename": "Преименуј {name}",
     "renameLabel": "Назив прегледача",
     "disconnect": "Прекини везу",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "Картице",
-      "own": "Сопствене картице",
+      "own": "Само картице које отвара",
       "all": "Све картице"
     }
   },

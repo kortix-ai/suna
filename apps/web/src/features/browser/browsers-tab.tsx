@@ -2,11 +2,12 @@
 
 import type { BrowserAccessMode, BrowserTabScope, KortixBrowser } from '@kortix/sdk';
 import { useBrowsers, useDeleteBrowser, useUpdateBrowser } from '@kortix/sdk/react';
-import { GlobeIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
+import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Label } from '@/components/ui/label';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,17 +17,20 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { relativeTime } from '@/lib/relative-time';
+import { BrowserLogoTile } from './browser-icon';
 import {
   BrowserConnectModal,
+  ChromeButtonMark,
   BrowserConnectSteps,
   BrowserOnlineDot,
 } from './browser-connect';
 
 const ACCESS_MODES: readonly BrowserAccessMode[] = ['always', 'ask', 'off'];
-const TAB_SCOPES: readonly BrowserTabScope[] = ['own', 'all'];
+// `all` first: it is the recommended default.
+const TAB_SCOPES: readonly BrowserTabScope[] = ['all', 'own'];
 
 /**
- * Settings › Browsers: the browsers this person connected with the Kortix
+ * Settings › Chrome extension: the browsers this person connected with the Kortix
  * extension. With none, the three connect steps stand inline.
  */
 export function BrowsersTab() {
@@ -43,7 +47,7 @@ export function BrowsersTab() {
         action={
           list.length > 0 ? (
             <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setConnectOpen(true)}>
-              <PlusIcon className="size-4 shrink-0" />
+              <ChromeButtonMark />
               {t('connectAnother')}
             </Button>
           ) : undefined
@@ -69,11 +73,14 @@ export function BrowsersTab() {
           <BrowserConnectSteps />
         </div>
       ) : (
-        <ul className="space-y-2">
-          {list.map((browser) => (
-            <BrowserRow key={browser.id} browser={browser} />
-          ))}
-        </ul>
+        <section className="space-y-3">
+          <Label>{t('listTitle')}</Label>
+          <ul className="space-y-2">
+            {list.map((browser) => (
+              <BrowserRow key={browser.id} browser={browser} />
+            ))}
+          </ul>
+        </section>
       )}
 
       <BrowserConnectModal open={connectOpen} onOpenChange={setConnectOpen} />
@@ -105,9 +112,7 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
   return (
     <li className="bg-popover space-y-3 rounded-md border px-4 py-3">
       <div className="flex items-center gap-3">
-        <span className="bg-muted text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm">
-          <GlobeIcon className="size-5" />
-        </span>
+        <BrowserLogoTile brand={browser.brand} />
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-center gap-2">
             <BrowserOnlineDot online={browser.online} />
@@ -156,7 +161,7 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
             disabled={update.isPending}
             onValueChange={(value) => save({ accessMode: value as BrowserAccessMode })}
           >
-            <SelectTrigger size="sm" className="w-auto min-w-36 shrink-0" aria-label={t('access.label')}>
+            <SelectTrigger size="sm" className="w-auto min-w-40 shrink-0" aria-label={t('access.label')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -175,7 +180,7 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
             disabled={update.isPending}
             onValueChange={(value) => save({ tabScope: value as BrowserTabScope })}
           >
-            <SelectTrigger size="sm" className="w-32 shrink-0" aria-label={t('scope.label')}>
+            <SelectTrigger size="sm" className="w-auto min-w-44 shrink-0" aria-label={t('scope.label')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

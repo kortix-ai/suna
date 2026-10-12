@@ -515,8 +515,8 @@
           "label": "Contas conectadas"
         },
         "browsers": {
-          "label": "Navegadores",
-          "description": "Navegadores que você conectou, para uma sessão poder usá-los."
+          "label": "Extensão do Chrome",
+          "description": "Deixe suas sessões usarem o Chrome, com seus logins. Conecte cada navegador em que a extensão do Kortix está instalada."
         },
         "tokens": {
           "label": "Chaves de acesso pessoais",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "Próximo"
   },
   "browsers": {
-    "pill": "Seu navegador",
-    "connectTitle": "Conectar seu navegador",
-    "connectDescription": "Deixe uma sessão do Kortix usar o seu Chrome. Você vê o que ela faz e pode pará-la a qualquer momento.",
-    "connectYourBrowser": "Conectar seu navegador",
+    "pill": "Extensão do Chrome",
+    "connectTitle": "Adicionar o Kortix ao Chrome",
+    "connectDescription": "Deixe suas sessões usarem o Chrome, com seus logins. Você vê o que elas fazem e pode pará-las a qualquer momento.",
+    "promoLabel": "Extensão do Chrome",
     "dismissPromo": "Dispensar",
     "steps": {
       "install": {
-        "title": "Adicionar o Kortix ao Chrome",
+        "title": "Adicione a extensão",
         "description": "Pela Chrome Web Store.",
         "done": "O Kortix está no Chrome."
       },
       "connect": {
-        "title": "Conectar",
+        "title": "Entrar",
         "description": "Entre no Kortix pela extensão.",
         "done": "Login feito."
       },
@@ -20224,7 +20224,8 @@
     "offline": "Offline",
     "lastSeen": "Visto por último {time}",
     "usedBy": "{count, plural, one {Em uso por # sessão agora} other {Em uso por # sessões agora}}",
-    "connectAnother": "Conectar outro navegador",
+    "connectAnother": "Adicionar outro navegador",
+    "listTitle": "Navegadores conectados",
     "rename": "Renomear {name}",
     "renameLabel": "Nome do navegador",
     "disconnect": "Desconectar",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "Abas",
-      "own": "Abas próprias",
+      "own": "Só as abas que ela abre",
       "all": "Todas as abas"
     }
   },

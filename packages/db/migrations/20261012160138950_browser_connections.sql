@@ -44,7 +44,7 @@ CREATE TABLE "kortix"."browser_connections" (
 	"profile_label" text,
 	"extension_version" text,
 	"access_mode" text DEFAULT 'always' NOT NULL,
-	"tab_scope" text DEFAULT 'own' NOT NULL,
+	"tab_scope" text DEFAULT 'all' NOT NULL,
 	"relay_owner_id" text,
 	"last_seen_at" timestamp with time zone,
 	"revoked_at" timestamp with time zone,

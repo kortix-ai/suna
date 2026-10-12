@@ -368,8 +368,8 @@
           "label": "Connected accounts"
         },
         "browsers": {
-          "label": "Browsers",
-          "description": "Browsers you connected, so a session can use them."
+          "label": "Chrome extension",
+          "description": "Let your sessions use Chrome, with your logins. Connect each browser where the Kortix extension is installed."
         },
         "tokens": {
           "label": "Personal access keys",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "Upcoming"
   },
   "browsers": {
-    "pill": "Your browser",
-    "connectTitle": "Connect your browser",
-    "connectDescription": "Let a Kortix session use your own Chrome. You see what it does and can stop it at any time.",
-    "connectYourBrowser": "Connect your browser",
+    "pill": "Chrome extension",
+    "connectTitle": "Add Kortix to Chrome",
+    "connectDescription": "Let your sessions use Chrome, with your logins. You see what they do and can stop them at any time.",
+    "promoLabel": "Chrome extension",
     "dismissPromo": "Dismiss",
     "steps": {
       "install": {
-        "title": "Add Kortix to Chrome",
+        "title": "Add the extension",
         "description": "From the Chrome Web Store.",
         "done": "Kortix is in Chrome."
       },
       "connect": {
-        "title": "Connect",
+        "title": "Sign in",
         "description": "Sign in to Kortix from the extension.",
         "done": "Signed in."
       },
@@ -20224,7 +20224,8 @@
     "offline": "Offline",
     "lastSeen": "Last seen {time}",
     "usedBy": "{count, plural, one {Used by # session now} other {Used by # sessions now}}",
-    "connectAnother": "Connect another browser",
+    "connectAnother": "Add another browser",
+    "listTitle": "Connected browsers",
     "rename": "Rename {name}",
     "renameLabel": "Browser name",
     "disconnect": "Disconnect",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "Tabs",
-      "own": "Own tabs",
+      "own": "Only tabs it opens",
       "all": "All tabs"
     }
   },

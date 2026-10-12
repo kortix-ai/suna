@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 
 import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
+import { ExtensionPanelIdentity } from '@/features/browser/extension-panel-identity';
 import { MfaGate } from '@/features/auth/mfa-step-up';
 import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watcher';
 
@@ -33,6 +34,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <BillingReturnWatcher />
       </Suspense>
       <ProjectSwitchWatcher />
+      <ExtensionPanelIdentity />
       {/* Closed, this is one store subscription and a `popstate` listener. The
           hub's own chunk is not fetched until the first open — or until
           `preloadAccountHub()` warms it on pointer intent. */}

@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHmac } from 'node:crypto'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createBrowserRouter } from '@/routes/kortix/browser'
 import {
   createBrowserBridge,
   KORTIX_BROWSER_BRIDGE_PATH,
+  MAX_UPLOAD_BYTES,
   NO_BROWSER_REASON,
+  withSandboxFiles,
   type BridgeWsData,
   type BrowserBridge,
 } from './browser-bridge'
@@ -239,5 +244,29 @@ describe('browser bridge', () => {
     expect(await ok.json()).toMatchObject({ attached: false, clients: 0 })
     const rel = await app.request('/release', { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` } })
     expect(rel.status).toBe(204)
+  })
+})
+
+describe('uploads from the sandbox', () => {
+  test('DOM.setFileInputFiles becomes Kortix.setFileInputFiles with the file bytes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-upload-'))
+    const path = join(dir, 'invoice.txt')
+    writeFileSync(path, 'hello')
+    const out = await withSandboxFiles({ id: 7, sessionId: 's1', method: 'DOM.setFileInputFiles', params: { files: [path], backendNodeId: 42 } })
+    expect(out).toEqual({
+      id: 7,
+      sessionId: 's1',
+      method: 'Kortix.setFileInputFiles',
+      params: { backendNodeId: 42, files: [{ name: 'invoice.txt', type: expect.stringContaining('text/plain'), data: Buffer.from('hello').toString('base64') }] },
+    })
+  })
+  test('a missing file is a clear error, not a silent miss', async () => {
+    await expect(withSandboxFiles({ method: 'DOM.setFileInputFiles', params: { files: ['/nope/missing.pdf'] } })).rejects.toThrow('No such file in the sandbox: /nope/missing.pdf')
+  })
+  test('more than the limit is refused', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-upload-'))
+    const path = join(dir, 'big.bin')
+    writeFileSync(path, Buffer.alloc(MAX_UPLOAD_BYTES + 1))
+    await expect(withSandboxFiles({ method: 'DOM.setFileInputFiles', params: { files: [path] } })).rejects.toThrow('Upload too large')
   })
 })

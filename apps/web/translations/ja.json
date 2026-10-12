@@ -515,8 +515,8 @@
           "label": "接続済みアカウント"
         },
         "browsers": {
-          "label": "ブラウザー",
-          "description": "接続したブラウザーです。セッションが使えます。"
+          "label": "Chrome 拡張機能",
+          "description": "セッションがあなたのログイン状態のまま Chrome を使えるようにします。Kortix 拡張機能をインストールしたブラウザーごとに接続します。"
         },
         "tokens": {
           "label": "個人用アクセスキー",
@@ -20191,19 +20191,19 @@
     "calendarUpcomingSr": "予定"
   },
   "browsers": {
-    "pill": "あなたのブラウザー",
-    "connectTitle": "ブラウザーを接続",
-    "connectDescription": "Kortix のセッションがあなたの Chrome を使えるようにします。操作は画面で確認でき、いつでも止められます。",
-    "connectYourBrowser": "ブラウザーを接続",
+    "pill": "Chrome 拡張機能",
+    "connectTitle": "Kortix を Chrome に追加",
+    "connectDescription": "セッションがあなたのログイン状態のまま Chrome を使えるようにします。操作は画面で確認でき、いつでも止められます。",
+    "promoLabel": "Chrome 拡張機能",
     "dismissPromo": "閉じる",
     "steps": {
       "install": {
-        "title": "Kortix を Chrome に追加",
+        "title": "拡張機能を追加",
         "description": "Chrome Web Store から追加します。",
         "done": "Kortix が Chrome に追加されました。"
       },
       "connect": {
-        "title": "接続",
+        "title": "サインイン",
         "description": "拡張機能から Kortix にサインインします。",
         "done": "サインインしました。"
       },
@@ -20224,7 +20224,8 @@
     "offline": "オフライン",
     "lastSeen": "最終確認 {time}",
     "usedBy": "{count, plural, other {現在 # 件のセッションが使用中}}",
-    "connectAnother": "別のブラウザーを接続",
+    "connectAnother": "別のブラウザーを追加",
+    "listTitle": "接続済みのブラウザー",
     "rename": "{name} の名前を変更",
     "renameLabel": "ブラウザー名",
     "disconnect": "接続を解除",
@@ -20243,7 +20244,7 @@
     },
     "scope": {
       "label": "タブ",
-      "own": "自分のタブ",
+      "own": "自分で開いたタブのみ",
       "all": "すべてのタブ"
     }
   },
