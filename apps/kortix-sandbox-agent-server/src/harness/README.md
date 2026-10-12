@@ -184,7 +184,8 @@ reacts to a non-streaming assistant message). A live put is published:
   before the next v1 frame, so a block is on the stream before its first delta
   and its text holds exactly the deltas published before it;
 - on each `message.part.updated` of a tool part that changes its
-  `state.status` or the key set of its `state.metadata` (P4.7): a call that
+  `state.status` or the key set of its `state.metadata` (the keys with a
+  defined value: what the wire carries) (P4.7): a call that
   starts running, a task that names its child (`sessionId`), a bash call that
   names its `command`. A value change alone (bash rewrites `metadata.output`
   per stdout chunk, a pending call's `raw` grows) publishes nothing: a put

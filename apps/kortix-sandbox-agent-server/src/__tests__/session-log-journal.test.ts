@@ -539,6 +539,9 @@ describe('session-log journal', () => {
     bus.publish('message.part.updated', { sessionID: T, part: taskRunning }, T) // nothing changed: no put
     bus.publish('message.part.updated', { sessionID: T, part: bashRunning('total 0') }, T)
     bus.publish('message.part.updated', { sessionID: T, part: bashRunning('total 0\na') }, T) // only output grew: no put
+    const undefinedKey = bashRunning('total 0\na')
+    ;(undefinedKey.state.metadata as Record<string, unknown>).truncation = undefined // a key JSON drops (pi bash): no put
+    bus.publish('message.part.updated', { sessionID: T, part: undefinedKey }, T)
     bus.publish('message.part.updated', { sessionID: T, part: write }, T)
     expect(puts().map((m) => m.blocks.map((b) => (b.type === 'tool_call' ? `${b.name}/${b.status}` : b.type)).join(','))).toEqual([
       '', // message.updated

@@ -523,7 +523,10 @@ export function logChanges(
  * or a streaming `raw` waits for the next put; key on values when a throttled put lands.
  */
 function toolShape(part: Record<string, any>): string {
-  return part.type === 'tool' ? `${part.state?.status}:${Object.keys(part.state?.metadata ?? {}).join()}` : ''
+  if (part.type !== 'tool') return ''
+  const meta = part.state?.metadata ?? {}
+  // The keys the wire carries: pi's bash ends with `truncation: undefined`, which JSON drops.
+  return `${part.state?.status}:${Object.keys(meta).filter((k) => meta[k] !== undefined).join()}`
 }
 
 function parseJson(text: string): unknown {
