@@ -526,6 +526,8 @@ The root exports the types of the Kortix session log, the harness-neutral record
 | `SessionLogTodo` | One todo item. |
 | `RestoreGrade` · `GradeCounts` | How faithfully the record restores (`native`, `converted` or `partial`) · what is missing. |
 
+A text over 256 kB is stored by reference. This applies to a `TextBlock` and to a `text` item of a tool result (`ToolResultContent`). Its `text` holds the first 16 kB, `bytes` holds the UTF-8 length of the full text, and `ref` is `kortix-attachment://<project_id>/<session_id>/<attachment_id>`. `kortix.session(projectId, sessionId).attachments.read(attachmentId)` returns the full text as a `Blob` (`text/plain; charset=utf-8`), also while the sandbox is stopped. The v1 transcript reads return the full text.
+
 ```ts
 import type { SessionLog, SessionLogBlock } from '@kortix/sdk';
 

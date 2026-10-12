@@ -87,7 +87,7 @@ export const AttachmentBlockSchema = z.object({
 /** F12: the known kinds are in `KnownToolKind`; a harness may define its own, so any non-empty string passes. */
 export const ToolKindSchema = str.min(1);
 export const ToolResultContentSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text'), text: str }),
+  z.object({ type: z.literal('text'), text: str, ref: str.optional(), bytes: count.optional() }), // F3
   z.object({ type: z.literal('attachment'), ref: str.optional(), mime: str, sha256: str.optional(), url: str.optional() }), // F13
 ]);
 export const ToolCallBlockSchema = z.object({
