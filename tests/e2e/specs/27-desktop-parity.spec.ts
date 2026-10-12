@@ -1667,16 +1667,37 @@ for (const runtime of runtimes) {
             "New session in Quick Entry target",
           );
           const prompt = `Quick Entry prompt ${randomUUID()}`;
+          const created = page.waitForResponse(
+            (response) =>
+              response.request().method() === "POST" &&
+              new URL(response.url()).pathname ===
+                `/v1/projects/${projectId}/sessions`,
+            { timeout: 60_000 },
+          );
           await bar.locator("#prompt").fill(prompt);
           await bar.locator("#prompt").press("Enter");
 
-          await expect(page).toHaveURL(
-            new RegExp(`/projects/${projectId}/sessions/[^/?#]+`),
-            { timeout: 60_000 },
-          );
+          // The project home composer submitted the prompt: one create, and it
+          // carries the text as the session's first prompt.
+          const response = await created;
           expect(creates).toHaveLength(1);
           expect(creates[0]?.pending_prompt?.text).toBe(prompt);
-          await expect(page.getByText(prompt).first()).toBeVisible();
+          if (isDeployedTarget()) {
+            expect(response.ok()).toBe(true);
+            await expect(page).toHaveURL(
+              new RegExp(`/projects/${projectId}/sessions/[^/?#]+`),
+              { timeout: 60_000 },
+            );
+            await expect(page.getByText(prompt).first()).toBeVisible();
+          } else {
+            // The local profile has no tunnel, so the API refuses every
+            // create (503 KORTIX_URL_UNREACHABLE, as in spec 28). The prompt
+            // is not lost: the composer keeps it.
+            expect(response.status()).toBe(503);
+            await expect(
+              page.getByRole("textbox", { name: "Message input" }),
+            ).toHaveText(prompt, { timeout: 15_000 });
+          }
           // The bar hid itself, and the prompt was taken exactly once.
           expect(
             await desktopApp.evaluate(({ BrowserWindow }) =>
