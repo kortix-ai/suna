@@ -7,7 +7,7 @@
  * path. Every session here is synthetic. The Storage bucket is
  * `helpers/fake-session-storage.ts`.
  */
-import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
 import { fromV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
   accountMembers,
@@ -23,6 +23,7 @@ import {
   sessionTurns,
 } from '@kortix/db';
 import { and, asc, eq, lt, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
@@ -360,5 +361,99 @@ describe('a box with a journal: journal rows always win', () => {
     const clash = await ingestSessionLogJournal(scope(session), { generation: 0, puts: [{ rev: REV + 1, message: { ...other, message_id: 'msg_journal_two' } }], tombstones: [], threads: [] });
     expect(clash.status).toBe(422);
     expect(clash.body).toMatchObject({ error: 'seq_conflict', message_id: 'msg_journal_two', seq: 2 });
+  });
+});
+
+describe('a journal batch with no message does not claim the log', () => {
+  const empty = (session?: SessionLogJournalRequest['session']): SessionLogJournalRequest => ({ generation: 0, session, threads: [], puts: [], tombstones: [] });
+
+  test('a session patch or an empty batch leaves journal_seen_at null, and the capture still writes; a batch with a put sets it', async () => {
+    const session = await seedSession(project, OWNER);
+    // The daemon's boot patch, before any capture: it creates the log row.
+    expect((await ingestSessionLogJournal(scope(session), empty({ restore_grade: 'native' }))).status).toBe(200);
+    expect((await logRow(session))?.journalSeenAt).toBeNull();
+    // The flush at stop with 0 messages, on an existing row.
+    expect((await ingestSessionLogJournal(scope(session), empty())).status).toBe(200);
+    expect((await ingestSessionLogJournal(scope(session), empty({ restore_grade: 'native' }))).status).toBe(200);
+    expect((await logRow(session))?.journalSeenAt).toBeNull();
+
+    await capture(session, range(0, 4));
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003']);
+    await expectLogEqualsFromV1(session);
+
+    const batch = journalOf(await fromMirror(session));
+    expect((await ingestSessionLogJournal(scope(session), { ...batch, puts: batch.puts.slice(0, 1) })).status).toBe(200);
+    expect((await logRow(session))?.journalSeenAt).toBeInstanceOf(Date);
+  });
+
+  test('a tombstone alone sets journal_seen_at', async () => {
+    const session = await seedSession(project, OWNER);
+    await capture(session, range(0, 2));
+    expect((await ingestSessionLogJournal(scope(session), { ...empty(), tombstones: [{ message_id: 'msg_000001', rev: REV }] })).status).toBe(200);
+    expect((await logRow(session))?.journalSeenAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('the v1 window over a stale log', () => {
+  const read = async (session: string, query = 'shape=sync&limit=40') => {
+    const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?${query}`, { headers: { Authorization: `Bearer ${ownerToken}` } });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+  const mirrorAt = (session: string, at: Date) => db.update(sessionTranscriptMirrors).set({ capturedAt: at }).where(eq(sessionTranscriptMirrors.sessionId, session));
+  const staleWarnings = (warn: { mock: { calls: unknown[][] } }, session: string) =>
+    warn.mock.calls.filter((c) => String(c[0]).includes('log is behind the mirror') && (c[1] as { sessionId?: string })?.sessionId === session);
+
+  test('a mirror newer than the log by over 60 s serves the mirror and warns once per session; within 60 s the log answers', async () => {
+    const session = await seedSession(project, OWNER);
+    await capture(session, range(0, 6));
+    await setFlag(true);
+    const warn = spyOn(logger, 'warn');
+    try {
+      const [{ last }] = (await db.select({ last: sql<Date>`max(${sessionLogMessages.updatedAt})` }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, session))) as [{ last: Date }];
+      const lastMs = new Date(last).getTime();
+
+      // Within the margin: the log answers (its captured_at is the log's last write).
+      await mirrorAt(session, new Date(lastMs + 30_000));
+      const near = await read(session);
+      expect(near.status).toBe(200);
+      expect(near.body.captured_at).not.toBe(new Date(lastMs + 30_000).toISOString());
+      expect(staleWarnings(warn, session)).toHaveLength(0);
+
+      // Over the margin: the mirror answers, once-warned.
+      const at = new Date(lastMs + 120_000);
+      await mirrorAt(session, at);
+      for (let i = 0; i < 2; i++) {
+        const far = await read(session);
+        expect(far.status).toBe(200);
+        expect(far.body.captured_at).toBe(at.toISOString());
+        expect((far.body.messages as unknown[]).length).toBe(6);
+      }
+      expect(staleWarnings(warn, session)).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+      await setFlag(false);
+    }
+  });
+});
+
+describe('a cursor on a tombstoned message', () => {
+  test('the v1 window over the log answers like the mirror: the unknown-cursor error, not an empty page', async () => {
+    const session = await seedSession(project, OWNER);
+    await capture(session, range(0, 8));
+    await setTranscriptRewindMarker(session, ROOT, 'msg_000004');
+    await capture(session, [...range(0, 4), plain(8), plain(9)]);
+    expect((await logRows(session)).filter((r) => r.deletedAt !== null).map((r) => r.id)).toContain('msg_000005');
+    const read = async () => {
+      const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?shape=sync&limit=40&before=msg_000005`, { headers: { Authorization: `Bearer ${ownerToken}` } });
+      return { status: res.status, body: await res.json() };
+    };
+    const mirror = await read();
+    expect(mirror.status).not.toBe(200);
+    await setFlag(true);
+    try {
+      expect(await read()).toEqual(mirror);
+    } finally {
+      await setFlag(false);
+    }
   });
 });
