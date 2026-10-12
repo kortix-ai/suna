@@ -58,11 +58,13 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # dispatch the release gate on the release branch
 
 jobs:
   open-release-pr:
     name: Open review-gated release PR
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
         uses: actions/checkout@v7
@@ -240,6 +242,17 @@ jobs:
               "$IN_TITLE" "$IN_NOTES" "$TAG" \
               | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
           fi
+
+          # Start the release gate here. This step opens the pull request with
+          # the workflow token, and GitHub holds a pull request run from that
+          # bot for a person's approval, so every release used to wait for
+          # someone to notice and approve it. A dispatch needs no approval, it
+          # runs the same jobs on the same head SHA with the same expected SHA,
+          # and its `full suite + quality gates` check satisfies `prod`'s
+          # required check on that SHA. Leave the held pull request run
+          # unapproved: approving it runs the gate twice against staging.
+          gh workflow run tests-release.yml --ref "$RELBR" -f expected_sha="$SRC_SHA"
+          echo "Dispatched the release gate on $RELBR (expected_sha=$SRC_SHA)."
 
       - name: Summary
         env:
