@@ -13,8 +13,10 @@
  *   the object exists: a later put of the same text uploads nothing.
  *
  * The objects are written before the batch's transaction, so a batch that then
- * answers 409 or 422 leaves objects no message names. They stay indexed and go
- * with the session (retention is P2.8).
+ * answers 409 or 422, or a capture batch that ends `skipped` (a journal wrote, or
+ * a newer mirror capture ran), leaves objects no message names. They stay indexed
+ * and go with the session (retention is P2.8). They are not deleted on a skip:
+ * the object is shared by sha256, so a row of the same session may name it.
  *
  * `GET .../log` serves rows as stored. The v1 reads serve whole bodies, so they
  * call `rehydrateLargeTexts`. A text over 256 kB is offloaded even when the

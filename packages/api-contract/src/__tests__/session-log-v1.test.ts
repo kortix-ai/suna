@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   fromV1,
+  liveMessageFromV1,
   toV1,
   upcast,
   SessionLogMessageSchema,
@@ -467,6 +468,58 @@ describe('fromV1 live: the turn that runs is not closed', () => {
   test('settled calls and messages are the same as at rest', () => {
     const rest = fromV1(mainFixture());
     for (const id of ['msg_r01', 'msg_r02', 'msg_r04', 'msg_r06', 'msg_r11', 'msg_c02']) expect(message(live, id)).toEqual(message(rest, id));
+  });
+});
+
+describe('liveMessageFromV1: a message of the running turn keeps its v1 residual (P4.7)', () => {
+  // The frames so far of one reply: a running task, a running bash call, a pending call that streams its input.
+  const reply = assistant(ROOT, 'msg_lv02', T0 + 100, 'msg_lv01', (m) => [
+    tool(ROOT, m, 'prt_lv02a', 'task', { status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: { sessionId: CHILD }, time: { start: T0 + 110 } }),
+    tool(ROOT, m, 'prt_lv02b', 'bash', { status: 'running', input: { command: 'ls -la', description: 'Lists' }, title: 'Lists', metadata: { command: 'ls -la', output: 'total 0' }, time: { start: T0 + 120 } }),
+    tool(ROOT, m, 'prt_lv02c', 'write', { status: 'pending', input: {}, raw: '{"filePath":"/w/a.ts","content":"exp' }),
+  ], { finish: undefined, time: { created: T0 + 100 } });
+  const live = liveMessageFromV1(json({ info: reply.info, parts: reply.parts }), { seq: 2 });
+  /** The v1 parts `toV1` rebuilds from the live message, in a v1-derived thread. */
+  const partsBack = (m: SessionLogMessage) => {
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows: [json(reply)] }, { live: true });
+    log.threads[0]!.messages = [m];
+    return toV1(json(log)).rows[0]!.parts;
+  };
+
+  test('the message streams; the open calls stay open with no result', () => {
+    expect(live).toMatchObject({ seq: 2, status: 'streaming', completed_at: null, finish: null });
+    expect(live.blocks.map((b) => [(b as ToolCallBlock).status, (b as ToolCallBlock).result])).toEqual([['running', undefined], ['running', undefined], ['pending', undefined]]);
+  });
+
+  test('a running task keeps state.metadata.sessionId: toV1 restores the part', () => {
+    expect(partsBack(live)[0]).toEqual(json(reply.parts[0]));
+    expect((partsBack(live)[0] as { state: { metadata: unknown } }).state.metadata).toEqual({ sessionId: CHILD });
+  });
+
+  test('a running bash call keeps state.metadata.command: toV1 restores the part', () => {
+    expect(partsBack(live)[1]).toEqual(json(reply.parts[1]));
+  });
+
+  test('a pending call carries its partial input as a string; toV1 restores raw and the empty input', () => {
+    expect((live.blocks[2] as ToolCallBlock).input).toBe('{"filePath":"/w/a.ts","content":"exp');
+    expect(partsBack(live)[2]).toEqual(json(reply.parts[2]));
+    expect(SessionLogMessageSchema.safeParse(live).success).toBe(true);
+  });
+
+  test('the whole live message round-trips: toV1 gives back the frames', () => {
+    expect(partsBack(live)).toEqual(json(reply.parts));
+  });
+
+  test('pi completes a reply before its calls run: a completed reply with an open call streams, and toV1 keeps its completion', () => {
+    const pi = assistant(ROOT, 'msg_lv03', T0 + 200, 'msg_lv01', (m) => [
+      tool(ROOT, m, 'prt_lv03a', 'bash', { status: 'running', input: { command: 'echo hi' }, metadata: { output: '' }, time: { start: T0 + 210 } }),
+    ], { finish: undefined });
+    const m = liveMessageFromV1(json({ info: pi.info, parts: pi.parts }), { seq: 3 }, 'pi');
+    expect(m).toMatchObject({ status: 'streaming', in_context: true });
+    expect(SessionLogMessageSchema.safeParse(m).success).toBe(true);
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows: [json(pi)] }, { harness: 'pi', live: true });
+    log.threads[0]!.messages = [m];
+    expect(toV1(json(log)).rows).toEqual([json(pi)]);
   });
 });
 

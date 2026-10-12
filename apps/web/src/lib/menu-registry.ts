@@ -1327,6 +1327,19 @@ export const menuRegistry: MenuItemDef[] = [
     shortcut: 'Ctrl+B',
   },
   {
+    // Opens the Customize sidebar modal (`customize-sidebar-modal.tsx`),
+    // mounted by the project sidebar, so it needs a project.
+    id: 'customize-sidebar',
+    label: 'Customize Sidebar',
+    icon: PanelLeftClose,
+    group: 'view',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'customizeSidebar',
+    requiresProject: true,
+    keywords: 'sidebar customize reorder hide show navigation rows',
+  },
+  {
     id: 'toggle-panel-mode',
     label: 'Switch to Advanced View', // swapped dynamically at render time based on current mode
     icon: SlidersHorizontal,

@@ -26,8 +26,8 @@
 
 locals {
   # environment name => IAM role-name prefix the root is allowed to manage.
-  # environments/dev + dev-web create kortix-dev-*, kortix-dev-web-*,
-  # kortix-dev-gateway-*; staging and prod follow the same shape.
+  # environments/dev-us-east-2 + dev-web-us-east-2 create kortix-dev-use2-*;
+  # staging (kortix-staging-euw2-*) and prod follow the same shape.
   gha_tf_apply_envs = {
     dev     = "kortix-dev-"
     staging = "kortix-staging-"

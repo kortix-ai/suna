@@ -72,33 +72,34 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('Vercel is disabled for dev');
   });
 
-  it('defines the Dev web service and canonical DNS record', () => {
-    const terraform = read('infra/terraform/environments/dev-web/main.tf');
-    const variables = read('infra/terraform/environments/dev-web/variables.tf');
+  it('defines the Dev web service and its origin record', () => {
+    const terraform = read('infra/terraform/environments/dev-web-us-east-2/main.tf');
 
     expect(terraform).toContain('data "aws_secretsmanager_secret" "web_env"');
+    expect(terraform).toContain('name = "kortix-dev-use2-web-env"');
     expect(terraform).toContain('module "web"');
     expect(terraform).toContain('container_name         = "web"');
     expect(terraform).toContain('health_check_path      = "/api/health"');
     expect(terraform).toContain('enable_postgres_egress = false');
-    expect(terraform).toContain('name    = "dev"');
+    expect(terraform).toContain('name    = "dev-use2"');
+    // Deploy Dev's publish-web-ecs-dns job owns dev.kortix.com, not Terraform.
+    expect(terraform).not.toContain('name    = "dev"');
     expect(terraform).not.toContain('dev-fe-ecs');
-    expect(variables).toContain('Manage the canonical dev.kortix.com CNAME');
-    expect(variables).not.toContain('manage_canonical_dns');
   });
 
   it('defines isolated staging and production services with environment-specific capacity', () => {
-    const staging = read('infra/terraform/environments/staging-web/main.tf');
-    const stagingVariables = read('infra/terraform/environments/staging-web/variables.tf');
+    const staging = read('infra/terraform/environments/staging-web-eu-west-2/main.tf');
     const prod = read('infra/terraform/environments/prod-web/main.tf');
     const prodVariables = read('infra/terraform/environments/prod-web/variables.tf');
 
-    expect(staging).toContain('name = "kortix-staging-web"');
-    expect(staging).toContain('name = "kortix-staging-web-env"');
-    expect(staging).toContain('staging-fe-ecs');
+    expect(staging).toContain('name = "kortix-staging-euw2-web"');
+    expect(staging).toContain('name = "kortix-staging-euw2-web-env"');
+    expect(staging).toContain('domain_name               = "staging-fe-ecs.kortix.com"');
     expect(staging).toContain('min_capacity     = 1');
     expect(staging).toContain('max_capacity     = 4');
-    expect(stagingVariables).toContain('never manages staging.kortix.com');
+    // Deploy Staging owns staging-fe-ecs.kortix.com; Vercel owns staging.kortix.com.
+    expect(staging).toContain('name    = "staging-fe-ecs-euw2"');
+    expect(staging).not.toMatch(/name\s*=\s*"staging(-fe-ecs)?"/);
 
     expect(prod).toContain('name = "kortix-prod-web"');
     expect(prod).toContain('name = "kortix-prod-web-env"');
