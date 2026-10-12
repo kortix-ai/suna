@@ -26,7 +26,8 @@
  * record as sent, so the manifest the daemon reconciles against does not change.
  *
  * Two writers, one apply path (`applyBatch`):
- * - The journal. Its first committed batch sets `session_logs.journal_seen_at`.
+ * - The journal. Its first committed batch with a put or a tombstone sets
+ *   `session_logs.journal_seen_at`.
  * - The transcript capture of a box without a journal (P2.7,
  *   `session-log-capture.ts`): `fromV1` of the v1 mirror, at generation 0, with
  *   revs below `SESSION_LOG_CAPTURE_REV_LIMIT`. It writes only while
@@ -199,6 +200,9 @@ async function upsertSession(
     .where(eq(sessionLogs.sessionId, scope.sessionId))
     .limit(1);
   if (capture && row?.journalSeenAt) return 'journal';
+  // A batch with no put and no tombstone (the boot session patch, the empty flush at stop) proves no journal:
+  // the capture keeps writing until a message arrives.
+  const writes = batch.puts.length + batch.tombstones.length > 0;
   if (row && batch.generation < row.generation) return row.generation;
   const patch = batch.session;
   if (!row) {
@@ -214,11 +218,11 @@ async function upsertSession(
       restoreGrade: patch?.restore_grade ?? 'native',
       gradeCounts: patch?.grade_counts ?? null,
       record: (patch ?? {}) as Record<string, unknown>,
-      journalSeenAt: capture ? null : sql`now()`,
+      journalSeenAt: capture || !writes ? null : sql`now()`,
     });
     return null;
   }
-  const firstJournal = !capture && !row.journalSeenAt;
+  const firstJournal = !capture && writes && !row.journalSeenAt;
   if (!patch && batch.generation === row.generation && !firstJournal) return null;
   await tx
     .update(sessionLogs)
