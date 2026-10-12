@@ -26,7 +26,8 @@ import { dismissOnboarding, dismissWelcomeCard } from "../helpers/ui";
  * database). This journey answers the presence PUT with a running sandbox's
  * window and checks what the page shows.
  *
- * Local only: the session is a saved conversation with no sandbox.
+ * Local only: the session is a saved conversation with no sandbox, and `/start`
+ * answers as a running one does.
  */
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
@@ -114,6 +115,39 @@ async function answerPresence(page: Page, sessionId: string, next: () => AwakeWi
   );
 }
 
+/** The session reads as running: a saved conversation has no sandbox to wake. */
+async function answerStartReady(page: Page, projectId: string, accountId: string, sessionId: string) {
+  const rootId = `ses_${sessionId.replaceAll("-", "")}`;
+  const at = new Date().toISOString();
+  await page.route(`**/sessions/${sessionId}/start?*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        stage: "ready",
+        agent_name: "kortix",
+        retriable: false,
+        opencode_session_id: rootId,
+        sandbox: {
+          sandbox_id: sessionId,
+          session_id: sessionId,
+          project_id: projectId,
+          account_id: accountId,
+          provider: "daytona",
+          external_id: sessionId,
+          base_url: "http://127.0.0.1:1",
+          status: "active",
+          config: {},
+          metadata: {},
+          last_used_at: null,
+          created_at: at,
+          updated_at: at,
+        },
+      }),
+    }),
+  );
+}
+
 /** Hide the page, then show it: the SDK reports absent, then present again. */
 async function leaveAndComeBack(page: Page) {
   for (const hidden of [true, false]) {
@@ -160,6 +194,7 @@ test("49 — the composer says how long the sandbox stays on while you are here"
       awake_until: new Date(Date.now() + 15 * MINUTE).toISOString(),
       awake_cap_at: new Date(Date.now() + 100 * MINUTE).toISOString(),
     };
+    await answerStartReady(page, project.id, accountId, sessionId);
     await answerPresence(page, sessionId, () => window);
     await installBrowserSessionDirect(page, auth, `/projects/${project.id}/sessions/${sessionId}`, authOptions);
     await dismissOnboarding(page);
