@@ -47,9 +47,12 @@ export function AppPreviewPoolLoader({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (!framesKeepAlive()) return;
-    const ric = window.requestIdleCallback;
-    const handle = ric ? ric(() => setIdle(true), { timeout: 2000 }) : window.setTimeout(() => setIdle(true), 1500);
-    return () => (ric ? window.cancelIdleCallback(handle) : window.clearTimeout(handle));
+    // Safari has no requestIdleCallback.
+    const idleCallback = 'requestIdleCallback' in window;
+    const handle = idleCallback
+      ? window.requestIdleCallback(() => setIdle(true), { timeout: 2000 })
+      : window.setTimeout(() => setIdle(true), 1500);
+    return () => (idleCallback ? window.cancelIdleCallback(handle) : window.clearTimeout(handle));
   }, []);
 
   // A new release or a deleted App drops its old frame; leaving the project drops all.
