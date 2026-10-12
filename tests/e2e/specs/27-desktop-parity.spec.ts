@@ -1534,7 +1534,7 @@ for (const runtime of runtimes) {
     );
     nativeTest?.(
       "Quick Entry starts a session in the open project from the prompt bar",
-      async ({ page, desktopApp }) => {
+      async ({ page, desktopApp, baseURL }) => {
         if (!desktopApp)
           throw new Error("native Electron application is required");
         test.setTimeout(240_000);
@@ -1625,10 +1625,11 @@ for (const runtime of runtimes) {
             }
             await route.continue();
           });
+          // Electron windows have no Playwright baseURL: pass an absolute URL.
           await installBrowserSessionDirect(
             page,
             session,
-            `/projects/${projectId}`,
+            `${baseURL}/projects/${projectId}`,
             authOptions,
           );
           await dismissOnboarding(page);
