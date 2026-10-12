@@ -6,12 +6,12 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { accounts, notifications, projects } from '@kortix/db';
+import { notifications, projects } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
-import { mfaGateBlocks } from '../iam/authorize';
 import { db } from '../shared/db';
 import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
 import { notificationsEnabled } from './enabled';
+import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
 import { notificationUrl } from './push-payload';
 
@@ -81,18 +81,10 @@ const ROW = {
 };
 type StoredRow = Pick<typeof notifications.$inferSelect, keyof typeof ROW>;
 
-/** Accounts whose MFA step-up this sign-in has not passed. */
-async function mfaBlockedAccounts(accountIds: string[], ctx: InboxReadContext): Promise<Set<string>> {
-  if (ctx.skipMfaGate || accountIds.length === 0) return new Set();
-  const rows = await db
-    .select({ accountId: accounts.accountId, mfaRequired: accounts.mfaRequired })
-    .from(accounts)
-    .where(inArray(accounts.accountId, accountIds));
-  return new Set(
-    rows
-      .filter((row) => mfaGateBlocks({ accountMfaRequired: row.mfaRequired }, ctx.iamTokenId, ctx.mfaAal ?? undefined))
-      .map((row) => row.accountId),
-  );
+/** Accounts whose MFA step-up this sign-in owes: the gate `authorize` applies (super admins pass it). */
+async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: InboxReadContext): Promise<Set<string>> {
+  if (ctx.skipMfaGate) return new Set();
+  return mfaWithheldAccounts(userId, accountIds, ctx);
 }
 
 /**
@@ -122,7 +114,7 @@ async function visible<T extends InboxRowForFilter>(
   const sessions = new Map<string, SessionAccessRow>();
   if (!userId || rows.length === 0) return { rows: [], sessions, projectNames: new Map() };
   const [blocked, projectNames] = await Promise.all([
-    mfaBlockedAccounts([...new Set(rows.map((row) => row.accountId))], ctx),
+    mfaBlockedAccounts(userId, [...new Set(rows.map((row) => row.accountId))], ctx),
     notificationCenterProjects([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
   ]);
   const open = rows.filter((row) => !blocked.has(row.accountId) && row.projectId !== null && projectNames.has(row.projectId));
