@@ -8,7 +8,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolPartRenderer } from '../tool-part-renderer';
-import { isInterruptedCall, openCall } from './call-liveness';
+import { openCall } from './call-liveness';
 
 // Synthetic calls; every id and value is invented.
 const T0 = 1_790_000_000_000;
@@ -59,27 +59,6 @@ describe('openCall: a closure-rule call is open again', () => {
     const done = toolCallBlock(part('prt_done', 'bash', { status: 'completed', input: { command: 'ls' }, output: 'a', title: 'ls', metadata: {}, time: { start: T0, end: T0 + 1 } }));
     const failed = toolCallBlock(part('prt_err', 'read', { status: 'error', input: { filePath: '/w/x' }, error: 'File not found', time: { start: T0, end: T0 + 1 } }));
     for (const call of [live, done, failed]) expect(openCall(call)).toBe(call);
-  });
-});
-
-describe('isInterruptedCall: decided by the turn, never by the block status alone', () => {
-  test('an open call of a turn that is not live is interrupted, on both paths', () => {
-    for (const p of Object.values(OPEN)) {
-      expect(isInterruptedCall(toolCallBlock(p), false)).toBe(true);
-      expect(isInterruptedCall(closed(toolCallBlock(p)), false)).toBe(true);
-    }
-  });
-
-  test('while the turn is live no call is interrupted, a closure-rule block included', () => {
-    for (const p of Object.values(OPEN)) {
-      expect(isInterruptedCall(toolCallBlock(p), true)).toBe(false);
-      expect(isInterruptedCall(closed(toolCallBlock(p)), true)).toBe(false);
-    }
-  });
-
-  test('a finished call or a real error is never interrupted', () => {
-    const failed = toolCallBlock(part('prt_err2', 'read', { status: 'error', input: { filePath: '/w/x' }, error: 'File not found', time: { start: T0, end: T0 + 1 } }));
-    expect(isInterruptedCall(failed, false)).toBe(false);
   });
 });
 

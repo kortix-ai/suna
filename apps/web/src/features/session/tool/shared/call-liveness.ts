@@ -8,9 +8,8 @@ import type { ToolCallBlock } from '@kortix/sdk';
  * at rest, where the closure rule (C2/F11) closes it: `error`, `result.synthetic`,
  * `result.error.code: 'interrupted'`. A block cannot say whether its turn is still
  * live, so neither status is the verdict. `openCall` gives both paths the open
- * call, and the turn decides: an open call of a turn that is not live is
- * interrupted (`isInterruptedCall`), which `ToolPartRenderer` reads through
- * `TurnLiveContext`.
+ * call, and the turn decides: `ToolPartRenderer` reads the open call against
+ * `TurnLiveContext`, as it read the v1 part before.
  *
  * Read every block a host renders through `openCall`. P5.2c replaces this module
  * with the derived liveness field of the SDK's block turn layer (P5.2b).
@@ -38,10 +37,4 @@ export function openCall(call: ToolCallBlock): ToolCallBlock {
     reopened.set(call, open);
   }
   return open;
-}
-
-/** An open call (`pending`/`running`, or closed by the closure rule) of a turn that is not live. */
-export function isInterruptedCall(call: ToolCallBlock, turnLive: boolean): boolean {
-  const { status } = openCall(call);
-  return !turnLive && (status === 'pending' || status === 'running');
 }

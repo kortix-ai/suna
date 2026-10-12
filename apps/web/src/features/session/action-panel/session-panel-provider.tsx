@@ -179,9 +179,6 @@ export function SessionPanelProvider({
   // further back in the session).
   const latestSteps = useMemo(() => groupSteps(latestCalls), [latestCalls]);
 
-  // W1/W9 — announce finished deliverables and blocked-on-you states while the
-  // panel is closed. Headless: writes the ready chip; the header renders it.
-  useDeliverableReadiness(sessionId, messages, isSessionBusy);
 
   // A running app is not "one of" the outputs — it's the thing the user asked
   // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
@@ -560,6 +557,10 @@ export function SessionPanelProvider({
     () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),
     [messages, latestSteps],
   );
+
+  // W1/W9 — announce finished deliverables and blocked-on-you states while the
+  // panel is closed. Headless: writes the ready chip; the header renders it.
+  useDeliverableReadiness(sessionId, { isRunning, outcome, outputs });
 
   // Auto-expand Outputs the moment a run finishes with something to show —
   // never on every render of an already-finished (or still-running) run, and

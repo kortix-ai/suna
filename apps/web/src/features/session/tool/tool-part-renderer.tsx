@@ -29,7 +29,7 @@ import {
   shouldShowToolPart,
 } from '@/ui';
 import { toolKind, type ToolCallBlock } from '@kortix/sdk';
-import { isInterruptedCall, openCall } from '@/features/session/tool/shared/call-liveness';
+import { openCall } from '@/features/session/tool/shared/call-liveness';
 import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -225,7 +225,7 @@ function ToolPartRendererImpl({
   // the frozen-looking row under a status line that was still saying
   // "Making changes...".
   const isStalePending =
-    isInterruptedCall(call, turnLive) && call.status === 'pending' && Object.keys(partStreamingInput(call)).length === 0;
+    !turnLive && call.status === 'pending' && Object.keys(partStreamingInput(call)).length === 0;
 
   const isRunning = !isStalePending && (call.status === 'running' || call.status === 'pending');
 

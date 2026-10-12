@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -58,34 +58,79 @@ export function sumMetrics(all: ThreadMetrics[]): ThreadMetrics {
 // Sub-session tree component
 // ============================================================================
 
+/** The metrics of every descendant thread, by runtime session id. */
+type MetricsById = Readonly<Record<string, ThreadMetrics>>;
+
 /**
- * One sub-agent's row: its thread's metrics, read through `useSessionLogThread`
- * (the sub-agent's runtime session id is its thread id), reported up for the
- * combined totals, and its own children under it.
+ * Reads the thread of every id in `ids` through `useSessionLogThread`, one
+ * component per id (a hook per thread, no loop), and renders `children` with
+ * the metrics of all of them. A pure derivation: no state, no effect, so the
+ * totals never depend on which rows are expanded.
  */
-function SubSessionTreeNode({
+function WithThreadMetrics({
   source,
+  ids,
+  pricingLookup,
+  acc = {},
+  children,
+}: {
+  source: SessionMessagesSource;
+  ids: readonly string[];
+  pricingLookup: ModelPricingLookup;
+  acc?: MetricsById;
+  children: (metrics: MetricsById) => ReactNode;
+}) {
+  if (ids.length === 0) return <>{children(acc)}</>;
+  return (
+    <WithOneThread source={source} id={ids[0]} rest={ids.slice(1)} pricingLookup={pricingLookup} acc={acc}>
+      {children}
+    </WithOneThread>
+  );
+}
+
+function WithOneThread({
+  source,
+  id,
+  rest,
+  pricingLookup,
+  acc,
+  children,
+}: {
+  source: SessionMessagesSource;
+  id: string;
+  rest: readonly string[];
+  pricingLookup: ModelPricingLookup;
+  acc: MetricsById;
+  children: (metrics: MetricsById) => ReactNode;
+}) {
+  const thread = useSessionLogThread(source, id);
+  const metrics = useMemo(() => threadMetrics(thread?.messages ?? [], pricingLookup), [thread, pricingLookup]);
+  const next = useMemo(() => ({ ...acc, [id]: metrics }), [acc, id, metrics]);
+  return (
+    <WithThreadMetrics source={source} ids={rest} pricingLookup={pricingLookup} acc={next}>
+      {children}
+    </WithThreadMetrics>
+  );
+}
+
+/** One sub-agent's row: its thread's metrics, and its own children under it. */
+function SubSessionTreeNode({
   id,
   depth = 0,
   childMap,
   allSessions,
-  pricingLookup,
+  metrics,
   messagesSuffix,
-  onMetrics,
 }: {
-  source: SessionMessagesSource;
   id: string;
   depth?: number;
   childMap: Map<string, string[]>;
   allSessions: Session[];
-  pricingLookup: ModelPricingLookup;
+  metrics: MetricsById;
   messagesSuffix: string;
-  onMetrics: (id: string, metrics: ThreadMetrics) => void;
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
-  const thread = useSessionLogThread(source, id);
-  const metrics = useMemo(() => threadMetrics(thread?.messages ?? [], pricingLookup), [thread, pricingLookup]);
-  useEffect(() => onMetrics(id, metrics), [onMetrics, id, metrics]);
+  const own = metrics[id] ?? NO_METRICS;
   const title = allSessions.find((s) => s.id === id)?.title ?? id.slice(0, 12);
   const children = childMap.get(id) ?? [];
   const hasChildren = children.length > 0;
@@ -111,23 +156,21 @@ function SubSessionTreeNode({
         )}
         <span className="text-foreground min-w-0 truncate font-medium">{title}</span>
         <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
-          {metrics.messages} {messagesSuffix}
+          {own.messages} {messagesSuffix}
         </span>
-        <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(metrics.cost)}</span>
+        <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(own.cost)}</span>
       </button>
       {expanded && hasChildren && (
         <div className="flex flex-col">
           {children.map((childId) => (
             <SubSessionTreeNode
               key={childId}
-              source={source}
               id={childId}
               depth={depth + 1}
               childMap={childMap}
               allSessions={allSessions}
-              pricingLookup={pricingLookup}
+              metrics={metrics}
               messagesSuffix={messagesSuffix}
-              onMetrics={onMetrics}
             />
           ))}
         </div>
@@ -155,56 +198,48 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
     [childMap, session],
   );
 
-  const hasSubSessions = descendantIds.length > 0;
-
-  // The root's own metrics here; each sub-agent row reports its thread's as it
-  // renders, and the combined totals sum what is reported for the descendants
-  // the tree holds now (a collapsed branch is not mounted, so its children
-  // report nothing; the sub-agent rows up to the collapse point count).
+  // The root's own metrics, plus every descendant's (the whole tree, whatever
+  // is expanded): the combined totals read the same records the rows do.
   const root = useSessionLogThread(source);
   const rootMetrics = useMemo(() => threadMetrics(root?.messages ?? [], pricingLookup), [root, pricingLookup]);
-  const [reported, setReported] = useState<Record<string, ThreadMetrics>>({});
-  const onMetrics = useCallback((id: string, metrics: ThreadMetrics) => {
-    setReported((prev) => (prev[id] === metrics ? prev : { ...prev, [id]: metrics }));
-  }, []);
-  const aggregateTotals = useMemo(
-    () => sumMetrics([rootMetrics, ...descendantIds.flatMap((id) => reported[id] ?? [])]),
-    [rootMetrics, descendantIds, reported],
-  );
 
-  return hasSubSessions && session && allSessions ? (
-    <section className="space-y-3">
-      <div className="space-y-1">
-        <Label>{t.raw('subAgentsLabel')}</Label>
-        <p className="text-muted-foreground text-xs">{t.raw('subAgentsNote')}</p>
-      </div>
-      <div className="bg-popover rounded-md border">
-        <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
-          <Stat label={t.raw('combinedCost')} value={formatCost(aggregateTotals.cost)} />
-          <Stat
-            label={t.raw('combinedMessages')}
-            value={aggregateTotals.messages.toLocaleString()}
-          />
-          <Stat label={t.raw('tokensIn')} value={fmt.number(aggregateTotals.inputTokens)} />
-          <Stat label={t.raw('tokensOut')} value={fmt.number(aggregateTotals.outputTokens)} />
-        </div>
-        <div className="border-t px-2 py-2">
-          {(childMap.get(session.id) ?? []).map((childId) => (
-            <SubSessionTreeNode
-              key={childId}
-              source={source}
-              id={childId}
-              childMap={childMap}
-              allSessions={allSessions}
-              pricingLookup={pricingLookup}
-              messagesSuffix={t.raw('treeMessages')}
-              onMetrics={onMetrics}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
-  ) : null;
+  if (!session || !allSessions || descendantIds.length === 0) return null;
+
+  return (
+    <WithThreadMetrics source={source} ids={descendantIds} pricingLookup={pricingLookup}>
+      {(metrics) => {
+        const totals = sumMetrics([rootMetrics, ...descendantIds.map((id) => metrics[id] ?? NO_METRICS)]);
+        return (
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <Label>{t.raw('subAgentsLabel')}</Label>
+              <p className="text-muted-foreground text-xs">{t.raw('subAgentsNote')}</p>
+            </div>
+            <div className="bg-popover rounded-md border">
+              <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
+                <Stat label={t.raw('combinedCost')} value={formatCost(totals.cost)} />
+                <Stat label={t.raw('combinedMessages')} value={totals.messages.toLocaleString()} />
+                <Stat label={t.raw('tokensIn')} value={fmt.number(totals.inputTokens)} />
+                <Stat label={t.raw('tokensOut')} value={fmt.number(totals.outputTokens)} />
+              </div>
+              <div className="border-t px-2 py-2">
+                {(childMap.get(session.id) ?? []).map((childId) => (
+                  <SubSessionTreeNode
+                    key={childId}
+                    id={childId}
+                    childMap={childMap}
+                    allSessions={allSessions}
+                    metrics={metrics}
+                    messagesSuffix={t.raw('treeMessages')}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+        );
+      }}
+    </WithThreadMetrics>
+  );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
