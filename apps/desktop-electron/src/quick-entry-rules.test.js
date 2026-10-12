@@ -8,6 +8,7 @@ const {
   normalizeTarget,
   pickerItems,
   quickEntryBounds,
+  relativeTime,
   resolveShortcut,
   shortcutLabel,
 } = require('./quick-entry-rules');
@@ -147,5 +148,32 @@ describe('pickerItems', () => {
 
   test('with no project known, only "New session" is offered', () => {
     expect(pickerItems(null, null)).toEqual([{ sessionId: null, label: 'New session', checked: true }]);
+  });
+});
+
+describe('relativeTime', () => {
+  const now = Date.parse('2026-10-12T12:00:00Z');
+  test('reads like the sidebar would say it', () => {
+    expect(relativeTime(now - 20_000, now)).toBe('just now');
+    expect(relativeTime(now - 5 * 60_000, now)).toBe('5 min ago');
+    expect(relativeTime(now - 3 * 3_600_000, now)).toBe('3 h ago');
+    expect(relativeTime(now - 30 * 3_600_000, now)).toBe('Yesterday');
+    expect(relativeTime(Date.parse('2026-10-09T10:00:00Z'), now)).toBe('Oct 9');
+  });
+
+  test('two untitled sessions are told apart by when they were last active', () => {
+    const target = normalizeTarget({
+      projectId: 'p1',
+      sessions: [
+        { id: 'a', title: 'New session', status: 'stopped', lastActiveAt: '2026-10-12T11:55:00Z' },
+        { id: 'b', title: 'New session', status: 'stopped', lastActiveAt: '2026-10-12T09:00:00Z' },
+        { id: 'c', title: 'No time', status: 'running', lastActiveAt: 'garbage' },
+      ],
+    });
+    expect(pickerItems(target, null, now).slice(1).map((item) => item.statusText)).toEqual([
+      'Stopped · 5 min ago',
+      'Stopped · 3 h ago',
+      'Running',
+    ]);
   });
 });

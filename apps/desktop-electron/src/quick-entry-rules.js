@@ -75,7 +75,7 @@ const SESSION_STATUS_TEXT = {
 /**
  * `{ projectId, name, sessions }` from the web app, or null for anything else.
  * `sessions` is the person's most recent sessions in the project, newest
- * activity first: `{ id, title, status }`.
+ * activity first: `{ id, title, status, lastActiveAt }` (`lastActiveAt` an ISO time).
  */
 function normalizeTarget(target) {
   const projectId = label(target?.projectId, '');
@@ -85,7 +85,13 @@ function normalizeTarget(target) {
       const id = label(session?.id, '');
       if (!id) return null;
       const status = Object.hasOwn(SESSION_STATUS_TEXT, session.status) ? session.status : 'stopped';
-      return { id, title: label(session.title, 'Untitled session'), status };
+      const lastActiveAt = Date.parse(session.lastActiveAt);
+      return {
+        id,
+        title: label(session.title, 'Untitled session'),
+        status,
+        ...(Number.isFinite(lastActiveAt) ? { lastActiveAt } : {}),
+      };
     })
     .filter(Boolean)
     .slice(0, RECENT_SESSIONS);
@@ -97,12 +103,24 @@ function pickedSession(target, sessionId) {
   return target?.sessions.find((session) => session.id === sessionId) ?? null;
 }
 
+/** "just now", "5 min ago", "3 h ago", "Yesterday", else "Oct 9". */
+function relativeTime(ms, now) {
+  const minutes = Math.floor((now - ms) / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} h ago`;
+  if (minutes < 48 * 60) return 'Yesterday';
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(ms);
+}
+
 /**
  * The picker menu, top to bottom: a new session in the project, then the
  * recent sessions. Exactly one item is checked: the picked session while it is
- * still listed, else the new session.
+ * still listed, else the new session. A session's line under its title is its
+ * status and when it was last active, which also tells apart two sessions whose
+ * titles never landed ("New session").
  */
-function pickerItems(target, sessionId) {
+function pickerItems(target, sessionId, now = Date.now()) {
   const picked = pickedSession(target, sessionId);
   return [
     { sessionId: null, label: target?.name ? `New session in ${target.name}` : 'New session', checked: !picked },
@@ -110,7 +128,9 @@ function pickerItems(target, sessionId) {
       sessionId: session.id,
       label: session.title,
       status: session.status,
-      statusText: SESSION_STATUS_TEXT[session.status],
+      statusText: [SESSION_STATUS_TEXT[session.status], session.lastActiveAt && relativeTime(session.lastActiveAt, now)]
+        .filter(Boolean)
+        .join(' · '),
       checked: picked?.id === session.id,
     })),
   ];
@@ -126,6 +146,7 @@ module.exports = {
   pickedSession,
   pickerItems,
   quickEntryBounds,
+  relativeTime,
   resolveShortcut,
   shortcutLabel,
 };
