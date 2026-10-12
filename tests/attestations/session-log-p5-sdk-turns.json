@@ -1,11 +1,9 @@
 {
-  "source_hash": "4f5a9808ece2109a9107ae75d65d8c9c7b366ee576a69164c3c126322dcb70fd",
+  "source_hash": "a2063e961e65115c8a3bd332fd8084bc29a833f7f667be73a3b325bc3172cabe",
   "diff_files": [
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/content/docs/sdk/reference.mdx",
     "apps/web/src/lib/seo/content-timestamps.json",
-    "apps/web/translations/ja.json",
-    "apps/web/translations/zh.json",
     "packages/api-contract/src/__tests__/session-log-v1.test.ts",
     "packages/api-contract/src/session-log/live.ts",
     "packages/api-contract/src/session-log/v1.ts",
@@ -28,13 +26,13 @@
     "packages/sdk/src/react/use-session-log.test.ts",
     "packages/sdk/src/react/use-session-log.ts"
   ],
-  "diff_hash": "d3319990808d94545e2e3425c79ec83452b9705813ec1a001a8678f3851d1dba",
-  "head": "2bd3b861819e1e2fabe926d2e8f3ad349766ba89",
+  "diff_hash": "77a5d0de8a779b554f12aafb8fe1e887582afb71527196ba09905e26196eac66",
+  "head": "506ec3c9191f2415ef18da2db03866d1afd77576",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T20:17:22.459Z"
+  "at": "2026-10-12T21:00:25.751Z"
 }
