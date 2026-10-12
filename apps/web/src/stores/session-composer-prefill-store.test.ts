@@ -106,3 +106,21 @@ describe('session composer attach request (Task 5)', () => {
     expect(useSessionComposerPrefillStore.getState().attachRequestBySession['a3']).toBeDefined();
   });
 });
+
+describe('desktop Quick Entry into a picked session', () => {
+  test('a submit prefill replaces the draft and asks the composer to send', () => {
+    useSessionComposerPrefillStore.getState().setPrefill('qe1', 'Also update the changelog', undefined, 'replace', {
+      submit: true,
+    });
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['qe1']).toMatchObject({
+      text: 'Also update the changelog',
+      mode: 'replace',
+      submit: true,
+    });
+  });
+
+  test('every other prefill only fills the box', () => {
+    useSessionComposerPrefillStore.getState().setPrefill('qe2', 'In report.pdf, ');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['qe2']?.submit).toBeUndefined();
+  });
+});

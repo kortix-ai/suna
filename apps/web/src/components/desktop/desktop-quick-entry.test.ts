@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { quickEntryProjectId } from './desktop-quick-entry';
+import type { ProjectSession } from '@kortix/sdk';
+
+import { QUICK_ENTRY_RECENT_SESSIONS, quickEntryProjectId, quickEntryRecentSessions } from './desktop-quick-entry';
+
+function session(id: string, fields: Partial<ProjectSession> = {}): ProjectSession {
+  return { session_id: id, status: 'stopped', name: null, custom_name: null, metadata: {}, ...fields } as ProjectSession;
+}
 
 describe('quickEntryProjectId', () => {
   test('the project the window shows wins, on its home and inside a session', () => {
@@ -22,6 +28,37 @@ describe('quickEntryProjectId', () => {
   });
 });
 
+describe('quickEntryRecentSessions', () => {
+  test('keeps the 5 newest, in the list order the sidebar uses', () => {
+    const list = Array.from({ length: 8 }, (_, i) => session(`s${i}`, { name: `Task ${i}` }));
+    const recent = quickEntryRecentSessions(list);
+    expect(QUICK_ENTRY_RECENT_SESSIONS).toBe(5);
+    expect(recent.map((s) => s.id)).toEqual(['s0', 's1', 's2', 's3', 's4']);
+  });
+
+  test("uses the sidebar's title and status", () => {
+    expect(
+      quickEntryRecentSessions([
+        session('a', { name: 'Fix login', status: 'running' }),
+        session('b', { status: 'provisioning' }),
+        session('c', { name: 'Old', custom_name: 'Renamed', status: 'failed' }),
+      ]),
+    ).toEqual([
+      { id: 'a', title: 'Fix login', status: 'running' },
+      { id: 'b', title: 'New session', status: 'starting' },
+      { id: 'c', title: 'Renamed', status: 'failed' },
+    ]);
+  });
+
+  test('leaves out an unused warm session, which nobody started', () => {
+    const recent = quickEntryRecentSessions([
+      session('warm', { status: 'running', metadata: { warm: true } }),
+      session('real', { name: 'Fix login' }),
+    ]);
+    expect(recent.map((s) => s.id)).toEqual(['real']);
+  });
+});
+
 describe('DesktopQuickEntry wiring', () => {
   // Rendering needs the router, auth and query client for no extra signal, so
   // the send path is pinned in the source. The composer's submit of a
@@ -33,6 +70,20 @@ describe('DesktopQuickEntry wiring', () => {
       'useComposerPrefillStore.getState().setPrefill(target, prompt.text, { submit: true })',
     );
     expect(source).toContain('router.push(`/projects/${target}`)');
+  });
+
+  test("a prompt for a picked session is submitted by that session's composer", () => {
+    expect(source).toContain(
+      ".setPrefill(prompt.sessionId, prompt.text, undefined, 'replace', { submit: true })",
+    );
+    expect(source).toContain(
+      '`/projects/${encodeURIComponent(prompt.projectId)}/sessions/${encodeURIComponent(prompt.sessionId)}`',
+    );
+  });
+
+  test('publishes the project and its recent sessions for the picker', () => {
+    expect(source).toContain('setDesktopQuickEntryTarget(projectId ? { projectId, name, sessions: recent } : null)');
+    expect(source).toContain("parent: 'root',\n    startedBy: 'me',");
   });
 
   test('without a project the prompt only fills the composer, through ?q=', () => {

@@ -406,13 +406,26 @@ export const desktopComputerRequestGrants = (input: { restartAgent?: boolean } =
    (`components/desktop/desktop-quick-entry.tsx`). Both return null in a
    browser and on a desktop build that predates Quick Entry. */
 
-/** The prompt typed in the Quick Entry bar, once. Null when there is none. */
+/**
+ * The prompt typed in the Quick Entry bar, once. Null when there is none.
+ * `sessionId` (with its `projectId`) is set when the person picked one of the
+ * recent sessions in the bar; without it the prompt starts a new session.
+ */
 export const takeDesktopQuickEntryPrompt = () =>
-  desktopCommand<{ text: string }>('quick_entry_take');
+  desktopCommand<{ text: string; projectId?: string; sessionId?: string }>('quick_entry_take');
 
-/** The project a Quick Entry prompt starts its session in, for the bar's label. */
-export const setDesktopQuickEntryTarget = (target: { projectId: string; name: string | null } | null) =>
-  desktopCommand<null>('quick_entry_set_target', { target });
+/**
+ * The project a new Quick Entry session starts in, and the person's recent
+ * sessions there (newest first, at most 5), for the bar's picker. `status` is
+ * the sidebar's `SessionDisplayStatus`.
+ */
+export const setDesktopQuickEntryTarget = (
+  target: {
+    projectId: string;
+    name: string | null;
+    sessions: { id: string; title: string; status: string }[];
+  } | null,
+) => desktopCommand<null>('quick_entry_set_target', { target });
 
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and

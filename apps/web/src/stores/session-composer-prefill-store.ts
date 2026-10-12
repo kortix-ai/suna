@@ -23,6 +23,12 @@ export interface SessionPrefill {
   files?: AttachedFile[];
   /** `replace` swaps out what is typed; the default merges into it. */
   mode?: 'replace';
+  /**
+   * Send once it lands, exactly as if the person pressed Enter (so a running
+   * turn is steered). Only the desktop Quick Entry sets it: a prompt the person
+   * typed into the app's own bar for this session.
+   */
+  submit?: boolean;
 }
 
 interface SessionComposerPrefillState {
@@ -40,6 +46,7 @@ interface SessionComposerPrefillState {
     text: string,
     files?: AttachedFile[],
     mode?: 'replace',
+    options?: { submit?: boolean },
   ) => void;
   /** Called once the composer has been handed this session's prefill —
    *  removes it so a later remount doesn't re-apply stale text. */
@@ -63,7 +70,7 @@ let nextId = 0;
 
 export const useSessionComposerPrefillStore = create<SessionComposerPrefillState>((set) => ({
   prefillBySession: {},
-  setPrefill: (sessionId, text, files, mode) =>
+  setPrefill: (sessionId, text, files, mode, options) =>
     set((s) => ({
       prefillBySession: {
         ...s.prefillBySession,
@@ -72,6 +79,7 @@ export const useSessionComposerPrefillStore = create<SessionComposerPrefillState
           id: ++nextId,
           ...(files?.length ? { files } : {}),
           ...(mode ? { mode } : {}),
+          ...(options?.submit ? { submit: true } : {}),
         },
       },
     })),
