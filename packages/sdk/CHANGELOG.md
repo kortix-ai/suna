@@ -5,6 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (account invites)
+- `acceptAccountInviteAndLand(inviteId, invite?)` (`accountInvites.acceptAndLand`)
+  accepts an invite and returns `{ accepted, landing }`. `accountInviteLanding`
+  is the rule alone, and `AccountInviteLanding` its type: the first project the
+  accept granted, else the first project `invite` names, else the account
+  joined. Web and mobile land through it (KRTX-1731). Additive.
+
 ### Added (files)
 - `listProjectDirectory(projectId, { cursor?, limit? })` and
   `files.listDirectory({ cursor?, limit? })` page a folder: `limit` entries
