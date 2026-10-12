@@ -150,23 +150,18 @@ module "api" {
   task_cpu      = 1024
   task_memory   = 4096
   desired_count = 3
-  min_capacity  = 3
-  max_capacity  = 10
-  # One replacement at a time: deployment_maximum_percent = 100 keeps the
-  # fleet at desired_count during a rolling deploy (ten EXTRA API tasks at the
-  # old 200% overlap would nearly exhaust the production PostgreSQL connection
-  # budget — the 2026-09-27 SQLSTATE 53300 deploy burst; the envelope in
-  # apps/api/src/shared/database-capacity.ts is pinned to this value).
-  # deployment_minimum_healthy_percent = 50 is the deployable pairing: AWS
-  # rounds minimum UP and maximum DOWN, so min=100 with max=100 cannot stop or
-  # start a task; 50 lets one task replace at a time at every autoscaled
-  # count (ceil(desired × 0.5) < desired even at desired_count = 2).
-  deployment_minimum_healthy_percent = 50
-  deployment_maximum_percent         = 100
-  use_fargate_spot                   = false
-  container_insights                 = true
-  cpu_target                         = 55
-  memory_target                      = 65
+  # Rolling overlap stays at the module default (maximum 200%, minimum healthy
+  # 100%), which is what the live service runs. AWS refuses
+  # deployment_maximum_percent <= 100 while Availability Zone Rebalancing is on
+  # ("InvalidParameterException"), which failed Deploy Prod for v0.13.54 and
+  # v0.13.55. Pinning 100 (KRTX-586) needs availability_zone_rebalancing =
+  # "DISABLED" on this service first; that is a resilience decision of its own.
+  min_capacity       = 3
+  max_capacity       = 10
+  use_fargate_spot   = false
+  container_insights = true
+  cpu_target         = 55
+  memory_target      = 65
   # Load-proportional scaling. CPU/mem alone left the service flat during the
   # 2026-06-08 DB-contention incident. ~200 req/min/target is normal and peaks
   # ~256; 600 only scales out on a genuine sustained surge (no flapping). Tune
