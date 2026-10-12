@@ -24,6 +24,8 @@
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
  * are written before the transaction. `content_hash` is always the hash of the
  * record as sent, so the manifest the daemon reconciles against does not change.
+ * A second exception: lone UTF-16 surrogates are replaced with U+FFFD
+ * (`wellFormedJson`), because Postgres jsonb rejects them outright.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -83,11 +85,30 @@ async function sessionExists(scope: SessionLogScope): Promise<boolean> {
 export const sessionLogContentHash = (message: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(message)).digest('hex')}`;
 
+/**
+ * Postgres jsonb rejects lone UTF-16 surrogates (`\ud800`–`\udfff` without
+ * their pair) with `unsupported Unicode escape sequence`: a harness slicing
+ * an emoji mid-code-point emits one in a block text, JSON keeps it as an
+ * escape, and ONE poisoned record failed the whole INSERT — which the daemon
+ * then re-sent forever (2026-10-12: 243 5xx in a day on this route, one
+ * 730 kB batch retried 171 times). Replace every lone surrogate with U+FFFD
+ * before anything is hashed or written, the way a terminal renders it. The
+ * round-trip is exact for parsed-JSON data (no undefined/Date/Map values),
+ * so the stored record and its `content_hash` keep describing each other.
+ */
+const wellFormedJson = <T>(value: T): T =>
+  JSON.parse(
+    JSON.stringify(value, (_key, v: unknown) =>
+      typeof v === 'string' && !v.isWellFormed() ? v.toWellFormed() : v,
+    ),
+  ) as T;
+
 /** Apply one journal batch. `batch` is the request body as sent, already validated by `SessionLogJournalRequestSchema`. */
 export async function ingestSessionLogJournal(
   scope: SessionLogScope,
-  batch: SessionLogJournalRequest,
+  request: SessionLogJournalRequest,
 ): Promise<SessionLogJournalOutcome> {
+  const batch = wellFormedJson(request);
   if (!(await sessionExists(scope))) return NO_SESSION;
   // One put at a time: at most one large text is in memory twice.
   const records: SessionLogPut['message'][] = [];

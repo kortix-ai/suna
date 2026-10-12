@@ -1,0 +1,24 @@
+{
+  "source_hash": "c320009a45484faa4b54fe0122ecc943505288e148290a30b1406fa95b76d3aa",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-log-ingest.test.ts",
+    "apps/api/src/__tests__/unit-account-id-param.test.ts",
+    "apps/api/src/__tests__/unit-resolve-account.test.ts",
+    "apps/api/src/__tests__/unit-resolve-principal-uuid.test.ts",
+    "apps/api/src/__tests__/unit-scim-uuid-guard.test.ts",
+    "apps/api/src/accounts/core/app.ts",
+    "apps/api/src/iam/authorize.ts",
+    "apps/api/src/iam/membership-read.ts",
+    "apps/api/src/scim/app.ts",
+    "apps/api/src/shared/resolve-account.ts"
+  ],
+  "diff_hash": "283c6e5f84c750271c520bfb8a736038f11b4628b84421651262d0fbed600ac6",
+  "head": "fecedbbbd5ac909d3f0a6fa4e76909075de79c9b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T15:20:13.041Z"
+}
