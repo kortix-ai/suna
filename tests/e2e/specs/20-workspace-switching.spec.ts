@@ -12,7 +12,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, settingsPanel } from "../helpers/ui";
+import { dismissOnboarding, fulfillRewrittenJson, settingsPanel } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:13738/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://localhost:13740";
@@ -184,15 +184,12 @@ test.describe("20 — Workspace switching", () => {
       });
       await test.step("account branding changes the document and restores on removal", async () => {
         const accountRoute = "**/v1/accounts";
-        await page.route(accountRoute, async (route) => {
-          const response = await route.fetch();
-          const rows = await response.json();
-          await route.fulfill({ response, json: rows.map((row: AccountSummary) => ({
+        await page.route(accountRoute, (route) => fulfillRewrittenJson(route, (rows: AccountSummary[]) =>
+          rows.map((row) => ({
             ...row,
             branding: row.account_id === account.account_id
               ? { app_name: "Synthetic Brand", favicon_url: "/favicon.png?brand=synthetic" } : null,
-          })) });
-        });
+          }))));
         await page.reload({ waitUntil: "domcontentloaded" });
         await expect(page).toHaveTitle(/Synthetic Brand/);
         await expect(page.locator('link[rel="icon"]').first())
