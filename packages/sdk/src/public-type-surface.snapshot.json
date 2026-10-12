@@ -3249,6 +3249,8 @@
     "useSession",
     "useSessionChildren",
     "useSessionDrives",
+    "useSessionLog",
+    "useSessionLogThread",
     "useSessionMessageAuthors",
     "useSessionMessages",
     "useSessionModelSelection",
