@@ -173,7 +173,7 @@ export default function InviteScreen() {
   }, [id, router, signOut, signingOut, t, toast]);
 
   const backToProjects = (
-    <Button size="lg" variant="ghost" className="rounded-full" onPress={leave}>
+    <Button size="lg" variant="secondary" className="rounded-full" onPress={leave}>
       <Text>{t('invites.backToProjects', 'Back to projects')}</Text>
     </Button>
   );
