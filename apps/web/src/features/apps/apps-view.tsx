@@ -203,10 +203,6 @@ export function AppsView({ projectId }: { projectId: string }) {
           canWrite={canWrite}
           canDeploy={canDeploy}
           canAdmin={canAdmin}
-          onOpenLinked={(slug) => {
-            const linked = apps.data?.find((item) => item.slug === slug);
-            if (linked) setOpenAppId(linked.app_id);
-          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);
