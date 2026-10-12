@@ -90,7 +90,8 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { DrawerSessionNode, NESTED_SESSION_INDENT, useSessionStarterOf } from './DrawerSessionRows';
 import { SubsessionTreeMemory } from '@/components/session/SessionSubsessionTree';
-import { CountPill, NavPill, SwitcherRow } from './DrawerNavRows';
+import { CountBadge } from '@/components/kortix/count-badge';
+import { NavPill, SwitcherRow } from './DrawerNavRows';
 import { SessionChildren, type SessionChildrenProps } from '@/components/session/SessionTreeParts';
 import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
@@ -697,7 +698,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             label="Review"
             accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
             onPress={goToReview}
-            trailing={<CountPill count={reviewNeedsYouCount} />}
+            trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}
           />
           {notificationsEnabled ? (
             <NavPill
@@ -707,7 +708,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
                 notificationsUnreadCount > 0 ? `Notifications, ${notificationsUnreadCount} unread` : 'Notifications'
               }
               onPress={goToNotifications}
-              trailing={<CountPill count={notificationsUnreadCount} />}
+              trailing={<CountBadge count={notificationsUnreadCount} tone="waiting" />}
             />
           ) : null}
           <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
