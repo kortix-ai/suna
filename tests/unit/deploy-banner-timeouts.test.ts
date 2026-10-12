@@ -67,3 +67,21 @@ describe('deploy workflows bound every job', () => {
     });
   }
 });
+
+/** The API and gateway roll read nothing the web Terraform root creates. */
+describe('web Terraform root does not gate the API roll', () => {
+  const needsOf = (text: string) => /^ {4}needs: \[([^\]]*)\]/m.exec(text)?.[1] ?? '';
+
+  it('prod: deploy-ecs skips terraform-prod, deploy-web-ecs waits for it', () => {
+    const all = jobs(read('deploy-prod.yml'));
+    expect(needsOf(all['deploy-ecs'])).not.toContain('terraform-prod,');
+    expect(needsOf(all['deploy-ecs']).split(', ')).not.toContain('terraform-prod');
+    expect(needsOf(all['deploy-web-ecs']).split(', ')).toContain('terraform-prod');
+  });
+
+  it('dev: deploy-api-ecs skips terraform-dev, deploy-web-ecs waits for it', () => {
+    const all = jobs(read('deploy-dev.yml'));
+    expect(needsOf(all['deploy-api-ecs']).split(', ')).not.toContain('terraform-dev');
+    expect(needsOf(all['deploy-web-ecs']).split(', ')).toContain('terraform-dev');
+  });
+});

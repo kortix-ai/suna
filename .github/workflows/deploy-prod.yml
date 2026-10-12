@@ -201,15 +201,14 @@ jobs:
   # is unset the job is a no-op, so the release still works before it is added.
   maintenance-banner-on:
     name: Rollout banner (raise)
-    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api, terraform-prod]
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api]
     # Same gate as deploy-ecs: raise the banner only when the roll will start.
     if: >-
       ${{ always()
         && needs.retag-images.result == 'success'
         && needs.verify-image-commits.result == 'success'
         && needs.migrate-db.result == 'success'
-        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
-        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
@@ -1021,19 +1020,18 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api, terraform-prod]
-    # `always()` is required because both terraform jobs are SKIPPED while
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api]
+    # `always()` is required because terraform-prod-api is SKIPPED while
     # TF_APPLY_ROLE_ARN_PROD is unset. Every other upstream stays required, so
-    # this remains the hard gate described above. Both roots are listed: a
-    # failed terraform-prod-api skips terraform-prod, and a skip alone must not
-    # read as a pass for the root that actually failed.
+    # this remains the hard gate described above. The web root (terraform-prod)
+    # is not awaited: the API and gateway roll read nothing it creates.
+    # deploy-web-ecs awaits it.
     if: >-
       ${{ always()
         && needs.retag-images.result == 'success'
         && needs.verify-image-commits.result == 'success'
         && needs.migrate-db.result == 'success'
-        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
-        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 30
@@ -1458,7 +1456,15 @@ jobs:
   # ── Prod frontend (parallel ECS + Vercel) ───────────────────────────────────
   deploy-web-ecs:
     name: Deploy prod web to ECS Fargate
-    needs: [version, retag-images, deploy-ecs]
+    needs: [version, retag-images, deploy-ecs, terraform-prod]
+    # `always()` because terraform-prod is SKIPPED while TF_APPLY_ROLE_ARN_PROD
+    # is unset. Every other upstream must have succeeded.
+    if: >-
+      ${{ always()
+        && needs.version.result == 'success'
+        && needs.retag-images.result == 'success'
+        && needs.deploy-ecs.result == 'success'
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20

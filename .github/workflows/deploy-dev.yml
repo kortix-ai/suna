@@ -529,19 +529,18 @@ jobs:
   # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
   deploy-api-ecs:
     name: Deploy API to dev (ECS Fargate)
-    needs: [detect-changes, build-api, migrate-db, terraform-dev-api, terraform-dev]
-    # `always()` is required because both terraform jobs are SKIPPED whenever no
+    needs: [detect-changes, build-api, migrate-db, terraform-dev-api]
+    # `always()` is required because terraform-dev-api is SKIPPED whenever no
     # dev Terraform changed — without it GitHub would skip this job too. Every
-    # other upstream is still required to have succeeded. Both roots are listed:
-    # a failed terraform-dev-api skips terraform-dev, and a skip alone must not
-    # read as a pass for the root that actually failed.
+    # other upstream is still required to have succeeded. The web root
+    # (terraform-dev) is not awaited: the API roll reads nothing it creates.
+    # deploy-web-ecs awaits it.
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.api == 'true'
         && needs.build-api.result == 'success'
         && needs.migrate-db.result == 'success'
-        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
-        && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
+        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 35
     permissions:
