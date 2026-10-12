@@ -4,6 +4,8 @@ const {
   DEFAULT_SHORTCUT,
   PENDING_TTL_MS,
   RECENT_SESSIONS,
+  composerLabels,
+  composerMenuItems,
   freshPrompt,
   normalizeTarget,
   pickerItems,
@@ -84,12 +86,13 @@ describe('normalizeTarget', () => {
       projectId: 'p1',
       name: 'Website',
       sessions: [],
+      composer: null,
     });
   });
 
   test('a project with no name yet still targets the project', () => {
-    expect(normalizeTarget({ projectId: 'p1', name: '' })).toEqual({ projectId: 'p1', name: null, sessions: [] });
-    expect(normalizeTarget({ projectId: 'p1' })).toEqual({ projectId: 'p1', name: null, sessions: [] });
+    expect(normalizeTarget({ projectId: 'p1', name: '' })).toEqual({ projectId: 'p1', name: null, sessions: [], composer: null });
+    expect(normalizeTarget({ projectId: 'p1' })).toEqual({ projectId: 'p1', name: null, sessions: [], composer: null });
   });
 
   test('keeps the 5 most recent sessions, in the order the web app sent them', () => {
@@ -212,5 +215,63 @@ describe('normalizeAttachments', () => {
 describe('screenshotName', () => {
   test('names a screenshot the way macOS does', () => {
     expect(screenshotName(new Date(2026, 9, 12, 15, 4, 31))).toBe('Screenshot 2026-10-12 at 15.04.31.png');
+  });
+});
+
+describe('the new session composer row', () => {
+  const target = normalizeTarget({
+    projectId: 'p1',
+    composer: {
+      agents: [
+        { id: 'kortix', label: 'Kortix' },
+        { id: 'meta', label: 'Meta' },
+      ],
+      agent: 'kortix',
+      models: [
+        { id: 'anthropic:claude', label: 'Claude', group: 'Anthropic', variants: [] },
+        { id: 'openai:gpt', label: 'GPT-6 Astra', group: 'OpenAI', variants: ['low', 'high'] },
+      ],
+      model: 'openai:gpt',
+      variant: 'high',
+    },
+  });
+
+  test('labels the agent, model and effort the way the composer shows them', () => {
+    expect(composerLabels(target.composer)).toEqual({ agent: 'Kortix', model: 'GPT-6 Astra', effort: 'High' });
+  });
+
+  test('hides effort for a model without variants, as the composer does', () => {
+    expect(composerLabels({ ...target.composer, model: 'anthropic:claude', variant: null }).effort).toBeNull();
+  });
+
+  test('no composer from the web app hides the whole row', () => {
+    expect(composerLabels(null)).toBeNull();
+    expect(normalizeTarget({ projectId: 'p1' }).composer).toBeNull();
+  });
+
+  test('the model menu names each provider above its models, and checks the current one', () => {
+    expect(composerMenuItems(target.composer, 'model')).toEqual([
+      { header: 'Anthropic' },
+      { value: 'anthropic:claude', label: 'Claude', checked: false },
+      { header: 'OpenAI' },
+      { value: 'openai:gpt', label: 'GPT-6 Astra', checked: true },
+    ]);
+  });
+
+  test("the effort menu offers Auto and the current model's variants", () => {
+    expect(composerMenuItems(target.composer, 'effort')).toEqual([
+      { value: null, label: 'Auto', checked: false },
+      { value: 'low', label: 'Low', checked: false },
+      { value: 'high', label: 'High', checked: true },
+    ]);
+  });
+
+  test('drops a selection the lists do not hold', () => {
+    const composer = normalizeTarget({
+      projectId: 'p1',
+      composer: { agents: [{ id: 'kortix' }], agent: 'gone', models: [{ id: 'm', variants: ['low'] }], model: 'm', variant: 'max' },
+    }).composer;
+    expect(composer).toMatchObject({ agent: null, model: 'm', variant: null });
+    expect(composerLabels(composer)).toEqual({ agent: null, model: 'm', effort: 'Auto' });
   });
 });

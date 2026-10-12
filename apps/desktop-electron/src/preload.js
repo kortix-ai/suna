@@ -79,6 +79,14 @@ ipcRenderer.on('kortix:quick-entry', () => {
   window.dispatchEvent(new CustomEvent('kortix-desktop-quick-entry'));
 });
 
+// An agent, model or effort picked in the Quick Entry bar. The detail is a JSON
+// string: an object built in this isolated world would reach the page as null.
+ipcRenderer.on('kortix:quick-entry-select', (_event, kind, value) => {
+  window.dispatchEvent(
+    new CustomEvent('kortix-desktop-quick-entry-select', { detail: JSON.stringify({ kind, value }) }),
+  );
+});
+
 const setFullscreenState = (fullscreen) => {
   const html = document.documentElement;
   if (!html) return;

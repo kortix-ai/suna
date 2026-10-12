@@ -30,6 +30,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  composerLabels,
+  composerMenuItems,
   freshPrompt,
   normalizeAttachments,
   normalizeTarget,
@@ -245,7 +247,8 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
     return {
       target: target?.name ?? null,
       session: session ? { title: session.title, status: session.status } : null,
-      composer: null,
+      // The app window owns the selection; without it a pick could not apply.
+      composer: getMainWindow() ? composerLabels(target?.composer ?? null) : null,
       canScreenshot: process.platform === 'darwin',
     };
   }
@@ -273,6 +276,31 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
         click: choose(item.sessionId),
       })),
     ];
+    Menu.buildFromTemplate(template).popup({
+      window: win,
+      x: Math.round(Number(anchor?.x) || 0),
+      y: Math.round(Number(anchor?.y) || 0),
+    });
+  }
+
+  /**
+   * The agent, model or effort menu. A pick goes to the app window, which
+   * applies it with the composer's own setters (the same persistence as a
+   * pick in the composer) and sends the bar the resolved selection back.
+   */
+  function openComposerMenu(kind, anchor) {
+    const rows = composerMenuItems(target?.composer ?? null, kind);
+    if (!rows.length) return;
+    const template = rows.map((row) =>
+      row.header
+        ? { label: row.header, enabled: false }
+        : {
+            label: row.label,
+            type: 'checkbox',
+            checked: row.checked,
+            click: () => getMainWindow()?.webContents.send('kortix:quick-entry-select', kind, row.value),
+          },
+    );
     Menu.buildFromTemplate(template).popup({
       window: win,
       x: Math.round(Number(anchor?.x) || 0),
@@ -363,6 +391,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   ipcMain.on(CHANNEL.menu, (event, kind, anchor) => {
     if (!fromBar(event)) return;
     if (kind === 'session') openPicker(anchor);
+    else openComposerMenu(kind, anchor);
   });
   ipcMain.on(CHANNEL.screenshot, (event) => {
     if (fromBar(event)) takeScreenshot();

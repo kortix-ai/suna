@@ -124,7 +124,78 @@ function normalizeTarget(target) {
     })
     .filter(Boolean)
     .slice(0, RECENT_SESSIONS);
-  return { projectId, name: label(target.name, null), sessions };
+  return { projectId, name: label(target.name, null), sessions, composer: normalizeComposer(target.composer) };
+}
+
+/** `medium` → `Medium`; no variant is `Auto` (the model decides), as in the composer. */
+const effortLabel = (variant) => (variant ? variant.charAt(0).toUpperCase() + variant.slice(1) : 'Auto');
+
+/**
+ * A new session's agent, model and effort, as the web app's composer resolves
+ * them for this project: `{ agents: [{ id, label }], agent, models: [{ id,
+ * label, group, variants }], model, variant }`, models in menu order. Null
+ * while the web app has not sent them.
+ */
+function normalizeComposer(composer) {
+  if (!composer || typeof composer !== 'object') return null;
+  const list = (items, map) => (Array.isArray(items) ? items : []).map(map).filter(Boolean).slice(0, 300);
+  const agents = list(composer.agents, (agent) => {
+    const id = label(agent?.id, '');
+    return id ? { id, label: label(agent.label, id) } : null;
+  });
+  const models = list(composer.models, (model) => {
+    const id = label(model?.id, '');
+    if (!id) return null;
+    const variants = (Array.isArray(model.variants) ? model.variants : [])
+      .filter((variant) => typeof variant === 'string' && variant)
+      .map((variant) => variant.slice(0, 40))
+      .slice(0, 20);
+    return { id, label: label(model.label, id), group: label(model.group, 'Models'), variants };
+  });
+  const agent = agents.some((item) => item.id === composer.agent) ? composer.agent : null;
+  const model = models.find((item) => item.id === composer.model) ?? null;
+  const variant = model?.variants.includes(composer.variant) ? composer.variant : null;
+  return { agents, models, agent, model: model?.id ?? null, variant };
+}
+
+/** The bar's labels for the agent, model and effort buttons; a null label hides its button. */
+function composerLabels(composer) {
+  if (!composer) return null;
+  const model = composer.models.find((item) => item.id === composer.model);
+  return {
+    agent: composer.agents.find((item) => item.id === composer.agent)?.label ?? null,
+    model: model?.label ?? null,
+    // The composer hides effort for a model without variants.
+    effort: model?.variants.length ? effortLabel(composer.variant) : null,
+  };
+}
+
+/**
+ * One composer menu's rows: `{ value, label, checked }`, with `{ header }`
+ * rows naming each model provider. `value` is what the web app applies: an
+ * agent name, a model key, or a variant (null = Auto).
+ */
+function composerMenuItems(composer, kind) {
+  if (!composer) return [];
+  if (kind === 'agent') {
+    return composer.agents.map((agent) => ({ value: agent.id, label: agent.label, checked: agent.id === composer.agent }));
+  }
+  if (kind === 'model') {
+    const rows = [];
+    for (const model of composer.models) {
+      if (rows.at(-1)?.group !== model.group) rows.push({ header: model.group, group: model.group });
+      rows.push({ value: model.id, label: model.label, checked: model.id === composer.model, group: model.group });
+    }
+    return rows.map(({ group: _group, ...row }) => row);
+  }
+  if (kind === 'effort') {
+    const variants = composer.models.find((model) => model.id === composer.model)?.variants ?? [];
+    return [
+      { value: null, label: 'Auto', checked: !composer.variant },
+      ...variants.map((variant) => ({ value: variant, label: effortLabel(variant), checked: variant === composer.variant })),
+    ];
+  }
+  return [];
 }
 
 /** The session a prompt goes to: the picked one while the web app still lists it, else null (a new session). */
@@ -170,6 +241,8 @@ module.exports = {
   PENDING_TTL_MS,
   SHORTCUTS,
   RECENT_SESSIONS,
+  composerLabels,
+  composerMenuItems,
   freshPrompt,
   normalizeTarget,
   pickedSession,
