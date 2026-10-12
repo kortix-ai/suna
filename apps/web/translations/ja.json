@@ -20783,7 +20783,6 @@
         "audio": "音声",
         "audioHint": "マイクとシステム音声。文字起こし付き。"
       },
-      "privacyTitle": "プライバシー",
       "masking": "個人データをマスク",
       "maskingHint": "デバイスは記録内容の氏名、メールアドレス、電話番号、住所、口座番号、シークレットを、保存前にコンピューター上で置き換えます。各コンピューターは最初に約 1 GB のローカルモデルをダウンロードし、準備ができるまで何も記録しません。",
       "pause": "全員の記録を一時停止",
@@ -20821,7 +20820,9 @@
       "retentionTitle": "保存期間",
       "pauseTitle": "一時停止",
       "hours": "時間",
-      "days": "日"
+      "days": "日",
+      "experimentalTitle": "試験運用",
+      "experimentalHint": "動作しますが、変更される場合があります。まず試用してください。"
     },
     "dialog": {
       "product": "Kortix Capture",

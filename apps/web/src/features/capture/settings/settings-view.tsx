@@ -124,8 +124,8 @@ function NumberRow({
  * Kortix Capture's organization settings, the `capture` section of the
  * account settings (`?accountTab=capture`), `capture.manage` only: what every
  * device of the organization must do, in the order This computer shows it.
- * What is recorded · Privacy · Exclusions (mandatory) · Retention · Notice ·
- * Pause. The policy is one draft; the save bar shows while it differs from
+ * What is recorded · Exclusions (mandatory) · Retention · Notice · Pause ·
+ * Experimental (local masking). The policy is one draft; the save bar shows while it differs from
  * what is stored. The switch that turns Capture on is in the account's
  * Settings. A member's own exclusions live on their computer and never reach
  * Kortix. The account settings pane supplies the heading.
@@ -200,15 +200,6 @@ function PolicyForm({
         ))}
       </Group>
 
-      <Group title={t('privacyTitle')}>
-        <SwitchRow
-          title={t('masking')}
-          description={t('maskingHint')}
-          checked={draft.privacy.redact_pii}
-          onChange={(redact_pii) => patch('privacy', { redact_pii })}
-        />
-      </Group>
-
       <section className="space-y-1">
         <Label>{t('exclusionsTitle')}</Label>
         <ExclusionsEditor
@@ -277,6 +268,16 @@ function PolicyForm({
           description={t('pauseHint')}
           checked={draft.recording.paused}
           onChange={(paused) => patch('recording', { paused, paused_until_ms: null })}
+        />
+      </Group>
+
+      {/* Experimental: works, and costs each computer a ~1 GB model download first. */}
+      <Group title={t('experimentalTitle')} description={t('experimentalHint')}>
+        <SwitchRow
+          title={t('masking')}
+          description={t('maskingHint')}
+          checked={draft.privacy.redact_pii}
+          onChange={(redact_pii) => patch('privacy', { redact_pii })}
         />
       </Group>
 

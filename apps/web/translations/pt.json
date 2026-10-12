@@ -20783,7 +20783,6 @@
         "audio": "Áudio",
         "audioHint": "Microfone e áudio do sistema, com transcrição."
       },
-      "privacyTitle": "Privacidade",
       "masking": "Mascarar dados pessoais",
       "maskingHint": "Os dispositivos substituem nomes, e-mails, telefones, endereços, números de conta e segredos no que gravam, no computador, antes de salvar. Cada computador baixa primeiro um modelo local de cerca de 1 GB e não grava nada até ele estar pronto.",
       "pause": "Pausar a gravação para todos",
@@ -20821,7 +20820,9 @@
       "retentionTitle": "Retenção",
       "pauseTitle": "Pausa",
       "hours": "horas",
-      "days": "dias"
+      "days": "dias",
+      "experimentalTitle": "Experimental",
+      "experimentalHint": "Funcionam e podem mudar. Teste primeiro."
     },
     "dialog": {
       "product": "Kortix Capture",

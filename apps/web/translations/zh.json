@@ -20783,7 +20783,6 @@
         "audio": "音频",
         "audioHint": "麦克风和系统音频，附带转写。"
       },
-      "privacyTitle": "隐私",
       "masking": "遮盖个人数据",
       "maskingHint": "设备在保存前，会在电脑上替换录制内容中的姓名、邮箱、电话、地址、账号和密钥。每台电脑会先下载约 1 GB 的本地模型，准备好之前不会录制任何内容。",
       "pause": "为所有人暂停录制",
@@ -20821,7 +20820,9 @@
       "retentionTitle": "保留期限",
       "pauseTitle": "暂停",
       "hours": "小时",
-      "days": "天"
+      "days": "天",
+      "experimentalTitle": "实验功能",
+      "experimentalHint": "可用，但可能会变化。请先试用。"
     },
     "dialog": {
       "product": "Kortix Capture",
