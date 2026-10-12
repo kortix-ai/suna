@@ -644,7 +644,13 @@ test("13 — opening a terminal without a cached PTY wakes a stopped sandbox and
   }
 });
 
-test('13 — message retries keep their sandbox after switching sessions', async ({ page }) => {
+// @quarantine: boots two real cloud sandboxes, and the provider can refuse a
+// boot (`stage=failed reason=provider_transient_retries_exhausted
+// sandbox=error`, release-gate run 38266997766, shard 3, both attempts, 3.6 m
+// each; the same test passed in run 38262705690, 48 s). A provider refusal is
+// outside our code. The nightly lane keeps running it; un-quarantine after 7
+// green nights (see the testing skill).
+test('13 — message retries keep their sandbox after switching sessions', { tag: '@quarantine' }, async ({ page }) => {
   test.skip(!enabled, 'Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.');
   test.setTimeout(15 * 60_000);
   const email = `session-routing-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
