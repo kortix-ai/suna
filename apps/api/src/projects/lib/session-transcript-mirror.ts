@@ -70,6 +70,7 @@ import { and, count, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { isRecord } from '@kortix/shared/guards';
+import { jsonbSafeValue } from './jsonb-safe';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -254,37 +255,6 @@ function stringBudget(total: number) {
   };
 }
 
-/**
- * Postgres jsonb cannot store a string whose text carries U+0000 or an
- * unpaired surrogate: the INSERT that carries one fails with
- * `unsupported Unicode escape sequence — \u0000 cannot be converted to text.`
- * (SQLSTATE 22P05), and the mirror write is deterministic on its content — one
- * such message retried the same doomed transaction at every turn end (568 warn
- * lines in one prod hour, KRTX-1701).
- *
- * The projection therefore makes every string it emits storable: U+0000 and a
- * lone surrogate become U+FFFD. The test is unicode-aware (`/u`), so an astral
- * character's surrogate halves never match — emoji and every BMP char pass
- * through untouched. Well-formed text pays only the scan.
- */
-const JSONB_UNSAFE = /[\0\uD800-\uDFFF]/u;
-
-const jsonbSafeText = (text: string): string =>
-  JSONB_UNSAFE.test(text) ? text.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD') : text;
-
-/** Pure: every string in a JSON value, keys included, is storable as jsonb. */
-function jsonbSafeValue(value: Record<string, unknown>): Record<string, unknown>;
-function jsonbSafeValue(value: Array<Record<string, unknown>>): Array<Record<string, unknown>>;
-function jsonbSafeValue(value: unknown): unknown {
-  if (typeof value === 'string') return jsonbSafeText(value);
-  if (Array.isArray(value)) return value.map(jsonbSafeValue);
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) out[jsonbSafeText(key)] = jsonbSafeValue(item);
-    return out;
-  }
-  return value;
-}
 
 /**
  * Pure: a JSON value with every `data:` URL string removed, and every other

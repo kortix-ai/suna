@@ -57,6 +57,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
+import { jsonbSafeValue } from './lib/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
 
 export interface SessionLogScope {
@@ -114,35 +115,12 @@ export const sessionLogContentHash = (message: unknown): string =>
 /**
  * Postgres refuses two things a harness record can carry: a NUL (`\u0000` escape in
  * jsonb, a raw 0x00 byte in a text parameter) and an unpaired surrogate. Every string
- * the ingest stores passes through `jsonbSafe`, which replaces each bad code unit
- * with U+FFFD — the same replacement a UTF-8 decoder emits for an undecodable byte.
- * Copy on write: a subtree without bad code units keeps its identity. `content_hash`
- * is computed from the record as sent (`sessionLogContentHash` reads `put.message`,
- * never a sanitized copy), so the manifest reconcile contract survives.
+ * the ingest stores passes through `jsonbSafeValue` (`lib/jsonb-safe.ts`), which
+ * replaces each bad code unit with U+FFFD — the same replacement a UTF-8 decoder
+ * emits for an undecodable byte. `content_hash` is computed from the record as sent
+ * (`sessionLogContentHash` reads `put.message`, never a sanitized copy), so the
+ * manifest reconcile contract survives.
  */
-const JSONB_UNSAFE = /[\u0000]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-
-function jsonbSafe<T>(value: T): T {
-  if (typeof value === 'string') return value.replace(JSONB_UNSAFE, '\uFFFD') as T;
-  if (value === null || typeof value !== 'object') return value;
-  if (Array.isArray(value)) {
-    let copy: unknown[] | null = null;
-    for (let i = 0; i < value.length; i++) {
-      const next = jsonbSafe(value[i]);
-      if (next !== value[i] && copy === null) copy = [...value];
-      if (copy !== null) copy[i] = next;
-    }
-    return (copy ?? value) as T;
-  }
-  let changed = false;
-  const copy: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    const next = jsonbSafe(item);
-    changed ||= next !== item;
-    copy[key] = next;
-  }
-  return (changed ? copy : value) as T;
-}
 
 /** Apply one journal batch. `batch` is the request body as sent, already validated by `SessionLogJournalRequestSchema`. */
 export async function ingestSessionLogJournal(
@@ -173,7 +151,7 @@ async function applyBatch(
   if (!(await sessionExists(scope))) return NO_SESSION;
   // One put at a time: at most one large text is in memory twice.
   const records: SessionLogPut['message'][] = [];
-  for (const put of batch.puts) records.push(await offloadLargeTexts(scope, jsonbSafe(put.message)));
+  for (const put of batch.puts) records.push(await offloadLargeTexts(scope, jsonbSafeValue(put.message)));
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
@@ -237,7 +215,7 @@ async function upsertSession(
   // the capture keeps writing until a message arrives.
   const writes = batch.puts.length + batch.tombstones.length > 0;
   if (row && batch.generation < row.generation) return row.generation;
-  const patch = jsonbSafe(batch.session);
+  const patch = jsonbSafeValue(batch.session);
   if (!row) {
     await tx.insert(sessionLogs).values({
       sessionId: scope.sessionId,
@@ -247,7 +225,7 @@ async function upsertSession(
       v: patch?.v ?? SESSION_LOG_MINOR,
       // A first batch without a session patch still needs the NOT NULL columns;
       // the next patch overwrites them.
-      harnessCurrent: patch?.harness?.current ?? batch.puts[0]?.message.producer.harness ?? 'unknown',
+      harnessCurrent: patch?.harness?.current ?? jsonbSafeValue(batch.puts[0]?.message.producer.harness) ?? 'unknown',
       restoreGrade: patch?.restore_grade ?? 'native',
       gradeCounts: patch?.grade_counts ?? null,
       record: (patch ?? {}) as Record<string, unknown>,
@@ -285,7 +263,7 @@ async function upsertThreads(tx: Tx, sessionId: string, batch: SessionLogJournal
         threadId: t.thread_id,
         parentThreadId: t.parent_thread_id,
         v: t.v,
-        record: jsonbSafe(t) as unknown as Record<string, unknown>,
+        record: jsonbSafeValue(t) as unknown as Record<string, unknown>,
       })),
     )
     .onConflictDoUpdate({
@@ -340,7 +318,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         // it, the column (an ordering aid) takes the ingest time.
         createdAt: Number.isFinite(createdAt) ? new Date(createdAt) : new Date(),
         v: m.v,
-        producer: m.producer,
+        producer: jsonbSafeValue(m.producer),
         generation,
         rev: put.rev,
         contentHash: sessionLogContentHash(m),

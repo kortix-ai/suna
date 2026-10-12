@@ -211,6 +211,7 @@ describe('journal', () => {
       rev: REV + 60,
       message: message('msg_bin', 6, {
         role: 'assistant',
+        producer: { harness: 'opencode\u0000', harness_version: '1.18.15', adapter_version: '1' },
         blocks: [
           {
             type: 'tool_call',
@@ -220,7 +221,7 @@ describe('journal', () => {
             kind: 'read',
             status: 'complete',
             result: { content: [{ type: 'text', text: 'HTTP 200 2346\n \u0000,\u0000Q\u0000I\u0000H\u0000U\u0000H\u0000 end \uD83D tail' }], is_error: false, details: { note: 'nul\u0000' } },
-            ext: { raw: { version: '1', data: 'x\u0000y' } },
+            ext: { raw: { version: '1', data: 'x\u0000y' }, 'bad\u0000key': { version: '1', data: 'v' } },
           },
         ],
         ext: { out: { version: '1', data: 'ok \uD83D\uDE00 pair \uDE00 lone' } },
@@ -237,17 +238,21 @@ describe('journal', () => {
     const record = row!.record as {
       blocks: Array<{ result?: { content: Array<{ type: string; text: string }>; details?: unknown }; ext?: Record<string, unknown> }>;
       ext?: Record<string, unknown>;
+      producer?: { harness: string };
     };
     expect(record.blocks[0]!.result!.content[0]).toEqual({ type: 'text', text: 'HTTP 200 2346\n \uFFFD,\uFFFDQ\uFFFDI\uFFFDH\uFFFDU\uFFFDH\uFFFD end \uFFFD tail' });
     expect(record.blocks[0]!.result!.details).toEqual({ note: 'nul\uFFFD' });
-    expect(record.blocks[0]!.ext).toEqual({ raw: { version: '1', data: 'x\uFFFDy' } });
+    expect(record.blocks[0]!.ext).toEqual({ raw: { version: '1', data: 'x\uFFFDy' }, 'bad\uFFFDkey': { version: '1', data: 'v' } });
     expect(record.ext).toEqual({ out: { version: '1', data: 'ok \uD83D\uDE00 pair \uFFFD lone' } });
+    expect(record.producer!.harness).toBe('opencode\uFFFD');
     // Nothing jsonb refuses reached the row: Postgres renders a NUL as \u0000 and a
     // lone surrogate is not storable at all.
-    const [text_row] = await db.execute(sql`select record::text as r from kortix.session_log_messages where session_id = ${SESSION} and message_id = 'msg_bin'`);
+    const [text_row] = await db.execute(sql`select record::text as r, producer::text as p from kortix.session_log_messages where session_id = ${SESSION} and message_id = 'msg_bin'`);
     expect((text_row as { r: string }).r).not.toContain('\\u0000');
     expect((text_row as { r: string }).r).not.toContain('\\ud83d');
     expect((text_row as { r: string }).r).not.toContain('\\ude00');
+    // The `producer` jsonb column is a projection of the record: sanitized too.
+    expect(JSON.parse((text_row as { p: string }).p).harness).toBe('opencode\uFFFD');
 
     const [log] = await db.select({ harnessCurrent: sessionLogs.harnessCurrent }).from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
     expect(log?.harnessCurrent).toBe('opencode');
