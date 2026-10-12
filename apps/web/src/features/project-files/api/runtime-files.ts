@@ -14,7 +14,6 @@
 import type {
   FileContent,
   FileNode,
-  FindMatch,
   GitFileStatus,
   RuntimeProjectInfo,
   ServerHealth,
@@ -27,6 +26,7 @@ import {
   searchProjectFiles,
 } from '@kortix/sdk';
 import { getLanguageFromExt } from '@/features/file-viewer';
+import type { FileContentMatch } from '../explorer-source';
 
 const READ_ONLY = 'Read-only — project files come from Git';
 
@@ -66,23 +66,42 @@ export { toRepoRelative };
 // Listing
 // ---------------------------------------------------------------------------
 
+/** Entries per folder page. A folder with more shows "Load more" (KRTX-1723). */
+export const FILE_LIST_PAGE_SIZE = 500;
+
+export interface FileListPage {
+  /** Folders first, then files, each in the server's order. */
+  nodes: FileNode[];
+  /** Pass to the next call for the rest of the folder. Null: no next page. */
+  nextCursor: string | null;
+  /**
+   * The folder holds more entries than this page. With `nextCursor` null it
+   * cannot be paged: an API older than paging cut it at 5,000 entries.
+   */
+  truncated: boolean;
+}
+
 /**
- * List immediate children (files + directories) of `dirPath` for the given
- * project at the given ref.
+ * One page of the immediate children (files + directories) of `dirPath` for
+ * the given project at the given ref. Without `cursor` it reads the first page.
  *
  * One folder level per request (`depth=1`). The recursive list stops at 1,000
  * files, so a tree built from it lost every folder that sorted after file
- * 1,000 (KRTX-1723).
+ * 1,000 (KRTX-1723). A folder larger than one page continues through
+ * `nextCursor`, which pins the commit the first page read.
  */
 export async function listFiles(
   projectId: string,
   ref: string,
   dirPath: string,
-): Promise<FileNode[]> {
+  cursor?: string,
+): Promise<FileListPage> {
   const relativeDir = toRepoRelative(dirPath);
-  const { entries } = await listProjectDirectory(projectId, {
+  const { entries, truncated, next_cursor } = await listProjectDirectory(projectId, {
     ref,
     path: relativeDir || undefined,
+    cursor,
+    limit: FILE_LIST_PAGE_SIZE,
   });
 
   const toNode = (entry: (typeof entries)[number]): FileNode => ({
@@ -92,10 +111,14 @@ export async function listFiles(
     type: entry.type,
     ignored: false,
   });
-  return [
-    ...entries.filter((entry) => entry.type === 'directory').map(toNode),
-    ...entries.filter((entry) => entry.type === 'file').map(toNode),
-  ];
+  return {
+    nodes: [
+      ...entries.filter((entry) => entry.type === 'directory').map(toNode),
+      ...entries.filter((entry) => entry.type === 'file').map(toNode),
+    ],
+    nextCursor: next_cursor ?? null,
+    truncated: !!truncated,
+  };
 }
 
 /**
@@ -113,6 +136,31 @@ export async function searchFiles(
   if (!q) return [];
   const { results } = await searchProjectFiles(projectId, q, { ref, limit: options?.limit });
   return results.map((match) => toWorkspacePath(match.path));
+}
+
+/**
+ * Search the text of every file at the ref on the server (`git grep`, case
+ * insensitive, at most 10 lines per file). Returns "/workspace/..." paths and
+ * the 1-based line of each match.
+ */
+export async function searchFileContents(
+  projectId: string,
+  ref: string,
+  query: string,
+  options?: { limit?: number },
+): Promise<FileContentMatch[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { results } = await searchProjectFiles(projectId, q, {
+    ref,
+    content: true,
+    limit: options?.limit,
+  });
+  return results.map((match) => ({
+    path: toWorkspacePath(match.path),
+    lineNumber: match.line_number ?? 1,
+    lineText: match.line_text ?? '',
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -327,11 +375,6 @@ export async function findFiles(
   _query: string,
   _options?: { type?: 'file' | 'directory'; limit?: number },
 ): Promise<string[]> {
-  return [];
-}
-
-// TODO: wire to project history/search once backend supports it
-export async function findText(_pattern: string): Promise<FindMatch[]> {
   return [];
 }
 

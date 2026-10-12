@@ -194,7 +194,10 @@ export async function beginTurn(
     runtimeSessionId: opencodeSessionId,
     messageId,
   });
-  return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
+  return c.json({
+    ok: outcome === 'adopted' || outcome === 'identity_bound' || outcome === 'open_turn_exists',
+    outcome,
+  });
 }
 
 /** The durable half of a turn end: settle the ledger and attach a bare cause. */

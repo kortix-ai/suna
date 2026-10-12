@@ -5,9 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (files)
+- `listProjectDirectory(projectId, { cursor?, limit? })` and
+  `files.listDirectory({ cursor?, limit? })` page a folder: `limit` entries
+  (1 to 2,000, default 500), and `ProjectDirectoryListing.next_cursor` while
+  entries remain. Every page reads the commit the first page read, so a push
+  between pages skips or repeats nothing. Additive: a call without `cursor`
+  or `limit` sends the same request as before (up to 5,000 entries), and a
+  server that predates paging omits `next_cursor`.
+
 ### Added (presence)
 - `useSession().presenceAwake` (`{ until: Date; capAt: Date } | null`): with
-  `browserPresence`, when the session's computer stops after the latest
+  `browserPresence`, when the session's sandbox stops after the latest
   presence renewal, and the time presence cannot keep it on past. The view
   re-sends present every 5 minutes while the person is present, when a turn
   ends, when the control plane closes a turn, and when the sandbox becomes
