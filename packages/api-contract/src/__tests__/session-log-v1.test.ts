@@ -461,6 +461,19 @@ describe('fromV1 live: the turn that runs is not closed', () => {
     expect(message(live, 'msg_r04')).toMatchObject({ status: 'error', in_context: false });
   });
 
+  test('a complete reply with an open call streams (pi completes a reply before its calls run); the round trip stays exact', () => {
+    const row = assistant(ROOT, 'msg_pi_open', T0 + 40_000, 'msg_r01', (m) => [
+      tool(ROOT, m, 'prt_pi_open', 'bash', { status: 'running', input: { command: 'make' }, title: 'make', time: { start: T0 + 40_001 } }),
+    ], { finish: 'tool-calls', time: { created: T0 + 40_000, completed: T0 + 40_500 } });
+    const x: V1Transcript = { session_id: 's', root_id: ROOT, rows: [row] };
+    const m = message(fromV1(json(x), { live: true }), 'msg_pi_open');
+    expect(m).toMatchObject({ status: 'streaming', in_context: true, finish: 'tool_calls' });
+    expect(SessionLogMessageSchema.safeParse(m).success).toBe(true);
+    expectExact(x, roundTrip(x, { live: true }));
+    // At rest the closure rule closes the call and the reply stays complete.
+    expect(message(fromV1(json(x)), 'msg_pi_open')).toMatchObject({ status: 'complete', blocks: [{ status: 'error', result: { synthetic: true } }] });
+  });
+
   test('a compaction whose summary has not arrived is streaming, not interrupted', () => {
     expect(message(live, 'msg_r10')).toMatchObject({ kind: 'compaction', status: 'streaming' });
   });
