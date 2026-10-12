@@ -203,7 +203,18 @@ function useDriveMutation<TArgs>(run: (driveId: string, args: TArgs) => Promise<
 const parentOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/';
 
 export const driveExplorerSource: FileExplorerSource = {
-  capabilities: { write: true, search: false, hiddenToggle: false, gitStatusChip: false },
+  capabilities: {
+    write: true,
+    search: false,
+    hiddenToggle: false,
+    gitStatusChip: false,
+    newFile: false,
+    // The top level and `/Users` hold only folders; files go inside one.
+    filesAllowedAt: (path) => {
+      const p = toDrivePath(path);
+      return p !== '/' && p !== '/Users';
+    },
+  },
   useFileViewerSource: useDriveFileViewerSource,
   useFileList: useDriveFileList,
   // Files has no compute behind it to park.
