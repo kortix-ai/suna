@@ -71,12 +71,13 @@
     "packages/sdk/src/react/use-session-log.ts"
   ],
   "diff_hash": "6409130e72330b65bb80ec5ae50e39897a063375edaba20e180e82e3ee604835",
-  "head": "869cc802ef16893a4b6ace09b75f66cfff0a9c59",
+  "head": "acbd01641b637c4ea6bbd4278e9c589236c5acca",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "pass",
+    "browser": "pass"
   },
-  "at": "2026-10-12T16:51:32.358Z"
+  "at": "2026-10-12T18:33:02.233Z"
 }
