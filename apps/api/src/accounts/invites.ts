@@ -342,6 +342,8 @@ accountInvitesRouter.openapi(
   async (c: any) => {
   const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
+  // Not a uuid: no invite has it, and Postgres would reject the cast (500).
+  if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
 
   const [invite] = await db
     .select()
@@ -420,6 +422,8 @@ accountInvitesRouter.openapi(
   const userId = c.get('userId') as string;
   const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
+  // Not a uuid: no invite has it, and Postgres would reject the cast (500).
+  if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
 
   const [invite] = await db
     .select()
@@ -567,6 +571,8 @@ accountInvitesRouter.openapi(
   async (c: any) => {
   const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
+  // Not a uuid: no invite has it, and Postgres would reject the cast (500).
+  if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
 
   const [invite] = await db
     .select()

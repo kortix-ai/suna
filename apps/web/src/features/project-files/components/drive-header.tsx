@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
@@ -142,9 +142,7 @@ export function DriveHeader({
         <FileDiff className="size-4 shrink-0" />
         <span className="hidden sm:inline">{tI18nComplete.raw('text486f49f03bf7')}</span>
         {reviewCount > 0 && (
-          <Badge variant="success" size="tabular" className="ml-0.5">
-            {reviewCount}
-          </Badge>
+          <CountBadge count={reviewCount} tone="waiting" className="ml-0.5" />
         )}
       </Button>
 
@@ -167,7 +165,7 @@ export function DriveHeader({
       repoNavLabel(volumes.enabled) === 'repo' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
     return (
       <>
-        <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>
+        <ProjectPageHeader title={title}>
           {actions}
         </ProjectPageHeader>
         <DrivePathBar rootLabel={title} as="row" />

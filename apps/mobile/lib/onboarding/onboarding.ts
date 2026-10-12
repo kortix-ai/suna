@@ -4,8 +4,9 @@
  * onboarding.test.ts); the screens are `app/index.tsx`, `app/welcome.tsx`
  * and `app/new.tsx`.
  *
- * - Where the app opens (`startDestination`): a project when any account has
- *   one (the last one opened, else the first — `lib/projects/landing.ts`).
+ * - Where the app opens (`startDestination`): a pending invite first; then a
+ *   project when any account has one (the last one opened, else the first —
+ *   `lib/projects/landing.ts`).
  *   With no project anywhere: the upgrade screen if this user has not seen
  *   it, else `/new`. A user with a project never sees the upgrade screen.
  * - Which account the first project goes to (`onboardingAccountId`).
@@ -25,12 +26,25 @@ import { creatableAccounts, type LandingResolution } from '@/lib/projects/landin
 import type { KortixAccount } from '@/lib/projects/projects-client';
 
 export type StartDestination =
+  | { kind: 'invite'; inviteId: string }
   | { kind: 'project'; projectId: string; accountId: string }
   | { kind: 'welcome' }
   | { kind: 'new' };
 
-/** Where the start screen sends a signed-in user. */
-export function startDestination(landing: LandingResolution, upgradeSeen: boolean): StartDestination {
+/**
+ * Where the start screen sends a signed-in user. A pending invite comes first
+ * (web `decideDoor`): a project invite stays pending until it is accepted, so
+ * without this an invitee lands in an empty personal account (KRTX-1731).
+ * `skipped` holds the invites put off with Not now.
+ */
+export function startDestination(
+  landing: LandingResolution,
+  upgradeSeen: boolean,
+  invites: ReadonlyArray<{ invite_id: string }> = [],
+  skipped: ReadonlySet<string> = new Set()
+): StartDestination {
+  const invite = invites.find((pending) => !skipped.has(pending.invite_id));
+  if (invite) return { kind: 'invite', inviteId: invite.invite_id };
   if (landing.kind === 'project') return landing;
   return upgradeSeen ? { kind: 'new' } : { kind: 'welcome' };
 }
