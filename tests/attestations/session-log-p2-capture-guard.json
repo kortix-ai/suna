@@ -1,11 +1,18 @@
 {
-  "source_hash": "ef5af937ed2a66c43f84bb8ca3ef9c170ab3dd8cb87c7757047577fae594484d",
-  "head": "8985df31c07452580728252a1ed2b194e97f4a4f",
+  "source_hash": "a2cc13c7d512fd737fed23ee947eabae4bc20064dbc31fc8fc197caa74bdfdd1",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-log-capture.test.ts",
+    "apps/api/src/projects/session-log-blobs.ts",
+    "apps/api/src/projects/session-log-ingest.ts",
+    "apps/api/src/projects/session-log-read.ts"
+  ],
+  "diff_hash": "6327f2a6087b91deb6a3fb9dfa2f0d40f21d85c1fbb69618833ef3207d70c4d2",
+  "head": "f46f260304611313aa6782e4f5a3b4a40cd8420f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T14:51:38.444Z"
+  "at": "2026-10-12T15:09:13.539Z"
 }

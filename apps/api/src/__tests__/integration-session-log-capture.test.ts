@@ -399,9 +399,36 @@ describe('the v1 window over a stale log', () => {
     const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?${query}`, { headers: { Authorization: `Bearer ${ownerToken}` } });
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
-  const mirrorAt = (session: string, at: Date) => db.update(sessionTranscriptMirrors).set({ capturedAt: at }).where(eq(sessionTranscriptMirrors.sessionId, session));
+  /** The mirror's content time: the newest row `captured_at`, which moves only when a row's info or parts change. */
+  const mirrorAt = (session: string, at: Date) => db.update(sessionTranscriptMessages).set({ capturedAt: at }).where(eq(sessionTranscriptMessages.sessionId, session));
   const staleWarnings = (warn: { mock: { calls: unknown[][] } }, session: string) =>
     warn.mock.calls.filter((c) => String(c[0]).includes('log is behind the mirror') && (c[1] as { sessionId?: string })?.sessionId === session);
+
+  test('a stop-style tail capture that changes no row, long after the last log write, leaves the log answering', async () => {
+    const session = await seedSession(project, OWNER);
+    await capture(session, range(0, 6));
+    // The last turn ended 5 minutes ago: the log's writes and the mirror's rows are that old.
+    const old = new Date(Date.now() - 300_000);
+    await db.update(sessionLogMessages).set({ updatedAt: old }).where(eq(sessionLogMessages.sessionId, session));
+    await db.update(sessionLogs).set({ updatedAt: old }).where(eq(sessionLogs.sessionId, session));
+    await mirrorAt(session, old);
+    // The tail capture at stop: same history, so no row changes, but the mirror's capture time moves to now.
+    await capture(session, range(0, 6));
+    const [mirror] = await db.select({ at: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
+    expect(new Date(mirror!.at).getTime()).toBeGreaterThan(Date.now() - 60_000);
+    await setFlag(true);
+    const warn = spyOn(logger, 'warn');
+    try {
+      const res = await read(session);
+      expect(res.status).toBe(200);
+      expect(res.body.captured_at).not.toBe(new Date(mirror!.at).toISOString());
+      expect((res.body.messages as unknown[]).length).toBe(6);
+      expect(staleWarnings(warn, session)).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+      await setFlag(false);
+    }
+  });
 
   test('a mirror newer than the log by over 60 s serves the mirror and warns once per session; within 60 s the log answers', async () => {
     const session = await seedSession(project, OWNER);
@@ -411,21 +438,24 @@ describe('the v1 window over a stale log', () => {
     try {
       const [{ last }] = (await db.select({ last: sql<Date>`max(${sessionLogMessages.updatedAt})` }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, session))) as [{ last: Date }];
       const lastMs = new Date(last).getTime();
+      // The mirror window's captured_at is the mirror's run time, whatever its rows' content time.
+      const [mirror] = await db.select({ at: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
+      const mirrorIso = new Date(mirror!.at).toISOString();
 
       // Within the margin: the log answers (its captured_at is the log's last write).
       await mirrorAt(session, new Date(lastMs + 30_000));
       const near = await read(session);
       expect(near.status).toBe(200);
-      expect(near.body.captured_at).not.toBe(new Date(lastMs + 30_000).toISOString());
+      expect(near.body.captured_at).not.toBe(mirrorIso);
       expect(staleWarnings(warn, session)).toHaveLength(0);
 
-      // Over the margin: the mirror answers, once-warned.
+      // Over the margin (the rows' content time): the mirror answers, once-warned.
       const at = new Date(lastMs + 120_000);
       await mirrorAt(session, at);
       for (let i = 0; i < 2; i++) {
         const far = await read(session);
         expect(far.status).toBe(200);
-        expect(far.body.captured_at).toBe(at.toISOString());
+        expect(far.body.captured_at).toBe(mirrorIso);
         expect((far.body.messages as unknown[]).length).toBe(6);
       }
       expect(staleWarnings(warn, session)).toHaveLength(1);

@@ -26,13 +26,17 @@
  * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
  * then holds the ingest time). The two agree for every row with a creation time.
  *
- * The log also cannot answer when it is behind the mirror: the mirror's `captured_at` is more than
- * `STALE_LOG_MS` after the log's last write (the newest message or session write). The capture keeps
- * the mirror current without a journal, so a log that stopped (the daemon's journal off for a boot,
- * a daemon build without one) must not freeze what a reader sees. A healthy journal writes within
- * seconds of the capture, so the margin is far above the normal gap; a mirror capture that changed
- * nothing, later than the margin, falls back too (the mirror is the full answer). The read warns once
- * per session per process.
+ * The log also cannot answer when it is behind the mirror: the mirror's content time is more than
+ * `STALE_LOG_MS` after the log's last write (the newest message or session write). The content time
+ * is the newest `session_transcript_messages.captured_at`, which moves only when a row's info or
+ * parts change. It is not `session_transcript_mirrors.captured_at`: that moves on every capture, and
+ * the tail capture at stop changes nothing, so it would send every stopped session to the mirror.
+ * The capture keeps the mirror current without a journal, so a log that stopped (the daemon's journal
+ * off for a boot, a daemon build without one) must not freeze what a reader sees. A healthy journal
+ * writes within seconds of the capture, so the margin is far above the normal gap. Caveat: a rewind
+ * the mirror applied with no new rows deletes rows and does not move that max; the next turn's rows do.
+ * The read warns once per session per process, and never again for that session: a second stale
+ * episode in one process is silent.
  *
  * `readSessionLogPage` answers `'unknown_thread'` for a `thread` the session does not have.
  */
@@ -44,7 +48,7 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
-import { projects, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMirrors } from '@kortix/db';
+import { projects, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMessages } from '@kortix/db';
 import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
@@ -183,7 +187,7 @@ export async function readLogTranscriptWindow(input: {
       projectId: sessionLogs.projectId,
       metadata: projects.metadata,
       accountId: projects.accountId,
-      mirrorMs: sql<number | null>`(SELECT extract(epoch from ${sessionTranscriptMirrors.capturedAt}) * 1000 FROM ${sessionTranscriptMirrors} WHERE ${sessionTranscriptMirrors.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
+      mirrorMs: sql<number | null>`(SELECT extract(epoch from max(${sessionTranscriptMessages.capturedAt})) * 1000 FROM ${sessionTranscriptMessages} WHERE ${sessionTranscriptMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
       lastWriteMs: sql<number | null>`(SELECT extract(epoch from max(${sessionLogMessages.updatedAt})) * 1000 FROM ${sessionLogMessages} WHERE ${sessionLogMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
     })
