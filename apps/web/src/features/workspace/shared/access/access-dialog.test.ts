@@ -351,6 +351,31 @@ function recordingWriters() {
 }
 
 describe('writeAccountEdit — the account edit write plan', () => {
+  test('an expiry-only edit on a custom role re-assigns the role with the new expiry', async () => {
+    const current: AccessDialogCurrent = { role: customRole('role-a') };
+    const draft = { role: customRole('role-a'), agents: ALL_AGENTS, expiresAt: '2027-03-01' };
+    const { calls, writers } = recordingWriters();
+    await writeAccountEdit(
+      diffAccessDraft(current, draft),
+      current,
+      draft.role,
+      '2027-03-01T23:59:59.000Z',
+      writers,
+    );
+    expect(calls).toEqual(['revoke-custom', 'assign-custom:role-a:2027-03-01T23:59:59.000Z']);
+  });
+
+  test('clearing the expiry re-assigns the custom role without one', async () => {
+    const current: AccessDialogCurrent = {
+      role: customRole('role-a'),
+      expiresAt: '2027-03-01T23:59:59.000Z',
+    };
+    const draft = { role: customRole('role-a'), agents: ALL_AGENTS, expiresAt: '' };
+    const { calls, writers } = recordingWriters();
+    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    expect(calls).toEqual(['revoke-custom', 'assign-custom:role-a:never']);
+  });
+
   test('a role-only edit keeps its order: revoke, baseline, assign', async () => {
     const current: AccessDialogCurrent = { role: customRole('role-a') };
     const draft = { role: customRole('role-b'), agents: ALL_AGENTS, expiresAt: '' };

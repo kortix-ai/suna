@@ -321,7 +321,9 @@ export async function writeAccountEdit(
   expiresIso: string | undefined,
   writers: AccountEditWriters,
 ): Promise<void> {
-  if (!diff.roleChanged) return;
+  // An expiry-only edit must reach the assignment writer too: the expiry is
+  // written on the custom role's assignment row, not on the member row.
+  if (!diff.roleChanged && !diff.expiryChanged) return;
   if (current.role.kind === 'custom') await writers.revokeCustomRole();
   if (diff.roleChanged) {
     await writers.setBuiltinRole((baselineBuiltinRole('account', role) ?? 'member') as AccountRole);
