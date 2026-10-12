@@ -62,10 +62,10 @@ interface ErrorBody {
 const CDP_PORT = 9333;
 const CONNECT_CODES = new Set(['browser_not_connected', 'browser_offline']);
 
-/** "Chrome · Work (macOS)" */
+/** "Chrome · Work (macOS)"; the OS once, also when the name already says it. */
 export function browserLabel(b: BrowserInfo): string {
   const name = b.name || b.brand || 'Browser';
-  return `${name}${b.os ? ` (${b.os})` : ''}`;
+  return b.os && !name.includes(b.os) ? `${name} (${b.os})` : name;
 }
 
 export function formatUsed(b: BrowserInfo, port = CDP_PORT): string {
@@ -78,7 +78,8 @@ export function formatUsed(b: BrowserInfo, port = CDP_PORT): string {
 export function formatBrowserError(body: ErrorBody): string {
   const lines = [status.err(body.error || 'The browser request failed.')];
   if (body.connectUrl && body.code && CONNECT_CODES.has(body.code)) {
-    lines.push(`     Ask the user to connect one: ${C.cyan}${body.connectUrl}${C.reset}`);
+    const ask = body.code === 'browser_offline' ? 'Ask the user to open Chrome, or check it here' : 'Ask the user to connect one';
+    lines.push(`     ${ask}: ${C.cyan}${body.connectUrl}${C.reset}`);
   } else if (body.code === 'browser_denied') {
     lines.push('     Do not retry without asking the user. If they agree, run: kortix browser use --ask');
   }

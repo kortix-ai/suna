@@ -182,8 +182,9 @@ export async function upsertConnection(input: {
 
 /** "Chrome · Work (macOS)" style default name. */
 export function defaultBrowserName(info: BrowserInfo): string {
-  const label = info.profileLabel ? ` · ${info.profileLabel}` : '';
-  return `${info.brand}${label} (${info.os})`.slice(0, 255);
+  // "Chrome · Work" when Chrome names the profile, else "Chrome on macOS".
+  const name = info.profileLabel ? `${info.brand} · ${info.profileLabel}` : `${info.brand} on ${info.os}`;
+  return name.slice(0, 255);
 }
 
 export async function touchBrowser(browserId: string, relayOwnerId: string): Promise<void> {

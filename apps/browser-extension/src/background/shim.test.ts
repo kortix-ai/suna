@@ -32,7 +32,7 @@ function fake() {
       return { ok: method };
     },
     paused: () => paused,
-    pointer: (_t, p) => log.pointer.push(p),
+    pointer: async (_t, p) => void log.pointer.push(p),
     touched: () => {},
   };
   const out: Record<string, Out[]> = {};

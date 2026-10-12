@@ -29,8 +29,11 @@ export interface ShimHost {
   detach(tabId: number): Promise<void>;
   send(tabId: number, childSessionId: string | undefined, method: string, params: unknown): Promise<unknown>;
   paused(): boolean;
-  /** Called for every Input.dispatchMouseEvent so the overlay can move its cursor. */
-  pointer(tabId: number, params: { type?: string; x?: number; y?: number }): void;
+  /**
+   * Called before every Input.dispatchMouseEvent: the overlay moves its cursor
+   * and gets its control bar out of the way when the point is under it.
+   */
+  pointer(tabId: number, params: { type?: string; x?: number; y?: number }): Promise<void>;
   /** Called after the debugger attaches a tab, so the overlay can appear. */
   touched(tabId: number): void;
 }
@@ -175,7 +178,8 @@ export class Shim {
     }
     if (tabId === undefined) throw new CdpError(-32001, 'Session with given id not found.');
     if (method.startsWith('Input.') && this.host.paused()) throw new CdpError(-32000, PAUSED_MSG);
-    if (method === 'Input.dispatchMouseEvent') this.host.pointer(tabId, params ?? {});
+    // Awaited: the page hit-tests the event, and the control bar must not take an agent click.
+    if (method === 'Input.dispatchMouseEvent') await this.host.pointer(tabId, params ?? {});
     if (method === 'Page.captureScreenshot') await this.host.activateTab(tabId);
     return this.host.send(tabId, child, method, params);
   }

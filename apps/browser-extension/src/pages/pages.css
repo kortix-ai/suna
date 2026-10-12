@@ -45,3 +45,4 @@ details input { margin-top: calc(var(--spacing) * 2); }
 .foot a, .foot button { color: var(--muted-foreground); background: none; border: 0; padding: 0; text-decoration: none; }
 .foot a:hover, .foot button:hover { color: var(--foreground); background: none; }
 .consent { padding: calc(var(--spacing) * 6); }
+input[type=radio] { accent-color: var(--foreground); }

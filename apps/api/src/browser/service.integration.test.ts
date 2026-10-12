@@ -70,7 +70,7 @@ withDb('browser service', () => {
     expect(again.browserId).toBe(first.browserId);
     const stranger = await upsertConnection({ userId: crypto.randomUUID(), accountId: crypto.randomUUID(), browserId: first.browserId, info, relayOwnerId: 'test' });
     expect(stranger.browserId).not.toBe(first.browserId);
-    expect(first.name).toBe('Chrome · Work (macOS)');
+    expect(first.name).toBe('Chrome · Work');
   });
 
   test('mode always: attach is granted at once, release ends it', async () => {

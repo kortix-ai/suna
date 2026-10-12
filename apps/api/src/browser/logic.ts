@@ -86,7 +86,7 @@ export type BrowserErrorCode =
 const ERRORS: Record<BrowserErrorCode, { status: 403 | 404 | 408 | 409; error: string }> = {
   browser_not_connected: {
     status: 404,
-    error: 'No browser is connected to Kortix. Ask the user to connect one.',
+    error: 'No browser is connected to Kortix.',
   },
   browser_not_found: {
     status: 404,
@@ -94,15 +94,15 @@ const ERRORS: Record<BrowserErrorCode, { status: 403 | 404 | 408 | 409; error: s
   },
   browser_offline: {
     status: 409,
-    error: 'The browser is not online. Ask the user to open Chrome with the Kortix extension, then retry.',
+    error: 'The browser is not online: Chrome is closed, or the Kortix extension is signed out.',
   },
   browser_access_off: {
     status: 403,
-    error: 'The user turned off access for this browser. Ask the user to turn it on in Kortix settings.',
+    error: 'The user turned off agent access for this browser. Ask the user to turn it on in Settings → Browsers.',
   },
   browser_denied: {
     status: 403,
-    error: 'The user denied this session access to the browser. Retry with ask=true to show a new prompt in Chrome.',
+    error: 'The user stopped or denied this session\'s access to the browser. Ask the user before you try again.',
   },
   browser_consent_timeout: {
     status: 408,

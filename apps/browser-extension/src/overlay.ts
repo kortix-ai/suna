@@ -3,14 +3,20 @@
 declare const __TOKENS_CSS__: string;
 
 const HOST_ID = 'kortix-overlay-host';
+// The cursor draws over any third-party page, light or dark, so its outline and
+// shadow are fixed and do not follow the Kortix theme.
+const CURSOR_OUTLINE = '#fff';
+const CURSOR_SHADOW = 'rgb(0 0 0 / .3)';
 type Msg =
   | { kortix: 'overlay'; on: boolean; paused: boolean; title: string }
   | { kortix: 'cursor'; x?: number; y?: number; type?: string };
 
 const STYLE = `
 ${__TOKENS_CSS__.replaceAll(':root', ':host')}
-:host { all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; font-family: var(--font-sans-system); }
-* { box-sizing: border-box; }
+:host { all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }
+/* \`all: initial\` on the host also drops the custom properties in some builds, so the stack is literal here. */
+* { box-sizing: border-box; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; }
+button { font: inherit; }
 .glow { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 200ms ease-out;
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--kortix-base) 70%, transparent),
               inset 0 0 48px color-mix(in srgb, var(--kortix-base) 30%, transparent); }
@@ -18,7 +24,7 @@ ${__TOKENS_CSS__.replaceAll(':root', ':host')}
 .glow.paused { opacity: .35; }
 .cursor { position: fixed; left: 0; top: 0; opacity: 0; transition: transform 160ms ease-out, opacity 200ms ease-out; will-change: transform; }
 .cursor.on { opacity: 1; }
-.cursor svg { display: block; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .3)); }
+.cursor svg { display: block; filter: drop-shadow(0 1px 2px ${CURSOR_SHADOW}); }
 .label { position: absolute; left: 14px; top: 16px; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
   background: var(--primary); color: var(--primary-foreground); font-size: var(--text-xs); line-height: 1.4; }
 .ripple { position: fixed; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
@@ -30,6 +36,7 @@ ${__TOKENS_CSS__.replaceAll(':root', ':host')}
   background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
   font-size: var(--text-sm); line-height: 1.25; }
 .bar.on { display: flex; }
+.bar.yield { pointer-events: none; opacity: .25; transition: opacity 150ms ease-out; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kortix-base); }
 .paused .dot { background: var(--muted-foreground); }
 button { all: unset; box-sizing: border-box; cursor: pointer; padding: 5px 12px; border-radius: var(--radius-md);
@@ -50,7 +57,7 @@ function mount() {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${STYLE}</style>
     <div class="glow"></div>
-    <div class="cursor"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M2 1.5 17 9l-6.5 1.8L8 17.5z" fill="var(--kortix-base)" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg><span class="label">Kortix</span></div>
+    <div class="cursor"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M2 1.5 17 9l-6.5 1.8L8 17.5z" fill="var(--kortix-base)" stroke="${CURSOR_OUTLINE}" stroke-width="1.2" stroke-linejoin="round"/></svg><span class="label">Kortix</span></div>
     <div class="ripple"></div>
     <div class="bar" role="region" aria-label="Kortix"><span class="dot"></span><span class="msg"></span>
       <button class="pause" type="button"></button><button class="stop" type="button">Stop</button></div>`;
@@ -61,7 +68,17 @@ function mount() {
   pause.onclick = () => void chrome.runtime.sendMessage({ kortix: 'overlay-pause' });
   document.documentElement.append(host);
 
-  const onMessage = (m: Msg) => {
+  // The agent's clicks land on the page under the bar: step aside while it works there.
+  let yieldTimer: ReturnType<typeof setTimeout> | undefined;
+  const yieldBar = (x: number, y: number) => {
+    const r = bar.getBoundingClientRect();
+    if (x < r.left - 8 || x > r.right + 8 || y < r.top - 8 || y > r.bottom + 8) return;
+    bar.classList.add('yield');
+    clearTimeout(yieldTimer);
+    yieldTimer = setTimeout(() => bar.classList.remove('yield'), 2000);
+  };
+
+  const onMessage = (m: Msg, _sender: chrome.runtime.MessageSender, reply: (r?: unknown) => void) => {
     if (m?.kortix === 'overlay') {
       if (!m.on) { chrome.runtime.onMessage.removeListener(onMessage); host.remove(); return; }
       glow.classList.add('on');
@@ -72,6 +89,7 @@ function mount() {
       pause.textContent = m.paused ? 'Resume' : 'Take over';
       cursor.style.display = m.paused ? 'none' : '';
     } else if (m?.kortix === 'cursor' && m.x !== undefined && m.y !== undefined) {
+      yieldBar(m.x, m.y);
       cursor.classList.add('on');
       cursor.style.transform = `translate(${m.x}px, ${m.y}px)`;
       if (m.type === 'mousePressed') {
@@ -82,6 +100,7 @@ function mount() {
         ripple.classList.add('go');
       }
     }
+    reply();
   };
   chrome.runtime.onMessage.addListener(onMessage);
 }

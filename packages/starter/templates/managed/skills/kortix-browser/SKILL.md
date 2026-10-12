@@ -56,8 +56,10 @@ asking*, *ask first* (your first `use` shows a prompt in Chrome and waits up to
   Tell the user to look at Chrome, then run `kortix browser use --ask` again.
 - **`browser_dial_failed`**: Chrome did not connect. Ask the user to check that
   Chrome is open and the extension is signed in.
-- **`No browser attached. Run: kortix browser use`** from agent-browser: the
-  browser was released or disconnected. Run `kortix browser use` again.
+- **agent-browser cannot reach `127.0.0.1:9333`** (`No browser attached`,
+  `Auto-launch failed … No webSocketDebuggerUrl`): no browser is attached. It was
+  released, the user pressed Stop, or Chrome closed. Run `kortix browser use`;
+  after a Stop it answers `browser_denied`, so ask the user first.
 </errors>
 
 <rules>

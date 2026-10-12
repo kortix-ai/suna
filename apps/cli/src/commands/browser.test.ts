@@ -31,6 +31,7 @@ describe('browser output', () => {
   test('empty list points at the connect page', () => {
     expect(stripAnsi(formatBrowserList([], 'https://kortix.com/settings/browsers'))).toContain('settings/browsers');
     expect(browserLabel({ brand: 'Chrome', os: 'macOS' })).toBe('Chrome (macOS)');
+    expect(browserLabel({ name: 'Chrome on macOS', brand: 'Chrome', os: 'macOS' })).toBe('Chrome on macOS');
   });
 });
 

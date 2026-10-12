@@ -102,3 +102,16 @@ test('routeIngress() sends Kortix-native PTY websockets through the authenticate
     },
   });
 });
+
+test('routeIngress() carries the signed user context on every daemon websocket, not only PTY', async () => {
+  const p = await makeProvider();
+  // The Kortix Browser bridge: the edge drops headers on an upgrade, so kortixd
+  // only sees the user context in the query.
+  expect(p.routeIngress({ port: 8000, transport: 'websocket', path: '/kortix/browser/bridge' })).toEqual({
+    effectivePort: 8000,
+    websocket: { userContextQueryParam: '__kortix_user_context' },
+  });
+  // HTTP to the daemon and websockets to an app port stay as they were.
+  expect(p.routeIngress({ port: 8000, transport: 'http', path: '/kortix/browser/status' }).websocket).toBeUndefined();
+  expect(p.routeIngress({ port: 3000, transport: 'websocket', path: '/_next/webpack-hmr' }).websocket).toBeUndefined();
+});

@@ -156,7 +156,7 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
             disabled={update.isPending}
             onValueChange={(value) => save({ accessMode: value as BrowserAccessMode })}
           >
-            <SelectTrigger size="sm" className="w-36 shrink-0" aria-label={t('access.label')}>
+            <SelectTrigger size="sm" className="w-auto min-w-36 shrink-0" aria-label={t('access.label')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

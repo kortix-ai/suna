@@ -1191,12 +1191,17 @@ export class PlatinumProvider implements SandboxProvider {
       // reload the live half may be the standby, and matching only 4096 would
       // send it upstream unrewritten (see shared/opencode-ports).
       effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
+      // Platinum's edge drops custom headers on a WebSocket upgrade, so every
+      // daemon socket (PTY, the Kortix Browser bridge) carries the signed user
+      // context in the query instead.
       websocket: ptyWebsocket
         ? {
             userContextQueryParam: '__kortix_user_context',
             queryDefaults: { cursor: '0' },
           }
-        : undefined,
+        : request.transport === 'websocket' && request.port === AGENT_PORT
+          ? { userContextQueryParam: '__kortix_user_context' }
+          : undefined,
     };
   }
 

@@ -177,9 +177,12 @@ export class Attachment {
       send: (tabId, sessionId, method, params) =>
         chrome.debugger.sendCommand({ tabId, ...(sessionId ? { sessionId } : {}) }, method, (params ?? {}) as Record<string, unknown>),
       paused: () => this.paused,
-      pointer: (tabId, p) => {
-        chrome.tabs.sendMessage(tabId, { kortix: 'cursor', x: p.x, y: p.y, type: p.type }).catch(() => {});
-      },
+      // Bounded: a tab without the overlay (a page that blocks scripts) must not stall input.
+      pointer: (tabId, p) =>
+        Promise.race([
+          chrome.tabs.sendMessage(tabId, { kortix: 'cursor', x: p.x, y: p.y, type: p.type }).then(() => {}, () => {}),
+          new Promise<void>((r) => setTimeout(r, 250)),
+        ]),
       touched: (tabId) => {
         this.touched.add(tabId);
         this.env.overlay(tabId, this);
