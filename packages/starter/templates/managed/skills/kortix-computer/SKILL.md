@@ -1,6 +1,6 @@
 ---
 name: kortix-computer
-description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or server) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. A connected computer is an ACCOUNT of the project's `computer` connector, called through the same `kortix connectors` path as every other connector, with `--account` picking the machine. Load this when the task is about acting ON a specific physical computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. For files INSIDE this sandbox, use normal shell/fs — not this.
+description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or server) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. A connected computer is an ACCOUNT of the project's `computer` connector, called through the same `kortix connectors` path as every other connector, with `--account` picking the machine. Load this when the task is about acting ON a specific physical computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. ALSO load it when the user mentions their own machine or its files and no computer may be connected yet ("my local files", "my Desktop", a path like `~/…`, `/Users/…`, "the repo on my laptop") — this sandbox cannot see their disk, and the skill says how to tell them to connect it. For files INSIDE this sandbox, use normal shell/fs — not this.
 ---
 
 <skill name="kortix-computer">
@@ -55,10 +55,20 @@ kortix connectors accounts computer
 The slug is `computer` in most projects. An older project may use another
 slug for its computer connector; `kortix connectors ls` shows it.
 
-If there is no account, no computer is connected yet. Say so and tell the
-human: **click "Connect your computer" in the project sidebar** (one click in
-the Kortix desktop app, or a download / command in the browser). There is no
-feature flag to turn on, and nothing to set up per project.
+If there is no account, no computer is connected yet. This sandbox cannot see
+the user's disk, so never guess at a local path or pretend to read it. Say so
+in one line and tell the human how to connect it:
+
+- **In the Kortix desktop app:** click **"Connect this computer"** at the
+  bottom of the project sidebar. One click; macOS then asks for the
+  permissions it needs.
+- **In the browser:** click **"Connect your computer"** at the bottom of the
+  project sidebar, then install the desktop app or run the command it shows
+  (`npx @kortix/agent-tunnel@latest connect`) on that computer.
+
+Then ask them to tell you when it is connected, and continue from step 2.
+There is no feature flag to turn on, and nothing to set up per project. For a
+single file, uploading it into the chat is the faster path; offer both.
 
 **2. Check the machine before real work.** Read `online` and `access`.
 

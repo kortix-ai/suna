@@ -15,7 +15,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 ### D13 A backend is an App of kind `convex`
 - **Decision:** A Convex-powered backend is an App of kind `convex`, not a product of its own. The CLI, API, SDK and skills name Apps, kinds and capabilities only (`kortix apps create <slug> --kind convex`, `/apps/:appId/snapshots`, `app.capabilities`). "Backend" stays the plain-language noun for what a `convex` App is, and the label of its kind badge in the web app. Never "database", "DB", "Convex project", or "app backend".
 - **Why:** The founder decided on 2026-10-09: "technically the backends are apps as well." One noun for every deployable thing removes a second inventory, a second permission set and a second CLI group. Clients branch on capabilities, so a future kind needs no new noun.
-- **Where:** `verbal/voice-and-tone.md` section 3 (product nouns), `apps/web/content/docs/feature-flags/apps.mdx` (Kind `convex`), the `kortix-apps` system skill (`packages/starter/templates/managed/skills/kortix-apps/`), the `kortix apps` CLI help.
+- **Where:** `verbal/voice-and-tone.md` section 3 (product nouns), `apps/web/content/docs/apps.mdx` (template `convex`), the `kortix-apps` system skill (`packages/starter/templates/managed/skills/kortix-apps/`), the `kortix apps` CLI help.
 - **Supersedes:** D12 (the CLI `kortix backends`, the `/backends` API routes and the Backends product area; the banned synonyms stay).
 - **Source:** branch `apps-convex` (2026-10-09).
 
@@ -45,7 +45,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Where:** `verbal/claims.md` (the harness rule), the accuracy gates in `apps/web/src/features/marketing/agents-and-skills/content.ts`, `faq/content.ts`, `how-it-work/how-it-works-content.ts` and `how-it-work/step/step-harness.tsx`. 11 marketing files name OpenCode.
 - **Supersedes:** the "Why" of the harness rule in `verbal/claims.md`. The rule itself stays.
 - **Source:** OpenCode decoupling W7, task G3 (2026-10-02).
-- **Until answered:** name OpenCode and no other harness on marketing, deck and sales surfaces. Do not name pi there. The product docs are not marketing: they name both harnesses (`apps/web/content/docs/work/harnesses.mdx`). Change no marketing copy for pi before this entry has an answer. Answer it before the default harness of new projects moves to pi.
+- **Until answered:** name OpenCode and no other harness on marketing, deck and sales surfaces. Do not name pi there. The product docs are not marketing: they name both harnesses (`apps/web/content/docs/project/agents.mdx`, section Harnesses). Change no marketing copy for pi before this entry has an answer. Answer it before the default harness of new projects moves to pi.
 
 ## 2026-10-01
 

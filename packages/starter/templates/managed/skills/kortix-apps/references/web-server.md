@@ -17,7 +17,7 @@ runtime behavior. Data and server logic for a UI belong in a Convex backend App
 Choose the run mode on the first deploy (Lifecycle, below):
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 
 kortix apps deploy --image nginx:1.27-alpine --slug nginx \
@@ -56,7 +56,7 @@ run mode, never a price. To use less compute, use `--on-demand` or a smaller
 machine (`--memory-gb 1`).
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000
 ```
 
@@ -81,7 +81,7 @@ changes only the API rebuilds nothing.
 
 ## Process groups, services, volumes
 
-A server App is a release + machines (fly-model.md). Beyond one process:
+A server App is a release + machines (apps-model.md). Beyond one process:
 
 - **Process groups:** `processes: { app: "", worker: "node worker.js" }`, one
   machine per group by default; `kortix apps scale count <slug> 3 --process
@@ -90,7 +90,7 @@ A server App is a release + machines (fly-model.md). Beyond one process:
   admins }]` answers on `<host>--admin`.
 - **State:** never on the root disk (each release replaces it). Mount a volume:
   `mounts: [{ source: data, destination: /data }]`. The release then deploys
-  `rolling` and keeps the data (fly-model.md, Volumes).
+  `rolling` and keeps the data (apps-model.md, Volumes).
 - **Migrations:** `deploy: { release_command: "node migrate.js" }` runs once
   before machines change; a failure leaves the live release serving.
 - **Debug:** `kortix apps machines <slug>`, then `kortix apps exec <slug> --

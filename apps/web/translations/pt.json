@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Substituído para este projeto",
         "defaultOn": "Ativado por padrão",
-        "defaultOff": "Desativado por padrão"
+        "defaultOff": "Desativado por padrão",
+        "organization": "Toda a organização, gerenciado pela Kortix"
       },
       "search": "Pesquisar recursos",
       "loadFailed": "Não foi possível carregar o projeto",
@@ -1203,6 +1204,14 @@
           "name": "Gatilhos de eventos do app",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Arquivos compartilhados e sessões em volumes para toda a organização."
+        },
+        "stateless_sessions": {
+          "name": "Sessões sem estado",
+          "description": "Um computador novo a cada retomada; só arquivos e chat são mantidos. Requer Volumes ativado."
+        },
         "drives": {
           "name": "Drive",
           "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
@@ -1210,6 +1219,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes efémeras",
           "description": "Uma sessão parada mantém os ficheiros e a conversa num volume e liberta o seu computador. Ao reativá-la arranca um computador novo com a imagem mais recente. Os processos em execução não sobrevivem a uma paragem."
+        },
+        "session_log": {
+          "name": "Registo de sessão v2",
+          "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
         }
       }
     },
@@ -19527,7 +19540,8 @@
       "textac6d9b76a141": "Montado",
       "text8d54763edcd8": "Não montado",
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
-      "text6f52b07880a0": "Criar snapshot agora"
+      "text6f52b07880a0": "Criar snapshot agora",
+      "text91dc861375bc": "Política de versão móvel visualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -19772,6 +19786,7 @@
     "providerError": "Não foi possível atualizar o acesso ao provedor.",
     "managedTitle": "Modelos gerenciados pela Kortix",
     "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
+    "managedUpgradeHint": "Faça upgrade para usar os modelos gerenciados da Kortix ou conecte seu próprio provedor.",
     "pricingEstimate": "Preço estimado para o cliente. A rota utilizada determina o custo.",
     "pricingRoute": "{route}: {input} entrada / {cacheRead} cache / {output} saída por 1 milhão de tokens",
     "pricingPreferred": "Preferida",

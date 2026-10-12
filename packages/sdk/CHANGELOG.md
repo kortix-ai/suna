@@ -5,13 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (display)
+- `AppDisplay` (`listed`, `preview`: `live` | `none`, `parent`): where Kortix
+  shows an App. `App.display` reads it; `UpdateAppInput.display` replaces it
+  whole (`{}` restores the defaults). Presentation only. Additive: a server
+  that predates it omits the field.
+
 ### Removed
 - Apps have no monthly budget. `App.monthly_budget_usd`,
   `CreateAppInput.monthly_budget_usd` and `UpdateAppInput.monthly_budget_usd`
   are gone: account credits pay for App compute, and the billing `402` is the
   only cost gate. A server that still sends the field is ignored; a client
-  that still sends it gets `200` and the server ignores it. Read
-  `App.estimated_monthly_usd` for the machine's 24/7 monthly cost.
+  that still sends it gets `200` and the server ignores it.
 - The unreleased `convex` App kind is gone before any release carried it
   (0.13.53, the last published version, has none of these names): `AppKind`,
   `App.kind`, `App.instance` and the `AppInstance*` types, `AppSnapshot*`,
@@ -24,7 +29,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kortix apps launch`). No published name is removed.
 
 ### Added
-- Apps on the Fly.io model (releases, machines, volumes).
+- Apps: releases, machines, volumes.
   `CreateAppBuildInput.config` (`AppReleaseConfigInput`) carries a release's
   config: `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`
   (`strategy`, `release_command`). An invalid config answers
@@ -258,7 +263,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Changed
-- Apps run on the Fly.io model. `rollbackApp` creates a NEW release from the
+- `rollbackApp` creates a NEW release from the
   target's artifact and config and answers `202` with the App plus the queued
   release in `deployment`; it no longer moves traffic to the old release in
   place. It resolves with the new `AppRollback` type (`App & { deployment }`),

@@ -3,14 +3,27 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon } from '@phosphor-icons/react';
 
+/**
+ * Static class strings per scope. Tailwind named groups match ANY ancestor, so
+ * the turn's "Worked for" row (`group/work`) cannot share `group/burst`: its
+ * open state would rotate every burst caret nested inside it.
+ */
+const CARET_SCOPE = {
+  burst: 'group-hover/burst:text-muted-foreground/70 group-data-[state=open]/burst:rotate-90',
+  work: 'group-hover/work:text-muted-foreground/70 group-data-[state=open]/work:rotate-90',
+} as const;
+
 export function BurstSummaryTrigger({
   bare,
   running,
   title,
+  scope = 'burst',
 }: {
   bare: boolean;
   running: boolean;
   title: string;
+  /** The named group of the enclosing `Disclosure` root. */
+  scope?: 'burst' | 'work';
 }) {
   return (
     <>
@@ -61,7 +74,7 @@ export function BurstSummaryTrigger({
             ) : (
               <span className="min-w-0 truncate tabular-nums">{title}</span>
             )}
-            {/* The caret answers the pointer on its own, driven by `group/burst`.
+            {/* The caret answers the pointer on its own, driven by its scope's group.
                 The row's `hover:text-muted-foreground` reaches only the title, and
                 the title is `text-transparent` for the whole time the burst runs —
                 which, because a running burst is forced open, is the state a
@@ -69,8 +82,8 @@ export function BurstSummaryTrigger({
                 row has no hover response at all. */}
             <CaretRightIcon
               className={cn(
-                'text-muted-foreground/40 group-hover/burst:text-muted-foreground/70 size-3.5 flex-none',
-                'transition-[transform,color] group-data-[state=open]/burst:rotate-90',
+                'text-muted-foreground/40 size-3.5 flex-none transition-[transform,color]',
+                CARET_SCOPE[scope],
               )}
             />
           </div>

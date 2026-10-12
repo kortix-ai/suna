@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -16,6 +16,10 @@ let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let uploaded: Uint8Array | null = null;
 /** Fields every App response carries in the current test. */
 let appFields: Record<string, unknown> = {};
+/** Project secrets that already hold a value. */
+let configuredSecrets: string[] = [];
+/** Slugs of the Apps created during the test (one id serves them all). */
+let created: string[] = [];
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -133,10 +137,11 @@ function startServer(): string {
         });
       }
       if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'GET') {
-        return Response.json({ apps: [] });
+        return Response.json({ apps: created.map((slug) => app({ slug, name: slug })) });
       }
       if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'POST') {
         const input = body as { slug: string; name: string };
+        created.push(input.slug);
         return Response.json(app({ slug: input.slug, name: input.name }));
       }
       if (path === `/v1/projects/${PROJECT}/apps/artifacts` && req.method === 'POST') {
@@ -173,6 +178,15 @@ function startServer(): string {
       }
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
         return Response.json(app(body as Record<string, unknown>));
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/exec` && req.method === 'POST') {
+        return Response.json({ exit_code: 0, stdout: 'Admin key:\nsynthetic-admin-key|0123\n', stderr: '', truncated: false });
+      }
+      if (path === `/v1/projects/${PROJECT}/secrets` && req.method === 'GET') {
+        return Response.json({ items: configuredSecrets.map((name) => ({ identifier: name, name, configured: true })), required: [], optional: [] });
+      }
+      if (path === `/v1/projects/${PROJECT}/secrets` && req.method === 'POST') {
+        return Response.json({ identifier: (body as { name: string }).name, name: (body as { name: string }).name, configured: true });
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -227,6 +241,8 @@ describe('kortix apps deploy (characterization)', () => {
     calls = [];
     uploaded = null;
     appFields = {};
+    configuredSecrets = [];
+    created = [];
   });
 
   afterEach(() => {
@@ -277,14 +293,14 @@ describe('kortix apps deploy (characterization)', () => {
       source: { kind: 'bundle', output_dir: 'build' },
       environment: { NODE_ENVIRONMENT: 'production' },
       secrets: { DATABASE_URL: 'database-primary' },
-      // The block's release config (Fly model): here only its machine size.
+      // The block's release config: here only its machine size.
       config: { resources: { cpu: 2, memory_gb: 4 } },
     });
     expect(r.stdout).toContain('deployment ready');
     expect(r.stdout).toContain('storefront.kortix.test');
   });
 
-  test('an explicit path still uses the matching kortix.yaml block (spa, mounts, services, labels reach the deploy)', async () => {
+  test('an explicit path still uses the matching kortix.yaml block (spa, mounts, services, labels, display reach the deploy)', async () => {
     mkdirSync(join(tmp, 'apps', 'web', 'dist'), { recursive: true });
     writeFileSync(join(tmp, 'apps', 'web', 'dist', 'index.html'), '<!doctype html>');
     mkdirSync(join(tmp, 'db'), { recursive: true });
@@ -301,6 +317,7 @@ describe('kortix apps deploy (characterization)', () => {
       '    type: dockerfile',
       '    command: ["/start.sh"]',
       '    labels: [backend]',
+      '    display: { preview: none }',
       '    http_service: { internal_port: 3210, access: public }',
       '    services:',
       '      - { name: site, internal_port: 3211, access: public }',
@@ -324,7 +341,52 @@ describe('kortix apps deploy (characterization)', () => {
       services: [{ name: 'site', internal_port: 3211, access: 'public' }],
       mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10 }],
     });
-    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ labels: ['backend'] });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ labels: ['backend'], display: { preview: 'none' } });
+  });
+
+  test('launch --template convex: the dashboard is a tab of the backend, signed in by a secret the launch creates once', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--name', 'crm-data', '--project', PROJECT], config);
+    expect(r.stderr).not.toContain('✗');
+    expect(r.code).toBe(0);
+    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    expect(yaml.apps['crm-data']!.display).toEqual({ preview: 'none' });
+    expect(yaml.apps['crm-data-dashboard']!.display).toEqual({ parent: 'crm-data' });
+    expect(yaml.apps['crm-data-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'CRM_DATA_ADMIN_KEY' });
+    expect(yaml.apps['crm-data-dashboard']!.path).toBe('apps/crm-data/dashboard');
+    expect(r.stdout).toContain('wrote apps/crm-data/dashboard/start.js');
+    // Backend first, then the key from its machine, then the dashboard that reads it.
+    const order = calls.filter((c) => c.method === 'POST' && /\/(deployments|exec|secrets)$/.test(c.path)).map((c) => c.path.split('/').pop());
+    expect(order).toEqual(['deployments', 'exec', 'secrets', 'deployments']);
+    expect(calls.find((c) => c.path.endsWith('/secrets') && c.method === 'POST')?.body).toEqual({ name: 'CRM_DATA_ADMIN_KEY', value: 'synthetic-admin-key|0123' });
+    expect(r.stdout + r.stderr).not.toContain('synthetic-admin-key');
+    expect(r.stdout).toContain('CRM_DATA_ADMIN_KEY');
+  });
+
+  test('launch without --name names the Convex App for what it is: backend, backend-dashboard, BACKEND_ADMIN_KEY', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    expect(Object.keys(yaml.apps)).toEqual(['backend', 'backend-dashboard']);
+    expect(yaml.apps['backend-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'BACKEND_ADMIN_KEY' });
+    expect(yaml.apps['backend-dashboard']!.path).toBe('apps/backend/dashboard');
+  });
+
+  test('launch rewrites a secret an earlier App of the same name left, and keeps a file the user already has', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    mkdirSync(join(tmp, 'apps', 'crm-data', 'dashboard'), { recursive: true });
+    writeFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), '// mine\n');
+    configuredSecrets = ['CRM_DATA_ADMIN_KEY'];
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--name', 'crm-data', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.some((c) => c.path.endsWith('/exec'))).toBe(true);
+    expect(calls.find((c) => c.path.endsWith('/secrets') && c.method === 'POST')?.body).toEqual({ name: 'CRM_DATA_ADMIN_KEY', value: 'synthetic-admin-key|0123' });
+    expect(readFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), 'utf8')).toBe('// mine\n');
+    expect(readFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'Dockerfile'), 'utf8')).toContain('ENV BACKEND=crm-data');
   });
 
   test('a directory source is archived and inferred as a bundle from package.json', async () => {

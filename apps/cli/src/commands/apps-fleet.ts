@@ -1,4 +1,4 @@
-// `kortix apps releases|machines|scale|exec|volumes|labels` — the Fly.io model:
+// `kortix apps releases|machines|scale|exec|volumes|labels` —
 // releases are immutable, machines are replaceable, volumes persist.
 
 import type { App, AppDeployment, AppMachine, AppVolume } from '@kortix/sdk';

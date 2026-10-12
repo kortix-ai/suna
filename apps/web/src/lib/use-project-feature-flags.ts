@@ -42,8 +42,11 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
   const notificationCenter = useFeatureFlag(projectId, 'notification_center');
+  const volumes = useFeatureFlag(projectId, 'volumes');
+  const statelessSessions = useFeatureFlag(projectId, 'stateless_sessions');
   const drives = useFeatureFlag(projectId, 'drives');
   const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
+  const sessionLog = useFeatureFlag(projectId, 'session_log');
 
   return {
     flags: {
@@ -62,10 +65,13 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,
       notification_center: notificationCenter.enabled,
+      volumes: volumes.enabled,
+      stateless_sessions: statelessSessions.enabled,
       drives: drives.enabled,
       ephemeral_sandboxes: ephemeralSandboxes.enabled,
+      session_log: sessionLog.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: ephemeralSandboxes.isLoading,
+    isLoading: sessionLog.isLoading,
   };
 }

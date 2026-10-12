@@ -21,15 +21,16 @@ import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
 import { AppPreview } from './app-preview';
+import { frameKey, reloadFrame } from './app-preview-pool';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
 import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
-import { localizedAppCopy, appCan, appCommand, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { localizedAppCopy, appCan, appCommand, appHost, appStatus, appTabLabel, childApps, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -78,6 +79,30 @@ export function AppDetailModal({
   const [overlay, setOverlay] = useState<
     'access' | 'delete' | 'connect' | null
   >(null);
+  // Apps shown as tabs of this one (`display.parent`): a backend's dashboard.
+  // An App that hides its own thumbnail opens on its first tab.
+  const children = childApps(apps.data ?? [], app, canAdmin);
+  const [view, setView] = useState(() =>
+    app.display?.preview === 'none' && children[0] ? children[0].app_id : app.app_id,
+  );
+  const viewedChild = children.find((child) => child.app_id === view) ?? null;
+  // The tab on screen decides what Open and Refresh act on.
+  const childAccess = useAppAccess(projectId, viewedChild?.app_id ?? null, {
+    policy: false,
+    session: !!viewedChild && viewedChild.viewer_can_access !== false && appCan(viewedChild, 'preview'),
+  });
+  const viewed = viewedChild ?? app;
+  const viewedSession = viewedChild ? childAccess.session : access.session;
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const fresh = await viewedSession.refetch();
+      if (fresh.data?.url) reloadFrame(frameKey(viewed), fresh.data.url);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const latest = deployments.data?.[0];
   const status = appStatus(app, tI18nComplete);
   const notice = deployNotice(latest, tI18nComplete);
@@ -92,6 +117,7 @@ export function AppDetailModal({
   const canSleep = appCan(app, 'sleep');
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
+  const viewedUrl = viewedChild ? (childAccess.session.data?.url ?? viewedChild.url) : liveUrl;
 
   const lifecycle = async (action: 'start' | 'stop') => {
     try {
@@ -149,6 +175,16 @@ export function AppDetailModal({
                   running case needs a screen-reader-only label — but rendering
                   it unconditionally alongside the visible one made every
                   non-running state read its status out twice. */}
+              {children.length ? (
+                <Tabs value={view} onValueChange={setView} className="shrink-0">
+                  <TabsListCompact>
+                    <TabsTriggerCompact value={app.app_id}>{app.name}</TabsTriggerCompact>
+                    {children.map((child) => (
+                      <TabsTriggerCompact key={child.app_id} value={child.app_id}>{appTabLabel(child, app)}</TabsTriggerCompact>
+                    ))}
+                  </TabsListCompact>
+                </Tabs>
+              ) : null}
               {status.live ? (
                 <span className="sr-only">{status.label}</span>
               ) : (
@@ -173,7 +209,12 @@ export function AppDetailModal({
                   code mints their sign-in tokens and binds them) and the Apps
                   that use it. Each slug opens that App. */}
               <AppLinks label={tI18nComplete.raw('text9e6151acb057')} slugs={app.uses} onOpen={onOpenLinked} />
-              <AppLinks label={tI18nComplete.raw('text681bf81aba87')} slugs={app.used_by} onOpen={onOpenLinked} />
+              {/* A tab of this App already shows it: not listed again as a user. */}
+              <AppLinks
+                label={tI18nComplete.raw('text681bf81aba87')}
+                slugs={app.used_by?.filter((slug) => !children.some((child) => child.slug === slug))}
+                onOpen={onOpenLinked}
+              />
               {/* Its other services (each on its own host) and its labels. */}
               <AppServices app={app} />
               {(app.labels ?? []).map((label) => (
@@ -218,14 +259,28 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                {preview ? (
+                {appCan(viewed, 'preview') && viewed.active_deployment_id ? (
+                  <Hint label={tI18nComplete.raw('text5b529abadacc')} side="bottom">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      disabled={refreshing}
+                      aria-label={tI18nComplete.raw('text5b529abadacc')}
+                      onClick={() => void refresh()}
+                      data-testid="app-preview-refresh"
+                    >
+                      {refreshing ? <Loading className="size-4 shrink-0" /> : <ArrowClockwiseIcon className="size-4 shrink-0" />}
+                    </Button>
+                  </Hint>
+                ) : null}
+                {appCan(viewed, 'preview') ? (
                   <Hint
-                    label={tI18nComplete('text06ce842278f6', { value0: appHost(app.url) })}
+                    label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
                     side="bottom"
                   >
                     <Button asChild size="icon" variant="outline">
                       <a
-                        href={liveUrl}
+                        href={viewedUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label={tI18nComplete.raw('text306ef19c8ac3')}
@@ -317,7 +372,16 @@ export function AppDetailModal({
           </header>
 
           <div className="relative min-h-0 flex-1">
-            {preview ? (
+            {viewedChild ? (
+              <AppPreview
+                key={viewedChild.app_id}
+                app={viewedChild}
+                url={childAccess.session.data?.url ?? null}
+                accessError={viewedChild.viewer_can_access === false || childAccess.session.isError}
+                interactive
+                className="absolute inset-0 size-full"
+              />
+            ) : preview ? (
               <AppPreview
                 key={app.active_deployment_id ?? app.app_id}
                 app={app}

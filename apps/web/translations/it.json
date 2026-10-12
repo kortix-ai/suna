@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Sostituito per questo progetto",
         "defaultOn": "Attivo per impostazione predefinita",
-        "defaultOff": "Disattivo per impostazione predefinita"
+        "defaultOff": "Disattivo per impostazione predefinita",
+        "organization": "Tutta l'organizzazione, gestito da Kortix"
       },
       "search": "Cerca funzionalità",
       "loadFailed": "Impossibile caricare il progetto",
@@ -1203,6 +1204,14 @@
           "name": "Trigger di eventi dell'app",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario."
         },
+        "volumes": {
+          "name": "Volumi",
+          "description": "File condivisi e sessioni su volumi per tutta l'organizzazione."
+        },
+        "stateless_sessions": {
+          "name": "Sessioni senza stato",
+          "description": "Un computer nuovo a ogni risveglio; restano solo file e chat. Richiede i volumi attivi."
+        },
         "drives": {
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."
@@ -1210,6 +1219,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandbox effimere",
           "description": "Una sessione arrestata conserva file e conversazione su un volume e rilascia la sua macchina. Riattivarla avvia una nuova macchina con l’immagine più recente. I processi in esecuzione non sopravvivono a un arresto."
+        },
+        "session_log": {
+          "name": "Log di sessione v2",
+          "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
       }
     },
@@ -19527,7 +19540,8 @@
       "textac6d9b76a141": "Montato",
       "text8d54763edcd8": "Non montato",
       "textffeb0c99532f": "Snapshot conservati {value0} giorni",
-      "text6f52b07880a0": "Crea snapshot ora"
+      "text6f52b07880a0": "Crea snapshot ora",
+      "text91dc861375bc": "Criteri di versione mobile visualizzati"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -19772,6 +19786,7 @@
     "providerError": "Impossibile aggiornare l’accesso al fornitore.",
     "managedTitle": "Modelli gestiti da Kortix",
     "managedDescription": "Modelli gestiti addebitati in crediti Kortix. Non serve una chiave API.",
+    "managedUpgradeHint": "Effettua l'upgrade per usare i modelli gestiti di Kortix oppure connetti un provider tuo.",
     "pricingEstimate": "Prezzo stimato per il cliente. La rotta utilizzata determina il costo.",
     "pricingRoute": "{route}: {input} input / {cacheRead} cache / {output} output per 1 milione di token",
     "pricingPreferred": "Preferita",

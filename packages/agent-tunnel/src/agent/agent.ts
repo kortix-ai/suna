@@ -33,6 +33,16 @@ import { signMessage, verifyMessageSignature } from '../shared/crypto';
 export const AGENT_VERSION = agentTunnelVersion();
 
 /**
+ * Opens a socket to the relay. It names the agent: Bun sends no User-Agent,
+ * and Cloudflare answers an upgrade without one with 403. Bun, Node 22 and
+ * `ws` all take `{ headers }` as the second argument.
+ */
+export function openRelaySocket(url: string): WebSocket {
+  const RelaySocket = WebSocket as unknown as new (url: string, init: { headers: Record<string, string> }) => WebSocket;
+  return new RelaySocket(url, { headers: { 'User-Agent': `kortix-agent-tunnel/${AGENT_VERSION}` } });
+}
+
+/**
  * Relay close codes that mean the credential itself is bad. They are terminal:
  * reconnecting with the same token can never succeed.
  */
@@ -232,7 +242,7 @@ export class TunnelAgent {
 
     try {
       // lgtm[js/file-access-to-http] Tunnel endpoint is intentionally loaded from trusted local config.
-      this.ws = new WebSocket(new URL(wsUrl));
+      this.ws = openRelaySocket(new URL(wsUrl).href);
       this.setupWsHandlers();
     } catch (err) {
       log(`${c.red}✗${c.reset}`, `Connection failed`);

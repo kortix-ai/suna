@@ -253,6 +253,12 @@ export const RUNTIME_CAPABILITIES = [
    * boundary (`POST /kortix/runtime/sessions/:id/steer`). The turn does not stop.
    */
   'session.steer',
+  /**
+   * `GET /kortix/runtime/events?schema=v2` streams the session log
+   * (`kortix.session/2`) as `log.*` frames (`@kortix/api-contract/session-log`
+   * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
+   */
+  'session.log.v2',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
