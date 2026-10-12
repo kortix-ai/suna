@@ -358,13 +358,15 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
     page,
   }) => {
     const promptPosts: string[] = [];
-    const globalEventRequests: string[] = [];
+    const sessionStreamRequests: string[] = [];
     const acpRequests: string[] = [];
     const failedKortixResponses: string[] = [];
 
     page.on('request', (request) => {
-      if (request.url().includes('/global/event')) {
-        globalEventRequests.push(request.url());
+      // The browser holds ONE live stream per session, served by the API
+      // (`control-stream.ts`), not the runtime's `/global/event`.
+      if (request.url().includes(`/v1/projects/${projectId}/sessions/${sessionId}/events`)) {
+        sessionStreamRequests.push(request.url());
       }
       if (request.url().includes('/kortix/acp/')) {
         acpRequests.push(request.url());
@@ -433,7 +435,7 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
       timeout: 120_000,
     });
     expect(promptPosts).toHaveLength(1);
-    expect(globalEventRequests.length).toBeGreaterThan(0);
+    expect(sessionStreamRequests.length).toBeGreaterThan(0);
     expect(acpRequests).toEqual([]);
     expect(failedKortixResponses).toEqual([]);
 
