@@ -188,16 +188,27 @@ jobs:
       cloudflare: true
 
   # ── Raise the "release in progress" banner ──────────────────────────────────
-  # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
-  # for members; admins can still dismiss). Best-effort and non-blocking: it never
-  # gates or fails the deploy, and it
-  # never clobbers an active incident banner (see scripts/ci-maintenance-banner.sh).
-  # Cleared again by `maintenance-banner-off`, but ONLY once the rollout is green.
+  # Show users a CRITICAL banner while the ECS roll changes prod traffic
+  # (non-dismissible for members; admins can still dismiss). It waits for the
+  # same gates as `deploy-ecs` and starts in parallel with it, so a run that
+  # fails in Terraform, retag or migrations never raises it. Best-effort and
+  # non-blocking: it never gates or fails the deploy, and it never clobbers an
+  # active incident banner (see scripts/ci-maintenance-banner.sh).
+  # Cleared again by `maintenance-banner-off`, which runs when the run ends,
+  # whatever the result.
   # Requires the PROD_MAINTENANCE_TOKEN secret (a platform-admin bearer); if it
   # is unset the job is a no-op, so the release still works before it is added.
   maintenance-banner-on:
     name: Rollout banner (raise)
-    needs: version
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api, terraform-prod]
+    # Same gate as deploy-ecs: raise the banner only when the roll will start.
+    if: >-
+      ${{ always()
+        && needs.retag-images.result == 'success'
+        && needs.verify-image-commits.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1737,18 +1748,18 @@ jobs:
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true
 
-  # ── Lower the "release in progress" banner — ONLY when the rollout is green ───
-  # `needs: verify-live-version` with the default `if: success()` means this runs
-  # only after the backend deployed (deploy-ecs is upstream of
-  # verify-live-version, and migrate-db is upstream of those) AND the public
-  # endpoints verifiably serve the released version. If any of that fails, this
-  # job is skipped and the critical banner stays raised — deliberately, so users
-  # keep seeing it until an admin clears or escalates it from the console.
-  # Best-effort and non-clobbering: only clears the banner if it is still OUR
-  # rollout banner.
+  # ── Lower the "release in progress" banner — ALWAYS, when the run ends ───────
+  # `if: always()` runs this job after success, failure and cancel. It waits for
+  # every job that can hold the roll open: banner-on (so raise and lower never
+  # race), deploy-ecs, verify-live-version, and frontend-auth-proof. Incident
+  # 2026-10-11: a failed run skipped this job and left the banner up 8 h 27 min.
+  # Non-clobbering: scripts/ci-maintenance-banner.sh clears the banner only if it
+  # is still OUR rollout banner. The step retries, and logs an ::error:: if the
+  # endpoint stays down, but never fails the run.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [verify-live-version, frontend-auth-proof]
+    needs: [maintenance-banner-on, deploy-ecs, verify-live-version, frontend-auth-proof]
+    if: ${{ always() }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
