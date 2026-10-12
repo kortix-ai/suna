@@ -4,7 +4,7 @@
 #   service (autoscaled on CPU/memory, min 3 tasks across 2 AZs) in private
 #   subnets, egress via per-AZ NAT.
 #
-# SAME modules as dev (../dev) — prod just runs bigger numbers, no Spot, a NAT
+# SAME modules as dev (../dev-us-east-2) — prod just runs bigger numbers, no Spot, a NAT
 # per AZ, and Container Insights on. min_capacity=3 preserves one healthy
 # replica if two tasks fail together. Applied by deploy-prod.yml's
 # terraform-prod-api job on every release, before the image rolls. See README.md.
@@ -28,7 +28,7 @@ provider "aws" {
 }
 
 provider "cloudflare" {
-  # Auth precedence (mirrors ../dev): scoped API token → global API key
+  # Auth precedence: scoped API token → global API key
   # (email + key) → format-valid dummy token (so an apply with no CF creds, e.g.
   # plan-only, doesn't reject an empty token). DNS/ACM validation needs real creds.
   api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : (var.cloudflare_api_key != "" ? null : "0000000000000000000000000000000000000000")

@@ -1,0 +1,18 @@
+{
+  "source_hash": "5842a501c01252d45939fe72f5c2507c850e3ab94943d86841f294e8a85e2943",
+  "diff_files": [
+    "apps/web/src/features/apps/app-preview-pool-loader.tsx",
+    "apps/web/src/features/apps/app-shared.test.ts",
+    "apps/web/src/features/apps/app-shared.tsx",
+    "apps/web/src/features/apps/apps-view.tsx"
+  ],
+  "diff_hash": "89d76cc1d36f94a6fe8a4cc07ce3c2deaddbbdd7d7d8c9814d04b186b6ba0a49",
+  "head": "cda1786d0b783e0d1aeb6ad329bc038f4ed8bd96",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T17:08:08.471Z"
+}

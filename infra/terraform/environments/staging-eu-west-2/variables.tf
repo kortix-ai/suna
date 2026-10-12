@@ -82,7 +82,7 @@ variable "api_environment" {
 }
 
 variable "api_secrets" {
-  description = "Secret env vars: name -> Secrets Manager ARN. Empty on purpose — see ../dev-us-east-2/variables.tf's api_secrets comment; this root relies entirely on secrets_blob_arn, same as ../staging does today."
+  description = "Secret env vars: name -> Secrets Manager ARN. Empty on purpose — see ../dev-us-east-2/variables.tf's api_secrets comment; this root relies entirely on secrets_blob_arn."
   type        = map(string)
   default     = {}
 }
@@ -101,9 +101,7 @@ variable "enable_https" {
 variable "manage_dns" {
   description = <<-EOT
     Manage this stack's origin records (staging-api-euw2 /
-    gateway-staging-euw2), which point at this root's ALBs. The records for
-    ../staging (staging-api-ecs-fargate / gateway-staging-ecs-fargate) stay in
-    ../staging.
+    gateway-staging-euw2), which point at this root's ALBs.
   EOT
   type        = bool
   default     = true
@@ -112,9 +110,8 @@ variable "manage_dns" {
 variable "api_task_count" {
   description = <<-EOT
     API task floor (desired_count and min_capacity). 6 is staging's release
-    sizing. While ../staging still runs its 6 tasks against the same database,
-    apply with 2: the staging database allows 120 connections and each API
-    task holds up to 9, so 6 + 6 tasks would leave about 10 free.
+    sizing. The staging database allows 120 connections and each API task
+    holds up to 9.
   EOT
   type        = number
   default     = 6

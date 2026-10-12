@@ -13,6 +13,8 @@
  * The body above 2 MB gzipped or 16 MB raw answers 413. A batch that reuses a `seq` another
  * message of the same thread holds answers 422 `SessionLogJournalSeqConflict` and writes nothing:
  * `seq` is never reused in a thread, and a tombstone keeps its seq. The daemon drops the batch.
+ * One exception: a row the API's transcript capture wrote for a box without a journal (P2.7,
+ * rev below 2^31) is provisional. A put that claims its seq replaces it and answers 200.
  *
  * Manifest: `GET /v1/projects/:p/sessions/:s/log/manifest`, sandbox token, answers
  * `SessionLogManifest` for the boot reconcile: the session's `generation` (0 before the first
