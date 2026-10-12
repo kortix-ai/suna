@@ -47,6 +47,13 @@ async function buildProvisionContext(c: Context): Promise<ProvisionContext> {
 
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);
+  // A project's feature flags (Volumes, Stateless sessions) come from the
+  // Volumes policy row; read it fresh so every instance agrees right after a
+  // flip. At most one tiny query per instance every 2 s.
+  projectsApp.use('/*', async (_c, next) => {
+    await (await import('../../platform/services/boot-mode-setting')).ensureBootModePolicyFresh();
+    await next();
+  });
 
   projectsApp.openapi(
     createRoute({

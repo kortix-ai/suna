@@ -19,6 +19,12 @@ export interface CachedPlatformSetting<T> {
   read(): T;
   /** Force a fresh database read into the cache. Never throws. */
   refresh(): Promise<void>;
+  /**
+   * Async read no older than `maxAgeMs`. For a refusal that must not rest on
+   * another instance's stale or cold cache (a setting another instance just
+   * wrote). Never throws.
+   */
+  readFresh(maxAgeMs: number): Promise<T>;
   /** Overwrite the row, then await a cache refresh. */
   write(value: unknown): Promise<void>;
   /** Delete the row, then await a cache refresh. */
@@ -91,6 +97,17 @@ export function createCachedPlatformSetting<T>(
       return cache ? cache.value : parse(undefined);
     },
     refresh,
+    async readFresh(maxAgeMs: number): Promise<T> {
+      if (!cache || Date.now() - cache.at >= maxAgeMs) {
+        if (!inflight) {
+          inflight = refresh().finally(() => {
+            inflight = null;
+          });
+        }
+        await inflight;
+      }
+      return cache ? cache.value : parse(undefined);
+    },
     write: (value: unknown) => persist(value),
     clear: () => persist(null),
     __setForTests(value: unknown): void {

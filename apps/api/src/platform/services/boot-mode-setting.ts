@@ -25,6 +25,16 @@ export function bootModePolicy(): { stored: boolean; policy: BootModePolicy } {
   return setting.read();
 }
 
+/**
+ * Bring this instance's copy of the policy to at most `maxAgeMs` old. The API
+ * runs several instances, each with its own 30 s cache, so a project read
+ * right after a flag flip can land on one that still holds the old policy
+ * and show Volumes and Stateless sessions in the wrong positions.
+ */
+export async function ensureBootModePolicyFresh(maxAgeMs = 2_000): Promise<void> {
+  await setting.readFresh(maxAgeMs);
+}
+
 export async function refreshBootModePolicy(): Promise<{ stored: boolean; policy: BootModePolicy }> {
   await setting.refresh();
   return setting.read();
@@ -77,6 +87,18 @@ export async function setVolumesForOrg(accountId: string, enabled: boolean | nul
       SET value = ${merged(sql`kortix.platform_settings.value`)}, updated_at = now()
   `);
   await setting.refresh();
+}
+
+/**
+ * {@link volumesEnabledFor} that never refuses on a stale or cold cache: an
+ * "off" answer is re-read from the database (at most 2 s old) before it
+ * stands. Another API instance may have just turned Volumes on, and an
+ * instance that just started has no cache at all.
+ */
+export async function volumesEnabledForFresh(accountId: string | null | undefined): Promise<boolean> {
+  if (volumesEnabledFor(accountId)) return true;
+  await setting.readFresh(2_000);
+  return volumesEnabledFor(accountId);
 }
 
 /**
