@@ -1,5 +1,5 @@
 {
-  "source_hash": "9b4033b685e26619870bcda6da849513592c7c417ab54ec6d984440ed4242e0a",
+  "source_hash": "3cf7ea6ff5a882df7f5b30950b519629c25a826100a10e5c483ff9fdbab47984",
   "diff_files": [
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/assets/quick-entry.html",
@@ -19,6 +19,8 @@
     "apps/web/src/components/desktop/desktop-quick-entry.test.ts",
     "apps/web/src/components/desktop/desktop-quick-entry.tsx",
     "apps/web/src/features/session/composer-chat-input.tsx",
+    "apps/web/src/features/session/composer/composer-submit-latch.test.ts",
+    "apps/web/src/features/session/composer/composer.tsx",
     "apps/web/src/features/session/session-chat-quick-entry-prefill.test.ts",
     "apps/web/src/features/session/session-chat.tsx",
     "apps/web/src/features/workspace/project-layout/project-home.test.tsx",
@@ -31,13 +33,13 @@
     "apps/web/src/stores/session-composer-prefill-store.ts",
     "tests/e2e/specs/27-desktop-parity.spec.ts"
   ],
-  "diff_hash": "93542030b93abdf3542daf84878fda172c48d749700de065208550b078b4e6af",
-  "head": "8576ec927fbc1da8b090fbf16ce4a51946db6ca4",
+  "diff_hash": "13df14db7101050b845f44897b828cd599ce34a7fb611859332a1208c4c3bcb8",
+  "head": "57b8edc633bc3375c9695b0467cd4c2051dc5b92",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T14:18:55.996Z"
+  "at": "2026-10-12T14:47:55.870Z"
 }
