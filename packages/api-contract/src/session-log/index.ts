@@ -3,9 +3,10 @@
  * of a session (threads, messages, blocks) that every harness adapter exports to
  * and restores from. Types come from `types.ts`, validators from `schema.ts`, the
  * daemon-to-API journal and manifest from `wire.ts`, the `log.*` frames of the live runtime
- * stream from `events.ts`, `fromV1`/`toV1` (the exact conversion from
- * and to the v1 mirror) from `v1.ts`, and the oracle (`modelView`, the request normalizers) from
- * `model-view.ts`.
+ * stream from `events.ts`, `fromV1`/`toV1` (the exact conversion from and to the v1 mirror)
+ * from `v1.ts`, the v1 transcript frames and a message of the running turn
+ * (`V1_TRANSCRIPT_EVENTS`, `liveMessageFromV1`) from `live.ts`, and the oracle (`modelView`,
+ * the request normalizers) from `model-view.ts`.
  * Import it as `@kortix/api-contract/session-log`.
  */
 import { SessionLogSchema } from './schema';
@@ -17,6 +18,7 @@ export * from './wire';
 export * from './events';
 export * from './v1';
 export * from './model-view';
+export * from './live';
 
 /**
  * Every reader calls this on a record it loads. Minor 1 is the only minor, so it

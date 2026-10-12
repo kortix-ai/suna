@@ -32,11 +32,11 @@ import { useCallback, useMemo } from 'react';
  * has on a read row. The document itself sits in {@link ToolMarkdownCard};
  * listed files sit in {@link ToolResultCard}, matching a directory read.
  */
-export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SkillTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
 
   const rawName = typeof input.name === 'string' ? input.name.trim() : '';
   // `skillDocumentPath` refuses the 'skill' placeholder as a directory name, so

@@ -197,7 +197,7 @@ async function loadAppToken(
  *
  * ```ts
  * const token = kortixToken();                    // for this App itself
- * client.setAuth(kortixToken({ audience: 'db' })); // for an App this App uses
+ * client.setAuth(kortixToken({ audience: 'backend' })); // for an App this App uses
  * ```
  *
  * Cached until shortly before expiry; concurrent callers share one request;

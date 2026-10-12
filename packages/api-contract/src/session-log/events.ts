@@ -7,16 +7,23 @@
  * The v2 stream has its own sequence and epoch (`kortix.hello` names them). The daemon
  * derives every frame from the records its journal sends to the API (`wire.ts`): the same
  * message ids, block ids, `seq`, thread ids and `rev`, so a client merges the stream with
- * the saved pages by keeping the highest `rev` of each message.
+ * the saved pages by keeping the highest `rev` of each message. While a turn runs, a
+ * `log.message` put with `status: 'streaming'` precedes the first delta of a message (the
+ * API never stores it); a later put with a higher `rev` replaces it.
  *
  * | Frame | Payload | When |
  * | --- | --- | --- |
  * | `log.state` | `SessionLogStateEventSchema` | the session fields changed (journal start, turn end) |
  * | `log.thread` | `SessionLogThreadUpsertSchema` | a thread is new or changed |
- * | `log.message` | `SessionLogMessageEventSchema` | the journal collected a new revision of a message (`{ rev, message }`), or its tombstone (`{ message_id, rev }`, the journal's own form) |
+ * | `log.message` | `SessionLogMessageEventSchema` | the journal collected a new revision of a message (`{ rev, message }`), or its tombstone (`{ message_id, rev }`, the journal's own form); or a live put of the running turn |
  * | `log.block.delta` | `SessionLogBlockDeltaEventSchema` | the harness streamed text into a text or reasoning block |
  *
  * In one collection the order is `log.state`, then `log.thread`, then `log.message`.
+ *
+ * The API session stream (`GET /v1/projects/:p/sessions/:s/events?schema=v2`, P4.4) carries these
+ * frames in place of the v1 transcript frames (`V1_TRANSCRIPT_EVENTS`, `live.ts`). It relays them
+ * from a daemon that lists `session.log.v2`; for an older daemon the API converts the v1 frames
+ * (`liveMessageFromV1`, block id = part id, seq = `v1Seqs`), and `log.thread` is never sent.
  */
 import { z } from 'zod';
 import { SessionLogPutSchema, SessionLogSessionPatchSchema, SessionLogThreadUpsertSchema, SessionLogTombstoneSchema } from './wire';

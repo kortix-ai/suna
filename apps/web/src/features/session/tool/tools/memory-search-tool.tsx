@@ -33,12 +33,12 @@ export function hitPreview(content: string): string {
   return line.length > 80 ? `${line.slice(0, 79).trimEnd()}…` : line;
 }
 
-export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function MemorySearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseMemorySearchOutput(output), [output]);
   const query = ((input.query as string) || parsed.query || '').trim();

@@ -985,7 +985,7 @@ export type SecretEchoNotice = {
  *
  * There is one answer now. The relay returns an ordinary response with
  * `[REDACTED]` in place of the value (`redactSecretFromResponse`,
- * apps/api/src/secrets/http-broker.ts), on every sandbox provider. The
+ * apps/api/src/secrets/broker/substitution.ts), on every sandbox provider. The
  * provider-edge story — a cut connection that reads as `curl: (52) Empty reply
  * from server` — described a mechanism that no longer serves any project, and
  * telling a user to expect it made a working request look broken.

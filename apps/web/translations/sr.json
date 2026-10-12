@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
-        "defaultOff": "Подразумевано искључено"
+        "defaultOff": "Подразумевано искључено",
+        "organization": "Cela organizacija, upravlja Kortix"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "Okidači događaja aplikacije",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru."
+        },
+        "volumes": {
+          "name": "Volumeni",
+          "description": "Deljeni fajlovi i sesije na volumenima za celu organizaciju."
+        },
+        "stateless_sessions": {
+          "name": "Sesije bez stanja",
+          "description": "Svaki put nov računar; čuvaju se samo fajlovi i razgovor. Potrebno je uključiti volumene."
         },
         "drives": {
           "name": "Drive",
@@ -19777,6 +19786,7 @@
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "managedUpgradeHint": "Надоградите да бисте користили Kortix управљане моделе или повежите сопственог добављача.",
     "pricingEstimate": "Процењена цена за корисника. Коришћена рута одређује наплату.",
     "pricingRoute": "{route}: {input} улаз / {cacheRead} кеш / {output} излаз по милион токена",
     "pricingPreferred": "Пожељна",

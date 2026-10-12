@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
@@ -54,11 +55,11 @@ describe('WebSearchTool', () => {
   test('renders every source as a flat row — no disclosure groups', () => {
     const html = render(
       <WebSearchTool
-        part={completedSearchPart([
+        call={toolCallBlock(completedSearchPart([
           { title: 'LinkedIn — Marko', url: 'https://linkedin.com/in/marko' },
           { title: 'Kortix founder', url: 'https://markokraemer.com' },
           { title: 'GitHub', url: 'https://github.com/markokraemer' },
-        ])}
+        ]))}
         defaultOpen
       />,
     );
@@ -75,10 +76,10 @@ describe('WebSearchTool', () => {
   test('two sources on the same domain render as two flat rows, never a "N results" domain group', () => {
     const html = render(
       <WebSearchTool
-        part={completedSearchPart([
+        call={toolCallBlock(completedSearchPart([
           { title: 'Kortix SDK repo', url: 'https://github.com/kortix-ai/sdk' },
           { title: 'Suna repo', url: 'https://github.com/kortix-ai/suna' },
-        ])}
+        ]))}
         defaultOpen
       />,
     );

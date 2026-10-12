@@ -13,9 +13,9 @@ import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function SessionStatsTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function SessionStatsTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const output = partOutput(part);
+  const output = partOutput(call);
 
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
   // it — asked once per render, whether the row is open or collapsed.
