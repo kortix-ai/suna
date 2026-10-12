@@ -18,6 +18,7 @@ const {
   app,
   BrowserWindow,
   Menu,
+  desktopCapturer,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -373,9 +374,12 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
    */
   function takeScreenshot() {
     if (process.platform !== 'darwin' || capturing) return;
-    const access = systemPreferences.getMediaAccessStatus('screen');
-    if (access === 'denied' || access === 'restricted') {
-      notify('Kortix needs Screen Recording access to take a screenshot.', {
+    if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+      // A capture attempt is what adds Kortix to the Screen Recording list and
+      // shows the macOS prompt the first time. macOS 11+ reports a never-asked
+      // app as denied, so a status check alone never asked (computer-tray.js).
+      void desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      notify('Allow Kortix under Screen Recording, then quit and reopen Kortix.', {
         label: 'Open Settings',
         run: () => shell.openExternal(SCREEN_RECORDING_SETTINGS),
       });

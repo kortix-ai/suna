@@ -185,8 +185,11 @@ Enter starts a new session with that prompt. The same bar opens from
 - **Files and screenshots.** Paperclip, paste or drop; at most 10 files of
   20 MB each (`normalizeAttachments`). On macOS the camera button hides the bar
   and runs `screencapture -i` (region, or Space for a window); the image comes
-  back as a thumbnail. Screen Recording access is asked by macOS on first use;
-  when it is denied the bar links to the privacy pane. Files reach the web app
+  back as a thumbnail. Without Screen Recording access the first click runs a
+  `desktopCapturer` capture, which shows the macOS prompt and lists Kortix, and
+  the bar links to the privacy pane; macOS applies a grant after Kortix restarts.
+  An unpackaged build started from a terminal is listed as that terminal app
+  (iTerm, Terminal): macOS credits the app that launched it. Files reach the web app
   in `quick_entry_take` and are staged by the composer like any attachment. A
   screenshot for a model whose catalog says it cannot read images fills the
   composer instead of sending.
