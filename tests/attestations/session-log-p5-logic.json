@@ -1,5 +1,5 @@
 {
-  "source_hash": "36921a0c6ea56d120d7c0cd3c4feddb720591d71f4f697c25a52ecae9df00ca0",
+  "source_hash": "3a3570ddb714a16cbbc7503a7cdaef0f0510d2ce1be219aabcd78f3b0b76dbc9",
   "diff_files": [
     "apps/web/src/app/[locale]/(system)/debug/session-fixture/fixture-turn.tsx",
     "apps/web/src/app/[locale]/(system)/debug/subagent-failure/page.tsx",
@@ -70,8 +70,8 @@
     "packages/sdk/src/react/use-session-log.test.ts",
     "packages/sdk/src/react/use-session-log.ts"
   ],
-  "diff_hash": "6409130e72330b65bb80ec5ae50e39897a063375edaba20e180e82e3ee604835",
-  "head": "acbd01641b637c4ea6bbd4278e9c589236c5acca",
+  "diff_hash": "82d00dde901f67616545f80a9f05b9540722a754d979df5da69eba6d1ca5119a",
+  "head": "21c615eac3ce939c0301cb04d9ac238f9b992c92",
   "passed": true,
   "lanes": {
     "core": "pass",
@@ -79,5 +79,5 @@
     "db-suites": "pass",
     "browser": "pass"
   },
-  "at": "2026-10-12T18:33:02.233Z"
+  "at": "2026-10-12T19:43:37.163Z"
 }
