@@ -518,4 +518,35 @@ describe('EXACTLY ONE framing header reaches the upstream', () => {
     expect(error).toBeInstanceOf(SecretBrokerError);
     expect((error as SecretBrokerError).code).toBe('relay_request_too_large');
   });
+
+  // Characterization for the framing DECISION across all three body shapes at
+  // once, pinned against real sockets before the framing code was extracted
+  // into its own helper: a Buffer proves its length → `content-length`; a
+  // stream with a caller-declared length keeps it and never gains
+  // `transfer-encoding`; a stream without one goes chunked. Every shape
+  // carries EXACTLY ONE framing header.
+  test('the three body shapes each get exactly one framing header', async () => {
+    received = [];
+    const buffered = await openUpstream(head(), Buffer.from('exactly-13-by'), { seam: seam() });
+    await drain(buffered.body);
+    const declared = await openUpstream(
+      { ...head(), headers: { ...head().headers, 'content-length': '5' } },
+      Readable.from([Buffer.from('abcde')]),
+      { seam: seam() },
+    );
+    await drain(declared.body);
+    const undeclared = await openUpstream(head(), Readable.from([Buffer.from('abc')]), { seam: seam() });
+    await drain(undeclared.body);
+
+    expect(received).toHaveLength(3);
+    expect(received[0]?.headers['content-length']).toBe('13');
+    expect(received[0]?.headers['transfer-encoding']).toBeUndefined();
+    expect(Buffer.concat(received[0]!.chunks).toString()).toBe('exactly-13-by');
+    expect(received[1]?.headers['content-length']).toBe('5');
+    expect(received[1]?.headers['transfer-encoding']).toBeUndefined();
+    expect(Buffer.concat(received[1]!.chunks).toString()).toBe('abcde');
+    expect(received[2]?.headers['transfer-encoding']).toBe('chunked');
+    expect(received[2]?.headers['content-length']).toBeUndefined();
+    expect(Buffer.concat(received[2]!.chunks).toString()).toBe('abc');
+  });
 });

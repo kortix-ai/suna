@@ -1,0 +1,22 @@
+{
+  "source_hash": "da5f83e1dd7197a34cf768820e941a845d0f06cf60f4dfb80f01552d20e5c8d1",
+  "diff_files": [
+    "apps/api/src/iam/membership-read.ts",
+    "apps/api/src/notifications/inbox-read.integration.test.ts",
+    "apps/api/src/notifications/inbox-read.ts",
+    "apps/api/src/notifications/mfa-gate.ts",
+    "apps/api/src/notifications/web-push-delivery.integration.test.ts",
+    "apps/api/src/notifications/web-push-delivery.ts",
+    "apps/web/content/docs/work/sessions.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "f6c1fbcc5bffb9d36e3f483e5ba7e26e782d6560deed15b1a1e96ef02e547e09",
+  "head": "e6751a5cedab0044e401390b26b563a00246d30e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T10:28:46.557Z"
+}
