@@ -10,16 +10,9 @@ name: Deploy Prod
 #      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
 #      self-host `:stable` channel is promoted SEPARATELY and manually via
 #      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
-#   2. Deploy the production and pre-cutover shadow backends in parallel:
-#      - ECS Fargate (the ACTIVE backend behind api.kortix.com since PR #4683):
-#        deploy-ecs rolls api + gateway task-defs rendered from the prod env
-#        blob, stamped with the clean KORTIX_VERSION.
-#      - US East 2 ECS shadow: deploy-us-shadow applies the same database
-#        migrations, refreshes logical replication, and rolls the US API and
-#        gateway. It does not change production routing or enable writers.
-#        OFF by default — it runs only when the repository variable
-#        ENABLE_US_SHADOW_DEPLOY is `true`. Its data plane has been broken
-#        since 2026-08-07; see the job comment.
+#   2. Deploy the production backend on ECS Fargate (the ACTIVE backend behind
+#      api.kortix.com since PR #4683): deploy-ecs rolls api + gateway task-defs
+#      rendered from the prod env blob, stamped with the clean KORTIX_VERSION.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
@@ -1063,50 +1056,6 @@ jobs:
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}" --database-migrated
 
-  # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
-  # The shadow uses the native US East 2 Supabase project and separate ECS
-  # services. This job keeps its database schema, logical publication, API, and
-  # gateway on the same release as production. It does not change Cloudflare
-  # routing, production DNS, desired counts, or worker flags.
-  #
-  # DISABLED BY DEFAULT since v0.12.7. The shadow's data plane is broken in
-  # three independent places and no release needs it:
-  #   1. The source publication `kortix_us_east_2_20260725` and its replication
-  #      slot were DROPPED from prod on 2026-08-08 (wal_status was `lost`).
-  #      `scripts/prod-us-east-2/refresh-replication.sh` exits 1 with "The
-  #      enabled target subscription is missing" until both are rebuilt and the
-  #      target is fully resynced.
-  #   2. Prod still carries `kortix.project_session_connector_bindings.profile_id`,
-  #      which migration 20260806150353417_connector_compat_removal.sql dropped
-  #      and the shadow no longer has. The refresh script rejects that source
-  #      column with "The target lacks selected source columns" — the sole
-  #      failure of the v0.12.5 (job 92927632339) and v0.12.6 (job 93130050196)
-  #      shadow lanes.
-  #   3. The shadow's pending `audit_events` migrations exceed the server
-  #      statement timeout: v0.12.7 spent 24m20s on 20260807221200000 and then
-  #      failed 20260807221205000 with 57014 "canceling statement due to
-  #      statement timeout" (job 93576314456).
-  # Running that lane on every release costs 25-30 minutes, turns a green
-  # release red, and — because the job stays `in_progress` — blocks "re-run
-  # failed jobs" on the whole release run. v0.12.7 had to be cancelled outright
-  # to re-run anything else.
-  #
-  # Set the repository variable ENABLE_US_SHADOW_DEPLOY=true to turn the lane
-  # back on. Do that only after the revival checklist in
-  # deploy-prod-us-east-2-shadow.yml passes end to end. The reusable workflow keeps its
-  # `workflow_dispatch` trigger, so an operator can always drive the shadow by
-  # hand while the lane is off.
-  #
-  # The shadow is dark: Cloudflare routes no user traffic to it. A wedged
-  # shadow (e.g. logical replication stuck) must not block the release
-  # artifacts for the PRIMARY region — that skipped the tag, GitHub Release,
-  # and VERSION sync on v0.10.16 through v0.12.0. Nothing `needs:` this job
-  # (verify-live-version deliberately does not), so its failure shows red
-  # here but blocks nothing; verify-live-version reports shadow drift as a
-  # warning. NOTE: `continue-on-error` is NOT valid on a reusable-workflow
-  # call job — GitHub rejects the whole file (startup_failure, zero jobs).
-  # A job-level `if:` IS valid, and a skipped job leaves the run green — the
-  # same mechanism the shadow lane uses with ENABLE_US_SHADOW_DEPLOY.
   # ── Deploy the prod API router Worker ───────────────────────────────────────
   # api.kortix.com and gateway.kortix.com are fronted by the Cloudflare Worker
   # in infra/cloudflare/workers/api-router. Until 2026-09-07 NOTHING in this
@@ -1179,21 +1128,6 @@ jobs:
             exit 1
           fi
 
-  deploy-us-shadow:
-    name: Deploy API + gateway to US East 2 shadow
-    needs: [version, retag-images, verify-image-commits, migrate-db]
-    if: vars.ENABLE_US_SHADOW_DEPLOY == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/deploy-prod-us-east-2-shadow.yml
-    with:
-      version: ${{ needs.version.outputs.version }}
-      source_sha: ${{ needs.version.outputs.source_sha }}
-      synchronize_database: true
-
-  
-
   # ── Verify the release is ACTUALLY live on the public endpoints ──────────────
   # The backstop that catches ANY deploy/routing divergence regardless of cause:
   # curls the PUBLIC hosts (the Cloudflare api-router = whatever backend is
@@ -1207,11 +1141,6 @@ jobs:
   #     api-ecs-fargate.kortix.com
   #     gateway-ecs-fargate.kortix.com
   #
-  # The US East 2 shadow endpoints are checked only while
-  # ENABLE_US_SHADOW_DEPLOY is `true`, and they only ever warn. With the lane
-  # off, the shadow is not deployed at all, so asserting its version would log
-  # two guaranteed, meaningless warnings on every release.
-  #
   # Everything that announces success (github-release, announce, banner-off)
   # needs this job. A release whose live version does not match cannot be
   # published.
@@ -1223,7 +1152,6 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
-      SHADOW_ENABLED: ${{ vars.ENABLE_US_SHADOW_DEPLOY }}
     steps:
       - name: Assert public + origin endpoints report v${{ needs.version.outputs.version }}
         run: |
@@ -1243,15 +1171,6 @@ jobs:
             "origin-api-ecs|https://api-ecs-fargate.kortix.com/v1/health|origin|1"
             "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin|0"
           )
-          # The dark US East 2 shadow is only deployed when the lane is on.
-          if [ "${SHADOW_ENABLED:-}" = "true" ]; then
-            ENDPOINTS+=(
-              "shadow-api-use2|https://api-use2-shadow.kortix.com/v1/health|shadow|1"
-              "shadow-gateway-use2|https://gateway-use2-shadow.kortix.com/health/live|shadow|1"
-            )
-          else
-            echo "ENABLE_US_SHADOW_DEPLOY is not 'true' — skipping the US East 2 shadow endpoints."
-          fi
 
           declare -A live
           declare -A live_commit
@@ -1277,9 +1196,7 @@ jobs:
                 echo "($attempt/20) ✓ $name  version=$v commit=${c:-n/a}"
               else
                 echo "($attempt/20) … $name  version=${v:-<unreachable>} commit=${c:-n/a}"
-                if [ "$kind" != "shadow" ]; then
-                  all_ok=0
-                fi
+                all_ok=0
               fi
             done
             if [ "$all_ok" = 1 ]; then
@@ -1304,8 +1221,6 @@ jobs:
             fi
             if [ "$v" = "$VERSION" ] && [ "$commit_mismatch" = 0 ]; then
               continue
-            elif [ "$kind" = "shadow" ]; then
-              echo "::warning::$name ($url) reports version='${v:-<unreachable>}' commit='${c:-n/a}' — the dark US shadow is not serving v${VERSION}. Tolerated; the shadow region blocks nothing, fix it separately."
             elif [ -z "$v" ]; then
               if [ "$kind" = "required" ]; then
                 echo "::error::$name ($url) is unreachable — the PUBLIC endpoint must serve the release. Release blocked."

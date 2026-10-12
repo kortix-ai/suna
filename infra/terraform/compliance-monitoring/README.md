@@ -29,8 +29,6 @@ It manages:
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
-- A restricted us-east-2 network ACL, a locked default security group, and VPC
-  flow logs (Drata DCF-25 / DCF-97).
 - A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
   backups. Velero retains backups for 30 days. S3 expires current and
   noncurrent object versions after 35 days.
@@ -102,9 +100,6 @@ done
 
 ## Verify us-east-2 controls
 
-The us-east-2 network ACL excludes inbound TCP ports `22` and `3389`. The
-default network ACL and default security group contain no allow rules.
-
 ```bash
 aws wafv2 list-resources-for-web-acl --region us-east-2 \
   --web-acl-arn "$(aws wafv2 list-web-acls --region us-east-2 \
@@ -113,9 +108,6 @@ aws wafv2 list-resources-for-web-acl --region us-east-2 \
 
 aws cloudwatch describe-alarms --region us-east-2 \
   --alarm-name-prefix kortix-alb-
-
-aws ec2 describe-flow-logs --region us-east-2 \
-  --filter Name=resource-id,Values=vpc-03371e6a60dafbd25
 ```
 
 ## Drata test decisions
@@ -169,5 +161,4 @@ scheme. A new finding fails the `drata-compliance.yml` gate at `CRITICAL`.
 | Moderate | 8007 | 6 `aws_lambda_function`: 5 compliance reconcilers and the alerts logger | They call public AWS control-plane APIs only. A VPC adds a NAT or endpoint dependency to the functions that repair and report controls. No data plane access. |
 | Moderate | 8010 | `modules/selfhost-ec2` `aws_security_group.this` egress | Self-host boxes reach registries, model providers and user-chosen hosts with no stable CIDR. Ingress is restricted separately. |
 | Moderate | 8028 | `modules/network` `aws_subnet.public`, `aws_subnet.private` | Tagged with `lookup(var.tags, …)` and an interpolated Kubernetes key. Parser rule 2. |
-| Moderate | 8028 | `compliance-monitoring` `aws_network_acl_association.use2_restricted` | An association to subnets read by a data source; Terraform does not own those subnets' tags. |
 | Moderate | 8028 | `modules/ecs-api` `aws_kms_key.logs`, `aws_s3_bucket.alb_logs`; `modules/selfhost-ec2` `aws_instance.this`, `aws_kms_key.alarm_topic`; `modules/project-snapshots-bucket` `aws_s3_bucket.this` | Module resources take the caller's `var.tags`; a literal map would drop per-environment tags. Parser rule 2. |

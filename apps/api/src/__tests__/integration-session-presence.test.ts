@@ -14,7 +14,7 @@ import { PgClient } from './helpers/pg-client';
 const { db } = await import('../shared/db');
 const { deleteSessionPresence, expireSessionPresence, renewSessionPresence, upsertSessionPresence } = await import('../projects/lib/session-presence');
 const { loadSessionPresence } = await import('../notifications/notifier');
-const { idleGraceMs } = await import('../projects/sandbox-deadline');
+const { extendSandboxDeadlineForPresence, idleGraceMs } = await import('../projects/sandbox-deadline');
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `presence-it-${SANDBOX_ID}`;
@@ -231,5 +231,47 @@ describe('presence alone keeps a box at most 2 h past its latest turn', () => {
     await lastTurnEndedMinutesAgo(null);
     await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true });
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
+  });
+});
+
+/** Seconds from now to `at`, by this process's clock. */
+const secondsUntil = (at: Date) => Math.round((at.getTime() - Date.now()) / 1000);
+
+// KRTX-1729: the composer says how long presence keeps the computer on. The
+// renewal returns the deadline it wrote and the cap it applied.
+describe('a presence renewal returns the deadline it wrote and the cap', () => {
+  beforeAll(async () => {
+    await runStartedHoursAgo(5);
+  });
+  afterAll(async () => {
+    await lastTurnEndedMinutesAgo(null);
+  });
+
+  test('a turn that ended 30 min ago: the idle grace, under a cap 90 min away', async () => {
+    await lastTurnEndedMinutesAgo(30);
+    const awake = await extendSandboxDeadlineForPresence({ sessionId: SESSION_ID });
+    expect(awake).not.toBeNull();
+    expect(Math.abs(secondsUntil(awake!.deadlineAt) - idleGraceMs() / 1000)).toBeLessThanOrEqual(5);
+    expect(Math.abs(secondsUntil(awake!.deadlineAt) - (await secondsLeft()))).toBeLessThanOrEqual(1);
+    expect(Math.abs(secondsUntil(awake!.capAt) - 90 * 60)).toBeLessThanOrEqual(5);
+  });
+
+  test('a turn that ended 1 h 50 min ago: the deadline is the cap, 10 min away', async () => {
+    await lastTurnEndedMinutesAgo(110);
+    const awake = await extendSandboxDeadlineForPresence({ sessionId: SESSION_ID });
+    expect(awake!.deadlineAt.getTime()).toBe(awake!.capAt.getTime());
+    expect(Math.abs(secondsUntil(awake!.capAt) - 600)).toBeLessThanOrEqual(5);
+  });
+
+  test('a turn that ended 3 h ago: the cap is past, and the deadline is the one already set', async () => {
+    await lastTurnEndedMinutesAgo(180);
+    const awake = await extendSandboxDeadlineForPresence({ sessionId: SESSION_ID });
+    expect(Math.abs(secondsUntil(awake!.capAt) + 60 * 60)).toBeLessThanOrEqual(5);
+    expect(secondsUntil(awake!.deadlineAt)).toBeLessThanOrEqual(60);
+    expect(Math.abs(secondsUntil(awake!.deadlineAt) - (await secondsLeft()))).toBeLessThanOrEqual(1);
+  });
+
+  test('no live box for the session: null', async () => {
+    expect(await extendSandboxDeadlineForPresence({ sessionId: `${SESSION_ID}-missing` })).toBeNull();
   });
 });
