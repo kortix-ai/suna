@@ -171,6 +171,21 @@ describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store
     expect(message.blocks.map((b) => (b as { status?: string }).status)).toEqual(['running', 'pending']);
   });
 
+  test('restore_grade and grade_counts count only in-context messages, as fromV1 does', () => {
+    // A failed attempt (an errored reply, out of context) whose call lost its input: the model never saw it.
+    const failed: V1MessageRow = {
+      info: { ...(live.info as object), id: 'msg_zfail', time: { created: T + 10, completed: T + 11 }, error: { name: 'APIError', data: { message: 'upstream 500' } } } as unknown as Message,
+      parts: [{ id: 'prt_zfail1', sessionID: RS, messageID: 'msg_zfail', type: 'tool', callID: 'call_f', tool: 'bash', state: { status: 'completed', output: 'ok', title: '', metadata: {}, time: { start: T + 10, end: T + 11 } } }] as unknown as Part[],
+    };
+    const input = [...rows, failed];
+    const want = expected(input);
+    const message = want.threads[0]!.messages.at(-1)!;
+    expect(message).toMatchObject({ message_id: 'msg_zfail', in_context: false, hidden_reason: 'failed_attempt' });
+    const got = sessionLogOfV1Rows('kses_v1', RS, input);
+    expect(got.grade_counts).toEqual(want.grade_counts!);
+    expect(got.restore_grade).toBe(want.restore_grade);
+  });
+
   test('the same rows array gives the same log; a changed row gives a new message for that row only', () => {
     const first = sessionLogOfV1Rows('kses_v1', RS, rows);
     expect(sessionLogOfV1Rows('kses_v1', RS, rows)).toBe(first);
