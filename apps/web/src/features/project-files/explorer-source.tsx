@@ -32,6 +32,8 @@ export interface ExplorerCapabilities {
   write: boolean;
   /** Cmd+P file-name search overlay + toolbar search button. */
   search: boolean;
+  /** The search overlay's "Search contents" switch: needs `useFileContentSearch`. */
+  contentSearch?: boolean;
   /** Dotfile show/hide toggle in the toolbar (list is pre-filtered by the hook). */
   hiddenToggle: boolean;
   /** Per-file git-status chip in the preview modal header. */
@@ -49,6 +51,27 @@ export interface ExplorerQueryResult<T> {
   isFetching?: boolean;
   error: unknown;
   refetch: () => Promise<unknown>;
+  /** A paged listing has more entries than `data` holds. Absent: `data` is complete. */
+  hasNextPage?: boolean;
+  /** Appends the next page to `data`. */
+  fetchNextPage?: () => Promise<unknown>;
+  isFetchingNextPage?: boolean;
+  /**
+   * The last `fetchNextPage` failed. `data` still holds the pages before it
+   * and `error` stays null: the footer reports it, the rows stay.
+   */
+  nextPageError?: unknown;
+  /** `data` is cut and has no next page (an API older than paging). */
+  truncated?: boolean;
+}
+
+/** One line of a file that matches a content search. */
+export interface FileContentMatch {
+  /** "/workspace/..." path of the file. */
+  path: string;
+  /** 1-based line number. */
+  lineNumber: number;
+  lineText: string;
 }
 
 export interface ExplorerMutation<TArgs> {
@@ -81,6 +104,11 @@ export interface FileExplorerSource {
     query: string,
     options?: { type?: 'file' | 'directory'; limit?: number; enabled?: boolean },
   ) => { data: string[] | undefined; isLoading: boolean; error: unknown };
+  /** Text search over every file. Present when `capabilities.contentSearch` is. */
+  useFileContentSearch?: (
+    query: string,
+    options?: { limit?: number; enabled?: boolean },
+  ) => { data: FileContentMatch[] | undefined; isLoading: boolean; error: unknown };
   useFileHistory: (filePath: string | null) => ExplorerQueryResult<FileHistoryResult>;
   useFileCommitDiff: (
     filePath: string | null,

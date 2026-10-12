@@ -41,7 +41,7 @@ function sizeOf(value: unknown): number {
   try {
     return JSON.stringify(value)?.length * 2 || 64;
   } catch {
-    return MAX_ENTRY_BYTES + 1;
+    return Number.POSITIVE_INFINITY;
   }
 }
 
@@ -60,6 +60,9 @@ function evictUntilUnderBudget() {
  * answer. Concurrent callers share one run. A rejected read is dropped so the
  * next caller retries; `load` decides what counts as an answer (a "path not
  * found" sentinel is an answer, a network or timeout failure is not).
+ *
+ * An answer over `maxEntryBytes` (default 2 MiB) is served but not kept. A
+ * caller that re-reads one large answer many times raises it for that read.
  */
 export function cachedGitRead<T>(
   repoPath: string,
@@ -67,7 +70,9 @@ export function cachedGitRead<T>(
   op: string,
   arg: string,
   load: () => Promise<T>,
+  opts?: { maxEntryBytes?: number },
 ): Promise<T> {
+  const maxEntryBytes = opts?.maxEntryBytes ?? MAX_ENTRY_BYTES;
   const key = `${repoPath}\u0000${sha}\u0000${op}\u0000${arg}`;
   const hit = entries.get(key);
   if (hit) {
@@ -84,7 +89,7 @@ export function cachedGitRead<T>(
     (answer) => {
       if (entries.get(key) !== entry) return;
       const bytes = sizeOf(answer);
-      if (bytes > MAX_ENTRY_BYTES) {
+      if (bytes > maxEntryBytes) {
         entries.delete(key);
         return;
       }

@@ -29,8 +29,8 @@ LOGGER_TF = (
 ).read_text()
 
 # (prefix, config, ALB discovery local the sibling alarms iterate, SNS action)
+# us-west-2 runs no ALB since 2026-10-12 and has no alarm family.
 REGION_FAMILIES = (
-    ("usw2", MONITORING, "local.usw2_albs", "data.aws_sns_topic.usw2_alerts.arn"),
     ("euw2", MONITORING, "local.euw2_albs", "data.aws_sns_topic.euw2_alerts.arn"),
     ("use2", USE2, "local.use2_albs", "aws_sns_topic.use2_alerts.arn"),
 )
@@ -149,9 +149,7 @@ class AlbTargetResponseTimeAlarmTests(unittest.TestCase):
         self.assertIn(
             "ALERT_TOPIC_ARN = aws_sns_topic.use2_alerts.arn", RECONCILER_TF
         )
-        self.assertIn(
-            "ALERT_TOPIC_ARN = data.aws_sns_topic.usw2_alerts.arn", RECONCILER_TF
-        )
+        self.assertNotIn("usw2", RECONCILER_TF)
         self.assertIn(
             "ALERT_TOPIC_ARN = data.aws_sns_topic.euw2_alerts.arn", RECONCILER_TF
         )

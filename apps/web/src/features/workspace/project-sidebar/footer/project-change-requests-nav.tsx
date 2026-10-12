@@ -5,7 +5,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
@@ -44,10 +44,6 @@ export function ProjectChangeRequestsNavItem({
   if (!canRead || visibility === 'never') return null;
   if (visibility === 'active' && count === 0 && !isActive) return null;
 
-  // The pill is one sidebar row: a three-digit count would push the label into
-  // an ellipsis, so it clamps instead. The exact number lives in the inbox.
-  const countLabel = count > 99 ? '99+' : String(count);
-
   // This row NAVIGATES, and it navigates through an anchor, not a handler. It
   // is permanently mounted in the sidebar, and `router.push` would run the RSC
   // fetch cold on every click; that fetch degrades into a full document load
@@ -79,13 +75,7 @@ export function ProjectChangeRequestsNavItem({
             <span className="ml-auto flex shrink-0 items-center gap-1">
               {/* Pending, not done. An amber count says "N waiting" without
                   claiming the green this system uses for "finished". */}
-              <Badge
-                variant="transparent"
-                size="tabular"
-                className="bg-kortix-yellow/15 text-current"
-              >
-                {countLabel}
-              </Badge>
+              <CountBadge count={count} tone="waiting" />
             </span>
           ) : null}
         </Link>

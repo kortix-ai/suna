@@ -19,7 +19,13 @@ import {
 // From the leaf, not the barrel: suites that stub '../git' by listing its
 // exports would otherwise lose these names and fail at import.
 import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
-import { listRepoDirectory } from '../git/files';
+import {
+  DIRECTORY_PAGE_LIMIT,
+  DIRECTORY_PAGE_MAX_LIMIT,
+  decodeDirectoryCursor,
+  encodeDirectoryCursor,
+  listRepoDirectory,
+} from '../git/files';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
@@ -36,6 +42,33 @@ function isMissingGitPathError(error: unknown): boolean {
 /** Entry cap of the recursive `GET /files` list (no `depth`). */
 const RECURSIVE_LIST_LIMIT = 1000;
 
+/** An optional text query field. A repeated key reads as its first value, as `c.req.query()` reads it. */
+const queryText = (description: string) =>
+  z.preprocess((value) => (Array.isArray(value) ? value[0] : value), z.string().optional()).openapi({ description });
+
+/** A folder page size from `?limit=`: a decimal integer from 1 to the ceiling, else null. */
+function pageLimit(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null;
+  const limit = Number(raw);
+  return limit >= 1 && limit <= DIRECTORY_PAGE_MAX_LIMIT ? limit : null;
+}
+
+const DirectoryListingSchema = z
+  .object({
+    entries: z.array(
+      z.object({
+        path: z.string().openapi({ description: 'Repository-relative path.' }),
+        type: z.enum(['file', 'directory']),
+        size: z.number().int().optional().openapi({ description: 'Bytes of a file. A folder has none.' }),
+      }),
+    ),
+    truncated: z.boolean().openapi({ description: 'More entries follow this response.' }),
+    next_cursor: z.string().nullable().openapi({
+      description: 'Send as `cursor` to read the next page. Null on the last page, and on a response to a request without `limit` or `cursor`.',
+    }),
+  })
+  .openapi('ProjectDirectoryListing');
+
 export function registerProjectFilesRoutes(): void {
   // GET /v1/projects/:projectId/files
 
@@ -45,14 +78,38 @@ export function registerProjectFilesRoutes(): void {
       path: '/{projectId}/files',
       tags: ['files'],
       summary: 'List files in the project repository',
+      description:
+        'With `depth=1`: one folder level as `{ entries, truncated, next_cursor }`. A request without `limit` or `cursor` returns up to 5,000 entries. ' +
+        'A request with either is paged: `limit` entries (default 500), and `next_cursor` while entries remain. Every page reads the commit the first page read. ' +
+        'Without `depth`: every file under `path`, recursively, cut at 1,000; a cut list carries `X-Kortix-Truncated: 1`.',
       ...auth,
         request: {
           params: z.object({ projectId: z.string() }),
-          query: z.object({}).passthrough(),
+          // Documented, not enforced: every field reads as text, as
+          // `c.req.query()` read it before (a repeated key keeps its first
+          // value). Only the `depth=1` branch checks `limit` and `cursor`, so
+          // the recursive list takes any query it took before.
+          query: z
+            .object({
+              ref: queryText('Branch, tag or commit. Default: the default branch.'),
+              path: queryText('Folder, relative to the repository root. Default: the root.'),
+              depth: queryText('`1` lists one folder level.'),
+              limit: queryText(
+                `With \`depth=1\`: entries per page, an integer from 1 to ${DIRECTORY_PAGE_MAX_LIMIT}. Default ${DIRECTORY_PAGE_LIMIT}. Anything else is a 400.`,
+              ),
+              cursor: queryText('With `depth=1`: the `next_cursor` of the previous page, for the same `path`. A malformed cursor is a 400.'),
+            })
+            .passthrough(),
         },
       responses: {
-          200: json(z.any(), 'OK'),
-          ...errors(404),
+          200: json(
+            z.union([
+              DirectoryListingSchema,
+              z.array(z.object({ path: z.string(), type: z.literal('file'), size: z.number().nullable() })),
+            ]),
+            'With `depth=1`: one folder level. Without it: the recursive file list.',
+          ),
+          ...errors(400, 404, 503),
       },
     }),
     async (c: any) => {
@@ -61,8 +118,9 @@ export function registerProjectFilesRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
+    const query = c.req.valid('query');
     const gitProject = await withProjectGitAuth(loaded.row);
-    const ref = c.req.query('ref') || loaded.row.defaultBranch;
+    const ref = query.ref || loaded.row.defaultBranch;
     const unavailable = (error: unknown) => {
       console.warn('[projects] repo file listing unavailable', {
         projectId,
@@ -82,20 +140,36 @@ export function registerProjectFilesRoutes(): void {
 
     // `depth=1`: one folder level, complete up to its own entry cap. The Files
     // tree reads this; the recursive list below cuts at 1,000 files (KRTX-1723).
-    if (c.req.query('depth') === '1') {
-      let listing: Awaited<ReturnType<typeof listRepoDirectory>> = { entries: [], truncated: false };
+    // `limit` or `cursor` pages it: `next_cursor` names the commit and the last
+    // key, so the next page reads the same snapshot.
+    if (query.depth === '1') {
+      const paged = query.limit !== undefined || query.cursor !== undefined;
+      const limit = query.limit === undefined ? DIRECTORY_PAGE_LIMIT : pageLimit(query.limit);
+      if (limit === null) return c.json({ error: `Invalid limit: send an integer from 1 to ${DIRECTORY_PAGE_MAX_LIMIT}` }, 400);
+      const after = query.cursor === undefined ? undefined : decodeDirectoryCursor(query.cursor, query.path);
+      if (after === null) return c.json({ error: 'Invalid cursor' }, 400);
       try {
-        listing = await listRepoDirectory(gitProject, ref, c.req.query('path'), { freshOnMiss: true });
+        const listing = await listRepoDirectory(gitProject, ref, query.path, {
+          freshOnMiss: true,
+          limit: paged ? limit : undefined,
+          after,
+          // Before the cut, so a page stays full and a cursor never names a hidden entry.
+          visible: denier ? (path) => !denier.isDenied(path) : undefined,
+        });
+        const nextCursor =
+          paged && listing.nextKey && listing.commit ? encodeDirectoryCursor(listing.commit, query.path, listing.nextKey) : null;
+        return c.json({ entries: listing.entries, truncated: listing.truncated, next_cursor: nextCursor });
       } catch (error) {
         unavailable(error);
+        // An empty later page would read as the end of the folder.
+        if (after) return c.json({ error: 'The repository listing is unavailable. Try again.' }, 503);
+        return c.json({ entries: [], truncated: false, next_cursor: null });
       }
-      const entries = denier ? listing.entries.filter((e) => !denier.isDenied(e.path)) : listing.entries;
-      return c.json({ entries, truncated: listing.truncated });
     }
 
     let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
     try {
-      files = await listRepoFiles(gitProject, ref, c.req.query('path'), { freshOnMiss: true });
+      files = await listRepoFiles(gitProject, ref, query.path, { freshOnMiss: true });
     } catch (error) {
       unavailable(error);
     }

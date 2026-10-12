@@ -2217,6 +2217,41 @@ describe('config releases on pi', () => {
     expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
   })
 
+  test('a ./ pi package loads from the release, not the working tree; a change to it reaches the session by a restart', async () => {
+    const extension = (marker: string) =>
+      `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
+    // No OpenCode config dir: the release is the whole tree with `config_dir: null` (a pi-only project).
+    const pinned = (prompt: string) =>
+      buildRelease(repo, commitAll(repo, prompt), null, { projectId: 'proj-pi-test', governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt } } }) })
+    write(repo, 'skills/deploy/SKILL.md', '---\nname: deploy\ndescription: deploy from the base branch\n---\nBody.\n')
+    write(repo, 'extensions/native.ts', extension('PACKAGE-V1'))
+    serveRelease(api, pinned('RELEASE-ONE'))
+    const r = await boot({
+      script: [{ text: 'first' }, { text: 'second' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/native.ts']) },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+      prepare: (workspace) => {
+        // The session's checkout has its own copy at the same path; a release must not read it.
+        mkdirSync(join(workspace, 'extensions'), { recursive: true })
+        writeFileSync(join(workspace, 'extensions', 'native.ts'), extension('WORKSPACE-PACKAGE'))
+      },
+    })
+    expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('release')
+    expect(await skillsOf(r)).toContainEqual(['deploy', 'deploy from the base branch'])
+    const loaded = () => r.service.runtime()!.extensionStatus().loaded
+    expect(loaded().some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/extensions/native.ts'))).toBe(true)
+    const first = await ask(r, 'first question')
+    expect(first).toContain('PACKAGE-V1')
+    expect(first).not.toContain('WORKSPACE-PACKAGE')
+
+    write(repo, 'extensions/native.ts', extension('PACKAGE-V2'))
+    serveRelease(api, pinned('RELEASE-TWO'))
+    expect(await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())).toMatchObject({ ok: true, outcome: 'applied' })
+    const second = await ask(r, 'second question')
+    expect(second).toContain('PACKAGE-V2')
+    expect(second).not.toContain('PACKAGE-V1')
+  })
+
   test('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {
     api.respond(FEATURE_DISABLED)
     const r = await bootOnReleases([{ text: 'ok' }])
