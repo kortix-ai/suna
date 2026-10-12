@@ -129,6 +129,25 @@ describe('journal', () => {
     expect(await durable()).toEqual(firstDurable!);
   });
 
+  test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
+    // A harness slicing an emoji in half emits `\ud83d` alone; JSON keeps it
+    // ("\\ud83d") and Postgres jsonb rejects the escape — one such record
+    // failed the whole 730 KB INSERT and the daemon retried it forever
+    // (2026-10-12: 243 5xx on this route in a day). The ingest must sanitize
+    // to U+FFFD, like a terminal, and ack the batch. Runs in the OTHER
+    // session so the manifest test's exact message list stays closed.
+    const res = await journal(batch({
+      puts: [{ rev: REV + 70, message: message('msg_well', 7, { blocks: [{ type: 'text', id: 'blk_well', text: 'sliced emoji \ud83d done' }] }) }],
+    }), tokens[OTHER]!, OTHER);
+    expect(res.status).toBe(200);
+    const [row] = await db
+      .select({ record: sessionLogMessages.record })
+      .from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, OTHER), eq(sessionLogMessages.messageId, 'msg_well')));
+    const block = (row!.record as { blocks: Array<{ id?: string; text?: string }> }).blocks.find((b) => b.id === 'blk_well');
+    expect(block!.text).toBe('sliced emoji \uFFFD done');
+  });
+
   test('the highest rev wins; a lower rev is acknowledged and changes nothing', async () => {
     const edited = message('msg_u1', 0, { status: 'aborted' });
     expect((await journal(batch({ puts: [{ rev: REV + 10, message: edited }] }))).status).toBe(200);

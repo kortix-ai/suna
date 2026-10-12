@@ -1632,7 +1632,19 @@
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Seitenleiste anpassen",
+    "customizeSidebarDescription": "Ziehe Elemente zwischen den beiden Gruppen.",
+    "resetSidebar": "Auf Standard zurücksetzen",
+    "reorderItem": "{name} verschieben",
+    "reorderHint": "Zum Neuordnen ziehen. Oder die Pfeiltasten nach oben und unten drücken; über „Mehr“ hinaus blendet das Element in der Seitenleiste aus.",
+    "reorderAnnouncement": "{name}: {group}, Position {position} von {total}",
+    "more": "Mehr",
+    "inSidebar": "Seitenleiste",
+    "underMore": "Mehr",
+    "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
+    "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
+    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19217,6 +19229,12 @@
       "servedModelInPlaceOf": "Anstelle von",
       "servedModelBadge": "Läuft auf {model}",
       "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
+      "computerAwakeStays": "Die Sandbox bleibt an, solange du hier bist · bis zu {duration}",
+      "computerAwakeStops": "Die Sandbox schaltet sich in {duration} ab. Sende eine Nachricht, damit sie anbleibt.",
+      "computerAwakeStopsSoon": "Die Sandbox schaltet sich bald ab. Sende eine Nachricht, damit sie anbleibt.",
+      "computerAwakeHoursMinutes": "{hours} Std. {minutes} Min.",
+      "computerAwakeHours": "{hours} Std.",
+      "computerAwakeMinutes": "{minutes} Min.",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",
@@ -19550,7 +19568,9 @@
       "text8d54763edcd8": "Nicht eingebunden",
       "textffeb0c99532f": "Snapshots {value0} Tage aufbewahrt",
       "text6f52b07880a0": "Jetzt Snapshot erstellen",
-      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt"
+      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
+      "texta37dd5ef6ef2": "Seitenleiste anpassen",
+      "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

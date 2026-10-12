@@ -104,39 +104,53 @@ function cappedDeadline(grantMs: number) {
 }
 
 /**
- * Presence's horizon (KRTX-1729): the idle grace, but never past
- * PRESENCE_ONLY_CAP_MS after the session's latest turn activity or the run's
- * start, whichever is later. Turns are sequential, so the latest-started turn
- * holds the latest activity, and the (session_id, started_at DESC) index finds
- * it.
+ * Presence's cap (KRTX-1729): PRESENCE_ONLY_CAP_MS after the session's latest
+ * turn activity or the run's start, whichever is later, and never past the
+ * run's non-turn cap. Turns are sequential, so the latest-started turn holds
+ * the latest activity, and the (session_id, started_at DESC) index finds it.
  */
+function presenceCap() {
+  return sql`LEAST(
+             s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
+             GREATEST(
+               s.active_since,
+               (SELECT COALESCE(t.ended_at, t.started_at)
+                  FROM kortix.session_turns t
+                 WHERE t.session_id = s.session_id
+                 ORDER BY t.started_at DESC
+                 LIMIT 1)
+             ) + make_interval(secs => ${secs(PRESENCE_ONLY_CAP_MS)}))`;
+}
+
+/** Presence's horizon: the grant, but never past {@link presenceCap}. */
 function presenceCappedDeadline(grantMs: number) {
   return sql`GREATEST(
              s.deadline_at,
-             LEAST(
-               s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
-               GREATEST(
-                 s.active_since,
-                 (SELECT COALESCE(t.ended_at, t.started_at)
-                    FROM kortix.session_turns t
-                   WHERE t.session_id = s.session_id
-                   ORDER BY t.started_at DESC
-                   LIMIT 1)
-               ) + make_interval(secs => ${secs(PRESENCE_ONLY_CAP_MS)}),
-               now() + make_interval(secs => ${secs(grantMs)})))`;
+             LEAST(${presenceCap()}, now() + make_interval(secs => ${secs(grantMs)})))`;
 }
 
 /**
  * The extension a present person earns: the idle grace, capped by
  * {@link presenceCappedDeadline}. Same monotone statement shape as
- * {@link extendSandboxDeadline}.
+ * {@link extendSandboxDeadline}. Returns the deadline it wrote and the cap,
+ * from the same statement, or null when no live box matched.
  */
-export async function extendSandboxDeadlineForPresence(target: DeadlineTarget): Promise<void> {
-  await db.execute(sql`
+export async function extendSandboxDeadlineForPresence(
+  target: DeadlineTarget,
+): Promise<{ deadlineAt: Date; capAt: Date } | null> {
+  const result = await db.execute(sql`
     UPDATE kortix.session_sandboxes s
        SET deadline_at = ${presenceCappedDeadline(idleGraceMs())},
            updated_at = now()
-     WHERE ${targetPredicate(target)} AND s.status IN ('active', 'provisioning')`);
+     WHERE ${targetPredicate(target)} AND s.status IN ('active', 'provisioning')
+    RETURNING (extract(epoch from s.deadline_at) * 1000)::float8 AS deadline_ms,
+              (extract(epoch from ${presenceCap()}) * 1000)::float8 AS cap_ms`);
+  const rows = Array.isArray(result)
+    ? result
+    : (result as { rows?: unknown[] } | null | undefined)?.rows;
+  const row = rows?.[0] as { deadline_ms: number | string; cap_ms: number | string } | undefined;
+  if (!row) return null;
+  return { deadlineAt: new Date(Number(row.deadline_ms)), capAt: new Date(Number(row.cap_ms)) };
 }
 
 /**
