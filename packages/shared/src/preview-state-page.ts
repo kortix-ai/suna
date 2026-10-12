@@ -4,7 +4,7 @@
  * A preview address is a real website address: people paste it, bookmark it,
  * open it in a fresh tab, and send it to each other. Every state it can be in
  * therefore needs a page — not JSON, and not an intermediary's error
- * interstitial. There are six, and they are all normal:
+ * interstitial. There are seven, and they are all normal:
  *
  *   signed-out    no credential yet            → offer to sign in
  *   forbidden     host claimed without a signature
