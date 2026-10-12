@@ -152,17 +152,19 @@ module "api" {
   desired_count = 3
   min_capacity  = 3
   max_capacity  = 10
-  # One replacement at a time: deployment_maximum_percent = 100 keeps the
-  # fleet at desired_count during a rolling deploy (ten EXTRA API tasks at the
-  # old 200% overlap would nearly exhaust the production PostgreSQL connection
+  # 50% rolling-deploy headroom: deployment_maximum_percent = 150 keeps the
+  # deploy peak at floor(desired × 1.5) = 15 tasks at full scale (15 × the
+  # per-task pools must stay inside the production PostgreSQL connection
   # budget — the 2026-09-27 SQLSTATE 53300 deploy burst; the envelope in
   # apps/api/src/shared/database-capacity.ts is pinned to this value).
+  # 100% is rejected by ECS: Availability Zone Rebalancing is enabled on this
+  # service (out-of-band, not managed here) and AWS refuses
+  # maximumPercent <= 100 — the failed v0.13.54 prod apply (2026-10-11).
   # deployment_minimum_healthy_percent = 50 is the deployable pairing: AWS
-  # rounds minimum UP and maximum DOWN, so min=100 with max=100 cannot stop or
-  # start a task; 50 lets one task replace at a time at every autoscaled
-  # count (ceil(desired × 0.5) < desired even at desired_count = 2).
+  # rounds minimum UP and maximum DOWN, so min=100 would deadlock the deploy;
+  # 50 lets replacements run at every autoscaled count.
   deployment_minimum_healthy_percent = 50
-  deployment_maximum_percent         = 100
+  deployment_maximum_percent         = 150
   use_fargate_spot                   = false
   container_insights                 = true
   cpu_target                         = 55
