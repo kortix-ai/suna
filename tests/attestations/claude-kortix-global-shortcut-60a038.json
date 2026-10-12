@@ -1,5 +1,5 @@
 {
-  "source_hash": "570d487f4d6f920fa88546802a4af4d0c83d0440ff17c806ae6ad8772602ae9c",
+  "source_hash": "02381e26d876114fc66f6cb5c17e202721eb6e9996c831312eeb0fe3c1955749",
   "diff_files": [
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/assets/quick-entry.html",
@@ -10,6 +10,7 @@
     "apps/desktop-electron/src/quick-entry-rules.js",
     "apps/desktop-electron/src/quick-entry-rules.test.js",
     "apps/desktop-electron/src/quick-entry.js",
+    "apps/web/content/docs/clients.mdx",
     "apps/web/content/docs/work/sessions.mdx",
     "apps/web/src/app/[locale]/(app)/layout.tsx",
     "apps/web/src/app/[locale]/(app)/projects/[id]/project-prefill-contract.test.ts",
@@ -23,13 +24,14 @@
     "apps/web/src/stores/composer-prefill-store.ts",
     "tests/e2e/specs/27-desktop-parity.spec.ts"
   ],
-  "diff_hash": "4626f65f5f6ed477246381ccf50482d6f6eda79010e57e74d80ab2fe435847b9",
-  "head": "453b74c24c26e7df9ba3af01563ee6727fa9313d",
+  "diff_hash": "37c5d00575f68a5918f1aec381de7cbd99c47b240237bba713f8f4b889338ca6",
+  "head": "4ef42b035db31678e04628c45ad1c7c8c53bb2e9",
   "passed": true,
   "lanes": {
-    "packages": "pass",
+    "browser": "pass",
     "core": "pass",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T09:22:11.930Z"
+  "at": "2026-10-12T09:46:04.041Z"
 }
