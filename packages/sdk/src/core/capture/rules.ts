@@ -15,6 +15,20 @@ export type CaptureExclusionGroup = (typeof CAPTURE_EXCLUSION_GROUPS)[number];
 /** Upper bounds of the account's retention settings. */
 export const CAPTURE_RETENTION_LIMITS = { localHours: 24 * 365, remoteDays: 3650 } as const;
 
+/**
+ * The screen frame intervals an organization can set (`recording.interval_ms`),
+ * shortest first. A device saves a frame only when the screen changed, and an
+ * unchanged screen every 30 s.
+ */
+export const CAPTURE_FRAME_INTERVALS_MS = [500, 1000, 2000, 5000, 10000] as const;
+
+/** The resolutions an organization can set (`recording.max_height`): the frame height in pixels, at most. */
+export const CAPTURE_MAX_HEIGHTS = [720, 1080, 1440, 2160] as const;
+export type CaptureMaxHeight = (typeof CAPTURE_MAX_HEIGHTS)[number];
+
+/** What a device uses while the policy sets no interval or resolution (`null`). */
+export const CAPTURE_DEVICE_DEFAULTS = { intervalMs: 2000, maxHeight: 1440 } as const;
+
 const HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 /**

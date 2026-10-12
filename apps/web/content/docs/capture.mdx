@@ -27,10 +27,12 @@ it is off:
 - a device cannot sign in or get storage credentials;
 - Kortix indexes nothing new.
 
-In Kortix: open the account's settings, then **Kortix Capture**, and turn on
-**Record members' computers**. The same section holds the organization's rules:
-what every device records, the mandatory exclusions, retention and the notice
-devices show. In Kortix Capture, the gear and your profile menu open it.
+In Kortix: open the account's settings, then **Settings**, and turn on
+**Kortix Capture**. The account settings then list a **Kortix Capture**
+section with the organization's rules: what every device records, the screen
+frame interval and resolution, the mandatory exclusions, retention, the notice
+devices show, and an account-wide pause. In Kortix Capture, the gear and your
+profile menu open it.
 
 From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
 From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.
@@ -47,8 +49,9 @@ a computer by itself.
 3. Approve the sign-in. The browser opens `/capture/authorize` with a code.
    Check that the code matches, then choose the account. Only accounts with
    Capture on are listed.
-4. Grant the macOS permissions when asked: Screen Recording for the screen,
-   Accessibility and Input Monitoring for actions, Microphone for audio.
+4. On macOS, grant the permissions when asked: Screen Recording for the
+   screen, Accessibility and Input Monitoring for actions, Microphone for
+   audio. Windows asks for none.
 
 The device records into that account as you, 24/7, and uploads every finished
 item. It gets a revocable device token and, from it, short-lived storage
@@ -82,7 +85,12 @@ Capture on or off writes `capture.enable` or `capture.disable`.
 One policy applies to every device of the account:
 
 - layers: screen, actions, audio (audio is off until someone turns it on);
-- personal-data masking on the device;
+- the screen frame interval (`recording.interval_ms`, 0.5 to 10 seconds) and
+  resolution (`recording.max_height`: 720p, 1080p, 1440p or 4K). Every device
+  uses them instead of its own settings. Without them a device records one
+  frame every 2 seconds at 1440p. A device saves a frame only when the screen
+  changed, and an unchanged screen every 30 seconds. The devices list shows
+  the values each device uses;
 - mandatory exclusions: apps, websites, the categories password managers,
   messaging and banking, and private browsing. Password managers and private
   browsing are excluded by default. A device adds them to the member's own
@@ -90,12 +98,14 @@ One policy applies to every device of the account:
   account's;
 - an account-wide pause;
 - retention on the device and in Kortix (`remote_days`);
-- the notice the device shows the person it records.
+- the notice the device shows the person it records;
+- personal-data masking on the device (**Experimental**, off by default). The
+  first time it is on, each computer downloads a ~1 GB model.
 
 Kortix publishes the policy to `orgs/<account_id>/policy.json` in the capture
-store, where every device reads it. A device cannot write a policy of its
-own. Kortix also enforces the layers when it indexes: a device never widens
-the policy.
+store, where every device reads it within a minute. A device cannot write a
+policy of its own. Kortix also enforces the layers when it indexes: a device
+never widens the policy.
 
 A device records every connected display, the active one (the display with
 the focused window) first. Each display is its own recorded item; the

@@ -9,8 +9,11 @@
     "ApiError",
     "AuthError",
     "BillingError",
+    "CAPTURE_DEVICE_DEFAULTS",
     "CAPTURE_EXCLUSION_GROUPS",
+    "CAPTURE_FRAME_INTERVALS_MS",
     "CAPTURE_LAYERS",
+    "CAPTURE_MAX_HEIGHTS",
     "CAPTURE_RETENTION_LIMITS",
     "CONNECTION_FAULT_GRACE_MS",
     "CONNECTOR_POLL_FIRST_DELAY_MS",
@@ -2676,8 +2679,11 @@
     "parseRuntimeErrorPayload"
   ],
   "./platform-client": [
+    "CAPTURE_DEVICE_DEFAULTS",
     "CAPTURE_EXCLUSION_GROUPS",
+    "CAPTURE_FRAME_INTERVALS_MS",
     "CAPTURE_LAYERS",
+    "CAPTURE_MAX_HEIGHTS",
     "CAPTURE_RETENTION_LIMITS",
     "CONNECTOR_POLL_FIRST_DELAY_MS",
     "CONNECTOR_POLL_INTERVAL_MS",
@@ -2955,8 +2961,11 @@
     "wireIdClockDelta"
   ],
   "./capture-rules": [
+    "CAPTURE_DEVICE_DEFAULTS",
     "CAPTURE_EXCLUSION_GROUPS",
+    "CAPTURE_FRAME_INTERVALS_MS",
     "CAPTURE_LAYERS",
+    "CAPTURE_MAX_HEIGHTS",
     "CAPTURE_RETENTION_LIMITS",
     "normalizeCaptureAppId",
     "normalizeCaptureDomain"

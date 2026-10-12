@@ -35,6 +35,8 @@ export interface DeviceStatusView {
   pending: number | null;
   syncFailed: boolean;
   lastFrameMs: number | null;
+  /** The screen frame interval and resolution in force on the device; null before it reports them. */
+  frames: { intervalMs: number; maxHeight: number } | null;
 }
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -48,6 +50,9 @@ export function deviceStatus(device: CaptureDevice): DeviceStatusView {
   const status = record(device.live.status);
   const sync = record(status.sync);
   const audio = record(status.audio);
+  const capture = record(status.capture);
+  const intervalMs = num(capture.intervalMs);
+  const maxHeight = num(capture.maxHeight);
   const state = device.live.state;
   const reason = typeof status.reason === 'string' ? status.reason : '';
   const stopped = state === 'paused' || state === 'not_recording';
@@ -83,5 +88,6 @@ export function deviceStatus(device: CaptureDevice): DeviceStatusView {
     pending: num(sync.pending),
     syncFailed: typeof sync.errorClass === 'string' && sync.errorClass.length > 0,
     lastFrameMs: num(status.lastFrameMs),
+    frames: intervalMs && maxHeight ? { intervalMs, maxHeight } : null,
   };
 }

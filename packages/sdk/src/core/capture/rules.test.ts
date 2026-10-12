@@ -3,8 +3,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  CAPTURE_DEVICE_DEFAULTS,
   CAPTURE_EXCLUSION_GROUPS,
+  CAPTURE_FRAME_INTERVALS_MS,
   CAPTURE_LAYERS,
+  CAPTURE_MAX_HEIGHTS,
   CAPTURE_RETENTION_LIMITS,
   normalizeCaptureAppId,
   normalizeCaptureDomain,
@@ -15,6 +18,14 @@ describe('Capture rules shared by the API, the web and the CLI', () => {
     expect(CAPTURE_LAYERS).toEqual(['screen', 'actions', 'audio']);
     expect(CAPTURE_EXCLUSION_GROUPS).toEqual(['password_managers', 'messaging', 'banking']);
     expect(CAPTURE_RETENTION_LIMITS).toEqual({ localHours: 24 * 365, remoteDays: 3650 });
+  });
+
+  test('the frame interval and resolution an organization can set, and what a device does without one', () => {
+    expect(CAPTURE_FRAME_INTERVALS_MS).toEqual([500, 1000, 2000, 5000, 10000]);
+    expect(CAPTURE_MAX_HEIGHTS).toEqual([720, 1080, 1440, 2160]);
+    expect(CAPTURE_DEVICE_DEFAULTS).toEqual({ intervalMs: 2000, maxHeight: 1440 });
+    expect(CAPTURE_FRAME_INTERVALS_MS).toContain(CAPTURE_DEVICE_DEFAULTS.intervalMs);
+    expect(CAPTURE_MAX_HEIGHTS).toContain(CAPTURE_DEVICE_DEFAULTS.maxHeight);
   });
 
   test.each([

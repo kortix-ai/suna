@@ -20767,6 +20767,7 @@
         "actions": "Aktionen",
         "audio": "Audio"
       },
+      "frames": "Alle {seconds, number} s · {resolution}",
       "never": "Nie",
       "pausedUntil": "bis {time}",
       "apiLink": "Kortix Capture API"
@@ -20816,6 +20817,13 @@
       "accessTitle": "Wer Aufzeichnungen sieht",
       "accessBody": "Jedes Mitglied sieht seine eigenen Geräte und seine Zeitleiste. Inhaber und Admins sehen zusätzlich die aller anderen (capture.read_all) und verwalten Capture (capture.manage). Vergib diesen Zugriff an andere über eine eigene Rolle unter Konto → Rollen. Jede Ansicht eines anderen Mitglieds landet im Audit-Log.",
       "layersHint": "Jedes Gerät in {org} zeichnet auf, was hier an ist. Mitglieder sehen das auf ihrem Computer und können es nicht ändern.",
+      "framesTitle": "Bildschirmbilder",
+      "framesHint": "Gilt für jedes Gerät. Ein Gerät speichert ein Bild nur, wenn sich der Bildschirm geändert hat, und einen unveränderten Bildschirm alle 30 Sekunden.",
+      "interval": "Ein Bild alle",
+      "intervalHint": "Kürzere Abstände halten mehr Details fest und brauchen mehr CPU und Speicher.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Auflösung",
+      "resolutionHint": "Größere Bildschirme werden auf diese Höhe verkleinert. 4K erhält feine Details, etwa in CAD-Zeichnungen.",
       "exclusionsTitle": "Ausschlüsse",
       "retentionTitle": "Aufbewahrung",
       "pauseTitle": "Pause",

@@ -20767,6 +20767,7 @@
         "actions": "操作",
         "audio": "音频"
       },
+      "frames": "每 {seconds, number} 秒 · {resolution}",
       "never": "从未",
       "pausedUntil": "至 {time}",
       "apiLink": "Kortix Capture API"
@@ -20816,6 +20817,13 @@
       "accessTitle": "谁能查看录制内容",
       "accessBody": "每位成员都能查看自己的设备和时间线。所有者和管理员还能查看所有人的内容 (capture.read_all) 并管理 Capture (capture.manage)。如需将此权限授予他人，请在“账户 → 角色”中使用自定义角色。每次查看其他成员的内容都会记入审计日志。",
       "layersHint": "{org} 的每台设备都会录制此处开启的内容。成员可在自己的电脑上看到，但无法更改。",
+      "framesTitle": "屏幕帧",
+      "framesHint": "适用于每台设备。设备仅在屏幕变化时保存一帧，未变化的屏幕每 30 秒保存一次。",
+      "interval": "帧间隔",
+      "intervalHint": "间隔越短，细节越多，占用的 CPU 和存储也越多。",
+      "intervalOption": "{seconds, number} 秒",
+      "resolution": "分辨率",
+      "resolutionHint": "更大的屏幕会缩小到此高度。4K 可保留 CAD 图纸等细节。",
       "exclusionsTitle": "排除项",
       "retentionTitle": "保留期限",
       "pauseTitle": "暂停",

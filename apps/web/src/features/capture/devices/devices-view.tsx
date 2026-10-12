@@ -349,6 +349,14 @@ function DeviceRow({
       </TableCell>
       <TableCell className="text-muted-foreground text-xs">
         {view.layers.map((layer) => t(`layer.${layer}`)).join(', ')}
+        {view.frames ? (
+          <span className="block tabular-nums">
+            {t('frames', {
+              seconds: view.frames.intervalMs / 1000,
+              resolution: view.frames.maxHeight >= 2160 ? '4K' : `${view.frames.maxHeight}p`,
+            })}
+          </span>
+        ) : null}
       </TableCell>
       <TableCell className="pr-4 text-right">
         <span className="relative z-10 inline-flex items-center gap-1">

@@ -20767,6 +20767,7 @@
         "actions": "アクション",
         "audio": "音声"
       },
+      "frames": "{seconds, number} 秒ごと · {resolution}",
       "never": "なし",
       "pausedUntil": "{time} まで",
       "apiLink": "Kortix Capture API"
@@ -20816,6 +20817,13 @@
       "accessTitle": "録画を閲覧できるユーザー",
       "accessBody": "各メンバーは自分のデバイスとタイムラインを閲覧できます。オーナーと管理者は全員分も閲覧でき (capture.read_all)、Capture を管理できます (capture.manage)。このアクセス権をほかの人に付与するには、[アカウント] → [ロール] でカスタムロールを使います。ほかのメンバーの閲覧はすべて監査ログに記録されます。",
       "layersHint": "{org} のすべてのデバイスは、ここでオンの内容を記録します。メンバーは自分のコンピューターで確認できますが、変更できません。",
+      "framesTitle": "画面フレーム",
+      "framesHint": "すべてのデバイスに適用されます。デバイスは画面が変化したときだけフレームを保存し、変化のない画面は30秒ごとに保存します。",
+      "interval": "フレーム間隔",
+      "intervalHint": "間隔を短くすると詳細が増え、CPUとストレージの使用量も増えます。",
+      "intervalOption": "{seconds, number} 秒",
+      "resolution": "解像度",
+      "resolutionHint": "大きな画面はこの高さに縮小されます。4KはCAD図面などの細部を保ちます。",
       "exclusionsTitle": "除外",
       "retentionTitle": "保存期間",
       "pauseTitle": "一時停止",

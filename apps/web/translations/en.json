@@ -20767,6 +20767,7 @@
         "actions": "Actions",
         "audio": "Audio"
       },
+      "frames": "Every {seconds, number} s · {resolution}",
       "never": "Never",
       "pausedUntil": "until {time}",
       "apiLink": "Kortix Capture API"
@@ -20816,6 +20817,13 @@
       "accessTitle": "Who sees recordings",
       "accessBody": "Every member sees their own devices and timeline. Owners and admins also see everyone's (capture.read_all) and manage Capture (capture.manage). To give someone else that access, use a custom role under Account → Roles. Every view of another member goes into the audit log.",
       "layersHint": "Every device in {org} records what is on here. Members see it on their computer and cannot change it.",
+      "framesTitle": "Screen frames",
+      "framesHint": "Every device uses these. A device saves a frame only when the screen changed, and an unchanged screen every 30 seconds.",
+      "interval": "One frame every",
+      "intervalHint": "Shorter intervals keep more detail and use more CPU and storage.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Resolution",
+      "resolutionHint": "Larger screens are scaled down to this height. 4K keeps fine detail, such as CAD drawings.",
       "exclusionsTitle": "Exclusions",
       "retentionTitle": "Retention",
       "pauseTitle": "Pause",

@@ -11,11 +11,14 @@
 import { z } from 'zod';
 import {
   CAPTURE_EXCLUSION_GROUPS,
+  CAPTURE_FRAME_INTERVALS_MS,
   CAPTURE_LAYERS,
+  CAPTURE_MAX_HEIGHTS,
   CAPTURE_RETENTION_LIMITS,
   normalizeCaptureAppId,
   normalizeCaptureDomain,
   type CaptureLayer,
+  type CaptureMaxHeight,
 } from '@kortix/sdk/capture-rules';
 import { isUuid } from '../shared/validate';
 
@@ -319,8 +322,25 @@ export const PolicySchema = z.object({
       remote_days: z.number().int().min(0).max(CAPTURE_RETENTION_LIMITS.remoteDays),
     })
     .default({ local_hours: 0, remote_days: 90 }),
+  // `interval_ms` and `max_height` SET the device's capture rate and size (null: the device
+  // default); the engine applies them over the person's own settings.
   recording: z
-    .object({ paused: z.boolean(), paused_until_ms: z.number().int().nullable() })
+    .object({
+      paused: z.boolean(),
+      paused_until_ms: z.number().int().nullable(),
+      interval_ms: z
+        .number()
+        .int()
+        .min(CAPTURE_FRAME_INTERVALS_MS[0])
+        .max(CAPTURE_FRAME_INTERVALS_MS[CAPTURE_FRAME_INTERVALS_MS.length - 1])
+        .nullable()
+        .default(null),
+      max_height: z
+        .number()
+        .refine((height): height is CaptureMaxHeight => (CAPTURE_MAX_HEIGHTS as readonly number[]).includes(height), 'not a capture resolution')
+        .nullable()
+        .default(null),
+    })
     .default({ paused: false, paused_until_ms: null }),
   notice: z.string().max(2000).default(''),
 });

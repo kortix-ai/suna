@@ -20767,6 +20767,7 @@
         "actions": "Azioni",
         "audio": "Audio"
       },
+      "frames": "Ogni {seconds, number} s · {resolution}",
       "never": "Mai",
       "pausedUntil": "fino alle {time}",
       "apiLink": "API di Kortix Capture"
@@ -20816,6 +20817,13 @@
       "accessTitle": "Chi vede le registrazioni",
       "accessBody": "Ogni membro vede i propri dispositivi e la propria cronologia. Proprietari e amministratori vedono anche quelli di tutti (capture.read_all) e gestiscono Capture (capture.manage). Per dare questo accesso a un'altra persona, usa un ruolo personalizzato in Account → Ruoli. Ogni visualizzazione di un altro membro finisce nel registro di audit.",
       "layersHint": "Ogni dispositivo di {org} registra ciò che è attivo qui. I membri lo vedono sul loro computer e non possono cambiarlo.",
+      "framesTitle": "Fotogrammi dello schermo",
+      "framesHint": "Vale per ogni dispositivo. Un dispositivo salva un fotogramma solo quando lo schermo cambia, e uno schermo invariato ogni 30 secondi.",
+      "interval": "Un fotogramma ogni",
+      "intervalHint": "Intervalli più brevi conservano più dettagli e usano più CPU e spazio.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Risoluzione",
+      "resolutionHint": "Gli schermi più grandi vengono ridotti a questa altezza. Il 4K conserva i dettagli fini, come i disegni CAD.",
       "exclusionsTitle": "Esclusioni",
       "retentionTitle": "Conservazione",
       "pauseTitle": "Pausa",

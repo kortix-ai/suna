@@ -79,6 +79,29 @@
             "integer",
             "null"
           ]
+        },
+        "interval_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 500,
+          "maximum": 10000,
+          "description": "One screen frame per display every this many ms on every device; null keeps the device's own setting."
+        },
+        "max_height": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            720,
+            1080,
+            1440,
+            2160,
+            null
+          ],
+          "description": "Frame height cap on every device (the width follows: 1280, 1920, 2560, 3840); null keeps the device's own setting."
         }
       }
     },

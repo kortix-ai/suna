@@ -253,7 +253,8 @@ The app bundles the Kortix Capture engine from the private repository
 `logout`, `status --json`, and its own OS service. The app passes itself as
 that service's host, so macOS attributes Screen Recording, Accessibility,
 Input Monitoring and the Microphone to Kortix, and there is one set of
-grants. The engine's own tray app (`kortix-tray`) is not shipped. Pieces:
+grants. The app ships the binaries of the engine's release zip
+(`kortix-capture-<tag>-<platform>.zip`); the engine has no tray of its own. Pieces:
 
 | File | Role |
 | --- | --- |
@@ -282,7 +283,7 @@ available.
 | --- | --- | --- | --- |
 | `kortix-capture` (recorder, sync, CLI) | yes | `.exe` | when released |
 | `kortix-capture-engine` (Swift / Rust native engine) | yes | `.exe` | when released |
-| `kortix-backend` (action recorder) | yes | `.exe` (from the stealth zip) | when released |
+| `kortix-backend` (action recorder) | yes | `.exe` | when released |
 | ONNX runtime (local privacy masking) | `libonnxruntime.1.23.2.dylib` | `onnxruntime.dll` | — |
 
 - **Token.** The repository is private. Set `KORTIX_CAPTURE_GITHUB_TOKEN` (or
@@ -315,9 +316,10 @@ gh workflow run release.yml -R kortix-ai/capture --ref main \
 gh run watch -R kortix-ai/capture   # macOS + Windows packages, then the release
 ```
 
-It publishes `kortix-tray-<tag>-macos.zip` (an app bundle that holds every
-macOS binary), `kortix-tray-<tag>-windows-x86_64.zip` and
-`kortix-stealth-<tag>-windows-x86_64.zip`. Then, in this repository:
+It publishes one zip per OS: `kortix-capture-<tag>-macos.zip` (arm64, signed
+and notarized) and `kortix-capture-<tag>-windows-x86_64.zip`. Each holds one
+folder of the same name with the files in the table above. Then, in this
+repository:
 
 ```bash
 GH_TOKEN="$(gh auth token)" node apps/desktop-electron/scripts/fetch-capture-engine.js pin v0.39.0

@@ -1,8 +1,12 @@
 'use client';
 
 import {
+  CAPTURE_DEVICE_DEFAULTS,
+  CAPTURE_FRAME_INTERVALS_MS,
   CAPTURE_LAYERS,
+  CAPTURE_MAX_HEIGHTS,
   CAPTURE_RETENTION_LIMITS,
+  type CaptureMaxHeight,
   type CapturePolicy,
   type CapturePolicyRecord,
 } from '@kortix/sdk';
@@ -14,6 +18,7 @@ import { Field, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -120,11 +125,50 @@ function NumberRow({
   );
 }
 
+/** A choice from a short list, right-aligned like a switch. */
+function SelectRow<T extends number>({
+  title,
+  description,
+  value,
+  options,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <p id={id} className="text-foreground text-sm font-medium">
+          {title}
+        </p>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+      </div>
+      <Select value={String(value)} onValueChange={(next) => onChange(Number(next) as T)}>
+        <SelectTrigger size="sm" aria-labelledby={id} className="w-32 shrink-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={String(option.value)}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 /**
  * Kortix Capture's organization settings, the `capture` section of the
  * account settings (`?accountTab=capture`), `capture.manage` only: what every
  * device of the organization must do, in the order This computer shows it.
- * What is recorded · Exclusions (mandatory) · Retention · Notice · Pause ·
+ * What is recorded · Screen frames · Exclusions (mandatory) · Retention · Notice · Pause ·
  * Experimental (local masking). The policy is one draft; the save bar shows while it differs from
  * what is stored. The switch that turns Capture on is in the account's
  * Settings. A member's own exclusions live on their computer and never reach
@@ -198,6 +242,29 @@ function PolicyForm({
             onChange={(on) => patch('layers', { [layer]: on })}
           />
         ))}
+      </Group>
+
+      <Group title={t('framesTitle')} description={t('framesHint')}>
+        <SelectRow
+          title={t('interval')}
+          description={t('intervalHint')}
+          value={draft.recording.interval_ms ?? CAPTURE_DEVICE_DEFAULTS.intervalMs}
+          options={CAPTURE_FRAME_INTERVALS_MS.map((ms) => ({
+            value: ms,
+            label: t('intervalOption', { seconds: ms / 1000 }),
+          }))}
+          onChange={(interval_ms) => patch('recording', { interval_ms })}
+        />
+        <SelectRow<CaptureMaxHeight>
+          title={t('resolution')}
+          description={t('resolutionHint')}
+          value={draft.recording.max_height ?? CAPTURE_DEVICE_DEFAULTS.maxHeight}
+          options={CAPTURE_MAX_HEIGHTS.map((height) => ({
+            value: height,
+            label: height === 2160 ? '4K' : `${height}p`,
+          }))}
+          onChange={(max_height) => patch('recording', { max_height })}
+        />
       </Group>
 
       <section className="space-y-1">

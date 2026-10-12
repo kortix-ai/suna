@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { fetchCaptureEngine, verify, lockKeys } = require('../scripts/fetch-capture-engine');
+const { fetchCaptureEngine, verify, lockKeys, pin } = require('../scripts/fetch-capture-engine');
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'capture-fetch-test-'));
@@ -41,7 +41,7 @@ function fakeGithub(assets) {
 
 const WIN_FILES = ['kortix-capture.exe', 'kortix-capture-engine.exe', 'onnxruntime.dll', 'privacy-runtime-notices.txt'];
 
-function winLock(trayZip, stealthZip, overrides = {}) {
+function winLock(trayZip, extraZip, overrides = {}) {
   return {
     repo: 'kortix-ai/capture',
     version: 'v9.9.9',
@@ -52,7 +52,7 @@ function winLock(trayZip, stealthZip, overrides = {}) {
           sha256: overrides.traySha ?? sha256(trayZip),
           files: Object.fromEntries(WIN_FILES.map((n) => [`tray/${n}`, n])),
         },
-        { asset: 'stealth.zip', sha256: sha256(stealthZip), files: { 'stealth/kortix-backend.exe': 'kortix-backend.exe' } },
+        { asset: 'extra.zip', sha256: sha256(extraZip), files: { 'extra/kortix-backend.exe': 'kortix-backend.exe' } },
       ],
     },
   };
@@ -62,11 +62,11 @@ describe('fetchCaptureEngine', () => {
   test('stages every engine file from two verified assets, with the token, and skips a second run', async () => {
     const dir = tmp();
     const tray = makeZip(dir, 'tray.zip', 'tray', WIN_FILES);
-    const stealth = makeZip(dir, 'stealth.zip', 'stealth', ['kortix-backend.exe']);
-    const { fetchFn, calls } = fakeGithub({ 'tray.zip': tray, 'stealth.zip': stealth });
+    const extra = makeZip(dir, 'extra.zip', 'extra', ['kortix-backend.exe']);
+    const { fetchFn, calls } = fakeGithub({ 'tray.zip': tray, 'extra.zip': extra });
     const outDir = path.join(dir, 'out');
     const env = { KORTIX_CAPTURE_GITHUB_TOKEN: 'test-token' };
-    const lock = winLock(tray, stealth);
+    const lock = winLock(tray, extra);
 
     expect(await fetchCaptureEngine({ platform: 'win32', lock, outDir, env, fetchFn, log: () => {} })).toBe(outDir);
     expect(fs.readdirSync(outDir).sort()).toEqual([...WIN_FILES, 'kortix-backend.exe', 'VERSION'].sort());
@@ -84,10 +84,10 @@ describe('fetchCaptureEngine', () => {
   test('a checksum mismatch fails the build and stages nothing', async () => {
     const dir = tmp();
     const tray = makeZip(dir, 'tray.zip', 'tray', WIN_FILES);
-    const stealth = makeZip(dir, 'stealth.zip', 'stealth', ['kortix-backend.exe']);
-    const { fetchFn } = fakeGithub({ 'tray.zip': tray, 'stealth.zip': stealth });
+    const extra = makeZip(dir, 'extra.zip', 'extra', ['kortix-backend.exe']);
+    const { fetchFn } = fakeGithub({ 'tray.zip': tray, 'extra.zip': extra });
     const outDir = path.join(dir, 'out');
-    const lock = winLock(tray, stealth, { traySha: '0'.repeat(64) });
+    const lock = winLock(tray, extra, { traySha: '0'.repeat(64) });
     await expect(
       fetchCaptureEngine({ platform: 'win32', lock, outDir, env: { GH_TOKEN: 't' }, fetchFn, log: () => {} }),
     ).rejects.toThrow('tray.zip checksum mismatch');
@@ -97,10 +97,10 @@ describe('fetchCaptureEngine', () => {
   test('a file the lock names but the archive lacks fails the build', async () => {
     const dir = tmp();
     const tray = makeZip(dir, 'tray.zip', 'tray', WIN_FILES.slice(1));
-    const stealth = makeZip(dir, 'stealth.zip', 'stealth', ['kortix-backend.exe']);
-    const { fetchFn } = fakeGithub({ 'tray.zip': tray, 'stealth.zip': stealth });
+    const extra = makeZip(dir, 'extra.zip', 'extra', ['kortix-backend.exe']);
+    const { fetchFn } = fakeGithub({ 'tray.zip': tray, 'extra.zip': extra });
     await expect(
-      fetchCaptureEngine({ platform: 'win32', lock: winLock(tray, stealth), outDir: path.join(dir, 'out'), env: { GH_TOKEN: 't' }, fetchFn, log: () => {} }),
+      fetchCaptureEngine({ platform: 'win32', lock: winLock(tray, extra), outDir: path.join(dir, 'out'), env: { GH_TOKEN: 't' }, fetchFn, log: () => {} }),
     ).rejects.toThrow('tray.zip has no tray/kortix-capture.exe');
   });
 
@@ -139,6 +139,30 @@ describe('fetchCaptureEngine', () => {
     fs.rmSync(path.join(local, 'kortix-backend'));
     await expect(fetchCaptureEngine({ platform: 'linux', lock, outDir, env, log: () => {} })).rejects.toThrow('kortix-backend');
   });
+});
+
+test('pin reads the one zip per OS that the engine release publishes, and hashes it', async () => {
+  const dir = tmp();
+  const win = ['kortix-capture.exe', 'kortix-capture-engine.exe', 'kortix-backend.exe', 'onnxruntime.dll', 'privacy-runtime-notices.txt'];
+  const mac = ['kortix-capture', 'kortix-capture-engine', 'kortix-backend', 'libonnxruntime.1.23.2.dylib', 'privacy-runtime-notices.txt'];
+  const winZip = makeZip(dir, 'kortix-capture-v9-windows-x86_64.zip', 'kortix-capture-v9-windows-x86_64', win);
+  const macZip = makeZip(dir, 'kortix-capture-v9-macos.zip', 'kortix-capture-v9-macos', mac);
+  const { fetchFn } = fakeGithub({ 'kortix-capture-v9-windows-x86_64.zip': winZip, 'kortix-capture-v9-macos.zip': macZip });
+  const lock = await pin('v9', { env: { GH_TOKEN: 't' }, fetchFn });
+  expect(lock.version).toBe('v9');
+  expect(lock.platforms['win32-x64']).toEqual([
+    {
+      asset: 'kortix-capture-v9-windows-x86_64.zip',
+      sha256: sha256(winZip),
+      files: Object.fromEntries(win.map((n) => [`kortix-capture-v9-windows-x86_64/${n}`, n])),
+    },
+  ]);
+  expect(lock.platforms['darwin-arm64'][0].sha256).toBe(sha256(macZip));
+  expect(lock.platforms['linux-x64']).toBeNull();
+  // The pinned lock stages: every listed file is in the zip.
+  const outDir = path.join(dir, 'out');
+  await fetchCaptureEngine({ platform: 'win32', lock, outDir, env: { GH_TOKEN: 't' }, fetchFn, log: () => {} });
+  expect(fs.readdirSync(outDir).sort()).toEqual([...win, 'VERSION'].sort());
 });
 
 test('verify accepts the right hash and rejects any other', () => {

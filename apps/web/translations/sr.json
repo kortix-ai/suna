@@ -20767,6 +20767,7 @@
         "actions": "Радње",
         "audio": "Звук"
       },
+      "frames": "Svakih {seconds, number} s · {resolution}",
       "never": "Никада",
       "pausedUntil": "до {time}",
       "apiLink": "Kortix Capture API"
@@ -20816,6 +20817,13 @@
       "accessTitle": "Ко види снимке",
       "accessBody": "Сваки члан види своје уређаје и своју временску линију. Власници и админи виде и туђе (capture.read_all) и управљају Capture-ом (capture.manage). Да бисте овај приступ дали неком другом, користите прилагођену улогу у Налог → Улоге. Свако гледање другог члана улази у дневник ревизије.",
       "layersHint": "Сваки уређај у {org} снима оно што је овде укључено. Чланови то виде на свом рачунару и не могу да промене.",
+      "framesTitle": "Snimci ekrana",
+      "framesHint": "Važi za svaki uređaj. Uređaj čuva snimak samo kada se ekran promeni, a nepromenjen ekran svakih 30 sekundi.",
+      "interval": "Jedan snimak svakih",
+      "intervalHint": "Kraći razmaci čuvaju više detalja i troše više procesora i prostora.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Rezolucija",
+      "resolutionHint": "Veći ekrani se smanjuju na ovu visinu. 4K čuva fine detalje, na primer CAD crteže.",
       "exclusionsTitle": "Изузеци",
       "retentionTitle": "Чување",
       "pauseTitle": "Пауза",

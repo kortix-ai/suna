@@ -165,6 +165,20 @@ describe('policy and status', () => {
     expect(PolicySchema.safeParse({ retention: { local_hours: 0, remote_days: -1 } }).success).toBe(false);
   });
 
+  test('the policy sets the screen frame interval and resolution; null keeps the device default', () => {
+    expect(DEFAULT_POLICY.recording).toEqual({ paused: false, paused_until_ms: null, interval_ms: null, max_height: null });
+    // A policy stored before the fields existed reads back with the device defaults.
+    expect(PolicySchema.parse({ recording: { paused: false, paused_until_ms: null } }).recording.interval_ms).toBeNull();
+    const cad = PolicySchema.parse({ recording: { paused: false, paused_until_ms: null, interval_ms: 1000, max_height: 2160 } });
+    expect(cad.recording).toMatchObject({ interval_ms: 1000, max_height: 2160 });
+    conforms('policy', JSON.parse(policyDocument(cad, 1)));
+    const recording = (extra: object) => ({ recording: { paused: false, paused_until_ms: null, ...extra } });
+    expect(PolicySchema.safeParse(recording({ interval_ms: 499 })).success).toBe(false);
+    expect(PolicySchema.safeParse(recording({ interval_ms: 10_001 })).success).toBe(false);
+    expect(PolicySchema.safeParse(recording({ interval_ms: 1500.5 })).success).toBe(false);
+    expect(PolicySchema.safeParse(recording({ max_height: 1000 })).success).toBe(false);
+  });
+
   test('the policy carries the organization exclusions: defaults, normalization, known groups', () => {
     expect(DEFAULT_POLICY.privacy).toEqual({
       redact_pii: false,

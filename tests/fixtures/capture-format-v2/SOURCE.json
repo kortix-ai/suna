@@ -1,5 +1,5 @@
 {
   "repository": "kortix-ai/capture",
-  "commit": "c0799daf71058579f2596866aa5265b48a1adaae",
+  "commit": "05ed7937e0adef5977cab9b47197481c7a83e7e1",
   "paths": ["apps/recorder/schemas", "apps/recorder/fixtures/capture-format-v2"]
 }

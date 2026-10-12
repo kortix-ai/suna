@@ -175,33 +175,18 @@ async function fetchCaptureEngine({
 
 /**
  * The lock for a published release, from the asset layout release.yml
- * produces: the macOS tray zip (an app bundle) and, for Windows, the tray zip
- * plus the stealth zip (it carries kortix-backend.exe). Every hash is computed
+ * produces: one zip per OS, `kortix-capture-<tag>-<platform>.zip`, holding one
+ * folder of that name with every binary the app ships. Every hash is computed
  * from the downloaded bytes, and every listed file is checked to exist.
  */
 async function pin(tag, { env = process.env, fetchFn = fetch, repo = 'kortix-ai/capture' } = {}) {
-  const macDir = `kortix-tray-${tag}-macos/Kortix Capture.app/Contents`;
-  const winTray = `kortix-tray-${tag}-windows-x86_64`;
+  const pkg = (platform, files) => {
+    const dir = `kortix-capture-${tag}-${platform}`;
+    return [{ asset: `${dir}.zip`, files: Object.fromEntries(files.map((n) => [`${dir}/${n}`, n])) }];
+  };
   const layout = {
-    'darwin-arm64': [
-      {
-        asset: `kortix-tray-${tag}-macos.zip`,
-        files: {
-          ...Object.fromEntries(['kortix-capture', 'kortix-capture-engine', 'kortix-backend', 'libonnxruntime.1.23.2.dylib'].map((n) => [`${macDir}/MacOS/${n}`, n])),
-          [`${macDir}/Resources/privacy-runtime-notices.txt`]: 'privacy-runtime-notices.txt',
-        },
-      },
-    ],
-    'win32-x64': [
-      {
-        asset: `${winTray}.zip`,
-        files: Object.fromEntries(['kortix-capture.exe', 'kortix-capture-engine.exe', 'onnxruntime.dll', 'privacy-runtime-notices.txt'].map((n) => [`${winTray}/${n}`, n])),
-      },
-      {
-        asset: `kortix-stealth-${tag}-windows-x86_64.zip`,
-        files: { [`kortix-stealth-${tag}-windows-x86_64/kortix-backend.exe`]: 'kortix-backend.exe' },
-      },
-    ],
+    'darwin-arm64': pkg('macos', ['kortix-capture', 'kortix-capture-engine', 'kortix-backend', 'libonnxruntime.1.23.2.dylib', 'privacy-runtime-notices.txt']),
+    'win32-x64': pkg('windows-x86_64', ['kortix-capture.exe', 'kortix-capture-engine.exe', 'kortix-backend.exe', 'onnxruntime.dll', 'privacy-runtime-notices.txt']),
   };
   const release = githubRelease({ repo, version: tag, auth: token(env), fetchFn });
   const names = new Set((await release.assets()).map((a) => a.name));

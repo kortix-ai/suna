@@ -103,6 +103,24 @@
     "actionsRecording": {
       "type": "boolean"
     },
+    "capture": {
+      "type": "object",
+      "description": "The screen capture rate and size in force: the account policy's recording.interval_ms/max_height, else the device's own settings.",
+      "required": [
+        "intervalMs",
+        "maxHeight"
+      ],
+      "properties": {
+        "intervalMs": {
+          "type": "integer",
+          "minimum": 500
+        },
+        "maxHeight": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "policy": {
       "oneOf": [
         {

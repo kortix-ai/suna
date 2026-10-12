@@ -22,7 +22,7 @@
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from '../projects-client/shared';
-import type { CaptureExclusionGroup, CaptureLayer } from '../../capture/rules';
+import type { CaptureExclusionGroup, CaptureLayer, CaptureMaxHeight } from '../../capture/rules';
 
 export * from '../../capture/rules';
 
@@ -54,7 +54,18 @@ export interface CapturePolicy {
   };
   /** `remote_days` 0 keeps indexed data until it is deleted. */
   retention: { local_hours: number; remote_days: number };
-  recording: { paused: boolean; paused_until_ms: number | null };
+  recording: {
+    paused: boolean;
+    paused_until_ms: number | null;
+    /**
+     * One screen frame every this many milliseconds, 500–10000, on every device
+     * (`CAPTURE_FRAME_INTERVALS_MS` lists the choices). Null or absent: the
+     * device default, `CAPTURE_DEVICE_DEFAULTS.intervalMs`.
+     */
+    interval_ms?: number | null;
+    /** The frame height in pixels, at most. Null or absent: `CAPTURE_DEVICE_DEFAULTS.maxHeight`. */
+    max_height?: CaptureMaxHeight | null;
+  };
   /** Text the device shows the person being recorded. */
   notice: string;
 }
