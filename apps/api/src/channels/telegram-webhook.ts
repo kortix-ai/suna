@@ -7,11 +7,19 @@ import {
   createSession,
   resolveProjectAutomationActor,
 } from '../projects/session-lifecycle';
-import { loadTelegramWebhookSecretForProject } from './install-store';
+import { readSecret } from './install-store';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
 
 export const telegramWebhookApp = makeOpenApiApp();
+
+const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
+
+async function loadTelegramWebhookSecretForProject(
+  projectId: string,
+): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
 
 telegramWebhookApp.openapi(
   createRoute({

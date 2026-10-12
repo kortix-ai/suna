@@ -215,24 +215,31 @@ describe('a text over 256 kB is stored by reference', () => {
     expect(size!.n).toBeLessThan(20_000);
     expect(bucket.objects.get((await blobRows(big))[0]!.objectKey)!.size).toBe(50_000_000);
 
-    const measure = async (label: string, read: () => Promise<number>) => {
-      const timings: number[] = [];
-      for (let i = 0; i < 200; i++) {
-        const started = performance.now();
-        expect(await read()).toBe(40);
-        timings.push(performance.now() - started);
-      }
-      timings.sort((a, b) => a - b);
-      const [p50, p99] = [timings[99]!, timings[197]!];
-      console.info(`[session-log-blobs] ${label}: p50 ${p50.toFixed(2)} ms, p99 ${p99.toFixed(2)} ms (200 reads)`);
-      return p50;
-    };
     const service = (sessionId: string) => async () =>
       ((await readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: 40 })) as { messages: unknown[] }).messages.length;
-    // Relative, not absolute: a loaded machine slows both reads alike. Reading the object would cost ~100x.
-    const withText = await measure('readSessionLogPage, 50 MB tool output', service(big));
-    const without = await measure('readSessionLogPage, no large text', service(small));
-    expect(withText).toBeLessThanOrEqual(2 * without + 1);
+    const readBig = service(big);
+    const readSmall = service(small);
+    // Interleaved, not two sequential loops: both p50s then span the same
+    // machine conditions. A sequential pair measures the 50 MB session first,
+    // so any load burst on that loop alone (a sibling suite in the 6-worker
+    // db-suites lane, a cold JIT or plan cache) reds it, while the second
+    // loop's clean p50 sets the budget. Relative, not absolute: a loaded
+    // machine slows both reads alike. Reading the object would cost ~100x.
+    const withText: number[] = [];
+    const without: number[] = [];
+    for (let i = 0; i < 200; i++) {
+      let started = performance.now();
+      expect(await readBig()).toBe(40);
+      withText.push(performance.now() - started);
+      started = performance.now();
+      expect(await readSmall()).toBe(40);
+      without.push(performance.now() - started);
+    }
+    const p50 = (timings: number[]) => timings.sort((a, b) => a - b)[99]!;
+    const withP50 = p50(withText);
+    const withoutP50 = p50(without);
+    console.info(`[session-log-blobs] readSessionLogPage p50: 50 MB tool output ${withP50.toFixed(2)} ms, no large text ${withoutP50.toFixed(2)} ms (200 interleaved reads each)`);
+    expect(withP50).toBeLessThanOrEqual(2 * withoutP50 + 1);
   }, 120_000);
 
   test('account erasure deletes the objects', async () => {
