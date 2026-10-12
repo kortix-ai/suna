@@ -1,5 +1,5 @@
 {
-  "source_hash": "c320009a45484faa4b54fe0122ecc943505288e148290a30b1406fa95b76d3aa",
+  "source_hash": "6a638e6e7bfdd1dc2b5eecc0302c08da657bff7179de1bc7f2204d90389f2544",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-log-ingest.test.ts",
     "apps/api/src/__tests__/unit-account-id-param.test.ts",
@@ -9,16 +9,18 @@
     "apps/api/src/accounts/core/app.ts",
     "apps/api/src/iam/authorize.ts",
     "apps/api/src/iam/membership-read.ts",
+    "apps/api/src/projects/session-log-ingest.ts",
     "apps/api/src/scim/app.ts",
-    "apps/api/src/shared/resolve-account.ts"
+    "apps/api/src/shared/resolve-account.ts",
+    "apps/api/tsconfig.json"
   ],
-  "diff_hash": "283c6e5f84c750271c520bfb8a736038f11b4628b84421651262d0fbed600ac6",
-  "head": "fecedbbbd5ac909d3f0a6fa4e76909075de79c9b",
+  "diff_hash": "ed13217649f25f1a55f69ea04772fe6a25059edc7281de98c4f6c0dbe4360a64",
+  "head": "2ff26d07b1971dfa1be1c6b871b0a7a619d3f0af",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T15:20:13.041Z"
+  "at": "2026-10-12T16:27:49.445Z"
 }
