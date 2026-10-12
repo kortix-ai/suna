@@ -68,7 +68,10 @@ export function useBrowserConnect() {
   const status = ping.data ?? null;
   const connected: KortixBrowser | undefined =
     browsers.data?.find((browser) => baseline && !baseline.has(browser.id)) ??
-    (status?.browserId ? browsers.data?.find((browser) => browser.id === status.browserId) : undefined);
+    // The extension keeps its browser id after a sign-out: trust it only while signed in.
+    (status?.connected && status.browserId
+      ? browsers.data?.find((browser) => browser.id === status.browserId && browser.online)
+      : undefined);
 
   const connect = useMutation({
     // A retry would open the sign-in window again.

@@ -22,6 +22,7 @@ export type Stored = {
 export type PageMessage =
   | { kortix: 'status' }
   | { kortix: 'signin'; apiUrl?: string }
+  | { kortix: 'oauth-done'; url: string }
   | { kortix: 'signout' }
   | { kortix: 'patch'; body: { name?: string; accessMode?: AccessMode; tabScope?: TabScope } }
   | { kortix: 'stop'; attachmentId: string }

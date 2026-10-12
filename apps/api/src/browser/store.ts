@@ -21,6 +21,7 @@ const connectionColumns = {
   accessMode: browserConnections.accessMode,
   tabScope: browserConnections.tabScope,
   lastSeenAt: browserConnections.lastSeenAt,
+  relayOwnerId: browserConnections.relayOwnerId,
   revokedAt: browserConnections.revokedAt,
   createdAt: browserConnections.createdAt,
 };
@@ -192,6 +193,18 @@ export async function touchBrowser(browserId: string, relayOwnerId: string): Pro
     .update(browserConnections)
     .set({ lastSeenAt: new Date(), relayOwnerId })
     .where(and(eq(browserConnections.browserId, browserId), isNull(browserConnections.revokedAt)));
+}
+
+/**
+ * The control socket closed (sign-out, Chrome quit): offline at once, not after
+ * the ping window. Only while this replica still owns it, so a reconnect that
+ * landed on another replica stays online.
+ */
+export async function markOffline(browserId: string, relayOwnerId: string): Promise<void> {
+  await db
+    .update(browserConnections)
+    .set({ relayOwnerId: null })
+    .where(and(eq(browserConnections.browserId, browserId), eq(browserConnections.relayOwnerId, relayOwnerId)));
 }
 
 // ── Grants ──────────────────────────────────────────────────────────────────

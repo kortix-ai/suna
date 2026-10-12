@@ -99,3 +99,4 @@ select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .ok-mark svg { width: 22px; height: 22px; fill: none; stroke: var(--kortix-green); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .example { color: var(--foreground); font-size: var(--text-base); border-left: 2px solid var(--border); padding-left: calc(var(--spacing) * 3); }
 .next { padding-left: calc(var(--spacing) * 5); margin: 0 0 calc(var(--spacing) * 6); color: var(--muted-foreground); display: grid; gap: calc(var(--spacing) * 2); line-height: var(--leading-snug); }
+main:has(#done:not([hidden])) > .symbol { display: none; }

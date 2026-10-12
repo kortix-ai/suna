@@ -15,7 +15,7 @@ import { tunnelRateLimiter } from '../tunnel/core/rate-limiter';
 import { toBrowserDto } from './logic';
 import { registerSocket, unregisterSocket, type BrowserSocket } from './registry';
 import { handleAttached, handleConsent, handleDetached } from './service';
-import { activeSessionsFor, touchBrowser, upsertConnection, type BrowserInfo } from './store';
+import { activeSessionsFor, markOffline, touchBrowser, upsertConnection, type BrowserInfo } from './store';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { isUuid } from '../shared/validate';
@@ -69,7 +69,12 @@ export const browserWsHandlers = {
 
   close(ws: Socket) {
     if (ws.data.authTimer) clearTimeout(ws.data.authTimer);
-    if (ws.data.browserId) unregisterSocket(ws.data.browserId, ws);
+    const browserId = ws.data.browserId;
+    if (browserId && unregisterSocket(browserId, ws)) {
+      void markOffline(browserId, API_INSTANCE_ID).catch((err) => {
+        logger.warn('[browser-ws] mark offline failed', { error: err instanceof Error ? err.message : String(err) });
+      });
+    }
   },
 };
 

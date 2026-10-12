@@ -23,6 +23,7 @@ function row(over: Partial<BrowserRow> & { browserId: string }): BrowserRow {
     accessMode: 'always',
     tabScope: 'own',
     lastSeenAt: new Date(NOW - 5_000),
+    relayOwnerId: 'replica-1',
     revokedAt: null,
     createdAt: new Date(NOW - 86_400_000),
     ...over,
@@ -47,6 +48,8 @@ describe('isOnline', () => {
     expect(isOnline(row({ browserId: 'a', lastSeenAt: new Date(NOW - ONLINE_WINDOW_MS) }), NOW)).toBe(false);
     expect(isOnline(row({ browserId: 'a', lastSeenAt: null }), NOW)).toBe(false);
     expect(isOnline(row({ browserId: 'a', revokedAt: new Date(NOW) }), NOW)).toBe(false);
+    // The control socket closed (sign-out): offline at once, though the last ping is fresh.
+    expect(isOnline(row({ browserId: 'a', lastSeenAt: new Date(NOW), relayOwnerId: null }), NOW)).toBe(false);
   });
 });
 

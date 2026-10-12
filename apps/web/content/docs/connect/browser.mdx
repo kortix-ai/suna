@@ -10,8 +10,8 @@ Kortix Browser is not a sandbox browser and not [a computer](/docs/connect/compu
 ## Connect a browser
 
 1. Select **Connect your browser** in the sidebar, or open **Settings → Browsers**. In Chrome, Edge, Brave or Arc, the dialog shows three steps.
-2. **Add Kortix to Chrome.** Select **Add to Chrome**. The Chrome Web Store opens. Add the extension. Chrome then opens a Kortix tab: select **Connect to Kortix** there.
-3. **Connect.** The Kortix sign-in page opens. Approve the extension. If you added the extension earlier, select **Connect** in the dialog instead.
+2. **Add Kortix to Chrome.** Select **Add to Chrome**. The Chrome Web Store opens. Add the extension. Chrome then opens a Kortix tab: check the **Kortix server**, then select **Connect to Kortix**.
+3. **Connect.** The tab goes to the Kortix sign-in page. Select **Allow**. The tab comes back, and you name the browser and choose its access. If you added the extension earlier, select **Connect** in the dialog instead.
 4. **Connected.** The browser appears with an online dot. Select **Done**.
 
 The extension stays signed in. If you open the dialog in a browser that cannot run the extension, it tells you to open Kortix in Chrome, Edge, Brave or Arc.
@@ -92,4 +92,4 @@ Ask the agent in plain words, for example "Use my browser to check the invoices 
 | `browser_consent_timeout` | Nobody answered the prompt in Chrome within 90 seconds. | Run `kortix browser use --ask` and answer in Chrome. |
 | `browser_not_found` | No connected browser has that name. | Run `kortix browser ls` and pass a listed name. |
 
-If the dialog does not show the extension as added, finish in the Kortix tab Chrome opened, or reload the Kortix page. If **Connect** opens a sign-in window you close, select **Connect** again.
+If the dialog does not show the extension as added, finish in the Kortix tab Chrome opened, or reload the Kortix page. If you leave the sign-in page without **Allow**, select **Connect to Kortix** again. A server that does not offer Kortix Browser yet is named on the Kortix tab before any sign-in.

@@ -283,7 +283,7 @@ describe('self-registered clients', () => {
   test('an app that registered itself is shown as unverified', () => {
     expect(isSelfRegistered({ ...selfRegistered, redirectUris: ['https://client.example/callback'] })).toBe(true);
   });
-  test('the Kortix Chrome extension is not: only it can receive its chromiumapp.org redirect', () => {
+  test('the Kortix Chrome extension is not: only it serves its chrome-extension:// page', () => {
     expect(isSelfRegistered({ ...selfRegistered, redirectUris: [KORTIX_EXTENSION_REDIRECT_URI] })).toBe(false);
     // A second redirect target would let the code go elsewhere: unverified again.
     expect(

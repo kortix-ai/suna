@@ -1,8 +1,10 @@
 {
-  "source_hash": "07ac9fda2ecbb092c072833844aada5ace5f2ce9a815b6c393bed2cb82d58d66",
+  "source_hash": "7c9e1f961dac2c9ae298cbe981940b38f477064da9c427f7492d8605a727df57",
   "diff_files": [
     ".agents/skills/kortix-browser/SKILL.md",
     ".agents/skills/kortix-browser/references/protocol.md",
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-12T171229Z-send-the-signed-user-context-in-the-query-for-every-daemon-w.md",
     ".claude/skills/kortix-browser",
     "apps/api/.env",
     "apps/api/src/__tests__/unit-browser-auth-mount.test.ts",
@@ -18,6 +20,7 @@
     "apps/api/src/browser/ws.ts",
     "apps/api/src/inbound-dispatch.ts",
     "apps/api/src/index.ts",
+    "apps/api/src/mcp/cli.ts",
     "apps/api/src/middleware/auth-scope.ts",
     "apps/api/src/middleware/request-deadline.ts",
     "apps/api/src/oauth/index.ts",
@@ -112,13 +115,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/browser.flow.ts"
   ],
-  "diff_hash": "13d8d994832985070ea02ca5e978086a054e3b204b8892e5d263384f98d14de8",
-  "head": "249fa83478bde775aa4f56a218ab2d5b9bf5aa3c",
+  "diff_hash": "f2847d187632c3d43a6427eddcdacc8353a3a439653fda435a3679ba5ab18e85",
+  "head": "a219d0ea7da16dca0eec0fac06f8cb4e9edac8d5",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T17:19:48.845Z"
+  "at": "2026-10-12T17:32:36.524Z"
 }

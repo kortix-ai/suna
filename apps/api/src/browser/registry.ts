@@ -32,8 +32,11 @@ export function registerSocket(browserId: string, ws: BrowserSocket): void {
 }
 
 /** Remove the entry, but only if `ws` is still the registered socket. */
-export function unregisterSocket(browserId: string, ws: BrowserSocket): void {
-  if (sockets.get(browserId) === ws) sockets.delete(browserId);
+/** True when `ws` was the browser's current socket here (not one a reconnect already replaced). */
+export function unregisterSocket(browserId: string, ws: BrowserSocket): boolean {
+  if (sockets.get(browserId) !== ws) return false;
+  sockets.delete(browserId);
+  return true;
 }
 
 export function hasLocalSocket(browserId: string): boolean {

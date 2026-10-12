@@ -603,11 +603,11 @@ oauthApp.openapi(
 export const SELF_REGISTERED_DESCRIPTION = 'Self-registered (RFC 7591 dynamic client registration)';
 
 /**
- * The Kortix Chrome extension registers itself on each install. Chrome delivers
- * a redirect to `<id>.chromiumapp.org` only to the extension with that id, and
- * our signing key pins the id, so a client that can only redirect there is ours.
+ * The Kortix Chrome extension registers itself on each install. Only the
+ * extension with this id serves a `chrome-extension://<id>/` page, and our
+ * signing key pins the id, so a client that can only redirect there is ours.
  */
-export const KORTIX_EXTENSION_REDIRECT_URI = 'https://gefbbnjgoiljpbnalgafbhbfdhikgjek.chromiumapp.org/';
+export const KORTIX_EXTENSION_REDIRECT_URI = 'chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek/welcome.html';
 
 export function isSelfRegistered(client: Pick<ClientRow, 'accountId' | 'description' | 'redirectUris'>): boolean {
   const kortixExtension =
@@ -616,6 +616,7 @@ export function isSelfRegistered(client: Pick<ClientRow, 'accountId' | 'descript
 }
 
 function redirectTarget(redirectUri: string): string {
+  if (redirectUri === KORTIX_EXTENSION_REDIRECT_URI) return 'Kortix for Chrome';
   const url = parseRedirectUri(redirectUri);
   if (!url) return redirectUri;
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;

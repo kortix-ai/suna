@@ -37,8 +37,16 @@ async function saveTokens(t: TokenResponse, prevRefresh?: string) {
   });
 }
 
-/** Interactive sign-in. Stores the API URL, client and tokens. */
-export async function signIn(apiUrl?: string): Promise<void> {
+/** Where Kortix sends the browser back after sign-in: the welcome page, in the same tab. */
+export const redirectUri = () => chrome.runtime.getURL('welcome.html');
+
+type Pending = { state: string; verifier: string; api: string; clientId: string; tokenEndpoint: string };
+
+/**
+ * Start sign-in in a normal tab (a full-size page, unlike the identity popup).
+ * Kortix redirects back to welcome.html, which calls `finishSignIn`.
+ */
+export async function startSignIn(apiUrl: string | undefined, tabId?: number): Promise<void> {
   const api = normalizeApiUrl(apiUrl || (await getStored()).apiUrl || DEFAULT_API_URL);
   // A server without Kortix Browser answers 404 here; one with it answers 401.
   const host = SERVERS.find((x) => x.api === api)?.web ?? new URL(api).host;
@@ -46,42 +54,51 @@ export async function signIn(apiUrl?: string): Promise<void> {
   if (!probe) throw new Error(`Cannot reach ${host}. Check the server address.`);
   if (probe.status === 404) throw new Error(`${host} does not have Kortix Browser yet. Pick another server.`);
   const m = await meta(api);
-  const redirectUri = chrome.identity.getRedirectURL();
+  const back = redirectUri();
   let { clientId, clientApi, redirectUri: regRedirect } = await getStored();
-  if (!clientId || clientApi !== api || regRedirect !== redirectUri) {
+  if (!clientId || clientApi !== api || regRedirect !== back) {
     const r = await fetch(m.registration_endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         client_name: 'Kortix for Chrome',
-        redirect_uris: [redirectUri],
+        redirect_uris: [back],
         token_endpoint_auth_method: 'none',
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'kortix',
       }),
     });
-    if (!r.ok) throw new Error(`Sign-in is not available on ${api} (${r.status})`);
+    if (!r.ok) throw new Error(`Sign-in is not available on ${host} (${r.status})`);
     clientId = (await r.json()).client_id as string;
-    await setStored({ clientId, clientApi: api, redirectUri });
+    await setStored({ clientId, clientApi: api, redirectUri: back });
   }
   const { verifier, challenge, state } = await pkce();
+  const pending: Pending = { state, verifier, api, clientId: clientId!, tokenEndpoint: m.token_endpoint };
+  await chrome.storage.session.set({ pendingSignIn: pending });
   const url = new URL(m.authorization_endpoint);
   for (const [k, v] of Object.entries({
-    response_type: 'code', client_id: clientId, redirect_uri: redirectUri, scope: 'kortix', state,
+    response_type: 'code', client_id: clientId!, redirect_uri: back, scope: 'kortix', state,
     code_challenge: challenge, code_challenge_method: 'S256',
   })) url.searchParams.set(k, v);
-  const done = await chrome.identity.launchWebAuthFlow({ url: url.href, interactive: true });
-  const back = new URL(done ?? '');
-  if (back.searchParams.get('state') !== state) throw new Error('Sign-in was interrupted. Try again.');
+  if (tabId !== undefined) await chrome.tabs.update(tabId, { url: url.href, active: true });
+  else await chrome.tabs.create({ url: url.href, active: true });
+}
+
+/** Finish sign-in from the URL Kortix sent the welcome page back to. Stores the API URL and tokens. */
+export async function finishSignIn(callbackUrl: string): Promise<void> {
+  const { pendingSignIn: p } = (await chrome.storage.session.get('pendingSignIn')) as { pendingSignIn?: Pending };
+  const back = new URL(callbackUrl);
+  if (!p || back.searchParams.get('state') !== p.state) throw new Error('Sign-in was interrupted. Try again.');
+  await chrome.storage.session.remove('pendingSignIn');
   const code = back.searchParams.get('code');
   if (!code) throw new Error(back.searchParams.get('error_description') || 'Sign-in was canceled.');
-  const r = await fetch(m.token_endpoint, {
+  const r = await fetch(p.tokenEndpoint, {
     method: 'POST',
-    body: form({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: clientId, code_verifier: verifier }),
+    body: form({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(), client_id: p.clientId, code_verifier: p.verifier }),
   });
   if (!r.ok) throw new Error(`Sign-in failed (${r.status})`);
-  await setStored({ apiUrl: api });
+  await setStored({ apiUrl: p.api });
   await saveTokens(await r.json());
 }
 

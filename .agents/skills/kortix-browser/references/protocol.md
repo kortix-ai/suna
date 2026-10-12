@@ -19,12 +19,16 @@ exactly this. Change this file in the same commit as any wire change.
 - **Extension credential:** OAuth 2.1 with PKCE (S256) against the API's existing
   authorization server. The extension registers itself with
   `POST /v1/oauth/register` (`client_name: "Kortix for Chrome"`,
-  `redirect_uris: [chrome.identity.getRedirectURL()]`,
-  `token_endpoint_auth_method: "none"`), then calls
-  `chrome.identity.launchWebAuthFlow` on `/v1/oauth/authorize` with
-  `scope=kortix`. Tokens: `kortix_oat_` (1 h) and a rotating `kortix_ort_`
-  (30 days). The extension refreshes 5 min before expiry. Endpoints come from
-  `GET <api>/.well-known/oauth-authorization-server`.
+  `redirect_uris: ["chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek/welcome.html"]`,
+  `token_endpoint_auth_method: "none"`). Sign-in runs in a normal tab: the
+  welcome page's tab goes to `/v1/oauth/authorize` (`scope=kortix`), and Kortix
+  sends it back to `welcome.html` (web-accessible), which finishes the code
+  exchange. The API shows a client whose only redirect is that URI as the
+  verified Kortix extension. Tokens: `kortix_oat_` (1 h) and a rotating
+  `kortix_ort_` (30 days). The extension refreshes 5 min before expiry.
+  Endpoints come from `GET <api>/.well-known/oauth-authorization-server`.
+  Before sign-in, `GET /v1/browsers` without a token answers `401` on a server
+  with Kortix Browser and `404` on one without it.
 - **Sandbox credential:** the session-scoped `KORTIX_TOKEN` (`kortix_pat_`). The
   API resolves it to `{userId, sessionId, projectId}`. The browser owner must be
   that `userId`.

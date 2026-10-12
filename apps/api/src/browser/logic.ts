@@ -26,6 +26,8 @@ export interface BrowserRow {
   accessMode: string;
   tabScope: string;
   lastSeenAt: Date | null;
+  /** The API replica holding the control socket; null once it closed. */
+  relayOwnerId: string | null;
   revokedAt: Date | null;
   createdAt: Date;
 }
@@ -52,8 +54,14 @@ export interface BrowserDto {
   activeSessions: ActiveSession[];
 }
 
-export function isOnline(row: Pick<BrowserRow, 'lastSeenAt' | 'revokedAt'>, now = Date.now()): boolean {
-  return row.revokedAt === null && row.lastSeenAt !== null && now - row.lastSeenAt.getTime() < ONLINE_WINDOW_MS;
+/** Online: a replica holds its control socket (relayOwnerId) and it pinged within the window. */
+export function isOnline(row: Pick<BrowserRow, 'lastSeenAt' | 'revokedAt' | 'relayOwnerId'>, now = Date.now()): boolean {
+  return (
+    row.revokedAt === null &&
+    row.relayOwnerId !== null &&
+    row.lastSeenAt !== null &&
+    now - row.lastSeenAt.getTime() < ONLINE_WINDOW_MS
+  );
 }
 
 export function toBrowserDto(row: BrowserRow, activeSessions: ActiveSession[] = [], now = Date.now()): BrowserDto {

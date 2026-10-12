@@ -16,7 +16,19 @@ const pickedApi = () => (server.value === CUSTOM ? api.value.trim() : server.val
 const serverLabel = (apiUrl: string) =>
   SERVERS.find((s) => s.api === apiUrl)?.web ?? (() => { try { return new URL(apiUrl).host; } catch { return apiUrl; } })();
 
-rpc<Status>({ kortix: 'status' }).then((s) => {
+// Back from Kortix sign-in: finish it here, then name the browser.
+const back = new URLSearchParams(location.search);
+if (back.has('code') || back.has('error')) {
+  const url = location.href;
+  history.replaceState(null, '', location.pathname);
+  connect.disabled = true;
+  connect.textContent = 'Finishing sign-in…';
+  rpc<Status>({ kortix: 'oauth-done', url }).then(setup, (e: Error) => {
+    show($('err'), e.message);
+    connect.disabled = false;
+    connect.textContent = 'Connect to Kortix';
+  });
+} else rpc<Status>({ kortix: 'status' }).then((s) => {
   const known = SERVERS.some((x) => x.api === s.apiUrl);
   server.value = known ? s.apiUrl : s.apiUrl && s.apiUrl !== DEFAULT_API_URL ? CUSTOM : DEFAULT_API_URL;
   if (server.value === CUSTOM) api.value = s.apiUrl;
@@ -31,10 +43,10 @@ connect.onclick = async () => {
   connect.textContent = 'Waiting for sign-in…';
   show($('err'), '');
   try {
-    setup(await rpc<Status>({ kortix: 'signin', apiUrl }));
+    // This tab goes to the Kortix sign-in page and comes back here when it is done.
+    await rpc({ kortix: 'signin', apiUrl });
   } catch (e) {
     show($('err'), (e as Error).message);
-  } finally {
     connect.disabled = false;
     connect.textContent = 'Connect to Kortix';
   }

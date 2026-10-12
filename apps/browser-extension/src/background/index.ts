@@ -1,4 +1,4 @@
-import { getToken, normalizeApiUrl, signIn, signOutLocal } from './auth';
+import { finishSignIn, getToken, normalizeApiUrl, signOutLocal, startSignIn } from './auth';
 import { Control } from './control';
 import { Hub } from './hub';
 import { getStored, setStored } from './state';
@@ -73,8 +73,9 @@ async function status(): Promise<Status> {
   };
 }
 
-async function connectFlow(apiUrl?: string) {
-  await signIn(apiUrl);
+/** After Kortix sends the welcome page back: store the tokens, then dial the control socket. */
+async function connectFlow(callbackUrl: string) {
+  await finishSignIn(callbackUrl);
   control.stop();
   await control.connect();
   if (!(await control.ready())) throw new Error('Signed in, but Kortix did not answer. Try again.');
@@ -88,7 +89,8 @@ chrome.runtime.onMessage.addListener((m: PageMessage, sender, reply) => {
     await boot;
     switch (m.kortix) {
       case 'status': return status();
-      case 'signin': return connectFlow(m.apiUrl);
+      case 'signin': return void (await startSignIn(m.apiUrl, sender.tab?.id));
+      case 'oauth-done': return connectFlow(m.url);
       case 'signout': {
         await hub.endAll('closed');
         control.stop();
@@ -143,8 +145,9 @@ chrome.runtime.onMessageExternal.addListener((m: { type?: string; apiUrl?: strin
         if (u.hostname === 'localhost') api = normalizeApiUrl(m.apiUrl);
       }
       if (!api) return { ok: false, error: 'This site cannot connect a browser.' };
-      const st = await connectFlow(api);
-      return { ok: true, browserId: st.browser?.id ?? null };
+      // Sign-in continues in a new tab; the page sees the browser come online in its list.
+      await startSignIn(api);
+      return { ok: true, browserId: s.browserId ?? null };
     }
     return { ok: false, error: 'Unknown message.' };
   };
