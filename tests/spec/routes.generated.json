@@ -1000,26 +1000,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/browser/attach"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/browser/release"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/browsers"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/browsers/:id"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/browsers/:id"
-    },
-    {
-      "method": "POST",
       "path": "/v1/channels/slack/identity/bind"
     },
     {
@@ -1041,6 +1021,26 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/attach"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chrome/connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/release"
     },
     {
       "method": "GET",

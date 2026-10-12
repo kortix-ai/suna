@@ -18,7 +18,7 @@
  *   `script-src` into the enforced header (with nonces for the inline scripts).
  */
 
-import { KORTIX_EXTENSION_ID } from '../../features/browser/extension';
+import { KORTIX_EXTENSION_ID } from '../../features/chrome/extension';
 
 export const CSP_REPORT_PATH = '/api/csp-report';
 
@@ -44,7 +44,7 @@ export const SCRIPT_SRC_HOSTS = [
 ] as const;
 
 export function enforcedContentSecurityPolicy(): string {
-  // The Kortix browser extension frames the app in its side panel. X-Frame-Options
+  // The Kortix Chrome extension frames the app in its side panel. X-Frame-Options
   // cannot allowlist an origin, so the app sends no XFO and this directive is the only gate.
   return [
     `frame-ancestors 'self' chrome-extension://${KORTIX_EXTENSION_ID}`,

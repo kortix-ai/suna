@@ -82,11 +82,11 @@ export const SESSION_PROMPTS_CHANGED_CHANNEL = 'kortix_session_prompts_changed';
 export const SESSION_CHANGED_CHANNEL = 'kortix_session_changed';
 
 /**
- * A seventh channel: "send this frame to a Kortix Browser extension". The
- * payload is `{"browserId","frame"}`, always under 8 KB. The replica that holds
- * the extension's control socket delivers it; see `browser/registry.ts`.
+ * A seventh channel: "send this frame to a Kortix for Chrome extension". The
+ * payload is `{"chromeId","frame"}`, always under 8 KB. The replica that holds
+ * the extension's control socket delivers it; see `chrome/registry.ts`.
  */
-export const BROWSER_COMMAND_CHANNEL = 'kortix_browser_cmd';
+export const CHROME_COMMAND_CHANNEL = 'kortix_chrome_cmd';
 
 type Handler = (projectId: string) => void;
 
@@ -96,7 +96,7 @@ let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
 let commandDueHandler: ((dueAtMs: number) => void) | null = null;
 let promptsChangedHandler: ((sessionId: string) => void) | null = null;
-let browserCommandHandler: ((payload: string) => void) | null = null;
+let chromeCommandHandler: ((payload: string) => void) | null = null;
 // replica-local: subscribers in this process; the NOTIFY reaches every replica.
 const sessionChangedHandlers = new Set<(sessionId: string) => void>();
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -164,9 +164,9 @@ function deliverPromptsChanged(payload: string): void {
   }
 }
 
-/** The browser registry registers once, at import. Kept across stop/start. */
-export function onBrowserCommand(handler: ((payload: string) => void) | null): void {
-  browserCommandHandler = handler;
+/** The chrome registry registers once, at import. Kept across stop/start. */
+export function onChromeCommand(handler: ((payload: string) => void) | null): void {
+  chromeCommandHandler = handler;
 }
 
 /** Subscribe to `kortix_session_changed`. Returns the unsubscribe. Kept across stop/start. */
@@ -287,9 +287,9 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
     await sql.listen(LIFECYCLE_COMMAND_DUE_CHANNEL, deliverCommandDue);
     await sql.listen(SESSION_PROMPTS_CHANGED_CHANNEL, deliverPromptsChanged);
     await sql.listen(SESSION_CHANGED_CHANNEL, deliverSessionChanged);
-    await sql.listen(BROWSER_COMMAND_CHANNEL, (payload) => {
+    await sql.listen(CHROME_COMMAND_CHANNEL, (payload) => {
       try {
-        browserCommandHandler?.(payload);
+        chromeCommandHandler?.(payload);
       } catch {
         // A subscriber must not take the listener down.
       }
@@ -302,7 +302,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${BROWSER_COMMAND_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${CHROME_COMMAND_CHANNEL}`,
     );
     return true;
   } catch (error) {

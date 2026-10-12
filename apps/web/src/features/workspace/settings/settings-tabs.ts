@@ -47,9 +47,9 @@ export type SettingsTab =
   | 'preferences'
   | 'connected'
   // The browsers a person connected with the Kortix Chrome extension. The API
-  // and the CLI link here (`/settings/browsers`) when an agent needs a browser
+  // and the CLI link here (`/settings/chrome`) when an agent needs a browser
   // and none is connected.
-  | 'browsers'
+  | 'chrome'
   // API keys came BACK, and only half of what left returned. The old
   // `api-keys` tab listed three kinds of credential at once — a person's own
   // keys, service-account bearers, and the connector tokens the runtime mints
@@ -146,7 +146,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'appearance',
   'sessions',
   'preferences',
-  'browsers',
+  'chrome',
   'tokens',
   // `connected` is still in the type but NOT here: it listed the ACCOUNT's
   // GitHub App installations — the account page's Git tab — under a

@@ -143,10 +143,10 @@ export {
   webPushSubscriptions,
   // Product feedback (POST /v1/feedback)
   feedback,
-  // Kortix Browser (apps/api/src/browser)
-  browserConnections,
-  browserGrants,
-  browserAttachments,
+  // Kortix for Chrome (apps/api/src/chrome)
+  chromeConnections,
+  chromeGrants,
+  chromeAttachments,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,

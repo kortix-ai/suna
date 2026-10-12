@@ -514,7 +514,7 @@
         "connected": {
           "label": "Verbundene Konten"
         },
-        "browsers": {
+        "chrome": {
           "label": "Kortix in Chrome",
           "description": "Deine Sitzungen nutzen Chrome mit deinen Logins. Du siehst jeden Schritt."
         },
@@ -20219,7 +20219,7 @@
     "calendarEstimatedSr": "Vergangene Ausführung, aus dem Zeitplan geschätzt",
     "calendarUpcomingSr": "Bevorstehend"
   },
-  "browsers": {
+  "chrome": {
     "pill": "Chrome-Erweiterung",
     "connectTitle": "Kortix zu Chrome hinzufügen",
     "connectDescription": "Lass deine Sitzungen Chrome mit deinen Logins nutzen. Du siehst, was sie tun, und kannst sie jederzeit stoppen.",

@@ -46,7 +46,7 @@ describe('project sidebar layout', () => {
       '<SidebarMenu',
       '<ProjectMcpNavItem',
       '<ProjectComputerNavItem',
-      '<ProjectBrowserNavItem',
+      '<ProjectChromeNavItem',
       '<SidebarUpgradeButton',
     ]);
   });

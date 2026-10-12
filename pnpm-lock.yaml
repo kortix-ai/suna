@@ -319,7 +319,7 @@ importers:
         specifier: 8.70.0
         version: 8.70.0(eslint@9.39.5)(typescript@5.9.3)
 
-  apps/browser-extension:
+  apps/chrome-extension:
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0

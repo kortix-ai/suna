@@ -514,7 +514,7 @@
         "connected": {
           "label": "关联账户"
         },
-        "browsers": {
+        "chrome": {
           "label": "Chrome 中的 Kortix",
           "description": "你的会话沿用登录状态使用 Chrome。每一步你都看得见。"
         },
@@ -20219,7 +20219,7 @@
     "calendarEstimatedSr": "过去的触发，根据计划推算",
     "calendarUpcomingSr": "即将触发"
   },
-  "browsers": {
+  "chrome": {
     "pill": "Chrome 扩展程序",
     "connectTitle": "将 Kortix 添加到 Chrome",
     "connectDescription": "让你的会话使用 Chrome，并沿用你的登录状态。你可以看到它们的操作，并随时停止。",

@@ -1192,7 +1192,7 @@ export class PlatinumProvider implements SandboxProvider {
       // send it upstream unrewritten (see shared/opencode-ports).
       effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
       // Platinum's edge drops custom headers on a WebSocket upgrade, so every
-      // daemon socket (PTY, the Kortix Browser bridge) carries the signed user
+      // daemon socket (PTY, the Kortix for Chrome bridge) carries the signed user
       // context in the query instead.
       websocket: ptyWebsocket
         ? {

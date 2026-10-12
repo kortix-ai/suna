@@ -170,17 +170,6 @@ One table per domain. The route column shows the method and route template. `any
 | `billing.transaction.summary.read` | Viewed transaction summary | `GET /v1/billing/transactions/summary` |
 | `billing.usage_history.read` | Viewed credit usage history | `GET /v1/billing/usage-history` |
 
-### `browser.`
-
-| Action | Title | Route |
-| --- | --- | --- |
-| `browser.attach` | Attached a session to a browser | `POST /v1/browser/attach` |
-| `browser.disconnect` | Disconnected a browser | `DELETE /v1/browsers/:id` |
-| `browser.extension.connect` | Connected a browser extension | before the API router |
-| `browser.list` | Viewed connected browsers | `GET /v1/browsers` |
-| `browser.release` | Released a browser from a session | `POST /v1/browser/release` |
-| `browser.update` | Changed a connected browser | `PATCH /v1/browsers/:id` |
-
 ### `change_request.`
 
 | Action | Title | Route |
@@ -236,6 +225,17 @@ One table per domain. The route column shows the method and route template. `any
 | `channel.teams.message.send` | Sent Microsoft Teams message | `POST /v1/projects/:projectId/channels/teams/message` |
 | `channel.teams.mode.read` | Viewed Microsoft Teams setup options | `GET /v1/projects/:projectId/channels/teams/mode` |
 | `channel.teams.oauth.complete` | Completed Microsoft Teams install | `POST /v1/projects/:projectId/channels/teams/oauth/complete` |
+
+### `chrome.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `chrome.attach` | Attached a session to a browser | `POST /v1/chrome/attach` |
+| `chrome.disconnect` | Disconnected a browser | `DELETE /v1/chrome/connections/:id` |
+| `chrome.extension.connect` | Connected a browser extension | before the API router |
+| `chrome.list` | Viewed connected browsers | `GET /v1/chrome/connections` |
+| `chrome.release` | Released a browser from a session | `POST /v1/chrome/release` |
+| `chrome.update` | Changed a connected browser | `PATCH /v1/chrome/connections/:id` |
 
 ### `client.`
 

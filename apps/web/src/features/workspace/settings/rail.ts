@@ -15,7 +15,7 @@ import {
   UserIcon as User,
 } from '@phosphor-icons/react';
 
-import { ChromeRailIcon } from '@/features/browser/browser-icon';
+import { ChromeRailIcon } from '@/features/chrome/browser-icon';
 
 import type { SettingsTab } from './settings-tabs';
 import type { RailGroup, RailItem } from './type';
@@ -92,10 +92,10 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         icon: SlidersHorizontal,
       },
       {
-        tab: 'browsers',
+        tab: 'chrome',
         label: 'Kortix in Chrome',
         description: 'Your sessions use Chrome with your logins. You see every step.',
-        docsHref: '/docs/connect/browser',
+        docsHref: '/docs/connect/chrome',
         // Monochrome like its neighbours; `ChromeRailIcon` takes only `className`.
         icon: ChromeRailIcon as unknown as Icon,
       },

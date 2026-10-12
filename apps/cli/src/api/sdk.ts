@@ -220,7 +220,7 @@ function sanitizeCloseCode(code: number | undefined): number {
 }
 
 /**
- * A request to the sandbox daemon on this machine (`kortix browser` inside a
+ * A request to the sandbox daemon on this machine (`kortix chrome` inside a
  * session). The daemon is not the Kortix API, so it has no SDK client.
  */
 export async function sandboxDaemonRequest(

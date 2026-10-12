@@ -14,7 +14,7 @@ const sidebar = [
   { label: 'Run work', items: ['work/sessions', 'work/runtime'] },
   {
     label: 'Connect',
-    items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/browser', 'connect/mcp'],
+    items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/chrome', 'connect/mcp'],
   },
   { label: 'Ship', items: ['apps'] },
   { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },

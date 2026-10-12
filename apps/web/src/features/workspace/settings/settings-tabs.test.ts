@@ -52,7 +52,7 @@ describe('SETTINGS_TABS', () => {
       'appearance',
       'sessions',
       'preferences',
-      'browsers',
+      'chrome',
       'tokens',
     ]);
   });

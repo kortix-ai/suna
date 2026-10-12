@@ -95,11 +95,11 @@ export async function dispatchInbound(
     if (tunnelResult !== false) return tunnelResult;
   }
 
-  // ── Kortix Browser control socket ───────────────────────────────────
+  // ── Kortix for Chrome control socket ───────────────────────────────────
   // The extension connects, then authenticates with its first frame. The token
   // is never in the URL, and there is no Origin check: the token is the gate.
-  if (isWsUpgrade && url.pathname === '/v1/browser/ws') {
-    return upgradeBrowserWs(req, server);
+  if (isWsUpgrade && url.pathname === '/v1/chrome/ws') {
+    return upgradeChromeWs(req, server);
   }
 
   // ── Preview WebSocket proxy ─────────────────────────────────────────
@@ -158,16 +158,16 @@ async function upgradeAppOriginWs(req: Request, url: URL, server: any): Promise<
       });
 }
 
-async function upgradeBrowserWs(req: Request, server: any): Promise<Response | undefined> {
-  setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/browser/ws');
+async function upgradeChromeWs(req: Request, server: any): Promise<Response | undefined> {
+  setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/chrome/ws');
   if (!schemaReady) {
     return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
     });
   }
-  const { prepareBrowserUpgrade } = await import('./browser/ws');
-  const prepared = prepareBrowserUpgrade(req.headers);
+  const { prepareChromeUpgrade } = await import('./chrome/ws');
+  const prepared = prepareChromeUpgrade(req.headers);
   if (!prepared.ok) {
     return new Response(JSON.stringify({ error: prepared.message }), {
       status: prepared.status,

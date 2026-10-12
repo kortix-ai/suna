@@ -5624,8 +5624,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.browser_attachments": {
-      "name": "browser_attachments",
+    "kortix.chrome_attachments": {
+      "name": "chrome_attachments",
       "schema": "kortix",
       "columns": {
         "attachment_id": {
@@ -5635,8 +5635,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "browser_id": {
-          "name": "browser_id",
+        "chrome_id": {
+          "name": "chrome_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -5687,11 +5687,11 @@
         }
       },
       "indexes": {
-        "idx_browser_attachments_browser": {
-          "name": "idx_browser_attachments_browser",
+        "idx_chrome_attachments_chrome": {
+          "name": "idx_chrome_attachments_chrome",
           "columns": [
             {
-              "expression": "browser_id",
+              "expression": "chrome_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5708,8 +5708,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_browser_attachments_session": {
-          "name": "idx_browser_attachments_session",
+        "idx_chrome_attachments_session": {
+          "name": "idx_chrome_attachments_session",
           "columns": [
             {
               "expression": "session_id",
@@ -5725,16 +5725,16 @@
         }
       },
       "foreignKeys": {
-        "browser_attachments_browser_fk": {
-          "name": "browser_attachments_browser_fk",
-          "tableFrom": "browser_attachments",
-          "tableTo": "browser_connections",
+        "chrome_attachments_chrome_fk": {
+          "name": "chrome_attachments_chrome_fk",
+          "tableFrom": "chrome_attachments",
+          "tableTo": "chrome_connections",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "browser_id"
+            "chrome_id"
           ],
           "columnsTo": [
-            "browser_id"
+            "chrome_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -5744,19 +5744,19 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "browser_attachments_status": {
-          "name": "browser_attachments_status",
-          "value": "\"kortix\".\"browser_attachments\".\"status\" in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')"
+        "chrome_attachments_status": {
+          "name": "chrome_attachments_status",
+          "value": "\"kortix\".\"chrome_attachments\".\"status\" in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')"
         }
       },
       "isRLSEnabled": false
     },
-    "kortix.browser_connections": {
-      "name": "browser_connections",
+    "kortix.chrome_connections": {
+      "name": "chrome_connections",
       "schema": "kortix",
       "columns": {
-        "browser_id": {
-          "name": "browser_id",
+        "chrome_id": {
+          "name": "chrome_id",
           "type": "uuid",
           "primaryKey": true,
           "notNull": true,
@@ -5852,8 +5852,8 @@
         }
       },
       "indexes": {
-        "idx_browser_connections_user": {
-          "name": "idx_browser_connections_user",
+        "idx_chrome_connections_user": {
+          "name": "idx_chrome_connections_user",
           "columns": [
             {
               "expression": "user_id",
@@ -5873,19 +5873,19 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "browser_connections_access_mode": {
-          "name": "browser_connections_access_mode",
-          "value": "\"kortix\".\"browser_connections\".\"access_mode\" in ('always', 'ask', 'off')"
+        "chrome_connections_access_mode": {
+          "name": "chrome_connections_access_mode",
+          "value": "\"kortix\".\"chrome_connections\".\"access_mode\" in ('always', 'ask', 'off')"
         },
-        "browser_connections_tab_scope": {
-          "name": "browser_connections_tab_scope",
-          "value": "\"kortix\".\"browser_connections\".\"tab_scope\" in ('own', 'all')"
+        "chrome_connections_tab_scope": {
+          "name": "chrome_connections_tab_scope",
+          "value": "\"kortix\".\"chrome_connections\".\"tab_scope\" in ('own', 'all')"
         }
       },
       "isRLSEnabled": false
     },
-    "kortix.browser_grants": {
-      "name": "browser_grants",
+    "kortix.chrome_grants": {
+      "name": "chrome_grants",
       "schema": "kortix",
       "columns": {
         "grant_id": {
@@ -5895,8 +5895,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "browser_id": {
-          "name": "browser_id",
+        "chrome_id": {
+          "name": "chrome_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -5928,11 +5928,11 @@
         }
       },
       "indexes": {
-        "idx_browser_grants_browser": {
-          "name": "idx_browser_grants_browser",
+        "idx_chrome_grants_chrome": {
+          "name": "idx_chrome_grants_chrome",
           "columns": [
             {
-              "expression": "browser_id",
+              "expression": "chrome_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5951,16 +5951,16 @@
         }
       },
       "foreignKeys": {
-        "browser_grants_browser_fk": {
-          "name": "browser_grants_browser_fk",
-          "tableFrom": "browser_grants",
-          "tableTo": "browser_connections",
+        "chrome_grants_chrome_fk": {
+          "name": "chrome_grants_chrome_fk",
+          "tableFrom": "chrome_grants",
+          "tableTo": "chrome_connections",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "browser_id"
+            "chrome_id"
           ],
           "columnsTo": [
-            "browser_id"
+            "chrome_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -5970,9 +5970,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "browser_grants_decision": {
-          "name": "browser_grants_decision",
-          "value": "\"kortix\".\"browser_grants\".\"decision\" in ('allow', 'deny')"
+        "chrome_grants_decision": {
+          "name": "chrome_grants_decision",
+          "value": "\"kortix\".\"chrome_grants\".\"decision\" in ('allow', 'deny')"
         }
       },
       "isRLSEnabled": false

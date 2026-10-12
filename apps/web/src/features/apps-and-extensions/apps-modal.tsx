@@ -7,7 +7,7 @@
  * Kortix in Chrome); nothing here pairs or connects by itself.
  */
 
-import { useBrowsers } from '@kortix/sdk/react';
+import { useChromeConnections } from '@kortix/sdk/react';
 import {
   ArrowUpRightIcon,
   DownloadSimpleIcon,
@@ -24,14 +24,14 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
 import {
-  BrowserOnlineDot,
+  ChromeOnlineDot,
   ChromeButtonMark,
-  useBrowserConnect,
-} from '@/features/browser/browser-connect';
-import { BrowserLogoTile } from '@/features/browser/browser-icon';
-import { BrowserMock } from '@/features/browser/browser-mock';
-import { chromeCardState } from '@/features/browser/chrome-card-state';
-import { KORTIX_EXTENSION_STORE_URL } from '@/features/browser/extension';
+  useChromeConnect,
+} from '@/features/chrome/chrome-connect';
+import { BrowserLogoTile } from '@/features/chrome/browser-icon';
+import { ChromeMock } from '@/features/chrome/chrome-mock';
+import { chromeCardState } from '@/features/chrome/chrome-card-state';
+import { KORTIX_EXTENSION_STORE_URL } from '@/features/chrome/extension';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { detectPlatform, isMobilePlatform } from '@/features/marketing/download/detect-os';
 import { useOwnsPairedComputer } from '@/features/tunnel/computer-connect';
@@ -101,11 +101,11 @@ export function AppsModal({
 
 function ChromeCard({ onManage }: { onManage: () => void }) {
   const t = useTranslations('appsModal.chrome');
-  const { environment, checking, installed, signedIn, connected, connect } = useBrowserConnect();
-  const browsers = useBrowsers();
-  const browser = connected ?? browsers.data?.find((item) => item.online) ?? browsers.data?.[0];
+  const { environment, checking, installed, signedIn, connected, connect } = useChromeConnect();
+  const connections = useChromeConnections();
+  const chrome = connected ?? connections.data?.find((item) => item.online) ?? connections.data?.[0];
   const state = chromeCardState({
-    hasConnectedBrowser: Boolean(browser),
+    hasConnectedChrome: Boolean(chrome),
     environment,
     checking,
     installed: installed || signedIn,
@@ -122,21 +122,21 @@ function ChromeCard({ onManage }: { onManage: () => void }) {
           <p className="text-muted-foreground text-sm text-pretty">{t('description')}</p>
         </div>
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2">
-          {state === 'connected' && browser ? (
+          {state === 'connected' && chrome ? (
             <>
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={() => {
                   onManage();
-                  useSettingsPanelStore.getState().openSettings('browsers');
+                  useSettingsPanelStore.getState().openSettings('chrome');
                 }}
               >
                 {t('manage')}
               </Button>
               <span className="flex min-w-0 items-center gap-1.5 text-xs">
-                <BrowserOnlineDot online={browser.online} />
-                <span className="truncate">{browser.name}</span>
+                <ChromeOnlineDot online={chrome.online} />
+                <span className="truncate">{chrome.name}</span>
               </span>
             </>
           ) : state === 'unsupported' ? (
@@ -174,7 +174,7 @@ function ChromeCard({ onManage }: { onManage: () => void }) {
           )}
         </div>
       </div>
-      <BrowserMock className="rounded-none max-sm:hidden" />
+      <ChromeMock className="rounded-none max-sm:hidden" />
     </section>
   );
 }
@@ -196,7 +196,7 @@ function ComputerCard({ onOpenComputer }: { onOpenComputer: () => void }) {
         description={
           live ? (
             <span className="flex items-center gap-1.5">
-              <BrowserOnlineDot online />
+              <ChromeOnlineDot online />
               {t('connected')}
             </span>
           ) : (

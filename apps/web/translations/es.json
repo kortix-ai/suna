@@ -514,7 +514,7 @@
         "connected": {
           "label": "Cuentas conectadas"
         },
-        "browsers": {
+        "chrome": {
           "label": "Kortix en Chrome",
           "description": "Tus sesiones usan Chrome con tus inicios de sesión. Ves cada paso."
         },
@@ -20219,7 +20219,7 @@
     "calendarEstimatedSr": "Activación pasada, estimada a partir de la programación",
     "calendarUpcomingSr": "Próxima"
   },
-  "browsers": {
+  "chrome": {
     "pill": "Extensión de Chrome",
     "connectTitle": "Añadir Kortix a Chrome",
     "connectDescription": "Deja que tus sesiones usen Chrome, con tus inicios de sesión. Ves lo que hacen y puedes detenerlas en cualquier momento.",

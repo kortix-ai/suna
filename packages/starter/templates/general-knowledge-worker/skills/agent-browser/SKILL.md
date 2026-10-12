@@ -20,8 +20,8 @@ works out of the box. (For reference, outside this sandbox it installs with
 
 This sandbox browser is a fresh, logged-out cloud Chrome. To work in the
 **user's own Chrome** (their logins, their real session, sites that block cloud
-browsers), load the `kortix-browser` skill: run `kortix browser use`, then add
-`--cdp 9333` to every `agent-browser` command, and run `kortix browser release`
+browsers), load the `kortix-chrome` skill: run `kortix chrome use`, then add
+`--cdp 9333` to every `agent-browser` command, and run `kortix chrome release`
 when done.
 
 ## Start here

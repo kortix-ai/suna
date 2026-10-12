@@ -36,7 +36,7 @@ export const DENY_COMMANDS: Record<string, Denial> = {
   attach: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   token: { reason: 'it prints the raw access token', use: '`whoami --json` names the user' },
   tools: { reason: "it reads and edits a local kortix.yaml, and this server has no project checkout", use: 'run_command in a session sandbox, where the project lives: `kortix tools ls` there' },
-  browser: { reason: "it attaches the user's browser to a session sandbox, and this server is not one", use: 'run_command in a session sandbox: `kortix browser use` there' },
+  chrome: { reason: "it attaches the user's browser to a session sandbox, and this server is not one", use: 'run_command in a session sandbox: `kortix chrome use` there' },
 };
 
 /** [command, subcommand] → refusal. */

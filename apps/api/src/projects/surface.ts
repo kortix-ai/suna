@@ -86,7 +86,7 @@ export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';
 // the mirror), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
 
-// Abort a session's running turn (consumed by browser/, on a user's Stop in Chrome).
+// Abort a session's running turn (consumed by chrome/, on a user's Stop in Chrome).
 export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).

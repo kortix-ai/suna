@@ -514,7 +514,7 @@
         "connected": {
           "label": "接続済みアカウント"
         },
-        "browsers": {
+        "chrome": {
           "label": "Chrome の Kortix",
           "description": "セッションがログイン状態のまま Chrome を使います。すべての操作が見えます。"
         },
@@ -20219,7 +20219,7 @@
     "calendarEstimatedSr": "過去の実行（スケジュールからの推定）",
     "calendarUpcomingSr": "予定"
   },
-  "browsers": {
+  "chrome": {
     "pill": "Chrome 拡張機能",
     "connectTitle": "Kortix を Chrome に追加",
     "connectDescription": "セッションがあなたのログイン状態のまま Chrome を使えるようにします。操作は画面で確認でき、いつでも止められます。",

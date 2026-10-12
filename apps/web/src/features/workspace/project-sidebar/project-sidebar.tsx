@@ -21,7 +21,7 @@ import { useAppsModalStore } from '@/stores/apps-modal-store';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from '@/features/workspace/project-sidebar/footer/project-mcp-nav';
-import { ProjectBrowserNavItem } from '@/features/workspace/project-sidebar/footer/project-browser-nav';
+import { ProjectChromeNavItem } from '@/features/workspace/project-sidebar/footer/project-chrome-nav';
 import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
@@ -287,7 +287,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     onOpenConnect={() => setComputerConnectOpen(true)}
                   />
-                  <ProjectBrowserNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
+                  <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
                 </SidebarMenu>
               </li>
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in

@@ -51,7 +51,7 @@ describe('railGroups', () => {
       'appearance',
       'sessions',
       'preferences',
-      'browsers',
+      'chrome',
       'tokens',
     ]);
   });

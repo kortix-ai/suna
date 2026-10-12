@@ -367,7 +367,7 @@
         "connected": {
           "label": "Повезани налози"
         },
-        "browsers": {
+        "chrome": {
           "label": "Kortix у Chrome-у",
           "description": "Твоје сесије користе Chrome са твојим пријавама. Видиш сваки корак."
         },
@@ -20219,7 +20219,7 @@
     "calendarEstimatedSr": "Прошло активирање, процењено на основу распореда",
     "calendarUpcomingSr": "Предстојеће"
   },
-  "browsers": {
+  "chrome": {
     "pill": "Chrome проширење",
     "connectTitle": "Додај Kortix у Chrome",
     "connectDescription": "Дозволи да твоје сесије користе Chrome, са твојим пријавама. Видиш шта раде и можеш да их зауставиш кад год хоћеш.",

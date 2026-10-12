@@ -146,17 +146,15 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/drives', drivesApp); // personal, agent and company drives + their files and versions
-// Kortix Browser: the user's own Chrome, driven from a session sandbox. The
-// control socket (/v1/browser/ws) is upgraded in inbound-dispatch.ts. The sandbox
+// Kortix for Chrome: the user's own Chrome, driven from a session sandbox. The
+// control socket (/v1/chrome/ws) is upgraded in inbound-dispatch.ts. The sandbox
 // routes (attach, release) take only a session-scoped credential, checked in the
 // handler; enforceTokenProjectScope lets that credential through (auth-scope.ts).
-import { browserApp, browsersApp, registerBrowserRoutes } from './browser/routes';
-app.use('/v1/browsers', supabaseAuth);
-app.use('/v1/browsers/*', supabaseAuth);
-app.use('/v1/browser/*', supabaseAuth);
-registerBrowserRoutes();
-app.route('/v1/browsers', browsersApp); // GET /v1/browsers, PATCH|DELETE /v1/browsers/:id
-app.route('/v1/browser', browserApp); // POST /v1/browser/attach, /v1/browser/release
+import { chromeApp, chromeConnectionsApp, registerChromeRoutes } from './chrome/routes';
+app.use('/v1/chrome/*', supabaseAuth);
+registerChromeRoutes();
+app.route('/v1/chrome/connections', chromeConnectionsApp); // GET /v1/chrome/connections, PATCH|DELETE /v1/chrome/connections/:id
+app.route('/v1/chrome', chromeApp); // POST /v1/chrome/attach, /v1/chrome/release
 app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
 app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedback from agents, the CLI and the web app
 // Auth for the platform routes that need an identity. Scoped to these exact

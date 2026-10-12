@@ -245,7 +245,7 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
           },
           {
-            name: 'browser',
+            name: 'chrome',
             args: '<subcommand>',
             blurb: "Drive the user's own Chrome from a session (use, release, ls, status)",
           },

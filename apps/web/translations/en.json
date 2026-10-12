@@ -367,7 +367,7 @@
         "connected": {
           "label": "Connected accounts"
         },
-        "browsers": {
+        "chrome": {
           "label": "Kortix in Chrome",
           "description": "Your sessions use Chrome with your logins. You see every step."
         },
@@ -20219,7 +20219,7 @@
     "calendarEstimatedSr": "Past fire, estimated from the schedule",
     "calendarUpcomingSr": "Upcoming"
   },
-  "browsers": {
+  "chrome": {
     "pill": "Chrome extension",
     "connectTitle": "Add Kortix to Chrome",
     "connectDescription": "Let your sessions use Chrome, with your logins. You see what they do and can stop them at any time.",

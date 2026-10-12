@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 
 import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
-import { ExtensionPanelIdentity } from '@/features/browser/extension-panel-identity';
+import { ExtensionPanelIdentity } from '@/features/chrome/extension-panel-identity';
 import { MfaGate } from '@/features/auth/mfa-step-up';
 import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watcher';
 

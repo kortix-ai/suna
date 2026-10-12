@@ -14,8 +14,8 @@ import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/serv
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
 import { createToolsRouter } from '@/routes/kortix/tools'
-import { createBrowserRouter } from '@/routes/kortix/browser'
-import { browserBridge, isBridgeWsData, KORTIX_BROWSER_BRIDGE_PATH, type BridgeWsData } from '@/services/browser/browser-bridge'
+import { createChromeRouter } from '@/routes/kortix/chrome'
+import { chromeBridge, isBridgeWsData, KORTIX_CHROME_BRIDGE_PATH, type BridgeWsData } from '@/services/chrome/chrome-bridge'
 import { createHarnessControlRouter } from '@/routes/kortix/harness-control'
 import { createDriveSyncRouter } from '@/routes/kortix/drive-sync'
 import { startDriveSyncFromEnv } from '@/services/drive-sync/drive-sync'
@@ -142,8 +142,8 @@ export function buildDaemonApp(
   kortixRouter.route('/env-rpc/', envRpcRouter)
   // Hosted tools for a harness outside this process (OpenCode's bridge plugin).
   kortixRouter.route('/tools', createToolsRouter(cfg))
-  // Kortix Browser: attach/release/status for `kortix browser` (the bridge socket upgrades in startProxy).
-  kortixRouter.route('/browser', createBrowserRouter(cfg))
+  // Kortix for Chrome: attach/release/status for `kortix chrome` (the bridge socket upgrades in startProxy).
+  kortixRouter.route('/chrome', createChromeRouter(cfg))
 
   // Kortix Drive off Platinum: the API's pre-stop request for the final push.
   kortixRouter.route('/drive-sync', createDriveSyncRouter(cfg))
@@ -329,10 +329,10 @@ export function startProxy(
         if (upgraded) return undefined
         return jsonError(500, { error: 'websocket upgrade failed' })
       }
-      if (isWsUpgrade && url.pathname === KORTIX_BROWSER_BRIDGE_PATH) {
-        const prep = browserBridge.prepareUpgrade(req, currentCfg.sandboxToken)
+      if (isWsUpgrade && url.pathname === KORTIX_CHROME_BRIDGE_PATH) {
+        const prep = chromeBridge.prepareUpgrade(req, currentCfg.sandboxToken)
         if (!prep.ok) return prep.response
-        if (srv.upgrade(req, { data: { browserBridge: true } satisfies BridgeWsData })) return undefined
+        if (srv.upgrade(req, { data: { chromeBridge: true } satisfies BridgeWsData })) return undefined
         return jsonError(500, { error: 'websocket upgrade failed' })
       }
       return app.fetch(req, srv)
@@ -349,7 +349,7 @@ export function startProxy(
       // — that's a real end-of-session the client should surface, not
       // silently paper over.
       open(ws: ServerWebSocket<PtyWsData | BridgeWsData>) {
-        if (isBridgeWsData(ws.data)) return browserBridge.bridgeSocket.open(ws as ServerWebSocket<BridgeWsData>)
+        if (isBridgeWsData(ws.data)) return chromeBridge.bridgeSocket.open(ws as ServerWebSocket<BridgeWsData>)
         const state = ws.data
         const requestedId = state.ptyId
         const result = ptyRegistry.attachOrCreate(requestedId, {
@@ -379,11 +379,11 @@ export function startProxy(
         }
       },
       message(ws: ServerWebSocket<PtyWsData | BridgeWsData>, message: string | Buffer) {
-        if (isBridgeWsData(ws.data)) return browserBridge.bridgeSocket.message(ws as ServerWebSocket<BridgeWsData>, message)
+        if (isBridgeWsData(ws.data)) return chromeBridge.bridgeSocket.message(ws as ServerWebSocket<BridgeWsData>, message)
         ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
       },
       close(ws: ServerWebSocket<PtyWsData | BridgeWsData>) {
-        if (isBridgeWsData(ws.data)) return browserBridge.bridgeSocket.close(ws as ServerWebSocket<BridgeWsData>)
+        if (isBridgeWsData(ws.data)) return chromeBridge.bridgeSocket.close(ws as ServerWebSocket<BridgeWsData>)
         ws.data.handle?.detach()
       },
     },
