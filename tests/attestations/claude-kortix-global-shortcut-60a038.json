@@ -1,5 +1,5 @@
 {
-  "source_hash": "02381e26d876114fc66f6cb5c17e202721eb6e9996c831312eeb0fe3c1955749",
+  "source_hash": "179504b72f8da5f3f18af7d29e4069d68cd9cfc26128b2d193d6ebb7d5a19019",
   "diff_files": [
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/assets/quick-entry.html",
@@ -14,18 +14,25 @@
     "apps/web/content/docs/work/sessions.mdx",
     "apps/web/src/app/[locale]/(app)/layout.tsx",
     "apps/web/src/app/[locale]/(app)/projects/[id]/project-prefill-contract.test.ts",
+    "apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx",
+    "apps/web/src/components/desktop/desktop-quick-entry-composer.tsx",
     "apps/web/src/components/desktop/desktop-quick-entry.test.ts",
     "apps/web/src/components/desktop/desktop-quick-entry.tsx",
+    "apps/web/src/features/session/composer-chat-input.tsx",
+    "apps/web/src/features/session/session-chat-quick-entry-prefill.test.ts",
+    "apps/web/src/features/session/session-chat.tsx",
     "apps/web/src/features/workspace/project-layout/project-home.test.tsx",
     "apps/web/src/features/workspace/project-layout/project-home.tsx",
     "apps/web/src/lib/desktop.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/stores/composer-prefill-store.test.ts",
     "apps/web/src/stores/composer-prefill-store.ts",
+    "apps/web/src/stores/session-composer-prefill-store.test.ts",
+    "apps/web/src/stores/session-composer-prefill-store.ts",
     "tests/e2e/specs/27-desktop-parity.spec.ts"
   ],
-  "diff_hash": "37c5d00575f68a5918f1aec381de7cbd99c47b240237bba713f8f4b889338ca6",
-  "head": "4ef42b035db31678e04628c45ad1c7c8c53bb2e9",
+  "diff_hash": "6e1934177a71d1286f9caf8986e34e398557406596f5f1f70690367a44a48290",
+  "head": "cd4a9964c36f1dcc838025b562254a13cea42c51",
   "passed": true,
   "lanes": {
     "browser": "pass",
@@ -33,5 +40,5 @@
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T09:46:04.041Z"
+  "at": "2026-10-12T14:05:57.561Z"
 }
