@@ -405,6 +405,9 @@ const savedToolTurn: SavedMessages = (root) => {
   ];
 };
 
+/** A settled turn folds its work behind one "Worked for …" row (#9558); open it. */
+const openWork = (scope: Pick<Page, 'getByText'>) => scope.getByText(/^Worked( for .+)?$/).first().click();
+
 test('34 — a saved tool call shows its command and output, from the server and from this device', async ({
   page,
 }, testInfo) => {
@@ -439,6 +442,7 @@ test('34 — a saved tool call shows its command and output, from the server and
     // From the server's saved copy.
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await openWork(page);
     await expect(commandRow()).toBeVisible();
     await commandRow().click();
     await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
@@ -449,6 +453,7 @@ test('34 — a saved tool call shows its command and output, from the server and
     holding = true;
     await page.reload({ waitUntil: 'commit' });
     await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await openWork(page);
     await expect(commandRow()).toBeVisible();
     await commandRow().click();
     await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
@@ -575,11 +580,13 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(SUBAGENT_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
 
-    // A finished turn folds its steps; the sub-agent row is one of them.
-    await page.getByText(/^Completed \d+ steps?$/).first().click();
+    // A finished turn folds its work; the sub-agent row is part of it.
+    await openWork(page);
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();
+    // The sub-agent's own settled turn folds the same way.
+    await openWork(view);
     await expect(view.getByText(SUBAGENT_COMMAND, { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(view.getByText('List the source files.', { exact: true })).toBeVisible();
     await page.waitForTimeout(400); // the view's open animation, for the screenshot only
@@ -629,6 +636,7 @@ test('34 — a tool call saved before tool calls were kept 1:1 shows its command
 
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await openWork(page);
     await expect(commandRow()).toBeVisible();
     await commandRow().click();
     await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();

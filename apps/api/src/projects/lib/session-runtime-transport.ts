@@ -8,7 +8,7 @@
  *
  *   • {@link fetchRuntimeState}  — `GET /kortix/runtime/state`, gzipped on the
  *     wire, `If-None-Match` honoured.
- *   • {@link openRuntimeEventStream} — `GET /kortix/runtime/events?since=&epoch=`,
+ *   • {@link openRuntimeEventStream} — `GET /kortix/runtime/events?since=&epoch=&schema=`,
  *     an SSE body handed back UNREAD so the caller can pump it.
  *   • {@link fetchRuntimeMessages} — `GET /kortix/runtime/messages/:sessionId`,
  *     one transcript page. Every harness serves it.
@@ -240,13 +240,13 @@ export type RuntimeStreamOpen =
 /**
  * Open the daemon's sequenced event stream.
  *
- * `since`/`epoch` are passed through VERBATIM — the daemon owns replay, and the
+ * `since`/`epoch` (and `schema`) are passed through VERBATIM — the daemon owns replay, and the
  * API deciding for itself what a client missed is exactly how two cursors start
  * disagreeing.
  */
 export async function openRuntimeEventStream(
   target: DaemonCallTarget,
-  options: { since?: number | null; epoch?: string | null; signal: AbortSignal },
+  options: { since?: number | null; epoch?: string | null; schema?: 'v2'; signal: AbortSignal },
 ): Promise<RuntimeStreamOpen> {
   let endpoint: { url: string; headers: Record<string, string> } | null;
   try {
@@ -263,6 +263,8 @@ export async function openRuntimeEventStream(
       next.searchParams.set('since', String(options.since));
     }
     if (options.epoch) next.searchParams.set('epoch', options.epoch);
+    // `schema=v2` (capability `session.log.v2`): the session log's own stream.
+    if (options.schema) next.searchParams.set('schema', options.schema);
     return next;
   };
 

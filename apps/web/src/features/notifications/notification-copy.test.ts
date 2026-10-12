@@ -57,7 +57,7 @@ describe('notification_center copy', () => {
     const entry = registry.slice(registry.indexOf("key: 'notification_center'"));
     for (const text of [
       entry.slice(0, entry.indexOf('enforcementNote')),
-      flat(read('content/docs/feature-flags/index.mdx')),
+      flat(read('content/docs/project/index.mdx')),
       flat(read('content/docs/work/sessions.mdx')),
     ]) {
       expect(text).toContain("only the session creator's phone gets a session push");
@@ -66,7 +66,7 @@ describe('notification_center copy', () => {
   });
 
   test('the notifications docs say a phone also has its own switch', () => {
-    const docs = flat(read('content/docs/work/notifications.mdx'));
+    const docs = flat(read('content/docs/work/sessions.mdx'));
     expect(docs).toContain(
       'A phone also has its own switch for **Turn finished**, **Turn failed**, **Question**, and **Permission request**. It gets these only while both switches are on.',
     );

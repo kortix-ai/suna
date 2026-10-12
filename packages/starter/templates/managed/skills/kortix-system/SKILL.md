@@ -353,10 +353,10 @@ and the alternative. `read_skill` with
 </mcp-client>
 
 <apps>
-## Kortix Apps — sites, servers and backends (the Fly.io model)
+## Kortix Apps — sites, servers and backends
 
 An **App** is a project-scoped thing with one stable Kortix URL. Kortix runs it
-on the Fly.io model:
+as releases, machines and volumes:
 
 - A **release** (`vN`) is immutable: an artifact plus its resolved config. A
   failed release never replaces the live one. A rollback is a new release from
@@ -378,10 +378,10 @@ type. `labels` (for example `backend`) only group and filter Apps.
   24/7; an on-demand App bills only while awake. Apps have no monthly budget:
   account credits pay. `--budget` is retired.
 - A **backend** (database, server functions, realtime, file storage) is a
-  server App with a volume. `kortix apps launch --template convex --name db`
-  writes and deploys a self-hosted Convex backend (`db`, data on a volume) and
-  an admins-only dashboard (`db-dashboard`). Its code lives in
-  `apps/db/convex/` and ships with `npx convex deploy`.
+  server App with a volume. `kortix apps launch --template convex`
+  writes and deploys a self-hosted Convex backend (`backend`, data on a volume) and
+  an admins-only dashboard (`backend-dashboard`). Its code lives in
+  `apps/backend/convex/` and ships with `npx convex deploy`.
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
 Project Settings → Feature flags; the user contacts Kortix). The CLI labels
@@ -391,22 +391,23 @@ New Apps are private. Use `kortix apps access <app>` to select creator-only,
 whole-project, restricted member/group, public, or password access. Never store
 an App password in `kortix.yaml`.
 
-Use the CLI from the source directory:
+Each App's code lives in its own folder, `apps/<slug>/` by default (`path` is
+free-form; group by team or topic when that fits better). Deploy that folder:
 
 ```sh
-kortix apps deploy ./dist --type static --spa
-kortix apps deploy . --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
+kortix apps deploy apps/storefront/dist --type static --spa
+kortix apps deploy apps/api --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
-kortix apps launch --template convex --name db
+kortix apps launch --template convex
 kortix apps releases api          # vN, status, strategy; the live one marked
 kortix apps machines api          # machines per process group, their volumes
 kortix apps scale count api 2 --process worker
-kortix apps volumes snapshot db data
+kortix apps volumes snapshot backend data
 kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
 ```
 
 For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`
-(the App's `fly.toml`: `processes`, `http_service`, `services`, `mounts`, `vm`,
+(the App's release config: `processes`, `http_service`, `services`, `mounts`, `vm`,
 `deploy`, `labels`), then run `kortix apps deploy --manifest-app <name>`, or a
 bare `kortix apps deploy` for every block. The manifest stores non-secret
 environment values and maps runtime environment keys to **project secret
@@ -422,8 +423,8 @@ networking between Apps, private registries, or custom domains yet.
 | The user wants | Build |
 | --- | --- |
 | A website or UI with no stored data | A static App |
-| An app with data, login or realtime | `kortix apps launch --template convex --name db` + a static App that uses it (`kortix apps link <ui> --uses db`) |
-| A database or API only | The `convex` template, or a server App with a volume |
+| An app with data, login or realtime | `kortix apps launch --template convex` + a static App that uses it (`kortix apps link <ui> --uses backend`) |
+| A backend (data, functions, realtime) or an API only | The `convex` template, or a server App with a volume |
 | A call to an external system from an App | The connector gateway (`kortix-connectors`) |
 | Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
 

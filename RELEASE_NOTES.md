@@ -11,7 +11,7 @@ Tools on every harness, one-step MCP install, and billing alerts for owners
 - **Reminders page.** A calendar (day, week, month) and a list with bulk pause, resume and remove. Reminders is beta: enable **Reminders** under Settings → Feature flags.
 - **App event triggers (beta).** Run an agent when something happens in a connected app, such as a new email or an opened pull request. Every app that publishes events is listed, and you can browse its events before you connect it. Enable **App event triggers** under Settings → Feature flags.
 - **Notification center (beta).** Kortix tells the right person when a session needs them: an in-app inbox, Web Push and email. Off by default: enable **Notification Center** under Settings → Feature flags.
-- **Billing alerts for owners.** Owners get an email when the wallet reaches $0, and when a declined card turns auto top-up off. The Billing pane says why auto top-up is off. A member who runs out of credits can ask the owners from the product. Budget managers get an email at 80% and 100% of an LLM gateway budget.
+- **Billing alerts for owners.** Owners get an email when the wallet runs out, and when a declined card turns auto top-up off. The Billing pane says why auto top-up is off. A member who runs out of credits can ask the owners from the product. Budget managers get an email at 80% and 100% of an LLM gateway budget.
 - `kortix feedback "<message>"` files a bug, an idea or a friction report from a terminal or from inside a session.
 
 ### Improved
@@ -34,6 +34,11 @@ Tools on every harness, one-step MCP install, and billing alerts for owners
 - **Your computer** shows the access the agent on that computer really has, in the browser and in the desktop app. Narrowing access applies at once from anywhere; widening it asks on the computer.
 - 30 API routes that no client calls answer `410 Gone`.
 - The subprocessor list adds six vendors.
+- A finished turn folds its work into one **Worked for** row. The answer and any cards the agent showed stay visible below it.
+- A question from the agent docks onto the composer as one surface, with previous/next and a confirm step that links back to each answer.
+- The docs at `kortix.com/docs` are rewritten: 31 pages, with Git as a core page.
+- Mobile asks you to update when the installed app is older than the minimum version the API sets.
+- When you mention files on your own machine, the agent offers to connect your computer.
 
 ### Fixed
 
@@ -64,6 +69,11 @@ Tools on every harness, one-step MCP install, and billing alerts for owners
 - CLI: `agents ls` lists the project's agents, `ship` and in-sandbox host selection use the right credentials, the CLI token list hides session tokens, `reminders ls` shows the prompt text, and `triggers fire` reports the real outcome.
 - Self-host: `doctor` fails when sign-up is open and unconfirmed, `self-host status --json` prints clean JSON, the CLI refuses to rotate `API_KEY_SECRET` and `POSTGRES_PASSWORD`, and `/v1/setup/status` no longer stalls the API while it checks Docker.
 - Mobile: streaming turns stay stable, change requests anchor to their turn, the composer stays above the keyboard, and web links open in the in-app browser.
+- The **Add account** dialog that Install opens proposes a name that is still free.
+- `@kortix/agent-tunnel connect` and the CLI's sandbox port proxy connect under Bun again.
+- The sidebar toggle tells screen readers whether the sidebar is open.
+- The Providers tab no longer shows the Kortix-managed provider as connected when it serves no models.
+- CLI: `kortix providers` subcommands reject unknown flags instead of ignoring them.
 
 ### Security
 
@@ -80,8 +90,9 @@ Tools on every harness, one-step MCP install, and billing alerts for owners
 
 ### Not yet offered in Settings
 
-- Apps hosting (static sites served without a sandbox, and server Apps on releases, machines and volumes, with a Convex backend as a template), project Files with per-folder access, and session boot modes with persistent machines sit behind account-level switches and are not offered in Settings yet.
+- Apps hosting (static sites served without a sandbox, and server Apps on releases, machines and volumes, with a Convex backend as a template), project Files with per-folder access, session boot modes with persistent machines, and organization-wide Volumes and Stateless sessions sit behind switches only Kortix can turn on and are not offered in Settings yet.
 
 ### Behind the scenes
 
 - CI runs on GitHub-hosted runners, and database indexes, connection pooling, audit storage and infrastructure checks are tightened.
+- Groundwork for a durable session log, off for every project.

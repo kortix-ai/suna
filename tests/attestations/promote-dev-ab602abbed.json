@@ -1,0 +1,27 @@
+{
+  "source_hash": "33bff4f312de97dd574fae534b5a70027f349a4961f6769dd7ef326f1ce7dde8",
+  "diff_files": [
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/e2e/specs/20-workspace-switching.spec.ts",
+    "tests/e2e/specs/27-desktop-parity.spec.ts",
+    "tests/e2e/specs/30-session-transcript-history.spec.ts",
+    "tests/e2e/specs/free-tier-pricing-onboarding.spec.ts",
+    "tests/src/core/flow.ts",
+    "tests/src/fixtures/supabase.ts",
+    "tests/src/flows/agent-principals.flow.ts",
+    "tests/src/flows/config-releases.flow.ts",
+    "tests/src/flows/iam.flow.ts",
+    "tests/src/flows/llm-gateway.flow.ts",
+    "tests/src/flows/runtime-assets.flow.ts",
+    "tests/src/flows/sessions.flow.ts"
+  ],
+  "diff_hash": "e0134c156cd7eedefa88f7277a2555ea943c125b2bd05d5a227c6cd6f9613ef5",
+  "head": "0bee59db584058970947a99ce2dcf1db31b2abf3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T00:27:43.678Z"
+}

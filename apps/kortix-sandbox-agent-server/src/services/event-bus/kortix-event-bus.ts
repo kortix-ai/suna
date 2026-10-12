@@ -75,6 +75,8 @@ export class KortixEventBus {
    *  away in batches, so a full ring costs O(1) per publish, not a shift. */
   private head = 0
   private readonly listeners = new Set<KortixEventListener>()
+  /** Daemon-internal listeners (`tap`): called before the subscribers, never counted as one. */
+  private readonly taps = new Set<KortixEventListener>()
 
   constructor(
     readonly epoch: string = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
@@ -122,15 +124,23 @@ export class KortixEventBus {
       this.sizes = this.sizes.slice(this.head)
       this.head = 0
     }
-    for (const listener of this.listeners) {
-      try {
-        listener(event)
-      } catch {
-        // A broken consumer must never stop the stream for the others, and
-        // must never propagate into The harness's SSE reader.
+    for (const set of [this.taps, this.listeners]) {
+      for (const listener of set) {
+        try {
+          listener(event)
+        } catch {
+          // A broken consumer must never stop the stream for the others, and
+          // must never propagate into The harness's SSE reader.
+        }
       }
     }
     return event
+  }
+
+  /** A daemon-internal listener: live events only, before the subscribers, not in `subscriberCount`. Returns its removal. */
+  tap(listener: KortixEventListener): () => void {
+    this.taps.add(listener)
+    return () => this.taps.delete(listener)
   }
 
   /** A daemon-origin event. Types are `kortix.*` by convention and by test. */
@@ -205,13 +215,49 @@ export class KortixEventBus {
 // report and `proxy.ts` for the resource monitor. `main.ts` feeds it The harness's
 // SSE; the turn observer and boot marks publish into it directly.
 
+/**
+ * The v1 transcript frames: the v2 stream (`/events?schema=v2`) carries the
+ * `log.*` frames in their place, and every other v1 frame unchanged (status,
+ * idle, error, permission, question, todo, the session tree, diffs, pty, lsp,
+ * `kortix.*`). The set P4.4 defines as `V1_TRANSCRIPT_EVENTS` in
+ * `@kortix/api-contract/session-log`; ponytail: inline until that is on dev,
+ * then import it from there.
+ */
+export const V1_TRANSCRIPT_EVENTS: ReadonlySet<string> = new Set([
+  'message.updated',
+  'message.part.updated',
+  'message.part.delta',
+  'message.removed',
+  'message.part.removed',
+])
+
 let bus: KortixEventBus | null = null
+let logBus: KortixEventBus | null = null
 
 export function kortixEventBus(): KortixEventBus {
-  if (!bus) bus = new KortixEventBus()
+  if (!bus) {
+    bus = new KortixEventBus()
+    // The v2 stream carries every v1 frame except the transcript's, which the
+    // `log.*` frames replace. The first tap: the copy is on the v2 bus before
+    // anything a later listener publishes there.
+    bus.tap((event) => {
+      if (!V1_TRANSCRIPT_EVENTS.has(event.type)) sessionLogEventBus().publish(event.type, event.payload, event.session)
+    })
+  }
   return bus
+}
+
+/**
+ * The bus of `/events?schema=v2`: the session log's `log.*` frames and a copy
+ * of every v1 frame outside `V1_TRANSCRIPT_EVENTS`. A second sequence, so the
+ * v1 stream keeps its dense seqs with no gap where a `log.*` frame would sit.
+ */
+export function sessionLogEventBus(): KortixEventBus {
+  if (!logBus) logBus = new KortixEventBus()
+  return logBus
 }
 
 export function resetKortixEventBusForTests(): void {
   bus = null
+  logBus = null
 }

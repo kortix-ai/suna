@@ -517,6 +517,19 @@ describe('Apps public edge', () => {
     expect(result.get('content-security-policy-report-only')).toBe("img-src 'self'");
   });
 
+  test('strips frame-ancestors from every policy in a comma-separated CSP list', () => {
+    // What the Convex dashboard reaches the proxy with: the image sends
+    // `frame-ancestors 'self';` and the sandbox edge adds a second policy.
+    // Each policy is enforced, so one surviving frame-ancestors blanks the card.
+    const result = appPublicResponseHeaders(new Headers({
+      'content-security-policy': ", frame-ancestors https://sandbox.example.test; img-src 'self'",
+    }));
+
+    expect(result.get('content-security-policy')).toBe(
+      "img-src 'self'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+    );
+  });
+
   test('an App cannot mark its own response shareable at the edge, and the API origin never caches it', () => {
     const result = appPublicResponseHeaders(new Headers({
       'cache-control': 'public, max-age=31536000, immutable',

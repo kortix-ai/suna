@@ -11,7 +11,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,6 +30,9 @@ import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import { logger } from '@/lib/log/logger'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
+import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
+import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
 import {
@@ -321,6 +324,7 @@ describe('pi harness', () => {
     expect(before.capabilities).toContain('session.subagents')
     expect(before.capabilities).toContain('session.compact')
     expect(before.capabilities).toContain('session.commands')
+    expect(before.capabilities).toContain('session.log.v2')
     expect(before.capabilities).not.toContain('session.rewind')
     expect(before.capabilities).not.toContain('session.attach')
     expect(before.runtimeReady).toBe(false)
@@ -3100,5 +3104,220 @@ describe('pi per-prompt agent (R7.2)', () => {
       expect({ pick, coder: system.includes('PROMPT-OF-CODER'), other: /PROMPT-OF-(REVIEWER|RETIRED)/.test(system) }).toEqual({ pick, coder: true, other: false })
       expect((await page(r)).messages.find((m) => m.info.id === id)!.info.agent).toBe('coder')
     }
+  })
+})
+
+describe('pi session-log export (P2.5)', () => {
+  // A real 1x1 PNG: pi drops an image it cannot decode ("[Image omitted: …]").
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+  const TASK = { tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general' } }
+  /** The model reads images, so the attachment reaches pi as image content. */
+  const imageCatalog = (workspace: string) => {
+    writeFileSync(join(workspace, 'image-catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', attachment: true, limit: { context: 64_000, output: 4_096 } } } }))
+    compactEverything(workspace)
+  }
+
+  test('a real session exports with Kortix ids and v1 part ids, and its hashes survive a restart', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const r = await boot({
+      workspace,
+      prepare: imageCatalog,
+      env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') },
+      script: [
+        { text: 'an image' },
+        { tool: 'bash', args: { command: 'printf a > a.txt && ls' } }, { text: 'listed' },
+        TASK, { tool: 'bash', args: { command: 'printf sub > sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' },
+        ...SUMMARY,
+        { tool: 'bash', args: { command: 'sleep 20' } },
+        { text: 'after the stop' },
+      ],
+    })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    const imageId = 'msg_0198e2a4b0f1ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID: imageId, parts: [{ type: 'text', text: 'what is this' }, { type: 'file', mime: 'image/png', url: PNG, filename: 'shot.png' }] })).status).toBe(204)
+    await waitFor(() => !rt.busy())
+    await promptAndSettle(r, 'list the files')
+    await promptAndSettle(r, 'spawn a helper')
+    expect((await summarize(r, root)).status).toBe(200)
+    await waitFor(() => rt.idle())
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'wait' }] })).status).toBe(204)
+    await waitForRunningTool(r, root)
+    expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    await promptAndSettle(r, 'after')
+
+    const { log, hashes } = piSessionLog(rt.sessionLogSnapshot()!)
+    expect(() => upcastSessionLog(log)).not.toThrow()
+    const [thread, child] = log.threads
+    // The seq rule (session-log.ts): strictly increasing per thread.
+    for (const t of log.threads) for (let i = 1; i < t.messages.length; i++) expect(t.messages[i]!.seq).toBeGreaterThan(t.messages[i - 1]!.seq)
+    const transcript = new Map(rt.transcript.all().map((m) => [m.info.id as string, m]))
+    // Every root message carries its Kortix id; every block id is a part of that v1 message.
+    // pi's system prompt entry has no Kortix message: a position id.
+    for (const m of thread!.messages.filter((x) => x.kind !== 'context')) {
+      const row = transcript.get(m.message_id)
+      expect(row, m.message_id).toBeDefined()
+      const partIds = new Set(row!.parts.map((p) => p.id))
+      for (const b of m.blocks) expect(partIds.has(b.id), `${m.message_id} ${b.type} ${b.id}`).toBe(true)
+    }
+    expect(thread!.messages.map((m) => `${m.role}:${m.kind}`)).toEqual([
+      'system:context',
+      'user:turn', 'assistant:turn',
+      'user:turn', 'assistant:turn', 'assistant:turn',
+      'user:turn', 'assistant:turn', 'assistant:turn',
+      'user:compaction',
+      'user:turn', 'assistant:turn', 'assistant:turn',
+      'user:turn', 'assistant:turn',
+    ])
+    expect((thread!.messages[0]!.blocks[0] as { text: string }).text).toContain('You are a coding agent')
+    const image = thread!.messages.find((m) => m.message_id === imageId)!
+    expect(image.blocks.map((b) => b.type)).toEqual(['text', 'attachment'])
+    expect(image.blocks[1]).toMatchObject({ mime: 'image/png', name: 'shot.png', ref: expect.stringMatching(/^blob:[0-9a-f]{64}$/) })
+    const compaction = thread!.messages[9]!
+    expect(compaction.blocks[0]).toMatchObject({ type: 'compaction', summary: expect.stringContaining('SUMMARY-ONE'), trigger: 'manual' })
+    // The bash call stopped mid-run: pi records its own error result. The reply cut after it is out of context.
+    expect(thread!.messages[11]!.blocks[0]).toMatchObject({ type: 'tool_call', name: 'bash', status: 'error', result: { content: [{ type: 'text', text: 'Command aborted' }], is_error: true } })
+    expect(thread!.messages[12]).toMatchObject({ role: 'assistant', status: 'aborted', in_context: false, hidden_reason: 'aborted' })
+    expect(child).toMatchObject({ parent_thread_id: root, spawned_by: { message_id: thread!.messages[7]!.message_id, call_id: expect.any(String) } })
+    expect(child!.messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'assistant'])
+    for (const m of child!.messages.slice(1)) expect(m.message_id.startsWith('msg_')).toBe(true)
+
+    // A daemon restart restores the id maps and the header: every native hash is the same.
+    await r.service.lifecycle.stop()
+    rigs.splice(rigs.indexOf(r), 1)
+    const restarted = await boot({ workspace, script: [], env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') } })
+    const again = piSessionLog(restarted.service.runtime()!.sessionLogSnapshot()!)
+    expect(again.hashes).toEqual(hashes)
+  })
+})
+
+/**
+ * The `log.*` frames of a v2 stream capture, after checking the whole stream: dense seqs, valid
+ * `log.*` payloads, the run's `session.status` frames, and no `message.*` frame (P4.3b).
+ */
+function v2Frames(raw: string) {
+  const all = raw.split('\n\n').filter((f) => /^id: /m.test(f)).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: string; payload: any })
+  expect(all.map((f) => f.seq)).toEqual(all.map((_, i) => i + 1))
+  expect(all.filter((f) => f.type.startsWith('message.'))).toEqual([])
+  expect(all.filter((f) => f.type === 'session.status').map((f) => f.payload.status.type)).toContain('busy')
+  const frames = all.filter((f) => f.type.startsWith('log.')) as Array<{ seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any }>
+  for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
+  return frames
+}
+
+describe('pi session log on the v2 stream (P4.3)', () => {
+  const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_SESSION_LOG_DUMP_DIR'] as const
+  let saved: Record<string, string | undefined> = {}
+  let dump: string
+  beforeEach(() => {
+    resetSessionLogJournalForTests()
+    saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]))
+    dump = mkdtempSync(join(tmpdir(), 'pi-log-dump-'))
+    Object.assign(process.env, { KORTIX_PROJECT_ID: 'proj-pi-test', KORTIX_SESSION_ID: 'sess-pi-test', KORTIX_TOKEN: TOKEN, KORTIX_API_URL: 'http://127.0.0.1:9', KORTIX_SESSION_LOG_DUMP_DIR: dump })
+  })
+  afterEach(() => {
+    resetSessionLogJournalForTests()
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]
+      else process.env[key] = saved[key]
+    }
+    rmSync(dump, { recursive: true, force: true })
+  })
+
+  test('two turns: state and thread first, text deltas under the block ids the records store, then the turn as log.message', async () => {
+    const r = await boot({ script: [{ text: 'First answer here.' }, { text: 'Second answer here.' }] })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    for (const text of ['first question', 'second question']) {
+      expect((await prompt(r, root, { parts: [{ type: 'text', text }] })).status).toBe(204)
+      await waitFor(() => rt.idle())
+      expect(await flushSessionLogJournal()).toBe(true)
+    }
+    const raw = await readSse(stream, (t) => t.includes('Second answer here.') && t.split('event: log.message').length > 4)
+    const frames = v2Frames(raw)
+    // The journal start: the session and its root thread, before any turn streams.
+    expect(frames.slice(0, 2).map((f) => f.type)).toEqual(['log.state', 'log.thread'])
+    expect(frames[1]!.payload.thread_id).toBe(root)
+
+    // The last put of each message: the turn end's record (P4.3b live puts precede it).
+    const messages = [...new Map(frames.filter((f) => f.type === 'log.message').map((f) => [f.payload.message.message_id, f.payload.message as SessionLogMessage])).values()]
+    const answers = messages.filter((m) => m.role === 'assistant' && m.kind === 'turn')
+    expect(answers).toHaveLength(2)
+    for (const [i, answer] of answers.entries()) {
+      const block = answer.blocks.find((b) => b.type === 'text') as { id: string; text: string }
+      const deltas = frames.filter((f) => f.type === 'log.block.delta' && f.payload.block_id === block.id)
+      // The fake model streams each answer in two chunks; each lands under the record's own ids.
+      expect(deltas.length).toBe(2)
+      for (const d of deltas) expect(d.payload).toMatchObject({ thread_id: root, message_id: answer.message_id })
+      expect(deltas.map((d) => d.payload.delta).join('')).toBe(block.text)
+      expect(block.text).toBe(['First answer here.', 'Second answer here.'][i]!)
+      // Deltas stream before the turn end's record.
+      const recordSeq = frames.findLast((f) => f.type === 'log.message' && f.payload.message?.message_id === answer.message_id)!.seq
+      expect(Math.max(...deltas.map((d) => d.seq))).toBeLessThan(recordSeq)
+    }
+    // Every record in a batch the journal wrote is on the stream, at the same rev; the stream's other puts are live puts (P4.3b) at lower revs.
+    const batches = readdirSync(dump).map((f) => JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> })
+    const onStream = new Map(frames.filter((x) => x.type === 'log.message').map((f) => [`${f.payload.message.message_id}@${f.payload.rev}`, f.payload.message]))
+    for (const p of batches.flatMap((b) => b.puts)) expect(onStream.get(`${p.message.message_id}@${p.rev}`)).toEqual(p.message)
+  })
+
+  test('a live turn (P4.3b): the user put, a streaming put before the first delta, a put for each new block, then the final put at a higher rev', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo live-turn' } }, { text: 'Ran it for you.' }] })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'run the command' }] })).status).toBe(204)
+    await waitFor(() => rt.idle())
+    expect(await flushSessionLogJournal()).toBe(true)
+    const raw = await readSse(stream, (t) => t.includes('Ran it for you.'))
+    const frames = v2Frames(raw)
+
+    const batches = readdirSync(dump).map((f) => JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> })
+    const finals = new Map(batches.flatMap((b) => b.puts).map((p) => [p.message.message_id, p]))
+    const puts = frames.filter((f) => f.type === 'log.message' && f.payload.message)
+    const putsOf = (id: string) => puts.filter((f) => f.payload.message.message_id === id)
+    const user = [...finals.values()].find((p) => p.message.role === 'user' && p.message.kind === 'turn')!.message
+    const answers = [...finals.values()].filter((p) => p.message.role === 'assistant').map((p) => p.message)
+    expect(answers).toHaveLength(2)
+
+    // The user put: complete, at the seq the API receives, before the first assistant put.
+    const userLive = putsOf(user.message_id)[0]!
+    expect(userLive.payload.rev).toBeLessThan(finals.get(user.message_id)!.rev)
+    expect(userLive.payload.message).toMatchObject({ status: 'complete', seq: user.seq, thread_id: root })
+    expect(userLive.seq).toBeLessThan(putsOf(answers[0]!.message_id)[0]!.seq)
+
+    for (const answer of answers) {
+      const own = putsOf(answer.message_id)
+      const final = own.at(-1)!
+      // The API receives one record per message: the turn end's, the last put on the stream.
+      expect(final.payload).toEqual(finals.get(answer.message_id))
+      expect(final.payload.message.status).toBe('complete')
+      const live = own.slice(0, -1)
+      expect(live.length).toBeGreaterThan(0)
+      expect(live[0]!.payload.message).toMatchObject({ status: 'streaming', role: 'assistant', reply_to: user.message_id, completed_at: null })
+      // Seq stability: every streaming put carries the seq, thread and created_at of the turn end's record.
+      for (const f of live) {
+        expect(f.payload.message).toMatchObject({ message_id: answer.message_id, seq: answer.seq, thread_id: root, created_at: answer.created_at })
+        expect(f.payload.rev).toBeLessThan(final.payload.rev)
+      }
+      // Each block is on the stream before its first delta.
+      for (const d of frames.filter((f) => f.type === 'log.block.delta' && f.payload.message_id === answer.message_id)) {
+        const holder = live.find((f) => f.payload.message.blocks.some((b: { id: string }) => b.id === d.payload.block_id))
+        expect(holder, d.payload.block_id).toBeDefined()
+        expect(holder!.seq).toBeLessThan(d.seq)
+      }
+    }
+    // The tool call: a streaming put carries its block while it runs.
+    const call = answers[0]!.blocks.find((b) => b.type === 'tool_call')!
+    expect(putsOf(answers[0]!.message_id).some((f) => f.payload.message.status === 'streaming' && f.payload.message.blocks.some((b: { id: string }) => b.id === call.id))).toBe(true)
+    // The answer's text block: on the stream before any of its text.
+    const text = answers[1]!.blocks.find((b) => b.type === 'text')!
+    expect(frames.some((f) => f.type === 'log.block.delta' && f.payload.block_id === text.id)).toBe(true)
+    // No streaming record reaches the API.
+    for (const p of batches.flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
   })
 })

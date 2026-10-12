@@ -3,7 +3,10 @@
  * 65 of 65 restores across 7 sources and 5 target harnesses). The record names differ
  * (decision D1): Session, Thread, Message and Block are SessionLog, SessionLogThread,
  * SessionLogMessage and SessionLogBlock. The other differences are the freeze additions below.
- * This file has no imports, so it can be copied as is.
+ * This file has no imports, so it can be copied as is. `@kortix/sdk` is published and cannot import
+ * this private package: it keeps a copy in `packages/sdk/src/core/session-log/types.ts`, and
+ * `packages/sdk/src/core/session-log/types.test.ts` holds the two copies equal from the
+ * `SESSION_LOG_SCHEMA` declaration on.
  *
  * kortix.session/2 — minor 1 (DRAFT 2.1). Additive over 2.0; a 2.0 reader still
  * reads every 2.1 record (new fields are optional; new layout entries carry text).

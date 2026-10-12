@@ -1,11 +1,11 @@
 ---
 name: kortix-apps
-description: "Build, deploy and operate Kortix Apps on the Fly.io model through the pre-authenticated CLI or SDK: static sites and SPAs, Dockerfile or OCI servers, workers, and stateful backends (a database, a Convex backend) with persistent volumes, snapshots and built-in Kortix sign-in. Use when the user asks to publish, host, deploy, preview, inspect, scale, wake, suspend, roll back, debug, or remove an App; asks for a database, an API, a backend, a data model, auth, or 'store this'; asks for an internal tool, business app, CRM, tracker, dashboard, portal, or any app the team logs in to; before writing any Convex code; or asks what an App costs or how it runs."
+description: "Build, deploy and operate Kortix Apps through the pre-authenticated CLI or SDK: static sites and SPAs, Dockerfile or OCI servers, workers, and stateful backends (a database, a Convex backend) with persistent volumes, snapshots and built-in Kortix sign-in. Use when the user asks to publish, host, deploy, preview, inspect, scale, wake, suspend, roll back, debug, or remove an App; asks for a database, an API, a backend, a data model, auth, or 'store this'; asks for an internal tool, business app, CRM, tracker, dashboard, portal, or any app the team logs in to; before writing any Convex code; or asks what an App costs or how it runs."
 ---
 
 # Kortix Apps
 
-Kortix Apps follow the Fly.io model:
+Kortix Apps are built from three parts:
 
 - **Release:** every deploy is an immutable release (v1, v2, …): the build
   plus its config. Rollback is a new release from an old one.
@@ -43,20 +43,30 @@ another host. Volumes need Platinum (the default on Kortix Cloud).
 | --- | --- | --- |
 | A website or UI with no stored data | A static App | references/web-static.md |
 | An app with data, login or realtime (an internal tool, a CRM, a tracker) | A Convex backend App (`kortix apps launch --template convex`) + a static App for the UI that uses it | "Internal apps" below, references/convex.md |
-| A database or an API only | The Convex template | references/convex.md |
-| A server of its own (SSR, native packages, a custom service), a worker, several process groups | A server App | references/web-server.md, references/fly-model.md |
+| A backend (data, functions, realtime) or an API only | The Convex template | references/convex.md |
+| A server of its own (SSR, native packages, a custom service), a worker, several process groups | A server App | references/web-server.md, references/apps-model.md |
 | A call to an external system from an App | The connector gateway | references/connectors.md |
 
 Default to static for every UI. Server logic for a UI (queries, writes,
 webhooks, integrations, schedules) lives in the backend App, not in a second
 server.
 
+## Where the code lives
+
+Default: one folder per App, `apps/<slug>/`, named after its `kortix.yaml` key:
+`apps/storefront/` (a static UI, built to `apps/storefront/dist`), `apps/api/`
+(a server App with its `Dockerfile`), `apps/backend/` (a Convex backend's
+`package.json` and `convex/`). Templates, `launch` and every example here use
+it. It is a default, not a rule: `path` is free-form, so group the code by team
+or topic when that fits the project better (`apps/sales/crm`,
+`apps/ops/fieldops-backend`).
+
 ## Deploy
 
 ```bash
-kortix apps launch --template convex --name db           # a ready-made backend App, deployed
-kortix apps deploy ./dist --slug storefront --name Storefront --type static --spa
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps launch --template convex           # a ready-made backend App, deployed
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 ```
 
@@ -64,18 +74,19 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 `kortix.yaml` block) for every later release of the same App. Never create a
 new slug for a normal update.
 
-Declare Apps in `kortix.yaml` `apps.<slug>` (≈ fly.toml; kortix-system,
+Declare Apps in `kortix.yaml` `apps.<slug>` (kortix-system,
 `references/kortix/kortix-yaml.md`). `kortix apps deploy` with no arguments
 deploys every block, used Apps first; `kortix apps deploy <path>` uses the
-block whose `path` it is. The Fly keys:
+block whose `path` it is. The keys:
 
 ```yaml
 apps:
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]
+    display: { preview: none }     # where Kortix shows it: listed, preview (live | none), parent (a tab of another App)
     processes: { app: "", worker: "node worker.js" }   # "" = the image's command
     vm: [{ cpu: 1, memory_gb: 2 }, { cpu: 1, memory_gb: 1, processes: [worker] }]
     mounts:
@@ -104,7 +115,7 @@ kortix apps scale count <app> 3 --process worker
 kortix apps exec <app> -- ls /data             # project admins; output and exit code
 ```
 
-A group with a mount gets one new, empty volume per new machine (Fly). Never
+A group with a mount gets one new, empty volume per new machine. Never
 scale a single-instance database above 1: each machine gets its own volume.
 
 ## Volumes and snapshots
@@ -180,25 +191,27 @@ function knows who is calling.
 
 ```text
 member's browser ──▶ App "crm" (static UI, access: project)
-      │                 └─ /_kortix/token?audience=db  ──▶ token naming the member + groups
-      └──── /_kortix/apps/db (HTTP + websocket) ──▶ App "db" (Convex, volume) ── requireKortixMember
+      │                 └─ /_kortix/token?audience=backend  ──▶ token naming the member + groups
+      └──── /_kortix/apps/backend (HTTP + websocket) ──▶ App "backend" (Convex, volume) ── requireKortixMember
 ```
 
 ### Layout (project repo)
 
 ```text
-apps/db/                       # Convex functions for App "db" (references/convex.md)
+apps/backend/                  # Convex functions for App "backend" (references/convex.md)
   package.json                 # "convex", "@kortix/sdk"
   convex/schema.ts
   convex/auth.config.ts        # Kortix sign-in (references/sign-in.md)
   convex/lib/auth.ts           # requireMember()
   convex/<domain>.ts           # queries + mutations per domain
   convex/seed.ts               # internal seed, demo data only
+  dashboard/Dockerfile         # App "backend-dashboard": Convex's dashboard (written by launch)
+  dashboard/start.js           # signs the dashboard in with BACKEND_ADMIN_KEY
 apps/crm/                      # static App "crm"
   package.json                 # vite, react, convex, @kortix/sdk
-  src/convex.ts                # kortixBinding("db") + ConvexReactClient
+  src/convex.ts                # kortixBinding("backend") + ConvexReactClient
 memory/crm.md                  # what you built, URLs, how to redeploy
-kortix.yaml                    # apps.db and apps.db-dashboard (the template), apps.crm (uses: [db])
+kortix.yaml                    # apps.backend and apps.backend-dashboard (the template), apps.crm (uses: [backend])
 .gitignore                     # **/node_modules and apps/*/dist: never commit them
 ```
 
@@ -209,9 +222,10 @@ Every session downloads the whole repository, so keep it small. Create
 
 1. **Model the domain.** Tables, fields, relations, and the 5–10 actions
    people take. Write it down in `memory/<app>.md` first.
-2. **Backend App.** `kortix apps launch --template convex --name db`, then
-   connect, discover and push as references/convex.md shows (the admin key
-   comes from `kortix apps exec`).
+2. **Backend App.** `kortix apps launch --template convex`, then
+   connect, discover and push as references/convex.md shows (`launch` writes
+   the admin key to the project secret `BACKEND_ADMIN_KEY` and the dashboard's
+   files to `apps/backend/dashboard/`; the dashboard is the Dashboard tab of `backend`).
 3. **Schema + sign-in.** `convex/schema.ts` with an index for every filter,
    `convex/auth.config.ts` and `convex/lib/auth.ts` from references/sign-in.md.
    Store `me.userId` as owner/author ids. Use Kortix roles
@@ -233,7 +247,7 @@ Every session downloads the whole repository, so keep it small. Create
    ```sh
    (cd apps/crm && npm run build)
    kortix apps deploy ./apps/crm/dist --slug crm --name "CRM" --type static --spa --access project
-   kortix apps link crm --uses db
+   kortix apps link crm --uses backend
    ```
    Never `public` for internal data: a public App has no signed-in member.
 9. **Integrations** only through Kortix connectors (references/connectors.md).
@@ -242,16 +256,16 @@ Every session downloads the whole repository, so keep it small. Create
 
 ### Redeploy after a change, and undo
 
-Take `kortix apps volumes snapshot db data` before a risky change (a schema
+Take `kortix apps volumes snapshot backend data` before a risky change (a schema
 migration, a bulk import, a backfill). Keep each data-layer change compatible
 with the live UI: add before you remove.
 
 | What broke | Undo |
 | --- | --- |
 | The UI | `kortix apps rollback crm <vN>` (a new release from vN) |
-| The backend's image or config | `kortix apps rollback db <vN>`: the volume keeps its data |
-| Convex code | `git checkout <good-sha> -- apps/db/convex`, push it again (references/convex.md), commit |
-| Data | `kortix apps volumes restore db data <snapshot>`, only with the user's consent: it drops every later change |
+| The backend's image or config | `kortix apps rollback backend <vN>`: the volume keeps its data |
+| Convex code | `git checkout <good-sha> -- apps/backend/convex`, push it again (references/convex.md), commit |
+| Data | `kortix apps volumes restore backend data <snapshot>`, only with the user's consent: it drops every later change |
 
 ## Verify before you report (mandatory)
 
@@ -295,7 +309,7 @@ kortix apps volumes destroy <slug> <volume> --yes       # admins; a final snapsh
 
 ## References
 
-- references/fly-model.md — releases, machines, volumes, strategies, release_command, checks, scale, services, exec, the env every machine gets.
+- references/apps-model.md — releases, machines, volumes, strategies, release_command, checks, scale, services, exec, the env every machine gets.
 - references/web-static.md — static sources, build rules, caching, verify.
 - references/web-server.md — Dockerfile and OCI Apps, process groups, run mode, wake, diagnose.
 - references/convex.md — the Convex template: launch, connect, push, test, dashboard, durability, delete.

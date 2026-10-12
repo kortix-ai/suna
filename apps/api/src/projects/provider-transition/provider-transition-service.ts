@@ -20,10 +20,10 @@ import {
   type ResolvedPrepIdentity,
   type TransitionDeps,
 } from './provider-transition-runner';
+import { setPinWithGenerationBump } from './provider-transition-activate';
+import { readActiveRouting } from './provider-transition-routing';
 import {
-  setPinWithGenerationBump,
   listTransitionsForProject,
-  readActiveRouting,
   reserveSwitchTransition,
 } from './provider-transition-store';
 import {
