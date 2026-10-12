@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "このプロジェクトで上書き",
         "defaultOn": "デフォルトでオン",
-        "defaultOff": "デフォルトでオフ"
+        "defaultOff": "デフォルトでオフ",
+        "organization": "組織全体（Kortix が管理）"
       },
       "search": "機能を検索",
       "loadFailed": "プロジェクトを読み込めませんでした",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "アプリイベントのトリガー",
           "description": "連携したアプリで何かが起きたときにエージェントを起動します。新しいメール、プルリクエスト、カレンダーの予定など。"
+        },
+        "volumes": {
+          "name": "ボリューム",
+          "description": "組織全体で共有ファイルとボリューム上のセッションを使えます。"
+        },
+        "stateless_sessions": {
+          "name": "ステートレスセッション",
+          "description": "起動のたびに新しいコンピューター。ファイルとチャットだけが残ります。ボリュームの有効化が必要です。"
         },
         "drives": {
           "name": "ドライブ",
@@ -19777,6 +19786,7 @@
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
     "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
+    "managedUpgradeHint": "アップグレードしてKortixの管理モデルを利用するか、独自のプロバイダーに接続してください。",
     "pricingEstimate": "お客様向けの概算料金です。実際の料金は使用された経路によって決まります。",
     "pricingRoute": "{route}：100万トークンあたり入力 {input} / キャッシュ {cacheRead} / 出力 {output}",
     "pricingPreferred": "優先",

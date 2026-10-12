@@ -65,6 +65,8 @@ export const FeatureFlagMapSchema = z.object({
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
+  volumes: z.boolean(),
+  stateless_sessions: z.boolean(),
   drives: z.boolean(),
   ephemeral_sandboxes: z.boolean(),
   session_log: z.boolean(),
@@ -91,6 +93,8 @@ export const FeatureFlagViewSchema = z.object({
   overridden: z.boolean(),
   /** Internal-only flag, listed only while on. Only a platform operator can change it. */
   operator_only: z.boolean().optional(),
+  /** `organization`: one value for every project of the organization; changing it needs `account.write`. */
+  scope: z.enum(['project', 'organization']).optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 

@@ -696,6 +696,15 @@ private `@kortix/api-contract` package. The types are a copy of the api-contract
 session-log types, and a test fails when the two differ. See the
 [reference](https://kortix.com/docs/sdk/reference#session-log-types).
 
+`@kortix/sdk/react` adds `useSessionLog(session)` and
+`useSessionLogThread(session, threadId?)`: the log of a session `useSession`
+owns, or `null` while the session reads v1. A session reads the log only when
+the runtime lists `session.log.v2`, the project flag `session_log` is on, and
+the API holds a log for an OpenCode session; every other session reads v1. The v1
+hooks (`useSessionMessages`, `useSession().messages`) return the same rows
+either way. See the
+[reference](https://kortix.com/docs/sdk/react#read-the-session-log).
+
 ## Kortix as a Backend (server-side)
 
 `createKortix()` stores its config — crucially, the bearer-token getter — in a
@@ -1046,8 +1055,8 @@ Guide: `/docs/apps#build-on-apps-from-typescript`.
 ### One member on every runtime: sign-in tokens, groups, roles
 
 ```ts
-const db = kortixBinding('db');                                                  // an App this App uses, same origin
-convex = new ConvexReactClient(db.url); convex.setAuth(db.token);                // its client, signed in as the viewer
+const backend = kortixBinding('backend');                                        // an App this App uses, same origin
+convex = new ConvexReactClient(backend.url); convex.setAuth(backend.token);      // its client, signed in as the viewer
 const token = await kortixToken()();                                             // a token for this App itself
 const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // a server function
 const caller = await verifyKortixToken(bearer);                                  // a server App (Kortix injects KORTIX_AUTH_*)

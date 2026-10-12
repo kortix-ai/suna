@@ -1,3 +1,5 @@
+import { getManagedModel } from '@kortix/llm-catalog';
+
 import type { UiTranslator } from '@/i18n/translator';
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
@@ -20,7 +22,10 @@ export function providerDisconnectPlan(provider: Pick<LlmProviderEntry, 'id' | '
 type RuntimeProvidersSnapshot =
   | {
       connected?: string[];
-      all?: Array<{ id: string; models?: Record<string, unknown> }>;
+      // `name` is on the SDK's Provider type; the builder only reads the fields
+      // below from the snapshot, so the local shape names those. The runtime
+      // answer is a superset (`packages/sdk` runtime-types `Provider`).
+      all?: Array<{ id: string; name?: string; models?: Record<string, unknown> }>;
     }
   | undefined;
 
@@ -77,6 +82,92 @@ export function buildCodexProvider(
     models,
     featured: true,
   };
+}
+
+/**
+ * The managed Kortix provider entry for the connected list, or null.
+ *
+ * Connected means "this gateway can serve a managed model you may use". The
+ * runtime provider snapshot always marks `kortix` connected when the gateway
+ * exists (`provider-selection.ts` hardcodes it), but the catalog it carries is
+ * plan-gated: a free-tier account whose deployment has no servable platform
+ * default gets an EMPTY managed set. Reporting that as a connected provider
+ * with zero models is the "Kortix · Included with your plan · 0 models" row the
+ * model picker contradicts with "No models available" (KRTX-1482), so an empty
+ * served set returns null — the row then renders not-connected under the same
+ * upgrade story the picker shows. Self-hosts (KORTIX_MANAGED_PROVIDER_ENABLED
+ * off) were already handled by the caller's flag check; this rule covers the
+ * cloud plan state the flag cannot see.
+ *
+ * Pure and exported so both rules are pinned by tests; the hook only wires
+ * inputs in.
+ */
+export function buildKortixManagedProvider(
+  ocProviders: RuntimeProvidersSnapshot,
+  managedModelIds: ReadonlySet<string>,
+  includedHint: string,
+): LlmProviderEntry | null {
+  const connectedIds = new Set(ocProviders?.connected ?? []);
+  const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
+  if (!kortix || !connectedIds.has('kortix')) return null;
+  const models: LlmProviderModel[] = [];
+  for (const [id, m] of Object.entries(kortix.models ?? {})) {
+    if (!managedModelIds.has(id)) continue;
+    // Best-effort capability/limit passthrough for the "Models in depth"
+    // display (models-tab.tsx / catalog-tab.tsx) — the opencode provider
+    // snapshot mirrors these when it has them; `vision`/`limit` otherwise
+    // fall back to `@kortix/llm-catalog`'s curated managed-model table,
+    // the canonical home for both (see MANAGED_MODELS' doc comment —
+    // managed slugs aren't reliably on models.dev, so this table is
+    // authoritative for them, not a guess).
+    const raw = m as {
+      name?: string;
+      release_date?: string;
+      reasoning?: boolean;
+      tool_call?: boolean;
+      limit?: { context?: number; output?: number };
+    };
+    const managed = getManagedModel(id);
+    models.push({
+      id,
+      name: (raw.name || id).replace('(latest)', '').trim(),
+      released: raw.release_date ?? null,
+      reasoning: raw.reasoning,
+      tool_call: raw.tool_call,
+      attachment: managed?.vision,
+      limit: raw.limit ?? managed?.limit,
+    });
+  }
+  if (models.length === 0) return null;
+  return {
+    id: 'kortix',
+    label: kortix.name || 'Kortix',
+    envVars: [],
+    authRequirement: { methods: [] },
+    helpUrl: null,
+    // Synthetic entry: no models.dev row, so no vendor API host.
+    apiHost: null,
+    hint: includedHint,
+    models,
+    featured: true,
+    managed: true,
+  };
+}
+
+/**
+ * The managed provider row's note on the "Add a key" grid.
+ *
+ * When the served catalog carries managed models, the note explains billing
+ * ("no API key needed"). When it carries NONE, that copy invites a key-free
+ * connection the picker refuses — the same free-tier contradiction as the
+ * connected flag above (KRTX-1482) — so the note takes the upgrade path
+ * instead, the story the picker's empty state already tells.
+ */
+export function managedProviderHint(
+  models: readonly unknown[],
+  copy: { managedDescription: string; managedUpgradeHint: string },
+): string {
+  return models.length === 0 ? copy.managedUpgradeHint : copy.managedDescription;
 }
 
 /**
