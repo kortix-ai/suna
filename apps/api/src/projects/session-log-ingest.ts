@@ -24,6 +24,22 @@
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
  * are written before the transaction. `content_hash` is always the hash of the
  * record as sent, so the manifest the daemon reconciles against does not change.
+ *
+ * Two writers, one apply path (`applyBatch`):
+ * - The journal. Its first committed batch sets `session_logs.journal_seen_at`.
+ * - The transcript capture of a box without a journal (P2.7,
+ *   `session-log-capture.ts`): `fromV1` of the v1 mirror, at generation 0, with
+ *   revs below `SESSION_LOG_CAPTURE_REV_LIMIT`. It writes only while
+ *   `journal_seen_at` is null, checked under the lock. A journal rev is a
+ *   microsecond timestamp, always above the limit, so every journal put and
+ *   tombstone wins over a capture row, and a capture put never overwrites a
+ *   journal row. A capture row is provisional: a journal put that claims its
+ *   `(thread_id, seq)` deletes it first (a seq collision between two journal
+ *   rows stays 422). The capture's session patch replaces the session record
+ *   (a `fromV1` field can disappear, such as a stale `root_id`); its tombstone
+ *   moves the row to seq `-rev`, so the seqs `fromV1` gives the messages after a
+ *   rewind stay free. The capture never sets `log_durable_at`: that column means
+ *   "acknowledged by the daemon's journal".
  */
 import { createHash } from 'node:crypto';
 import {
@@ -39,6 +55,7 @@ import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, se
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
+import { logger } from '../lib/logger';
 import { offloadLargeTexts } from './session-log-blobs';
 
 export interface SessionLogScope {
@@ -56,6 +73,16 @@ export type SessionLogJournalOutcome =
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const SEQ_KEY = 'session_log_messages_thread_seq_key';
+
+/**
+ * Every rev the transcript capture writes is below this (2^31, so `-rev` fits
+ * the int4 `seq` of a capture tombstone). Journal revs are microsecond
+ * timestamps (~1.8e15), always above it: a journal write always wins.
+ */
+export const SESSION_LOG_CAPTURE_REV_LIMIT = 2 ** 31;
+
+/** A capture write: `current` runs under the lock and answers false when a newer mirror capture ran. */
+type CaptureWrite = { current: (tx: Tx) => Promise<boolean> };
 const NO_SESSION = { status: 404, body: { error: 'Session not found' } } as const;
 
 class SeqConflict extends Error {
@@ -88,6 +115,27 @@ export async function ingestSessionLogJournal(
   scope: SessionLogScope,
   batch: SessionLogJournalRequest,
 ): Promise<SessionLogJournalOutcome> {
+  return (await applyBatch(scope, batch, null)) as SessionLogJournalOutcome;
+}
+
+/**
+ * Apply one capture batch (P2.7). 'skipped' when a journal has written for the
+ * session, the session generation moved on, or `current` answered false.
+ */
+export async function writeCapturedSessionLog(
+  scope: SessionLogScope,
+  batch: SessionLogJournalRequest,
+  current: CaptureWrite['current'],
+): Promise<SessionLogJournalOutcome | 'skipped'> {
+  const outcome = await applyBatch(scope, batch, { current });
+  return outcome !== 'skipped' && outcome.status === 409 ? 'skipped' : outcome;
+}
+
+async function applyBatch(
+  scope: SessionLogScope,
+  batch: SessionLogJournalRequest,
+  capture: CaptureWrite | null,
+): Promise<SessionLogJournalOutcome | 'skipped'> {
   if (!(await sessionExists(scope))) return NO_SESSION;
   // One put at a time: at most one large text is in memory twice.
   const records: SessionLogPut['message'][] = [];
@@ -95,14 +143,22 @@ export async function ingestSessionLogJournal(
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
-      const current = await upsertSession(tx, scope, batch);
+      if (capture && !(await capture.current(tx))) return 'skipped' as const;
+      const current = await upsertSession(tx, scope, batch, capture !== null);
+      if (current === 'journal') return 'skipped' as const;
       if (current !== null) return { status: 409 as const, body: { generation: current } };
       await upsertThreads(tx, scope.sessionId, batch);
-      for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
+      // Tombstones first: a capture tombstone frees the seq a put of the same batch takes.
       for (const t of batch.tombstones) {
         await tx
           .update(sessionLogMessages)
-          .set({ deletedAt: sql`now()`, rev: t.rev, generation: batch.generation, updatedAt: sql`now()` })
+          .set({
+            deletedAt: sql`now()`,
+            rev: t.rev,
+            generation: batch.generation,
+            ...(capture && { seq: -t.rev }),
+            updatedAt: sql`now()`,
+          })
           .where(
             and(
               eq(sessionLogMessages.sessionId, scope.sessionId),
@@ -111,7 +167,9 @@ export async function ingestSessionLogJournal(
             ),
           );
       }
-      await markDurableTurns(tx, scope.sessionId, batch.puts);
+      await dropProvisionalRows(tx, scope.sessionId, batch.puts);
+      for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
+      if (!capture) await markDurableTurns(tx, scope.sessionId, batch.puts);
       const acked = [
         ...batch.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })),
         ...batch.tombstones.map((t) => ({ message_id: t.message_id, rev: t.rev })),
@@ -126,14 +184,21 @@ export async function ingestSessionLogJournal(
 
 /**
  * Create or update the `session_logs` row and fence the generation. Returns the
- * session's generation when the batch's is older (nothing was written), else null.
+ * session's generation when the batch's is older (nothing was written),
+ * 'journal' for a capture after the journal wrote, else null.
  */
-async function upsertSession(tx: Tx, scope: SessionLogScope, batch: SessionLogJournalRequest): Promise<number | null> {
+async function upsertSession(
+  tx: Tx,
+  scope: SessionLogScope,
+  batch: SessionLogJournalRequest,
+  capture: boolean,
+): Promise<number | 'journal' | null> {
   const [row] = await tx
-    .select({ generation: sessionLogs.generation })
+    .select({ generation: sessionLogs.generation, journalSeenAt: sessionLogs.journalSeenAt })
     .from(sessionLogs)
     .where(eq(sessionLogs.sessionId, scope.sessionId))
     .limit(1);
+  if (capture && row?.journalSeenAt) return 'journal';
   if (row && batch.generation < row.generation) return row.generation;
   const patch = batch.session;
   if (!row) {
@@ -149,15 +214,18 @@ async function upsertSession(tx: Tx, scope: SessionLogScope, batch: SessionLogJo
       restoreGrade: patch?.restore_grade ?? 'native',
       gradeCounts: patch?.grade_counts ?? null,
       record: (patch ?? {}) as Record<string, unknown>,
+      journalSeenAt: capture ? null : sql`now()`,
     });
     return null;
   }
-  if (!patch && batch.generation === row.generation) return null;
+  const firstJournal = !capture && !row.journalSeenAt;
+  if (!patch && batch.generation === row.generation && !firstJournal) return null;
   await tx
     .update(sessionLogs)
     .set({
       generation: batch.generation,
-      ...(patch && { record: sql`${sessionLogs.record} || ${JSON.stringify(patch)}::jsonb` }),
+      ...(firstJournal && { journalSeenAt: sql`now()` }),
+      ...(patch && { record: capture ? (patch as Record<string, unknown>) : sql`${sessionLogs.record} || ${JSON.stringify(patch)}::jsonb` }),
       ...(patch?.v !== undefined && { v: patch.v }),
       ...(patch?.harness?.current !== undefined && { harnessCurrent: patch.harness.current }),
       ...(patch?.restore_grade !== undefined && { restoreGrade: patch.restore_grade }),
@@ -192,6 +260,26 @@ async function upsertThreads(tx: Tx, sessionId: string, batch: SessionLogJournal
         updatedAt: sql`now()`,
       },
     });
+}
+
+/**
+ * A capture row (rev below the limit) that holds the `(thread_id, seq)` a put
+ * of this batch claims for another message is provisional: it goes. For a
+ * journal put that is the journal taking over a capture's seq. For a capture
+ * put it is a shifted message, whose own put in this batch writes it again.
+ */
+async function dropProvisionalRows(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
+  if (puts.length === 0) return;
+  const claims = JSON.stringify(puts.map(({ message: m }) => ({ message_id: m.message_id, thread_id: m.thread_id, seq: m.seq })));
+  const dropped = await tx.execute<{ message_id: string; thread_id: string; seq: number }>(sql`
+    DELETE FROM kortix.session_log_messages m
+     USING jsonb_to_recordset(${claims}::jsonb) AS p(message_id text, thread_id text, seq int)
+     WHERE m.session_id = ${sessionId} AND m.thread_id = p.thread_id AND m.seq = p.seq
+       AND m.message_id <> p.message_id AND m.rev < ${SESSION_LOG_CAPTURE_REV_LIMIT}
+    RETURNING m.message_id, m.thread_id, m.seq`);
+  if (dropped.length > 0) {
+    logger.info('[session-log] provisional capture rows gave up their seq', { sessionId, rows: dropped.slice(0, 20) });
+  }
 }
 
 // ponytail: one INSERT per put, so a seq collision names its own pair without
