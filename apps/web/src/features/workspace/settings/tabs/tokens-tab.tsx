@@ -168,18 +168,22 @@ export function apiKeyMetaParts(
   return parts;
 }
 
-function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
+/**
+ * The pane's relative-time voice: the shared helper's ladder, but a stamp
+ * younger than a minute reads "this minute" ("Last used this minute") rather
+ * than the helper's "just now", and `now` is fixed per render so a list does
+ * not re-render with drifting labels.
+ */
+export function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
   const then = typeof input === 'string' ? new Date(input).getTime() : input;
   if (!Number.isFinite(then)) return '';
-  const elapsedMinutes = Math.max(0, Math.floor((now - then) / 60_000));
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' });
-  if (elapsedMinutes < 1) return formatter.format(0, 'minute');
-  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, 'minute');
-  const hours = Math.floor(elapsedMinutes / 60);
-  if (hours < 24) return formatter.format(-hours, 'hour');
-  const days = Math.floor(hours / 24);
-  if (days < 30) return formatter.format(-days, 'day');
-  return new Date(then).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+  if (then <= now && now - then < 60_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' }).format(
+      0,
+      'minute',
+    );
+  }
+  return relativeTime(input, locale, now);
 }
 
 export function TokensTab({ accountId }: { accountId: string | undefined }) {

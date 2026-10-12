@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ApiKeyRow } from '@/components/iam/api-key-rows';
-import { apiKeyMetaParts } from './tokens-tab';
+import { apiKeyMetaParts, localizedRelativeTime } from './tokens-tab';
 
 const NOW = Date.parse('2026-08-18T12:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -81,6 +81,20 @@ describe('apiKeyMetaParts', () => {
   test('a used key reports when, relatively', () => {
     const parts = apiKeyMetaParts(row({ lastUsedAt: new Date(NOW - 2 * DAY).toISOString() }), NOW);
     expect(parts[1]).toStartWith('Last used ');
+  });
+});
+
+describe('localizedRelativeTime', () => {
+  test('a 1-day expiry renders as its countdown, not as "this minute"', () => {
+    expect(localizedRelativeTime(new Date(NOW + DAY).toISOString(), 'en', NOW)).toBe('in 1d');
+    expect(localizedRelativeTime(new Date(NOW + 23 * 3_600_000).toISOString(), 'en', NOW)).toBe('in 23h');
+    expect(localizedRelativeTime(new Date(NOW + 5 * 60_000).toISOString(), 'en', NOW)).toBe('in 5m');
+  });
+
+  test('the past rendering keeps the pane\'s own voice', () => {
+    expect(localizedRelativeTime(new Date(NOW - 30_000).toISOString(), 'en', NOW)).toBe('this minute');
+    expect(localizedRelativeTime(new Date(NOW - 5 * 60_000).toISOString(), 'en', NOW)).toBe('5m ago');
+    expect(localizedRelativeTime(new Date(NOW - 2 * DAY).toISOString(), 'en', NOW)).toBe('2d ago');
   });
 });
 
