@@ -1,20 +1,20 @@
 {
-  "source_hash": "c424106b8f38662104a0ef8f8b0a9088cd254bce390fc2cd0f06129c94cf12cd",
+  "source_hash": "d5ccddba3d9bcec18482f4e1eb2cda272b648eecbda701eba9637c239226251c",
   "diff_files": [
     "apps/web/src/features/session/composer/queued-prompt-list.click.test.tsx",
     "apps/web/src/features/session/composer/queued-prompt-list.test.tsx",
     "apps/web/src/features/session/composer/queued-prompt-list.tsx",
     "apps/web/src/features/session/session-chat.tsx",
-    "apps/web/src/features/workspace/command-palette-search.test.ts",
-    "apps/web/src/lib/menu-registry.ts"
+    "apps/web/translations/ja.json",
+    "apps/web/translations/zh.json"
   ],
-  "diff_hash": "8989bfd9ed2cda1eb13d15b2e7737e4451a3a44615f77da7b1ca639b27ddeb10",
-  "head": "805deaa3ce3f1aa97e463017e08488682783dce2",
+  "diff_hash": "63e4de5e574f19f0f85eef520c323fd7e64a5cf9432ba7e704792dc19426bf0f",
+  "head": "dd6af9198a5f45d545ea26e7c4d664fe77ea0fed",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T18:41:10.546Z"
+  "at": "2026-10-12T20:26:46.061Z"
 }
