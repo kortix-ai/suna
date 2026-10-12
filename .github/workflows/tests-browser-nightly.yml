@@ -117,7 +117,13 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --filter @kortix/tests...
           pnpm --dir tests exec playwright install --with-deps chromium
+      # `continue-on-error`: the runner's strict-skip reporter turns every skipped
+      # test into exit 1 (a capability skip such as GitHub OAuth, which staging
+      # disables, or a `test.fixme`). The verdict step below reads the per-test
+      # results and is what fails this job.
       - name: Run the quarantined browser journeys against staging
+        id: run
+        continue-on-error: true
         run: |
           set -o pipefail
           pnpm test -- --target-browser-full 2>&1 | tee "$RUNNER_TEMP/browser-list.log"
@@ -128,6 +134,7 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           SHA: ${{ github.sha }}
+          RUN_OUTCOME: ${{ steps.run.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
@@ -144,6 +151,8 @@ jobs:
             > "$out/quarantine-verdict.json"
           executed="$(jq '[.[] | select(. != "skip")] | length' "$out/quarantine-verdict.json")"
           failing="$(jq -r 'to_entries[] | select(.value == "fail") | "- `\(.key)`"' "$out/quarantine-verdict.json")"
+
+          skipped="$(jq -r 'to_entries[] | select(.value == "skip") | "- `\(.key)`"' "$out/quarantine-verdict.json")"
 
           # Streak: consecutive nights (this run, then earlier scheduled runs
           # newest first) in which the test passed. A night with no verdict
@@ -170,6 +179,7 @@ jobs:
           {
             echo "## Quarantined browser journeys: ${executed} executed"
             [ -n "$failing" ] && { echo; echo "Red:"; echo "$failing"; }
+            [ -n "$skipped" ] && { echo; echo "Skipped (a capability the target lacks, or a fixme; not red):"; echo "$skipped"; }
             echo; echo "Green nights in a row (a test needs ${GREEN_NIGHTS} to leave quarantine):"; echo
             printf '%s\n' "$streaks" | awk -F'\t' 'NF {print "- " $1 " / '"$GREEN_NIGHTS"': `" $2 "`"}'
           } | tee -a "$GITHUB_STEP_SUMMARY" > "$RUNNER_TEMP/verdict.md"
@@ -177,6 +187,10 @@ jobs:
           if [ "$executed" -eq 0 ]; then
             echo "::error::No quarantined test executed. The lane is broken, not green."
             body="The nightly quarantine lane executed no test. Run: $RUN_URL"
+          elif [ "$RUN_OUTCOME" = failure ] && [ -z "$failing" ] && [ -z "$skipped" ]; then
+            echo "::error::The runner failed but no test is red or skipped. Read the run step."
+            body="The nightly quarantine runner failed without a red test. Run: $RUN_URL"
+            failing="runner"
           elif [ -n "$failing" ]; then
             body="$(printf 'Quarantined browser journeys are red on staging. Owner of each test: the author of its quarantine reason (see the test header).\n\n%s\n\nRun: %s' "$failing" "$RUN_URL")"
           elif [ -n "$candidates" ]; then
@@ -186,7 +200,8 @@ jobs:
           fi
           [ -n "$body" ] && printf '%s\n' "$body" > "$RUNNER_TEMP/comment.md" \
             && gh api "repos/$REPO/commits/$SHA/comments" -F body=@"$RUNNER_TEMP/comment.md" --jq '.html_url'
-          [ "$executed" -gt 0 ] || exit 1
+          # Red = a failed test, or nothing ran (setup broke before any test).
+          [ "$executed" -gt 0 ] && [ -z "$failing" ]
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
