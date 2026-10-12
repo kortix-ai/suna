@@ -910,13 +910,20 @@ harnessFlow(
       }
     });
 
+    // A queued row can reach the live turn at a step boundary before Stop lands
+    // (its inbox row shows `attempts: 1` while still `waiting`), and the model may
+    // answer it there. That answer belongs to the aborted turn, not to the batch.
+    // Only assistant messages that appear after the release count against it.
+    const beforeRelease = new Set(
+      (await readTranscript(ctx, projectId, sessionId)).messages.filter((m) => m.role === 'assistant').map((m) => m.id),
+    );
     await ctx.step('Resume releases both as one batch: one turn answers both, parented on the second', async () => {
       (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts/hold', { held: false }, { params })).status(200);
       const messages = await waitForAssistantText(ctx, projectId, sessionId, batch);
       const first = messages.find((m) => m.role === 'user' && m.text.includes(alpha));
       const second = messages.find((m) => m.role === 'user' && m.text.includes(batch));
       if (!first?.id || !second?.id) throw new Error(`a batch prompt is missing from the transcript: ${JSON.stringify({ first, second })}`);
-      const answeredFirst = messages.filter((m) => m.role === 'assistant' && m.parent_id === first.id);
+      const answeredFirst = messages.filter((m) => m.role === 'assistant' && m.parent_id === first.id && !beforeRelease.has(m.id));
       if (answeredFirst.length > 0) {
         throw new Error(`the first batch row ran a turn of its own on ${harness}: ${JSON.stringify(answeredFirst.map((m) => m.text))}`);
       }
