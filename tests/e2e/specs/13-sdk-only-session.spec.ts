@@ -132,23 +132,25 @@ async function waitForReadySession(
  *  - Stale locators. `Agent picker` / `Model picker` appear nowhere in
  *    apps/web, so they matched nothing on any environment. Replaced above with
  *    the one control on that rail that has a fixed accessible name.
- *  - Local-only transport shape. `expect(runtimeRequests).toHaveLength(1)`
- *    counts `POST /v1/p/…/prompt_async`. Against staging that count is ZERO
- *    while the prompt still round-trips correctly — the model answers and the
- *    reply renders — so the browser reaches the runtime by a different path
- *    there. The assertion is not merely mis-tuned: it guards "exactly one
- *    prompt submission", which is what stops a duplicate send from silently
- *    doubling LLM spend. It is deliberately NOT deleted to make the lane green;
- *    it needs the correct deployed path, which is a separate investigation.
+ *  - Wrong transport. The old assertion counted `POST /v1/p/…/prompt_async`
+ *    from the browser. The browser never sends that: it puts the prompt in the
+ *    session inbox (`POST /v1/projects/<id>/sessions/<id>/prompts`) and the API
+ *    relays it to the runtime. The assertion now counts the inbox POSTs, so
+ *    "exactly one prompt submission" (a duplicate send doubles LLM spend) holds
+ *    on every target.
+ *  - The skeleton overlay and the live chat layer both render `session-layout`
+ *    while the boot overlay fades, so the locator takes `.first()`.
+ *
+ * What still keeps the file quarantined: it boots a real cloud sandbox and
+ * waits on a real model reply. Both are outside our code.
  *
  * `test.describe.serial` shares `projectId`/`sessionId` across all three, so
  * the tag cannot be scoped to the two offenders without splitting the fixture.
  * The first test does pass now (verified twice against staging, 45.8s and
  * 1.4m) and keeps running nightly.
  *
- * To un-quarantine: establish what the browser's runtime transport is on a
- * deployed target, re-assert the exactly-once property against it, then split
- * or re-tag.
+ * To un-quarantine: the nightly lane reports it green for 7 nights in a row;
+ * then split the serial fixture and drop the tag (see the testing skill).
  */
 test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () => {
   test.skip(!enabled, 'Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.');
@@ -355,7 +357,7 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
   test('streams a real prompt through the SDK and keeps the project UI functional', async ({
     page,
   }) => {
-    const runtimeRequests: string[] = [];
+    const promptPosts: string[] = [];
     const globalEventRequests: string[] = [];
     const acpRequests: string[] = [];
     const failedKortixResponses: string[] = [];
@@ -369,10 +371,9 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
       }
       if (
         request.method() === 'POST'
-        && request.url().includes('/v1/p/')
-        && request.url().includes('/prompt_async')
+        && request.url().endsWith(`/v1/projects/${projectId}/sessions/${sessionId}/prompts`)
       ) {
-        runtimeRequests.push(request.url());
+        promptPosts.push(request.url());
       }
     });
     page.on('response', (response) => {
@@ -394,7 +395,9 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
     );
 
     await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
-    await expect(page.getByTestId('session-layout')).toBeVisible({ timeout: 120_000 });
+    // While the boot overlay fades, two layouts exist (the live chat layer and
+    // the overlay's skeleton), so a bare locator is a strict-mode violation.
+    await expect(page.getByTestId('session-layout').first()).toBeVisible({ timeout: 120_000 });
     // This asserted `Agent picker` and `Model picker`. Neither string exists
     // anywhere in apps/web, so both locators matched nothing on every
     // environment — dead assertions, hidden because the `beforeAll` above used
@@ -429,7 +432,7 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
     await expect(page.getByText('PONG', { exact: true }).last()).toBeVisible({
       timeout: 120_000,
     });
-    expect(runtimeRequests).toHaveLength(1);
+    expect(promptPosts).toHaveLength(1);
     expect(globalEventRequests.length).toBeGreaterThan(0);
     expect(acpRequests).toEqual([]);
     expect(failedKortixResponses).toEqual([]);
