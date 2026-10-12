@@ -26,13 +26,14 @@ export function bootModePolicy(): { stored: boolean; policy: BootModePolicy } {
 }
 
 /**
- * Bring this instance's copy of the policy to at most `maxAgeMs` old. The API
+ * Re-read the policy from the database into this instance's cache. The API
  * runs several instances, each with its own 30 s cache, so a project read
  * right after a flag flip can land on one that still holds the old policy
- * and show Volumes and Stateless sessions in the wrong positions.
+ * and show Volumes and Stateless sessions in the wrong positions. One
+ * single-row read by primary key.
  */
-export async function ensureBootModePolicyFresh(maxAgeMs = 2_000): Promise<void> {
-  await setting.readFresh(maxAgeMs);
+export async function ensureBootModePolicyFresh(): Promise<void> {
+  await setting.readFresh();
 }
 
 export async function refreshBootModePolicy(): Promise<{ stored: boolean; policy: BootModePolicy }> {
@@ -89,15 +90,9 @@ export async function setVolumesForOrg(accountId: string, enabled: boolean | nul
   await setting.refresh();
 }
 
-/**
- * {@link volumesEnabledFor} that never refuses on a stale or cold cache: an
- * "off" answer is re-read from the database (at most 2 s old) before it
- * stands. Another API instance may have just turned Volumes on, and an
- * instance that just started has no cache at all.
- */
+/** {@link volumesEnabledFor} on the policy as the database holds it now, not a cached copy. */
 export async function volumesEnabledForFresh(accountId: string | null | undefined): Promise<boolean> {
-  if (volumesEnabledFor(accountId)) return true;
-  await setting.readFresh(2_000);
+  await setting.readFresh();
   return volumesEnabledFor(accountId);
 }
 
