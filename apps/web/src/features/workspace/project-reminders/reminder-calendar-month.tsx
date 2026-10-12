@@ -9,6 +9,7 @@ import {
   dateFormat,
   daysBetween,
   focusMonth,
+  fold,
   isSameDay,
   monthEntries,
   startOfDay,
@@ -18,7 +19,7 @@ import {
   type CalendarModel,
 } from './reminder-calendar-model';
 import { LANDED_RING } from './reminder-calendar-week';
-import { FireRow } from './reminder-fire-chip';
+import { FireRow, MORE_LINE } from './reminder-fire-chip';
 import {
   TITLE_SETTLE_MS,
   useCalendarHighlight,
@@ -288,9 +289,7 @@ function DayLines({
   onOpenDay: (date: Date) => void;
 }) {
   const t = useTranslations('reminders');
-  const entries = monthEntries(day);
-  const shown = entries.length > MONTH_LINES ? entries.slice(0, MONTH_LINES - 1) : entries;
-  const rest = entries.length - shown.length;
+  const { shown, rest } = fold(monthEntries(day), MONTH_LINES);
   return (
     <>
       {shown.map(({ fire, count }) => (
@@ -302,7 +301,10 @@ function DayLines({
           onClick={() => onOpenDay(day.date)}
           aria-label={t('calendarMoreOn', { count: rest, date: name })}
           data-testid="reminder-fire-more"
-          className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 flex w-full shrink-0 rounded-sm px-1 py-px text-left text-xs font-medium tabular-nums transition-colors outline-none focus-visible:ring-2"
+          className={cn(
+            MORE_LINE,
+            'focus-visible:ring-ring/50 w-full shrink-0 outline-none focus-visible:ring-2',
+          )}
         >
           {t('calendarMore', { count: rest })}
         </button>

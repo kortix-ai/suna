@@ -184,89 +184,39 @@ export function relativeFire(at: number, now: number, locale: string): string {
   return rtf.format(Math.round(minutes / DAY_MINUTES), 'day');
 }
 
+/** The minute of the day at `y` pixels down a 24-hour grid `height` tall, clamped to 00:00–23:59. */
+export const minuteAt = (y: number, height: number) =>
+  Math.min(DAY_MINUTES - 1, Math.max(0, Math.floor((y / height) * DAY_MINUTES)));
+
+/** "15:37" for a minute of the day. */
+export const minuteLabel = (minute: number, locale: string) =>
+  clockTime(new Date(2000, 0, 1, Math.floor(minute / 60), minute % 60), locale);
+
 export const minutesOfDay = (at: number) => {
   const date = new Date(at);
   return date.getHours() * 60 + date.getMinutes();
 };
 
-export type ChipLayout = {
-  fire: ReminderFire;
-  top: number;
-  lane: number;
-  lanes: number;
-  span: number;
-  /** Chips that overlap, directly or through a chain, share a cluster. */
-  cluster: number;
-};
-
 /**
- * Side-by-side lanes for chips that would overlap in one day column. A chip
- * covers `span` minutes from its fire; chips that overlap, directly or through
- * a chain, share a cluster and split its width evenly. A chip alone in its
- * lane with `tall` free minutes below it is drawn `tall` (two lines).
+ * A day's fires by hour: 24 lists, each sorted by time. The Week grid draws
+ * one hour cell per list, full column width. Fires placed at their exact
+ * minute in side-by-side lanes became a staircase of clipped titles on a
+ * busy afternoon.
  */
-export function layoutChips(
-  fires: readonly ReminderFire[],
-  span: number,
-  tall = span,
-): ChipLayout[] {
-  const out: ChipLayout[] = [];
-  let cluster: ChipLayout[] = [];
-  let laneEnds: number[] = [];
-  let clusters = 0;
-  const close = () => {
-    clusters += 1;
-    for (const chip of cluster) chip.lanes = laneEnds.length;
-    cluster = [];
-    laneEnds = [];
-  };
-  for (const fire of [...fires].sort((a, b) => a.at - b.at)) {
-    const top = minutesOfDay(fire.at);
-    if (cluster.length > 0 && top >= Math.max(...laneEnds)) close();
-    let lane = laneEnds.findIndex((end) => end <= top);
-    if (lane === -1) lane = laneEnds.push(0) - 1;
-    laneEnds[lane] = top + span;
-    const chip = { fire, top, lane, lanes: 1, span, cluster: clusters };
-    cluster.push(chip);
-    out.push(chip);
-  }
-  close();
-  out.forEach((chip, i) => {
-    const next = out[i + 1];
-    const room = !next || next.top - chip.top >= tall;
-    if (chip.lanes === 1 && room && chip.top + tall <= DAY_MINUTES) chip.span = tall;
-  });
-  return out;
+export function hourCells(fires: readonly ReminderFire[]): ReminderFire[][] {
+  const cells: ReminderFire[][] = Array.from({ length: 24 }, () => []);
+  for (const fire of fires) cells[new Date(fire.at).getHours()]!.push(fire);
+  for (const cell of cells) cell.sort((a, b) => a.at - b.at);
+  return cells;
 }
 
-/** The fires a capped cluster could not show: one "+N" chip in its last lane. */
-export type MoreLayout = { top: number; lane: number; lanes: number; fires: ReminderFire[] };
-
 /**
- * At most `max` lanes per cluster. A wider cluster keeps its first
- * `max - 1` lanes and folds every other fire into one "+N" in the last
- * lane, at the first folded fire's time. Ten lanes in a seventh of the
- * screen read as a row of clipped digits.
+ * The lines a cell shows when it has room for `limit`: all of them, or
+ * `limit - 1` and a count for the "+N" that takes the last line.
  */
-export function capLanes(
-  chips: readonly ChipLayout[],
-  max: number,
-): { chips: ChipLayout[]; more: MoreLayout[] } {
-  const kept: ChipLayout[] = [];
-  const folded = new Map<number, MoreLayout>();
-  for (const chip of chips) {
-    if (chip.lanes <= max) {
-      kept.push(chip);
-    } else if (chip.lane < max - 1) {
-      kept.push({ ...chip, lanes: max });
-    } else {
-      const more = folded.get(chip.cluster);
-      if (more) more.fires.push(chip.fire);
-      else
-        folded.set(chip.cluster, { top: chip.top, lane: max - 1, lanes: max, fires: [chip.fire] });
-    }
-  }
-  return { chips: kept, more: [...folded.values()] };
+export function fold<T>(items: readonly T[], limit: number): { shown: T[]; rest: number } {
+  if (items.length <= limit) return { shown: [...items], rest: 0 };
+  return { shown: items.slice(0, limit - 1), rest: items.length - limit + 1 };
 }
 
 /** A frequent reminder's day: its first upcoming (else first) fire, and how many. */
@@ -282,12 +232,8 @@ export type CalendarDay = {
   total: number;
 };
 
-/** A frequent reminder with a fire on screen, and its first upcoming (else first) fire. */
-export type ReminderFrequent = { reminder: ProjectReminder; fire: ReminderFire };
-
 export type CalendarModel = {
   days: CalendarDay[];
-  frequent: ReminderFrequent[];
   total: number;
   /** The clock the days were built with. */
   now: number;
@@ -337,18 +283,13 @@ export function calendarModel(
       if (end <= previous.now || day.date.getTime() > now) reusable.set(day.date.getTime(), day);
     }
   }
-  const frequent = new Map<string, { reminder: ProjectReminder; fire: ReminderFire }>();
   let total = 0;
   const out = days.map((date) => {
     const day = reusable.get(date.getTime()) ?? buildDay(date, rare, often, now);
-    for (const { reminder, fire } of day.groups) {
-      const seen = frequent.get(reminder.id);
-      if (!seen || (seen.fire.past && !fire.past)) frequent.set(reminder.id, { reminder, fire });
-    }
     total += day.total;
     return day;
   });
-  return { days: out, frequent: [...frequent.values()], total, now };
+  return { days: out, total, now };
 }
 
 /** A Month cell line: one fire, or a frequent reminder's day as one line with its count. */
