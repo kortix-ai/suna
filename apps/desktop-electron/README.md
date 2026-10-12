@@ -154,6 +154,14 @@ opens from **File ▸ Open Quick Entry**.
   project this profile opened last (the `kortix_last_project` cookie). The bar
   names it: "New session in \<project\>". With no project known, the prompt
   opens `/projects/start?q=…`: it fills the composer there and does not send.
+- **Send to a recent session.** The picker on the right of the bar is a native
+  menu: "New session in \<project\>", then the person's 5 most recent root
+  sessions there (the sidebar's list, title and status dot, plus last
+  activity). A pick is kept with the draft and cleared on send. The web app
+  publishes the list with `quick_entry_set_target`; a picked prompt is taken
+  as `{ text, projectId, sessionId }` and submitted by that session's composer
+  (Enter semantics: a running turn is steered). The session page moves the
+  prefill from the route id onto the chat id when the chat resolves.
 - **How it sends.** The bar never calls Kortix. Enter stores the prompt in the
   main process, brings the app window forward, and pokes it
   (`kortix:quick-entry`, no text). The web app pulls the prompt once with the
