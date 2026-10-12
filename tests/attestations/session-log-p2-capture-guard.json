@@ -6,13 +6,13 @@
     "apps/api/src/projects/session-log-ingest.ts",
     "apps/api/src/projects/session-log-read.ts"
   ],
-  "diff_hash": "6327f2a6087b91deb6a3fb9dfa2f0d40f21d85c1fbb69618833ef3207d70c4d2",
-  "head": "f46f260304611313aa6782e4f5a3b4a40cd8420f",
+  "diff_hash": "9d18e23282da0e5f957613562d8758ff5ceb1bce5a2542af1c3a29c35906bd40",
+  "head": "16d4e6d08639a2a5da867358153f374f7018e7d6",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T15:09:13.539Z"
+  "at": "2026-10-12T15:20:54.204Z"
 }
