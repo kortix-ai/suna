@@ -21,14 +21,11 @@ Region-of-truth per environment:
     every root (staging/variables.tf's `api_secrets` default is `{}` — it has
     never committed a literal DATABASE_URL ARN).
 
-`infra/terraform/environments/region-map.json` says which root is CURRENTLY
-declared authoritative for each environment. Only those roots are asserted to
-pass. A root not listed there (the legacy dev/ and staging/ roots, kept live
-and unmigrated until the runbook's decommission step) is intentionally not
-gated — its variables.tf says so, in words, right next to its
-`database_region` default — but this script still lists what it found for
-every root under environments/, so the "before" state (dev, staging failing;
-prod passing) stays directly reproducible by running this file at any commit.
+`infra/terraform/environments/region-map.json` says which root is declared
+authoritative for each environment. Only those roots are asserted to pass.
+`--survey` lists what it finds for every root under environments/. The legacy
+us-west-2 dev/ and staging/ roots, which failed this check, were destroyed and
+deleted on 2026-10-12.
 """
 
 from __future__ import annotations
@@ -128,8 +125,7 @@ class RegionColocationTests(unittest.TestCase):
                 )
 
     def test_api_region_matches_database_region(self):
-        """The enforcer. Prod must pass today; dev/staging pass only through
-        their -us-east-2 / -eu-west-2 successor roots (region-map.json)."""
+        """The enforcer: every root in region-map.json is colocated."""
         region_map = load_region_map()
         failures = []
         for environment, root in region_map.items():
@@ -157,7 +153,7 @@ def _print_survey():
     for root in discover_environment_roots():
         aws_region, database_region = read_environment_regions(ENVIRONMENTS_DIR / root)
         colocated = "yes" if aws_region == database_region else "NO"
-        auth = "yes" if root in authoritative else "no (legacy/unmigrated)"
+        auth = "yes" if root in authoritative else "no"
         print(f"{root:<24}{str(aws_region):<14}{str(database_region):<18}{colocated:<12}{auth}")
 
 

@@ -82,14 +82,14 @@ There are **four environments**, each a separate encrypted file with its **own k
   `aws sts get-session-token --serial-number arn:aws:iam::935064898258:mfa/markokraemer-mfa --token-code <code>`).
   Direction rule: SM → file for anything already running; file → SM only as a
   deliberate change with a rollout (`aws secretsmanager put-secret-value`).
-- **Which region to edit.** CI reads each blob from the region of its row in
-  `blob_region` (`.github/actions/aws-env/fetch.sh`). Edit a blob in its
-  primary region: `aws secretsmanager describe-secret --region <row region>
-  --secret-id <blob> --query PrimaryRegion` names it (`null` means the row
-  region is the primary). A replica rejects writes. Until the cutover after the
-  next release, `kortix-ci-env`, `kortix-preview-env` and `kortix-prod-env` keep
-  their primary in us-west-2, and CI reads their replicas in us-east-2 and
-  eu-west-2.
+- **Which region to edit.** Each blob lives in exactly one region: the region
+  of its row in `blob_region` (`.github/actions/aws-env/fetch.sh`). CI and ECS
+  read it there, so edit it there. `kortix-ci-env`, `kortix-preview-env` and
+  `kortix-dev-env` are in us-east-2; `kortix-prod-env` and `kortix-staging-env`
+  are in eu-west-2. No blob has a replica, and nothing is in us-west-2: the
+  us-west-2 copies were retired on 2026-10-12 (replication stopped, copies
+  scheduled for deletion on 2026-11-11). A blob without a `blob_region` row
+  fails the `aws-env` read; add the row before the first workflow reads it.
 - Each profile owns its internal secrets (`INTERNAL_SERVICE_KEY`,
   `API_KEY_SECRET`, `GATEWAY_INTERNAL_TOKEN`, `TUNNEL_SIGNING_SECRET`).
   `INTERNAL_SERVICE_KEY` authenticates internal service calls such as the
