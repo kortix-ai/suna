@@ -16,29 +16,42 @@
  * (`first-chat-store.ts`).
  */
 
+import type { AttachedFile } from '@/features/session/composer/types';
+import type { SessionPromptOverrides } from '@kortix/sdk';
 import { create } from 'zustand';
 
 interface ComposerPrefill {
   text: string;
   /** Send once it lands, exactly as if the person pressed Enter. */
   submit?: boolean;
+  /** Files to attach (desktop Quick Entry screenshots and files). */
+  files?: AttachedFile[];
+  /** The agent, model and effort to select before it lands (desktop Quick Entry). */
+  options?: SessionPromptOverrides;
 }
+
+type PrefillExtras = Omit<ComposerPrefill, 'text'>;
 
 interface ComposerPrefillState {
   /** projectId → prefill. Cleared once consumed. */
   prefillByProject: Record<string, ComposerPrefill>;
-  setPrefill: (projectId: string, prompt: string, options?: { submit?: boolean }) => void;
+  setPrefill: (projectId: string, prompt: string, extras?: PrefillExtras) => void;
   /** Read AND clear in one step — the prompt should only land once. */
   consume: (projectId: string) => ComposerPrefill | null;
 }
 
 export const useComposerPrefillStore = create<ComposerPrefillState>((set, get) => ({
   prefillByProject: {},
-  setPrefill: (projectId, prompt, options) =>
+  setPrefill: (projectId, prompt, extras) =>
     set((s) => ({
       prefillByProject: {
         ...s.prefillByProject,
-        [projectId]: { text: prompt, ...(options?.submit ? { submit: true } : {}) },
+        [projectId]: {
+          text: prompt,
+          ...(extras?.submit ? { submit: true } : {}),
+          ...(extras?.files?.length ? { files: extras.files } : {}),
+          ...(extras?.options ? { options: extras.options } : {}),
+        },
       },
     })),
   consume: (projectId) => {

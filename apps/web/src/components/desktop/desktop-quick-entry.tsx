@@ -1,6 +1,7 @@
 'use client';
 
 import { sessionDisplayStatus, type SessionDisplayStatus } from '@/components/projects/session-label';
+import type { AttachedFile } from '@/features/session/composer/types';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   getSessionDisplayTitle,
@@ -16,10 +17,22 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { projectIdFromPathname } from '@/stores/project-switch-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import { getProjectDetail, type ProjectSession } from '@kortix/sdk';
-import { contract, flattenProjectSessionPages, qk, useProjectSessions } from '@kortix/sdk/react';
+import {
+  KortixProjectProvider,
+  contract,
+  flattenProjectSessionPages,
+  qk,
+  useProjectSessions,
+} from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import {
+  QuickEntryComposer,
+  type QuickEntryComposerSnapshot,
+  type QuickEntrySelect,
+} from './desktop-quick-entry-composer';
 
 /** How many sessions the Quick Entry picker lists. */
 export const QUICK_ENTRY_RECENT_SESSIONS = 5;
@@ -54,6 +67,26 @@ export function quickEntryRecentSessions(
     }));
 }
 
+/** A file the bar sent (a screenshot, a picked file) as a composer attachment. */
+export function quickEntryAttachedFile(input: { name: string; type: string; bytes: Uint8Array }): AttachedFile {
+  const file = new File([input.bytes], input.name, { type: input.type });
+  // The composer stages it and makes its own preview URL.
+  return { kind: 'local', file, localUrl: '', isImage: input.type.startsWith('image/'), attachedAt: Date.now() };
+}
+
+/**
+ * Whether a new-session prompt may send itself. A model that cannot read
+ * images would refuse the screenshot; then the prompt only fills the
+ * composer, which shows why and lets the person pick another model.
+ */
+export function quickEntryCanSubmit(
+  files: readonly AttachedFile[],
+  composer: QuickEntryComposerSnapshot | null,
+): boolean {
+  if (!files.some((file) => file.isImage)) return true;
+  return composer?.models.find((model) => model.id === composer.model)?.vision !== false;
+}
+
 /**
  * Desktop Quick Entry, the web half. The shell's global shortcut opens a
  * prompt bar over any app (`apps/desktop-electron/src/quick-entry.js`). Enter
@@ -63,8 +96,10 @@ export function quickEntryRecentSessions(
  * session picked in the bar gets the prompt in its own composer (Enter
  * semantics: a running turn is steered).
  *
- * It also tells the shell the project and its recent sessions, for the bar's
- * picker. Renders nothing, and does nothing outside the desktop app.
+ * It also tells the shell the project, its recent sessions, and a new
+ * session's agent, model and effort (`QuickEntryComposer`), and applies the
+ * picks the person makes in the bar. Renders nothing visible, and does nothing
+ * outside the desktop app.
  */
 export function DesktopQuickEntry() {
   const router = useRouter();
@@ -96,11 +131,52 @@ export function DesktopQuickEntry() {
     [sessionPages],
   );
 
+  // The composer snapshot changes identity on every render; publish on content.
+  const composerRef = useRef<QuickEntryComposerSnapshot | null>(null);
+  const selectRef = useRef<QuickEntrySelect | null>(null);
+  const [composerKey, setComposerKey] = useState('');
+  const onComposer = useCallback((snapshot: QuickEntryComposerSnapshot | null) => {
+    composerRef.current = snapshot;
+    setComposerKey(
+      snapshot
+        ? JSON.stringify([snapshot.projectId, snapshot.agents, snapshot.agent, snapshot.models, snapshot.model, snapshot.variant])
+        : '',
+    );
+  }, []);
+
   useEffect(() => {
     if (!desktop || !userId) return;
-    void setDesktopQuickEntryTarget(projectId ? { projectId, name, sessions: recent } : null);
+    const snapshot = composerRef.current?.projectId === projectId ? composerRef.current : null;
+    const composer = snapshot
+      ? {
+          agents: snapshot.agents,
+          agent: snapshot.agent,
+          models: snapshot.models.map(({ id, label, group, variants }) => ({ id, label, group, variants })),
+          model: snapshot.model,
+          variant: snapshot.variant,
+        }
+      : null;
+    void setDesktopQuickEntryTarget(projectId ? { projectId, name, sessions: recent, composer } : null);
     if (projectId) router.prefetch(`/projects/${projectId}`);
-  }, [desktop, userId, projectId, name, recent, router]);
+  }, [desktop, userId, projectId, name, recent, composerKey, router]);
+
+  // An agent, model or effort picked in the bar, applied by the composer's own setters.
+  useEffect(() => {
+    if (!desktop) return;
+    const onSelect = (event: Event) => {
+      try {
+        const { kind, value } = JSON.parse(String((event as CustomEvent<string>).detail)) as {
+          kind: string;
+          value: string | null;
+        };
+        selectRef.current?.(kind, typeof value === 'string' ? value : null);
+      } catch {
+        /* not ours */
+      }
+    };
+    window.addEventListener('kortix-desktop-quick-entry-select', onSelect);
+    return () => window.removeEventListener('kortix-desktop-quick-entry-select', onSelect);
+  }, [desktop]);
 
   useEffect(() => {
     // Signed out: the prompt waits in the shell, up to 10 minutes, for sign-in.
@@ -108,12 +184,14 @@ export function DesktopQuickEntry() {
     const take = async () => {
       const prompt = await takeDesktopQuickEntryPrompt();
       if (!prompt) return;
+      const files = (prompt.files ?? []).map(quickEntryAttachedFile);
       if (prompt.sessionId && prompt.projectId) {
         // A session picked in the bar: its composer sends the prompt, replacing
-        // an unsent draft there rather than merging into it.
+        // an unsent draft there rather than merging into it. It keeps its own
+        // agent and model; its composer refuses images its model cannot read.
         useSessionComposerPrefillStore
           .getState()
-          .setPrefill(prompt.sessionId, prompt.text, undefined, 'replace', { submit: true });
+          .setPrefill(prompt.sessionId, prompt.text, files.length ? files : undefined, 'replace', { submit: true });
         // nav-contract: prefetch-only — the session was picked in the native bar
         router.push(
           `/projects/${encodeURIComponent(prompt.projectId)}/sessions/${encodeURIComponent(prompt.sessionId)}`,
@@ -128,9 +206,15 @@ export function DesktopQuickEntry() {
         router.push(`/projects/start?q=${encodeURIComponent(prompt.text)}`);
         return;
       }
-      // Project home consumes this and submits it (project-home.tsx). The
-      // prompt replaces an unsent draft in that composer.
-      useComposerPrefillStore.getState().setPrefill(target, prompt.text, { submit: true });
+      // Project home consumes this and submits it (project-home.tsx) with the
+      // agent, model and effort the bar showed. The prompt replaces an unsent
+      // draft in that composer.
+      const composer = composerRef.current?.projectId === target ? composerRef.current : null;
+      useComposerPrefillStore.getState().setPrefill(target, prompt.text, {
+        submit: quickEntryCanSubmit(files, composer),
+        ...(files.length ? { files } : {}),
+        ...(composer ? { options: composer.overrides } : {}),
+      });
       // nav-contract: prefetch-only — the effect above prefetches this route
       router.push(`/projects/${target}`);
     };
@@ -140,5 +224,14 @@ export function DesktopQuickEntry() {
     return () => window.removeEventListener('kortix-desktop-quick-entry', take);
   }, [desktop, userId, router]);
 
-  return null;
+  return desktop && userId && projectId ? (
+    <KortixProjectProvider projectId={projectId}>
+      <QuickEntryComposer
+        projectId={projectId}
+        project={detail?.project}
+        onChange={onComposer}
+        selectRef={selectRef}
+      />
+    </KortixProjectProvider>
+  ) : null;
 }

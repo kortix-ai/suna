@@ -412,7 +412,13 @@ export const desktopComputerRequestGrants = (input: { restartAgent?: boolean } =
  * recent sessions in the bar; without it the prompt starts a new session.
  */
 export const takeDesktopQuickEntryPrompt = () =>
-  desktopCommand<{ text: string; projectId?: string; sessionId?: string }>('quick_entry_take');
+  desktopCommand<{
+    text: string;
+    /** Screenshots and files from the bar. */
+    files?: { name: string; type: string; bytes: Uint8Array }[];
+    projectId?: string;
+    sessionId?: string;
+  }>('quick_entry_take');
 
 /**
  * The project a new Quick Entry session starts in, and the person's recent
@@ -424,6 +430,14 @@ export const setDesktopQuickEntryTarget = (
     projectId: string;
     name: string | null;
     sessions: { id: string; title: string; status: string; lastActiveAt: string }[];
+    /** A new session's agent, model and effort, as project home resolves them. */
+    composer: {
+      agents: { id: string; label: string }[];
+      agent: string | null;
+      models: { id: string; label: string; group: string; variants: string[] }[];
+      model: string | null;
+      variant: string | null;
+    } | null;
   } | null,
 ) => desktopCommand<null>('quick_entry_set_target', { target });
 

@@ -20,6 +20,7 @@ import {
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
+  type SessionPromptOverrides,
 } from '@kortix/sdk';
 import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
@@ -77,9 +78,13 @@ export function ProjectHome({
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [prefill, setPrefill] = useState<{ text: string; id: number; submit?: boolean } | null>(
-    null,
-  );
+  const [prefill, setPrefill] = useState<{
+    text: string;
+    id: number;
+    submit?: boolean;
+    files?: AttachedFile[];
+    options?: SessionPromptOverrides;
+  } | null>(null);
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
   // `useSandboxHealth`, its own key and its own polling). Changed only by this
@@ -178,7 +183,13 @@ export function ProjectHome({
   useEffect(() => {
     if (!pendingPrefill) return;
     consumePrefill(projectId);
-    setPrefill({ text: pendingPrefill.text, id: Date.now(), submit: pendingPrefill.submit });
+    setPrefill({
+      text: pendingPrefill.text,
+      id: Date.now(),
+      submit: pendingPrefill.submit,
+      files: pendingPrefill.files,
+      options: pendingPrefill.options,
+    });
   }, [pendingPrefill, projectId, consumePrefill]);
 
   const handleCommand = useCallback(
