@@ -1,5 +1,5 @@
 {
-  "source_hash": "d220a2cf7009ab0f61912c73072771f58605be57a40d9d4b79d3887db0b88840",
+  "source_hash": "516e8cb07ac07e1aac190ce66366ab470b3eb1933600bc87ba4c92211a591cfa",
   "diff_files": [
     "apps/api/src/__tests__/helpers/fake-session-storage.ts",
     "apps/api/src/__tests__/integration-session-log-blobs.test.ts",
@@ -17,13 +17,13 @@
     "packages/db/migrations/20261011231931109_session_attachments_bucket.sql",
     "packages/sdk/src/core/session-log/types.ts"
   ],
-  "diff_hash": "f7cf8f377b7d471662e604314fe0554cbe8dbf655606ceaff9130fbbffb3700e",
-  "head": "f9c917c564f3e5bcc34e15d96a5b7e0d4f12831c",
+  "diff_hash": "e2e102c0f6c8ad8cbfdcf644a73e2214a8dd01b127ee7bc4a2d535cc0e76bf3b",
+  "head": "a787edc506d73423719abf00b5ac5792186afe4a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T23:53:03.491Z"
+  "at": "2026-10-12T00:45:22.371Z"
 }
