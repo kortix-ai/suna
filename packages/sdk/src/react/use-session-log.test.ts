@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useState, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { SessionLog } from '../core/session-log/types';
@@ -24,6 +24,7 @@ const { setRuntimeCapabilities } = await import('../browser/stores/sandbox-conne
 const { useSessionLog, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
 const { createSavedCopyStore, setSavedCopyStore } = await import('../core/session-sync/saved-copy-store');
 const { savedSessionLogCopies } = await import('../core/session-log/saved-log');
+const v1Convert = await import('../core/session-log/v1');
 
 const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
 const PROJECT = 'proj_log';
@@ -72,6 +73,61 @@ describe('useSessionLog / useSessionLogThread', () => {
     expect(last.log!.threads[0]!.messages).toEqual(log.threads[0]!.messages);
     expect(last.root).toBe(last.log!.threads[0]!);
     expect(last.child).toBe(last.log!.threads[1]!);
+  });
+});
+
+describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the v1 rows', () => {
+  const { fromV1, toV1 } = v1Convert;
+  const v1Log = structuredClone(log);
+  for (const t of v1Log.threads) t.ext = { ...t.ext, opencode: { version: 'kortix.transcript.v1', native_id: t.thread_id } };
+  const v1 = toV1(v1Log);
+  const RS = v1.root_id!;
+  const rows = v1.rows.filter((r) => r.runtime_session_id === RS).map((r) => ({ info: r.info, parts: r.parts }));
+  const session = { projectId: PROJECT, sessionId: SESSION, runtimeSessionId: RS };
+
+  test('source v1: the log equals fromV1 (live) of the rows the v1 hooks render; the root thread is its thread', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<{ log: ReturnType<typeof useSessionLog>; root: unknown; byId: unknown }> = [];
+    render(() => {
+      seen.push({ log: useSessionLog(session), root: useSessionLogThread(session), byId: useSessionLogThread(session, RS) });
+      return null;
+    });
+    const last = seen.at(-1)!;
+    const expected = fromV1({ session_id: SESSION, root_id: RS, rows: rows.map((r) => ({ runtime_session_id: RS, ...r })) as never }, { live: true });
+    expect(last.log!.source).toBe('v1');
+    const { source: _source, ...plain } = last.log!;
+    expect(plain).toEqual(expected);
+    expect(last.root).toBe(last.log!.threads[0]!);
+    expect(last.byId).toBe(last.log!.threads[0]!);
+  });
+
+  test('identity: a re-render with no store change returns the same log, thread and messages', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<ReturnType<typeof useSessionLog>> = [];
+    let bump: () => void = () => {};
+    render(() => {
+      const [, set] = useState(0);
+      bump = () => set((n) => n + 1);
+      seen.push(useSessionLog(session));
+      return null;
+    });
+    act(() => bump());
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen[0]).not.toBeNull();
+    expect(seen.at(-1)).toBe(seen[0]);
+  });
+
+  test('null without a runtime session id; source v2 once a page is in the store', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<{ none: unknown; log: ReturnType<typeof useSessionLog> }> = [];
+    render(() => {
+      seen.push({ none: useSessionLog({ projectId: PROJECT, sessionId: SESSION }), log: useSessionLog(session) });
+      return null;
+    });
+    expect(seen.at(-1)!.none).toBeNull();
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    expect(seen.at(-1)!.log!.source).toBe('v2');
+    expect(seen.at(-1)!.log!.session_id).toBe(log.session_id);
   });
 });
 

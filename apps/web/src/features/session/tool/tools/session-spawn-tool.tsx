@@ -1,5 +1,7 @@
 'use client';
 
+import { toolCallBlock } from '@kortix/sdk';
+
 import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
@@ -22,10 +24,10 @@ import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 
-export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
+export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const status = partStatus(call);
   const pathname = usePathname();
 
   const agentName = capitalizeWords((input.agent as string) || 'kortix');
@@ -33,7 +35,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const projectName = (input.project as string) || '';
   const fullPrompt = (input.prompt as string) || '';
 
-  const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
+  const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
 
   const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
 
@@ -54,7 +56,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const lastActivity = useMemo(() => {
     if (childToolParts.length === 0) return null;
     const last = childToolParts[childToolParts.length - 1];
-    const info = getToolInfo(last.tool, partInput(last) as Record<string, any>);
+    const info = getToolInfo(last.tool, partInput(toolCallBlock(last)) as Record<string, any>);
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 

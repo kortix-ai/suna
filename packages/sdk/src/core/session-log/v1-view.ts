@@ -16,9 +16,9 @@
  */
 import type { Message, Part } from '../runtime/runtime-types';
 import type { SessionLogState, SessionLogThreadHead } from './store';
-import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLog, type SessionLogMessage } from './types';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogMessage } from './types';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '../runtime/transcript-types';
-import { toV1 } from './v1';
+import { fromV1, toV1 } from './v1';
 
 export interface V1MessageRow {
   info: Message;
@@ -142,4 +142,81 @@ export function sessionLogRowsFor<R extends V1MessageRow>(
   }
   merged.set(list, { v1Rows, native, revs: state.revs, result });
   return result as R[];
+}
+
+// ─── v1 rows -> session log (v2 not negotiated) ──────────────────────────────
+
+type Converted = { sum: V1MessageRow | undefined; seq: number; message: SessionLogMessage; lost: GradeCounts };
+/** The message of a row (with the summary row folded into its compaction marker), valid for one runtime session id. */
+const converted = new WeakMap<V1MessageRow, Converted & { sessionId: string; native: string }>();
+const views = new WeakMap<readonly V1MessageRow[], { sessionId: string; native: string; log: SessionLog }>();
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const iso = (ms: number | undefined) => (ms !== undefined && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : null);
+const isMarker = (row: V1MessageRow) => row.info.role === 'user' && row.parts.some((p) => isObj(p) && p.type === 'compaction');
+const summaryOf = (row: V1MessageRow, marker: V1MessageRow) => {
+  const info = row.info as { role?: string; summary?: unknown; parentID?: unknown };
+  return info.role === 'assistant' && info.summary === true && info.parentID === marker.info.id;
+};
+
+function convert(sessionId: string, native: string, row: V1MessageRow, sum: V1MessageRow | undefined, seq: number): Converted {
+  const cached = converted.get(row);
+  if (cached && cached.sessionId === sessionId && cached.native === native && cached.sum === sum && cached.seq === seq) return cached;
+  const unit = sum ? [row, sum] : [row];
+  const log = fromV1(
+    { session_id: sessionId, root_id: native, rows: unit.map((r) => ({ runtime_session_id: native, info: r.info as never, parts: r.parts as never })) },
+    { live: true },
+  );
+  const entry = { sessionId, native, sum, seq, message: { ...log.threads[0]!.messages[0]!, seq }, lost: log.grade_counts! };
+  converted.set(row, entry);
+  return entry;
+}
+
+/**
+ * The session log of one runtime session's v1 store rows: what `fromV1(…, { live: true })`
+ * builds for them (one root thread, the runtime session id as its id), so a host reads blocks
+ * while the session reads v1. The open turn stays open: its calls keep `pending`/`running`.
+ * Each message is converted once per row object and keeps its identity while its row is
+ * unchanged; the same `rows` array gives the same log.
+ */
+export function sessionLogOfV1Rows(sessionId: string, runtimeSessionId: string, rows: readonly V1MessageRow[]): SessionLog {
+  const cached = views.get(rows);
+  if (cached && cached.sessionId === sessionId && cached.native === runtimeSessionId) return cached.log;
+  const sorted = [...rows].sort(v1Order);
+  // A compaction marker and its summary row are one message, as `fromV1` pairs them.
+  const paired = new Map<V1MessageRow, V1MessageRow>();
+  const used = new Set<V1MessageRow>();
+  for (const row of sorted) {
+    if (!isMarker(row)) continue;
+    const sum = sorted.find((r) => !used.has(r) && summaryOf(r, row));
+    if (!sum) continue;
+    paired.set(row, sum);
+    used.add(sum);
+  }
+  const counts: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
+  const messages: SessionLogMessage[] = [];
+  for (const row of sorted) {
+    if (used.has(row)) continue;
+    const entry = convert(sessionId, runtimeSessionId, row, paired.get(row), messages.length + 1);
+    for (const k of ['tool_input', 'cut_point', 'attachment'] as const) counts[k] += entry.lost[k];
+    messages.push(entry.message);
+  }
+  const created = iso(sorted.map(createdOf).find((t): t is number => typeof t === 'number' && Number.isFinite(t))) ?? '';
+  const users = messages.filter((m) => m.role === 'user' && m.kind === 'turn');
+  const log: SessionLog = {
+    ...SHELL,
+    session_id: sessionId,
+    created_at: created,
+    restore_grade: counts.tool_input + counts.cut_point + counts.attachment > 0 ? 'partial' : 'converted',
+    grade_counts: counts,
+    harness: { current: 'opencode', history: [] },
+    selection: { agent: users.at(-1)?.agent ?? null, model: users.at(-1)?.model ?? null },
+    threads: [{
+      schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: runtimeSessionId, parent_thread_id: null, spawned_by: null,
+      agent: users[0]?.agent ?? null, title: null, created_at: messages[0]?.created_at || created, messages,
+      ext: { opencode: { version: KORTIX_TRANSCRIPT_SCHEMA, native_id: runtimeSessionId } },
+    }],
+  };
+  views.set(rows, { sessionId, native: runtimeSessionId, log });
+  return log;
 }
