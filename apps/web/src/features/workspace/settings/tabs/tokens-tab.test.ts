@@ -120,3 +120,26 @@ describe('the pane reads only the caller’s own keys', () => {
     expect(source).not.toContain('createServiceAccountApi');
   });
 });
+
+describe('the pane’s clock advances with fresh data', () => {
+  const source = readFileSync(join(import.meta.dir, 'tokens-tab.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  // A stamp that lands AFTER the pane mounted — a key used while the settings
+  // dialog is open — must not be aged against the mount-time clock: the past
+  // direction would flip and the row would read "Last used in 2m" for
+  // something that happened two minutes ago. So the clock must be derived
+  // from the tokens query's own fetch time (it advances with every refetch),
+  // with the mount capture only covering the first paint.
+  test('renderedAt is the query’s fetch time once data has landed', () => {
+    expect(source).toContain('useState(() => Date.now())');
+    expect(source).toContain('tokensQuery.dataUpdatedAt || mountAt');
+    expect(source).not.toContain('setRenderedAt');
+  });
+
+  test('the row formatting still ages against the captured clock, not a fresh Date.now()', () => {
+    expect(source).toContain('localizedRelativeTime(input, locale, renderedAt)');
+    expect(source).toContain('apiKeyMetaParts(row, renderedAt,');
+  });
+});
