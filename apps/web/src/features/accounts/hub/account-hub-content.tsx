@@ -85,7 +85,7 @@ import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useBrandingScope } from '@/features/branding/branding-provider';
-import { CaptureAccountCard } from '@/features/capture/area/capture-account-card';
+import { CaptureSettingsPane } from '@/features/capture/settings/settings-view';
 import { Close } from '@/features/icon/icons/close';
 import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -168,7 +168,7 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tCapture = useTranslations('capture.account');
+  const tCapture = useTranslations('capture');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -190,6 +190,7 @@ export function AccountHubContent() {
     canReadRoles,
     canReadPolicies,
     canReadAudit,
+    canManageCapture,
     canWriteAccount,
     canDeleteAccount,
     canInviteMember,
@@ -272,7 +273,12 @@ export function AccountHubContent() {
     (activeSection === 'members' && selectedAccessMemberId) ||
     (activeSection === 'identity' && activeSetup)
       ? undefined
-      : localizedAccountPaneMeta(tI18nComplete)[activeSection];
+      : activeSection === 'capture'
+        ? {
+            title: tCapture('account.title'),
+            description: tCapture('settings.description', { name: account?.name ?? '' }),
+          }
+        : localizedAccountPaneMeta(tI18nComplete)[activeSection];
   // `project` / `group` / `member` carry the open detail entity onto the URL
   // (`?tab=groups&group=<id>`) — omit one (or pass null) to drop the param,
   // e.g. switching tabs or backing out to the list. Every other tab switch
@@ -438,6 +444,10 @@ export function AccountHubContent() {
 
           {activeSection === 'help' ? <AccessHelp accountId={account.account_id} /> : null}
 
+          {activeSection === 'capture' && canManageCapture ? (
+            <CaptureSettingsPane accountId={account.account_id} />
+          ) : null}
+
           {activeSection === 'roles' && sectionVisible.roles ? (
             entitlementsLoading ? (
               <Skeleton className="h-64 w-full rounded-md" />
@@ -583,12 +593,6 @@ export function AccountHubContent() {
                   <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
-              </SettingsGroup>
-
-              <SettingsGroup title={tCapture('title')}>
-                <SettingsRowGroup>
-                  <CaptureAccountCard accountId={account.account_id} />
-                </SettingsRowGroup>
               </SettingsGroup>
 
               {/* Tucked away, not headline: this reports whether the

@@ -38,6 +38,7 @@ export const ACCOUNT_PERMISSION_PROBES = [
   { action: 'role.read' }, // GET .../iam/roles            → Roles
   { action: 'policy.read' }, // GET .../iam/policies       → the members list's custom-role column
   { action: 'audit.read' }, // GET .../audit               → Audit log
+  { action: 'capture.manage' }, // PUT .../capture/policy  → Kortix Capture
   // Writes → controls inside a visible pane.
   { action: 'account.write' },
   { action: 'account.delete' },
@@ -57,6 +58,7 @@ export interface AccountHubAccess {
   canReadRoles: Allowed;
   canReadPolicies: Allowed;
   canReadAudit: Allowed;
+  canManageCapture: Allowed;
   canWriteAccount: Allowed;
   canDeleteAccount: Allowed;
   canInviteMember: Allowed;
@@ -88,6 +90,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canReadRoles },
     { allowed: canReadPolicies },
     { allowed: canReadAudit },
+    { allowed: canManageCapture },
     { allowed: canWriteAccount },
     { allowed: canDeleteAccount },
     { allowed: canInviteMember },
@@ -142,6 +145,8 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     branding: canWriteAccount === true,
     // Reference copy — no data, no mutations, nothing to gate.
     help: true,
+    // GET/PUT .../capture/policy — `capture.manage` (capture/account-routes.ts).
+    capture: canManageCapture === true,
   };
 
   // Members is not unconditionally visible, so it cannot be the blanket
@@ -159,6 +164,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     canReadRoles,
     canReadPolicies,
     canReadAudit,
+    canManageCapture,
     canWriteAccount,
     canDeleteAccount,
     canInviteMember,

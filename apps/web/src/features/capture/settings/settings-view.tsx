@@ -7,7 +7,6 @@ import {
   type CapturePolicyRecord,
 } from '@kortix/sdk';
 import { useCapturePolicy, useSetCapturePolicy } from '@kortix/sdk/react';
-import { notFound, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useId, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -25,7 +24,6 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { relativeTime } from '@/lib/relative-time';
 import { CaptureAccountCard } from '../area/capture-account-card';
-import { CapturePage } from '../area/capture-area-shell';
 import { useCaptureArea } from '../area/use-capture-area';
 import { ExclusionsEditor } from './exclusions-editor';
 import { applyToPrivacy, fromPolicy } from './exclusions-model';
@@ -75,58 +73,46 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * Organization settings (`/capture/[accountId]/settings`), `capture.manage`
- * only: what every device of the organization must do. General (the switch,
- * who sees what) · Recording · Exclusions (mandatory) · Retention · Notice.
- * The policy is one draft across the tabs; the save bar shows while it differs
- * from what is stored. A member's own choices live on their computer, in the
- * desktop app, and never reach Kortix.
+ * Kortix Capture's organization settings, the `capture` section of the
+ * account settings (`?accountTab=capture`), `capture.manage` only: what every
+ * device of the organization must do. General (the switch, who sees what) ·
+ * Recording · Exclusions (mandatory) · Retention · Notice. The policy is one
+ * draft across the tabs; the save bar shows while it differs from what is
+ * stored. A member's own choices live on their computer, in the desktop app,
+ * and never reach Kortix. The account settings pane supplies the heading.
  */
-export function CaptureSettingsView({ accountId }: { accountId: string }) {
+export function CaptureSettingsPane({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.settings');
   const area = useCaptureArea(accountId);
   const record = useCapturePolicy(accountId);
-  const router = useRouter();
-  const pathname = usePathname();
-  const raw = useSearchParams().get('tab');
-  const tab: SettingsTab = (TABS as readonly string[]).includes(raw ?? '')
-    ? (raw as SettingsTab)
-    : 'general';
-  const setTab = (next: string) =>
-    router.replace(next === 'general' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
-  if (!area.canManage) notFound();
+  // Local, not a URL param: the pane opens over any page, whose `?tab=` is not its own.
+  const [tab, setTab] = useState<SettingsTab>('general');
 
-  return (
-    <CapturePage title={t('title')} description={t('description', { name: area.accountName })}>
-      <div className="w-full max-w-2xl">
-        {record.isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-9 w-80 rounded-md" />
-            <Skeleton className="h-32 rounded-md" />
-          </div>
-        ) : record.isError || !record.data ? (
-          <ErrorState
-            size="sm"
-            title={t('loadFailed')}
-            action={
-              <Button variant="outline" size="sm" onClick={() => record.refetch()}>
-                {t('tryAgain')}
-              </Button>
-            }
-          />
-        ) : (
-          // Keyed by the saved version: a save or a newer policy starts a fresh draft.
-          <PolicyForm
-            key={record.data.updated_at ?? 'default'}
-            accountId={accountId}
-            org={area.accountName}
-            record={record.data}
-            tab={tab}
-            onTab={setTab}
-          />
-        )}
-      </div>
-    </CapturePage>
+  return record.isLoading ? (
+    <div className="space-y-3">
+      <Skeleton className="h-9 w-80 rounded-md" />
+      <Skeleton className="h-32 rounded-md" />
+    </div>
+  ) : record.isError || !record.data ? (
+    <ErrorState
+      size="sm"
+      title={t('loadFailed')}
+      action={
+        <Button variant="outline" size="sm" onClick={() => record.refetch()}>
+          {t('tryAgain')}
+        </Button>
+      }
+    />
+  ) : (
+    // Keyed by the saved version: a save or a newer policy starts a fresh draft.
+    <PolicyForm
+      key={record.data.updated_at ?? 'default'}
+      accountId={accountId}
+      org={area.accountName}
+      record={record.data}
+      tab={tab}
+      onTab={(next) => setTab(next as SettingsTab)}
+    />
   );
 }
 
@@ -144,7 +130,6 @@ function PolicyForm({
   onTab: (tab: string) => void;
 }) {
   const t = useTranslations('capture.settings');
-  const tAccount = useTranslations('capture.account');
   const tGroup = useTranslations('capture.settings.exclusions.group');
   const locale = useLocale();
   const save = useSetCapturePolicy(accountId);
@@ -171,9 +156,9 @@ function PolicyForm({
       </TabsList>
 
       <TabsContent value="general" className="space-y-8 pt-6">
-        <Group title={tAccount('title')}>
-          <CaptureAccountCard accountId={accountId} showOpen={false} />
-        </Group>
+        <div className="bg-popover rounded-md border">
+          <CaptureAccountCard accountId={accountId} />
+        </div>
         <section className="space-y-2">
           <Label>{t('accessTitle')}</Label>
           <p className="text-muted-foreground text-sm text-pretty">{t('accessBody')}</p>

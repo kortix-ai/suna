@@ -1,10 +1,11 @@
-import { CaptureSettingsView } from '@/features/capture/settings/settings-view';
+import { redirect } from 'next/navigation';
 
-import { captureMetadata } from '../capture-metadata';
-
-export const generateMetadata = () => captureMetadata('settings');
-
+/**
+ * Kortix Capture's organization settings are the `capture` section of the
+ * account settings, which open over any page (`?accountId=&accountTab=`, see
+ * `stores/account-panel-store.ts`). This address opens them over Devices.
+ */
 export default async function Page({ params }: { params: Promise<{ accountId: string }> }) {
-  const p = await params;
-  return <CaptureSettingsView accountId={p.accountId} />;
+  const { accountId } = await params;
+  redirect(`/capture/${accountId}/devices?accountId=${accountId}&accountTab=capture`);
 }

@@ -36,7 +36,7 @@ export function useCaptureArea(accountId: string) {
 
 /** The pages of the area, in the header's order. */
 export const CAPTURE_SECTIONS = ['devices'] as const;
-export type CaptureSection = (typeof CAPTURE_SECTIONS)[number] | 'settings' | 'this-computer';
+export type CaptureSection = (typeof CAPTURE_SECTIONS)[number] | 'this-computer';
 
 export function captureHref(accountId: string, section: CaptureSection = 'devices', rest = '') {
   return `/capture/${accountId}/${section}${rest}`;
@@ -45,7 +45,7 @@ export function captureHref(accountId: string, section: CaptureSection = 'device
 /** The section of a `/capture/[accountId]/…` path. */
 export function sectionOf(pathname: string | null): CaptureSection {
   const part = pathname?.split('/capture/')[1]?.split('/')[1] ?? '';
-  return ([...CAPTURE_SECTIONS, 'settings', 'this-computer'] as readonly string[]).includes(part)
+  return ([...CAPTURE_SECTIONS, 'this-computer'] as readonly string[]).includes(part)
     ? (part as CaptureSection)
     : 'devices';
 }

@@ -10,7 +10,6 @@ import {
   type CaptureTimelineItems,
 } from '@kortix/sdk';
 import {
-  useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDevices,
   useCaptureTimeline,
@@ -70,7 +69,7 @@ import {
   type ScreenItem,
 } from './display-model';
 import { AllDisplaysStage, DisplayStrip, displayLabel, shortDisplayName } from './display-stage';
-import { FrameStage } from './frame-stage';
+import { FrameStage, useFrameSource } from './frame-stage';
 import { JumpPopover } from './jump-popover';
 import { MomentPanel } from './moment-panel';
 import { DeviceSearch } from './search-panel';
@@ -353,18 +352,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     coveredAt(screenItems, view.T, multi ? shownDisplay : null) ||
     recordedSince(frame ? Date.parse(frame.ts) : null, view.T);
   const offFrame = !frame || !covered;
-  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
-  const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
-  // While the next chunk's URL loads, the stage keeps the last frame it showed: no blank flash mid-scrub.
-  const nextShown =
-    video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;
-  const [shown, setShown] = useState<{ src: string | null; seconds: number }>({
-    src: null,
-    seconds: 0,
-  });
-  if (nextShown && (nextShown.src !== shown.src || nextShown.seconds !== shown.seconds))
-    setShown(nextShown);
-  const display = nextShown ?? (media.isFetching && frame ? shown : { src: null, seconds: 0 });
+  const { video, shown: display } = useFrameSource(accountId, frame, userId);
 
   // The opening scale, once the first runs land.
   const scaled = useRef(false);

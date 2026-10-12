@@ -1,13 +1,13 @@
 'use client';
 
 import type { CaptureDisplay, CaptureFrame } from '@kortix/sdk';
-import { useCaptureChunkMedia } from '@kortix/sdk/react';
+import { useEffect, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 import { displayLayout, type FocusSpan, type ScreenItem } from './display-model';
-import { FrameStage } from './frame-stage';
+import { FrameStage, useFrameSource } from './frame-stage';
 
 type TimelineT = ReturnType<typeof useTranslations>;
 
@@ -31,9 +31,24 @@ export function shortDisplayName(
   return short || t('display.unnamed', { n: displays.indexOf(display) + 1 });
 }
 
-/** The layout box: 16:10, like the stage. Tiles are placed in percent of it. */
-const BOX_W = 1600;
-const BOX_H = 1000;
+/** The gap between the stage's edge and the tiles, in px. */
+const INSET = 8;
+
+/** The element's content size, kept current as it resizes. */
+function useBoxSize() {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry!.contentRect;
+      setSize({ w: width, h: height });
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return [setNode, size] as const;
+}
 
 /**
  * All displays side by side, where they sit on the desk (the device's own
@@ -58,9 +73,13 @@ export function AllDisplaysStage({
   onPick: (displayId: number) => void;
 }) {
   const t = useTranslations('capture.timeline');
-  const rects = displayLayout(displays, BOX_W, BOX_H);
+  // Placed in the stage's real pixels, so every tile keeps its display's shape at any window size.
+  const [boxRef, box] = useBoxSize();
+  const rects = box.w
+    ? displayLayout(displays, Math.max(0, box.w - 2 * INSET), Math.max(0, box.h - 2 * INSET))
+    : [];
   return (
-    <div className="bg-pane relative min-h-0 flex-1">
+    <div ref={boxRef} className="bg-pane relative min-h-0 flex-1">
       {rects.map((rect) => {
         const display = displays.find((d) => d.id === rect.id)!;
         const label = displayLabel(display, displays, t);
@@ -71,14 +90,14 @@ export function AllDisplaysStage({
             aria-label={t('display.show', { name: label })}
             onClick={() => onPick(rect.id)}
             className={cn(
-              'focus-visible:ring-ring bg-pane absolute overflow-hidden rounded-sm border outline-none focus-visible:ring-2',
+              'focus-visible:ring-ring bg-pane absolute flex flex-col overflow-hidden rounded-sm border outline-none focus-visible:ring-2',
               rect.id === activeId ? 'border-foreground ring-foreground ring-1' : 'border-border',
             )}
             style={{
-              left: `${(rect.left / BOX_W) * 100}%`,
-              top: `${(rect.top / BOX_H) * 100}%`,
-              width: `${(rect.width / BOX_W) * 100}%`,
-              height: `${(rect.height / BOX_H) * 100}%`,
+              left: rect.left + INSET,
+              top: rect.top + INSET,
+              width: rect.width,
+              height: rect.height,
             }}
           >
             <DisplayTile
@@ -114,12 +133,11 @@ function DisplayTile({
   recorded: boolean;
   label: string;
 }) {
-  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
-  const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
+  const { shown } = useFrameSource(accountId, frame, userId);
   return (
     <FrameStage
-      src={video && !video.encrypted ? video.url : null}
-      seconds={frame?.frame_index ?? 0}
+      src={shown.src}
+      seconds={shown.seconds}
       label={label}
       dimmed={!recorded}
       failedLabel={null}

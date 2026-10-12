@@ -1,7 +1,31 @@
 'use client';
 
+import type { CaptureFrame } from '@kortix/sdk';
+import { useCaptureChunkMedia } from '@kortix/sdk/react';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
+
+/**
+ * The video and seek position for `frame`. While the next chunk's URL loads, it
+ * keeps the last one it returned: no blank flash mid-scrub or mid-play.
+ */
+export function useFrameSource(
+  accountId: string,
+  frame: CaptureFrame | null,
+  userId: string | undefined,
+) {
+  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
+  const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
+  const next =
+    video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;
+  const [held, setHeld] = useState<{ src: string | null; seconds: number }>({
+    src: null,
+    seconds: 0,
+  });
+  if (next && (next.src !== held.src || next.seconds !== held.seconds)) setHeld(next);
+  const shown = next ?? (media.isFetching && frame ? held : { src: null, seconds: 0 });
+  return { video, shown };
+}
 
 /**
  * The hero: the screen at the playhead. A chunk is a 1 fps video with frame i

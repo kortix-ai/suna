@@ -14,18 +14,11 @@ import { useTranslations } from '@/i18n/use-translations';
 import { captureHref } from './use-capture-area';
 
 /**
- * Kortix Capture on the organization's Settings: the account switch
- * (`capture.manage`) and the way into the Capture area. Capture is off until
- * an admin turns it on here.
+ * The Kortix Capture switch (`capture.manage`) and the way into the Capture
+ * area, at the top of the account settings' Kortix Capture section. Capture is
+ * off until an admin turns it on here.
  */
-export function CaptureAccountCard({
-  accountId,
-  showOpen = true,
-}: {
-  accountId: string;
-  /** Off inside Capture itself, where the link would point at the page you are on. */
-  showOpen?: boolean;
-}) {
+export function CaptureAccountCard({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.account');
   const workspace = useCaptureWorkspace(accountId);
   const setEnabled = useSetCaptureEnabled(accountId);
@@ -40,7 +33,7 @@ export function CaptureAccountCard({
         <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
       ) : (
         <span className="flex shrink-0 items-center gap-3">
-          {enabled && showOpen ? (
+          {enabled ? (
             <Button asChild variant="outline" size="sm">
               <Link href={captureHref(accountId, 'devices')}>{t('open')}</Link>
             </Button>

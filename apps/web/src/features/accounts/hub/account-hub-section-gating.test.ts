@@ -67,6 +67,7 @@ describe('account hub — the read probes exist and are ordered', () => {
       'role.read',
       'policy.read',
       'audit.read',
+      'capture.manage',
       'account.write',
       'account.delete',
       'member.invite',
@@ -82,6 +83,7 @@ describe('account hub — the read probes exist and are ordered', () => {
       'canReadRoles',
       'canReadPolicies',
       'canReadAudit',
+      'canManageCapture',
       'canWriteAccount',
       'canDeleteAccount',
       'canInviteMember',
@@ -122,6 +124,13 @@ describe('account hub — every Access nav item maps to its own READ probe', () 
     ] as const) {
       expect(sectionVisible).toContain(`${section}: ${gate}`);
     }
+  });
+
+  // Kortix Capture's pane reads and writes the policy, which asserts `capture.manage`.
+  test('Kortix Capture gates on capture.manage, and the pane renders only then', async () => {
+    expect(sectionVisible).toContain('capture: canManageCapture === true');
+    const code = await Bun.file(new URL('./account-hub-content.tsx', import.meta.url)).text();
+    expect(code).toContain("activeSection === 'capture' && canManageCapture");
   });
 
   test('roles is no longer hard-coded visible — the original bug', () => {

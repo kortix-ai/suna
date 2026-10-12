@@ -2,10 +2,17 @@
 
 import { ApiError } from '@kortix/sdk';
 import { useSetCaptureEnabled } from '@kortix/sdk/react';
-import { CaretDownIcon, CheckIcon, GearSixIcon } from '@phosphor-icons/react';
+import {
+  BuildingsIcon,
+  CaretDownIcon,
+  CheckIcon,
+  GearSixIcon,
+  MonitorPlayIcon,
+  SignOutIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { notFound, usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@/components/ui/button';
@@ -14,6 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
@@ -24,9 +32,12 @@ import { errorToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { hubTarget } from '@/stores/account-panel-store';
 
 import {
   CAPTURE_SECTIONS,
@@ -130,7 +141,6 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
   const pathname = usePathname();
   const section = sectionOf(pathname);
   const area = useCaptureArea(accountId);
-  const { user } = useAuth();
   return (
     <header
       data-sidebar-collapsed
@@ -182,29 +192,84 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
         <AccountSwitcher accountId={accountId} />
         {area.canManage ? (
           <Hint label={t('nav.settings')}>
-            <Button
-              asChild
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('nav.settings')}
-              className={cn(section === 'settings' && 'bg-active')}
-            >
-              <Link
-                href={captureHref(accountId, 'settings')}
-                aria-current={section === 'settings' ? 'page' : undefined}
-              >
+            <Button asChild variant="ghost" size="icon-sm" aria-label={t('nav.settings')}>
+              <HubLink to={hubTarget(accountId, { tab: 'capture' })}>
                 <GearSixIcon className="size-4 shrink-0" />
-              </Link>
+              </HubLink>
             </Button>
           </Hint>
         ) : null}
-        {user ? (
-          <span aria-label={t('signedInAs', { email: user.email ?? '' })} role="img">
-            <UserAvatar email={user.email ?? ''} size="sm" />
-          </span>
-        ) : null}
+        <ProfileMenu accountId={accountId} canManage={area.canManage} />
       </div>
     </header>
+  );
+}
+
+/**
+ * Who you are, and the way to everything outside Capture: Kortix Capture's
+ * organization settings, this organization's settings, your own settings (the
+ * accounts list), theme and log out. The settings rows open the account
+ * settings over the page you are on; closing them returns here.
+ */
+function ProfileMenu({ accountId, canManage }: { accountId: string; canManage: boolean }) {
+  const t = useTranslations('capture.area');
+  const tSidebar = useTranslations('sidebar');
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const deferAfterClose = (fn: () => void) => {
+    setOpen(false);
+    requestAnimationFrame(() => fn());
+  };
+  const { openConfirm, dialog } = useLogoutFlow(deferAfterClose);
+  const email = user?.email ?? '';
+  return (
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-full"
+            aria-label={t('signedInAs', { email })}
+          >
+            <UserAvatar email={email} size="sm" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuLabel className="text-muted-foreground truncate font-normal">
+            {email}
+          </DropdownMenuLabel>
+          {canManage ? (
+            <DropdownMenuItem asChild size="sm">
+              <HubLink to={hubTarget(accountId, { tab: 'capture' })}>
+                <MonitorPlayIcon />
+                {t('nav.settings')}
+              </HubLink>
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild size="sm">
+            <HubLink to={hubTarget(accountId)}>
+              <BuildingsIcon />
+              {tSidebar('workspace.accountSettings')}
+            </HubLink>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild size="sm">
+            <Link href="/settings/profile" prefetch>
+              <GearSixIcon />
+              {tSidebar('workspace.settings')}
+            </Link>
+          </DropdownMenuItem>
+          <ThemeSubmenu />
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={openConfirm} size="sm">
+            <SignOutIcon />
+            {tSidebar('workspace.logOut')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
+      {dialog}
+    </>
   );
 }
 

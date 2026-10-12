@@ -21,6 +21,7 @@ import {
   GearSixIcon,
   GitBranchIcon,
   KeyIcon,
+  MonitorPlayIcon,
   NetworkIcon,
   PaintBrushIcon,
   QuestionIcon,
@@ -43,6 +44,7 @@ export const VALID_TABS = [
   'identity',
   'audit',
   'help',
+  'capture',
 ] as const;
 export type AccountSection = (typeof VALID_TABS)[number];
 
@@ -91,6 +93,10 @@ export const NAV_GROUPS: readonly AccountNavGroup[] = [
       // opposed to a person's own keys under Preferences › Personal access
       // keys. The id stays `tokens` — it is the `?tab=` segment.
       { id: 'tokens', label: 'API keys', icon: KeyIcon },
+      // Kortix Capture's organization settings: the switch, what devices record,
+      // the mandatory exclusions, retention and the notice. A product name, so
+      // the label is not translated; the pane's own heading is.
+      { id: 'capture', label: 'Kortix Capture', icon: MonitorPlayIcon },
     ],
   },
   {
