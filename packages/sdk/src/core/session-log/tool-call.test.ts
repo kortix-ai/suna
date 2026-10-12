@@ -8,6 +8,7 @@ import { getToolPrimaryArg } from '../turns/tools/tool-meta';
 import { isEmptyShowPart } from '../turns/segments/session-activity-groups';
 import { createArtifactKind, familyForTool, narrateFailedStep, narrateStep } from '../turns/segments/narration';
 import { groupSteps } from '../turns/segments/group-steps';
+import { stepLabel } from '../turns/segments/step-label';
 import { toolCallBlock, toolCallMetadata } from './tool-call';
 import type { ToolCallBlock } from './types';
 import { fromV1, type V1Row } from './v1';
@@ -129,6 +130,10 @@ describe('the step helpers read blocks the way they read their parts', () => {
     expect(createArtifactKind(toolCallBlock(extra.image))).toBe('image');
   });
 
+  test('stepLabel', () => {
+    for (const p of each) expect(stepLabel(toolCallBlock(p))).toEqual(stepLabel(p));
+  });
+
   test('narrateStep and narrateFailedStep', () => {
     for (const p of each) {
       const family = familyForTool(p.tool);
@@ -146,4 +151,24 @@ describe('the step helpers read blocks the way they read their parts', () => {
     expect(fromCalls.map((s) => s.parts.map((c) => c.id))).toEqual(fromParts.map((s) => s.parts.map((p) => p.id)));
     for (const step of fromCalls) for (const c of step.parts) expect(calls).toContain(c);
   });
+});
+
+describe('a call the closure rule closed, reopened, reads as its stored v1 part', () => {
+  // The host rule (apps/web call-liveness.ts): a closure-rule block is open again,
+  // `running` when it started, else `pending`, with no result. Its residual was taken
+  // against the closed block, and still rebuilds the stored part.
+  const rest = atRest();
+  for (const name of ['task', 'pending'] as const) {
+    test(name, () => {
+      const stored = PARTS[name]!;
+      const closed = rest.get(stored.id)!;
+      expect(closed).toMatchObject({ status: 'error', result: { synthetic: true, error: { code: 'interrupted' } } });
+      const { result: _result, ...open } = closed;
+      const reopened: ToolCallBlock = { ...open, status: closed.started_at ? 'running' : 'pending' };
+      expect(reopened.status).toBe(stored.state.status as ToolCallBlock['status']);
+      expect(toolCallMetadata(reopened)).toEqual(toolCallMetadata(toolCallBlock(stored)));
+      expect(toToolView(reopened)).toEqual(toToolView(stored));
+      expect(getChildSessionId(reopened)).toBe(getChildSessionId(stored));
+    });
+  }
 });
