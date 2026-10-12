@@ -1666,7 +1666,7 @@ for (const runtime of runtimes) {
           const bar = desktopApp
             .windows()
             .find((window) => window.url().endsWith("/quick-entry.html"))!;
-          await expect(bar.locator("#target")).toHaveText(
+          await expect(bar.locator("#pick-label")).toHaveText(
             "New session in Quick Entry target",
           );
           const prompt = `Quick Entry prompt ${randomUUID()}`;
