@@ -25,6 +25,7 @@
  * reachable from an external client, so SESS-23 observes its effect only
  * through the transcript.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow, harnessFlow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import {
@@ -881,6 +882,21 @@ harnessFlow(
     await ctx.step('a long turn runs', async () => {
       await sendPrompt(ctx, projectId, sessionId, `Run the shell command "sleep 90" with your bash tool, then reply with the word LONG${stamp}.`);
       await waitForTurn(ctx, projectId, sessionId, (turn) => turn.turns.some((t) => t.state === 'active'), `a running turn in ${sessionId}`);
+      // An active turn is not yet a long one: a model that answers without the
+      // tool ends the turn at once, the next prompt is then delivered as a turn of
+      // its own, and "queued behind the running turn" has nothing to prove. Wait
+      // for the bash call itself to be in flight.
+      await waitFor(
+        async () => (await readTranscript(ctx, projectId, sessionId)).messages,
+        {
+          until: (messages) =>
+            messages.some((m) => m.role === 'assistant' && (m.tools ?? []).some((t) => t.tool === 'bash' && (t.status === 'running' || t.status === 'pending'))),
+          timeoutMs: 120_000,
+          intervalMs: 2_000,
+          description: `the sleep command to be running in ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
     });
 
     let ids: string[] = [];
