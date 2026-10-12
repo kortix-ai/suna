@@ -17,13 +17,23 @@ const PresenceBody = z.object({
   }),
 });
 
+const PresenceResponse = z.object({
+  ok: z.boolean(),
+  awake_until: z.string().datetime().nullable().openapi({
+    description: 'When the session\'s computer stops after this renewal. Null unless active=true, the caller may start the session, and the computer is running or starting.',
+  }),
+  awake_cap_at: z.string().datetime().nullable().openapi({
+    description: 'Presence never keeps the computer on past this time: 2 h after the session\'s latest turn activity, or after the computer started if that is later, and at most 24 h into the computer\'s run. A new turn moves it. Null when awake_until is null.',
+  }),
+});
+
 export function registerSessionPresenceRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'put', path: '/{projectId}/sessions/{sessionId}/presence', tags: ['sessions'],
     summary: 'Renew a browser tab presence lease', ...auth,
-    description: 'active=true holds a 90 s lease for this tab and, with the project\'s notification_center flag on, marks the caller\'s notifications of this session read; active=false drops the lease.',
+    description: 'active=true holds a 90 s lease for this tab and, with the project\'s notification_center flag on, marks the caller\'s notifications of this session read; active=false drops the lease. For a caller who may start the session, active=true also keeps its computer on by the idle grace, and the response says until when.',
     request: { params: z.object({ projectId: z.string().uuid(), sessionId: z.string() }), body: { required: true, content: { 'application/json': { schema: PresenceBody } } } },
-    responses: { 200: json(z.object({ ok: z.boolean() }), 'Presence updated'), ...errors(400, 403, 404) },
+    responses: { 200: json(PresenceResponse, 'Presence updated'), ...errors(400, 403, 404) },
   }), async (c) => {
     const { projectId, sessionId } = c.req.valid('param');
     const { tab_id: tabId, active, alerts } = c.req.valid('json');
@@ -33,6 +43,7 @@ export function registerSessionPresenceRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     const visible = await loadVisibleSession(loaded, sessionId, null, null);
     if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    let awake: { deadlineAt: Date; capAt: Date } | null = null;
     if (active) {
       await upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true);
       // KRTX-1742: a person looking at the session has seen what it notified.
@@ -41,11 +52,15 @@ export function registerSessionPresenceRoutes(): void {
       // KRTX-1729: a person who may start the session keeps its computer awake,
       // by the idle grace. A read-only viewer's lease only routes pushes.
       if (await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START)) {
-        await extendSandboxDeadlineForPresence({ sessionId });
+        awake = await extendSandboxDeadlineForPresence({ sessionId });
       }
     } else {
       await deleteSessionPresence(loaded.userId, sessionId, tabId);
     }
-    return c.json({ ok: true }, 200);
+    return c.json({
+      ok: true,
+      awake_until: awake?.deadlineAt.toISOString() ?? null,
+      awake_cap_at: awake?.capAt.toISOString() ?? null,
+    }, 200);
   });
 }

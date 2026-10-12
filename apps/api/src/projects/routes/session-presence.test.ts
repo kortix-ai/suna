@@ -26,6 +26,10 @@ let leaseUpdates: Array<Record<string, unknown>> = [];
 let sessionsMarkedRead: Array<{ userId: string; sessionId: string }> = [];
 let extensions: Array<{ target: unknown; grantMs: number }> = [];
 let projectMetadata: Record<string, unknown> = {};
+/** What the presence extension returns: the box deadline and cap, or null (no live box). */
+let awake: { deadlineAt: Date; capAt: Date } | null = null;
+const DEADLINE_AT = new Date('2026-10-12T10:15:00.000Z');
+const CAP_AT = new Date('2026-10-12T11:40:00.000Z');
 
 mock.module('../lib/access', () => ({
   ...realAccess,
@@ -77,6 +81,7 @@ mock.module('../sandbox-deadline', () => ({
   // KRTX-1729: presence extends through the capped statement, by the idle grace.
   extendSandboxDeadlineForPresence: async (target: unknown) => {
     extensions.push({ target, grantMs: realDeadline.idleGraceMs() });
+    return awake;
   },
 }));
 
@@ -106,6 +111,7 @@ beforeEach(() => {
   sessionsMarkedRead = [];
   extensions = [];
   projectMetadata = { experimental: { notification_center: true } };
+  awake = { deadlineAt: DEADLINE_AT, capAt: CAP_AT };
 });
 
 describe('PUT .../presence', () => {
@@ -153,6 +159,27 @@ describe('PUT .../presence', () => {
     expect(leaseWrites).toBe(2);
     expect(extensions).toHaveLength(2);
     expect(sessionsMarkedRead).toEqual([]);
+  });
+
+  // KRTX-1729: the composer says how long the computer stays on.
+  test('a person who may start the session reads back the deadline and the cap', async () => {
+    const res = await put({ tab_id: TAB_ID, active: true });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      awake_until: DEADLINE_AT.toISOString(),
+      awake_cap_at: CAP_AT.toISOString(),
+    });
+  });
+
+  test('a viewer, an absent tab and a stopped box read back no awake window', async () => {
+    const none = { ok: true, awake_until: null, awake_cap_at: null };
+    mayStartSession = false;
+    expect(await (await put({ tab_id: TAB_ID, active: true })).json()).toEqual(none);
+    mayStartSession = true;
+    expect(await (await put({ tab_id: TAB_ID, active: false })).json()).toEqual(none);
+    awake = null;
+    expect(await (await put({ tab_id: TAB_ID, active: true })).json()).toEqual(none);
   });
 
   test('a missing body or a non-boolean alerts → 400 and nothing is written', async () => {
