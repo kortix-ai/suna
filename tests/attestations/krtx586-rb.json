@@ -1,23 +1,22 @@
 {
-  "source_hash": "a84ca3e65034931042e823f7d8ed3f880c6de154077c2839a83f7270cdebbea8",
+  "source_hash": "bbf76aecde83186e177177f6ae4aa0c72932e1bf6dced06dcabbf5991296341c",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-11T215409Z-check-the-live-ecs-service-state-before-lowering-deployment.md",
     "apps/api/src/shared/database-capacity.test.ts",
     "apps/api/src/shared/database-capacity.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "infra/terraform/environments/prod-us-east-2-shadow/main.tf",
     "infra/terraform/environments/prod/main.tf",
     "infra/terraform/modules/ecs-api/variables.tf",
     "packages/db/src/connection-defaults.ts"
   ],
-  "diff_hash": "c851ede5252989718caeb022499fdab387838351033522b024496ec025b94b48",
-  "head": "2e76a763413ac6798dee5a01cca1c6fea4acf098",
+  "diff_hash": "86a89bb3a5e5c07139cd16169ecbdf98dcefa5dfc90237df4de5d4a9da949e0d",
+  "head": "f2996f5c2533f40e8bea095eb91cc4ce80dacfef",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T00:06:08.961Z"
+  "at": "2026-10-12T00:57:59.827Z"
 }
