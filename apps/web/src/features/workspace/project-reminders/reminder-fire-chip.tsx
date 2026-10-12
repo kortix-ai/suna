@@ -23,9 +23,8 @@ function FireStatus({ fire }: { fire: ReminderFire }) {
 }
 
 /**
- * A Week card or lane pill in the reminder's colour: a translucent tint of its
- * hue (so it sits on both themes and keeps theme text), and a solid left bar.
- * A past fire keeps its hue at lower opacity.
+ * A reminder's colour: a soft tint of its hue (so it sits on both themes and
+ * keeps theme text) and a 2px bar in the solid hue. A past fire recedes.
  */
 function tintStyle(fire: ReminderFire): CSSProperties {
   const { border } = reminderColors(fire.reminder);
@@ -41,101 +40,8 @@ const PAST = 'opacity-60';
 const succeeded = ({ confirmed, reminder }: ReminderFire) =>
   confirmed && reminder.last_status === 'fired' && !reminder.last_error;
 
-/**
- * A Week card at its time: title over time when `tall`, else one line
- * "Title 14:00". Hairline border in the reminder's colour.
- */
-export function FireCard({
-  fire,
-  locale,
-  tall,
-  style,
-}: {
-  fire: ReminderFire;
-  locale: string;
-  tall: boolean;
-  style: CSSProperties;
-}) {
-  const open = useOpenFire();
-  return (
-    <button
-      type="button"
-      aria-haspopup="dialog"
-      onClick={(event) => open(fire, event.currentTarget)}
-      data-testid="reminder-fire-chip"
-      style={{ ...tintStyle(fire), ...style }}
-      className={cn(
-        'text-foreground absolute z-10 flex min-w-0 overflow-hidden rounded-sm border-l-4 px-1.5 text-left text-xs',
-        tall ? 'flex-col justify-start py-0.5' : 'items-center gap-1.5',
-        fire.past && PAST,
-        FOCUS,
-      )}
-    >
-      <span className="min-w-0 truncate font-medium">{reminderTitle(fire.reminder)}</span>
-      <span className="shrink-0 tabular-nums opacity-70">{clockTime(fire.at, locale)}</span>
-      <FireStatus fire={fire} />
-      {succeeded(fire) && !tall ? (
-        <SolidCheckIcon className="ml-auto size-3 shrink-0" aria-hidden />
-      ) : null}
-    </button>
-  );
-}
-
-/**
- * A Month line, Notion-style: no fill, a dot in the reminder's colour, the
- * time muted, then the title. A frequent reminder's day is one line,
- * "Title · ×48". Plain rows keep a busy month readable.
- */
-export function FireRow({
-  fire,
-  locale,
-  count,
-  card = false,
-}: {
-  fire: ReminderFire;
-  locale: string;
-  count: number | null;
-  /** Today's events: the tinted card with a left bar, like the Week cards. */
-  card?: boolean;
-}) {
-  const open = useOpenFire();
-  return (
-    <button
-      type="button"
-      aria-haspopup="dialog"
-      onClick={(event) => open(fire, event.currentTarget)}
-      data-testid="reminder-fire-chip"
-      style={card ? tintStyle(fire) : undefined}
-      className={cn(
-        'flex w-full min-w-0 shrink-0 items-center gap-1.5 rounded-sm px-1 text-left text-xs transition-colors',
-        card ? 'border-l-4 py-0.5' : 'hover:bg-muted py-px',
-        fire.past && PAST,
-        FOCUS,
-      )}
-    >
-      {card ? null : (
-        <span
-          aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
-          style={{ background: reminderColors(fire.reminder).border }}
-        />
-      )}
-      {count === null ? (
-        <span className="text-muted-foreground shrink-0 tabular-nums">
-          {clockTime(fire.at, locale)}
-        </span>
-      ) : null}
-      <span className="text-foreground min-w-0 truncate">{reminderTitle(fire.reminder)}</span>
-      {count !== null ? (
-        <span className="text-muted-foreground shrink-0 tabular-nums">×{count}</span>
-      ) : null}
-      <FireStatus fire={fire} />
-    </button>
-  );
-}
-
-/** A pill in the Week "All week" lane: a frequent reminder, "Title · every 5m". */
-export function FirePill({ fire, label }: { fire: ReminderFire; label: string }) {
+/** One line in a Week hour cell: the title, then the minute. Full cell width, one height. */
+export function FireLine({ fire, locale }: { fire: ReminderFire; locale: string }) {
   const open = useOpenFire();
   return (
     <button
@@ -145,12 +51,67 @@ export function FirePill({ fire, label }: { fire: ReminderFire; label: string })
       data-testid="reminder-fire-chip"
       style={tintStyle(fire)}
       className={cn(
-        'text-foreground max-w-full truncate rounded-sm border-l-4 px-1.5 py-0.5 text-left text-xs',
+        'text-foreground flex h-5 min-w-0 items-center gap-1.5 rounded-sm border-l-2 pr-1.5 pl-1 text-left text-xs transition-[filter] duration-(--duration-fast) hover:brightness-95 dark:hover:brightness-125',
         fire.past && PAST,
         FOCUS,
       )}
     >
-      {label}
+      <span className="min-w-0 flex-1 truncate font-medium">{reminderTitle(fire.reminder)}</span>
+      {succeeded(fire) ? (
+        <SolidCheckIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+      ) : null}
+      <span className="text-muted-foreground shrink-0 tabular-nums">
+        {clockTime(fire.at, locale)}
+      </span>
+      <FireStatus fire={fire} />
+    </button>
+  );
+}
+
+/** The last line of a full cell: "+N more". */
+export const MORE_LINE =
+  'text-muted-foreground hover:bg-accent hover:text-foreground flex h-5 min-w-0 items-center rounded-sm px-1 text-left text-xs font-medium tabular-nums transition-colors';
+
+/**
+ * A Month line: a dot in the reminder's colour, the time muted, then the
+ * title. A frequent reminder's day is one line, "Title ×48".
+ */
+export function FireRow({
+  fire,
+  locale,
+  count,
+}: {
+  fire: ReminderFire;
+  locale: string;
+  count: number | null;
+}) {
+  const open = useOpenFire();
+  return (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      onClick={(event) => open(fire, event.currentTarget)}
+      data-testid="reminder-fire-chip"
+      className={cn(
+        'hover:bg-accent text-foreground flex h-5 w-full min-w-0 shrink-0 items-center gap-1.5 rounded-sm px-1 text-left text-xs transition-colors',
+        fire.past && PAST,
+        FOCUS,
+      )}
+    >
+      <span
+        aria-hidden
+        className="size-1.5 shrink-0 rounded-full"
+        style={{ background: reminderColors(fire.reminder).border }}
+      />
+      {count === null ? (
+        <span className="text-muted-foreground shrink-0 tabular-nums">
+          {clockTime(fire.at, locale)}
+        </span>
+      ) : null}
+      <span className="min-w-0 truncate">{reminderTitle(fire.reminder)}</span>
+      {count !== null ? (
+        <span className="text-muted-foreground shrink-0 tabular-nums">×{count}</span>
+      ) : null}
       <FireStatus fire={fire} />
     </button>
   );

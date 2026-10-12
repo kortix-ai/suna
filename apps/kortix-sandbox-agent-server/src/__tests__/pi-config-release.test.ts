@@ -473,6 +473,27 @@ describe('pi config releases: convergence', () => {
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
   })
 
+  test('a ./ pi package outside harnesses/pi restarts the runtime when its folder changes', async () => {
+    write(repo, 'extensions/hello.ts', 'export default function () {}\n')
+    write(repo, 'extensions/lib.ts', 'export const v = 1\n')
+    write(repo, `${DIR}/opencode.json`, '{}\n')
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'extension'), DIR, { projectId: 'proj-1', governance: governance('one') }))
+    const { releases } = create({ KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/hello.ts', 'npm:pi-web-access@0.30.0']) })
+    await releases.boot()
+    const runtime = fakeRuntime()
+
+    write(repo, 'README.md', 'unrelated\n')
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'readme'), DIR, { projectId: 'proj-1', governance: governance('one') }))
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+
+    // A helper beside the extension file is part of it, as a tool's folder is.
+    write(repo, 'extensions/lib.ts', 'export const v = 2\n')
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'extension helper'), DIR, { projectId: 'proj-1', governance: governance('one') }))
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+  })
+
   test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
     const withKortix = (prompt: string, kortixTools?: string[]) =>
       JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })

@@ -21,5 +21,4 @@ import_region() {
 }
 
 account_id=$(aws sts get-caller-identity --query Account --output text)
-import_region "us-west-2" "usw2" "arn:aws:wafv2:us-west-2:${account_id}:regional/webacl/kortix-alb-waf/4a81aadc-31ad-470a-a10c-3606de61cf65"
 import_region "eu-west-2" "euw2" "arn:aws:wafv2:eu-west-2:${account_id}:regional/webacl/kortix-alb-waf/8ac41166-f4f0-4a53-9d23-f4aae0963a22"

@@ -190,6 +190,28 @@ test('session presence carries alerts, and an absent report survives the page un
   expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
 });
 
+// KRTX-1729: a present report reads back until when the computer stays on.
+test('session presence returns the awake window the server wrote', async () => {
+  globalThis.fetch = mock(async () =>
+    Response.json({
+      ok: true,
+      awake_until: '2026-10-12T10:15:00.000Z',
+      awake_cap_at: '2026-10-12T11:40:00.000Z',
+    }),
+  ) as unknown as typeof fetch;
+  const res = await kortix
+    .session('PID123', 'SID456')
+    .presence({ tab_id: '00000000-0000-4000-8000-000000000004', active: true });
+  const body: { ok: boolean; awake_until?: string | null; awake_cap_at?: string | null } | undefined =
+    res.data;
+  expect(body).toEqual({
+    ok: true,
+    awake_until: '2026-10-12T10:15:00.000Z',
+    awake_cap_at: '2026-10-12T11:40:00.000Z',
+  });
+  expect(res.data?.awake_cap_at).toBe('2026-10-12T11:40:00.000Z');
+});
+
 // `useSession` sends an absent report without `keepalive` while the project's
 // `notification_center` flag is off, as before KRTX-1742.
 test('session presence takes an explicit keepalive, and the body stays the report', async () => {

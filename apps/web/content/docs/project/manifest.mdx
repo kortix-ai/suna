@@ -274,7 +274,7 @@ harnesses:
       - source: npm:pi-mcp-adapter@2.36.0
         extensions: ["extensions/*.ts"]   # load only these files
         skills: []                        # load none of its skills
-      - ./harnesses/pi/audit.ts           # a file in this repository
+      - ./extensions/audit.ts             # one extension file in this repository
 agents:
   reviewer:
     harnesses:
@@ -284,6 +284,8 @@ agents:
 ```
 
 - An entry is `npm:<name>@<x.y.z>` (an exact version), a `./` path that stays inside the repository, or `{ source, extensions, skills, prompts, themes }`. An omitted filter loads everything. `[]` loads nothing.
+- A `./` path to a `.ts` or `.js` file is one extension. It can live anywhere in the repository, so a project needs no `harnesses/pi/` folder. It loads from the session's config release, and a change to a file in its folder restarts the pi runtime.
+- A session reads the package list when it starts. A running session keeps its list until it restarts.
 - At most 20 entries. A range, a missing version and a git source are errors.
 - An agent loads the top-level list, minus its `exclude`, plus its own `packages`. `exclude` exists only on an agent.
 - The change request merge builds the packages. A session never runs `npm install`. A session that starts before the build exists boots without the project packages.

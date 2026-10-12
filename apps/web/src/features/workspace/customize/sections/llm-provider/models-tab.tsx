@@ -44,7 +44,7 @@ import {
   ShieldCheckIcon as ShieldCheck,
   StarIcon as Star,
 } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ProviderAccessMenu } from './provider-access-menu';
 
 import {
@@ -66,6 +66,8 @@ import { Copy } from '@/features/icon/icons/copy';
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { buildModelGroups } from './model-rows';
 import { formatPricePerMillion, formatTokenCount } from './utils';
+import { CountBadge } from '@/components/ui/count-badge';
+import { useSlashFocus } from '@/hooks/utils';
 
 /**
  * `search` used to be driven by the provider modal's always-on search bar,
@@ -112,6 +114,9 @@ export function ModelsTab({
 
   const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
   const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
+  // Only when this tab draws its own search; a host's search is the host's.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef, ownsSearch && models.length > 0);
 
   if (models.length === 0) {
     return (
@@ -155,6 +160,7 @@ export function ModelsTab({
                 <Search />
               </InputGroupSearchIcon>
               <InputGroupSearchInput
+                ref={searchRef}
                 type="text"
                 placeholder={tI18nComplete.raw('text2380f018cc45')}
                 autoComplete="off"
@@ -210,9 +216,7 @@ export function ModelsTab({
                 <span className="text-muted-foreground text-xs font-medium">
                   {group.providerName}
                 </span>
-                <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
-                  {group.rows.length}
-                </span>
+                <CountBadge count={group.rows.length} className="ml-auto" />
                 <ProviderAccessMenu
                   access={access}
                   providerId={group.providerID}
