@@ -33,6 +33,12 @@ interface PollEntry {
   etag: string;
   /** The page's continuation token, replayed on the memoized 304. */
   nextCursor: string | null;
+  /** The project's account, replayed onto the request context by the peek.
+   * A browser-JWT poller gets its account binding only from
+   * `loadProjectForUser`, which the memoized 304 skips — without the replay
+   * every memoized poll loses its account attribution in the audit row and
+   * the request log (the surface KRTX-468 was diagnosed from). */
+  accountId: string;
   storedAt: number;
 }
 
@@ -60,7 +66,7 @@ export function peekSessionListPollEtag(key: string, ifNoneMatch: string): PollE
 /** Record the page identity after a successful computation. */
 export function storeSessionListPollEtag(
   key: string,
-  entry: { etag: string; nextCursor: string | null },
+  entry: { etag: string; nextCursor: string | null; accountId: string },
 ): void {
   bumpBounded(entries, key, { ...entry, storedAt: Date.now() }, MAX_ENTRIES);
 }

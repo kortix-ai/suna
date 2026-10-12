@@ -303,6 +303,10 @@ export function registerProjectSessionsRoutes(): void {
     if (ifNoneMatch) {
       const memoed = peekSessionListPollEtag(pollMemoKey, ifNoneMatch);
       if (memoed) {
+        // Same binding `loadProjectForUser` performs on the computed path;
+        // a browser-JWT principal has no other source for it, and the audit
+        // snapshot and the post-handler context propagation both read it.
+        c.set('accountId', memoed.accountId);
         c.header('Cache-Control', 'private, no-cache');
         c.header('ETag', memoed.etag);
         if (memoed.nextCursor) c.header('X-Next-Cursor', memoed.nextCursor);
@@ -394,7 +398,11 @@ export function registerProjectSessionsRoutes(): void {
     // client already parses — adding an envelope would have broken all of them.
     if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
     c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
-    storeSessionListPollEtag(pollMemoKey, { etag, nextCursor: inventory.nextCursor });
+    storeSessionListPollEtag(pollMemoKey, {
+      etag,
+      nextCursor: inventory.nextCursor,
+      accountId: loaded.row.accountId,
+    });
     if (c.req.header('if-none-match') === etag) return c.body(null, 304);
     c.header('Content-Type', 'application/json');
     return c.body(serialized, 200);
