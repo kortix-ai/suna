@@ -16,7 +16,7 @@
  */
 import type { Message, Part } from '../runtime/runtime-types';
 import type { SessionLogState, SessionLogThreadHead } from './store';
-import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogMessage } from './types';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogBlock, type SessionLogMessage } from './types';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '../runtime/transcript-types';
 import { fromV1, toV1 } from './v1';
 
@@ -159,6 +159,33 @@ const summaryOf = (row: V1MessageRow, marker: V1MessageRow) => {
   return info.role === 'assistant' && info.summary === true && info.parentID === marker.info.id;
 };
 
+/**
+ * The block each part object last converted to, with what else it depends on (the runtime session,
+ * the message id and time, its index and id). A changed row reuses the block of every part object
+ * it still holds, so a streamed text delta does not replace the message's tool-call blocks. A
+ * compaction block also reads the summary row, so it is never reused.
+ */
+const partBlocks = new WeakMap<object, { key: string; block: SessionLogBlock }>();
+
+function reuseBlocks(native: string, row: V1MessageRow, message: SessionLogMessage): SessionLogMessage {
+  const info = row.info as { id?: unknown; time?: { created?: unknown } };
+  const at = `${native}|${String(info.id)}|${String(info.time?.created)}`;
+  let reused = false;
+  const blocks = message.blocks.map((block, i) => {
+    const part = row.parts[i];
+    if (!isObj(part) || block.type === 'compaction') return block;
+    const key = `${at}|${i}|${block.id}`;
+    const prev = partBlocks.get(part);
+    if (prev && prev.key === key) {
+      reused = true;
+      return prev.block;
+    }
+    partBlocks.set(part, { key, block });
+    return block;
+  });
+  return reused ? { ...message, blocks } : message;
+}
+
 function convert(sessionId: string, native: string, row: V1MessageRow, sum: V1MessageRow | undefined, seq: number): Converted {
   const cached = converted.get(row);
   if (cached && cached.sessionId === sessionId && cached.native === native && cached.sum === sum && cached.seq === seq) return cached;
@@ -167,7 +194,8 @@ function convert(sessionId: string, native: string, row: V1MessageRow, sum: V1Me
     { session_id: sessionId, root_id: native, rows: unit.map((r) => ({ runtime_session_id: native, info: r.info as never, parts: r.parts as never })) },
     { live: true },
   );
-  const entry = { sessionId, native, sum, seq, message: { ...log.threads[0]!.messages[0]!, seq }, lost: log.grade_counts! };
+  const message = reuseBlocks(native, row, log.threads[0]!.messages[0]!);
+  const entry = { sessionId, native, sum, seq, message: { ...message, seq }, lost: log.grade_counts! };
   converted.set(row, entry);
   return entry;
 }

@@ -66,6 +66,9 @@ export function toolPartOf(call: ToolCallBlock): ToolPart {
 export const isToolCallBlock = (value: unknown): value is ToolCallBlock =>
   typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'tool_call';
 
+/** The v1 part of a part or a block. Internal: a widened part helper reads its argument through it. */
+export const asToolPart = (value: ToolPart | ToolCallBlock): ToolPart => (isToolCallBlock(value) ? toolPartOf(value) : value);
+
 /**
  * The harness's display metadata of a tool call: the `state.metadata` of the v1 part it was
  * converted from (bash `command`, read `loaded`, task `sessionId`, edit `filediff`, ...), whole.

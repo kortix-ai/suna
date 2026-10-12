@@ -171,6 +171,25 @@ describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store
     expect(message.blocks.map((b) => (b as { status?: string }).status)).toEqual(['running', 'pending']);
   });
 
+  test('a changed row keeps the block of every part object it still holds (a text delta does not replace its tool calls)', () => {
+    const first = sessionLogOfV1Rows('kses_v1', RS, rows).threads[0]!.messages.at(-1)!;
+    // A text part streams in: a new row object, the same two tool part objects.
+    const text = { id: 'prt_zlive3', sessionID: RS, messageID: 'msg_zlive', type: 'text', text: 'hel' } as unknown as Part;
+    const grown: V1MessageRow = { ...live, parts: [...live.parts, text] };
+    const second = sessionLogOfV1Rows('kses_v1', RS, [...rows.slice(0, -1), grown]).threads[0]!.messages.at(-1)!;
+    expect(second).not.toBe(first);
+    expect(second.blocks[0]).toBe(first.blocks[0]);
+    expect(second.blocks[1]).toBe(first.blocks[1]);
+    // A changed part gets a new block, and the view still equals fromV1 (live).
+    const more: V1MessageRow = { ...grown, parts: [live.parts[0]!, { ...live.parts[1]!, state: { status: 'running', input: { filePath: '/w/b' }, time: { start: T + 3 } } } as unknown as Part, { ...text, text: 'hello' } as Part] };
+    const input = [...rows.slice(0, -1), more];
+    const third = sessionLogOfV1Rows('kses_v1', RS, input);
+    const last = third.threads[0]!.messages.at(-1)!;
+    expect(last.blocks[0]).toBe(first.blocks[0]);
+    expect(last.blocks[1]).not.toBe(first.blocks[1]);
+    expect(third).toEqual(expected(input));
+  });
+
   test('restore_grade and grade_counts count only in-context messages, as fromV1 does', () => {
     // A failed attempt (an errored reply, out of context) whose call lost its input: the model never saw it.
     const failed: V1MessageRow = {
