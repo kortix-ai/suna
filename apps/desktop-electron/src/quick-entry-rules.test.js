@@ -3,8 +3,10 @@ const { describe, expect, test } = require('bun:test');
 const {
   DEFAULT_SHORTCUT,
   PENDING_TTL_MS,
+  RECENT_SESSIONS,
   freshPrompt,
   normalizeTarget,
+  pickerItems,
   quickEntryBounds,
   resolveShortcut,
   shortcutLabel,
@@ -73,12 +75,34 @@ describe('freshPrompt', () => {
 
 describe('normalizeTarget', () => {
   test('keeps the project id and a trimmed name', () => {
-    expect(normalizeTarget({ projectId: 'p1', name: '  Website  ' })).toEqual({ projectId: 'p1', name: 'Website' });
+    expect(normalizeTarget({ projectId: 'p1', name: '  Website  ' })).toEqual({
+      projectId: 'p1',
+      name: 'Website',
+      sessions: [],
+    });
   });
 
   test('a project with no name yet still targets the project', () => {
-    expect(normalizeTarget({ projectId: 'p1', name: '' })).toEqual({ projectId: 'p1', name: null });
-    expect(normalizeTarget({ projectId: 'p1' })).toEqual({ projectId: 'p1', name: null });
+    expect(normalizeTarget({ projectId: 'p1', name: '' })).toEqual({ projectId: 'p1', name: null, sessions: [] });
+    expect(normalizeTarget({ projectId: 'p1' })).toEqual({ projectId: 'p1', name: null, sessions: [] });
+  });
+
+  test('keeps the 5 most recent sessions, in the order the web app sent them', () => {
+    const sessions = Array.from({ length: 7 }, (_, i) => ({ id: `s${i}`, title: `Task ${i}`, status: 'stopped' }));
+    const target = normalizeTarget({ projectId: 'p1', sessions });
+    expect(RECENT_SESSIONS).toBe(5);
+    expect(target?.sessions.map((s) => s.id)).toEqual(['s0', 's1', 's2', 's3', 's4']);
+  });
+
+  test('drops a session without an id, and repairs a missing title or unknown status', () => {
+    const target = normalizeTarget({
+      projectId: 'p1',
+      sessions: [{ title: 'no id' }, { id: 's1', title: '  ', status: 'exploded' }, 'junk', { id: 's2', title: 'Fix login', status: 'running' }],
+    });
+    expect(target?.sessions).toEqual([
+      { id: 's1', title: 'Untitled session', status: 'stopped' },
+      { id: 's2', title: 'Fix login', status: 'running' },
+    ]);
   });
 
   test('anything without a project id clears the target', () => {
@@ -92,5 +116,36 @@ describe('normalizeTarget', () => {
     const target = normalizeTarget({ projectId: long, name: long });
     expect(target?.projectId.length).toBe(200);
     expect(target?.name?.length).toBe(200);
+  });
+});
+
+describe('pickerItems', () => {
+  const target = normalizeTarget({
+    projectId: 'p1',
+    name: 'Website',
+    sessions: [
+      { id: 's1', title: 'Fix login', status: 'running' },
+      { id: 's2', title: 'Write docs', status: 'stopped' },
+    ],
+  });
+
+  test('a new session in the project comes first and is the default', () => {
+    expect(pickerItems(target, null)).toEqual([
+      { sessionId: null, label: 'New session in Website', checked: true },
+      { sessionId: 's1', label: 'Fix login', status: 'running', statusText: 'Running', checked: false },
+      { sessionId: 's2', label: 'Write docs', status: 'stopped', statusText: 'Stopped', checked: false },
+    ]);
+  });
+
+  test('checks exactly the picked session', () => {
+    expect(pickerItems(target, 's2').map((item) => item.checked)).toEqual([false, false, true]);
+  });
+
+  test('a pick the web app no longer lists falls back to a new session', () => {
+    expect(pickerItems(target, 'deleted').map((item) => item.checked)).toEqual([true, false, false]);
+  });
+
+  test('with no project known, only "New session" is offered', () => {
+    expect(pickerItems(null, null)).toEqual([{ sessionId: null, label: 'New session', checked: true }]);
   });
 });

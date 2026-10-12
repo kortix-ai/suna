@@ -16,6 +16,10 @@
         --primary: #1f1f1f;
         --primary-foreground: #ffffff;
         --ring: #0099ff;
+        --hover: rgb(0 0 0 / 0.045);
+        --kortix-green: #199338;
+        --kortix-yellow: #cca300;
+        --kortix-red: #f14b4c;
         --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         --font-sans: Roobert, ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", "Noto Sans", sans-serif;
       }
@@ -27,6 +31,7 @@
           --border: #262626;
           --primary: #ffffff;
           --primary-foreground: #090909;
+          --hover: rgb(255 255 255 / 0.06);
         }
       }
       html,
@@ -73,35 +78,48 @@
         user-select: text;
       }
       textarea::placeholder { color: var(--muted-foreground); }
-      .target {
-        flex: none;
-        align-self: flex-end;
-        max-width: 200px;
-        margin-bottom: 5px;
-        overflow: hidden;
-        color: var(--muted-foreground);
-        font-size: 13px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
       button {
         flex: none;
         align-self: flex-end;
-        display: grid;
-        place-items: center;
-        width: 30px;
         height: 30px;
         padding: 0;
         border: 0;
+        font: inherit;
+        cursor: pointer;
+        transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1), background-color 150ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+      /* Where the prompt goes: a new session in the project, or a picked recent session. */
+      .pick {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 260px;
+        padding: 0 6px 0 10px;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted-foreground);
+        font-size: 13px;
+      }
+      .pick:hover { background: var(--hover); color: var(--foreground); }
+      .pick-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pick svg { flex: none; width: 12px; height: 12px; }
+      /* The sidebar's session status mark (session-status-mark.tsx), at 8 px. */
+      .dot { flex: none; width: 8px; height: 8px; border-radius: 999px; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+      .dot[hidden] { display: none; }
+      .dot[data-status="running"], .dot[data-status="needs-you"] { background: var(--kortix-green); box-shadow: none; }
+      .dot[data-status="starting"] { background: var(--kortix-yellow); box-shadow: none; }
+      .dot[data-status="failed"] { background: var(--kortix-red); box-shadow: none; }
+      .send {
+        display: grid;
+        place-items: center;
+        width: 30px;
         border-radius: 999px;
         background: var(--primary);
         color: var(--primary-foreground);
-        cursor: pointer;
-        transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
       }
-      button:disabled { opacity: 0.4; cursor: default; }
-      button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-      button svg { width: 16px; height: 16px; }
+      .send:disabled { opacity: 0.4; cursor: default; }
+      .send svg { width: 16px; height: 16px; }
     </style>
   </head>
   <body>
@@ -111,8 +129,15 @@
         <path fill="currentColor" d="M139.737 139.53H163.055C163.055 109.932 147.261 84.0225 123.642 69.7694C147.261 55.5163 163.054 29.6068 163.054 0.0085907H139.736C139.736 28.0165 119.67 51.4471 93.2922 56.9406V0.0085907H69.9773V56.9406C43.4754 51.5428 23.5331 28.1045 23.5331 0.0085907H0.21529C0.21529 29.6068 16.0088 55.5163 39.6282 69.7694C16.0086 84.0225 0.214773 109.932 0.214773 139.53H23.5325C23.5325 111.434 43.4754 87.996 69.9773 82.5981V139.556H93.2922V82.598C119.794 87.9957 139.737 111.434 139.737 139.53Z" />
       </svg>
       <textarea id="prompt" rows="1" placeholder="Describe a task to start a session…" aria-label="Prompt"></textarea>
-      <span class="target" id="target"></span>
-      <button type="submit" id="send" aria-label="Start session" disabled>
+      <button type="button" class="pick" id="pick" aria-haspopup="menu">
+        <span class="dot" id="dot" hidden></span>
+        <span class="pick-label" id="pick-label">New session</span>
+        <!-- Phosphor CaretDown (regular). -->
+        <svg viewBox="0 0 256 256" aria-hidden="true">
+          <path fill="currentColor" d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" />
+        </svg>
+      </button>
+      <button type="submit" class="send" id="send" aria-label="Send" disabled>
         <!-- Phosphor ArrowUp (regular), the composer's send glyph. -->
         <svg viewBox="0 0 256 256" aria-hidden="true">
           <path fill="currentColor" d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z" />
@@ -124,7 +149,9 @@
       const form = document.getElementById('bar');
       const prompt = document.getElementById('prompt');
       const send = document.getElementById('send');
-      const target = document.getElementById('target');
+      const pick = document.getElementById('pick');
+      const pickLabel = document.getElementById('pick-label');
+      const dot = document.getElementById('dot');
 
       // Grow with the text up to max-height, then scroll; the window follows.
       const fit = () => {
@@ -152,18 +179,38 @@
         if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
           event.preventDefault();
           submit();
-        } else if (event.key === 'Escape') {
+        }
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
           event.preventDefault();
           bar.dismiss();
         }
       });
+      pick.addEventListener('click', () => {
+        const rect = pick.getBoundingClientRect();
+        bar.pick({ x: rect.left, y: rect.bottom + 4 });
+      });
 
-      bar.onShow(({ target: name }) => {
-        target.textContent = name ? `New session in ${name}` : '';
-        target.title = target.textContent;
+      // `session` is the picked recent session, or null for a new session in `target`.
+      const render = ({ target: name, session }) => {
+        pickLabel.textContent = session ? session.title : name ? `New session in ${name}` : 'New session';
+        pick.title = session ? `Send to ${session.title}` : pickLabel.textContent;
+        pick.setAttribute('aria-label', `${pick.title}. Choose a session`);
+        dot.hidden = !session;
+        if (session) dot.dataset.status = session.status;
+        send.setAttribute('aria-label', session ? 'Send' : 'Start session');
+      };
+      bar.onShow((state) => {
+        render(state);
         prompt.focus();
         prompt.setSelectionRange(prompt.value.length, prompt.value.length);
         fit();
+      });
+      bar.onState((state) => {
+        render(state);
+        // After a pick the menu leaves focus on the button; typing continues in the prompt.
+        if (document.activeElement === pick) prompt.focus();
       });
       fit();
     </script>

@@ -52,20 +52,79 @@ function freshPrompt(pending, now) {
   return pending.text;
 }
 
-/** `{ projectId, name }` from the web app, or null for anything else. */
+/** The picker lists this many of the project's sessions, most recent first. */
+const RECENT_SESSIONS = 5;
+
+/** A trimmed, capped string, or `fallback`. Page script must not push unbounded text into the bar. */
+const label = (value, fallback) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : fallback);
+
+/**
+ * The session list statuses (`sessionListStatus` in @kortix/sdk, the sidebar's
+ * dot) and their menu text. `running` means the session's computer is up.
+ */
+const SESSION_STATUS_TEXT = {
+  running: 'Running',
+  'needs-you': 'Needs you',
+  starting: 'Starting',
+  done: 'Done',
+  stopped: 'Stopped',
+  failed: 'Failed',
+  legacy: 'Stopped',
+};
+
+/**
+ * `{ projectId, name, sessions }` from the web app, or null for anything else.
+ * `sessions` is the person's most recent sessions in the project, newest
+ * activity first: `{ id, title, status }`.
+ */
 function normalizeTarget(target) {
-  const projectId = typeof target?.projectId === 'string' ? target.projectId.slice(0, 200) : '';
+  const projectId = label(target?.projectId, '');
   if (!projectId) return null;
-  const name = typeof target.name === 'string' && target.name.trim() ? target.name.trim().slice(0, 200) : null;
-  return { projectId, name };
+  const sessions = (Array.isArray(target.sessions) ? target.sessions : [])
+    .map((session) => {
+      const id = label(session?.id, '');
+      if (!id) return null;
+      const status = Object.hasOwn(SESSION_STATUS_TEXT, session.status) ? session.status : 'stopped';
+      return { id, title: label(session.title, 'Untitled session'), status };
+    })
+    .filter(Boolean)
+    .slice(0, RECENT_SESSIONS);
+  return { projectId, name: label(target.name, null), sessions };
+}
+
+/** The session a prompt goes to: the picked one while the web app still lists it, else null (a new session). */
+function pickedSession(target, sessionId) {
+  return target?.sessions.find((session) => session.id === sessionId) ?? null;
+}
+
+/**
+ * The picker menu, top to bottom: a new session in the project, then the
+ * recent sessions. Exactly one item is checked: the picked session while it is
+ * still listed, else the new session.
+ */
+function pickerItems(target, sessionId) {
+  const picked = pickedSession(target, sessionId);
+  return [
+    { sessionId: null, label: target?.name ? `New session in ${target.name}` : 'New session', checked: !picked },
+    ...(target?.sessions ?? []).map((session) => ({
+      sessionId: session.id,
+      label: session.title,
+      status: session.status,
+      statusText: SESSION_STATUS_TEXT[session.status],
+      checked: picked?.id === session.id,
+    })),
+  ];
 }
 
 module.exports = {
   DEFAULT_SHORTCUT,
   PENDING_TTL_MS,
   SHORTCUTS,
+  RECENT_SESSIONS,
   freshPrompt,
   normalizeTarget,
+  pickedSession,
+  pickerItems,
   quickEntryBounds,
   resolveShortcut,
   shortcutLabel,
