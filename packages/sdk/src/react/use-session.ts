@@ -21,7 +21,7 @@
 
 import type { Message, Part } from '../core/runtime/runtime-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
@@ -1135,7 +1135,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // the latest present PUT's response. Null while absent, for a viewer, for a
   // computer the renewal found not running, and from a turn's start until the
   // next renewal answers.
-  const [presenceAwake, setPresenceAwake] = useState<{ until: Date; capAt: Date } | null>(null);
+  const [presenceAwake, setPresenceAwakeState] = useState<{ until: Date; capAt: Date } | null>(null);
+  // Set only on a change: a same-value set during a streamed update still
+  // renders the host once, and hosts count on one render per delta.
+  const presenceAwakeRef = useRef(presenceAwake);
+  const setPresenceAwake = useCallback((next: { until: Date; capAt: Date } | null) => {
+    if (next === null && presenceAwakeRef.current === null) return;
+    presenceAwakeRef.current = next;
+    setPresenceAwakeState(next);
+  }, []);
   // Only the latest report's response may set the window: a present PUT that
   // lands after an absent report, or after a turn started, must not bring it
   // back. Bumped by each report and by each clear.
