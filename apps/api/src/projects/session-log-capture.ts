@@ -1,0 +1,112 @@
+/**
+ * The session log of a box without a journal (P2.7): after each transcript
+ * capture (`lib/session-transcript-capture.ts`) wrote the v1 mirror, this
+ * writes `fromV1` of the whole mirror as v2 rows through the journal's apply
+ * path (`writeCapturedSessionLog`, `session-log-ingest.ts`).
+ *
+ * - "Without a journal" is `session_logs.journal_seen_at` null: an old daemon,
+ *   a daemon in `KORTIX_SESSION_LOG_DUMP_DIR` mode, or one whose posts have not
+ *   committed yet. Checked once before the read and again under the lock.
+ * - Records are `fromV1` of the mirror rows: thread, message and block ids
+ *   (block id = part id), seq, residuals and the `kortix.transcript.v1` ext are
+ *   exactly what `fromV1` gives. `harness` is the one the daemon reported in its
+ *   runtime projection (`session_runtime_projections.harness`), else `opencode`.
+ * - Only a message whose `content_hash` changed is written, at the next capture
+ *   rev (1, 2, ... below `SESSION_LOG_CAPTURE_REV_LIMIT`). A stored message that
+ *   `fromV1` no longer gives (the mirror removes rows only on a recorded rewind)
+ *   gets a tombstone at the next rev. Nothing is ever deleted here.
+ * - A newer mirror capture between the read and the write makes this write
+ *   stale: `current` compares the mirror's `captured_at` under the lock and the
+ *   write is skipped (the newer capture writes its own).
+ * - The operator switch `SESSION_LOG_INGEST_ENABLED` gates this writer too.
+ *
+ * Never throws: the mirror is the user-facing store, and a failed v2 write is
+ * only a log line.
+ */
+import { fromV1, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
+import {
+  projectSessions,
+  sessionLogMessages,
+  sessionLogs,
+  sessionRuntimeProjections,
+  sessionTranscriptMessages,
+  sessionTranscriptMirrors,
+} from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { config } from '../config';
+import { logger } from '../lib/logger';
+import { db } from '../shared/db';
+import { SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSessionLog } from './session-log-ingest';
+
+const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
+
+export async function writeSessionLogFromMirror(sessionId: string): Promise<void> {
+  try {
+    if (!config.SESSION_LOG_INGEST_ENABLED) return;
+    const read = await db.transaction(async (tx) => {
+      const [s] = await tx
+        .select({
+          projectId: projectSessions.projectId,
+          accountId: projectSessions.accountId,
+          journalSeenAt: sessionLogs.journalSeenAt,
+          harness: sessionRuntimeProjections.harness,
+          root: sessionTranscriptMirrors.runtimeSessionId,
+          capturedAt: sessionTranscriptMirrors.capturedAt,
+        })
+        .from(projectSessions)
+        .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
+        .leftJoin(sessionRuntimeProjections, eq(sessionRuntimeProjections.sessionId, projectSessions.sessionId))
+        .leftJoin(sessionTranscriptMirrors, eq(sessionTranscriptMirrors.sessionId, projectSessions.sessionId))
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      // A journal owns the log, or there is no mirror to convert.
+      if (!s || s.journalSeenAt || !s.capturedAt) return null;
+      // ponytail: the whole mirror per capture, as the capture reads the whole box history per turn end.
+      const rows = await tx
+        .select({ runtime_session_id: sessionTranscriptMessages.runtimeSessionId, info: sessionTranscriptMessages.info, parts: sessionTranscriptMessages.parts })
+        .from(sessionTranscriptMessages)
+        .where(eq(sessionTranscriptMessages.sessionId, sessionId));
+      const stored = await tx
+        .select({ id: sessionLogMessages.messageId, rev: sessionLogMessages.rev, hash: sessionLogMessages.contentHash, deletedAt: sessionLogMessages.deletedAt })
+        .from(sessionLogMessages)
+        .where(eq(sessionLogMessages.sessionId, sessionId));
+      return { s, rows: rows as unknown as V1Row[], stored };
+    }, READ_ONLY);
+    if (!read) return;
+    const { s, rows, stored } = read;
+
+    const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness: s.harness === 'pi' ? 'pi' : 'opencode' });
+    const { threads, ...session } = log;
+    const byId = new Map(stored.map((r) => [r.id, r]));
+    let rev = stored.reduce((max, r) => (r.rev < SESSION_LOG_CAPTURE_REV_LIMIT ? Math.max(max, r.rev) : max), 0);
+    const batch: SessionLogJournalRequest = { generation: 0, session, threads: threads.map(({ messages: _m, ...t }) => t), puts: [], tombstones: [] };
+    const live = new Set<string>();
+    for (const m of threads.flatMap((t) => t.messages)) {
+      live.add(m.message_id);
+      const prior = byId.get(m.message_id);
+      if (prior && !prior.deletedAt && prior.hash === sessionLogContentHash(m)) continue;
+      batch.puts.push({ rev: ++rev, message: m });
+    }
+    for (const r of stored) if (!live.has(r.id) && !r.deletedAt) batch.tombstones.push({ message_id: r.id, rev: ++rev });
+    if (batch.puts.length === 0 && batch.tombstones.length === 0) return;
+    if (rev >= SESSION_LOG_CAPTURE_REV_LIMIT) {
+      logger.warn('[session-log] capture revs exhausted; the capture writes no more v2 rows', { sessionId });
+      return;
+    }
+
+    const capturedAt = new Date(s.capturedAt!).getTime();
+    const outcome = await writeCapturedSessionLog({ sessionId, projectId: s.projectId, accountId: s.accountId }, batch, async (tx) => {
+      const [mirror] = await tx
+        .select({ capturedAt: sessionTranscriptMirrors.capturedAt })
+        .from(sessionTranscriptMirrors)
+        .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
+        .limit(1);
+      return !!mirror && new Date(mirror.capturedAt).getTime() === capturedAt;
+    });
+    if (outcome !== 'skipped' && outcome.status !== 200) {
+      logger.warn('[session-log] capture write refused', { sessionId, status: outcome.status, body: outcome.body });
+    }
+  } catch (err) {
+    logger.warn('[session-log] capture write failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+  }
+}
