@@ -1,0 +1,61 @@
+name: Rerun failed jobs once
+
+# A release gate run that fails on attempt 1 reruns its failed jobs once,
+# automatically, and says which jobs failed. Before 2026-10-12 a person did the
+# same by hand, after noticing: the v0.13.45 to v0.13.56 gates needed up to 14
+# attempts each, and each red attempt waited for someone.
+#
+# This is not a retry around an assertion. A job that fails twice stays red.
+# A job that fails once and then passes is a flake, so the comment names it:
+# fix it at the root or quarantine it (the **testing** skill, "Quarantine").
+#
+# Scope:
+# - `Tests - release` on a release pull request or a dispatched rehearsal.
+# - `Tests` on a pull request into `staging`. Not a run on `dev`: those queue,
+#   and a rerun would take the pending slot of the newer `dev` SHA.
+#
+# `workflow_run` fires only from the workflow file on the default branch.
+
+on:
+  workflow_run:
+    workflows: ['Tests - release', 'Tests']
+    types: [completed]
+
+permissions:
+  actions: write # rerun the failed jobs
+  pull-requests: write # name the failed jobs on the pull request
+
+jobs:
+  rerun:
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.run_attempt == 1
+      && (github.event.workflow_run.name == 'Tests - release'
+      || (github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.pull_requests[0].base.ref == 'staging'))
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - name: Rerun the failed jobs and name them
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .name' \
+            | sort | paste -sd, - | sed 's/,/, /g')"
+          gh run rerun "$RUN_ID" --repo "$REPO" --failed
+          {
+            echo "$WORKFLOW attempt 1 failed: \`${failed:-unknown}\`. Rerunning the failed jobs once: $RUN_URL"
+            echo
+            echo "A job that passes on attempt 2 is a flake. Fix it at the root or quarantine it (the **testing** skill). A job that fails twice is real."
+          } > /tmp/rerun.md
+          cat /tmp/rerun.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PR" ]; then
+            gh pr comment "$PR" --repo "$REPO" --body-file /tmp/rerun.md
+          fi

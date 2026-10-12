@@ -328,6 +328,20 @@ describe('native test-lane workflow', () => {
     expect(lane).toContain('TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}');
   });
 
+  test('a failed release gate or staging pull request run reruns its failed jobs exactly once', () => {
+    const rerun = readFileSync(resolve(root, '.github/workflows/rerun-failed-once.yml'), 'utf8');
+    expect(rerun).toContain("workflows: ['Tests - release', 'Tests']");
+    expect(rerun).toContain("github.event.workflow_run.conclusion == 'failure'");
+    // Once: attempt 2 that fails again stays red.
+    expect(rerun).toContain('github.event.workflow_run.run_attempt == 1');
+    // Never a run on `dev`: it would take the pending slot of a newer SHA.
+    expect(rerun).toContain("github.event.workflow_run.pull_requests[0].base.ref == 'staging'");
+    expect(rerun).toContain('gh run rerun "$RUN_ID" --repo "$REPO" --failed');
+    // The workflow names it reruns must exist.
+    expect(readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8')).toMatch(/^name: Tests - release$/m);
+    expect(testWorkflow).toMatch(/^name: Tests$/m);
+  });
+
   test('promotion and release branches skip the local attestation; CI tests their SHA', () => {
     const hook = readFileSync(resolve(root, '.githooks/pre-push'), 'utf8');
     expect(hook).toContain('[ "${remote_ref#refs/heads/promote/}" = "$remote_ref" ] || continue');
