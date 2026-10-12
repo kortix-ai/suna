@@ -44,6 +44,7 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           WORKFLOW: ${{ github.event.workflow_run.name }}
           PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
           failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
@@ -56,6 +57,11 @@ jobs:
             echo "A job that passes on attempt 2 is a flake. Fix it at the root or quarantine it (the **testing** skill). A job that fails twice is real."
           } > /tmp/rerun.md
           cat /tmp/rerun.md >> "$GITHUB_STEP_SUMMARY"
+          # promote.yml dispatches the gate on `release/*`, and a dispatched
+          # run lists no pull request: find it by its branch.
+          if [ -z "$PR" ] && [ "${BRANCH#release/}" != "$BRANCH" ]; then
+            PR="$(gh pr list --repo "$REPO" --base prod --head "$BRANCH" --state open --json number --jq '.[0].number // empty' || true)"
+          fi
           if [ -n "$PR" ]; then
             gh pr comment "$PR" --repo "$REPO" --body-file /tmp/rerun.md
           fi

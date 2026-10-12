@@ -342,6 +342,19 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toMatch(/^name: Tests$/m);
   });
 
+  test('Promote to Production dispatches the release gate itself', () => {
+    // A pull request opened with the workflow token runs its workflows only
+    // after a person approves them. A dispatch needs no approval and its
+    // `full suite + quality gates` check satisfies the `prod` ruleset.
+    const promote = readFileSync(resolve(root, '.github/workflows/promote.yml'), 'utf8');
+    expect(promote).toContain('actions: write');
+    expect(promote).toContain('gh workflow run tests-release.yml --ref "$RELBR" -f expected_sha="$SRC_SHA"');
+    expect(promote.indexOf('gh workflow run tests-release.yml')).toBeGreaterThan(promote.indexOf('gh pr create --base prod'));
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    expect(release).toMatch(/^ {2}workflow_dispatch:\n {4}inputs:\n {6}expected_sha:/m);
+    expect(release).toContain('name: full suite + quality gates');
+  });
+
   test('promotion and release branches skip the local attestation; CI tests their SHA', () => {
     const hook = readFileSync(resolve(root, '.githooks/pre-push'), 'utf8');
     expect(hook).toContain('[ "${remote_ref#refs/heads/promote/}" = "$remote_ref" ] || continue');
