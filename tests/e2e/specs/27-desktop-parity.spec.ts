@@ -1669,6 +1669,12 @@ for (const runtime of runtimes) {
           await expect(bar.locator("#pick-label")).toHaveText(
             "New session in Quick Entry target",
           );
+          // The new session's agent and model, resolved as project home does.
+          await expect(bar.locator("#model-label")).toHaveText(
+            "E2E managed model",
+            { timeout: 30_000 },
+          );
+          await expect(bar.locator("#agent")).toBeVisible();
           const prompt = `Quick Entry prompt ${randomUUID()}`;
           const created = page.waitForResponse(
             (response) =>

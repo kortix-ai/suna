@@ -147,8 +147,9 @@ until you run the bundled build above.
 ## Quick Entry (global shortcut)
 
 **Command+Shift+Space** (Ctrl+Shift+Space on Windows and Linux) opens a prompt
-bar over any app. Enter starts a new session with that prompt. The same bar
-opens from **File ▸ Open Quick Entry**.
+bar over any app, centered at the bottom of the display, with a light dim
+(25% black) over the rest of that display. Enter starts a new session with that
+prompt. The same bar opens from **File ▸ Open Quick Entry**.
 
 - **Where the session starts.** The project the app window shows, else the
   project this profile opened last (the `kortix_last_project` cookie). The bar
@@ -170,6 +171,23 @@ opens from **File ▸ Open Quick Entry**.
   message (`apps/web/src/components/desktop/desktop-quick-entry.tsx`). A
   window that is still loading, or signed out, takes it when the app mounts.
   An untaken prompt expires after 10 minutes.
+- **Agent, model and effort (new session).** The row under the prompt mirrors
+  the project-home composer. The web app runs the composer's own selection
+  hooks headless (`desktop-quick-entry-composer.tsx`) and publishes the lists
+  and the resolved selection in `quick_entry_set_target` (`composer`). A pick
+  in a native menu is sent to the app window (`kortix:quick-entry-select`) and
+  applied with the composer's own setters, so it persists like a composer pick
+  (model per agent, effort per model); the bar shows what the app sends back.
+  On send, the prefill carries `options`, and `ComposerChatInput` applies agent,
+  then model, then effort, one per commit, before the composer submits.
+- **Files and screenshots.** Paperclip, paste or drop; at most 10 files of
+  20 MB each (`normalizeAttachments`). On macOS the camera button hides the bar
+  and runs `screencapture -i` (region, or Space for a window); the image comes
+  back as a thumbnail. Screen Recording access is asked by macOS on first use;
+  when it is denied the bar links to the privacy pane. Files reach the web app
+  in `quick_entry_take` and are staged by the composer like any attachment. A
+  screenshot for a model whose catalog says it cannot read images fills the
+  composer instead of sending.
 - **Keys.** Enter sends. Shift+Enter adds a line. Esc, the shortcut again, or a
   click in another app closes the bar and keeps the typed text for the next
   open. The prompt replaces an unsent draft in the project home composer.
