@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('kortixQuickEntry', {
    * effort labels, or null.
    */
   onShow: (cb) => ipcRenderer.on('kortix:quick-entry:show', (_e, state) => cb(state)),
+  /** Main → page: the bar is closing; play the close transition before main hides the window. */
+  onHide: (cb) => ipcRenderer.on('kortix:quick-entry:hide', () => cb()),
   /** Main → page: the same state, after a pick or a new list from the app. */
   onState: (cb) => ipcRenderer.on('kortix:quick-entry:state', (_e, state) => cb(state)),
   /** Main → page: a screenshot to attach, `{ name, type, bytes }`. */

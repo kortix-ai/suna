@@ -147,9 +147,11 @@ until you run the bundled build above.
 ## Quick Entry (global shortcut)
 
 **Command+Shift+Space** (Ctrl+Shift+Space on Windows and Linux) opens a prompt
-bar over any app, centered at the bottom of the display, with a light dim
-(25% black) over the rest of that display. Enter starts a new session with that
-prompt. The same bar opens from **File ▸ Open Quick Entry**.
+bar over any app: 840 px wide, centered at the bottom of the display, with a
+light dim (25% black) over the rest of that display. The bar rises and fades in
+with the dim over 200 ms and fades out over 150 ms (none with Reduce Motion).
+Enter starts a new session with that prompt. The same bar opens from
+**File ▸ Open Quick Entry**.
 
 - **Where the session starts.** The project the app window shows, else the
   project this profile opened last (the `kortix_last_project` cookie). The bar

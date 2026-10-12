@@ -42,11 +42,12 @@ const {
   screenshotName,
 } = require('./quick-entry-rules');
 
-// The bar is 680 px wide. The window adds a 32 px margin on each side for the
+// The bar is 840 px wide. The window adds a 32 px margin on each side for the
 // bar's CSS shadow: a native shadow would trace the transparent window.
-const WIDTH = 744;
+const WIDTH = 904;
 const CHANNEL = {
   show: 'kortix:quick-entry:show',
+  hide: 'kortix:quick-entry:hide',
   submit: 'kortix:quick-entry:submit',
   dismiss: 'kortix:quick-entry:dismiss',
   resize: 'kortix:quick-entry:resize',
@@ -58,14 +59,16 @@ const CHANNEL = {
   noticeAction: 'kortix:quick-entry:notice-action',
 };
 
-// The light dim behind the bar: a quarter of the dialog scrim (`bg-black/65`),
-// faded in over --duration-normal (150 ms).
+// The light dim behind the bar: a quarter of the dialog scrim (`bg-black/65`).
 const SCRIM_HTML = 'data:text/html;charset=utf-8,' + encodeURIComponent(
   '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'">' +
     '<body style="margin:0;height:100vh;background:rgb(0 0 0 / 0.25)"></body>',
 );
-const SCRIM_FADE_STEPS = 6;
-const SCRIM_FADE_MS = 150;
+// Open over --duration-moderate (200 ms), close over --duration-normal (150 ms):
+// the bar's CSS transition and the dim's opacity steps run together.
+const OPEN_MS = 200;
+const CLOSE_MS = 150;
+const SCRIM_FADE_STEPS = 10;
 // The macOS privacy pane a screenshot needs (System Settings ▸ Privacy & Security ▸ Screen Recording).
 const SCREEN_RECORDING_SETTINGS = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
 
@@ -117,6 +120,10 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   let height = 156;
   /** A screenshot is being taken: the bar is hidden on purpose and comes back. */
   let capturing = false;
+  /** @type {{ timer: ReturnType<typeof setTimeout>, rehide: boolean } | null} The close animation in progress. */
+  let closing = null;
+  /** @type {ReturnType<typeof setInterval> | undefined} */
+  let scrimFade;
   /** The notice's action, if it has one. */
   let noticeAction = null;
   /** @type {{ text: string, at: number } | null} */
@@ -191,10 +198,17 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   }
 
   function reveal() {
-    if (!win.isVisible() && !capturing) appWasHidden = process.platform === 'darwin' && app.isHidden();
+    if (closing) {
+      // Opened again while closing: it stays open, and Kortix stays as it was.
+      clearTimeout(closing.timer);
+      appWasHidden = closing.rehide;
+      closing = null;
+    } else if (!win.isVisible() && !capturing) {
+      appWasHidden = process.platform === 'darwin' && app.isHidden();
+    }
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     showScrim(display.bounds);
-    win.setBounds(quickEntryBounds(display.workArea, WIDTH, height));
+    win.setBounds(quickEntryBounds(display.workArea, Math.min(WIDTH, display.workArea.width), height));
     win.webContents.send(CHANNEL.show, barState());
     win.show();
     win.focus();
@@ -224,16 +238,26 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
       scrim.loadURL(SCRIM_HTML).catch(() => {});
     }
     scrim.setBounds(bounds);
-    scrim.setOpacity(0);
-    scrim.showInactive();
+    if (!scrim.isVisible()) {
+      scrim.setOpacity(0);
+      scrim.showInactive();
+    }
     // Above the dim (floating), below native menus (pop-up-menu).
     win.setAlwaysOnTop(true, 'modal-panel');
+    fadeScrim(1, OPEN_MS);
+  }
+
+  /** Step the dim's opacity from where it is to `to` over `ms`. */
+  function fadeScrim(to, ms) {
+    clearInterval(scrimFade);
+    if (!scrim || scrim.isDestroyed()) return;
+    const from = scrim.getOpacity();
     let step = 0;
-    const fade = setInterval(() => {
+    scrimFade = setInterval(() => {
       step += 1;
-      if (!scrim || scrim.isDestroyed() || !scrim.isVisible() || step >= SCRIM_FADE_STEPS) clearInterval(fade);
-      if (scrim && !scrim.isDestroyed()) scrim.setOpacity(Math.min(1, step / SCRIM_FADE_STEPS));
-    }, SCRIM_FADE_MS / SCRIM_FADE_STEPS);
+      if (!scrim || scrim.isDestroyed() || step >= SCRIM_FADE_STEPS) clearInterval(scrimFade);
+      if (scrim && !scrim.isDestroyed()) scrim.setOpacity(from + (to - from) * Math.min(1, step / SCRIM_FADE_STEPS));
+    }, ms / SCRIM_FADE_STEPS);
   }
 
   function notify(text, action = null) {
@@ -308,9 +332,38 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
     });
   }
 
-  function hide() {
-    if (scrim && !scrim.isDestroyed()) scrim.hide();
-    if (win && !win.isDestroyed() && win.isVisible()) win.hide();
+  /**
+   * Fade the bar and the dim out, then hide both. `animate: false` hides at
+   * once (a screenshot must not catch the bar). `rehide`: hide Kortix after,
+   * as it was before the bar opened.
+   */
+  function hide({ animate = true, rehide = false } = {}) {
+    const visible = Boolean(win && !win.isDestroyed() && win.isVisible());
+    if (closing && animate && visible) {
+      closing.rehide ||= rehide;
+      return;
+    }
+    if (closing) {
+      clearTimeout(closing.timer);
+      rehide ||= closing.rehide;
+      closing = null;
+    }
+    const finish = () => {
+      closing = null;
+      clearInterval(scrimFade);
+      if (scrim && !scrim.isDestroyed()) scrim.hide();
+      if (win && !win.isDestroyed() && win.isVisible()) win.hide();
+      if (rehide) app.hide();
+    };
+    if (!visible || !animate) return finish();
+    win.webContents.send(CHANNEL.hide);
+    fadeScrim(0, CLOSE_MS);
+    const timer = setTimeout(() => {
+      // A hide() during the animation merged its `rehide` into `closing`.
+      rehide = closing?.rehide ?? rehide;
+      finish();
+    }, CLOSE_MS + 10);
+    closing = { rehide, timer };
   }
 
   /**
@@ -329,7 +382,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
       return;
     }
     capturing = true;
-    hide();
+    hide({ animate: false });
     const file = path.join(os.tmpdir(), `kortix-quick-entry-${process.pid}-${Date.now()}.png`);
     execFile('/usr/sbin/screencapture', ['-i', '-x', '-o', '-t', 'png', file], () => {
       let bytes = null;
@@ -350,13 +403,12 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
 
   /** Esc or the shortcut again: close the bar and leave Kortix hidden if it was. */
   function dismiss() {
-    hide();
-    if (appWasHidden) app.hide();
+    hide({ rehide: appWasHidden });
     appWasHidden = false;
   }
 
   function toggle() {
-    if (win && !win.isDestroyed() && win.isVisible()) dismiss();
+    if (win && !win.isDestroyed() && win.isVisible() && !closing) dismiss();
     else show();
   }
 
@@ -404,7 +456,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
     if (!fromBar(event)) return;
     height = Math.min(560, Math.max(80, Math.round(Number(next) || 0)));
     const bounds = win.getBounds();
-    win.setBounds({ x: bounds.x, y: bounds.y + bounds.height - height, width: WIDTH, height });
+    win.setBounds({ x: bounds.x, y: bounds.y + bounds.height - height, width: bounds.width, height });
   });
 
   function register() {
