@@ -515,8 +515,8 @@
           "label": "关联账户"
         },
         "browsers": {
-          "label": "Chrome 扩展程序",
-          "description": "让你的会话使用 Chrome，并沿用你的登录状态。请连接每个已安装 Kortix 扩展程序的浏览器。"
+          "label": "Chrome 中的 Kortix",
+          "description": "你的会话沿用登录状态使用 Chrome。每一步你都看得见。"
         },
         "tokens": {
           "label": "个人访问密钥",
@@ -1539,7 +1539,8 @@
       "account": "账户",
       "loadError": "项目加载失败",
       "createIn": "在 {account} 中创建项目",
-      "localComputer": "你的电脑"
+      "localComputer": "你的电脑",
+      "appsAndExtensions": "应用和扩展"
     },
     "manifestUpgrade": {
       "title": "升级到 v2",
@@ -20268,12 +20269,20 @@
       "label": "访问",
       "always": "无需询问",
       "ask": "每次询问",
-      "off": "关闭"
+      "off": "关闭",
+      "description": "会话何时可以使用此浏览器。"
     },
     "scope": {
       "label": "标签页",
       "own": "仅它打开的标签页",
-      "all": "所有标签页"
+      "all": "所有标签页",
+      "description": "会话可以看到哪些标签页。"
+    },
+    "how": {
+      "title": "工作方式",
+      "group": "每个会话在自己的标签页组里工作，页面会发光。",
+      "control": "随时可通过页面上的栏接管或停止。",
+      "own": "只有你自己的会话可以使用你的浏览器。"
     }
   },
   "computers": {
@@ -20648,5 +20657,48 @@
     "you": "你",
     "manageFolderAccess": "管理访问权限",
     "viewFolderAccess": "查看访问权限"
+  },
+  "appsModal": {
+    "title": "用 Kortix 做更多事，无论你在哪里工作",
+    "name": "应用和扩展",
+    "mock": {
+      "group": "Kortix · 退回我的订单",
+      "button": "开始退货",
+      "working": "Kortix 正在工作",
+      "takeOver": "接管",
+      "stop": "停止"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "description": "Kortix 在你自己的浏览器里打开页面、点击并填写表单，沿用你的登录状态。每一步你都看得见。",
+      "add": "添加到 Chrome",
+      "installedConnect": "已安装？连接",
+      "connect": "连接",
+      "connecting": "正在连接…",
+      "manage": "管理",
+      "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来添加。"
+    },
+    "computer": {
+      "title": "你的电脑",
+      "thisComputer": "这台电脑",
+      "thisComputerDescription": "会话可以使用你的文件和终端。",
+      "connected": "已连接",
+      "connect": "连接",
+      "manage": "管理",
+      "desktop": "桌面应用",
+      "desktopDescription": "在你自己的电脑上运行 Kortix。",
+      "desktopRunning": "你正在使用它。",
+      "download": "下载"
+    },
+    "developers": {
+      "title": "开发者",
+      "cli": "终端 (CLI)",
+      "cliDescription": "macOS 和 Linux，Windows 使用 WSL",
+      "copy": "复制命令",
+      "copied": "已复制",
+      "mcp": "MCP",
+      "mcpDescription": "在 Claude、Cursor 或 Codex 中使用 Kortix。",
+      "connect": "连接"
+    }
   }
 }

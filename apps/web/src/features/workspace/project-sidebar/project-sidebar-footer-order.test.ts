@@ -36,7 +36,7 @@ describe('project sidebar layout', () => {
     expect(orderOf('ProjectNavItems')).toBeLessThan(orderOf('ProjectSessionList'));
   });
 
-  test('the footer holds status and the two connect rows, nothing else', () => {
+  test('the footer holds status and the three connect rows, nothing else', () => {
     expect(footer.match(/<(Project|Sidebar)\w+(?=[\s/>])/g)).toEqual([
       '<SidebarGroup',
       '<SidebarMenu',
@@ -46,6 +46,7 @@ describe('project sidebar layout', () => {
       '<SidebarMenu',
       '<ProjectMcpNavItem',
       '<ProjectComputerNavItem',
+      '<ProjectBrowserNavItem',
       '<SidebarUpgradeButton',
     ]);
   });

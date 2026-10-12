@@ -7,23 +7,31 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Label } from '@/components/ui/label';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { relativeTime } from '@/lib/relative-time';
-import { BrowserLogoTile } from './browser-icon';
 import {
   BrowserConnectModal,
-  ChromeButtonMark,
   BrowserConnectSteps,
   BrowserOnlineDot,
+  ChromeButtonMark,
 } from './browser-connect';
+import { BrowserLogoTile } from './browser-icon';
+import { BrowserMock } from './browser-mock';
 
 const ACCESS_MODES: readonly BrowserAccessMode[] = ['always', 'ask', 'off'];
 // `all` first: it is the recommended default.
@@ -46,7 +54,12 @@ export function BrowsersTab() {
         tab="browsers"
         action={
           list.length > 0 ? (
-            <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setConnectOpen(true)}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1.5"
+              onClick={() => setConnectOpen(true)}
+            >
               <ChromeButtonMark />
               {t('connectAnother')}
             </Button>
@@ -69,19 +82,31 @@ export function BrowsersTab() {
           }
         />
       ) : list.length === 0 ? (
-        <div className="bg-popover flex flex-col gap-5 rounded-md border px-4 py-5">
-          <BrowserConnectSteps />
+        <div className="space-y-4">
+          <BrowserMock className="mx-auto max-w-md" />
+          <div className="bg-popover flex flex-col gap-5 rounded-md border px-4 py-5">
+            <BrowserConnectSteps />
+          </div>
         </div>
       ) : (
         <section className="space-y-3">
-          <Label>{t('listTitle')}</Label>
-          <ul className="space-y-2">
+          <SettingsSubsectionHeader title={t('listTitle')} />
+          <ul className="space-y-3">
             {list.map((browser) => (
               <BrowserRow key={browser.id} browser={browser} />
             ))}
           </ul>
         </section>
       )}
+
+      <section className="space-y-2">
+        <SettingsSubsectionHeader title={t('how.title')} />
+        <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm text-pretty">
+          <li>{t('how.group')}</li>
+          <li>{t('how.control')}</li>
+          <li>{t('how.own')}</li>
+        </ul>
+      </section>
 
       <BrowserConnectModal open={connectOpen} onOpenChange={setConnectOpen} />
     </div>
@@ -96,7 +121,11 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
 
-  const save = (change: { name?: string; accessMode?: BrowserAccessMode; tabScope?: BrowserTabScope }) =>
+  const save = (change: {
+    name?: string;
+    accessMode?: BrowserAccessMode;
+    tabScope?: BrowserTabScope;
+  }) =>
     update.mutate({ id: browser.id, ...change }, { onError: () => errorToast(t('updateFailed')) });
 
   const commitName = () => {
@@ -110,58 +139,61 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
   const maker = [browser.brand, browser.os].filter(Boolean).join(' · ');
 
   return (
-    <li className="bg-popover space-y-3 rounded-md border px-4 py-3">
-      <div className="flex items-center gap-3">
-        <BrowserLogoTile brand={browser.brand} />
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="flex items-center gap-2">
-            <BrowserOnlineDot online={browser.online} />
-            {draft === null ? (
-              <button
-                type="button"
-                aria-label={t('rename', { name: browser.name })}
-                className="group/name flex min-w-0 items-center gap-1.5 text-left"
-                onClick={() => setDraft(browser.name)}
-              >
-                <span className="truncate text-sm font-medium">{browser.name}</span>
-                <PencilSimpleIcon className="text-muted-foreground size-3.5 shrink-0" />
-              </button>
-            ) : (
-              <Input
-                autoFocus
-                value={draft}
-                maxLength={255}
-                aria-label={t('renameLabel')}
-                className="h-7"
-                onChange={(event) => setDraft(event.target.value)}
-                onBlur={commitName}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') commitName();
-                  if (event.key === 'Escape') setDraft(null);
-                }}
-              />
-            )}
+    <li>
+      <SettingsRowGroup>
+        <div className="flex items-center gap-3 px-4 py-3">
+          <BrowserLogoTile brand={browser.brand} />
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="flex items-center gap-2">
+              <BrowserOnlineDot online={browser.online} />
+              {draft === null ? (
+                <button
+                  type="button"
+                  aria-label={t('rename', { name: browser.name })}
+                  className="group/name flex min-w-0 items-center gap-1.5 text-left"
+                  onClick={() => setDraft(browser.name)}
+                >
+                  <span className="truncate text-sm font-medium">{browser.name}</span>
+                  <PencilSimpleIcon className="text-muted-foreground size-3.5 shrink-0" />
+                </button>
+              ) : (
+                <Input
+                  autoFocus
+                  value={draft}
+                  maxLength={255}
+                  aria-label={t('renameLabel')}
+                  className="h-7"
+                  onChange={(event) => setDraft(event.target.value)}
+                  onBlur={commitName}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitName();
+                    if (event.key === 'Escape') setDraft(null);
+                  }}
+                />
+              )}
+            </div>
+            <InlineMeta>
+              {maker}
+              {browser.online
+                ? t('online')
+                : lastSeen
+                  ? t('lastSeen', { time: lastSeen })
+                  : t('offline')}
+              {sessions > 0 ? t('usedBy', { count: sessions }) : ''}
+            </InlineMeta>
           </div>
-          <InlineMeta>
-            {maker}
-            {browser.online ? t('online') : lastSeen ? t('lastSeen', { time: lastSeen }) : t('offline')}
-            {sessions > 0 ? t('usedBy', { count: sessions }) : ''}
-          </InlineMeta>
+          <Button variant="ghost" size="sm" onClick={() => setConfirmOpen(true)}>
+            {t('disconnect')}
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setConfirmOpen(true)}>
-          {t('disconnect')}
-        </Button>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <label className="flex items-center gap-2">
-          <span className="text-muted-foreground text-xs">{t('access.label')}</span>
+        <SettingsRow label={t('access.label')} description={t('access.description')}>
           <Select
             value={browser.accessMode}
             disabled={update.isPending}
             onValueChange={(value) => save({ accessMode: value as BrowserAccessMode })}
           >
-            <SelectTrigger size="sm" className="w-auto min-w-40 shrink-0" aria-label={t('access.label')}>
+            <SelectTrigger size="sm" className="w-44" aria-label={t('access.label')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -172,15 +204,14 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
               ))}
             </SelectContent>
           </Select>
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-muted-foreground text-xs">{t('scope.label')}</span>
+        </SettingsRow>
+        <SettingsRow label={t('scope.label')} description={t('scope.description')}>
           <Select
             value={browser.tabScope}
             disabled={update.isPending}
             onValueChange={(value) => save({ tabScope: value as BrowserTabScope })}
           >
-            <SelectTrigger size="sm" className="w-auto min-w-44 shrink-0" aria-label={t('scope.label')}>
+            <SelectTrigger size="sm" className="w-44" aria-label={t('scope.label')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -191,8 +222,8 @@ function BrowserRow({ browser }: { browser: KortixBrowser }) {
               ))}
             </SelectContent>
           </Select>
-        </label>
-      </div>
+        </SettingsRow>
+      </SettingsRowGroup>
 
       <ConfirmDialog
         open={confirmOpen}

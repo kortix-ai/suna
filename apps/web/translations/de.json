@@ -515,8 +515,8 @@
           "label": "Verbundene Konten"
         },
         "browsers": {
-          "label": "Chrome-Erweiterung",
-          "description": "Lass deine Sitzungen Chrome mit deinen Logins nutzen. Verbinde jeden Browser, in dem die Kortix-Erweiterung installiert ist."
+          "label": "Kortix in Chrome",
+          "description": "Deine Sitzungen nutzen Chrome mit deinen Logins. Du siehst jeden Schritt."
         },
         "tokens": {
           "label": "Persönliche Zugriffsschlüssel",
@@ -1539,7 +1539,8 @@
       "account": "Konto",
       "loadError": "Projekte konnten nicht geladen werden",
       "createIn": "Projekt in {account} erstellen",
-      "localComputer": "Dein Computer"
+      "localComputer": "Dein Computer",
+      "appsAndExtensions": "Apps und Erweiterungen"
     },
     "manifestUpgrade": {
       "title": "Auf v2 aktualisieren",
@@ -20268,12 +20269,20 @@
       "label": "Zugriff",
       "always": "Ohne Nachfrage",
       "ask": "Jedes Mal fragen",
-      "off": "Aus"
+      "off": "Aus",
+      "description": "Wann eine Sitzung diesen Browser nutzen darf."
     },
     "scope": {
       "label": "Tabs",
       "own": "Nur selbst geöffnete Tabs",
-      "all": "Alle Tabs"
+      "all": "Alle Tabs",
+      "description": "Welche Tabs eine Sitzung sehen kann."
+    },
+    "how": {
+      "title": "So funktioniert es",
+      "group": "Jede Sitzung arbeitet in einer eigenen Tab-Gruppe, mit einem Leuchten auf der Seite.",
+      "control": "Übernehmen oder Stopp jederzeit über die Leiste auf der Seite.",
+      "own": "Nur deine eigenen Sitzungen können deinen Browser nutzen."
     }
   },
   "computers": {
@@ -20648,5 +20657,48 @@
     "you": "Du",
     "manageFolderAccess": "Zugriff verwalten",
     "viewFolderAccess": "Zugriff ansehen"
+  },
+  "appsModal": {
+    "title": "Mehr aus Kortix machen, überall wo du arbeitest",
+    "name": "Apps und Erweiterungen",
+    "mock": {
+      "group": "Kortix · Meine Bestellung zurückgeben",
+      "button": "Rückgabe starten",
+      "working": "Kortix arbeitet",
+      "takeOver": "Übernehmen",
+      "stop": "Stopp"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "description": "Kortix öffnet Seiten, klickt und füllt Formulare in deinem eigenen Browser aus, mit deinen Logins. Du siehst jeden Schritt.",
+      "add": "Zu Chrome hinzufügen",
+      "installedConnect": "Schon installiert? Verbinden",
+      "connect": "Verbinden",
+      "connecting": "Verbinde …",
+      "manage": "Verwalten",
+      "unsupported": "Öffne Kortix in Chrome, Edge, Brave oder Arc, um die Erweiterung hinzuzufügen."
+    },
+    "computer": {
+      "title": "Dein Computer",
+      "thisComputer": "Dieser Computer",
+      "thisComputerDescription": "Sitzungen nutzen deine Dateien und dein Terminal.",
+      "connected": "Verbunden",
+      "connect": "Verbinden",
+      "manage": "Verwalten",
+      "desktop": "Desktop-App",
+      "desktopDescription": "Kortix auf deinem eigenen Rechner.",
+      "desktopRunning": "Du nutzt sie gerade.",
+      "download": "Herunterladen"
+    },
+    "developers": {
+      "title": "Entwickler",
+      "cli": "Terminal (CLI)",
+      "cliDescription": "macOS und Linux, WSL unter Windows",
+      "copy": "Befehl kopieren",
+      "copied": "Kopiert",
+      "mcp": "MCP",
+      "mcpDescription": "Nutze Kortix in Claude, Cursor oder Codex.",
+      "connect": "Verbinden"
+    }
   }
 }
