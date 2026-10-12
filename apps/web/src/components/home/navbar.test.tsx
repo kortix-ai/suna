@@ -64,10 +64,8 @@ mock.module('@/features/contact/request-demo-provider', () => ({
 
 /** Renders the marker the drawer docs-row test asserts the absence of: a plain
  * anchor (the static Astro docs) must not be a soft link (KRTX-1592). */
-const nextLinkProps: Array<Record<string, unknown>> = [];
 mock.module('next/link', () => ({
   default: (props: { children?: React.ReactNode } & Record<string, unknown>) => {
-    nextLinkProps.push(props);
     const routerOnly = ['prefetch', 'replace', 'scroll', 'shallow', 'onNavigate', 'legacyBehavior'];
     const anchorProps = Object.fromEntries(
       Object.entries(props).filter(([key]) => !routerOnly.includes(key)),
