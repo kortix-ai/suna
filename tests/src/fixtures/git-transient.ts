@@ -2,7 +2,7 @@ import { transientRetryDelayMs } from '../core/client';
 import { sleep } from '../core/poll';
 
 /** Git over HTTP failed at the edge or the load balancer, not in a handler. */
-const TRANSIENT_GIT_HTTP = /(?:HTTP|returned error:) ?(?:502|503|504|524)\b/;
+const TRANSIENT_GIT_HTTP = /(?:HTTP|returned error:) ?(?:408|502|503|504|524)\b/;
 
 /** `git <args>` talks to the remote, and repeating it cannot change the outcome. */
 export function isReplaySafeGit(args: string[]): boolean {
@@ -11,7 +11,7 @@ export function isReplaySafeGit(args: string[]): boolean {
 
 /**
  * Run a git command and repeat it, three attempts at most, when the remote
- * answered 502, 503, 504 or 524 (CFG-2, CFG-11, GH-17 on deployed staging). A
+ * answered 408, 502, 503, 504 or 524 (CFG-2, CFG-11, GH-17 on deployed staging). A
  * push repeated after one that landed reports "up-to-date". Every other
  * failure, including 4xx and ref rejections, reaches the caller on the first
  * attempt.

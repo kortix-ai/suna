@@ -652,13 +652,15 @@ flow('GW-MANAGED-1', {
     };
     const results = await Promise.all(managed.map(ask));
     const answered = results.filter((r) => r.status === 200 && /\bred\b/i.test(r.detail));
-    // The gateway answers an upstream outage of one model with the documented
-    // `503 model_unavailable` (llm-gateway/pipeline/public-identity.ts). That is
-    // the contract working, not a defect of this deployment: the gate must not
-    // depend on one upstream provider (`kimi-k3` answered it 6 of the last 17
-    // gate runs). It counts only beside at least one model that answered. Any
-    // other status — 400 for an image the model refuses, 401, 404, 500 — still
-    // fails, and so does a gateway where no model answers.
+    // The gateway answers a model it cannot route with the documented
+    // `503 model_unavailable` (llm-gateway/pipeline/public-identity.ts). `kimi-k3`
+    // does so on 6 of the last 17 gate runs: since 2026-10-09 its only route is
+    // above the catalog max_price (an open pricing decision in
+    // packages/llm-catalog), yet the picker still offers it. The gate must not
+    // depend on one upstream provider, so the answer counts beside at least one
+    // model that answered, and the run logs it. Any other status (400 for an
+    // image the model refuses, 401, 404, 500) fails, and so does a gateway where
+    // no model answers.
     const unavailable = (r: { status: number; detail: string }) =>
       r.status === 503 && /"code":"model_unavailable"/.test(r.detail);
     const throttled = results.filter((r) => r.status === 429 || (answered.length > 0 && unavailable(r)));
