@@ -8,12 +8,14 @@ import { MoonIcon } from '@phosphor-icons/react';
 
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
+import { ComputerAwakeBar } from './computer-awake-bar';
 import { QuoteList } from './quote-list';
 import { ServedModelBar } from './served-model-bar';
 
 /**
  * The composer's stack ABOVE the card: the `'above'` `/` dock anchor, the
- * reply-quote card, then the queue strip and the "still waking" notice.
+ * reply-quote card, then the queue strip, the "still waking" notice, the
+ * "computer stays on" strip and the served-model strip.
  * `ComposerImpl` owns the state and effects and passes them in; this renders
  * exactly the subtree `ComposerImpl` used to inline (KRTX-373 phase 1).
  */
@@ -38,6 +40,7 @@ export function ComposerAboveCard({
   notice = null,
   onNoticeRetry,
   servedModel = null,
+  computerAwake = null,
   onModelChange,
   slashMenuPlacement = 'above',
   questionActive = false,
@@ -45,6 +48,9 @@ export function ComposerAboveCard({
   const showQueueStrip = Boolean(inputSlot);
   // The strip explains the model selector, so it shows only where one exists.
   const served = onModelChange ? servedModel : null;
+  // A waking computer is not one that stays on: the notice says what is true.
+  // A docked question meets the card as one surface: no strip between them.
+  const awake = notice || questionActive ? null : computerAwake;
 
   return (
     <>
@@ -97,7 +103,7 @@ export function ComposerAboveCard({
       (queue strip at 96%, first full-width bar, the card itself); a layer
       the SAME width as the one above stays square and shares the divider.
     */}
-    {(notice || served || showQueueStrip) && (
+    {(notice || awake || served || showQueueStrip) && (
       <div className="relative isolate flex w-full flex-col items-center justify-center">
         {/*
           ONE element carries both the strip's chrome (bg, border, padding)
@@ -153,7 +159,9 @@ export function ComposerAboveCard({
           </div>
         )}
 
-        {served && <ServedModelBar notice={served} underNotice={Boolean(notice)} />}
+        {awake && <ComputerAwakeBar line={awake} />}
+
+        {served && <ServedModelBar notice={served} underNotice={Boolean(notice || awake)} />}
       </div>
     )}
     </>

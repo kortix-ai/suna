@@ -15,7 +15,8 @@ import type { ServedModelNotice } from '../turn/served-model';
  * or the selector changes (`servedModelNotice`).
  *
  * The same chrome as the "still waking" notice in `ComposerAboveCard`. Under
- * that notice it stays square and its top border is the divider.
+ * that notice, or the "computer stays on" strip, it stays square and its top
+ * border is the divider.
  */
 export function ServedModelBar({
   notice,

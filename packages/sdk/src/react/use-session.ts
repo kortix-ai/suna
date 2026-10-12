@@ -68,7 +68,12 @@ import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
 import { useSessionStream } from './use-session-stream';
 import { sessionStreamConnected } from '../core/session/control-stream';
-import { presenceReporter, watchHumanPresence } from './human-presence';
+import {
+  PRESENCE_AWAKE_REFRESH_MS,
+  presenceAwakeFrom,
+  presenceReporter,
+  watchHumanPresence,
+} from './human-presence';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -1126,6 +1131,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const presenceAlertsRef = useRef(presenceAlerts);
   const presencePageExitRef = useRef(presencePageExit);
   const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
+  // Until when this person's presence keeps the computer on (KRTX-1729), from
+  // the latest present PUT's response. Null while absent, for a viewer, for a
+  // computer the renewal found not running, and from a turn's start until the
+  // next renewal answers.
+  const [presenceAwake, setPresenceAwake] = useState<{ until: Date; capAt: Date } | null>(null);
+  // Only the latest report's response may set the window: a present PUT that
+  // lands after an absent report, or after a turn started, must not bring it
+  // back. Bumped by each report and by each clear.
+  const presenceReportRef = useRef(0);
   useEffect(() => {
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
@@ -1133,8 +1147,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // Without page exit, an absent PUT goes without `keepalive`, as before
     // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
+      const report = ++presenceReportRef.current;
+      if (!active) setPresenceAwake(null);
       const keepalive = !active && presencePageExitRef.current;
-      void handle.presence({ tab_id, active, alerts }, { keepalive }).catch(() => {});
+      void handle
+        .presence({ tab_id, active, alerts }, { keepalive })
+        .then((res) => {
+          // A failed request says nothing about the window: keep the last one.
+          if (active && report === presenceReportRef.current && res.data) {
+            setPresenceAwake(presenceAwakeFrom(res.data));
+          }
+        })
+        .catch(() => {});
     }, presenceAlertsRef.current);
     presenceReporterRef.current = reporter;
     const stop = watchHumanPresence(
@@ -1143,7 +1167,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       () => sessionStreamConnected(projectId, sessionId),
       () => presencePageExitRef.current,
     );
+    // The stream renews the lease and the deadline without a response, so the
+    // window ages: read it again while the person is here.
+    const refresh = window.setInterval(reporter.refresh, PRESENCE_AWAKE_REFRESH_MS);
     return () => {
+      window.clearInterval(refresh);
       presenceReporterRef.current = null;
       stop();
     };
@@ -1232,6 +1260,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
+  // The window follows the computer (KRTX-1729): one that becomes ready reads
+  // it at once, and one that stops ends it, with any response in flight.
+  const startReadyRef = useRef(startReady);
+  useEffect(() => {
+    if (startReady && !startReadyRef.current) {
+      presenceReporterRef.current?.refresh();
+    } else if (!startReady && startReadyRef.current) {
+      presenceReportRef.current += 1;
+      setPresenceAwake(null);
+    }
+    startReadyRef.current = startReady;
+  }, [startReady]);
 
   // T8 defect 1 — `useRuntimeReconnect`'s first-mount
   // `resetForServerSwitch()` (a plain `useEffect`) unconditionally seeds
@@ -1452,6 +1492,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled,
     runtimeSessionId: ocSessionId,
   });
+  // A turn keeps the computer on and moves presence's cap (2 h after the
+  // latest turn), so the window from before it is wrong after it (KRTX-1729):
+  // a turn that starts clears it, and a turn that ends reads it again.
+  const turnRunning = working.state === 'working';
+  const turnRanRef = useRef(turnRunning);
+  useEffect(() => {
+    if (turnRunning) {
+      presenceReportRef.current += 1;
+      setPresenceAwake(null);
+    } else if (turnRanRef.current) {
+      presenceReporterRef.current?.refresh();
+    }
+    turnRanRef.current = turnRunning;
+  }, [turnRunning]);
   // The receipt lives in a per-session store, not in this component: the
   // composer mounts its own `useSessionWorking` for the same session and they
   // share one `/turn` cache entry. Two private receipts meant the observer
@@ -1516,6 +1570,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // proof waits for the turn record, the host must not paint its boot screen.
   const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
   const turnRead = typeof turnOutcome.atMs === 'number';
+  // The idle flip above can land before the control plane closes the turn in
+  // its ledger (`endedByRuntime`: ~200 ms, 15 s in one measured case), and the
+  // refresh it sends then reads the open turn's deadline and cap. The ledger's
+  // newest ended turn changing is when the server's window is right, so the
+  // awake window is read again then (KRTX-1729). The first read is no news.
+  const lastEndedToken = turnOutcome.last_ended?.turn_token ?? null;
+  const lastEndedSeenRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!turnRead) return;
+    const seen = lastEndedSeenRef.current;
+    lastEndedSeenRef.current = lastEndedToken;
+    if (seen !== undefined && seen !== lastEndedToken) presenceReporterRef.current?.refresh();
+  }, [turnRead, lastEndedToken]);
   const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
@@ -1983,6 +2050,21 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  and for which turn. The one answer; `isBusy` is its boolean face. */
     working,
     isBusy: working.state === 'working',
+    /**
+     * Until when this person's presence keeps the session's computer on
+     * (KRTX-1729): `until` is the computer's stop time after the latest
+     * renewal, `capAt` the time presence cannot keep it on past (2 h after the
+     * latest turn). Set from the presence lease's responses, so it needs
+     * `browserPresence`. Null while the person is absent (hidden tab, or no
+     * input for 10 min), for a viewer who may not start the session, after a
+     * renewal that found the computer not running, from a turn's start until
+     * the next renewal answers, and against an API before KRTX-1729. Read
+     * again every 5 min while present, when a turn ends, and when the
+     * control plane closes a turn. A stop between two reads shows only at
+     * the next read, up to 5 min later: `until` is the latest stop time the
+     * hook knows, not proof the computer is running.
+     */
+    presenceAwake,
     isCompacting,
     isLoading: sync.isLoading,
     /**

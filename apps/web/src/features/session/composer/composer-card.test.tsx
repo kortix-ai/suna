@@ -33,6 +33,7 @@ function render(props?: {
   isDragOver?: boolean;
   commandAttachmentPlan?: { kind: 'refuse'; message: string; description: string };
   attachedFiles?: unknown[];
+  computerAwake?: { kind: 'stays' | 'stops'; minutes: number } | null;
 }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
@@ -104,6 +105,7 @@ function render(props?: {
               modelRequired={false}
               variants={[] as never}
               messages={[] as never}
+              computerAwake={props?.computerAwake ?? null}
             />
           </TooltipProvider>
         </AuthProvider>
@@ -138,6 +140,12 @@ describe('ComposerCard (the moved card subtrees)', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('A /command cannot carry attachments');
     expect(html).toContain('Detach the files or send without the command.');
+  });
+
+  // KRTX-1729: the "computer stays on" strip above owns the card's top corners.
+  test('under the computer-awake strip the card squares its top; without it the top stays round', () => {
+    expect(render({ computerAwake: { kind: 'stays', minutes: 25 } })).toContain('rounded-t-none');
+    expect(render()).not.toContain('rounded-t-none');
   });
 
   test('the hidden multi-file input keeps its accept list (the attach path)', () => {
