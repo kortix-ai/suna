@@ -43,8 +43,8 @@
         -webkit-user-select: none;
         user-select: none;
       }
-      /* The 32px margin holds the shadow inside the transparent window (quick-entry.js WIDTH). */
-      body { padding: 32px; }
+      /* The margin holds the shadow inside the transparent window (quick-entry.js WIDTH). */
+      body { padding: 40px 48px 56px; }
       form {
         display: flex;
         flex-direction: column;
@@ -53,22 +53,40 @@
         background: var(--popover);
         color: var(--foreground);
         border: 1px solid var(--border);
-        border-radius: 14px;
-        box-shadow: var(--shadow-lg);
-        /* Closed until main shows the bar; open and close run with the dim (quick-entry.js OPEN_MS, CLOSE_MS). */
+        border-radius: 16px;
+        /* A hairline, a close contact shadow and a wide soft one, so the bar floats over the dim. */
+        box-shadow:
+          0 0 0 1px rgb(0 0 0 / 0.04),
+          0 2px 6px -1px rgb(0 0 0 / 0.12),
+          0 20px 44px -12px rgb(0 0 0 / 0.45);
+        /* Closed until main shows the bar. Open and close run with the dim (quick-entry.js OPEN_MS, CLOSE_MS). */
         opacity: 0;
-        transform: translateY(8px) scale(0.98);
-        transition:
-          opacity 150ms cubic-bezier(0.2, 0, 0, 1),
-          transform 150ms cubic-bezier(0.2, 0, 0, 1);
+        transform: translateY(16px) scale(0.96);
+        transform-origin: 50% 100%;
+      }
+      @media (prefers-color-scheme: dark) {
+        form {
+          box-shadow:
+            0 2px 6px -1px rgb(0 0 0 / 0.4),
+            0 20px 48px -12px rgb(0 0 0 / 0.75);
+        }
       }
       body.open form {
         opacity: 1;
         transform: none;
-        transition-duration: 200ms;
+        transition:
+          opacity 180ms cubic-bezier(0.2, 0, 0, 1),
+          transform 250ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      body.closing form {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+        transition:
+          opacity 150ms cubic-bezier(0.4, 0, 1, 1),
+          transform 150ms cubic-bezier(0.4, 0, 1, 1);
       }
       @media (prefers-reduced-motion: reduce) {
-        form { transform: none; transition: none; }
+        form, body.open form, body.closing form { transform: none; transition: none; }
       }
       form.dragging { border-color: var(--ring); }
       .top { display: flex; gap: 12px; }
@@ -197,8 +215,6 @@
         <button type="button" class="control icon" id="screenshot" aria-label="Take a screenshot" title="Take a screenshot" hidden><svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M208,56H180.28L166.65,35.56A8,8,0,0,0,160,32H96a8,8,0,0,0-6.65,3.56L75.71,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.56L100.28,48h55.43l13.63,20.44A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,88Zm0,72a28,28,0,1,1,28-28A28,28,0,0,1,128,160Z" /></svg></button>
         <!-- A new session's agent, model and effort; a picked session keeps its own. -->
         <button type="button" class="control" id="agent" aria-haspopup="menu" hidden><span id="agent-label"></span><svg class="caret" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" /></svg></button>
-        <button type="button" class="control" id="model" aria-haspopup="menu" hidden><span id="model-label"></span><svg class="caret" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" /></svg></button>
-        <button type="button" class="control" id="effort" aria-haspopup="menu" hidden><svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M207.06,72.67A111.24,111.24,0,0,0,128,40h-.4C66.07,40.21,16,91,16,153.13V176a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V152A111.25,111.25,0,0,0,207.06,72.67ZM224,176H119.71l54.76-75.3a8,8,0,0,0-12.94-9.42L99.92,176H32V153.13c0-3.08.15-6.12.43-9.13H56a8,8,0,0,0,0-16H35.27c10.32-38.86,44-68.24,84.73-71.66V80a8,8,0,0,0,16,0V56.33A96.14,96.14,0,0,1,221,128H200a8,8,0,0,0,0,16h23.67c.21,2.65.33,5.31.33,8Z" /></svg><span id="effort-label"></span><svg class="caret" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" /></svg></button>
         <span class="spacer"></span>
         <!-- Where the prompt goes: a new session in the project, or a picked recent session. -->
         <button type="button" class="control" id="pick" aria-haspopup="menu">
@@ -224,11 +240,7 @@
       const filesEl = document.getElementById('files');
       const fileInput = document.getElementById('file-input');
       const notice = document.getElementById('notice');
-      const controls = {
-        agent: document.getElementById('agent'),
-        model: document.getElementById('model'),
-        effort: document.getElementById('effort'),
-      };
+      const controls = { agent: document.getElementById('agent') };
       const removeIcon = '<svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" /></svg>';
       /** @type {{ id: number, name: string, type: string, bytes: Uint8Array, url: string | null }[]} */
       let attachments = [];
@@ -349,10 +361,10 @@
       for (const [kind, button] of Object.entries(controls)) button.addEventListener('click', () => menuAt(button, kind));
 
       // `session` is the picked recent session, or null for a new session in `target`.
-      // `composer` labels the new session's agent, model and effort; null hides them.
+      // `composer` labels the new session's agent; null hides it.
       const render = ({ target: name, session, composer, canScreenshot }) => {
-        pickLabel.textContent = session ? session.title : name ? `New session in ${name}` : 'New session';
-        pick.title = session ? `Send to ${session.title}` : pickLabel.textContent;
+        pickLabel.textContent = session ? session.title : 'New session';
+        pick.title = session ? `Send to ${session.title}` : name ? `New session in ${name}` : 'New session';
         pick.setAttribute('aria-label', `${pick.title}. Choose a session`);
         dot.hidden = !session;
         if (session) dot.dataset.status = session.status;
@@ -363,7 +375,7 @@
           button.hidden = !value;
           if (value) {
             document.getElementById(`${kind}-label`).textContent = value;
-            button.title = `${kind === 'effort' ? 'Effort' : kind === 'agent' ? 'Agent' : 'Model'}: ${value}`;
+            button.title = `Agent: ${value}`;
             button.setAttribute('aria-label', button.title);
           }
         }
@@ -371,14 +383,17 @@
       };
       bar.onShow((state) => {
         // Restart the open transition from the closed state on every show.
-        document.body.classList.remove('open');
+        document.body.classList.remove('open', 'closing');
         void document.body.offsetWidth;
         requestAnimationFrame(() => document.body.classList.add('open'));
         render(state);
         prompt.focus();
         prompt.setSelectionRange(prompt.value.length, prompt.value.length);
       });
-      bar.onHide(() => document.body.classList.remove('open'));
+      bar.onHide(() => {
+        document.body.classList.remove('open');
+        document.body.classList.add('closing');
+      });
       bar.onState((state) => {
         render(state);
         // After a pick the menu leaves focus on its button; typing continues in the prompt.

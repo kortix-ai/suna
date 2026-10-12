@@ -36,6 +36,7 @@ const {
   freshPrompt,
   normalizeAttachments,
   normalizeTarget,
+  keptPick,
   pickedSession,
   pickerItems,
   quickEntryBounds,
@@ -43,9 +44,10 @@ const {
   screenshotName,
 } = require('./quick-entry-rules');
 
-// The bar is 840 px wide. The window adds a 32 px margin on each side for the
-// bar's CSS shadow: a native shadow would trace the transparent window.
-const WIDTH = 904;
+// The bar is 760 px wide. The window adds a 48 px margin on each side for the
+// bar's CSS shadow (quick-entry.html): a native shadow would trace the
+// transparent window.
+const WIDTH = 856;
 const CHANNEL = {
   show: 'kortix:quick-entry:show',
   hide: 'kortix:quick-entry:hide',
@@ -65,9 +67,9 @@ const SCRIM_HTML = 'data:text/html;charset=utf-8,' + encodeURIComponent(
   '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'">' +
     '<body style="margin:0;height:100vh;background:rgb(0 0 0 / 0.25)"></body>',
 );
-// Open over --duration-moderate (200 ms), close over --duration-normal (150 ms):
-// the bar's CSS transition and the dim's opacity steps run together.
-const OPEN_MS = 200;
+// Open over 250 ms, close over --duration-normal (150 ms): the bar's CSS
+// transition and the dim's opacity steps run together.
+const OPEN_MS = 250;
 const CLOSE_MS = 150;
 const SCRIM_FADE_STEPS = 10;
 // The macOS privacy pane a screenshot needs (System Settings ▸ Privacy & Security ▸ Screen Recording).
@@ -118,7 +120,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   let win = null;
   /** @type {BrowserWindow | null} The dim behind the bar, on the bar's display. */
   let scrim = null;
-  let height = 156;
+  let height = 188;
   /** A screenshot is being taken: the bar is hidden on purpose and comes back. */
   let capturing = false;
   /** @type {{ timer: ReturnType<typeof setTimeout>, rehide: boolean } | null} The close animation in progress. */
@@ -131,7 +133,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   let pending = null;
   /** @type {ReturnType<typeof normalizeTarget>} */
   let target = null;
-  /** The session the picker points at; null = a new session. Kept with the draft, cleared on send. */
+  /** The session the picker points at; null = a new session. Kept across opens while that session is live (`keptPick`). */
   let pickedId = null;
   /** macOS: Kortix was hidden (Command+H) when the bar opened. Showing the bar unhides the app. */
   let appWasHidden = false;
@@ -205,7 +207,9 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
       appWasHidden = closing.rehide;
       closing = null;
     } else if (!win.isVisible() && !capturing) {
+      // A fresh open, not the return from a screenshot.
       appWasHidden = process.platform === 'darwin' && app.isHidden();
+      pickedId = keptPick(target, pickedId);
     }
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     showScrim(display.bounds);
@@ -266,7 +270,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
     if (win && !win.isDestroyed()) win.webContents.send(CHANNEL.notice, { text, action: action?.label ?? null });
   }
 
-  /** What the bar shows: the target, the picked session, and the new session's agent, model and effort. */
+  /** What the bar shows: the target, the picked session, and the new session's agent. */
   function barState() {
     const session = pickedSession(target, pickedId);
     return {
@@ -309,23 +313,19 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   }
 
   /**
-   * The agent, model or effort menu. A pick goes to the app window, which
-   * applies it with the composer's own setters (the same persistence as a
-   * pick in the composer) and sends the bar the resolved selection back.
+   * The agent menu. A pick goes to the app window, which applies it with the
+   * composer's own setter (the same persistence as a pick in the composer)
+   * and sends the bar the resolved selection back.
    */
   function openComposerMenu(kind, anchor) {
     const rows = composerMenuItems(target?.composer ?? null, kind);
     if (!rows.length) return;
-    const template = rows.map((row) =>
-      row.header
-        ? { label: row.header, enabled: false }
-        : {
-            label: row.label,
-            type: 'checkbox',
-            checked: row.checked,
-            click: () => getMainWindow()?.webContents.send('kortix:quick-entry-select', kind, row.value),
-          },
-    );
+    const template = rows.map((row) => ({
+      label: row.label,
+      type: 'checkbox',
+      checked: row.checked,
+      click: () => getMainWindow()?.webContents.send('kortix:quick-entry-select', kind, row.value),
+    }));
     Menu.buildFromTemplate(template).popup({
       window: win,
       x: Math.round(Number(anchor?.x) || 0),
@@ -430,7 +430,6 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
       at: Date.now(),
       ...(session ? { projectId: target.projectId, sessionId: session.id } : {}),
     };
-    pickedId = null;
     appWasHidden = false;
     hide();
     openMainWindow();

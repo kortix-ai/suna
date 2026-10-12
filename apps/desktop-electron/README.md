@@ -147,20 +147,22 @@ until you run the bundled build above.
 ## Quick Entry (global shortcut)
 
 **Command+Shift+Space** (Ctrl+Shift+Space on Windows and Linux) opens a prompt
-bar over any app: 840 px wide, centered at the bottom of the display, with a
-light dim (25% black) over the rest of that display. The bar rises and fades in
-with the dim over 200 ms and fades out over 150 ms (none with Reduce Motion).
+bar over any app: 760 px wide, centered near the bottom of the display, with a
+soft shadow and a light dim (25% black) over the rest of that display. The bar
+rises and fades in with the dim over 250 ms and drops and fades out over 150 ms
+(none with Reduce Motion).
 Enter starts a new session with that prompt. The same bar opens from
 **File ▸ Open Quick Entry**.
 
 - **Where the session starts.** The project the app window shows, else the
   project this profile opened last (the `kortix_last_project` cookie). The bar
-  names it: "New session in \<project\>". With no project known, the prompt
+  reads "New session"; its tooltip names the project. With no project known, the prompt
   opens `/projects/start?q=…`: it fills the composer there and does not send.
 - **Send to a recent session.** The picker on the right of the bar is a native
-  menu: "New session in \<project\>", then the person's 5 most recent root
-  sessions there (the sidebar's list, title and status dot, plus last
-  activity). A pick is kept with the draft and cleared on send. The web app
+  menu: "New session", then the person's 5 most recent root sessions there
+  (the sidebar's list, title and status dot, plus last activity). A pick stays
+  for the next open while its session is running, starting or needs you
+  (`keptPick`); otherwise the bar opens on a new session. The web app
   publishes the list with `quick_entry_set_target`; a picked prompt is taken
   as `{ text, projectId, sessionId }` and submitted by that session's composer
   (Enter semantics: a running turn is steered). The session page moves the
@@ -173,15 +175,15 @@ Enter starts a new session with that prompt. The same bar opens from
   message (`apps/web/src/components/desktop/desktop-quick-entry.tsx`). A
   window that is still loading, or signed out, takes it when the app mounts.
   An untaken prompt expires after 10 minutes.
-- **Agent, model and effort (new session).** The row under the prompt mirrors
-  the project-home composer. The web app runs the composer's own selection
-  hooks headless (`desktop-quick-entry-composer.tsx`) and publishes the lists
-  and the resolved selection in `quick_entry_set_target` (`composer`). A pick
-  in a native menu is sent to the app window (`kortix:quick-entry-select`) and
-  applied with the composer's own setters, so it persists like a composer pick
-  (model per agent, effort per model); the bar shows what the app sends back.
-  On send, the prefill carries `options`, and `ComposerChatInput` applies agent,
-  then model, then effort, one per commit, before the composer submits.
+- **Agent (new session).** The row under the prompt has the project-home
+  composer's agent picker. The web app runs the composer's own selection hooks
+  headless (`desktop-quick-entry-composer.tsx`) and publishes the agents and
+  the resolved selection in `quick_entry_set_target` (`composer`). A pick in
+  the native menu is sent to the app window (`kortix:quick-entry-select`) and
+  applied with the composer's own setter; the bar shows what the app sends
+  back. The model and effort are the composer's own for that agent. On send,
+  the prefill carries `options`, and `ComposerChatInput` applies agent, then
+  model, then effort, one per commit, before the composer submits.
 - **Files and screenshots.** Paperclip, paste or drop; at most 10 files of
   20 MB each (`normalizeAttachments`). On macOS the camera button hides the bar
   and runs `screencapture -i` (region, or Space for a window); the image comes

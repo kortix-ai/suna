@@ -3,14 +3,13 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const MENUS = ['session', 'agent', 'model', 'effort'];
+const MENUS = ['session', 'agent'];
 
 contextBridge.exposeInMainWorld('kortixQuickEntry', {
   /**
    * Main → page, on every open: `{ target, session, composer, canScreenshot }`.
    * `target` is the project name or null; `session` the picked `{ title, status }`
-   * or null for a new session; `composer` the new session's agent, model and
-   * effort labels, or null.
+   * or null for a new session; `composer` the new session's agent label, or null.
    */
   onShow: (cb) => ipcRenderer.on('kortix:quick-entry:show', (_e, state) => cb(state)),
   /** Main → page: the bar is closing; play the close transition before main hides the window. */

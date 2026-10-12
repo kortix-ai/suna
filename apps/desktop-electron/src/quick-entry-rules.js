@@ -37,13 +37,13 @@ function shortcutLabel(accelerator, platform) {
 }
 
 /**
- * Centered at the bottom of the display, its bottom edge a tenth of the way up.
+ * Centered at the bottom of the display, its bottom edge a twentieth of the way up.
  * The bar grows upward as the prompt grows, so the bottom stays put.
  */
 function quickEntryBounds(workArea, width, height) {
   return {
     x: Math.round(workArea.x + (workArea.width - width) / 2),
-    y: Math.round(workArea.y + workArea.height - height - workArea.height / 10),
+    y: Math.round(workArea.y + workArea.height - height - workArea.height / 20),
     width,
     height,
   };
@@ -127,80 +127,46 @@ function normalizeTarget(target) {
   return { projectId, name: label(target.name, null), sessions, composer: normalizeComposer(target.composer) };
 }
 
-/** `medium` → `Medium`; no variant is `Auto` (the model decides), as in the composer. */
-const effortLabel = (variant) => (variant ? variant.charAt(0).toUpperCase() + variant.slice(1) : 'Auto');
-
 /**
- * A new session's agent, model and effort, as the web app's composer resolves
- * them for this project: `{ agents: [{ id, label }], agent, models: [{ id,
- * label, group, variants }], model, variant }`, models in menu order. Null
- * while the web app has not sent them.
+ * A new session's agent, as the web app's composer resolves it for this
+ * project: `{ agents: [{ id, label }], agent }`. Null while the web app has
+ * not sent it. The model and effort stay the composer's own.
  */
 function normalizeComposer(composer) {
   if (!composer || typeof composer !== 'object') return null;
-  const list = (items, map) => (Array.isArray(items) ? items : []).map(map).filter(Boolean).slice(0, 300);
-  const agents = list(composer.agents, (agent) => {
-    const id = label(agent?.id, '');
-    return id ? { id, label: label(agent.label, id) } : null;
-  });
-  const models = list(composer.models, (model) => {
-    const id = label(model?.id, '');
-    if (!id) return null;
-    const variants = (Array.isArray(model.variants) ? model.variants : [])
-      .filter((variant) => typeof variant === 'string' && variant)
-      .map((variant) => variant.slice(0, 40))
-      .slice(0, 20);
-    return { id, label: label(model.label, id), group: label(model.group, 'Models'), variants };
-  });
+  const agents = (Array.isArray(composer.agents) ? composer.agents : [])
+    .map((agent) => {
+      const id = label(agent?.id, '');
+      return id ? { id, label: label(agent.label, id) } : null;
+    })
+    .filter(Boolean)
+    .slice(0, 300);
   const agent = agents.some((item) => item.id === composer.agent) ? composer.agent : null;
-  const model = models.find((item) => item.id === composer.model) ?? null;
-  const variant = model?.variants.includes(composer.variant) ? composer.variant : null;
-  return { agents, models, agent, model: model?.id ?? null, variant };
+  return { agents, agent };
 }
 
-/** The bar's labels for the agent, model and effort buttons; a null label hides its button. */
+/** The bar's agent label; null hides the button. */
 function composerLabels(composer) {
   if (!composer) return null;
-  const model = composer.models.find((item) => item.id === composer.model);
-  return {
-    agent: composer.agents.find((item) => item.id === composer.agent)?.label ?? null,
-    model: model?.label ?? null,
-    // The composer hides effort for a model without variants.
-    effort: model?.variants.length ? effortLabel(composer.variant) : null,
-  };
+  return { agent: composer.agents.find((item) => item.id === composer.agent)?.label ?? null };
 }
 
-/**
- * One composer menu's rows: `{ value, label, checked }`, with `{ header }`
- * rows naming each model provider. `value` is what the web app applies: an
- * agent name, a model key, or a variant (null = Auto).
- */
+/** The agent menu's rows: `{ value, label, checked }`. `value` is the agent name the web app applies. */
 function composerMenuItems(composer, kind) {
-  if (!composer) return [];
-  if (kind === 'agent') {
-    return composer.agents.map((agent) => ({ value: agent.id, label: agent.label, checked: agent.id === composer.agent }));
-  }
-  if (kind === 'model') {
-    const rows = [];
-    for (const model of composer.models) {
-      if (rows.at(-1)?.group !== model.group) rows.push({ header: model.group, group: model.group });
-      rows.push({ value: model.id, label: model.label, checked: model.id === composer.model, group: model.group });
-    }
-    return rows.map(({ group: _group, ...row }) => row);
-  }
-  if (kind === 'effort') {
-    const variants = composer.models.find((model) => model.id === composer.model)?.variants ?? [];
-    return [
-      { value: null, label: 'Auto', checked: !composer.variant },
-      ...variants.map((variant) => ({ value: variant, label: effortLabel(variant), checked: variant === composer.variant })),
-    ];
-  }
-  return [];
+  if (!composer || kind !== 'agent') return [];
+  return composer.agents.map((agent) => ({ value: agent.id, label: agent.label, checked: agent.id === composer.agent }));
 }
 
 /** The session a prompt goes to: the picked one while the web app still lists it, else null (a new session). */
 function pickedSession(target, sessionId) {
   return target?.sessions.find((session) => session.id === sessionId) ?? null;
+}
+
+/** A pick is kept for the next open while its session is live; else the bar opens on a new session. */
+const LIVE_STATUSES = new Set(['running', 'starting', 'needs-you']);
+function keptPick(target, sessionId) {
+  const session = pickedSession(target, sessionId);
+  return session && LIVE_STATUSES.has(session.status) ? session.id : null;
 }
 
 /** "just now", "5 min ago", "3 h ago", "Yesterday", else "Oct 9". */
@@ -223,7 +189,7 @@ function relativeTime(ms, now) {
 function pickerItems(target, sessionId, now = Date.now()) {
   const picked = pickedSession(target, sessionId);
   return [
-    { sessionId: null, label: target?.name ? `New session in ${target.name}` : 'New session', checked: !picked },
+    { sessionId: null, label: 'New session', checked: !picked },
     ...(target?.sessions ?? []).map((session) => ({
       sessionId: session.id,
       label: session.title,
@@ -245,6 +211,7 @@ module.exports = {
   composerMenuItems,
   freshPrompt,
   normalizeTarget,
+  keptPick,
   pickedSession,
   pickerItems,
   MAX_ATTACHMENTS,

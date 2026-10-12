@@ -1666,15 +1666,15 @@ for (const runtime of runtimes) {
           const bar = desktopApp
             .windows()
             .find((window) => window.url().endsWith("/quick-entry.html"))!;
-          await expect(bar.locator("#pick-label")).toHaveText(
+          await expect(bar.locator("#pick-label")).toHaveText("New session");
+          await expect(bar.locator("#pick")).toHaveAttribute(
+            "title",
             "New session in Quick Entry target",
           );
-          // The new session's agent and model, resolved as project home does.
-          await expect(bar.locator("#model-label")).toHaveText(
-            "E2E managed model",
-            { timeout: 30_000 },
-          );
-          await expect(bar.locator("#agent")).toBeVisible();
+          // The new session's agent, resolved as project home does. The model
+          // and effort stay the composer's own: the bar has no control for them.
+          await expect(bar.locator("#agent")).toBeVisible({ timeout: 30_000 });
+          await expect(bar.locator("#model, #effort")).toHaveCount(0);
           const prompt = `Quick Entry prompt ${randomUUID()}`;
           const created = page.waitForResponse(
             (response) =>
@@ -1810,9 +1810,7 @@ for (const runtime of runtimes) {
           const bar = desktopApp
             .windows()
             .find((window) => window.url().endsWith("/quick-entry.html"))!;
-          await expect(bar.locator("#pick-label")).toHaveText(
-            "New session in Quick Entry picker",
-          );
+          await expect(bar.locator("#pick-label")).toHaveText("New session");
 
           // The list arrives with the sidebar's session query.
           const readPicker = async () => {
@@ -1826,7 +1824,7 @@ for (const runtime of runtimes) {
           };
           await expect(async () => {
             expect(await readPicker()).toEqual([
-              "New session in Quick Entry picker",
+              "New session",
               "",
               "Recent sessions",
               "Picked session target",
@@ -1851,14 +1849,21 @@ for (const runtime of runtimes) {
             new RegExp(`/projects/${projectId}/sessions/${pickedId}`),
             { timeout: 60_000 },
           );
-          // The pick goes with the draft: the next open starts a new session.
+          // The next open keeps the pick while the session is live (running,
+          // starting, needs you); any other status starts a new session.
           await desktopApp.evaluate(({ Menu }) => {
             Menu.getApplicationMenu()
               ?.getMenuItemById("kx-file-quick-entry")
               ?.click();
           });
+          await expect(bar.locator("#prompt")).toBeFocused();
+          const live =
+            (await bar.locator("#dot").isVisible()) &&
+            ["running", "starting", "needs-you"].includes(
+              (await bar.locator("#dot").getAttribute("data-status")) ?? "",
+            );
           await expect(bar.locator("#pick-label")).toHaveText(
-            "New session in Quick Entry picker",
+            live ? "Picked session target" : "New session",
           );
           await bar.locator("#prompt").press("Escape");
         } finally {

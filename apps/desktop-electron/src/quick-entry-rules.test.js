@@ -9,6 +9,7 @@ const {
   freshPrompt,
   normalizeTarget,
   pickerItems,
+  keptPick,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
   normalizeAttachments,
@@ -47,10 +48,10 @@ describe('shortcutLabel', () => {
 });
 
 describe('quickEntryBounds', () => {
-  test('centers the bar at the bottom of the display under the cursor, a tenth of the way up', () => {
+  test('centers the bar at the bottom of the display under the cursor, a twentieth of the way up', () => {
     expect(quickEntryBounds({ x: 0, y: 25, width: 1440, height: 875 }, 744, 156)).toEqual({
       x: 348,
-      y: 657,
+      y: 700,
       width: 744,
       height: 156,
     });
@@ -59,7 +60,7 @@ describe('quickEntryBounds', () => {
   test('stays on a secondary display left of the primary one', () => {
     expect(quickEntryBounds({ x: -1920, y: 0, width: 1920, height: 1080 }, 744, 156)).toEqual({
       x: -1332,
-      y: 816,
+      y: 870,
       width: 744,
       height: 156,
     });
@@ -139,7 +140,7 @@ describe('pickerItems', () => {
 
   test('a new session in the project comes first and is the default', () => {
     expect(pickerItems(target, null)).toEqual([
-      { sessionId: null, label: 'New session in Website', checked: true },
+      { sessionId: null, label: 'New session', checked: true },
       { sessionId: 's1', label: 'Fix login', status: 'running', statusText: 'Running', checked: false },
       { sessionId: 's2', label: 'Write docs', status: 'stopped', statusText: 'Stopped', checked: false },
     ]);
@@ -151,6 +152,23 @@ describe('pickerItems', () => {
 
   test('a pick the web app no longer lists falls back to a new session', () => {
     expect(pickerItems(target, 'deleted').map((item) => item.checked)).toEqual([true, false, false]);
+  });
+
+  test('the next open keeps a pick while its session is live, else starts a new session', () => {
+    const live = normalizeTarget({
+      projectId: 'p1',
+      sessions: ['running', 'starting', 'needs-you', 'done', 'stopped', 'failed'].map((status) => ({ id: status, title: status, status })),
+    });
+    expect(['running', 'starting', 'needs-you', 'done', 'stopped', 'failed'].map((id) => keptPick(live, id))).toEqual([
+      'running',
+      'starting',
+      'needs-you',
+      null,
+      null,
+      null,
+    ]);
+    expect(keptPick(live, 'deleted')).toBeNull();
+    expect(keptPick(null, 'running')).toBeNull();
   });
 
   test('with no project known, only "New session" is offered', () => {
@@ -227,21 +245,14 @@ describe('the new session composer row', () => {
         { id: 'meta', label: 'Meta' },
       ],
       agent: 'kortix',
-      models: [
-        { id: 'anthropic:claude', label: 'Claude', group: 'Anthropic', variants: [] },
-        { id: 'openai:gpt', label: 'GPT-6 Astra', group: 'OpenAI', variants: ['low', 'high'] },
-      ],
+      models: [{ id: 'openai:gpt', label: 'GPT-6 Astra', variants: ['high'] }],
       model: 'openai:gpt',
-      variant: 'high',
     },
   });
 
-  test('labels the agent, model and effort the way the composer shows them', () => {
-    expect(composerLabels(target.composer)).toEqual({ agent: 'Kortix', model: 'GPT-6 Astra', effort: 'High' });
-  });
-
-  test('hides effort for a model without variants, as the composer does', () => {
-    expect(composerLabels({ ...target.composer, model: 'anthropic:claude', variant: null }).effort).toBeNull();
+  test('labels the agent the way the composer shows it; the model and effort stay off the bar', () => {
+    expect(target.composer).toEqual({ agents: [{ id: 'kortix', label: 'Kortix' }, { id: 'meta', label: 'Meta' }], agent: 'kortix' });
+    expect(composerLabels(target.composer)).toEqual({ agent: 'Kortix' });
   });
 
   test('no composer from the web app hides the whole row', () => {
@@ -249,29 +260,18 @@ describe('the new session composer row', () => {
     expect(normalizeTarget({ projectId: 'p1' }).composer).toBeNull();
   });
 
-  test('the model menu names each provider above its models, and checks the current one', () => {
-    expect(composerMenuItems(target.composer, 'model')).toEqual([
-      { header: 'Anthropic' },
-      { value: 'anthropic:claude', label: 'Claude', checked: false },
-      { header: 'OpenAI' },
-      { value: 'openai:gpt', label: 'GPT-6 Astra', checked: true },
+  test('the agent menu checks the current agent; no other menu has rows', () => {
+    expect(composerMenuItems(target.composer, 'agent')).toEqual([
+      { value: 'kortix', label: 'Kortix', checked: true },
+      { value: 'meta', label: 'Meta', checked: false },
     ]);
+    expect(composerMenuItems(target.composer, 'model')).toEqual([]);
   });
 
-  test("the effort menu offers Auto and the current model's variants", () => {
-    expect(composerMenuItems(target.composer, 'effort')).toEqual([
-      { value: null, label: 'Auto', checked: false },
-      { value: 'low', label: 'Low', checked: false },
-      { value: 'high', label: 'High', checked: true },
-    ]);
-  });
-
-  test('drops a selection the lists do not hold', () => {
-    const composer = normalizeTarget({
-      projectId: 'p1',
-      composer: { agents: [{ id: 'kortix' }], agent: 'gone', models: [{ id: 'm', variants: ['low'] }], model: 'm', variant: 'max' },
-    }).composer;
-    expect(composer).toMatchObject({ agent: null, model: 'm', variant: null });
-    expect(composerLabels(composer)).toEqual({ agent: null, model: 'm', effort: 'Auto' });
+  test('drops an agent the list does not hold', () => {
+    const composer = normalizeTarget({ projectId: 'p1', composer: { agents: [{ id: 'kortix' }], agent: 'gone' } }).composer;
+    expect(composer).toEqual({ agents: [{ id: 'kortix', label: 'kortix' }], agent: null });
+    expect(composerLabels(composer)).toEqual({ agent: null });
   });
 });
+
