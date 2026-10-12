@@ -561,23 +561,23 @@ The turn model over session-log blocks: what a transcript renders a thread from.
 
 | Name | What it does | Replaces |
 | --- | --- | --- |
-| `groupLogIntoTurns(thread, options?)` | One `LogTurn` per user message: `id`, `user`, `assistant` (the replies, by `reply_to` then order), `partial` (the prompt is not loaded), `blocks` (every reply block), and the derived fields `status` (`pending`, else the last reply's status), `error` (`code`, `message`, `details`, `raw`), `cost` (the replies' usage priced with the platform markup), `compaction` (`block`, `hasContent`, `inFlight`), `threads` (the sub-threads it spawned), `plan` (owns the plan card), `shell` (shell mode's bash call), `response` (the last text block), `attachments`, `live`, `queued`, `retrying`. Options: `busy`, `liveMessageId`, `held` (the prompts the inbox holds, in queue order), `threads`, `pricing`. A turn keeps its identity while its messages and derived fields do. A message out of context keeps its turn. | `groupMessagesIntoTurns`, `collectTurnParts`, `getTurnError`, `getTurnErrorDetails`, `getTurnErrorRawText`, `getTurnCost`, `compactionTurnInfo`, `getShellModePart`, `findLastTextPart`, `isAttachment`, `getWorkingState`, `resolveWorkingTurn`, `hasRetryingAssistantTurn`, `getChildSessionId` |
-| `logTurnSegments(blocks, options?)` | The segments of a turn: `burst` (a run of non-text blocks), `text`, `standalone` (a `show` or sub-agent call, or a call named in `standaloneCallIds`), `show-group` (adjacent `show` calls). | `segmentTurn`, `groupShowSegments` |
-| `splitLogTurnWork(segments, { working })` | The settled-turn fold: `work`, `hoisted` (the `show` deliverables), `final` (the last text). `null` while the turn works or has no work. | `splitTurnWork` |
-| `logBurstSteps(blocks)` | The rows of a burst: `thought` (a run of reasoning; `running` only while its message streams), `block`, `group` (same-family calls, with `family`, `label`, `status`). An answered question is its own row. | `mergeBurstSteps`, `stepLabel` |
-| `logCallStatus(call, live)` | The status a call renders with: `pending`, `running`, `complete`, `error`, or `interrupted`. An open call, or one the closure rule closed (`result.synthetic`, or `result.error.code` `'interrupted'`), is `running` (started) or `pending` on a live turn and `interrupted` on any other. | new |
-| `logActivityText(turn, childMessages?)` | The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's messages. | `getTurnStatus` |
-| `promptLogMessage(prompt, threadId)` | The user message of a queued inbox prompt (`SessionPrompt`) the thread has not placed: id `message_id`, else `queued-<prompt_id>`. Append it after the thread's messages and name it in `held`. | the host's synthetic row |
+| `sessionLogTurns(thread, options?)` | One `SessionLogTurn` per user message: `id`, `user`, `assistant` (the replies, by `reply_to` then order), `partial` (the prompt is not loaded), `blocks` (every reply block), and the derived fields `status` (`pending`, else the last reply's status), `error` (`code`, `message`, `details`, `raw`), `cost` (the replies' usage priced with the platform markup), `compaction` (`block`, `hasContent`, `inFlight`), `threads` (the sub-threads it spawned), `plan` (owns the plan card), `shell` (shell mode's bash call), `response` (the last text block), `attachments`, `live`, `queued`, `retrying`. Options: `busy`, `liveMessageId`, `held` (the prompts the inbox holds, in queue order), `threads`, `pricing`. A turn keeps its identity while its messages and derived fields do. A message out of context keeps its turn. | `groupMessagesIntoTurns`, `collectTurnParts`, `getTurnError`, `getTurnErrorDetails`, `getTurnErrorRawText`, `getTurnCost`, `compactionTurnInfo`, `getShellModePart`, `findLastTextPart`, `isAttachment`, `getWorkingState`, `resolveWorkingTurn`, `hasRetryingAssistantTurn`, `getChildSessionId` |
+| `sessionLogTurnSegments(blocks, options?)` | The segments of a turn: `burst` (a run of non-text blocks), `text`, `standalone` (a `show` or sub-agent call, or a call named in `standaloneCallIds`), `show-group` (adjacent `show` calls). | `segmentTurn`, `groupShowSegments` |
+| `splitSessionLogTurnWork(segments, { working })` | The settled-turn fold: `work`, `hoisted` (the `show` deliverables), `final` (the last text). `null` while the turn works or has no work. | `splitTurnWork` |
+| `sessionLogBurstSteps(blocks)` | The rows of a burst: `thought` (a run of reasoning; `running` only while its message streams), `block`, `group` (same-family calls, with `family`, `label`, `status`). An answered question is its own row. | `mergeBurstSteps`, `stepLabel` |
+| `sessionLogCallStatus(call, live)` | The status a call renders with: `pending`, `running`, `complete`, `error`, or `interrupted`. An open call, or one the closure rule closed (`result.synthetic`, or `result.error.code` `'interrupted'`), is `running` (started) or `pending` on a live turn and `interrupted` on any other. | new |
+| `sessionLogActivityText(turn, childMessages?)` | The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's messages. | `getTurnStatus` |
+| `sessionLogPromptMessage(prompt, threadId)` | The user message of a queued inbox prompt (`SessionPrompt`) the thread has not placed: id `message_id`, else `queued-<prompt_id>`. Append it after the thread's messages and name it in `held`. | the host's synthetic row |
 
 A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`.
 
 ```ts
-import { groupLogIntoTurns, logTurnSegments, logCallStatus } from '@kortix/sdk';
+import { sessionLogTurns, sessionLogTurnSegments, sessionLogCallStatus } from '@kortix/sdk';
 
-const turns = groupLogIntoTurns(thread, { busy, liveMessageId: working.turnId, held: heldIds, threads: log.threads });
+const turns = sessionLogTurns(thread, { busy, liveMessageId: working.turnId, held: heldIds, threads: log.threads });
 for (const turn of turns) {
-  for (const segment of logTurnSegments(turn.blocks)) {
-    if (segment.kind === 'standalone') render(segment.block, logCallStatus(segment.block, turn.live));
+  for (const segment of sessionLogTurnSegments(turn.blocks)) {
+    if (segment.kind === 'standalone') render(segment.block, sessionLogCallStatus(segment.block, turn.live));
   }
 }
 ```

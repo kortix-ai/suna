@@ -165,6 +165,19 @@ describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks
     expect({ ...merged, messages: [] }).toEqual({ ...thread, messages: [] });
   });
 
+  test('a stub whose echo id the log holds (a re-minted prompt) stays out, in the thread and in the v1 rows', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    const echo = thread.messages[0]!.message_id;
+    const stub = optimistic('msg_stub', 1, 'sent');
+    const echoOf = (id: string) => (id === 'msg_stub' ? echo : undefined);
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub], echoOf)).toBe(thread);
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub]).messages.at(-1)!.message_id).toBe('msg_stub');
+    const rows = sessionLogRowsFor({ kses_1: state }, ROOT, [stub], echoOf);
+    expect(rows.map((r) => r.info.id)).not.toContain('msg_stub');
+    expect(sessionLogRowsFor({ kses_1: state }, ROOT, [stub]).map((r) => r.info.id)).toContain('msg_stub');
+  });
+
   test('identity: the same inputs give the same thread; no extra row gives the thread itself; a changed row renews only its message', () => {
     const state = stateOf(v1Golden);
     const thread = selectSessionLogThread(state)!;

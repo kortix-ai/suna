@@ -36,12 +36,12 @@ import {
 import { messageOfBlock, v1RowsOf } from './v1-parts';
 
 /** The turn's state: `pending` before a reply, else the last reply's `status` (`streaming` while a reply retries). */
-export type LogTurnStatus = 'pending' | SessionLogMessage['status'];
+export type SessionLogTurnStatus = 'pending' | SessionLogMessage['status'];
 
-/** The effective status of a tool call on a turn, see {@link logCallStatus}. */
-export type LogCallStatus = ToolCallBlock['status'] | 'interrupted';
+/** The effective status of a tool call on a turn, see {@link sessionLogCallStatus}. */
+export type SessionLogCallStatus = ToolCallBlock['status'] | 'interrupted';
 
-export interface LogTurnError {
+export interface SessionLogTurnError {
   /** The schema code (`SessionLogMessage['error']['code']`). */
   code: string;
   /** The sentence to show: the gateway's own, else the message unwrapped (`unwrapError`). */
@@ -52,7 +52,7 @@ export interface LogTurnError {
   raw?: string;
 }
 
-export interface LogCompaction {
+export interface SessionLogCompaction {
   block: CompactionBlock | null;
   /** The summary is here and not blank. */
   hasContent: boolean;
@@ -60,7 +60,7 @@ export interface LogCompaction {
   inFlight: boolean;
 }
 
-export interface LogTurn {
+export interface SessionLogTurn {
   /** The user message id, the turn's key. */
   id: string;
   user: SessionLogMessage;
@@ -70,12 +70,12 @@ export interface LogTurn {
   partial: boolean;
   /** Every block of every reply, in order. */
   blocks: SessionLogBlock[];
-  status: LogTurnStatus;
+  status: SessionLogTurnStatus;
   /** The first error on the turn (the marker's on a compaction, else the first errored reply). */
-  error: LogTurnError | null;
+  error: SessionLogTurnError | null;
   /** The replies' usage priced with the platform markup; null when no reply reports usage. */
   cost: TurnCostInfo | null;
-  compaction: LogCompaction | null;
+  compaction: SessionLogCompaction | null;
   /** The sub-threads this turn spawned, by `spawned_by`, a subtask block, or a task call's child id. */
   threads: string[];
   /** This turn owns the plan card: the last turn that wrote the todo list, else the last turn. */
@@ -94,7 +94,7 @@ export interface LogTurn {
   retrying: boolean;
 }
 
-export interface GroupLogTurnsOptions {
+export interface SessionLogTurnsOptions {
   /** The session is working (the composer shows Stop). Default false: no turn is live. */
   busy?: boolean;
   /** The user message id the working projection names (`WorkingProjection.turnId`), when it names one. */
@@ -126,7 +126,7 @@ const isClosedByRule = (b: ToolCallBlock) => b.status === 'error' && (b.result?.
  * started, else `pending`); on any other turn they were interrupted. A call the tool ended
  * keeps its own status.
  */
-export function logCallStatus(call: ToolCallBlock, live: boolean): LogCallStatus {
+export function sessionLogCallStatus(call: ToolCallBlock, live: boolean): SessionLogCallStatus {
   const closed = isClosedByRule(call);
   if (!isOpen(call) && !closed) return call.status;
   if (!live) return 'interrupted';
@@ -140,7 +140,7 @@ const prompts = new WeakMap<SessionPrompt, SessionLogMessage>();
  * append after the thread's messages and name in `held`. Its id is the prompt's `message_id`,
  * else `queued-<prompt_id>`; its text block is `syn-<prompt_id>`. One message per prompt object.
  */
-export function promptLogMessage(prompt: SessionPrompt, threadId: string): SessionLogMessage {
+export function sessionLogPromptMessage(prompt: SessionPrompt, threadId: string): SessionLogMessage {
   const cached = prompts.get(prompt);
   if (cached) return cached;
   const ms = typeof prompt.client_sent_at_ms === 'number' ? prompt.client_sent_at_ms : Date.parse(prompt.created_at);
@@ -221,7 +221,7 @@ function drafts(messages: readonly SessionLogMessage[], held: ReadonlySet<string
 
 // ─── derived fields ──────────────────────────────────────────────────────────
 
-function errorOf(d: Draft): LogTurnError | null {
+function errorOf(d: Draft): SessionLogTurnError | null {
   const sources = d.user.kind === 'compaction' ? [d.user, ...d.assistant] : d.assistant;
   const m = sources.find((x) => x.error);
   if (!m?.error) return null;
@@ -245,7 +245,7 @@ function costOf(replies: SessionLogMessage[], lookup?: ModelPricingLookup): Turn
   return getTurnCost(parts, lookup) ?? null;
 }
 
-function compactionOf(user: SessionLogMessage): LogCompaction | null {
+function compactionOf(user: SessionLogMessage): SessionLogCompaction | null {
   if (user.kind !== 'compaction') return null;
   const block = user.blocks.find((b): b is CompactionBlock => b.type === 'compaction') ?? null;
   return { block, hasContent: !!block?.summary?.trim(), inFlight: user.status === 'streaming' };
@@ -258,9 +258,8 @@ function shellOf(d: Draft): ToolCallBlock | null {
   return only && isCall(only) && only.name === 'bash' ? only : null;
 }
 
-function threadsOf(d: Draft, blocks: SessionLogBlock[], heads: NonNullable<GroupLogTurnsOptions['threads']>): string[] {
+function threadsOf(d: Draft, blocks: SessionLogBlock[], heads: NonNullable<SessionLogTurnsOptions['threads']>, known: ReadonlySet<string>): string[] {
   if (!heads.length) return [];
-  const known = new Set(heads.map((h) => h.thread_id));
   const replies = new Set(d.assistant.map((m) => m.message_id));
   const out = new Set<string>();
   for (const h of heads) if (h.spawned_by && replies.has(h.spawned_by.message_id)) out.add(h.thread_id);
@@ -273,11 +272,11 @@ function threadsOf(d: Draft, blocks: SessionLogBlock[], heads: NonNullable<Group
 
 const writesPlan = (d: Draft) => d.assistant.some((m) => m.blocks.some((b) => isCall(b) && toolKind(b.name) === 'todowrite' && shouldShowToolPart(b)));
 
-const cache = new WeakMap<SessionLogMessage, { assistant: SessionLogMessage[]; key: string; pricing: ModelPricingLookup | undefined; turn: LogTurn }>();
+const cache = new WeakMap<SessionLogMessage, { assistant: SessionLogMessage[]; key: string; pricing: ModelPricingLookup | undefined; heads: unknown; turn: SessionLogTurn }>();
 const NONE: readonly string[] = [];
 
 /** The turns of `thread`, see the module header. */
-export function groupLogIntoTurns(thread: SessionLogThread, options: GroupLogTurnsOptions = {}): LogTurn[] {
+export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
   const held = new Set(options.held ?? NONE);
   const list = drafts(thread.messages, held);
   const lastReply = last(thread.messages, (m) => m.role === 'assistant');
@@ -291,18 +290,20 @@ export function groupLogIntoTurns(thread: SessionLogThread, options: GroupLogTur
     unrunTurnIds: held,
   });
   const anchor = last(list, writesPlan) ?? list[list.length - 1];
+  const heads = options.threads ?? [];
+  const known = new Set(heads.map((h) => h.thread_id));
   return list.map((d) => {
-    const blocks = d.assistant.flatMap((m) => m.blocks);
-    for (const m of d.assistant) for (const b of m.blocks) messageOfBlock.set(b, m);
-    const threads = threadsOf(d, blocks, options.threads ?? []);
     const live = options.busy === true && working.workingTurnId === d.user.message_id;
     const queued = working.pendingTurnIds.includes(d.user.message_id);
     const retries = retrying && d.assistant.includes(lastReply!);
-    const key = `${d.partial}|${live}|${queued}|${d === anchor}|${retries}|${threads.join(',')}`;
+    const key = `${d.partial}|${live}|${queued}|${d === anchor}|${retries}`;
     const prev = cache.get(d.user);
-    if (prev && prev.key === key && prev.pricing === options.pricing && prev.assistant.length === d.assistant.length && prev.assistant.every((m, i) => m === d.assistant[i])) return prev.turn;
+    if (prev && prev.key === key && prev.pricing === options.pricing && prev.heads === options.threads && prev.assistant.length === d.assistant.length && prev.assistant.every((m, i) => m === d.assistant[i])) return prev.turn;
+    const blocks = d.assistant.flatMap((m) => m.blocks);
+    for (const m of d.assistant) for (const b of m.blocks) messageOfBlock.set(b, m);
+    const threads = threadsOf(d, blocks, heads, known);
     const reply = d.assistant[d.assistant.length - 1];
-    const turn: LogTurn = {
+    const turn: SessionLogTurn = {
       id: d.user.message_id,
       user: d.user,
       assistant: d.assistant,
@@ -321,7 +322,7 @@ export function groupLogIntoTurns(thread: SessionLogThread, options: GroupLogTur
       queued,
       retrying: retries,
     };
-    cache.set(d.user, { assistant: d.assistant, key, pricing: options.pricing, turn });
+    cache.set(d.user, { assistant: d.assistant, key, pricing: options.pricing, heads: options.threads, turn });
     return turn;
   });
 }

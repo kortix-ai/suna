@@ -18,28 +18,27 @@ import { splitTurnWork } from '../../turns/segments/work-split';
 import { getTurnStatus } from '../../turns/state';
 import { parseQuestionAnswersFromOutput } from '../../turns/tools/question-helpers';
 import type { SessionLogBlock, SessionLogMessage, TextBlock, ToolCallBlock } from '../types';
-import type { LogTurn } from './turn';
+import type { SessionLogTurn } from './turn';
 import { blockOf, messageOfBlock, partOf, partsOf, v1RowsOf } from './v1-parts';
 
-export type LogSegment =
+export type SessionLogSegment =
   | { kind: 'burst'; blocks: SessionLogBlock[] }
   | { kind: 'text'; block: TextBlock }
   | { kind: 'standalone'; block: ToolCallBlock }
   /** Two or more adjacent `show` calls, one carousel. */
   | { kind: 'show-group'; blocks: ToolCallBlock[] };
 
-export type { SegmentTurnOptions as LogSegmentOptions };
 
-export interface LogTurnWorkSplit {
+export interface SessionLogTurnWorkSplit {
   /** Folded behind the "Worked for" row. Never empty. */
-  work: LogSegment[];
+  work: SessionLogSegment[];
   /** The `show` deliverables, in call order. */
-  hoisted: LogSegment[];
+  hoisted: SessionLogSegment[];
   /** The final text segment, or empty when the turn did not end on text. */
-  final: LogSegment[];
+  final: SessionLogSegment[];
 }
 
-export type LogBurstStep =
+export type SessionLogBurstStep =
   | { kind: 'thought'; key: string; texts: string[]; running: boolean; durationMs?: number }
   | { kind: 'block'; key: string; block: SessionLogBlock }
   | { kind: 'group'; key: string; blocks: ToolCallBlock[]; family: StepFamily; label: string; status: 'running' | 'error' | 'done'; durationMs?: number };
@@ -47,7 +46,7 @@ export type LogBurstStep =
 const call = (p: object) => blockOf(p) as ToolCallBlock;
 
 /** The segments of a turn's blocks: a burst is a run of non-text blocks, closed by a text block; `show` and sub-agent calls stand alone. */
-export function logTurnSegments(blocks: ReadonlyArray<SessionLogBlock>, options: SegmentTurnOptions = {}): LogSegment[] {
+export function sessionLogTurnSegments(blocks: ReadonlyArray<SessionLogBlock>, options: SegmentTurnOptions = {}): SessionLogSegment[] {
   return groupShowSegments(segmentTurn(partsOf(blocks), options), options).map((s) =>
     s.kind === 'burst' ? { kind: s.kind, blocks: s.parts.map(blockOf) }
     : s.kind === 'show-group' ? { kind: s.kind, blocks: s.parts.map(call) }
@@ -56,11 +55,11 @@ export function logTurnSegments(blocks: ReadonlyArray<SessionLogBlock>, options:
   );
 }
 
-const v1Segment = (s: LogSegment): ShowGroupedSegment =>
+const v1Segment = (s: SessionLogSegment): ShowGroupedSegment =>
   s.kind === 'burst' || s.kind === 'show-group' ? ({ kind: s.kind, parts: partsOf(s.blocks) } as ShowGroupedSegment) : ({ kind: s.kind, part: partOf(s.block) } as ShowGroupedSegment);
 
 /** The settled-turn fold of `segments`: `null` while the turn works, or when it has no work to fold. */
-export function splitLogTurnWork(segments: ReadonlyArray<LogSegment>, options: { working: boolean }): LogTurnWorkSplit | null {
+export function splitSessionLogTurnWork(segments: ReadonlyArray<SessionLogSegment>, options: { working: boolean }): SessionLogTurnWorkSplit | null {
   const by = new Map(segments.map((s) => [v1Segment(s), s] as const));
   const split = splitTurnWork([...by.keys()], options);
   if (!split) return null;
@@ -82,7 +81,7 @@ function isAnswered(part: Part): boolean {
  * consecutive same-family calls are one group row; an answered question is its own row. A
  * thought runs only while its message streams (a native reasoning block carries no end time).
  */
-export function logBurstSteps(blocks: ReadonlyArray<SessionLogBlock>): LogBurstStep[] {
+export function sessionLogBurstSteps(blocks: ReadonlyArray<SessionLogBlock>): SessionLogBurstStep[] {
   const steps = mergeBurstSteps(partsOf(blocks), (p) => stepLabel(p).tier).flatMap((step): BurstStep[] =>
     step.kind === 'group' && step.step.parts.some(isAnswered) ? step.step.parts.map((part) => ({ kind: 'part', key: part.id, part })) : [step],
   );
@@ -96,6 +95,6 @@ export function logBurstSteps(blocks: ReadonlyArray<SessionLogBlock>): LogBurstS
 }
 
 /** The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's `childMessages`. */
-export function logActivityText(turn: Pick<LogTurn, 'blocks'>, childMessages?: readonly SessionLogMessage[]): string {
+export function sessionLogActivityText(turn: Pick<SessionLogTurn, 'blocks'>, childMessages?: readonly SessionLogMessage[]): string {
   return getTurnStatus(partsOf(turn.blocks).map((part) => ({ part })), childMessages?.flatMap(v1RowsOf));
 }

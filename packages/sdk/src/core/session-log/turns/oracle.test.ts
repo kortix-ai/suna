@@ -1,6 +1,6 @@
 /**
  * The equivalence oracle of the block turn layer: for every golden fixture session, the v1
- * parity fixture and the edge cases below, `groupLogIntoTurns` and its block functions, projected
+ * parity fixture and the edge cases below, `sessionLogTurns` and its block functions, projected
  * to v1 ids, equal the v1 turn helpers on the same rows. Each accepted difference is listed in
  * `ACCEPTED` with its reason; any other difference fails.
  *
@@ -45,7 +45,7 @@ import {
 import type { SessionLog, SessionLogThread } from '../types';
 import { toV1 } from '../v1';
 import { sessionLogOfV1Rows, type V1MessageRow } from '../v1-view';
-import { groupLogIntoTurns, logActivityText, logBurstSteps, logTurnSegments, splitLogTurnWork, type LogBurstStep, type LogSegment, type LogTurn } from './index';
+import { sessionLogTurns, sessionLogActivityText, sessionLogBurstSteps, sessionLogTurnSegments, splitSessionLogTurnWork, type SessionLogBurstStep, type SessionLogSegment, type SessionLogTurn } from './index';
 import { partOf, v1RowsOf } from './v1-parts';
 
 const FIXTURES = join(import.meta.dir, '../../../../../api-contract/src/__tests__/fixtures/session-log');
@@ -92,9 +92,10 @@ function planAnchorV1(rows: Rows): string | null {
 type Projected = Record<string, unknown>;
 const segV1 = (s: ShowGroupedSegment) =>
   s.kind === 'burst' || s.kind === 'show-group' ? { kind: s.kind, ids: s.parts.map((p) => p.id) } : { kind: s.kind, ids: [s.part.id] };
+// A thought's `running` is left out: the block layer clamps it to a streaming message (group.test.ts), v1 reads a missing end time as running.
 const stepV1 = (s: BurstStep) =>
   s.kind === 'thought'
-    ? { kind: s.kind, key: s.key, texts: s.texts, running: s.running, durationMs: s.durationMs }
+    ? { kind: s.kind, key: s.key, texts: s.texts, durationMs: s.durationMs }
     : s.kind === 'part'
       ? { kind: s.kind, key: s.key, ids: [s.part.id] }
       : { kind: s.kind, key: s.key, ids: s.step.parts.map((p) => p.id), family: s.step.family, label: s.step.label, status: s.step.status };
@@ -108,7 +109,17 @@ function v1Turn(turn: TurnLike<V1MessageRow>, opts: Opts, working: { id: string 
   const running = [...parts].reverse().find(({ part }) => isToolPart(part) && (part as ToolPart).state.status === 'running')?.part as ToolPart | undefined;
   const child = running ? children[(running.state as { metadata?: { sessionId?: string } }).metadata?.sessionId ?? ''] : undefined;
   const split = splitTurnWork(segments, { working: false });
+  // What the v1 cost read: step-finish parts per reply, and the totals they carry.
+  const stepParts = turn.assistantMessages.map((m) => m.parts.filter((p) => p.type === 'step-finish') as Array<{ cost?: number; tokens?: { input?: number; output?: number; reasoning?: number } }>);
+  const total = (p: { cost?: number; tokens?: { input?: number; output?: number; reasoning?: number } }) => (p.cost ?? 0) + (p.tokens?.input ?? 0) + (p.tokens?.output ?? 0) + (p.tokens?.reasoning ?? 0);
+  const facts = {
+    steps: Math.max(0, ...stepParts.map((list) => list.length)),
+    stepTotals: stepParts.flat().reduce((n, p) => n + total(p), 0),
+    // What the replies' own `info` carries: OpenCode accumulates its steps into it, a synthetic fixture may not.
+    infoTotals: turn.assistantMessages.reduce((n, m) => n + total(m.info as never), 0),
+  };
   return {
+    facts,
     user: turn.userMessage.info.id,
     partial: turn.partial === true,
     assistant: turn.assistantMessages.map((m) => m.info.id),
@@ -144,20 +155,20 @@ function v1Side(rows: Rows, opts: Opts, children: Record<string, Rows>) {
 // ─── the block layer, projected to v1 ids ──────────────────────────────────
 
 const ids = (blocks: readonly unknown[]) => blocks.map((b) => partOf(b as never)?.id ?? `!${(b as { id: string }).id}`);
-const segLog = (s: LogSegment) =>
+const segLog = (s: SessionLogSegment) =>
   s.kind === 'burst' || s.kind === 'show-group' ? { kind: s.kind, ids: ids(s.blocks) } : { kind: s.kind, ids: ids([s.block]) };
-const stepLog = (s: LogBurstStep) =>
+const stepLog = (s: SessionLogBurstStep) =>
   s.kind === 'thought'
-    ? { kind: s.kind, key: s.key, texts: s.texts, running: s.running, durationMs: s.durationMs }
+    ? { kind: s.kind, key: s.key, texts: s.texts, durationMs: s.durationMs }
     : s.kind === 'block'
       ? { kind: 'part', key: s.key, ids: ids([s.block]) }
       : { kind: s.kind, key: s.key, ids: ids(s.blocks), family: s.family, label: s.label, status: s.status };
 
-function logTurn(turn: LogTurn, opts: Opts, children: Record<string, SessionLogThread>): Projected {
+function logTurn(turn: SessionLogTurn, opts: Opts, children: Record<string, SessionLogThread>): Projected {
   // A message's v1 rows: the first is the message, a compaction's second its summary reply.
   const [userRow, ...summary] = turn.partial ? [{ info: { id: turn.user.message_id } }] : v1RowsOf(turn.user);
-  const segments = logTurnSegments(turn.blocks, { standaloneCallIds: new Set(opts.standalone) });
-  const split = splitLogTurnWork(segments, { working: false });
+  const segments = sessionLogTurnSegments(turn.blocks, { standaloneCallIds: new Set(opts.standalone) });
+  const split = splitSessionLogTurnWork(segments, { working: false });
   const running = [...turn.blocks].reverse().find((b) => b.type === 'tool_call' && b.status === 'running');
   const childId = running ? turn.threads.find((t) => children[t]) : undefined;
   return {
@@ -172,9 +183,9 @@ function logTurn(turn: LogTurn, opts: Opts, children: Record<string, SessionLogT
     compaction: turn.compaction && { hasContent: turn.compaction.hasContent, inFlight: turn.compaction.inFlight },
     shell: turn.shell ? ids([turn.shell])[0] : null,
     response: turn.response ? ids([turn.response])[0] : null,
-    activity: logActivityText(turn, childId ? children[childId]!.messages : undefined),
+    activity: sessionLogActivityText(turn, childId ? children[childId]!.messages : undefined),
     segments: segments.map(segLog),
-    bursts: segments.flatMap((s) => (s.kind === 'burst' ? [logBurstSteps(s.blocks).map(stepLog)] : [])),
+    bursts: segments.flatMap((s) => (s.kind === 'burst' ? [sessionLogBurstSteps(s.blocks).map(stepLog)] : [])),
     split: split && { work: split.work.map(segLog), hoisted: split.hoisted.map(segLog), final: split.final.map(segLog) },
     plan: turn.plan,
     live: turn.live,
@@ -183,7 +194,7 @@ function logTurn(turn: LogTurn, opts: Opts, children: Record<string, SessionLogT
 }
 
 function logSide(thread: SessionLogThread, opts: Opts, children: Record<string, SessionLogThread>, heads: SessionLogThread[]) {
-  const turns = groupLogIntoTurns(thread, { busy: opts.busy, liveMessageId: opts.hint, held: opts.held, threads: heads });
+  const turns = sessionLogTurns(thread, { busy: opts.busy, liveMessageId: opts.hint, held: opts.held, threads: heads });
   return { turns: turns.map((t) => logTurn(t, opts, children)), retrying: turns.some((t) => t.retrying) };
 }
 
@@ -198,29 +209,54 @@ function differences(name: string, v1: ReturnType<typeof v1Side>, log: ReturnTyp
     const l = log.turns[i];
     if (!l) return;
     for (const key of Object.keys(t)) {
-      if (JSON.stringify(t[key]) !== JSON.stringify(l[key])) out.push({ at: `${name} #${i} ${key}`, v1: t[key], log: l[key], turn: l });
+      if (key === 'facts') continue;
+      if (JSON.stringify(t[key]) !== JSON.stringify(l[key])) out.push({ at: `${name} #${i} ${key}`, v1: t[key], log: l[key], turn: l, v1Turn: t });
     }
   });
   return out;
 }
 
-const rowsOf = (log: SessionLog, thread: SessionLogThread): Rows =>
-  toV1({ ...log, threads: [thread] }).rows.map((r) => ({ info: r.info as unknown as Message, parts: r.parts as unknown as Part[] }));
+/**
+ * The v1 rows of a thread. With `bySeq`, each row is stamped with a time in the record's `seq`
+ * order (pi stamps coarse times and no `reply_to`; claude-code stamps its compaction marker after
+ * the prompt it precedes), so the v1 helpers, which order same-time rows by id, read the record's
+ * order as the block layer does. Their ids are not wire ids, so the stamp is the only clock.
+ */
+const rowsOf = (log: SessionLog, thread: SessionLogThread, bySeq = false): Rows =>
+  bySeq
+    ? thread.messages.flatMap((m) =>
+        toV1({ ...log, threads: [{ ...thread, messages: [m] }] }).rows.map((r, i) => ({
+          info: { ...(r.info as unknown as Message), time: { ...(r.info as { time?: object }).time, created: 1_800_000_000_000 + m.seq * 1000 + i } } as Message,
+          parts: r.parts as unknown as Part[],
+        })),
+      )
+    : toV1({ ...log, threads: [thread] }).rows.map((r) => ({ info: r.info as unknown as Message, parts: r.parts as unknown as Part[] }));
+const SEQ_ORDERED = new Set(['pi', 'claude-code']);
 
-type Difference = { at: string; v1: unknown; log: unknown; turn?: Projected };
+type Facts = { steps?: number; stepTotals?: number; infoTotals?: number };
+type Difference = { at: string; v1: unknown; log: unknown; turn?: Projected & { facts?: Facts }; v1Turn?: Projected & { facts?: Facts } };
 /**
  * Accepted differences, each with why the block result is the one to keep. A rule names the
  * field it covers and the cases it applies to (every case unless `cases` narrows it); every rule
  * must still fire. Filled from the oracle's real output; the PR body carries the same list.
  */
+/**
+ * The v1 cost read and the record's `usage` are allowed to differ only when v1 had nothing the
+ * record has: no step-finish part (v1 then prices usage only through the lookup and ignores a
+ * reported cost; it reports nothing without a lookup); several steps per reply; or step parts
+ * whose totals are not the reply's own (`toV1` writes zero-total step parts for a native record;
+ * a synthetic fixture's steps do not add up to its `info`, which OpenCode accumulates). A
+ * single-step reply whose steps add up must price the same on both sides.
+ */
+const costDiffers = (d: Difference) => {
+  const v1 = d.v1Turn?.facts ?? {};
+  return (d.v1 === null && v1.steps === 0) || (v1.steps ?? 0) > 1 || ((v1.steps ?? 0) > 0 && v1.stepTotals !== v1.infoTotals);
+};
 const ACCEPTED: Array<{ fields: string[]; cases?: RegExp; when?: (d: Difference) => boolean; reason: string }> = [
   {
-    fields: ['cost'],
-    reason: "the reply's `usage` is the record's own field (`cost` as reported, else the lookup); v1 sums step-finish parts and its fallback ignores a reported `info.cost`",
-  },
-  {
-    fields: ['tokens'],
-    reason: "the reply's `usage` is the record's own field; v1 sums step-finish parts, and OpenCode's `info.tokens` is the last step's, so the sums differ on a multi-step reply and on a fixture whose steps do not add up",
+    fields: ['cost', 'tokens'],
+    when: costDiffers,
+    reason: "the reply's `usage` is the record's own field (`cost` as reported, else the lookup); v1 sums step-finish parts, which a native record's `toV1` writes with zero totals and OpenCode's `info.tokens` (the last step's) does not add up to on a multi-step reply, and without a step part it prices usage only through the lookup",
   },
   {
     fields: ['plan'],
@@ -228,23 +264,9 @@ const ACCEPTED: Array<{ fields: string[]; cases?: RegExp; when?: (d: Difference)
     reason: 'the fallback anchor is the last displayed turn, so the plan card stays reachable; v1 takes the last message by time, which a held prompt displayed last is not',
   },
   {
-    fields: ['bursts'],
-    reason: "a thought runs only while its message streams; a reasoning block with no end time (every native one, and a v1 part a provider did not time) reads as running to v1",
-  },
-  {
-    fields: ['details'],
-    cases: /native/,
-    reason: "v1 reports the daemon's own error class (`code: 'unknown'`) as gateway details; the block turn carries it as `error.code` and `details` only for a gateway envelope",
-  },
-  {
-    fields: ['response', 'activity', 'segments', 'split', 'assistant'],
+    fields: ['response', 'activity', 'segments', 'split', 'assistant', 'bursts', 'cost', 'tokens'],
     when: (d) => d.turn?.compaction != null,
-    reason: 'a compaction turn holds its summary in its compaction block; v1 drew the summary as a reply text',
-  },
-  {
-    fields: ['user', 'assistant', 'compaction', 'error', 'response', 'activity', 'segments', 'split'],
-    cases: /^(pi|claude-code) /,
-    reason: "the record's `seq` orders the block layer; v1 orders same-time rows by id (pi stamps coarse times and no `reply_to`; claude-code's compaction marker is stamped after the prompt it precedes), so some replies land on the neighbouring turn",
+    reason: 'a compaction turn holds its summary in its compaction block, and the block layer draws it as a compaction row; v1 drew the summary as a reply (its text, its reasoning burst, its cost)',
   },
 ];
 
@@ -277,15 +299,19 @@ function u(ms: number, tag: string, parts: (mid: string) => object[] = (mid) => 
   const id = wireId(ms, tag);
   return { info: { id, sessionID: SID, role: 'user', time: { created: ms }, agent: 'build', model: { providerID: 'kortix', modelID: 'm' } } as never, parts: parts(id) as never };
 }
+/** A reply whose `cost` and `tokens` are the sums of its step-finish parts, as OpenCode accumulates them (zero without a step). */
 function a(ms: number, tag: string, parent: string | undefined, parts: (mid: string) => object[], info: object = {}): V1MessageRow {
   const id = wireId(ms, tag);
+  const built = parts(id);
+  const steps = built.filter((p): p is { cost: number; tokens: { input: number; output: number; reasoning: number } } => (p as { type?: string }).type === 'step-finish');
+  const sum = (pick: (s: (typeof steps)[number]) => number) => steps.reduce((n, s) => n + pick(s), 0);
   return {
     info: {
       id, sessionID: SID, role: 'assistant', time: { created: ms, completed: ms + 500 }, ...(parent && { parentID: parent }),
-      modelID: 'm', providerID: 'kortix', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' }, cost: 0.01,
-      tokens: { input: 10, output: 2, reasoning: 0, cache: { read: 0, write: 0 } }, finish: 'stop', ...info,
+      modelID: 'm', providerID: 'kortix', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' }, cost: sum((s) => s.cost),
+      tokens: { input: sum((s) => s.tokens.input), output: sum((s) => s.tokens.output), reasoning: sum((s) => s.tokens.reasoning), cache: { read: 0, write: 0 } }, finish: 'stop', ...info,
     } as never,
-    parts: parts(id) as never,
+    parts: built as never,
   };
 }
 const done = { status: 'completed', input: { command: 'ls' }, output: 'a', title: 'ls', metadata: {}, time: { start: T0, end: T0 + 9 } };
@@ -368,8 +394,8 @@ describe('edge cases', () => {
 describe('the block turn layer equals the v1 turn helpers', () => {
   for (const [name, log] of goldens) {
     for (const thread of log.threads) {
-      const rows = rowsOf(log, thread);
-      const childRows = Object.fromEntries(log.threads.map((t) => [t.thread_id, rowsOf(log, t)]));
+      const rows = rowsOf(log, thread, SEQ_ORDERED.has(name));
+      const childRows = Object.fromEntries(log.threads.map((t) => [t.thread_id, rowsOf(log, t, SEQ_ORDERED.has(name))]));
       const childThreads = Object.fromEntries(log.threads.map((t) => [t.thread_id, t]));
       for (const opts of [DEFAULT, { ...DEFAULT, busy: false }]) {
         const label = `${name} ${thread.thread_id === log.threads[0]!.thread_id ? 'root' : thread.thread_id}${opts.busy ? '' : ' idle'}`;

@@ -138,6 +138,26 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(seen.at(-1)!.messages.at(-1)).toEqual(put);
   });
 
+  test('a re-minted optimistic send (a different echo id) leaves once the log holds the echo id', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session));
+      return null;
+    });
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const stub = { id: 'msg_zzzstub', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    act(() => useSyncStore.getState().optimisticAdd(RS, stub as never, [{ id: 'prt_zzzstub', sessionID: RS, messageID: stub.id, type: 'text', text: 'sent' } as never]));
+    expect(seen.at(-1)!.messages.at(-1)!.message_id).toBe(stub.id);
+    // The control plane re-mints the prompt: the inbox announces the echo id, then the log's put arrives under it.
+    act(() => useSyncStore.getState().registerOptimisticEcho(RS, stub.id, 'msg_zzzecho'));
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: 'msg_zzzecho', seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.at(-1)).toBe('msg_zzzecho');
+    expect(ids).not.toContain(stub.id);
+  });
+
   test('null without a runtime session id; source v2 once a page is in the store', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<{ none: unknown; log: ReturnType<typeof useSessionLog> }> = [];

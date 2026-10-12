@@ -80,7 +80,7 @@ export function useSessionLogThread(
     if (!log) return undefined;
     const thread = selectSessionLogThread(log, threadId);
     // The v1 rows the log lacks (an optimistic send) show until the log's put replaces them.
-    return thread && sessionLogThreadWithV1Rows(log, thread, selectSessionRows(state, thread.thread_id));
+    return thread && sessionLogThreadWithV1Rows(log, thread, selectSessionRows(state, thread.thread_id), (id) => state.optimisticEchoOf(thread.thread_id, id));
   });
   const v1 = useV1SessionLog(session, threadId);
   return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);

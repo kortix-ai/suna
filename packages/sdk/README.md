@@ -733,7 +733,7 @@ transcript renders a thread from. It replaces the v1 turn helpers over
 `splitTurnWork`, `mergeBurstSteps`, `compactionTurnInfo`, `resolveWorkingTurn`,
 `hasRetryingAssistantTurn`), which stay until the next major.
 
-- `groupLogIntoTurns(thread, options?)` returns one `LogTurn` per user message:
+- `sessionLogTurns(thread, options?)` returns one `SessionLogTurn` per user message:
   `user`, `assistant` (the replies, by `reply_to` then order), `blocks`, and the
   derived fields `status`, `error`, `cost`, `compaction`, `threads`, `plan`,
   `shell`, `response`, `attachments`, `live`, `queued` and `retrying`, computed
@@ -742,14 +742,14 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   order), `threads` (the session's threads, for `threads`), `pricing`. A turn
   keeps its identity while its messages and derived fields do. A message out
   of context (a failed attempt) keeps its turn.
-- `logTurnSegments(blocks, options?)`, `splitLogTurnWork(segments, { working })`
-  and `logBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
+- `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
+  and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
   the settled-turn fold, and the rows of a burst.
-- `logCallStatus(call, live)` is the status a call renders with: an open call,
+- `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
   or one the closure rule closed, is `running` or `pending` on a live turn and
   `interrupted` on any other.
-- `logActivityText(turn, childMessages?)` is the activity line of a live turn.
-- `promptLogMessage(prompt, threadId)` is the user message of a queued inbox
+- `sessionLogActivityText(turn, childMessages?)` is the activity line of a live turn.
+- `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
   prompt the thread has not placed; append it and name it in `held`.
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).

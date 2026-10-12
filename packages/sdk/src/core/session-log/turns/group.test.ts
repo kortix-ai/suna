@@ -1,5 +1,5 @@
 /**
- * The block-native rules of `groupLogIntoTurns`: what a native v2 record (no v1 residuals)
+ * The block-native rules of `sessionLogTurns`: what a native v2 record (no v1 residuals)
  * gives, and what the schema decides that v1 had to guess. `oracle.test.ts` holds the
  * equivalence with the v1 helpers.
  */
@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SessionPrompt } from '../../rest/projects-client/sessions';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage, type SessionLogThread, type ToolCallBlock } from '../types';
 import { COST_MARKUP } from '../../turns';
-import { groupLogIntoTurns, logCallStatus, promptLogMessage } from './index';
+import { sessionLogTurns, sessionLogCallStatus, sessionLogPromptMessage } from './index';
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
 const PRODUCER = { harness: 'pi', harness_version: '1', adapter_version: '1' };
@@ -34,7 +34,7 @@ const thread = (messages: SessionLogMessage[], over: Partial<SessionLogThread> =
 
 describe('grouping', () => {
   test('a reply joins the prompt it names, then the latest prompt; a reply with no loaded prompt opens a partial turn', () => {
-    const turns = groupLogIntoTurns(thread([
+    const turns = sessionLogTurns(thread([
       reply('early', 'gone'),
       user('u1'),
       reply('a1', 'u1'),
@@ -51,7 +51,7 @@ describe('grouping', () => {
   });
 
   test('a message out of context stays (a failed attempt keeps its rows); system and context messages are not turns', () => {
-    const turns = groupLogIntoTurns(thread([
+    const turns = sessionLogTurns(thread([
       msg('sys', 'system', [{ type: 'text', id: 's', text: 'rules' }]),
       user('u1'),
       reply('fail', 'u1', undefined, { status: 'error', in_context: false, hidden_reason: 'failed_attempt', error: { code: 'provider_error', message: 'boom' } }),
@@ -62,12 +62,12 @@ describe('grouping', () => {
   });
 
   test('a reply shell with no blocks, no error and zero usage is not drawn', () => {
-    const turns = groupLogIntoTurns(thread([user('u1'), reply('shell', 'u1', [], { usage: { input: 0, output: 0, cache_read: 0, cache_write: 0 } })]));
+    const turns = sessionLogTurns(thread([user('u1'), reply('shell', 'u1', [], { usage: { input: 0, output: 0, cache_read: 0, cache_write: 0 } })]));
     expect(turns[0]!.assistant).toEqual([]);
   });
 
   test('held prompts go after the thread, in the order given, and the agent is not on them', () => {
-    const turns = groupLogIntoTurns(thread([user('q2'), user('u1'), reply('a1', 'u1', undefined, { status: 'streaming' }), user('q1')]), {
+    const turns = sessionLogTurns(thread([user('q2'), user('u1'), reply('a1', 'u1', undefined, { status: 'streaming' }), user('q1')]), {
       busy: true,
       held: ['q1', 'q2'],
     });
@@ -78,22 +78,22 @@ describe('grouping', () => {
     ]);
   });
 
-  test('promptLogMessage is the user message of an inbox prompt the transcript has not placed', () => {
+  test('sessionLogPromptMessage is the user message of an inbox prompt the transcript has not placed', () => {
     const prompt = { prompt_id: 'p9', message_id: null, text: 'short', full_text: 'the full prompt', client_sent_at_ms: 1_700_000_100_000, created_at: '2023-11-14T22:13:20.000Z' } as unknown as SessionPrompt;
-    const m = promptLogMessage(prompt, 't');
+    const m = sessionLogPromptMessage(prompt, 't');
     expect(m).toMatchObject({ message_id: 'queued-p9', thread_id: 't', role: 'user', kind: 'turn', status: 'complete', created_at: new Date(1_700_000_100_000).toISOString() });
     expect(m.blocks).toEqual([{ type: 'text', id: 'syn-p9', text: 'the full prompt' }]);
-    const [turn] = groupLogIntoTurns(thread([m]), { held: ['queued-p9'] });
+    const [turn] = sessionLogTurns(thread([m]), { held: ['queued-p9'] });
     expect([turn!.id, turn!.queued, turn!.status]).toEqual(['queued-p9', true, 'pending']);
   });
 
   test('turns keep their identity while their messages do; a changed message renews only its turn', () => {
     const messages = [user('u1'), reply('a1', 'u1'), user('u2'), reply('a2', 'u2')];
-    const first = groupLogIntoTurns(thread(messages));
-    const again = groupLogIntoTurns(thread([...messages]));
+    const first = sessionLogTurns(thread(messages));
+    const again = sessionLogTurns(thread([...messages]));
     expect(again[0]).toBe(first[0]!);
     expect(again[1]).toBe(first[1]!);
-    const next = groupLogIntoTurns(thread([...messages.slice(0, 3), { ...messages[3]!, blocks: [{ type: 'text', id: 'x', text: 'more' }] }]));
+    const next = sessionLogTurns(thread([...messages.slice(0, 3), { ...messages[3]!, blocks: [{ type: 'text', id: 'x', text: 'more' }] }]));
     expect(next[0]).toBe(first[0]!);
     expect(next[1]).not.toBe(first[1]!);
   });
@@ -101,7 +101,7 @@ describe('grouping', () => {
 
 describe('derived fields', () => {
   test('status: pending before a reply, then the last reply status; a retrying reply is streaming', () => {
-    const turns = groupLogIntoTurns(thread([
+    const turns = sessionLogTurns(thread([
       user('u1'), reply('a1', 'u1', undefined, { status: 'aborted', finish: 'aborted', error: { code: 'aborted', message: 'stopped' } }),
       user('u2'), reply('a2', 'u2', undefined, { status: 'interrupted' }),
       user('u3'),
@@ -111,7 +111,7 @@ describe('derived fields', () => {
 
   test('error: the first errored reply; the code is the schema code and the message the sentence of a gateway body', () => {
     const body = JSON.stringify({ error: { message: 'Your key is invalid.', provider: 'acme', code: 'auth', request_id: 'req_9' } });
-    const [turn] = groupLogIntoTurns(thread([
+    const [turn] = sessionLogTurns(thread([
       user('u1'),
       reply('a1', 'u1', undefined, { status: 'error', in_context: false, error: { code: 'auth_error', message: body } }),
       reply('a2', 'u1', undefined, { status: 'error', error: { code: 'unknown', message: 'later' } }),
@@ -121,7 +121,7 @@ describe('derived fields', () => {
   });
 
   test('cost: usage summed over the replies, with the platform markup; subscription models cost nothing; a lookup prices a reply that reports no cost', () => {
-    const [turn] = groupLogIntoTurns(thread([
+    const [turn] = sessionLogTurns(thread([
       user('u1'),
       reply('a1', 'u1', undefined, { usage: { input: 100, output: 10, cache_read: 5, cache_write: 1, reasoning: 2, cost: 0.5 } }),
       reply('a2', 'u1', undefined, { usage: { input: 1_000_000, output: 0, cache_read: 0, cache_write: 0 } }),
@@ -129,13 +129,13 @@ describe('derived fields', () => {
     ]), { pricing: (provider) => (provider === 'kortix' ? { inputPer1M: 2, outputPer1M: 4 } : null) });
     expect(turn!.cost!.cost).toBeCloseTo((0.5 + 2) * COST_MARKUP, 9);
     expect(turn!.cost!.tokens).toEqual({ input: 1_000_107, output: 17, reasoning: 2, cacheRead: 5, cacheWrite: 1 });
-    const [none] = groupLogIntoTurns(thread([user('u9')]));
+    const [none] = sessionLogTurns(thread([user('u9')]));
     expect(none!.cost).toBeNull();
   });
 
   test('compaction: the marker message is the turn, its block and state are derived once', () => {
     const block = { type: 'compaction' as const, id: 'c1', summary: 'SUMMARY', first_kept_message_id: 'u1', trigger: 'auto' as const };
-    const turns = groupLogIntoTurns(thread([
+    const turns = sessionLogTurns(thread([
       user('u1'),
       msg('cmp', 'user', [block], { kind: 'compaction', status: 'complete' }),
       msg('cmp2', 'user', [{ ...block, id: 'c2', summary: null }], { kind: 'compaction', status: 'streaming' }),
@@ -154,19 +154,19 @@ describe('derived fields', () => {
     const spawn = call('k1', 'task', { kind: 'task' });
     const t = thread([user('u1'), reply('a1', 'u1', [spawn]), user('u2'), reply('a2', 'u2', [call('k2', 'task', { kind: 'task' })])]);
     const child = thread([], { thread_id: 'child-1', parent_thread_id: 't', spawned_by: { message_id: 'a1', call_id: 'call_k1' } });
-    const turns = groupLogIntoTurns(t, { threads: [t, child] });
+    const turns = sessionLogTurns(t, { threads: [t, child] });
     expect(turns.map((x) => x.threads)).toEqual([['child-1'], []]);
   });
 
   test('plan: the turn that last wrote the todo list owns the plan card, else the last turn', () => {
     const write = call('w', 'todowrite', { kind: 'todo' });
-    expect(groupLogIntoTurns(thread([user('u1'), reply('a1', 'u1', [write]), user('u2'), reply('a2', 'u2', [call('r', 'todoread', { kind: 'todo' })])])).map((x) => x.plan)).toEqual([true, false]);
-    expect(groupLogIntoTurns(thread([user('u1'), user('u2')])).map((x) => x.plan)).toEqual([false, true]);
+    expect(sessionLogTurns(thread([user('u1'), reply('a1', 'u1', [write]), user('u2'), reply('a2', 'u2', [call('r', 'todoread', { kind: 'todo' })])])).map((x) => x.plan)).toEqual([true, false]);
+    expect(sessionLogTurns(thread([user('u1'), user('u2')])).map((x) => x.plan)).toEqual([false, true]);
   });
 
   test('shell, response and attachments', () => {
     const bash = call('b', 'bash', { kind: 'shell' });
-    const [shell, chat] = groupLogIntoTurns(thread([
+    const [shell, chat] = sessionLogTurns(thread([
       msg('u1', 'user', [{ type: 'text', id: 's', text: 'ls', synthetic: true }]),
       reply('a1', 'u1', [bash]),
       msg('u2', 'user', [
@@ -187,21 +187,21 @@ describe('derived fields', () => {
 describe('liveness', () => {
   test('the working turn: the hinted one, else the newest streaming reply; live only while the session is busy', () => {
     const messages = [user('u1'), reply('a1', 'u1'), user('u2'), reply('a2', 'u2', undefined, { status: 'streaming' }), user('u3')];
-    expect(groupLogIntoTurns(thread(messages), { busy: true }).map((t) => [t.live, t.queued])).toEqual([[false, false], [true, false], [false, true]]);
-    expect(groupLogIntoTurns(thread(messages), { busy: false }).map((t) => t.live)).toEqual([false, false, false]);
-    expect(groupLogIntoTurns(thread(messages), { busy: true, liveMessageId: 'u3' }).map((t) => t.live)).toEqual([false, false, true]);
+    expect(sessionLogTurns(thread(messages), { busy: true }).map((t) => [t.live, t.queued])).toEqual([[false, false], [true, false], [false, true]]);
+    expect(sessionLogTurns(thread(messages), { busy: false }).map((t) => t.live)).toEqual([false, false, false]);
+    expect(sessionLogTurns(thread(messages), { busy: true, liveMessageId: 'u3' }).map((t) => t.live)).toEqual([false, false, true]);
   });
 
-  test('logCallStatus: an open or closure-rule call is in progress on a live turn and interrupted on any other', () => {
+  test('sessionLogCallStatus: an open or closure-rule call is in progress on a live turn and interrupted on any other', () => {
     const running = call('r', 'bash', { status: 'running', result: undefined, started_at: '2026-10-01T00:00:00Z' });
     const pending = call('p', 'bash', { status: 'pending', result: undefined });
     const closed = (started?: string) =>
       call('c', 'bash', { status: 'error', ...(started && { started_at: started }), result: { content: [{ type: 'text', text: '[Tool execution was interrupted]' }], is_error: true, synthetic: true, error: { code: 'interrupted', message: 'x' } } });
     const failed = call('f', 'bash', { status: 'error', result: { content: [], is_error: true, error: { message: 'exit 1' } } });
-    expect([running, pending, closed('2026-10-01T00:00:00Z'), closed(), failed, call('d', 'bash')].map((c) => logCallStatus(c, true))).toEqual([
+    expect([running, pending, closed('2026-10-01T00:00:00Z'), closed(), failed, call('d', 'bash')].map((c) => sessionLogCallStatus(c, true))).toEqual([
       'running', 'pending', 'running', 'pending', 'error', 'complete',
     ]);
-    expect([running, pending, closed(), failed, call('d', 'bash')].map((c) => logCallStatus(c, false))).toEqual([
+    expect([running, pending, closed(), failed, call('d', 'bash')].map((c) => sessionLogCallStatus(c, false))).toEqual([
       'interrupted', 'interrupted', 'interrupted', 'error', 'complete',
     ]);
   });
@@ -209,6 +209,6 @@ describe('liveness', () => {
   test('retrying: only the session\'s last reply, open with a retryable error, retries', () => {
     const retry = { status: 'error' as const, completed_at: null, error: { code: 'rate_limit', message: 'slow down' } };
     // A native record carries no isRetryable flag: its last open errored reply is not a retry.
-    expect(groupLogIntoTurns(thread([user('u1'), reply('a1', 'u1', undefined, retry)])).map((t) => t.retrying)).toEqual([false]);
+    expect(sessionLogTurns(thread([user('u1'), reply('a1', 'u1', undefined, retry)])).map((t) => t.retrying)).toEqual([false]);
   });
 });

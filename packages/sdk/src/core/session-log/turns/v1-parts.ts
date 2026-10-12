@@ -27,7 +27,7 @@ export function partOf(block: SessionLogBlock): Part | undefined {
   let part: Part | undefined;
   const message = messageOfBlock.get(block);
   // With its message known, the part comes from the message's own rows (message time and session id included).
-  if (message) part = v1RowsOf(message)[0]?.parts.find((p) => p.id === block.id);
+  if (message) part = partsById(message).get(block.id);
   if (part) return blocks.set(part, block), part;
   if (block.type !== 'harness') part = blockPartOf(block);
   else if (typeof (block.data as { type?: unknown } | null)?.type === 'string') part = block.data as Part;
@@ -44,6 +44,14 @@ export const blockOf = (part: object): SessionLogBlock => blocks.get(part)!;
 
 /** The v1 parts of `list`, without the blocks v1 cannot hold. */
 export const partsOf = (list: ReadonlyArray<SessionLogBlock>): Part[] => list.flatMap((b) => partOf(b) ?? []);
+
+const indexes = new WeakMap<SessionLogMessage, Map<string, Part>>();
+/** The first v1 row's parts of `m`, by part id, built once per message object. */
+function partsById(m: SessionLogMessage): Map<string, Part> {
+  let index = indexes.get(m);
+  if (!index) indexes.set(m, (index = new Map(v1RowsOf(m)[0]?.parts.map((p) => [p.id, p]))));
+  return index;
+}
 
 const heads = new Map<string, SessionLogThreadHead>();
 
