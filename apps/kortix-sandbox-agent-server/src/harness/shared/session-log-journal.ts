@@ -41,9 +41,11 @@
  * Live turn (P4.3b): the journal also folds the v1 frames of each message it
  * has not collected yet. On the first `message.updated` of a message and on
  * each `message.part.updated` of a new part, it publishes a `log.message` put
- * of that message on the v2 bus only (never the dirty set): `fromV1` of the
- * frames so far, reopened where `fromV1` closes a turn at rest (`status:
- * 'streaming'`, running calls), with the seq (and `created_at`) the adapter's `live` names. It
+ * of that message on the v2 bus only (never the dirty set); so does an update
+ * of a tool part that changes its status or its metadata keys (P4.7): `fromV1` of the
+ * frames so far (`liveMessageFromV1`: `status: 'streaming'`, open calls stay
+ * open and keep their v1 residual, so a running task keeps its `sessionId`),
+ * with the seq (and `created_at`) the adapter's `live` names. It
  * is built in the bus listener, before the next frame, so its text is exactly
  * the deltas published before it. A message whose seq the adapter cannot know
  * yet waits for the next live frame. The collection's put of the message has
@@ -59,7 +61,7 @@
  * (`sandboxRelayContext`); same backoff as the audit relay (`computeRetryDelay`).
  */
 import {
-  fromV1,
+  liveMessageFromV1,
   SessionLogJournalConflictSchema,
   type FromV1Options,
   SessionLogJournalResponseSchema,
@@ -245,7 +247,8 @@ export class SessionLogJournal {
   private livePart(part: (KortixPart & Record<string, unknown>) | undefined): void {
     if (typeof part?.id !== 'string' || typeof part.messageID !== 'string' || this.collected(part.messageID)) return
     const row = this.row(part.messageID)
-    row.due ||= !row.parts.has(part.id)
+    const before = row.parts.get(part.id)
+    row.due ||= !before || toolShape(before) !== toolShape(part)
     // A copy: deltas extend it, and the v1 ring must keep the frame as published.
     row.parts.set(part.id, structuredClone(part))
     if (row.due) this.publishLive()
@@ -275,21 +278,8 @@ export class SessionLogJournal {
         const known = this.port.live(thread, id)
         if (!known) continue
         row.due = false
-        const message = fromV1(
-          { session_id: thread, root_id: thread, rows: [{ runtime_session_id: thread, info: row.info, parts: [...row.parts.values()] }] },
-          { harness: this.port.capabilities.harness as FromV1Options['harness'] },
-        ).threads[0]!.messages[0]!
-        Object.assign(message, known)
-        // fromV1 reads at rest: it marks an open reply `interrupted` and closes its open calls. This one runs.
-        let open = message.status === 'interrupted'
-        for (const b of message.blocks) {
-          if (b.type !== 'tool_call' || b.result?.error?.code !== 'interrupted' || !b.result.synthetic) continue
-          b.status = (row.parts.get(b.id)?.state as { status?: string } | undefined)?.status === 'pending' ? 'pending' : 'running'
-          delete b.result
-          delete b.ext // the v1 residual of the closed call
-          open = true
-        }
-        if (open) Object.assign(message, { status: 'streaming', completed_at: null, finish: null })
+        const harness = this.port.capabilities.harness as FromV1Options['harness']
+        const message = liveMessageFromV1({ info: row.info, parts: [...row.parts.values()] }, known, harness)
         row.sent = true
         sessionLogEventBus().publish('log.message', { rev: nextRev(), message } satisfies SessionLogMessageEvent, thread)
       } catch (err) {
@@ -524,6 +514,16 @@ export function logChanges(
     },
     sessionJson,
   }
+}
+
+/**
+ * What a live put shows of a tool part that its later updates change: the status and the
+ * metadata keys (task `sessionId`, bash `command`), not their values. ponytail: bash rewrites
+ * `metadata.output` per stdout chunk and a put rebuilds the whole message, so a growing output
+ * or a streaming `raw` waits for the next put; key on values when a throttled put lands.
+ */
+function toolShape(part: Record<string, any>): string {
+  return part.type === 'tool' ? `${part.state?.status}:${Object.keys(part.state?.metadata ?? {}).join()}` : ''
 }
 
 function parseJson(text: string): unknown {
