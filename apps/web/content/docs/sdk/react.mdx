@@ -256,7 +256,7 @@ More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#cust
 
 ### Read the session log
 
-`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks. `useSessionLogThread(session, threadId?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
 
 ```tsx
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
@@ -264,12 +264,12 @@ import { useSession, useSessionLogThread } from '@kortix/sdk/react';
 function Thread({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSession(projectId, sessionId, { subscribeMessages: false });
   const root = useSessionLogThread(session);
-  if (!root) return null; // the session reads v1: render useSessionMessages(session)
+  if (!root) return null; // no runtime session id yet, or no message yet
   return <ol>{root.messages.map((m) => <li key={m.message_id}>{m.role}: {m.blocks.length} blocks</li>)}</ol>;
 }
 ```
 
-A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return `null`.
+A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
 1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
 2. The project flag `session_log` is `true`.

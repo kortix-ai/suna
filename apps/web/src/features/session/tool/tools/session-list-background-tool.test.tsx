@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -27,7 +28,7 @@ const TWO_ROWS = [
 
 describe('SessionListBackgroundTool renders the worker rows', () => {
   test('a normal list shows every row and the count', () => {
-    const html = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(TWO_ROWS)} defaultOpen />);
+    const html = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(TWO_ROWS))} defaultOpen />);
 
     // The row is the id's last 12 characters, the project, and the status.
     expect(html).toContain('bc123def456');
@@ -44,7 +45,7 @@ describe('SessionListBackgroundTool renders the worker rows', () => {
       '**ses_z** status: activeproject: yosemite',
       `**ses_${'x**'.repeat(6)} status: running project: /app`,
     ].join('\n');
-    const html = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(odd)} defaultOpen />);
+    const html = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(odd))} defaultOpen />);
 
     expect(html).toContain('SES_y');
     expect(html).toContain('idle');
@@ -65,7 +66,7 @@ describe('SessionListBackgroundTool renders the worker rows', () => {
     // (packages/shared scan.ts isLineTerminator); these goldens keep the
     // component honest about it too.
     const byKind = ['**ses_cr1** status: running project: /w/cr', '**ses_ls1** status: idle project: /w/ls', '**ses_ps1** status: done project: /w/ps'].join('\r\u2028\u2029');
-    const html = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(byKind)} defaultOpen />);
+    const html = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(byKind))} defaultOpen />);
 
     expect(html).toContain('ses_cr1');
     expect(html).toContain('running');
@@ -80,7 +81,7 @@ describe('SessionListBackgroundTool renders the worker rows', () => {
     // A terminator inside a row cuts it: the broken row renders nothing, the
     // next complete row still does.
     const cut = '**ses_cut1** \rstatus: running project: /w/cut\n**ses_ok1** status: done project: /w/ok';
-    const cutHtml = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(cut)} defaultOpen />);
+    const cutHtml = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(cut))} defaultOpen />);
 
     expect(cutHtml).not.toContain('ses_cut1');
     expect(cutHtml).toContain('ses_ok1');
@@ -90,17 +91,17 @@ describe('SessionListBackgroundTool renders the worker rows', () => {
   test('no output at all and completed says there were no background sessions', () => {
     // `noWorkers` sits behind the truthy-output branch: the empty state is the
     // answer only when the output itself is empty.
-    const open = renderToStaticMarkup(<SessionListBackgroundTool part={makePart('')} defaultOpen />);
+    const open = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(''))} defaultOpen />);
     expect(open).toContain('No background sessions');
 
     // Closed, the trigger still says what happened.
-    const closed = renderToStaticMarkup(<SessionListBackgroundTool part={makePart('')} />);
+    const closed = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(''))} />);
     expect(closed).toContain('none');
   });
 
   test('a completed run whose output says nothing parseable shows the raw output, not the empty state', () => {
     const html = renderToStaticMarkup(
-      <SessionListBackgroundTool part={makePart('all workers finished')} defaultOpen />,
+      <SessionListBackgroundTool call={toolCallBlock(makePart('all workers finished'))} defaultOpen />,
     );
 
     expect(html).toContain('all workers finished');
@@ -109,7 +110,7 @@ describe('SessionListBackgroundTool renders the worker rows', () => {
 
   test('a ses_ mention that parses to no rows falls back to the raw output', () => {
     const html = renderToStaticMarkup(
-      <SessionListBackgroundTool part={makePart('**ses_gone** status: lost')} defaultOpen />,
+      <SessionListBackgroundTool call={toolCallBlock(makePart('**ses_gone** status: lost'))} defaultOpen />,
     );
 
     expect(html).toContain('ses_gone');
@@ -126,7 +127,7 @@ describe('SessionListBackgroundTool cannot be frozen by its output', () => {
     const pathological = `${'**ses_a** '.repeat(1000)}${'status: a '.repeat(1000)}`;
 
     const started = performance.now();
-    const html = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(pathological)} defaultOpen />);
+    const html = renderToStaticMarkup(<SessionListBackgroundTool call={toolCallBlock(makePart(pathological))} defaultOpen />);
     const elapsed = performance.now() - started;
 
     expect(html).toContain('status: a');

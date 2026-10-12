@@ -7,6 +7,7 @@ import {
   partOutput,
   partStatus,
   ToolOutputFallback,
+  partRawOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
@@ -59,13 +60,13 @@ function FlatSourceList({ queryResults }: { queryResults: WebSearchQueryResult[]
   );
 }
 
-export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+export function WebSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const query = (input.query as string) || '';
 
-  const rawOutput = part.state.status === 'completed' ? (part.state as any).output : undefined;
+  const rawOutput = call.status === 'complete' ? partRawOutput(call) : undefined;
   const queryResults = useMemo(
     () => parseWebSearchOutput(rawOutput ?? output),
     [rawOutput, output],

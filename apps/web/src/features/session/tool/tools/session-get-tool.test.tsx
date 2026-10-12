@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -61,7 +62,7 @@ Compressed 4 older turns.`;
 describe('SessionGetTool folds the transcript', () => {
   test('the session line and its todos stay visible; the conversation does not', () => {
     const html = renderToStaticMarkup(
-      withProviders(<SessionGetTool part={makePart(SESSION_OUTPUT)} defaultOpen />),
+      withProviders(<SessionGetTool call={toolCallBlock(makePart(SESSION_OUTPUT))} defaultOpen />),
     );
 
     // The answer: which session, when, what it changed, what it is doing.
@@ -78,7 +79,7 @@ describe('SessionGetTool folds the transcript', () => {
 
   test('both collapsibles are real disclosures — state on the trigger, not a bare button', () => {
     const html = renderToStaticMarkup(
-      withProviders(<SessionGetTool part={makePart(SESSION_OUTPUT)} defaultOpen />),
+      withProviders(<SessionGetTool call={toolCallBlock(makePart(SESSION_OUTPUT))} defaultOpen />),
     );
 
     // Todos open, conversation closed: two triggers, two different states, and
@@ -91,7 +92,7 @@ describe('SessionGetTool folds the transcript', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <SessionGetTool part={makePart(SESSION_OUTPUT)} />
+          <SessionGetTool call={toolCallBlock(makePart(SESSION_OUTPUT))} />
         </ToolSurfaceContext.Provider>,
       ),
     );
