@@ -132,6 +132,11 @@ mock.module('../iam/authorize', () => ({
   loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
   clearAuthorizeCaches: () => {},
   isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
+  // accounts/index.ts mounts accountSsoGate, which reads this; SSO is out of
+  // scope here, so the gate never fires.
+  ssoRequiredFor: async () => false,
+  // The access-MFA gate (KRTX-1742) reads this per request; out of scope.
+  mfaGateBlocks: () => false,
 }));
 
 mock.module('../iam/email-trust', () => ({

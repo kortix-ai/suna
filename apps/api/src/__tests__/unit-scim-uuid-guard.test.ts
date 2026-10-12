@@ -37,6 +37,9 @@ const tables = [
   'projects',
   'accountMembers',
   'accountMemberships',
+  // scim/app.ts imports the iam membership/group read models (dev's directory
+  // sync), and membership-read.ts reads the accounts view.
+  'accounts',
 ] as const;
 const tableStubs = Object.fromEntries(tables.map((name) => [name, { __table: name }]));
 
