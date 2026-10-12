@@ -252,10 +252,15 @@ describe('journal', () => {
 
     const row = await stored('msg_bin');
     // The KRTX-211 contract: content_hash describes the stored record — the
-    // sanitized form. Built here with an independent one-line replacer (the /u
-    // class never matches inside a valid surrogate pair).
+    // sanitized form. Built here with an independent walk (every string, keys
+    // included; the /u class never matches inside a valid surrogate pair).
+    const safe = (s: string): string => s.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD');
     const sanitized = JSON.parse(
-      JSON.stringify(put.message, (_k, v: unknown) => (typeof v === 'string' ? v.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD') : v)),
+      JSON.stringify(put.message, (_k, v: unknown) => {
+        if (typeof v === 'string') return safe(v);
+        if (v && typeof v === 'object' && !Array.isArray(v)) return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([key, item]) => [safe(key), item]));
+        return v;
+      }),
     );
     expect(row?.hash).toBe(`sha256:${createHash('sha256').update(JSON.stringify(sanitized)).digest('hex')}`);
     const record = row!.record as {
