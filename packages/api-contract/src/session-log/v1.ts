@@ -29,7 +29,8 @@
  *   `time.completed` and no error is `interrupted`, and every pending or running call is closed
  *   by the closure rule with the text the harness shows. An errored assistant row is out of
  *   context (`failed_attempt`), except an aborted one with a model-visible block (`aborted`,
- *   in context, as OpenCode sends it).
+ *   in context, as OpenCode sends it). `live: true` reads a live view instead (a client's v1
+ *   store): those rows are `streaming` and their open calls stay open.
  * - Errors. `error.code` is the daemon's `TurnErrorCode` (`info.error.code`) when the row has
  *   one, else the v1 error class name. `finish` takes the v2 values only; another v1 finish
  *   ('content-filter', 'other') maps to null and stays in ext.
@@ -97,6 +98,13 @@ export type FromV1Options = {
    * `ref` and no `bytes` (F13), keeps the url, and counts in `grade_counts.attachment`.
    */
   resolveAttachment?: (part: KortixFilePart) => V1Attachment | null;
+  /**
+   * The rows are a live view (a client's v1 store), not the mirror at rest: no closure rule. An
+   * open call keeps `pending`/`running` with no result, an open reply or compaction is
+   * `streaming`, and the residual is taken against those blocks, so `toV1` stays exact and a
+   * running call keeps its metadata. Default false.
+   */
+  live?: boolean;
 };
 /** What turns a value `toV1` builds into the stored one: replace it, delete it, or change some keys. */
 export type V1Change = { set: unknown } | { del: true } | { sub: Record<string, V1Change> };
@@ -311,7 +319,7 @@ export function toV1(input: SessionLog): V1Transcript {
 
 // ─── v1 -> v2 ────────────────────────────────────────────────────────────────
 
-type Convert = { h: Harness; resolve: NonNullable<FromV1Options['resolveAttachment']>; counts: GradeCounts };
+type Convert = { h: Harness; resolve: NonNullable<FromV1Options['resolveAttachment']>; counts: GradeCounts; live: boolean };
 
 function modelOf(info: J): ModelRef | null {
   const src = info.role === 'assistant' ? { p: info.providerID, m: info.modelID, v: info.variant } : isObj(info.model) ? { p: info.model.providerID, m: info.model.modelID, v: info.model.variant } : {};
@@ -349,7 +357,7 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
   if (!isObj(st.input)) lost.tool_input++;
   const exit = isObj(st.metadata) && num(st.metadata.exit) !== undefined ? { exit_code: st.metadata.exit as number } : {};
   let status: ToolCallBlock['status'];
-  let result: NonNullable<ToolCallBlock['result']>;
+  let result: ToolCallBlock['result'];
   if (st.status === 'completed') {
     const atts: ToolResultContent[] = (Array.isArray(st.attachments) ? st.attachments : []).filter(isObj).map((a) => {
       const { bytes: _bytes, ...content } = attachment(a, c, lost);
@@ -365,6 +373,8 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
     const error = str(st.error);
     status = 'error';
     result = { content: error !== undefined ? [{ type: 'text', text: error }] : [], is_error: true, ...(error !== undefined && { error: { message: error } }), ...exit };
+  } else if (c.live) {
+    status = st.status === 'pending' ? 'pending' : 'running';
   } else {
     // C2 closure rule: a call that never ended, at rest.
     const text = INTERRUPTED[c.h];
@@ -374,7 +384,7 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
   const started = iso(time.start);
   const ended = iso(time.end);
   return {
-    type: 'tool_call', id, call_id: p.callID, name: p.tool, kind: kindOf(p.tool), input: st.input ?? null, status, result,
+    type: 'tool_call', id, call_id: p.callID, name: p.tool, kind: kindOf(p.tool), input: st.input ?? null, status, ...(result && { result }),
     ...(str(st.title) && { title: st.title }), ...(started && { started_at: started }), ...(ended && { ended_at: ended }),
   };
 }
@@ -437,7 +447,8 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
   const err = src && isObj(src.error) ? src.error : undefined;
   const aborted = err?.name === 'MessageAbortedError';
   const completedAt = src && isObj(src.time) ? iso(src.time.completed) : null;
-  const status: SessionLogMessage['status'] = !src ? (marker ? 'interrupted' : 'complete') : err ? (aborted ? 'aborted' : 'error') : completedAt ? 'complete' : 'interrupted';
+  const open = c.live ? 'streaming' : 'interrupted';
+  const status: SessionLogMessage['status'] = !src ? (marker ? open : 'complete') : err ? (aborted ? 'aborted' : 'error') : completedAt ? 'complete' : open;
   const createdAt = iso(isObj(info.time) ? info.time.created : undefined) ?? '';
   const summary = sum ? (Array.isArray(sum.parts) ? sum.parts : []).flatMap((p) => (isObj(p) && p.type === 'text' && typeof p.text === 'string' ? [p.text] : [])).join('') : null;
   const lost: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
@@ -508,7 +519,7 @@ function spawnerOf(rows: V1Row[], id: string | null, text: (state: J) => string)
 
 /** v1 mirror -> session log. See the module header for every mapping decision. */
 export function fromV1(v1: V1Transcript, options: FromV1Options = {}): SessionLog {
-  const c: Convert = { h: options.harness ?? 'opencode', resolve: options.resolveAttachment ?? (() => null), counts: { tool_input: 0, cut_point: 0, attachment: 0 } };
+  const c: Convert = { h: options.harness ?? 'opencode', resolve: options.resolveAttachment ?? (() => null), counts: { tool_input: 0, cut_point: 0, attachment: 0 }, live: options.live === true };
   const rows = structuredClone(v1.rows).sort(rowOrder);
   const groups = new Map<string | null, V1Row[]>();
   for (const r of rows) {
