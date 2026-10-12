@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import { createSessionAttachmentStore } from "./session-attachments";
 const scope = {
   projectId: "11111111-1111-4111-8111-111111111111",
@@ -6,9 +6,8 @@ const scope = {
   attachmentId: "33333333-3333-4333-8333-333333333333",
 };
 const objects = new Map<string, Blob>();
+// No getBucket/createBucket/updateBucket: a migration owns the bucket, and a call to one fails the test.
 const storage = {
-  getBucket: async () => ({ data: { public: false }, error: null }),
-  createBucket: mock(async () => ({ error: null })),
   from: (bucket: string) => {
     expect(bucket).toBe("session-attachments");
     return {
@@ -85,26 +84,6 @@ test("cleanup removes only this session objects", async () => {
   expect(await store.read(scope)).toBeNull();
   expect(objects.size).toBe(1);
 });
-test("refuses a public bucket", async () => {
-  const store = createSessionAttachmentStore({
-    ...storage,
-    getBucket: async () => ({ data: { public: true }, error: null }),
-  } as never);
-  await expect(store.put(input())).rejects.toThrow("private");
-  expect(objects.size).toBe(0);
-});
-
-test('raises an older private bucket limit to the current composer limit', async () => {
-  const updateBucket = mock(async () => ({ error: null }));
-  const store = createSessionAttachmentStore({
-    ...storage,
-    getBucket: async () => ({ data: { public: false, file_size_limit: 25 * 1024 * 1024 }, error: null }),
-    updateBucket,
-  } as never);
-  await store.put(input());
-  expect(updateBucket).toHaveBeenCalledWith('session-attachments', { public: false, fileSizeLimit: 50 * 1024 * 1024 });
-});
-
 test("removeProject deletes the files of every session under the project, and only that project", async () => {
   // Real Storage lists ONE level: a project prefix names its session folders.
   const bucket = new Set([

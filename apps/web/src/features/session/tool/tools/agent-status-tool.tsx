@@ -28,10 +28,10 @@ import { useMemo, useState } from 'react';
 import { cleanWorkerOutput, parseTaskRows } from '@/features/session/tool/shared/agent-helpers';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 
-export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentStatusTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const status = partStatus(call);
+  const output = partOutput(call);
   const isRunning = status === 'running' || status === 'pending';
   const [modalSessionId, setModalSessionId] = useState<string | null>(null);
   const [modalTitle, setModalTitle] = useState('');

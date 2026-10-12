@@ -72,4 +72,15 @@ test('an app path renders through next/link, including the /docsx look-alike', (
   expect(softProps?.href).toBe(href);
   expect(softProps?.prefetch).toBe(true);
   expect(softProps?.className).toBe('row');
+  // The static-path boundary is exact-prefix: `/docsx` is a Next route that
+  // merely shares the `/docs` prefix, so it must stay a soft link.
+  renderToStaticMarkup(
+    <SiteLink href="/docsx" prefetch replace>
+      Docs look-alike
+    </SiteLink>,
+  );
+  const lookalike = softLinkProps[softLinkProps.length - 1];
+  expect(lookalike?.href).toBe('/docsx');
+  expect(lookalike?.prefetch).toBe(true);
+  expect(lookalike?.replace).toBe(true);
 });

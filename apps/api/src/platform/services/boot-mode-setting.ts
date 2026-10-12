@@ -89,7 +89,8 @@ export function statelessEnabledFor(accountId: string | null | undefined): boole
   if (!id || !volumesEnabledFor(id)) return false;
   const { policy } = bootModePolicy();
   if (policy.killSwitch) return false;
-  return (policy.orgs[id] ?? policy.default).mode === 'volume';
+  // Only the organization's own rule: the default never boots on a volume.
+  return policy.orgs[id]?.mode === 'volume';
 }
 
 /** This organization's own boot-mode rule, if it has one. */

@@ -24,11 +24,11 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
 import { looksLikeHtml, wsDomain } from '@/features/session/tool/shared/web-helpers';
 
-export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function WebFetchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const url = (input.url as string) || '';
   const format = (input.format as string) || '';
   // Both of these parse the URL. `new URL()` twice per render, per fetched page
