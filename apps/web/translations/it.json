@@ -536,6 +536,10 @@
       "keyboardTitle": "Scorciatoie da tastiera",
       "keyboardDescription": "Il tasto modificatore utilizzato per cambiare scheda e ogni scorciatoia nell'app.",
       "modifierKey": "Tasto modificatore",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "La scorciatoia che apre la barra dei prompt da qualsiasi app.",
+      "quickEntryOff": "Disattivata",
+      "quickEntryInUse": "Un'altra app usa questa scorciatoia, quindi non apre la barra. Scegline un'altra.",
       "shortcuts": {
         "newTab": "Nuova scheda",
         "closeActiveTab": "Chiudi la scheda attiva",

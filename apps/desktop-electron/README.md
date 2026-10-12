@@ -198,7 +198,9 @@ Enter starts a new session with that prompt. The same bar opens from
 - **Keys.** Enter sends. Shift+Enter adds a line. Esc, the shortcut again, or a
   click in another app closes the bar and keeps the typed text for the next
   open. The prompt replaces an unsent draft in the project home composer.
-- **Choose the shortcut.** **File ▸ Quick Entry Shortcut**: Command+Shift+Space
+- **Choose the shortcut.** **File ▸ Quick Entry Shortcut** or **Settings ▸
+  Preferences ▸ Keyboard shortcuts ▸ Quick Entry** (the web app calls
+  `quick_entry_shortcut` / `quick_entry_set_shortcut`): Command+Shift+Space
   (default), Option+Space, Option+Shift+Space, or Off. The choice is saved in
   `userData/quick_entry.json`. A shortcut another app holds shows "(in use)".
   Option+Space is not the default because Claude and ChatGPT use it.

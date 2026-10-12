@@ -1081,6 +1081,16 @@ function buildMenu() {
   refreshNavigationMenu();
 }
 
+/** Settings ▸ Preferences: the Quick Entry shortcut, its choices, and whether another app holds it. */
+function quickEntryShortcutState() {
+  const { accelerator, registered } = quickEntry?.shortcut() ?? { accelerator: null, registered: null };
+  return {
+    shortcut: accelerator,
+    inUse: Boolean(accelerator) && registered === false,
+    choices: SHORTCUTS.map((value) => ({ value, label: shortcutLabel(value, process.platform) })),
+  };
+}
+
 /** File ▸ Quick Entry Shortcut. A key another app holds stays selected, marked "(in use)". */
 function chooseQuickEntryShortcut(accelerator) {
   if (!quickEntry) return;
@@ -1175,6 +1185,16 @@ function registerIpc() {
         // `{ projectId, name } | null`: where the web app will start the session.
         quickEntry?.setTarget(args.target);
         return null;
+      case 'quick_entry_shortcut':
+        return quickEntryShortcutState();
+      case 'quick_entry_set_shortcut': {
+        // Settings ▸ Preferences: one of SHORTCUTS, or null for off. Same path as the File menu.
+        const next = args?.shortcut ?? null;
+        if (next !== null && !SHORTCUTS.includes(next)) throw new Error('Unknown Quick Entry shortcut.');
+        quickEntry?.setShortcut(next);
+        buildMenu();
+        return quickEntryShortcutState();
+      }
       default:
         // computer_status / _connect / _pause / _resume / _disconnect / _open_logs.
         // Same trusted-sender gate as every command above.

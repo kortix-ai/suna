@@ -536,6 +536,10 @@
       "keyboardTitle": "键盘快捷键",
       "keyboardDescription": "用于选项卡切换的修饰键以及应用程序中的每个快捷方式。",
       "modifierKey": "修饰键",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "在任意应用中打开提示栏的快捷键。",
+      "quickEntryOff": "关闭",
+      "quickEntryInUse": "另一个应用正在使用此快捷键，因此它无法打开提示栏。请选择其他快捷键。",
       "shortcuts": {
         "newTab": "新标签页",
         "closeActiveTab": "关闭活动选项卡",

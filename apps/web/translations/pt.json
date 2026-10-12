@@ -536,6 +536,10 @@
       "keyboardTitle": "Atalhos de teclado",
       "keyboardDescription": "A tecla modificadora usada para alternar guias e todos os atalhos do aplicativo.",
       "modifierKey": "Tecla modificadora",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "O atalho que abre a barra de prompt a partir de qualquer app.",
+      "quickEntryOff": "Desativado",
+      "quickEntryInUse": "Outro app usa este atalho, então ele não abre a barra. Escolha outro.",
       "shortcuts": {
         "newTab": "Nova guia",
         "closeActiveTab": "Fechar guia ativa",

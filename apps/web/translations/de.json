@@ -536,6 +536,10 @@
       "keyboardTitle": "Tastaturkürzel",
       "keyboardDescription": "Die Zusatztaste, die zum Wechseln zwischen Tabs und allen Tastenkombinationen in der App verwendet wird.",
       "modifierKey": "Modifikatortaste",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "Das Tastenkürzel, das die Eingabeleiste aus jeder App öffnet.",
+      "quickEntryOff": "Aus",
+      "quickEntryInUse": "Eine andere App verwendet dieses Tastenkürzel, daher öffnet es die Leiste nicht. Wähle ein anderes.",
       "shortcuts": {
         "newTab": "Neuer Tab",
         "closeActiveTab": "Aktive Registerkarte schließen",

@@ -442,6 +442,24 @@ export const setDesktopQuickEntryTarget = (
 ) => desktopCommand<null>('quick_entry_set_target', { target });
 
 /**
+ * The Quick Entry shortcut, for Settings ▸ Preferences. `shortcut` is an
+ * Electron accelerator from `choices`, or null when Quick Entry is off.
+ * `inUse`: another app holds it, so it does not open the bar.
+ */
+export interface DesktopQuickEntryShortcut {
+  shortcut: string | null;
+  inUse: boolean;
+  choices: { value: string; label: string }[];
+}
+
+export const getDesktopQuickEntryShortcut = () =>
+  desktopCommand<DesktopQuickEntryShortcut>('quick_entry_shortcut');
+
+/** Save and register a shortcut (null = off), as File ▸ Quick Entry Shortcut does. */
+export const setDesktopQuickEntryShortcut = (shortcut: string | null) =>
+  desktopCommand<DesktopQuickEntryShortcut>('quick_entry_set_shortcut', { shortcut });
+
+/**
  * Inline script run in <head> before hydration. Sets `data-desktop` and
  * `data-desktop-platform` on <html> so CSS can react before first paint —
  * eliminates the layout shift you'd get from a useEffect-driven flag.
