@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { AccountRole } from '@kortix/sdk';
+
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
   ALL_AGENTS,
@@ -11,6 +13,7 @@ import {
   diffAgentGrants,
   fixedPrincipalsOf,
   roleScopeFor,
+  writeAccountEdit,
   type AccessDialogCurrent,
   type AccessDialogMode,
   type AccessDialogScope,
@@ -320,6 +323,70 @@ describe('bulk-group submit', () => {
   test('the body shows the selected people as fixed rows, not a picker', () => {
     expect(fixedPrincipalsOf(mode)).toEqual(principals);
     expect(fixedPrincipalsOf({ kind: 'grant' })).toEqual([]);
+  });
+});
+
+// ─── The account edit write plan ────────────────────────────────────────
+//
+// `writeAccountEdit` is the account-scope half of `buildEditTasks`, isolated
+// from React so the exact write sequence is assertable — the same seam
+// `diffAccessDraft` uses for the diff.
+
+function recordingWriters() {
+  const calls: string[] = [];
+  return {
+    calls,
+    writers: {
+      revokeCustomRole: async () => {
+        calls.push('revoke-custom');
+      },
+      setBuiltinRole: async (role: AccountRole) => {
+        calls.push(`set-builtin:${role}`);
+      },
+      assignCustomRole: async (roleId: string, expiresIso: string | undefined) => {
+        calls.push(`assign-custom:${roleId}:${expiresIso ?? 'never'}`);
+      },
+    },
+  };
+}
+
+describe('writeAccountEdit — the account edit write plan', () => {
+  test('a role-only edit keeps its order: revoke, baseline, assign', async () => {
+    const current: AccessDialogCurrent = { role: customRole('role-a') };
+    const draft = { role: customRole('role-b'), agents: ALL_AGENTS, expiresAt: '' };
+    const { calls, writers } = recordingWriters();
+    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    expect(calls).toEqual(['revoke-custom', 'set-builtin:member', 'assign-custom:role-b:never']);
+  });
+
+  test('a builtin → builtin role edit only moves the baseline', async () => {
+    const current: AccessDialogCurrent = { role: builtinRole('member') };
+    const draft = { role: builtinRole('admin'), agents: ALL_AGENTS, expiresAt: '' };
+    const { calls, writers } = recordingWriters();
+    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    expect(calls).toEqual(['set-builtin:admin']);
+  });
+
+  test('an untouched draft writes nothing', async () => {
+    const current: AccessDialogCurrent = { role: builtinRole('member') };
+    const draft = { role: builtinRole('member'), agents: ALL_AGENTS, expiresAt: '' };
+    const { calls, writers } = recordingWriters();
+    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    expect(calls).toEqual([]);
+  });
+
+  test('an expiry-only edit on a builtin role writes nothing — a builtin account role has no expiry store', async () => {
+    const current: AccessDialogCurrent = { role: builtinRole('member') };
+    const draft = { role: builtinRole('member'), agents: ALL_AGENTS, expiresAt: '2027-03-01' };
+    const { calls, writers } = recordingWriters();
+    await writeAccountEdit(
+      diffAccessDraft(current, draft),
+      current,
+      draft.role,
+      '2027-03-01T23:59:59.000Z',
+      writers,
+    );
+    expect(calls).toEqual([]);
   });
 });
 
