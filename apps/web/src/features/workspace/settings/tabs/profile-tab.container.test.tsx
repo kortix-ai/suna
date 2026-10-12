@@ -33,6 +33,9 @@ let deletionStatusAnswer: {
   data?: { has_pending_deletion: boolean; deletion_scheduled_for: string | null; supported: boolean };
   isLoading: boolean;
   isError: boolean;
+  fetchStatus?: 'fetching' | 'paused' | 'idle';
+  errorUpdatedAt?: number;
+  dataUpdatedAt?: number;
   refetch: () => void;
 } = {
   data: { has_pending_deletion: false, deletion_scheduled_for: null, supported: true },
