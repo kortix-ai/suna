@@ -485,7 +485,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:

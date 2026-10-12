@@ -963,7 +963,7 @@ jobs:
     # `prod` only.
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
@@ -1023,7 +1023,7 @@ jobs:
         && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
