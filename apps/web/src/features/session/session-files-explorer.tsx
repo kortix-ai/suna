@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -249,9 +250,7 @@ function PanelTabs({ changedCount }: { changedCount: number }) {
       <TabsTrigger value="changes" className="w-fit flex-none gap-1.5 px-0">
         {tI18nComplete.raw('textbbd4b6a86bc6')}
         {changedCount > 0 && (
-          <Badge variant="secondary" size="tabular">
-            {changedCount}
-          </Badge>
+          <CountBadge count={changedCount} />
         )}
       </TabsTrigger>
     </TabsList>

@@ -4,6 +4,7 @@ import {
   SIDEBAR_NAV_DEFAULTS,
   moveSidebarNavItem,
   normalizeSidebarNav,
+  resolveSidebarNav,
   useSidebarNavStore,
 } from './sidebar-nav-store';
 
@@ -74,5 +75,31 @@ describe('useSidebarNavStore', () => {
     expect(items.find((e) => e.id === 'apps')?.visibility).toBe('always');
     store.reset();
     expect(useSidebarNavStore.getState().items).toEqual([...SIDEBAR_NAV_DEFAULTS]);
+  });
+});
+
+describe('resolveSidebarNav', () => {
+  const custom = normalizeSidebarNav([
+    { id: 'files', visibility: 'always' },
+    { id: 'apps', visibility: 'never' },
+  ]);
+
+  test('the account layout wins over the local one and is not pushed back', () => {
+    const remote = [{ id: 'review', visibility: 'never' }];
+    expect(resolveSidebarNav(remote, custom)).toEqual({
+      items: normalizeSidebarNav(remote),
+      push: false,
+    });
+  });
+
+  test('no account layout: a customized local layout is kept and pushed once', () => {
+    expect(resolveSidebarNav(undefined, custom)).toEqual({ items: custom, push: true });
+  });
+
+  test('no account layout and an untouched local one: nothing to push', () => {
+    expect(resolveSidebarNav(null, SIDEBAR_NAV_DEFAULTS)).toEqual({
+      items: [...SIDEBAR_NAV_DEFAULTS],
+      push: false,
+    });
   });
 });

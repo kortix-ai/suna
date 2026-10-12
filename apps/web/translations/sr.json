@@ -7915,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Историја верзија",
       "line285JsxTextCopyPath": "Копирај путању",
       "line396JsxTextThisFolderIsEmpty": "Овај фолдер је празан",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Све што ваши агенти сачувају и сва средства додата овом пројекту ће се приказати овде."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Све што ваши агенти сачувају и сва средства додата овом пројекту ће се приказати овде.",
+      "loadMoreItems": "Учитај још ставки",
+      "loadMoreFailed": "Учитавање још ставки није успело. Покушајте поново.",
+      "partialSortNote": "Приказано је {value0} ставки. Сортирање важи када се учитају све ставке.",
+      "showingFirstItems": "Приказано је првих {value0} ставки"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Кликните двапут да бисте уредили путању",
@@ -8007,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Тражи датотеке...",
       "line124JsxTextTypeToSearchFiles": "Укуцајте за претрагу датотека...",
-      "line136JsxTextNoFilesFound": "Ниједна датотека није пронађена"
+      "line136JsxTextNoFilesFound": "Ниједна датотека није пронађена",
+      "searchContents": "Претражи садржај",
+      "firstMatches": "Приказано је првих {value0} подударања",
+      "searchContentsPlaceholder": "Претражи садржај датотека...",
+      "typeToSearchContents": "Укуцајте за претрагу садржаја датотека...",
+      "noMatchingLines": "Нема одговарајућих редова"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Датотека или фасцикла са тим именом већ постоји",
@@ -19222,6 +19231,12 @@
       "servedModelInPlaceOf": "Уместо",
       "servedModelBadge": "Ради на моделу {model}",
       "servedModelBarDescription": "{requested} није одговорио на последњи захтев",
+      "computerAwakeStays": "Изоловано окружење остаје укључено док сте овде · до {duration}",
+      "computerAwakeStops": "Изоловано окружење се гаси за {duration}. Пошаљите поруку да остане укључено.",
+      "computerAwakeStopsSoon": "Изоловано окружење се ускоро гаси. Пошаљите поруку да остане укључено.",
+      "computerAwakeHoursMinutes": "{hours} ч {minutes} мин",
+      "computerAwakeHours": "{hours} ч",
+      "computerAwakeMinutes": "{minutes} мин",
       "text414cc580557b": "Упит сесије у реду измењен",
       "text52867b778586": "Један kortix.yaml.",
       "textd0dfd435b2f4": "Ваша AI радна снага, као код.",
@@ -20184,9 +20199,8 @@
     "calendarNextWeek": "Следећа недеља",
     "calendarPreviousMonth": "Претходни месец",
     "calendarNextMonth": "Следећи месец",
-    "calendarAllWeek": "Цела недеља",
-    "calendarAllDay": "Цео дан",
-    "calendarEvery": "сваких {period}",
+    "calendarMore": "+{count} još",
+    "calendarMoreOn": "Još {count, plural, one {# podsetnik} few {# podsetnika} other {# podsetnika}} za {date}",
     "calendarSession": "Сесија",
     "calendarEmptyWeek": "Ове недеље ништа се не покреће",
     "calendarEmptyDay": "Овог дана ништа се не покреће",

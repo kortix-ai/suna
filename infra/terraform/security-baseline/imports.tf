@@ -110,10 +110,6 @@ import {
   id = "vpc-flow-logs-role"
 }
 import {
-  to = aws_cloudwatch_log_group.flow_logs
-  id = "/vpc/flowlogs"
-}
-import {
   to = aws_iam_policy.cloudwatch_logs
   id = "arn:aws:iam::935064898258:policy/kortix-cloudwatch-logs-policy"
 }
