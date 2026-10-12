@@ -56,4 +56,12 @@ export interface SessionLogPort {
   restore(log: SessionLog): Promise<ExportCursor[]>
   /** A digest of the whole native store, for the boot reconcile. */
   fingerprint(): Promise<string>
+  /**
+   * What a message of the live turn (P4.3b) has in its turn end's record that
+   * its v1 frames do not carry: the seq it has, or gets when the harness
+   * stores it, and `created_at` when the harness times the message itself.
+   * Null while the harness cannot know the seq yet. The journal's streaming
+   * puts carry these, so they equal the turn end's record.
+   */
+  live(threadId: string, messageId: string): { seq: number; created_at?: string } | null
 }

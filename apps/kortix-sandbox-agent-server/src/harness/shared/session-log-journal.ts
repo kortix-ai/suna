@@ -38,6 +38,21 @@
  * frame on the v1 bus is published as `log.block.delta`: both harnesses use the
  * v1 session id, message id and part id as the thread, message and block id.
  *
+ * Live turn (P4.3b): the journal also folds the v1 frames of each message it
+ * has not collected yet. On the first `message.updated` of a message and on
+ * each `message.part.updated` of a new part, it publishes a `log.message` put
+ * of that message on the v2 bus only (never the dirty set); so does an update
+ * of a tool part that changes its status or its metadata keys (P4.7): `fromV1` of the
+ * frames so far (`liveMessageFromV1`: `status: 'streaming'`, open calls stay
+ * open and keep their v1 residual, so a running task keeps its `sessionId`),
+ * with the seq (and `created_at`) the adapter's `live` names. It
+ * is built in the bus listener, before the next frame, so its text is exactly
+ * the deltas published before it. A message whose seq the adapter cannot know
+ * yet waits for the next live frame. The collection's put of the message has
+ * a higher rev and ends its live puts. A live message the harness removes
+ * before the collection (`message.removed`) gets the journal-form tombstone
+ * if a put of it went out; a removed part (`message.part.removed`) a fresh put.
+ *
  * Debug: `KORTIX_SESSION_LOG_DUMP_DIR` (off by default) turns the API into a
  * directory. Each batch body is written there as JSON and acknowledged at
  * once; nothing is posted.
@@ -46,7 +61,9 @@
  * (`sandboxRelayContext`); same backoff as the audit relay (`computeRetryDelay`).
  */
 import {
+  liveMessageFromV1,
   SessionLogJournalConflictSchema,
+  type FromV1Options,
   SessionLogJournalResponseSchema,
   type ExportCursor,
   type SessionLog,
@@ -58,6 +75,7 @@ import {
   type SessionLogSessionPatch,
   type SessionLogThreadUpsert,
 } from '@kortix/api-contract/session-log'
+import type { KortixMessageInfo, KortixPart } from '@kortix/api-contract/transcript'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
@@ -94,6 +112,8 @@ export interface SessionLogJournalOptions {
 /** A pending revision: a whole message, or a tombstone when `message` is absent. */
 type Entry = { id: string; rev: number; message?: SessionLogMessage }
 type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array<ArrayBuffer> }
+/** A message of the live turn as its v1 frames describe it; `due` until a live put carries its latest change; `sent` once one went out. */
+type LiveRow = { info: KortixMessageInfo | null; parts: Map<string, KortixPart & Record<string, unknown>>; due: boolean; sent: boolean }
 
 export class SessionLogJournal {
   private readonly cursors = new Map<string, ExportCursor>()
@@ -117,15 +137,23 @@ export class SessionLogJournal {
   private waiters: Array<() => void> = []
   private readonly dumpDir = process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null
   private dumped = 0
-  /** Text deltas on the v1 bus, republished as `log.block.delta` until `stop`. */
-  private readonly offDeltas = kortixEventBus().subscribe((event) => {
-    if (this.off || event.type !== 'message.part.delta') return
-    const p = event.payload as Record<string, unknown> | null
-    if (p?.field !== 'text' || typeof p.delta !== 'string') return
+  /** The live turn's messages by id, in the order the v1 bus first named them. */
+  private readonly live = new Map<string, LiveRow>()
+  /** The v1 bus until `stop`: text deltas republished as `log.block.delta`, and the live turn's puts. */
+  private readonly offDeltas = kortixEventBus().tap((event) => {
+    if (this.off) return
+    const p = event.payload as Record<string, any> | null
+    if (event.type === 'message.updated') return this.liveMessage(p?.info)
+    if (event.type === 'message.part.updated') return this.livePart(p?.part)
+    if (event.type === 'message.removed') return this.liveRemoved(p?.messageID)
+    if (event.type === 'message.part.removed') return this.livePartRemoved(p?.messageID, p?.partID)
+    if (event.type !== 'message.part.delta' || p?.field !== 'text' || typeof p.delta !== 'string') return
     const { sessionID: thread_id, messageID: message_id, partID: block_id } = p
     if (typeof thread_id !== 'string' || typeof message_id !== 'string' || typeof block_id !== 'string') return
+    const part = this.live.get(message_id)?.parts.get(block_id)
+    if (part && typeof part.text === 'string') part.text += p.delta
     sessionLogEventBus().publish('log.block.delta', { thread_id, message_id, block_id, delta: p.delta } satisfies SessionLogBlockDeltaEvent, thread_id)
-  }).unsubscribe
+  })
 
   constructor(
     private readonly port: SessionLogPort,
@@ -197,6 +225,69 @@ export class SessionLogJournal {
     return this.collecting
   }
 
+  private collected(id: string): boolean {
+    for (const cursor of this.cursors.values()) if (id in cursor.native_hashes) return true
+    return false
+  }
+
+  private row(id: string): LiveRow {
+    let row = this.live.get(id)
+    if (!row) this.live.set(id, (row = { info: null, parts: new Map(), due: false, sent: false }))
+    return row
+  }
+
+  private liveMessage(info: KortixMessageInfo | undefined): void {
+    if (typeof info?.id !== 'string' || typeof info.sessionID !== 'string' || this.collected(info.id)) return
+    const row = this.row(info.id)
+    row.due ||= row.info === null
+    row.info = info
+    if (row.due) this.publishLive()
+  }
+
+  private livePart(part: (KortixPart & Record<string, unknown>) | undefined): void {
+    if (typeof part?.id !== 'string' || typeof part.messageID !== 'string' || this.collected(part.messageID)) return
+    const row = this.row(part.messageID)
+    const before = row.parts.get(part.id)
+    row.due ||= !before || toolShape(before) !== toolShape(part)
+    // A copy: deltas extend it, and the v1 ring must keep the frame as published.
+    row.parts.set(part.id, structuredClone(part))
+    if (row.due) this.publishLive()
+  }
+
+  /** A live message the harness removed before the journal collected it (a retracted prompt, a revert): its tombstone, if a put went out. */
+  private liveRemoved(id: unknown): void {
+    const row = typeof id === 'string' ? this.live.get(id) : undefined
+    if (!row) return
+    this.live.delete(id as string)
+    if (row.sent) sessionLogEventBus().publish('log.message', { message_id: id as string, rev: nextRev() } satisfies SessionLogMessageEvent, row.info?.sessionID)
+  }
+
+  private livePartRemoved(messageId: unknown, partId: unknown): void {
+    const row = typeof messageId === 'string' ? this.live.get(messageId) : undefined
+    if (!row || typeof partId !== 'string' || !row.parts.delete(partId)) return
+    row.due = true
+    this.publishLive()
+  }
+
+  /** A put of each due message whose seq the adapter knows, in the order the v1 bus named them. */
+  private publishLive(): void {
+    for (const [id, row] of this.live) {
+      if (!row.due || !row.info) continue
+      const thread = row.info.sessionID
+      try {
+        const known = this.port.live(thread, id)
+        if (!known) continue
+        row.due = false
+        const harness = this.port.capabilities.harness as FromV1Options['harness']
+        const message = liveMessageFromV1({ info: row.info, parts: [...row.parts.values()] }, known, harness)
+        row.sent = true
+        sessionLogEventBus().publish('log.message', { rev: nextRev(), message } satisfies SessionLogMessageEvent, thread)
+      } catch (err) {
+        logger.warn('[session-log] live put failed', { message_id: id, err: String(err) })
+      }
+    }
+  }
+
   private async collectOnce(): Promise<void> {
     const changes = await this.port.changes([...this.cursors.values()])
     const messages: SessionLogMessageEvent[] = []
@@ -211,6 +302,7 @@ export class SessionLogJournal {
       this.tombstoned.delete(id)
       const entry = { id, rev: nextRev(), message }
       this.dirty.set(id, entry)
+      this.live.delete(id)
       messages.push({ rev: entry.rev, message })
     }
     for (const id of changes.tombstones) {
@@ -422,6 +514,19 @@ export function logChanges(
     },
     sessionJson,
   }
+}
+
+/**
+ * What a live put shows of a tool part that its later updates change: the status and the
+ * metadata keys (task `sessionId`, bash `command`), not their values. ponytail: bash rewrites
+ * `metadata.output` per stdout chunk and a put rebuilds the whole message, so a growing output
+ * or a streaming `raw` waits for the next put; key on values when a throttled put lands.
+ */
+function toolShape(part: Record<string, any>): string {
+  if (part.type !== 'tool') return ''
+  const meta = part.state?.metadata ?? {}
+  // The keys the wire carries: pi's bash ends with `truncation: undefined`, which JSON drops.
+  return `${part.state?.status}:${Object.keys(meta).filter((k) => meta[k] !== undefined).join()}`
 }
 
 function parseJson(text: string): unknown {

@@ -650,7 +650,7 @@ describe('GET /events (SSE)', () => {
     expect(bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay).toHaveLength(10_000)
   })
 
-  test('schema negotiation: the default, empty and schema=v1 streams are the v1 bus byte for byte; schema=v2 is the log bus', async () => {
+  test('schema negotiation: the default, empty and schema=v1 streams are the v1 bus byte for byte; schema=v2 is the log bus plus every v1 frame but the transcript', async () => {
     const { app } = makeRouter()
     const bus = kortixEventBus()
     const logBus = sessionLogEventBus()
@@ -659,26 +659,33 @@ describe('GET /events (SSE)', () => {
     publishOpenCodeEvent(bus, { type: 'session.idle', properties: { sessionID: SESSION } })
     logBus.publish('log.thread', { thread_id: SESSION }, SESSION)
     bus.publishDaemon('kortix.turn', { verdict: 'idle' }, SESSION)
+    publishOpenCodeEvent(bus, { type: 'message.updated', properties: { sessionID: SESSION, info: { id: 'msg_a', role: 'assistant' } } })
+    publishOpenCodeEvent(bus, { type: 'permission.asked', properties: { id: 'per_a', sessionID: SESSION, permission: 'bash' } })
     // The frame format before schema negotiation existed: `event`, `id`, `data` of each v1 envelope.
     const v1Frames = bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay.map((e) => `event: ${e.type}\nid: ${e.seq}\ndata: ${JSON.stringify(e)}`)
-    expect(v1Frames).toHaveLength(3)
+    expect(v1Frames).toHaveLength(5)
     const read = async (query: string, want: number) => {
       const res = await app.request(`http://d/events?${query}since=0`, { headers: auth })
       expect(res.status).toBe(200)
       return { epoch: res.headers.get('x-kortix-epoch'), frames: await readFrames(res, want) }
     }
     for (const query of ['', 'schema=&', 'schema=v1&']) {
-      const { epoch, frames } = await read(query, 4)
+      const { epoch, frames } = await read(query, 6)
       expect(epoch).toBe(bus.epoch)
-      expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: bus.epoch, head_seq: 3, first_seq: 1 })
+      expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: bus.epoch, head_seq: 5, first_seq: 1 })
       expect(frames.slice(1)).toEqual(v1Frames)
       expect(frames.join('\n')).not.toContain('log.')
     }
-    const { epoch, frames } = await read('schema=v2&', 3)
+    const { epoch, frames } = await read('schema=v2&', 6)
     expect(epoch).toBe(logBus.epoch)
     expect(logBus.epoch).not.toBe(bus.epoch)
-    expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: logBus.epoch, head_seq: 2 })
-    expect(frames.slice(1).map(dataOf).map((e) => [e.seq, e.type])).toEqual([[1, 'log.block.delta'], [2, 'log.thread']])
+    expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: logBus.epoch, head_seq: 5 })
+    // Its own dense seqs; the v1 frames that are not transcript content ride along unchanged (P4.3b); no message.* frame.
+    const v2 = frames.slice(1).map(dataOf)
+    expect(v2.map((e) => [e.seq, e.type])).toEqual([[1, 'log.block.delta'], [2, 'session.idle'], [3, 'log.thread'], [4, 'kortix.turn'], [5, 'permission.asked']])
+    expect(v2[1]!.payload).toEqual({ sessionID: SESSION })
+    expect(v2[4]!.payload).toEqual({ id: 'per_a', sessionID: SESSION, permission: 'bash' })
+    expect(frames.join('\n')).not.toContain('message.')
   })
 
   test('an unknown schema is a 400 that names the supported ones', async () => {

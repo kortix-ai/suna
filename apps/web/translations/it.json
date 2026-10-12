@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Sostituito per questo progetto",
         "defaultOn": "Attivo per impostazione predefinita",
-        "defaultOff": "Disattivo per impostazione predefinita"
+        "defaultOff": "Disattivo per impostazione predefinita",
+        "organization": "Tutta l'organizzazione, gestito da Kortix"
       },
       "search": "Cerca funzionalità",
       "loadFailed": "Impossibile caricare il progetto",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "Trigger di eventi dell'app",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario."
+        },
+        "volumes": {
+          "name": "Volumi",
+          "description": "File condivisi e sessioni su volumi per tutta l'organizzazione."
+        },
+        "stateless_sessions": {
+          "name": "Sessioni senza stato",
+          "description": "Un computer nuovo a ogni risveglio; restano solo file e chat. Richiede i volumi attivi."
         },
         "drives": {
           "name": "Drive",
@@ -19777,6 +19786,7 @@
     "providerError": "Impossibile aggiornare l’accesso al fornitore.",
     "managedTitle": "Modelli gestiti da Kortix",
     "managedDescription": "Modelli gestiti addebitati in crediti Kortix. Non serve una chiave API.",
+    "managedUpgradeHint": "Effettua l'upgrade per usare i modelli gestiti di Kortix oppure connetti un provider tuo.",
     "pricingEstimate": "Prezzo stimato per il cliente. La rotta utilizzata determina il costo.",
     "pricingRoute": "{route}: {input} input / {cacheRead} cache / {output} output per 1 milione di token",
     "pricingPreferred": "Preferita",

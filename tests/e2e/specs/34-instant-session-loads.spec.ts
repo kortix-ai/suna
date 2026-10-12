@@ -406,7 +406,7 @@ const savedToolTurn: SavedMessages = (root) => {
 };
 
 /** A settled turn folds its work behind one "Worked for …" row (#9558); open it. */
-const openWork = (page: Page) => page.getByText(/^Worked( for .+)?$/).first().click();
+const openWork = (scope: Pick<Page, 'getByText'>) => scope.getByText(/^Worked( for .+)?$/).first().click();
 
 test('34 — a saved tool call shows its command and output, from the server and from this device', async ({
   page,
@@ -585,6 +585,8 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();
+    // The sub-agent's own settled turn folds the same way.
+    await openWork(view);
     await expect(view.getByText(SUBAGENT_COMMAND, { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(view.getByText('List the source files.', { exact: true })).toBeVisible();
     await page.waitForTimeout(400); // the view's open animation, for the screenshot only

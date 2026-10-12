@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
+import { fromV1, toV1 } from '@kortix/api-contract/session-log'
 import type {
   AdapterCapabilities,
   ExportCursor,
@@ -117,6 +118,7 @@ const sha = (text: string) => new Bun.CryptoHasher('sha256').update(text).digest
 function fakeAdapter() {
   const native = new Map<string, { seq: number; text: string }>()
   const removed: string[] = []
+  const liveSeqs = new Map<string, number>()
   let session: SessionLogChanges['session']
   const derive = (id: string, row: { seq: number; text: string }): SessionLogMessage => ({
     ...message(id, row.seq, row.text),
@@ -152,9 +154,12 @@ function fakeAdapter() {
     async fingerprint() {
       return sha(JSON.stringify([...native]))
     },
+    live: (_thread: string, id: string) => (liveSeqs.has(id) ? { seq: liveSeqs.get(id)! } : null),
   }
   return {
     port,
+    /** The seq `live` names for a message of the live turn. */
+    liveSeq: (id: string, seq: number) => liveSeqs.set(id, seq),
     put: (id: string, seq: number, text: string) => native.set(id, { seq, text }),
     remove: (id: string) => {
       native.delete(id)
@@ -386,11 +391,185 @@ describe('session-log journal', () => {
     fake.put('m2', 2, 'two')
     fake.remove('m1')
     expect(await journal.flush()).toBe(false)
+    fake.liveSeq('m3', 3)
+    kortixEventBus().publish('message.updated', { sessionID: 'thread-1', info: { id: 'm3', sessionID: 'thread-1', role: 'assistant', time: { created: 1 } } }, 'thread-1')
+    kortixEventBus().publish('message.part.updated', { sessionID: 'thread-1', part: { id: 'm3-p0', messageID: 'm3', sessionID: 'thread-1', type: 'text', text: '' } }, 'thread-1')
     kortixEventBus().publish('message.part.delta', { sessionID: 'thread-1', messageID: 'm2', partID: 'm2-p0', field: 'text', delta: 'x' }, 'thread-1')
     await Bun.sleep(50)
     expect(exports).toBe(before)
     expect(frames).toEqual([])
     expect(api.received).toHaveLength(posts)
+  })
+
+  test('live turn (P4.3b): puts on the v2 bus only, each before its deltas; a message waits for its seq; the API receives the turn end\'s record alone', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'earlier')
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const v1: string[] = []
+    kortixEventBus().subscribe((e) => void v1.push(JSON.stringify(e)), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    const user = { id: 'u2', sessionID: T, role: 'user', time: { created: 2_000 } }
+    const reply = { id: 'm3', sessionID: T, role: 'assistant', parentID: 'u2', time: { created: 3_000 }, modelID: 'fake-1', providerID: 'fake' }
+    // The harness has not stored the prompt: no seq, no put yet.
+    bus.publish('message.updated', { sessionID: T, info: user }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'u2-p0', messageID: 'u2', sessionID: T, type: 'text', text: 'question' } }, T)
+    expect(frames).toEqual([])
+    // A message the journal already collected gets no live put.
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm1-x', messageID: 'm1', sessionID: T, type: 'text', text: '' } }, T)
+    expect(frames).toEqual([])
+    fake.liveSeq('u2', 2)
+    fake.liveSeq('m3', 3)
+    bus.publish('message.updated', { sessionID: T, info: reply }, T)
+    const text = { id: 'm3-p0', messageID: 'm3', sessionID: T, type: 'text', text: '' }
+    bus.publish('message.part.updated', { sessionID: T, part: text }, T)
+    bus.publish('message.part.delta', { sessionID: T, messageID: 'm3', partID: 'm3-p0', field: 'text', delta: 'Ans' }, T)
+    bus.publish('message.part.delta', { sessionID: T, messageID: 'm3', partID: 'm3-p0', field: 'text', delta: 'wer' }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm3-p1', messageID: 'm3', sessionID: T, type: 'tool', callID: 'c1', tool: 'bash', state: { status: 'running', input: { command: 'ls' }, time: { start: 3_100 } } } }, T)
+    expect(frames.map((f) => [f.type, f.payload.message?.message_id ?? f.payload.delta])).toEqual([
+      ['log.message', 'u2'], // the waiting prompt first, in the order the v1 bus named them
+      ['log.message', 'm3'],
+      ['log.message', 'm3'],
+      ['log.block.delta', 'Ans'],
+      ['log.block.delta', 'wer'],
+      ['log.message', 'm3'],
+    ])
+    expect(frames[0]!.payload.message).toMatchObject({ seq: 2, role: 'user', status: 'complete', blocks: [{ id: 'u2-p0', text: 'question' }] })
+    expect(frames[1]!.payload.message).toMatchObject({ seq: 3, thread_id: T, role: 'assistant', status: 'streaming', reply_to: 'u2', completed_at: null, finish: null, blocks: [], created_at: new Date(3_000).toISOString() })
+    expect(frames[2]!.payload.message.blocks).toEqual([{ type: 'text', id: 'm3-p0', text: '' }])
+    expect(frames[5]!.payload.message.blocks).toMatchObject([{ id: 'm3-p0', text: 'Answer' }, { type: 'tool_call', id: 'm3-p1', status: 'running' }])
+    expect(frames[5]!.payload.message.blocks[1].result).toBeUndefined()
+    const revs = frames.filter((f) => f.type === 'log.message').map((f) => f.payload.rev)
+    expect(revs).toEqual([...revs].sort((a, b) => a - b))
+    // The v1 frames are untouched: the deltas extended the journal's copy, never the published part.
+    expect(text.text).toBe('')
+    expect(v1.every((line) => !line.includes('Answer'))).toBe(true)
+    // Nothing live reached the API. The turn end's collection sends the stored records at higher revs.
+    expect(api.received).toHaveLength(1)
+    // The live puts never entered the dirty set: a journal in backoff would post a streaming record.
+    expect(journal.clean).toBe(true)
+    const live = [...frames]
+    fake.put('u2', 2, 'question')
+    fake.put('m3', 3, 'Answer')
+    expect(await journal.flush()).toBe(true)
+    expect(putIds(api.received.slice(1))).toEqual(['u2', 'm3'])
+    for (const id of ['u2', 'm3']) {
+      const liveRevs = live.filter((f) => f.payload.message?.message_id === id).map((f) => f.payload.rev)
+      expect(revOf(api.received, id)[0]).toBeGreaterThan(Math.max(...liveRevs))
+    }
+    // A collected message gets no later live put.
+    const seen = frames.length
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm3-p2', messageID: 'm3', sessionID: T, type: 'text', text: 'late' } }, T)
+    expect(frames).toHaveLength(seen)
+    await journal.stop(0)
+  })
+
+  test('live turn (P4.3b): a live message removed before its collection gets a tombstone on v2; a removed part a fresh put', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any; session?: string }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    fake.liveSeq('u1', 1)
+    fake.liveSeq('m2', 2)
+    // A queued prompt the user retracts, and a reply whose part the harness drops.
+    bus.publish('message.updated', { sessionID: T, info: { id: 'u1', sessionID: T, role: 'user', time: { created: 1_000 } } }, T)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'm2', sessionID: T, role: 'assistant', parentID: 'u1', time: { created: 2_000 } } }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm2-p0', messageID: 'm2', sessionID: T, type: 'text', text: 'draft' } }, T)
+    bus.publish('message.part.removed', { sessionID: T, messageID: 'm2', partID: 'm2-p0' }, T)
+    bus.publish('message.removed', { sessionID: T, messageID: 'u1' }, T)
+    // A message no put named: nothing to retract.
+    bus.publish('message.removed', { sessionID: T, messageID: 'never-seen' }, T)
+    expect(frames.map((f) => [f.payload.message?.message_id ?? f.payload.message_id, f.payload.message ? f.payload.message.blocks.length : 'tombstone'])).toEqual([
+      ['u1', 0],
+      ['m2', 0],
+      ['m2', 1],
+      ['m2', 0], // the part is gone
+      ['u1', 'tombstone'],
+    ])
+    expect(frames[4]!.payload).toEqual({ message_id: 'u1', rev: expect.any(Number) })
+    expect(frames[4]!.session).toBe(T)
+    expect(frames[4]!.payload.rev).toBeGreaterThan(frames[0]!.payload.rev)
+    // The reply ends in the store; the collection takes it, and no live row is left.
+    fake.put('m2', 2, 'final')
+    expect(await journal.flush()).toBe(true)
+    expect(putIds(api.received.slice(1))).toEqual(['m2'])
+    expect((journal as unknown as { live: Map<string, unknown> }).live.size).toBe(0)
+    await journal.stop(0)
+  })
+
+  test('live turn (P4.7): a running call keeps its v1 metadata and a pending call its partial input; a tool part puts on a status or metadata-key change only', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    fake.liveSeq('m4', 4)
+    const info = { id: 'm4', sessionID: T, role: 'assistant', parentID: 'u3', time: { created: 4_000 }, modelID: 'fake-1', providerID: 'fake' }
+    const head = { messageID: 'm4', sessionID: T, type: 'tool' }
+    const task = (state: Record<string, unknown>) => ({ ...head, id: 'm4-task', callID: 'c-task', tool: 'task', state })
+    const bash = (state: Record<string, unknown>) => ({ ...head, id: 'm4-bash', callID: 'c-bash', tool: 'bash', state })
+    const write = { ...head, id: 'm4-write', callID: 'c-write', tool: 'write', state: { status: 'pending', input: {}, raw: '{"filePath":"/w/a.ts","content":"exp' } }
+    const taskRunning = task({ status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: { sessionId: 'thr_child' }, time: { start: 4_120 } })
+    const bashRunning = (output: string) => bash({ status: 'running', input: { command: 'ls -la', description: 'Lists' }, title: 'Lists', metadata: { command: 'ls -la', output }, time: { start: 4_200 } })
+    const puts = () => frames.filter((f) => f.type === 'log.message').map((f) => f.payload.message as SessionLogMessage)
+    /** The v1 parts `toV1` rebuilds from a live put. */
+    const partsBack = (m: SessionLogMessage): unknown[] => {
+      const log = fromV1({ session_id: 's', root_id: T, rows: [{ runtime_session_id: T, info: info as never, parts: [] }] }, { live: true })
+      log.threads[0]!.messages = [m]
+      return toV1(JSON.parse(JSON.stringify(log))).rows[0]!.parts
+    }
+    bus.publish('message.updated', { sessionID: T, info }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: task({ status: 'pending', input: {}, raw: '' }) }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: task({ status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: {}, time: { start: 4_120 } }) }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: taskRunning }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: taskRunning }, T) // nothing changed: no put
+    bus.publish('message.part.updated', { sessionID: T, part: bashRunning('total 0') }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: bashRunning('total 0\na') }, T) // only output grew: no put
+    const undefinedKey = bashRunning('total 0\na')
+    ;(undefinedKey.state.metadata as Record<string, unknown>).truncation = undefined // a key JSON drops (pi bash): no put
+    bus.publish('message.part.updated', { sessionID: T, part: undefinedKey }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: write }, T)
+    expect(puts().map((m) => m.blocks.map((b) => (b.type === 'tool_call' ? `${b.name}/${b.status}` : b.type)).join(','))).toEqual([
+      '', // message.updated
+      'task/pending', // new part
+      'task/running', // status change
+      'task/running', // metadata keys change: sessionId arrived
+      'task/running,bash/running', // new part
+      'task/running,bash/running,write/pending', // new part
+    ])
+    const last = puts().at(-1)!
+    expect(last).toMatchObject({ seq: 4, status: 'streaming', completed_at: null, finish: null })
+    expect(last.blocks.every((b) => b.type !== 'tool_call' || b.result === undefined)).toBe(true)
+    // The running calls keep their display metadata: toV1 gives back the frames (bash with the output of its last put).
+    expect(partsBack(puts()[3]!)).toEqual([taskRunning])
+    expect(partsBack(last)).toEqual([taskRunning, bashRunning('total 0\na'), write])
+    // The pending call carries its partial input as its input.
+    expect(last.blocks[2]).toMatchObject({ type: 'tool_call', status: 'pending', input: '{"filePath":"/w/a.ts","content":"exp' })
+    // The live puts never entered the dirty set, and nothing live reached the API.
+    expect(journal.clean).toBe(true)
+    expect(api.received).toHaveLength(1)
+    // The turn end: the collection's put is the adapter's record, unchanged, at a higher rev.
+    fake.put('m4', 4, 'done')
+    expect(await journal.flush()).toBe(true)
+    const stored = api.received[1]!.body.puts
+    expect(stored.map((p) => p.message)).toEqual([{ ...message('m4', 4, 'done'), model: null, usage: null }])
+    expect(frames.at(-1)!.payload).toEqual(stored[0])
+    expect(stored[0]!.rev).toBeGreaterThan(Math.max(...frames.filter((f) => f.payload.message?.status === 'streaming').map((f) => f.payload.rev)))
+    await journal.stop(0)
   })
 
   test('a 409 fences a zombie box: no later batch of the same drain is posted', async () => {

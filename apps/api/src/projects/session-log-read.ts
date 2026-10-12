@@ -18,6 +18,9 @@
  * - an attachment the API's capture uploaded keeps the `kortix-attachment://` url the mirror row
  *   has only when the journal sent it; the daemon never sees that url.
  * - object key order: the log path builds its own; key order is not a wire contract.
+ * - a text over 200,000 characters: the mirror cuts it (`MIRROR_MAX_PART_CHARS`); the log keeps
+ *   the whole text. A text over 256 kB is a preview in the row (F3, `session-log-blobs.ts`):
+ *   this read puts the whole text back from its object, after the transaction.
  * Paging assumes `seq` order is the mirror order (`created`, then id): the OpenCode adapter issues
  * seqs in `fromV1`'s order, which is that order. A cursor that names a message anchors on the
  * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
@@ -44,6 +47,7 @@ import {
   UnknownTranscriptCursorError,
   type MirrorSnapshot,
 } from './lib/session-transcript-mirror';
+import { rehydrateLargeTexts } from './session-log-blobs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type J = Record<string, unknown>;
@@ -163,6 +167,7 @@ export async function readLogTranscriptWindow(input: {
     .select({
       record: sessionLogs.record,
       updatedAt: sessionLogs.updatedAt,
+      projectId: sessionLogs.projectId,
       metadata: projects.metadata,
       accountId: projects.accountId,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
@@ -182,8 +187,11 @@ export async function readLogTranscriptWindow(input: {
   // Decided before BEGIN: a pi session (no v1 ext) costs one query, not a transaction.
   if (!target || !thread || !v1Ext(thread.record)) return null;
 
-  return db.transaction(async (tx) => {
+  const toRows = (records: J[]) =>
+    toV1({ ...(log.record as object), session_id: input.sessionId, threads: [{ ...thread.record, messages: records }] } as unknown as SessionLog)
+      .rows.filter((r) => r.runtime_session_id === target);
 
+  const read = await db.transaction(async (tx) => {
     // The rows `toV1` gives runtime session `target`. Only a superseded (out-of-context) message
     // carries its own runtime id; every other message has its thread's.
     const nativeIsTarget = nativeOf(thread) === target;
@@ -207,12 +215,7 @@ export async function readLogTranscriptWindow(input: {
       })
       .from(sessionLogMessages)
       .where(scope);
-    const total = totals?.total ?? 0;
-    if (total === 0) return null;
-
-    const toRows = (records: J[]) =>
-      toV1({ ...(log.record as object), session_id: input.sessionId, threads: [{ ...thread.record, messages: records }] } as unknown as SessionLog)
-        .rows.filter((r) => r.runtime_session_id === target);
+    if (!totals?.total) return null;
 
     const anchor = input.before ? await anchorOf(tx, scope, input.before, toRows) : null;
     const window = await tx
@@ -227,24 +230,29 @@ export async function readLogTranscriptWindow(input: {
       .orderBy(desc(sessionLogMessages.seq))
       // Every message is at least one row; an inclusive anchor drops its own summary row.
       .limit(input.limit + 1 + (anchor?.inclusive ? 1 : 0));
-
-    const rows = toRows(window.map((w) => w.record).reverse())
-      .filter((r) => anchor === null || keyCompare(keyOf(r), anchor.key) < 0)
-      .sort((a, b) => keyCompare(keyOf(b), keyOf(a)));
-    const kept = rows.slice(0, input.limit);
-    return {
-      opencode_session_id: target,
-      root_opencode_session_id: rootId,
-      captured_at: new Date(Math.max(new Date(log.updatedAt).getTime(), Math.floor(totals?.writtenMs ?? 0))).toISOString(),
-      total,
-      head_complete: true,
-      next_cursor: rows.length > input.limit ? idOf(kept.at(-1)!) : null,
-      messages: kept.reverse().map((r) => ({
-        info: r.info as unknown as J,
-        parts: restoreStrippedToolParts((Array.isArray(r.parts) ? r.parts : []) as unknown as J[]),
-      })),
-    };
+    return { totals, anchor, records: window.map((w) => w.record).reverse() };
   }, READ_ONLY);
+  if (!read) return null;
+  const { totals, anchor } = read;
+
+  // F3: a text over 256 kB is a preview in the row; v1 bodies carry the whole text. Read after COMMIT, off the connection.
+  const records = await rehydrateLargeTexts({ projectId: log.projectId, sessionId: input.sessionId }, read.records);
+  const rows = toRows(records)
+    .filter((r) => anchor === null || keyCompare(keyOf(r), anchor.key) < 0)
+    .sort((a, b) => keyCompare(keyOf(b), keyOf(a)));
+  const kept = rows.slice(0, input.limit);
+  return {
+    opencode_session_id: target,
+    root_opencode_session_id: rootId,
+    captured_at: new Date(Math.max(new Date(log.updatedAt).getTime(), Math.floor(totals.writtenMs ?? 0))).toISOString(),
+    total: totals.total,
+    head_complete: true,
+    next_cursor: rows.length > input.limit ? idOf(kept.at(-1)!) : null,
+    messages: kept.reverse().map((r) => ({
+      info: r.info as unknown as J,
+      parts: restoreStrippedToolParts((Array.isArray(r.parts) ? r.parts : []) as unknown as J[]),
+    })),
+  };
 }
 
 type Anchor = { seq: number; inclusive: boolean; key: { at: number; id: string } };

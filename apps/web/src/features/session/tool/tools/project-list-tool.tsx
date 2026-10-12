@@ -15,9 +15,9 @@ import { useMemo } from 'react';
 
 import { type ProjectEntry, parseProjectListOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ProjectListTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const output = partOutput(part);
+  const output = partOutput(call);
   const projects = useMemo(() => parseProjectListOutput(output || ''), [output]);
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it, next to
   // the list parse that is already memoised on the same string.

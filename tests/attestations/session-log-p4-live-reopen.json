@@ -1,0 +1,19 @@
+{
+  "source_hash": "1e81858d85c2d5c19574b36b22acfe7904f5b63b45a851555ec0c325dcaba912",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/README.md",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts",
+    "packages/api-contract/src/__tests__/session-log-v1.test.ts",
+    "packages/api-contract/src/session-log/live.ts"
+  ],
+  "diff_hash": "c718606a83673bcb9aed11c296cc86e80a99b9207361460fd5f9fa5b42edd823",
+  "head": "00986915f113ff019c9017d5df5dc6aa43b94d35",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T14:21:39.578Z"
+}

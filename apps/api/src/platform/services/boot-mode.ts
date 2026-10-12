@@ -125,17 +125,28 @@ function parseRule(v: unknown, dflt: BootModeRule | null): BootModeRule | null {
 
 /**
  * The policy in effect before anyone saved one: Volumes off for everyone, and
- * `volume` (with fallback) for an organization once it is turned on.
+ * `standard` boot even once an organization turns Volumes on. Stateless
+ * (`volume`) boot is its own per-organization opt-in.
  */
 export function defaultBootModePolicy(_envArtifactsSet = false): BootModePolicy {
   return {
     volumes: { enabled: false, percent: 0, orgs: {} },
     killSwitch: false,
-    default: { mode: 'volume', standardFallback: true },
+    default: { mode: 'standard', standardFallback: true },
     orgs: {},
     fallback: { volumeAttempts: DEFAULT_FALLBACK_ATTEMPTS, artifactsAttempts: DEFAULT_FALLBACK_ATTEMPTS },
     artifacts: null,
   };
+}
+
+/**
+ * The rule for an organization with no rule of its own never boots on a
+ * volume: turning Volumes on must not make sessions stateless. Volume boot
+ * comes only from an organization's own rule (Stateless sessions), so a
+ * stored `default: volume` reads as `standard`.
+ */
+function defaultRule(rule: BootModeRule): BootModeRule {
+  return rule.mode === 'volume' ? { ...rule, mode: 'standard' } : rule;
 }
 
 /** Stored JSON → policy. Garbage fields fall back to the defaults; never throws. */
@@ -162,7 +173,7 @@ export function parseBootModePolicy(value: unknown, envArtifactsSet: boolean): B
   return {
     volumes: { enabled: vol.enabled === true, percent: clampInt(vol.percent, 0, 100, 0), orgs: volumeOrgs },
     killSwitch: v.killSwitch === true,
-    default: parseRule(v.default, base.default)!,
+    default: defaultRule(parseRule(v.default, base.default)!),
     orgs,
     fallback: {
       volumeAttempts: clampInt(fb.volumeAttempts, 1, 10, DEFAULT_FALLBACK_ATTEMPTS),

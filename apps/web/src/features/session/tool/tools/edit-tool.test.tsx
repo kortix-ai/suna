@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -40,11 +41,11 @@ describe('EditTool trigger carries the line counts', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <EditTool
-          part={makePart({
+          call={toolCallBlock(makePart({
             filePath: '/workspace/app.py',
             oldString: 'a\nb\nc',
             newString: 'a\nx\ny\nc',
-          })}
+          }))}
         />,
       ),
     );
@@ -60,7 +61,7 @@ describe('EditTool trigger carries the line counts', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <EditTool
-          part={makePart({ filePath: '/f.ts', oldString: 'a\n', newString: 'a\nb\nc\n' })}
+          call={toolCallBlock(makePart({ filePath: '/f.ts', oldString: 'a\n', newString: 'a\nb\nc\n' }))}
         />,
       ),
     );
@@ -72,7 +73,7 @@ describe('EditTool trigger carries the line counts', () => {
   test('an identical before/after draws no stat at all', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <EditTool part={makePart({ filePath: '/f.ts', oldString: 'a\nb', newString: 'a\nb' })} />,
+        <EditTool call={toolCallBlock(makePart({ filePath: '/f.ts', oldString: 'a\nb', newString: 'a\nb' }))} />,
       ),
     );
 
@@ -84,10 +85,10 @@ describe('EditTool trigger carries the line counts', () => {
       withProviders(
         <ToolRunningContext.Provider value>
           <EditTool
-            part={makePart(
+            call={toolCallBlock(makePart(
               { filePath: '/f.ts', oldString: 'a\nb\nc', newString: 'a\nx\ny\nc' },
               'running',
-            )}
+            ))}
           />
         </ToolRunningContext.Provider>,
       ),
@@ -104,7 +105,7 @@ describe('EditTool speaks the tense the row is actually in', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolRunningContext.Provider value>
-          <EditTool part={makePart(edit, 'running')} />
+          <EditTool call={toolCallBlock(makePart(edit, 'running'))} />
         </ToolRunningContext.Provider>,
       ),
     );
@@ -117,7 +118,7 @@ describe('EditTool speaks the tense the row is actually in', () => {
   // call that finished an hour ago still claimed to be mid-flight. A restored
   // transcript is entirely settled calls, every one of them reading as live.
   test('a settled call is PAST tense — it is not still editing', () => {
-    const html = renderToStaticMarkup(withProviders(<EditTool part={makePart(edit)} />));
+    const html = renderToStaticMarkup(withProviders(<EditTool call={toolCallBlock(makePart(edit))} />));
 
     expect(html).toContain('Edited');
     expect(html).not.toContain('Editing');
@@ -127,7 +128,7 @@ describe('EditTool speaks the tense the row is actually in', () => {
     // Escaped apostrophe: `renderToStaticMarkup` emits the entity, and a raw
     // string here would be an assertion that can never fail.
     const html = renderToStaticMarkup(
-      withProviders(<EditTool part={makePart(edit, 'completed', 'Error: ENOENT')} />),
+      withProviders(<EditTool call={toolCallBlock(makePart(edit, 'completed', 'Error: ENOENT'))} />),
     );
 
     expect(html).toContain('Couldn&#x27;t update');
@@ -142,7 +143,7 @@ describe('EditTool, for the part that never got its diff', () => {
   const stale = makePart({}, 'running');
 
   test('a stale pending part states the fact instead of shimmering forever', () => {
-    const html = renderToStaticMarkup(withProviders(<EditTool part={stale} defaultOpen />));
+    const html = renderToStaticMarkup(withProviders(<EditTool call={toolCallBlock(stale)} defaultOpen />));
 
     expect(html).toContain('No content received');
     expect(html).not.toContain('Waiting for file content');
@@ -168,7 +169,7 @@ describe('EditTool on pi', () => {
         },
       },
     } as unknown as ToolPart;
-    const html = renderToStaticMarkup(withProviders(<EditTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<EditTool call={toolCallBlock(part)} />));
     expect(html).toContain('app.py');
     expect(html).toContain('>+2<');
     expect(html).toContain('>−1<');
