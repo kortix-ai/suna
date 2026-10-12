@@ -1,0 +1,16 @@
+{
+  "name": "@kortix/browser-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "@types/chrome": "0.3.4",
+    "typescript": "^5.4.0"
+  }
+}
