@@ -34,7 +34,9 @@ const api = createApiJsonClient(apiBase);
 test.describe('42 — Files lists the whole repository', { tag: '@local-only' }, () => {
   test('the root lists a folder past 1,000 files, a big folder loads in pages, and search finds a file and a line', async ({ page }) => {
     test.skip(!databaseUrl || isDeployedTarget(), 'local stack only: pushes into a local bare repository');
-    test.setTimeout(120_000);
+    // A cold Next.js compile of the Files route, three pages of `a/`, then
+    // filename and content search.
+    test.setTimeout(240_000);
 
     const runId = Date.now().toString(36);
     const email = `e2e-files-whole-${runId}@example.test`;
@@ -78,10 +80,12 @@ test.describe('42 — Files lists the whole repository', { tag: '@local-only' },
 
       const listings: string[] = [];
       const searches: string[] = [];
+      const previews: string[] = [];
       page.on('request', (request) => {
         const url = new URL(request.url());
         if (url.pathname === `/v1/projects/${projectId}/files`) listings.push(url.search);
         if (url.pathname === `/v1/projects/${projectId}/files/search`) searches.push(url.search);
+        if (url.pathname === `/v1/projects/${projectId}/files/raw`) previews.push(url.search);
       });
 
       await installBrowserSessionDirect(page, session, `/projects/${projectId}/files`, authOptions);
@@ -102,6 +106,8 @@ test.describe('42 — Files lists the whole repository', { tag: '@local-only' },
       await expect(page.getByText('f0500.txt', { exact: true })).toHaveCount(0);
       const loadMore = page.getByRole('button', { name: 'Load more items' });
       await expect(loadMore).toBeVisible();
+      // Only the cards near the viewport fetch a preview, not all 500 on the page.
+      expect(previews.length).toBeLessThan(100);
       expect(folderA().some((q) => q.get('limit') === '500' && !q.has('cursor'))).toBe(true);
       // A partial folder keeps the server's name order: sorting waits for the last page.
       await expect(page.getByText('Showing 500 items. Sorting applies once every item is loaded.')).toBeVisible();
