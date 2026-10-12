@@ -1,0 +1,22 @@
+{
+  "source_hash": "2fa0f4b120da194088dd5436b2816133ab95c52c49c197544ec0d1062f6b7d1a",
+  "diff_files": [
+    "apps/api/src/secrets/broker/errors.ts",
+    "apps/api/src/secrets/broker/pinned-transport.ts",
+    "apps/api/src/secrets/broker/request-gate.ts",
+    "apps/api/src/secrets/broker/substitution.ts",
+    "apps/api/src/secrets/handle-substitution.ts",
+    "apps/api/src/secrets/http-broker.ts",
+    "apps/api/src/secrets/stream-substitute.ts",
+    "apps/kortix-sandbox-agent-server/src/services/egress-shim/shim.ts"
+  ],
+  "diff_hash": "bee44bae8ba8969ebeb04cc32e31c4fddcf32a932f8599175cb395d3714f9dad",
+  "head": "cbfa99050cc2ee85c52dba7c123d0c9d7e6c75f8",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T02:19:28.074Z"
+}
