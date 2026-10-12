@@ -1337,7 +1337,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'customizeSidebar',
     requiresProject: true,
-    keywords: 'sidebar customize reorder hide show navigation rows',
+    keywords: 'sidebar customize reorder hide show rows',
   },
   {
     id: 'toggle-panel-mode',

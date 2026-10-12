@@ -215,12 +215,15 @@ describe('queries return the rows they name', () => {
     expect(result).toContain('nav:proj-invite');
   });
 
-  test('"customize" returns one row, not seventeen', () => {
+  test('"customize" returns the two rows that say the word', () => {
     // 12 settings tabs + 5 navigation rows carried the legacy `project
     // customize` tail. One row keeps the word, and it is the Customize INDEX
     // — the card grid that introduces every capability tab. It used to be the
     // Settings tab, i.e. one of the eight things that index introduces.
-    expect(hits('customize')).toEqual(['nav:proj-customize']);
+    // `customize-sidebar` (label "Customize Sidebar") joined it with the
+    // sidebar-customize modal; it answers by its own visible label, like the
+    // index row.
+    expect(hits('customize').sort()).toEqual(['nav:customize-sidebar', 'nav:proj-customize']);
   });
 
   test('"project" returns the three rows that say the word, not every project-scoped row', () => {
