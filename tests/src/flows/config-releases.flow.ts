@@ -25,6 +25,7 @@ import {
   sendPrompt,
   waitForAssistantText,
 } from '../fixtures/session-run';
+import { withTransientGitRetry } from '../fixtures/git-transient';
 import { isKe2eRetryableError, transientRetryDelayMs } from '../core/client';
 
 /**
@@ -211,6 +212,13 @@ const CONFIG_FILES: Record<string, string> = {
 };
 
 async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
+  if (cmd !== 'git') return runOnce(cmd, args, cwd, input);
+  // `-c http.extraHeader=...` precedes the subcommand; find it for the retry rule.
+  const sub = args.findIndex((a, i) => i > 0 && args[i - 1] !== '-c' && !a.startsWith('-'));
+  return withTransientGitRetry(sub >= 0 ? args.slice(sub) : args, () => runOnce(cmd, args, cwd, input));
+}
+
+async function runOnce(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
