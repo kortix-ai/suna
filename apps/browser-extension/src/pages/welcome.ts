@@ -1,35 +1,52 @@
-import type { Status } from '../background/types';
+import { DEFAULT_API_URL, SERVERS, type Status } from '../background/types';
 import { $, rpc, show } from './rpc';
 
-const connect = $<HTMLButtonElement>('connect'), api = $<HTMLInputElement>('api');
-const sections = ['start', 'setup', 'done'];
-const step = (id: string) => sections.forEach((s) => ($(s).hidden = s !== id));
+const CUSTOM = 'custom';
+const connect = $<HTMLButtonElement>('connect'), server = $<HTMLSelectElement>('server'), api = $<HTMLInputElement>('api');
+const step = (id: string) => ['start', 'setup', 'done'].forEach((s) => ($(s).hidden = s !== id));
 
-const label = () => ($('server-label').textContent = api.value ? new URL(api.value, 'https://x').host : 'Kortix Cloud');
-api.oninput = label;
+for (const s of SERVERS) server.add(new Option(s.web, s.api));
+server.add(new Option('Another server…', CUSTOM));
+const syncCustom = () => ($('custom-row').hidden = server.value !== CUSTOM);
+server.onchange = syncCustom;
+
+/** The API URL the person picked. */
+const pickedApi = () => (server.value === CUSTOM ? api.value.trim() : server.value);
+/** "dev.kortix.com" for a known API, else the API host. */
+const serverLabel = (apiUrl: string) =>
+  SERVERS.find((s) => s.api === apiUrl)?.web ?? (() => { try { return new URL(apiUrl).host; } catch { return apiUrl; } })();
 
 rpc<Status>({ kortix: 'status' }).then((s) => {
-  api.value = s.apiUrl === 'https://api.kortix.com' ? '' : s.apiUrl;
-  label();
+  const known = SERVERS.some((x) => x.api === s.apiUrl);
+  server.value = known ? s.apiUrl : s.apiUrl && s.apiUrl !== DEFAULT_API_URL ? CUSTOM : DEFAULT_API_URL;
+  if (server.value === CUSTOM) api.value = s.apiUrl;
+  syncCustom();
   if (s.signedIn && s.browser) setup(s);
 });
 
 connect.onclick = async () => {
+  const apiUrl = pickedApi();
+  if (!apiUrl) return show($('err'), 'Enter the API URL of your Kortix server.');
   connect.disabled = true;
+  connect.textContent = 'Waiting for sign-in…';
   show($('err'), '');
   try {
-    setup(await rpc<Status>({ kortix: 'signin', apiUrl: api.value.trim() || undefined }));
+    setup(await rpc<Status>({ kortix: 'signin', apiUrl }));
   } catch (e) {
     show($('err'), (e as Error).message);
   } finally {
     connect.disabled = false;
+    connect.textContent = 'Connect to Kortix';
   }
 };
 
-let webUrl = 'https://kortix.com';
+let current: Status | undefined;
 function setup(s: Status) {
-  webUrl = s.webUrl;
+  current = s;
+  $('setup-server').textContent = serverLabel(s.apiUrl);
   $<HTMLInputElement>('name').value = s.browser?.name ?? '';
+  const mode = s.browser?.accessMode === 'ask' ? 'ask' : 'always';
+  ($(`setup`).querySelector(`input[value=${mode}]`) as HTMLInputElement).checked = true;
   step('setup');
 }
 
@@ -38,7 +55,8 @@ $('finish').onclick = async () => {
   const accessMode = (document.querySelector('input[name=mode]:checked') as HTMLInputElement).value as 'always' | 'ask';
   try {
     await rpc({ kortix: 'patch', body: { ...(name ? { name } : {}), accessMode } });
-    $<HTMLAnchorElement>('open').href = webUrl;
+    $('done-name').textContent = name || current?.browser?.name || 'This browser';
+    $<HTMLAnchorElement>('open').href = current?.webUrl ?? 'https://kortix.com';
     step('done');
   } catch (e) {
     show($('err2'), (e as Error).message);

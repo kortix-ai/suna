@@ -43,9 +43,8 @@ const patch = (body: { accessMode?: AccessMode; tabScope?: TabScope }) =>
 $('mode').onclick = (e) => { const v = (e.target as HTMLElement).dataset.v; if (v) void patch({ accessMode: v as AccessMode }); };
 $('scope').onclick = (e) => { const v = (e.target as HTMLElement).dataset.v; if (v) void patch({ tabScope: v as TabScope }); };
 $('signout').onclick = () => rpc({ kortix: 'signout' }).then(refresh);
-$('connect').onclick = async () => {
-  try { await rpc({ kortix: 'signin' }); await refresh(); } catch (e) { show($('err'), (e as Error).message); }
-};
+// Sign-in lives on the welcome page: it is the one place to pick the server.
+$('connect').onclick = () => void chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') }).then(() => window.close());
 
 void refresh();
 setInterval(() => void refresh(), 2000);

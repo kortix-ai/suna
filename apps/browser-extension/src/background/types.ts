@@ -35,4 +35,10 @@ export type Status = {
   attachments: { attachmentId: string; sessionId: string; title: string; paused: boolean }[];
 };
 export const DEFAULT_API_URL = 'https://api.kortix.com';
+/** The Kortix web apps and the API each one signs in to. The welcome page offers them by web host. */
+export const SERVERS: { web: string; api: string }[] = [
+  { web: 'kortix.com', api: 'https://api.kortix.com' },
+  { web: 'dev.kortix.com', api: 'https://dev-api.kortix.com' },
+  { web: 'staging.kortix.com', api: 'https://staging-api.kortix.com' },
+];
 export const BRAND_BLUE = '#0099ff'; // --kortix-base in tokens.css (badge color)

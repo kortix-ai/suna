@@ -1,5 +1,5 @@
 // OAuth 2.1 PKCE + dynamic client registration (protocol.md §1).
-import { DEFAULT_API_URL } from './types';
+import { DEFAULT_API_URL, SERVERS } from './types';
 import { clearStored, getStored, setStored } from './state';
 
 const b64url = (b: ArrayBuffer | Uint8Array) =>
@@ -40,6 +40,11 @@ async function saveTokens(t: TokenResponse, prevRefresh?: string) {
 /** Interactive sign-in. Stores the API URL, client and tokens. */
 export async function signIn(apiUrl?: string): Promise<void> {
   const api = normalizeApiUrl(apiUrl || (await getStored()).apiUrl || DEFAULT_API_URL);
+  // A server without Kortix Browser answers 404 here; one with it answers 401.
+  const host = SERVERS.find((x) => x.api === api)?.web ?? new URL(api).host;
+  const probe = await fetch(`${api}/v1/browsers`).catch(() => null);
+  if (!probe) throw new Error(`Cannot reach ${host}. Check the server address.`);
+  if (probe.status === 404) throw new Error(`${host} does not have Kortix Browser yet. Pick another server.`);
   const m = await meta(api);
   const redirectUri = chrome.identity.getRedirectURL();
   let { clientId, clientApi, redirectUri: regRedirect } = await getStored();
