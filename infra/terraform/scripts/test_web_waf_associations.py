@@ -37,8 +37,8 @@ class WebWafAssociationTests(unittest.TestCase):
 
     def test_compliance_stack_does_not_compete_for_web_albs(self):
         config = (ROOT / "terraform/compliance-monitoring/monitoring.tf").read_text()
-        # us-west-2 has no web ALB since 2026-10-12, so it covers every ALB.
-        self.assertIn("for_each     = local.usw2_albs", config)
+        # us-west-2 runs no ALB since 2026-10-12 and has no association.
+        self.assertNotIn("usw2_albs", config)
         self.assertIn("for_each     = local.euw2_compliance_waf_albs", config)
         self.assertIn(
             '["kortix-prod-web-alb", "kortix-staging-euw2-web-alb"]', config

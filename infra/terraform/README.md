@@ -18,8 +18,8 @@ table is the source of truth for which root it drives.
 | `environments/staging-web-eu-west-2` | `deploy-staging.yml` -> `terraform-staging-web` | every staging deploy | `eu-west-2` | `kortix-gha-tf-apply-staging` |
 | `environments/prod` | `deploy-prod.yml` -> `terraform-prod-api` | every production release | `eu-west-2` | `kortix-gha-tf-apply-prod` |
 | `environments/prod-web` | `deploy-prod.yml` -> `terraform-prod` | every production release, after `environments/prod` | `eu-west-2` | `kortix-gha-tf-apply-prod` |
-| `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
-| `security-baseline` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
+| `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `eu-west-2`, `us-east-2`, one us-west-2 forwarder (alert hub `eu-west-2` since 2026-10-12) | `kortix-gha-tf-apply-global` |
+| `security-baseline` | `terraform-apply-global.yml` | push to `dev` touching the root | all 17 regions (alert hub `eu-west-2` since 2026-10-12) | `kortix-gha-tf-apply-global` |
 
 Every root above, applied or not, is planned nightly by the `drift detection`
 matrix in `terraform-ci.yml`, so an unapplied change still shows up as drift.
