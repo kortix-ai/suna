@@ -1,13 +1,12 @@
-# Regional state backend for the US East 2 production shadow root.
+# Regional state backend for the us-east-2 Terraform roots.
 #
-# The account-wide Terraform roots continue to use the shared US West 2
-# backend. This bucket and lock table keep the US East 2 production state in
-# the same region as its managed infrastructure.
+# The other roots still use the shared us-west-2 backend. This bucket and lock
+# table keep us-east-2 state in the region of the infrastructure it describes.
 # trivy:ignore:AVD-AWS-0089
 resource "aws_s3_bucket" "terraform_state_use2" {
   # checkov:skip=CKV_AWS_18:CloudTrail and S3 version history audit state access. A second access-log bucket adds another state-bearing bucket.
   # checkov:skip=CKV2_AWS_62:The state backend has no event-notification consumer. Terraform locking and CI plans detect state changes.
-  # checkov:skip=CKV_AWS_144:The production migration requires all state to remain in us-east-2. Versioning and the regional archive provide recovery.
+  # checkov:skip=CKV_AWS_144:us-east-2 state stays in us-east-2. Versioning and the regional archive provide recovery.
   provider = aws.use2
 
   bucket = "kortix-terraform-state-us-east-2-935064898258"

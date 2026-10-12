@@ -1,18 +1,18 @@
 {
-  "source_hash": "59af481886f94caee5374cfff6fbd8c40a3317ee617fd402510e9b62c445695d",
+  "source_hash": "5842a501c01252d45939fe72f5c2507c850e3ab94943d86841f294e8a85e2943",
   "diff_files": [
-    ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-10-12T153154Z-recover-an-app-machine-in-place-when-its-box-fails-to-start.md",
-    "apps/api/src/apps/hosting.test.ts",
-    "apps/api/src/apps/hosting.ts"
+    "apps/web/src/features/apps/app-preview-pool-loader.tsx",
+    "apps/web/src/features/apps/app-shared.test.ts",
+    "apps/web/src/features/apps/app-shared.tsx",
+    "apps/web/src/features/apps/apps-view.tsx"
   ],
-  "diff_hash": "6e803b2b2d09dc0bbea578875eb9afa6a9b2a232ac4ff39379ae18a2f4706f12",
-  "head": "db6ae3406504da7b8b799948d385fc0cf47b5ade",
+  "diff_hash": "89d76cc1d36f94a6fe8a4cc07ce3c2deaddbbdd7d7d8c9814d04b186b6ba0a49",
+  "head": "cda1786d0b783e0d1aeb6ad329bc038f4ed8bd96",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T15:45:42.697Z"
+  "at": "2026-10-12T17:08:08.471Z"
 }

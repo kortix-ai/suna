@@ -40,8 +40,8 @@ humans.
 Unlike `../dev-us-east-2`, eu-west-2 has **no pre-existing `*.kortix.com`
 wildcard cert** (prod's own `main.tf` notes this), so this root requests two
 dedicated per-domain ACM certs (api + gateway) — same pattern `../prod` uses,
-not the wildcard-reuse shortcut `../dev-us-east-2` gets from the
-`prod-us-east-2-shadow` cert that already exists in us-east-2.
+not the shortcut `../dev-us-east-2` uses (a `*.kortix.com` validation record
+already in the zone).
 
 ## The move from us-west-2 (done)
 
