@@ -5,10 +5,6 @@
 # lives in this us-west-2 bucket while every resource it describes is in
 # eu-west-2). A distinct KEY is all that is required to give this root its own
 # state; no new bucket/table bootstrap is needed.
-#
-# (../prod-us-east-2-shadow chose a dedicated us-east-2 bucket instead, for
-# production blast-radius isolation. Dev does not carry that requirement, so
-# this root follows the simpler dev/staging/prod precedent instead.)
 terraform {
   backend "s3" {
     bucket         = "kortix-terraform-state"
