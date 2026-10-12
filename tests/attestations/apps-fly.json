@@ -1,30 +1,17 @@
 {
-  "source_hash": "79fcde79fa642a6997d34fe04557d0e6756670e54938b6303d74f72975666c68",
+  "source_hash": "d2202122e8b005c269572c12c555384976e88075ab2059dc189f3c393ca0059d",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-10-11T211903Z-watch-the-platinum-template-count-per-org-kortix-reclaims-on.md",
-    "apps/cli/src/__tests__/apps-deploy.test.ts",
-    "apps/cli/src/commands/apps.ts",
-    "apps/web/content/docs/apps.mdx",
-    "packages/sdk/README.md",
-    "packages/sdk/src/core/auth/app-viewer.ts",
-    "packages/shared/src/app-templates.ts",
-    "packages/starter/src/embedded.generated.json",
-    "packages/starter/templates/managed/skills/kortix-apps/SKILL.md",
-    "packages/starter/templates/managed/skills/kortix-apps/references/apps-model.md",
-    "packages/starter/templates/managed/skills/kortix-apps/references/bindings.md",
-    "packages/starter/templates/managed/skills/kortix-apps/references/convex.md",
-    "packages/starter/templates/managed/skills/kortix-apps/references/sign-in.md",
-    "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
-    "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-yaml.md"
+    "apps/api/src/apps/hosting.test.ts",
+    "apps/api/src/apps/hosting.ts"
   ],
-  "diff_hash": "32a3594d2788c6297bd990d959a93a12644e998029182f49451a814b3c5ee5bf",
-  "head": "74ad947263d3f85db829438a60ecff9be6d89d96",
+  "diff_hash": "8a6accde6cd2ada7966a30b79bbe7e34dbe243713128a0a830dc555a4e7dc2b9",
+  "head": "7971a9ede2f4160fe048cda2acb68f838d545846",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T22:32:55.761Z"
+  "at": "2026-10-12T15:31:39.540Z"
 }
