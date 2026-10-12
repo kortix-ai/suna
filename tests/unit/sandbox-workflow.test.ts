@@ -273,11 +273,12 @@ describe('native test-lane workflow', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('a push to dev runs no suite: the trunk is tested on a daily schedule and cannot block anything', () => {
-    // 2026-10-03 (Actions minutes). The per-merge gate is the local attestation
-    // and the pre-push hook. A scheduled run on `dev` HEAD is the safety net.
+  test('every push to dev runs the suite, queued, and a red run names its suspects once', () => {
+    // 2026-10-12. Half of all release delay over v0.13.45 to v0.13.56 (49 of
+    // 96 hours) was a break merged to `dev` that no check saw before the
+    // staging pull request. A push to `dev` runs every lane; it blocks nothing.
     const on = testWorkflow.slice(testWorkflow.indexOf('\non:'), testWorkflow.indexOf('\nconcurrency:'));
-    expect(on).not.toMatch(/^ {2}push:/m);
+    expect(on).toMatch(/^ {2}push:\n {4}branches: \[dev\]\n/m);
     expect(on).toMatch(/^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '/m);
     expect(on).toContain('workflow_dispatch:');
     // The suite parses markdown (tests/spec/end-to-end.md feeds route coverage).
@@ -285,7 +286,8 @@ describe('native test-lane workflow', () => {
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    // A PR cancels its superseded run; a scheduled run queues.
+    // A PR cancels its superseded run. A run on `dev` queues: GitHub keeps one
+    // pending run per group, so a burst of merges costs one extra run.
     expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
@@ -293,20 +295,52 @@ describe('native test-lane workflow', () => {
     // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
     // so `failure()` would miss it. `cancelled()` covers a replaced queued run.
     expect(report).toContain(
-      "if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'",
+      "if: (github.event_name == 'push' || github.event_name == 'schedule') && !cancelled() && needs.lane.result != 'success'",
     );
     expect(report).not.toMatch(/^\s+if:.*failure\(\)/m);
     // Top level is `contents: read`; the commit comment 403s without this.
     expect(report).toContain('contents: write');
 
-    // A red trunk has to reach someone, or nobody learns dev is broken.
+    // A red trunk has to reach someone, or nobody learns dev is broken. It
+    // comments once per new set of failing lanes, not on every merge.
     expect(testWorkflow).toContain('repos/$REPO/commits/$SHA/comments');
     expect(testWorkflow).toContain('::error::dev is red at $SHA');
+    expect(report).toContain('[ "$failed" = "$prev_failed" ]');
+  });
+
+  test('a pull request into staging reuses a green dev run for its head SHA', () => {
+    // A promotion pushes a `dev` SHA unchanged, and the lanes check out the
+    // head SHA, so a green run on `dev` for that SHA is the same proof.
+    const reuse = testWorkflow.slice(testWorkflow.indexOf('\n  reuse:'), testWorkflow.indexOf('\n  lane:'));
+    expect(reuse).toContain(
+      "if: github.event_name == 'pull_request' && github.base_ref == 'staging' && github.event.action != 'labeled'",
+    );
+    // Only runs on `dev` count, never a labelled pull request run.
+    expect(reuse).toContain('branch=dev&head_sha=$HEAD_SHA&status=success');
+    expect(reuse).toContain('select(.event == "push" or .event == "schedule")');
+    // A failed lookup runs the lanes; it never skips them.
+    expect(reuse).toContain('|| true');
+    expect(reuse).not.toContain('set -e');
+    const lane = testWorkflow.slice(testWorkflow.indexOf('\n  lane:'), testWorkflow.indexOf('\n  trunk-report:'));
+    expect(lane).toContain('needs: reuse');
+    expect(lane).toContain("!cancelled() && needs.reuse.outputs.reuse != 'true'");
+    // The lanes test the head SHA, which is what makes the reuse sound.
+    expect(lane).toContain('TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}');
+  });
+
+  test('promotion and release branches skip the local attestation; CI tests their SHA', () => {
+    const hook = readFileSync(resolve(root, '.githooks/pre-push'), 'utf8');
+    expect(hook).toContain('[ "${remote_ref#refs/heads/promote/}" = "$remote_ref" ] || continue');
+    expect(hook).toContain('[ "${remote_ref#refs/heads/release/}" = "$remote_ref" ] || continue');
+    // Every other branch still verifies; `dev` strictly.
+    expect(hook).toContain('[ "$remote_ref" = refs/heads/dev ] && strict="--strict"');
   });
 
   test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
-    // 2026-10-03 (Actions minutes). Dev deploy, Tests, CI, CodeQL, Drata and the
-    // desktop build are dispatch, schedule, or release-branch only.
+    // 2026-10-03 (Actions minutes). Dev deploy, CI, CodeQL, Drata and the
+    // desktop build are dispatch, schedule, or release-branch only. Tests runs
+    // on every push since 2026-10-12: GitHub-hosted runners are free on this
+    // public repo, and a break found at staging cost a release round.
     const dir = resolve(root, '.github/workflows');
     const pushesToMain = (file: string): boolean => {
       const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
@@ -331,6 +365,7 @@ describe('native test-lane workflow', () => {
       'secret-scan.yml', // ~15 s
       'secrets-guard.yml', // ~15 s
       'terraform-apply-global.yml', // path-gated: infra/terraform roots
+      'tests.yml', // every lane, queued; blocks nothing
     ]);
     // Release branches keep their gates.
     for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {
