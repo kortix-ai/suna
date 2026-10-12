@@ -1,5 +1,5 @@
 {
-  "source_hash": "93175f7d55aa5bca3989d374446b1f41bd4d7a66243ffd3b3e5f0d2511f5475f",
+  "source_hash": "d82e699a73d9b42fa95464632078a3ba846cce09f80e38de9387fe78d22f0a86",
   "diff_files": [
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/content/docs/sdk/reference.mdx",
@@ -22,16 +22,17 @@
     "packages/sdk/src/core/session-log/v1.ts",
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
+    "packages/sdk/src/react/session-transcript-subscription.ts",
     "packages/sdk/src/react/use-session-log.test.ts",
     "packages/sdk/src/react/use-session-log.ts"
   ],
-  "diff_hash": "43362f870a29cce1cc1d1325e6db1757e0f7e568cc8486a5ee04fe9a4939e295",
-  "head": "3b31139e1874764d319352aa4d8e0b34f52c2c05",
+  "diff_hash": "f70b4343b96712518b3c257037380e7417576a56e9e46767706a58e2bae6a66f",
+  "head": "b82e95fa589e6280503e4d8393a02547556afb9b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T15:50:50.441Z"
+  "at": "2026-10-12T16:25:00.336Z"
 }
