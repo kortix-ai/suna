@@ -10,8 +10,8 @@ Kortix Browser is not a sandbox browser and not [a computer](/docs/connect/compu
 ## Connect a browser
 
 1. Select **Connect your browser** in the sidebar, or open **Settings → Browsers**. In Chrome, Edge, Brave or Arc, the dialog shows three steps.
-2. **Add Kortix to Chrome.** Select **Add to Chrome**. The Chrome Web Store opens. Add the extension. If the dialog does not notice it, select **Added it? Reload to continue**.
-3. **Connect.** Select **Connect**. A Chrome window opens the Kortix sign-in page. Approve the extension.
+2. **Add Kortix to Chrome.** Select **Add to Chrome**. The Chrome Web Store opens. Add the extension. Chrome then opens a Kortix tab: select **Connect to Kortix** there.
+3. **Connect.** The Kortix sign-in page opens. Approve the extension. If you added the extension earlier, select **Connect** in the dialog instead.
 4. **Connected.** The browser appears with an online dot. Select **Done**.
 
 The extension stays signed in. If you open the dialog in a browser that cannot run the extension, it tells you to open Kortix in Chrome, Edge, Brave or Arc.
@@ -56,7 +56,7 @@ You always see when a session uses your browser:
 
 With **Ask first**, Chrome asks before a session attaches. You answer for this session, for every session in the project, or **Deny**. With **Without asking**, a session attaches without a prompt, unless it asks for one.
 
-After you press **Stop** or **Deny**, that session cannot attach again unless it asks again. The next attach then shows a fresh prompt in Chrome. If nobody answers a prompt within 120 seconds, the attach fails.
+After you press **Stop** or **Deny**, that session cannot attach again unless it asks again. The next attach then shows a fresh prompt in Chrome. If nobody answers a prompt within 90 seconds, the attach fails.
 
 ## Use it from a session
 
@@ -89,7 +89,7 @@ Ask the agent in plain words, for example "Use my browser to check the invoices 
 | `browser_offline` | The browser is connected but did not answer in the last 75 seconds. Chrome may be closed or asleep. | Open Chrome and check that the extension is signed in. |
 | `browser_access_off` | **Access** for this browser is **Off**. | Set **Access** to **Without asking** or **Ask first**. |
 | `browser_denied` | You selected **Deny** or **Stop** for this session. | Run `kortix browser use --ask` to get a fresh prompt. |
-| `browser_consent_timeout` | Nobody answered the prompt in Chrome within 120 seconds. | Run `kortix browser use --ask` and answer in Chrome. |
+| `browser_consent_timeout` | Nobody answered the prompt in Chrome within 90 seconds. | Run `kortix browser use --ask` and answer in Chrome. |
 | `browser_not_found` | No connected browser has that name. | Run `kortix browser ls` and pass a listed name. |
 
-If the dialog never notices the extension, reload the Kortix page after you add it. If **Connect** opens a sign-in window you close, select **Connect** again.
+If the dialog does not show the extension as added, finish in the Kortix tab Chrome opened, or reload the Kortix page. If **Connect** opens a sign-in window you close, select **Connect** again.
