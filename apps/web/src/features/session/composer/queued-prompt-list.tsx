@@ -21,6 +21,9 @@ export interface QueuedPromptListProps {
   onResume?: () => void;
   onEdit?: (promptId: string) => void;
   onRemove?: (promptId: string) => void;
+  /** Run THIS prompt through the inbox's one retry primitive: a failed row's
+   *  "Retry", a queued row's "Send now" — the row is promoted past the
+   *  ordering gate and answered first, without touching the live turn. */
   onRetry?: (promptId: string) => void;
   /** "Stop and send": the turn ends after its running tool, then this row
    *  runs. Pass it only while a turn runs. */
@@ -200,6 +203,22 @@ export function QueuedPromptList({
                           onClick={() => editRow(row.id)}
                         >
                           <PencilSimpleIcon className="size-3.5" />
+                        </Button>
+                      )}
+                      {/* Send now: hurry one queued row. The same primitive as
+                          Retry below, and the gentler twin of "Stop and send":
+                          the live turn keeps running, and this row is answered
+                          first at the next drain. Another member's row runs as
+                          them, so only they may hurry it. */}
+                      {row.state === 'queued' && !row.fromAnotherMember && onRetry && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          aria-label={copy.raw('text588032878324')}
+                          onClick={() => onRetry(row.id)}
+                        >
+                          {copy.raw('text588032878324')}
                         </Button>
                       )}
                       {row.interruptible && onStopAndSend && (

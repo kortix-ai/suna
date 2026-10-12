@@ -294,9 +294,18 @@ describe('stop reaches the queue that actually holds the messages', () => {
 });
 
 describe('queue row actions address the inbox that holds the row', () => {
-  test('there is no per-row "send now": reordering is a non-goal, and Resume releases the hold', () => {
+  test('"Send now" reuses the one retry handler; the interrupting stop-then-send orchestration stays gone', () => {
+    // The row affordance lives in `QueuedPromptList` and is asserted
+    // behaviourally in `queued-prompt-list.test.tsx`. The chat keeps ONE client
+    // side path: the SAME `handleRetryQueuedMessage` → `promptInbox.retry`
+    // primitive answers a failed row's "Retry" and a queued row's "Send now"
+    // (the server promotes the row past the ordering gate — its own route
+    // comment names the two labels one primitive). The removed
+    // `stopThenSendNow` (stop the turn, then send) stays out: "Stop and send"
+    // is the server's interrupt primitive, named as the stop it is.
     expect(chat).not.toContain('handleQueueSendNow');
     expect(chat).not.toContain('stopThenSendNow');
+    expect(chat).toContain('onRetry={handleRetryQueuedMessage}');
     const resume = between(chat, 'const handleResumeQueue = useCallback(', '}, [promptInbox.hold]);');
     expect(resume).toContain('promptInbox.hold(false)');
     expect(resume).toContain('setResumePending(false)');
