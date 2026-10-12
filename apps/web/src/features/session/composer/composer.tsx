@@ -25,6 +25,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1711,9 +1712,13 @@ function ComposerImpl(props: SessionChatInputProps) {
    * must survive re-renders (a fresh latch mid-send would reopen the
    * double-fire window), while each later submit must read the CURRENT
    * dispatch closure, not the one from the render that created the latch.
+   *
+   * A layout effect, so it runs before every passive effect of the same
+   * commit: the prefill effect above submits in the commit that delivers the
+   * prefill, and must send with this render's agent, model and effort.
    */
   const dispatchSubmissionRef = useRef(dispatchSubmission);
-  useEffect(() => {
+  useLayoutEffect(() => {
     dispatchSubmissionRef.current = dispatchSubmission;
   });
   const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
