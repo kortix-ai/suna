@@ -19,11 +19,11 @@ import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PtySpawnTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
 
   const parsed = useMemo(() => {
     const body = ptySpawnedBody(output);

@@ -8,6 +8,8 @@
 
 import type { ToolPart } from '../../runtime/client';
 import { toolKind } from '../tool-kind';
+import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 import { humanizeSearchQuery } from './search-query';
 import { stripTrailingSlashes } from '../text-scan';
 
@@ -173,16 +175,17 @@ export const DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS: Readonly<ContextToolTriggerLab
 
 /**
  * Build a trigger { title, subtitle } for any tool inside the expanded
- * UnifiedGroup. Context tools get friendly names; others use their
+ * UnifiedGroup (a v1 tool part or a session-log tool call block). Context tools get friendly names; others use their
  * canonical name in Title Case.
  */
 export function contextToolTrigger(
-  part: ToolPart,
+  call: ToolPart | ToolCallBlock,
   labels: Partial<ContextToolTriggerLabels> = {},
 ): {
   title: string;
   subtitle: string;
 } {
+  const part = isToolCallBlock(call) ? toolPartOf(call) : call;
   const l = { ...DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS, ...labels };
   const n = normalizeName(part.tool);
   const sub = getToolPrimaryArg(part);

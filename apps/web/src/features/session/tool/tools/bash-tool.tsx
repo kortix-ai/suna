@@ -15,6 +15,7 @@ import {
   useToolCardPad,
   useToolIndent,
   useToolOpen,
+  partRawOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -363,13 +364,13 @@ function BashTrigger({
   );
 }
 
-export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const indent = useToolIndent();
   const rawCommand =
@@ -416,9 +417,9 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const isStalePending = !command && !running && (status === 'pending' || status === 'running');
 
   const exitCode = useMemo(() => {
-    if (part.state.status !== 'completed') return undefined;
-    return shellExitCode(part.state.output ?? '');
-  }, [part.state]);
+    if (call.status !== 'complete') return undefined;
+    return shellExitCode(partRawOutput(call));
+  }, [call]);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
 
   // `teams send "…"` / `slack send …` / `telegram send …` IS the reply the

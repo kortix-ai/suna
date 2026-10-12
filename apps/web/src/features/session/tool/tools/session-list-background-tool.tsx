@@ -18,11 +18,11 @@ import { useTranslations } from '@/i18n/use-translations';
 import { parseBackgroundWorkers } from '@kortix/shared/tool-output';
 import { useMemo } from 'react';
 
-export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionListBackgroundTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const project = (input.project as string) || '';
 
   const workers = useMemo(() => parseBackgroundWorkers(output), [output]);
