@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
+import { accountInviteLanding, type KortixAccount, type KortixProject } from '@kortix/sdk';
 
 import {
   buildAccountSections,
@@ -8,7 +8,6 @@ import {
   decideDoor,
   filterSections,
   inviteLandingPath,
-  joinDestination,
   type ProjectListResult,
 } from './project-selector-model';
 
@@ -194,41 +193,30 @@ describe('decideDoor — a requested account', () => {
   });
 });
 
-describe('inviteLandingPath — where an accepted invite lands', () => {
-  test('a project invite opens the first project it granted', () => {
-    expect(
-      inviteLandingPath({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw' }] }),
-    ).toBe('/projects/pw');
+describe('inviteLandingPath — the route of an accepted invite', () => {
+  test('a project landing opens that project', () => {
+    expect(inviteLandingPath({ kind: 'project', projectId: 'pw', accountId: 'b' })).toBe('/projects/pw');
   });
 
-  test('a workspace invite goes to the door for the joined account', () => {
-    expect(inviteLandingPath({ account_id: 'b', bootstrap_grants_applied: [] })).toBe('/projects/start?account=b');
-    expect(inviteLandingPath({ account_id: 'b' })).toBe('/projects/start?account=b');
+  test('an account landing goes to the door for the joined account', () => {
+    expect(inviteLandingPath({ kind: 'account', accountId: 'b' })).toBe('/projects/start?account=b');
   });
 
-  test('with no account id, the plain door', () => {
-    expect(inviteLandingPath({ account_id: null })).toBe('/projects/start');
-  });
-});
-
-describe('joinDestination', () => {
-  const base = {
-    invite_id: 'i',
-    account_id: 'a',
-    account_name: 'Acme',
-    initial_role: 'member',
-    inviter_email: null,
-    created_at: '',
-    expires_at: '',
-  } as unknown as MyAccountInvite;
-
-  test('a project invite opens the first invited project', () => {
-    expect(joinDestination({ ...base, projects: [{ project_id: 'p1', name: 'X', role: 'member' }] } as MyAccountInvite)).toBe(
-      '/projects/p1',
+  // The web hosts' three inputs, through the SDK rule.
+  test('an accept that granted a project, a re-opened project invite, a workspace invite', () => {
+    expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw' }] }))).toBe(
+      '/projects/pw',
     );
-  });
-
-  test('a workspace invite has no direct destination', () => {
-    expect(joinDestination({ ...base, projects: [] } as MyAccountInvite)).toBeNull();
+    const described = {
+      account_id: 'b',
+      projects: [
+        { project_id: 'pw', name: 'Website', role: 'member' },
+        { project_id: 'px', name: 'Docs', role: 'manager' },
+      ],
+    };
+    expect(inviteLandingPath(accountInviteLanding({ account_id: described.account_id }, described))).toBe('/projects/pw');
+    expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [] }, { projects: [] }))).toBe(
+      '/projects/start?account=b',
+    );
   });
 });

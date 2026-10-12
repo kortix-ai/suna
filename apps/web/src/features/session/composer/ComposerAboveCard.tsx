@@ -8,6 +8,7 @@ import { MoonIcon } from '@phosphor-icons/react';
 
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
+import { ComputerAwakeBar } from './computer-awake-bar';
 import { QuoteList } from './quote-list';
 import { ServedModelBar } from './served-model-bar';
 
@@ -23,7 +24,8 @@ const DOCKED_MIDDLE_LAYER_CLASS =
 
 /**
  * The composer's stack ABOVE the card: the `'above'` `/` dock anchor, the
- * reply-quote card, then the queue strip and the "still waking" notice.
+ * reply-quote card, then the queue strip, the "still waking" notice, the
+ * "computer stays on" strip and the served-model strip.
  * `ComposerImpl` owns the state and effects and passes them in; this renders
  * exactly the subtree `ComposerImpl` used to inline (KRTX-373 phase 1).
  */
@@ -48,6 +50,7 @@ export function ComposerAboveCard({
   notice = null,
   onNoticeRetry,
   servedModel = null,
+  computerAwake = null,
   onModelChange,
   slashMenuPlacement = 'above',
   questionActive = false,
@@ -55,6 +58,9 @@ export function ComposerAboveCard({
   const showQueueStrip = Boolean(inputSlot);
   // The strip explains the model selector, so it shows only where one exists.
   const served = onModelChange ? servedModel : null;
+  // A waking computer is not one that stays on: the notice says what is true.
+  // A docked question meets the card as one surface: no strip between them.
+  const awake = notice || questionActive ? null : computerAwake;
 
   return (
     <>
@@ -99,7 +105,7 @@ export function ComposerAboveCard({
 
     {/*
       The stack above the card. Every layer is full width (the strip, the
-      notice, the served-model bar, the card), so the stack reads as one
+      notice, the sandbox-on strip, the served-model bar, the card), so the stack reads as one
       surface: the topmost visible layer rounds its top, every layer under
       it is square and its top border is the divider. A narrower strip
       exposed the corners of the layer under it and is not allowed
@@ -110,7 +116,7 @@ export function ComposerAboveCard({
       this wrapper. `ComposerCard` applies the same rule to the card
       through `data-composer-stack`.
     */}
-    {(notice || served || showQueueStrip) && (
+    {(notice || awake || served || showQueueStrip) && (
       <div
         data-composer-stack
         className="relative isolate flex w-full flex-col items-center justify-center [&>[data-composer-strip]:not(:empty)~*]:rounded-t-none"
@@ -173,10 +179,15 @@ export function ComposerAboveCard({
           </div>
         )}
 
+        {awake && <ComputerAwakeBar line={awake} />}
+
         {served && (
           <ServedModelBar
             notice={served}
-            className={cn(notice && 'rounded-t-none', questionActive && DOCKED_MIDDLE_LAYER_CLASS)}
+            className={cn(
+              (notice || awake) && 'rounded-t-none',
+              questionActive && DOCKED_MIDDLE_LAYER_CLASS,
+            )}
           />
         )}
       </div>

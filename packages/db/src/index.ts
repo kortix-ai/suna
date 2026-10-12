@@ -98,6 +98,8 @@ export {
   sessionLogThreads,
   sessionLogMessages,
   sessionLogBlobs,
+  sessionContentPurges,
+  accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,
   sandboxes,

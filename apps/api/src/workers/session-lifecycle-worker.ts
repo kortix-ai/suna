@@ -12,8 +12,7 @@ import { isPgBroadcastListening, onLifecycleCommandDue } from '../shared/pg-broa
  * the LISTEN it drains every second, as before.
  *
  * `KORTIX_TRIGGER_SCHEDULER_ENABLED=false` switches this off with every other
- * background writer: the prod shadow stack and the local test stack run with no
- * writers on purpose (scripts/prod-us-east-2/target-writers.sh).
+ * background writer: the local test stack runs with no writers on purpose.
  */
 export const DRAIN_FALLBACK_MS = 5_000;
 /** The least time between two drain starts in one process. A row given back

@@ -72,7 +72,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { EventAppsStrip } from './schedule/event-apps-strip';
 import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
@@ -100,6 +100,7 @@ import {
 } from './schedule/trigger-filter';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { useEventTitles } from './schedule/use-event-titles';
+import { useSlashFocus } from '@/hooks/utils';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -388,6 +389,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       ),
     [triggersQuery.data],
   );
+  // The search only renders over a non-empty list; focus it once it does.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef, showContent && triggers.length > 0);
   const eventNames = useEventTitles(projectId, triggers, eventsOn, eventApps.data?.apps);
   const counts = useMemo(() => triggerCounts(triggers), [triggers]);
   const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
@@ -435,6 +439,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               <SearchIcon />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
+              ref={searchRef}
               placeholder={copy.searchPlaceholder}
               value={query}
               onChange={(e) => setQuery(e.target.value)}

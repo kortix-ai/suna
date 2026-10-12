@@ -1636,7 +1636,19 @@
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Seitenleiste anpassen",
+    "customizeSidebarDescription": "Ziehe Elemente zwischen den beiden Gruppen.",
+    "resetSidebar": "Auf Standard zurücksetzen",
+    "reorderItem": "{name} verschieben",
+    "reorderHint": "Zum Neuordnen ziehen. Oder die Pfeiltasten nach oben und unten drücken; über „Mehr“ hinaus blendet das Element in der Seitenleiste aus.",
+    "reorderAnnouncement": "{name}: {group}, Position {position} von {total}",
+    "more": "Mehr",
+    "inSidebar": "Seitenleiste",
+    "underMore": "Mehr",
+    "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
+    "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
+    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -7907,7 +7919,11 @@
       "line267JsxTextCheckpointHistory": "Versionsverlauf",
       "line285JsxTextCopyPath": "Pfad kopieren",
       "line396JsxTextThisFolderIsEmpty": "Dieser Ordner ist leer",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Alles, was deine Agents speichern, und alle Dateien dieses Projekts erscheinen hier."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Alles, was deine Agents speichern, und alle Dateien dieses Projekts erscheinen hier.",
+      "loadMoreItems": "Weitere Einträge laden",
+      "loadMoreFailed": "Weitere Einträge konnten nicht geladen werden. Versuche es erneut.",
+      "partialSortNote": "{value0} Einträge werden angezeigt. Die Sortierung gilt, sobald alle Einträge geladen sind.",
+      "showingFirstItems": "Die ersten {value0} Einträge werden angezeigt"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Doppelklicken, um den Pfad zu bearbeiten",
@@ -7999,7 +8015,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Dateien suchen...",
       "line124JsxTextTypeToSearchFiles": "Zum Suchen von Dateien tippen...",
-      "line136JsxTextNoFilesFound": "Keine Dateien gefunden"
+      "line136JsxTextNoFilesFound": "Keine Dateien gefunden",
+      "searchContents": "Inhalte durchsuchen",
+      "firstMatches": "Die ersten {value0} Treffer werden angezeigt",
+      "searchContentsPlaceholder": "Dateiinhalte durchsuchen...",
+      "typeToSearchContents": "Zum Durchsuchen von Dateiinhalten tippen...",
+      "noMatchingLines": "Keine passenden Zeilen"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Eine Datei oder ein Ordner mit diesem Namen existiert bereits",
@@ -19212,6 +19233,12 @@
       "servedModelInPlaceOf": "Anstelle von",
       "servedModelBadge": "Läuft auf {model}",
       "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
+      "computerAwakeStays": "Die Sandbox bleibt an, solange du hier bist · bis zu {duration}",
+      "computerAwakeStops": "Die Sandbox schaltet sich in {duration} ab. Sende eine Nachricht, damit sie anbleibt.",
+      "computerAwakeStopsSoon": "Die Sandbox schaltet sich bald ab. Sende eine Nachricht, damit sie anbleibt.",
+      "computerAwakeHoursMinutes": "{hours} Std. {minutes} Min.",
+      "computerAwakeHours": "{hours} Std.",
+      "computerAwakeMinutes": "{minutes} Min.",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",
@@ -19545,7 +19572,9 @@
       "text8d54763edcd8": "Nicht eingebunden",
       "textffeb0c99532f": "Snapshots {value0} Tage aufbewahrt",
       "text6f52b07880a0": "Jetzt Snapshot erstellen",
-      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt"
+      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
+      "texta37dd5ef6ef2": "Seitenleiste anpassen",
+      "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20172,9 +20201,8 @@
     "calendarNextWeek": "Nächste Woche",
     "calendarPreviousMonth": "Vorheriger Monat",
     "calendarNextMonth": "Nächster Monat",
-    "calendarAllWeek": "Ganze Woche",
-    "calendarAllDay": "Ganztägig",
-    "calendarEvery": "alle {period}",
+    "calendarMore": "+{count} weitere",
+    "calendarMoreOn": "{count, plural, one {# weitere Erinnerung} other {# weitere Erinnerungen}} am {date}",
     "calendarSession": "Sitzung",
     "calendarEmptyWeek": "Diese Woche wird nichts ausgelöst",
     "calendarEmptyDay": "An diesem Tag wird nichts ausgelöst",

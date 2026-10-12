@@ -13,6 +13,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -891,9 +892,7 @@ export function ReviewCenter({
                       <DropdownMenuRadioItem key={f.value} value={f.value} side="left">
                         {f.label}
                         {(kindCounts[f.value] ?? 0) > 0 && (
-                          <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
-                            {kindCounts[f.value]}
-                          </Badge>
+                          <CountBadge count={kindCounts[f.value] ?? 0} className="ml-auto" />
                         )}
                       </DropdownMenuRadioItem>
                     ))}
@@ -926,20 +925,18 @@ export function ReviewCenter({
                     <DropdownMenuRadioGroup value={sessionFilter} onValueChange={setSessionFilter}>
                       <DropdownMenuRadioItem value="all" side="left">
                         {tI18nComplete.raw('text78648d4d6649')}
-                        <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
-                          {filterItems(items, segment, kindFilter, query, 'all').length}
-                        </Badge>
+                        <CountBadge
+                          count={filterItems(items, segment, kindFilter, query, 'all').length}
+                          className="ml-auto"
+                        />
                       </DropdownMenuRadioItem>
                       {sessionOpts.map((s) => (
                         <DropdownMenuRadioItem key={s.sessionId} value={s.sessionId} side="left">
                           <span className="truncate">{s.label}</span>
-                          <Badge
-                            variant="secondary"
-                            size="xs"
-                            className="ml-auto shrink-0 tabular-nums"
-                          >
-                            {filterItems(items, segment, kindFilter, query, s.sessionId).length}
-                          </Badge>
+                          <CountBadge
+                            count={filterItems(items, segment, kindFilter, query, s.sessionId).length}
+                            className="ml-auto"
+                          />
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>

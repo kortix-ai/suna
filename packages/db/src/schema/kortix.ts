@@ -2635,6 +2635,62 @@ export const sessionLogBlobs = kortixSchema.table(
 );
 
 /**
+ * One row per session whose content the retention purge (P2.8,
+ * `apps/api/src/projects/session-log-purge.ts`) removed. It says WHEN the rows
+ * went (`rows_purged_at`: the v2 `session_log*` rows and the v1
+ * `session_transcript_*` rows) and when the session's `session-attachments`
+ * objects went (`objects_purged_at`, 7 days after the rows, null until then).
+ * The row stays after both: it is the "done" marker that stops the purge from
+ * selecting the session again. No content: ids, a reason and two timestamps.
+ */
+export const sessionContentPurges = kortixSchema.table(
+  'session_content_purges',
+  {
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // Which window fired: the session's own delete, or its account's subscription end.
+    reason: text('reason').notNull(),
+    rowsPurgedAt: timestamp('rows_purged_at', { withTimezone: true }).defaultNow().notNull(),
+    objectsPurgedAt: timestamp('objects_purged_at', { withTimezone: true }),
+  },
+  (table) => [
+    check('session_content_purges_reason_check', sql`${table.reason} IN ('session_deleted', 'subscription_ended')`),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_content_purges_session_fk',
+    }).onDelete('cascade'),
+    // The objects phase reads only the sessions whose objects are still due.
+    index('session_content_purges_objects_due_idx')
+      .on(table.rowsPurgedAt)
+      .where(sql`${table.objectsPurgedAt} IS NULL`),
+  ],
+);
+
+/**
+ * When the purge first saw an account's subscription dead (Stripe status
+ * `canceled`, `unpaid` or `incomplete_expired` on `credit_accounts`).
+ * `credit_accounts` keeps no end date, so the purge records its first sight:
+ * the end is dated at most one tick late, never early. The purge deletes the
+ * row when the subscription is live again, which restarts the clock.
+ */
+export const accountSubscriptionEnds = kortixSchema.table(
+  'account_subscription_ends',
+  {
+    accountId: uuid('account_id').primaryKey().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.accountId],
+      foreignColumns: [accounts.accountId],
+      name: 'account_subscription_ends_account_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
  * The RUNTIME PROJECTION — the daemon's `/kortix/opencode/state` document,
  * stored server-side so a session open answers "which agents, which commands,
  * what config, what is pending" from Postgres instead of from the box.

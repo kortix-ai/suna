@@ -7,7 +7,7 @@ import { useHeicBlob } from '@/hooks/use-heic-url';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
 import { getFileCategory, getLanguageFromExt, type FileCategory } from './preview-policy';
 import { usePreviewFit } from './preview-fit';
@@ -48,7 +48,8 @@ export function useFileContentState({
   markdownPreview,
   onMarkdownPreviewChange,
   onStatusChange,
- }: Pick<FileContentRendererProps, 'filePath' | 'onUnsavedChange' | 'onSaved' | 'readOnly' | 'markdownPreview' | 'onMarkdownPreviewChange' | 'onStatusChange'> & { readOnly: boolean }) {
+  targetLine,
+ }: Pick<FileContentRendererProps, 'filePath' | 'onUnsavedChange' | 'onSaved' | 'readOnly' | 'markdownPreview' | 'onMarkdownPreviewChange' | 'onStatusChange' | 'targetLine'> & { readOnly: boolean }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
@@ -124,8 +125,16 @@ export function useFileContentState({
     [isMarkdownPreview, markdownPreview, onMarkdownPreviewChange],
   );
   const [isJsonTreeView, setIsJsonTreeView] = useState(false);
-  // HTML files default to rendered preview mode
-  const [isHtmlPreview, setIsHtmlPreview] = useState(true);
+  // HTML files default to rendered preview mode. A jump to a line (a
+  // content-search match) defaults to the source: the rendered page has no
+  // lines to scroll to. `null` is the default; the header toggle sets a choice.
+  const [htmlPreviewChoice, setHtmlPreviewChoice] = useState<boolean | null>(null);
+  const isHtmlPreview = htmlPreviewChoice ?? !targetLine;
+  const setIsHtmlPreview = useCallback<Dispatch<SetStateAction<boolean>>>(
+    (next) =>
+      setHtmlPreviewChoice((choice) => (typeof next === 'function' ? next(choice ?? !targetLine) : next)),
+    [targetLine],
+  );
 
   const saveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -202,8 +211,8 @@ export function useFileContentState({
     setIsJsonTreeView(false);
     setHasUnsavedChanges(false);
     setSaveFlash(false);
-    // HTML files always default to preview mode
-    setIsHtmlPreview(true);
+    // HTML files go back to their default view (preview, or source at a line)
+    setHtmlPreviewChoice(null);
     latestContentRef.current = '';
   }, [filePath]);
 

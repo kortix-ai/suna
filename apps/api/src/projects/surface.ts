@@ -88,3 +88,6 @@ export { readStoredTranscriptWindow } from './session-log-read';
 
 // Abort a session's running turn (consumed by browser/, on a user's Stop in Chrome).
 export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
+
+// The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
+export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
