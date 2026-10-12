@@ -1,0 +1,37 @@
+{
+  "source_hash": "93175f7d55aa5bca3989d374446b1f41bd4d7a66243ffd3b3e5f0d2511f5475f",
+  "diff_files": [
+    "apps/web/content/docs/sdk/react.mdx",
+    "apps/web/content/docs/sdk/reference.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/api-contract/src/__tests__/session-log-v1.test.ts",
+    "packages/api-contract/src/session-log/live.ts",
+    "packages/api-contract/src/session-log/v1.ts",
+    "packages/sdk/README.md",
+    "packages/sdk/src/core/session-log/index.ts",
+    "packages/sdk/src/core/session-log/tool-call.ts",
+    "packages/sdk/src/core/session-log/turns/blocks.ts",
+    "packages/sdk/src/core/session-log/turns/group.test.ts",
+    "packages/sdk/src/core/session-log/turns/index.ts",
+    "packages/sdk/src/core/session-log/turns/oracle.test.ts",
+    "packages/sdk/src/core/session-log/turns/segments.test.ts",
+    "packages/sdk/src/core/session-log/turns/turn.ts",
+    "packages/sdk/src/core/session-log/turns/v1-parts.ts",
+    "packages/sdk/src/core/session-log/v1-view.test.ts",
+    "packages/sdk/src/core/session-log/v1-view.ts",
+    "packages/sdk/src/core/session-log/v1.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json",
+    "packages/sdk/src/react/use-session-log.test.ts",
+    "packages/sdk/src/react/use-session-log.ts"
+  ],
+  "diff_hash": "43362f870a29cce1cc1d1325e6db1757e0f7e568cc8486a5ee04fe9a4939e295",
+  "head": "3b31139e1874764d319352aa4d8e0b34f52c2c05",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T15:50:50.441Z"
+}
