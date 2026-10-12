@@ -1,20 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { useSessionStateStore } from '@kortix/sdk/react';
+import { useSessionLogThread, type SessionMessagesSource } from '@kortix/sdk/react';
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react';
-import { allDescendantIds, childMapByParent, formatCost, getSessionCost, type AssistantMessage, type Message, type ModelPricingLookup, type Part, type Session } from '@kortix/sdk';
+import { allDescendantIds, childMapByParent, formatCost, type ModelPricingLookup, type Session, type SessionLogMessage } from '@kortix/sdk';
+import { isReply, messageCounts, sessionLogCost } from './session-context-metrics';
 
 // ============================================================================
-// Sub-session aggregate types & helpers
+// Thread metrics
 // ============================================================================
 
-interface SubSessionCostInfo {
-  id: string;
-  title: string;
+export interface ThreadMetrics {
   cost: number;
   messages: number;
   inputTokens: number;
@@ -22,127 +21,74 @@ interface SubSessionCostInfo {
   reasoningTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
-  children: SubSessionCostInfo[];
 }
 
-/**
- * Compute cost info for a sub-session from its raw messages in the sync store.
- */
-export function computeSubSessionCost(
-  sessionId: string,
-  title: string,
-  storeMessages: Record<string, Message[]>,
-  storeParts: Record<string, Part[]>,
-  childMap: Map<string, string[]>,
-  allSessions: Session[],
-  pricingLookup: ModelPricingLookup,
-): SubSessionCostInfo {
-  const msgs = storeMessages[sessionId] ?? [];
-  const cost = getSessionCost(
-    msgs.map((info) => ({ info, parts: storeParts[info.id] ?? [] })),
-    pricingLookup,
-  );
+export const NO_METRICS: ThreadMetrics = {
+  cost: 0,
+  messages: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+};
 
-  // Sum tokens across all assistant messages (cumulative, not just last)
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let reasoningTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheWriteTokens = 0;
-  for (const msg of msgs) {
-    if (msg.role !== 'assistant') continue;
-    const t = (msg as AssistantMessage).tokens;
-    if (!t) continue;
-    inputTokens += t.input ?? 0;
-    outputTokens += t.output ?? 0;
-    reasoningTokens += t.reasoning ?? 0;
-    cacheReadTokens += t.cache?.read ?? 0;
-    cacheWriteTokens += t.cache?.write ?? 0;
+/** The cost, message count and token totals (every reply, not just the last) of one thread. */
+export function threadMetrics(messages: SessionLogMessage[], pricingLookup: ModelPricingLookup): ThreadMetrics {
+  const m: ThreadMetrics = { ...NO_METRICS, cost: sessionLogCost(messages, pricingLookup), messages: messageCounts(messages).all };
+  for (const msg of messages) {
+    const u = msg.usage;
+    if (!isReply(msg) || !u) continue;
+    m.inputTokens += u.input;
+    m.outputTokens += u.output;
+    m.reasoningTokens += u.reasoning ?? 0;
+    m.cacheReadTokens += u.cache_read;
+    m.cacheWriteTokens += u.cache_write;
   }
-
-  const directChildren = childMap.get(sessionId) ?? [];
-  const children = directChildren.map((childId) => {
-    const childSession = allSessions.find((s) => s.id === childId);
-    return computeSubSessionCost(
-      childId,
-      childSession?.title ?? childId.slice(0, 12),
-      storeMessages,
-      storeParts,
-      childMap,
-      allSessions,
-      pricingLookup,
-    );
-  });
-
-  return {
-    id: sessionId,
-    title,
-    cost,
-    messages: msgs.length,
-    inputTokens,
-    outputTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    children,
-  };
+  return m;
 }
 
-/**
- * Recursively sum all costs from a SubSessionCostInfo tree.
- */
-export function sumTreeCosts(node: SubSessionCostInfo): {
-  cost: number;
-  messages: number;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-} {
-  let cost = node.cost;
-  let messages = node.messages;
-  let inputTokens = node.inputTokens;
-  let outputTokens = node.outputTokens;
-  let reasoningTokens = node.reasoningTokens;
-  let cacheReadTokens = node.cacheReadTokens;
-  let cacheWriteTokens = node.cacheWriteTokens;
-  for (const child of node.children) {
-    const sub = sumTreeCosts(child);
-    cost += sub.cost;
-    messages += sub.messages;
-    inputTokens += sub.inputTokens;
-    outputTokens += sub.outputTokens;
-    reasoningTokens += sub.reasoningTokens;
-    cacheReadTokens += sub.cacheReadTokens;
-    cacheWriteTokens += sub.cacheWriteTokens;
-  }
-  return {
-    cost,
-    messages,
-    inputTokens,
-    outputTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-  };
+export function sumMetrics(all: ThreadMetrics[]): ThreadMetrics {
+  const sum = { ...NO_METRICS };
+  for (const m of all) for (const k of Object.keys(sum) as Array<keyof ThreadMetrics>) sum[k] += m[k];
+  return sum;
 }
 
 // ============================================================================
 // Sub-session tree component
 // ============================================================================
 
+/**
+ * One sub-agent's row: its thread's metrics, read through `useSessionLogThread`
+ * (the sub-agent's runtime session id is its thread id), reported up for the
+ * combined totals, and its own children under it.
+ */
 function SubSessionTreeNode({
-  node,
+  source,
+  id,
   depth = 0,
+  childMap,
+  allSessions,
+  pricingLookup,
   messagesSuffix,
+  onMetrics,
 }: {
-  node: SubSessionCostInfo;
+  source: SessionMessagesSource;
+  id: string;
   depth?: number;
+  childMap: Map<string, string[]>;
+  allSessions: Session[];
+  pricingLookup: ModelPricingLookup;
   messagesSuffix: string;
+  onMetrics: (id: string, metrics: ThreadMetrics) => void;
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
-  const hasChildren = node.children.length > 0;
+  const thread = useSessionLogThread(source, id);
+  const metrics = useMemo(() => threadMetrics(thread?.messages ?? [], pricingLookup), [thread, pricingLookup]);
+  useEffect(() => onMetrics(id, metrics), [onMetrics, id, metrics]);
+  const title = allSessions.find((s) => s.id === id)?.title ?? id.slice(0, 12);
+  const children = childMap.get(id) ?? [];
+  const hasChildren = children.length > 0;
 
   return (
     <div className={cn('flex flex-col', depth > 0 && 'border-border/30 ml-4 border-l pl-3')}>
@@ -163,20 +109,25 @@ function SubSessionTreeNode({
         ) : (
           <div className="size-3 shrink-0" />
         )}
-        <span className="text-foreground min-w-0 truncate font-medium">{node.title}</span>
+        <span className="text-foreground min-w-0 truncate font-medium">{title}</span>
         <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
-          {node.messages} {messagesSuffix}
+          {metrics.messages} {messagesSuffix}
         </span>
-        <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(node.cost)}</span>
+        <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(metrics.cost)}</span>
       </button>
       {expanded && hasChildren && (
         <div className="flex flex-col">
-          {node.children.map((child) => (
+          {children.map((childId) => (
             <SubSessionTreeNode
-              key={child.id}
-              node={child}
+              key={childId}
+              source={source}
+              id={childId}
               depth={depth + 1}
+              childMap={childMap}
+              allSessions={allSessions}
+              pricingLookup={pricingLookup}
               messagesSuffix={messagesSuffix}
+              onMetrics={onMetrics}
             />
           ))}
         </div>
@@ -185,17 +136,15 @@ function SubSessionTreeNode({
   );
 }
 
-export function SubSessionSection({ session, allSessions, pricingLookup, fmt }: {
+export function SubSessionSection({ source, session, allSessions, pricingLookup, fmt }: {
+  /** The session whose log the root thread and each sub-agent's thread read. */
+  source: SessionMessagesSource;
   session: Session | undefined;
   allSessions: Session[] | undefined;
   pricingLookup: ModelPricingLookup;
   fmt: { number: (value: number | null | undefined) => string };
 }) {
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
-  // ---- Sub-session aggregation ----
-  const storeMessages = useSessionStateStore((s) => s.messages);
-  const storeParts = useSessionStateStore((s) => s.parts);
-
   const childMap = useMemo(
     () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),
     [allSessions],
@@ -208,25 +157,22 @@ export function SubSessionSection({ session, allSessions, pricingLookup, fmt }: 
 
   const hasSubSessions = descendantIds.length > 0;
 
-  const subSessionTree = useMemo(() => {
-    if (!session || !hasSubSessions || !allSessions) return null;
-    return computeSubSessionCost(
-      session.id,
-      session.title ?? session.id,
-      storeMessages,
-      storeParts,
-      childMap,
-      allSessions,
-      pricingLookup,
-    );
-  }, [session, hasSubSessions, allSessions, storeMessages, storeParts, childMap, pricingLookup]);
-
+  // The root's own metrics here; each sub-agent row reports its thread's as it
+  // renders, and the combined totals sum what is reported for the descendants
+  // the tree holds now (a collapsed branch is not mounted, so its children
+  // report nothing; the sub-agent rows up to the collapse point count).
+  const root = useSessionLogThread(source);
+  const rootMetrics = useMemo(() => threadMetrics(root?.messages ?? [], pricingLookup), [root, pricingLookup]);
+  const [reported, setReported] = useState<Record<string, ThreadMetrics>>({});
+  const onMetrics = useCallback((id: string, metrics: ThreadMetrics) => {
+    setReported((prev) => (prev[id] === metrics ? prev : { ...prev, [id]: metrics }));
+  }, []);
   const aggregateTotals = useMemo(
-    () => (subSessionTree ? sumTreeCosts(subSessionTree) : null),
-    [subSessionTree],
+    () => sumMetrics([rootMetrics, ...descendantIds.flatMap((id) => reported[id] ?? [])]),
+    [rootMetrics, descendantIds, reported],
   );
 
-  return hasSubSessions && subSessionTree && aggregateTotals ? (
+  return hasSubSessions && session && allSessions ? (
     <section className="space-y-3">
       <div className="space-y-1">
         <Label>{t.raw('subAgentsLabel')}</Label>
@@ -242,17 +188,20 @@ export function SubSessionSection({ session, allSessions, pricingLookup, fmt }: 
           <Stat label={t.raw('tokensIn')} value={fmt.number(aggregateTotals.inputTokens)} />
           <Stat label={t.raw('tokensOut')} value={fmt.number(aggregateTotals.outputTokens)} />
         </div>
-        {subSessionTree.children.length > 0 && (
-          <div className="border-t px-2 py-2">
-            {subSessionTree.children.map((child) => (
-              <SubSessionTreeNode
-                key={child.id}
-                node={child}
-                messagesSuffix={t.raw('treeMessages')}
-              />
-            ))}
-          </div>
-        )}
+        <div className="border-t px-2 py-2">
+          {(childMap.get(session.id) ?? []).map((childId) => (
+            <SubSessionTreeNode
+              key={childId}
+              source={source}
+              id={childId}
+              childMap={childMap}
+              allSessions={allSessions}
+              pricingLookup={pricingLookup}
+              messagesSuffix={t.raw('treeMessages')}
+              onMetrics={onMetrics}
+            />
+          ))}
+        </div>
       </div>
     </section>
   ) : null;

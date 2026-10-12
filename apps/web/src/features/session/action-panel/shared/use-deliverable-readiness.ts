@@ -3,9 +3,9 @@
 /**
  * The headless half of the Ready moment (W1) and the needs-input chip (W9).
  *
- * Lives in `session-layout` — NOT in `EasyPanel` — because the panel body is
- * exactly the thing the user hasn't opened; the announcement must come from a
- * component that is mounted while the panel is closed.
+ * Lives in `SessionPanelProvider` — NOT in `EasyPanel` — because the panel
+ * body is exactly the thing the user hasn't opened; the announcement must come
+ * from a component that is mounted while the panel is closed.
  *
  * The existing notification system (`notifyTaskComplete`) already covers the
  * away cases (tab hidden, other session) and deliberately stays silent while
@@ -15,11 +15,11 @@
 
 import { track } from '@/lib/track';
 import { useIsSidePanelOpen, useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { MessageWithParts } from '@/ui';
+import type { SessionLogMessage } from '@kortix/sdk';
 import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { useEffect, useMemo, useRef } from 'react';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
-import { collectAllToolParts } from './collect-tool-parts';
+import { collectAllToolCalls } from './collect-tool-parts';
 import {
   chipForCompletion,
   completionYieldsToPendingInput,
@@ -45,13 +45,14 @@ const needsInputReported = new Set<string>();
 
 export function useDeliverableReadiness(
   sessionId: string,
-  messages: MessageWithParts[] | undefined,
+  /** The thread's messages (`useSessionLogThread`). */
+  messages: SessionLogMessage[] | undefined,
   isSessionBusy: boolean,
 ): void {
   const isPanelOpen = useIsSidePanelOpen();
 
-  const parts = useMemo(() => collectAllToolParts(messages), [messages]);
-  const steps = useMemo(() => groupSteps(parts), [parts]);
+  const calls = useMemo(() => collectAllToolCalls(messages), [messages]);
+  const steps = useMemo(() => groupSteps(calls), [calls]);
   const isRunning = deriveIsRunning(
     steps.some((s) => s.status === 'running'),
     isSessionBusy,
@@ -78,9 +79,9 @@ export function useDeliverableReadiness(
     // Scoped to the latest run's own steps, not the session's — otherwise a
     // text-only turn after an old errored write reads as failed forever
     // (the session-wide last step never moves off 'error').
-    const latestSteps = groupSteps(collectAllToolParts(latestRunMessages(messages)));
+    const latestSteps = groupSteps(collectAllToolCalls(latestRunMessages(messages)));
     const outcome = deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status);
-    const outputs = deriveOutputs(parts, { latestRun: latestRunCallIds(messages) });
+    const outputs = deriveOutputs(calls, { latestRun: latestRunCallIds(messages) });
     const freshDeliverables = outputs.filter((o) => o.fresh);
     const primary = selectPrimaryDeliverable(
       freshDeliverables.filter((o) => o.kind === 'app'),
@@ -96,7 +97,7 @@ export function useDeliverableReadiness(
       track('ready_chip_shown', { outcome: chip.outcome });
       useKortixComputerStore.getState().setReadyChip(chip);
     }
-  }, [isRunning, isPanelOpen, messages, parts, steps, sessionId, pendingForSession]);
+  }, [isRunning, isPanelOpen, messages, calls, steps, sessionId, pendingForSession]);
 
   // W9 — the agent is blocked on the user. This is not a transition: the chip
   // holds for as long as the question does, and yields to nothing (a
