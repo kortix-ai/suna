@@ -1,0 +1,17 @@
+{
+  "source_hash": "042d8a3fdac1165595993e32050439ed05373f0e2863bb7f9202b8e48ce0a4c9",
+  "diff_files": [
+    "apps/web/src/features/session/composer/queued-prompt-list.test.tsx",
+    "apps/web/src/features/session/composer/queued-prompt-list.tsx",
+    "apps/web/src/features/session/session-chat-inbox-queue.test.ts"
+  ],
+  "diff_hash": "33dcba263867c4cefbc2431fde47ff5ea587fb28cc1bbc0058f00fbff95d659c",
+  "head": "4797959e69e3a0c9b2223a54072e46ca85b001b3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T09:39:04.192Z"
+}
