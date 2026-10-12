@@ -16,6 +16,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { sandboxEnvValue } from '../api/sandbox-env.ts';
+import { sandboxDaemonRequest } from '../api/sdk.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix browser <subcommand> [options]
@@ -116,21 +117,15 @@ async function callDaemon(
   path: string,
   body?: unknown,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const res = await fetch(`${d.base}/kortix/browser/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${d.token}`, 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    // `use` can wait 120 s for the user to answer a prompt in Chrome.
-    signal: AbortSignal.timeout(180_000),
-  });
-  const text = await res.text();
+  // `use` can wait for the user to answer a prompt in Chrome.
+  const { status: code, text } = await sandboxDaemonRequest(d.base, d.token, method, `/kortix/browser/${path}`, body, 180_000);
   let parsed: Record<string, unknown> = {};
   try {
     parsed = text ? JSON.parse(text) : {};
   } catch {
     parsed = { error: text };
   }
-  return { status: res.status, body: parsed };
+  return { status: code, body: parsed };
 }
 
 const NOT_IN_SESSION =

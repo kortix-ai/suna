@@ -1,5 +1,5 @@
 {
-  "source_hash": "7c9e1f961dac2c9ae298cbe981940b38f477064da9c427f7492d8605a727df57",
+  "source_hash": "aa8a239094186eebccba9870eb7961d67ecb91bf273c9575b86cc56b6b47449c",
   "diff_files": [
     ".agents/skills/kortix-browser/SKILL.md",
     ".agents/skills/kortix-browser/references/protocol.md",
@@ -115,13 +115,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/browser.flow.ts"
   ],
-  "diff_hash": "f2847d187632c3d43a6427eddcdacc8353a3a439653fda435a3679ba5ab18e85",
-  "head": "a219d0ea7da16dca0eec0fac06f8cb4e9edac8d5",
+  "diff_hash": "76a6bbd324fe1643fc8fb22b3060079e584e471949cc9f10a2b2d1614370b18e",
+  "head": "910118a129f595f07cf19b819b95c4b6b2360af4",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T17:32:36.524Z"
+  "at": "2026-10-12T17:53:47.798Z"
 }
