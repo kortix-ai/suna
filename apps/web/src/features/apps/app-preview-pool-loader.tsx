@@ -10,7 +10,7 @@ import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react'
 import { useEffect, useState } from 'react';
 
 import { ensureFrame, frameKey, framesKeepAlive, pruneFrames } from './app-preview-pool';
-import { appCan, childApps, gridApps } from './app-shared';
+import { appCan, cardPreviewApp, gridApps } from './app-shared';
 
 /** At most this many Apps load in the background; the rest load when first shown. */
 // ponytail: a fixed cap, rank by recent use if a project outgrows it.
@@ -28,12 +28,8 @@ export function preloadApps(apps: App[], canAdmin: boolean): App[] {
     appCan(app, 'preview') && !!app.active_deployment_id && app.viewer_can_access !== false;
   const picked: App[] = [];
   for (const app of gridApps(apps, canAdmin)) {
-    if (app.display?.preview === 'none') {
-      const first = childApps(apps, app, canAdmin)[0];
-      if (first && opens(first)) picked.push(first);
-    } else if (opens(app)) {
-      picked.push(app);
-    }
+    const shown = cardPreviewApp(apps, app, canAdmin);
+    if (shown && opens(shown)) picked.push(shown);
   }
   return picked.slice(0, PRELOAD_LIMIT);
 }
