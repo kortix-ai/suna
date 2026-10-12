@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 779,
+  "count": 792,
   "routes": [
     {
       "method": "GET",
@@ -1023,6 +1023,10 @@
       "path": "/v1/channels/teams/identity/preview"
     },
     {
+      "method": "GET",
+      "path": "/v1/clients/mobile"
+    },
+    {
       "method": "POST",
       "path": "/v1/connectors/attachments"
     },
@@ -1668,10 +1672,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/credentials"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1691,32 +1691,36 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/exec"
+    },
+    {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/logs"
+      "path": "/v1/projects/:projectId/apps/:appId/machines"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/restore"
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId/restart"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId/stop"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/rotate-credentials"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/apps/:appId/snapshots/:snapshotId"
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/apps/:appId/scale"
     },
     {
       "method": "POST",
@@ -1729,6 +1733,38 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots"
     },
     {
       "method": "POST",
@@ -2488,6 +2524,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/journal"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/manifest"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/message-authors"
     },
     {
@@ -2989,6 +3037,10 @@
     {
       "method": "PATCH",
       "path": "/v1/tunnel/connections/:tunnelId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/connections/:tunnelId/access"
     },
     {
       "method": "POST",

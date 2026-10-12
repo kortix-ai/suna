@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { closeSync, mkdirSync, openSync } from 'node:fs'
+import { closeSync, fchmodSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { resolveSandboxOnBoot, type Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
@@ -19,7 +19,11 @@ export function runSandboxOnBoot(cfg: Config, logPath = '/tmp/kortix-on-boot.log
       let output: number | 'ignore' = 'ignore'
       try {
         mkdirSync(dirname(logPath), { recursive: true })
-        output = openSync(logPath, 'a')
+        // Owner-only: the command's output can carry secrets. The daemon and the
+        // agent both run as kortix (apps/sandbox/entrypoint.sh), so it can still tail it.
+        output = openSync(logPath, 'a', 0o600)
+        // A resumed box keeps the log an older daemon created world-readable.
+        fchmodSync(output, 0o600)
       } catch (err) {
         logger.warn('[boot] on_boot log is unavailable; running without output capture', {
           err: (err as Error).message,

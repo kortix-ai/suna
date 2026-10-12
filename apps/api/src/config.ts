@@ -213,7 +213,6 @@ const envSchema = z.object({
   // Ready deployments an App keeps besides its active one (rollback targets).
   // Older ones are retired: runtime, image, files and archive are freed.
   KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
-  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: optInt(100_000),
   // New server Apps run 24/7 unless the request says otherwise. Existing Apps
   // keep their own setting. Static Apps have no runtime and ignore it.
   KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
@@ -283,12 +282,26 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
+  // Operator switch for the session-log journal ingest (`POST …/sessions/:s/log/journal`).
+  // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
+  // retries with backoff, so turning it back on loses nothing the boxes still hold.
+  SESSION_LOG_INGEST_ENABLED: optBoolTrue,
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
   // (see openapi/index.ts filterSpecPaths); this flag lets a hardened self-host
   // deployment turn the whole docs/spec surface OFF so no route shapes publish.
   OPENAPI_PUBLIC_DOCS: optBoolTrue,
+  // Mobile release policy, served by GET /v1/clients/mobile. A mobile build older
+  // than MOBILE_MIN_VERSION (`major.minor.patch`) shows a blocking "update
+  // required" screen. Unset: no gate. The store URLs are the update button's
+  // targets; unset: the screen has no button.
+  // A malformed value would make every device fail open, so it is a boot error.
+  MOBILE_MIN_VERSION: optStr.refine((v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()), {
+    message: 'Must be major.minor.patch',
+  }),
+  MOBILE_STORE_URL_IOS: optUrl(''),
+  MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a
   // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
   // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
@@ -1190,7 +1203,6 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
-  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: Math.max(1, env.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD),
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
@@ -1206,7 +1218,11 @@ export const config = {
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
+  SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
+  MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
+  MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
+  MOBILE_STORE_URL_ANDROID: env.MOBILE_STORE_URL_ANDROID,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
   KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 

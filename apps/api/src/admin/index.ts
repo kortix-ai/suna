@@ -517,10 +517,16 @@ adminApp.openapi(
     if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
     const before = await findProject(projectId);
     if (!before || before.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    const { writeProjectFeatureFlag } = await import('../feature-flags/write');
-    const row = await writeProjectFeatureFlag(projectId, feature, enabled);
+    const { writeOrganizationFeatureFlag, writeProjectFeatureFlag } = await import('../feature-flags/write');
+    const { isOrganizationFeatureFlag } = await import('../feature-flags/registry');
+    // An organization flag (`volumes`) writes the organization's entry, not the project's.
+    const organization = isOrganizationFeatureFlag(feature);
+    if (organization) await writeOrganizationFeatureFlag(before.accountId, feature, enabled);
+    const row = organization ? before : await writeProjectFeatureFlag(projectId, feature, enabled);
     if (!row) return c.json({ error: 'Not found' }, 404);
-    const override = (row.metadata as { experimental?: Record<string, unknown> } | null)?.experimental?.[feature];
+    const override = organization
+      ? (await import('../platform/services/boot-mode-setting')).volumesOrgEntry(row.accountId)
+      : (row.metadata as { experimental?: Record<string, unknown> } | null)?.experimental?.[feature];
     const { recordAuditEvent } = await import('../shared/audit');
     await recordAuditEvent({
       accountId: row.accountId,
@@ -541,7 +547,7 @@ adminApp.openapi(
         project_id: projectId,
         feature,
         override: typeof override === 'boolean' ? override : null,
-        enabled: resolveFeatureFlag(row.metadata, feature),
+        enabled: resolveFeatureFlag(row.metadata, feature, row.accountId),
       },
       200,
     );

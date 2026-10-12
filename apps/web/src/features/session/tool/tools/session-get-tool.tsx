@@ -30,11 +30,11 @@ import { useTranslations } from '@/i18n/use-translations';
 import { parseSessionGetOutput } from '@kortix/shared/tool-output';
 import React, { useMemo } from 'react';
 
-export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionGetTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const sid = (input.session_id as string) || '';
 
   const parsed = useMemo(() => parseSessionGetOutput(output, sid), [output, sid]);

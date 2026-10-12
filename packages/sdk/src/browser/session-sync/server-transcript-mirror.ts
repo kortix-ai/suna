@@ -54,7 +54,6 @@ export interface MirrorHydrateDecision {
 	runtimeSessionId: string;
 	/** The store already holds messages for that root. */
 	hasMessages: boolean;
-	hasLoadedTranscript?: boolean;
 }
 
 /**
@@ -64,8 +63,9 @@ export interface MirrorHydrateDecision {
 export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	const { envelope, runtimeSessionId, hasMessages } = input;
 	if (!envelope) return false;
-	// A live read outranks a snapshot, always.
-	if (hasMessages || input.hasLoadedTranscript) return false;
+	// A live read WITH messages outranks a snapshot, always. An empty one does
+	// not: it is evidence the box lost its state, whichever read lands first.
+	if (hasMessages) return false;
 	// No root yet means no identity to match against, so nothing can be proven
 	// about the ids in the payload.
 	if (!runtimeSessionId) return false;

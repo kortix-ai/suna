@@ -24,7 +24,7 @@ import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import type { ConversationDensity } from '@/stores/user-preferences-store';
 import { isReasoningPart, type Part } from '@/ui';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isAnsweredQuestionPart } from './answered-question-step';
 import { StepBody } from './burst-step-body';
 import { burstSummary, burstSummaryLabel } from './burst-summary';
@@ -33,6 +33,7 @@ import { mergeBurstSteps, reasoningIsRunning } from './merge-steps';
 import { samePartsList } from './same-parts';
 import { stepLabel } from './step-label';
 import { ThoughtChainStep } from './thought-chain-step';
+import { WorkFoldContext } from './turn-work-accordion';
 export { ActivityGroupStep, sameActivityGroupStepProps } from './activity-group-step';
 
 /**
@@ -58,6 +59,25 @@ export function burstIsRunning(
     if (isReasoningPart(part)) return reasoningIsRunning(part);
     return false;
   });
+}
+
+/**
+ * The rows a burst renders. Empty means the burst renders nothing at all
+ * (plumbing only, or blank reasoning) — the turn's "Worked for" fold reads
+ * this too, so it never counts such a burst as work.
+ */
+export function burstSteps(parts: ReadonlyArray<Part>) {
+  const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
+  // An answered question owns its row's disclosure (`AnsweredQuestionStep`
+  // binds trigger + content to the step's own `Disclosure`), so it can never
+  // share a group row with siblings — `groupSteps` buckets `question` into
+  // the `ask` family, and two disclosures in one step means one is silently
+  // dropped. Split such a group back into individual part rows.
+  return merged.flatMap((step) =>
+    step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
+      ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
+      : [step],
+  );
 }
 
 export function burstFailureCount(parts: ReadonlyArray<Part>): number {
@@ -141,19 +161,7 @@ function ActivityBurstImpl({
     setOpen(autoExpand && running);
   }, [running, autoExpand]);
 
-  const steps = useMemo(() => {
-    const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
-    // An answered question owns its row's disclosure (`AnsweredQuestionStep`
-    // binds trigger + content to the step's own `Disclosure`), so it can never
-    // share a group row with siblings — `groupSteps` buckets `question` into
-    // the `ask` family, and two disclosures in one step means one is silently
-    // dropped. Split such a group back into individual part rows.
-    return merged.flatMap((step) =>
-      step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
-        ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
-        : [step],
-    );
-  }, [parts]);
+  const steps = useMemo(() => burstSteps(parts), [parts]);
   const summary = useMemo(() => burstSummary(parts), [parts]);
   // The summary goes through unchanged: `burstSummaryLabel` already ignores
   // failures while running, so the "no failure count mid-flight" rule lives in
@@ -161,19 +169,23 @@ function ActivityBurstImpl({
   const title = burstSummaryLabel(summary, running);
 
   const bare = steps.length === 1 && summary.total === 1;
+  // Under an opened "Worked for" row the summary line is the second door to
+  // the same steps: hide it and keep the chain open. Rows keep their glyphs —
+  // `bare` stays the single-call rule.
+  const flat = useContext(WorkFoldContext);
   if (steps.length === 0) return null;
 
   return (
     <Disclosure
       // Bare is permanently open — there is no trigger to close it with.
-      open={bare || open}
+      open={bare || flat || open}
       onOpenChange={(next) => {
         userToggled.current = true;
         setOpen(next);
       }}
       className="group/burst flex-row"
     >
-      <BurstSummaryTrigger bare={bare} running={running} title={title} />
+      <BurstSummaryTrigger bare={bare || flat} running={running} title={title} />
 
       <DisclosureContent>
         {/*
@@ -189,7 +201,7 @@ function ActivityBurstImpl({
         <ToolActivateContext.Provider value={null}>
           {/* `mt-3` is the gap under the summary line. Bare has no summary
 					    line, so it has no gap to open. */}
-          <div className={bare ? undefined : 'mt-3'}>
+          <div className={bare || flat ? undefined : 'mt-3'}>
             <ChainOfThought>
               {/* A thought row IS a `ChainOfThoughtStep` — it owns the step's
 							    open state so it can open itself while the model thinks. */}

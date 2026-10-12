@@ -84,7 +84,7 @@ One connector as a handle: `run` returns the output itself and throws
 `upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
 `paginate` follows a cursor and throws `ConnectorPageLimitError` (with
 `nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
-read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
+read. Guide: `/docs/connect/connectors#call-connectors-from-code`; runnable: `examples/13-connectors-as-code.ts`.
 
 ```ts
 const linear = kortix.project(projectId).connector('linear');
@@ -154,7 +154,7 @@ The browser path needs the App's viewer scope set to `api`
 `403 insufficient_scope`. A service account answers `403` until a person
 grants it a project role (`kortix access grant --service-account <id> --role
 member --project <id>`). Never put a provider API key in an App or a Convex
-deployment when a connector exists. Guide: `/docs/sdk/connectors`.
+deployment when a connector exists. Guide: `/docs/connect/connectors#call-connectors-from-code`.
 
 ### Upload prompt attachments before Send
 
@@ -402,7 +402,7 @@ both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
-`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+`kortix.project(projectId).apps` deploys immutable App releases behind one stable URL: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
 
 ```ts
 const apps = kortix.project(projectId).apps;
@@ -422,19 +422,30 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine, with no budget). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
+Branch on `app.capabilities` (`machines`, `scale`, `exec`, `volumes`, `snapshots`, `static`, …). A call for a capability the App lacks answers `409 app_capability_unsupported`. A backend (database, Convex) is an ordinary server App with a volume; there is no backend type.
 
-`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Only an on-demand server App has a `monthly_budget_usd`; an always-on or `convex` App has `null` and a fixed `estimated_monthly_usd`, and a budget on one answers `400 app_budget_not_applicable`.
+`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Apps have no budget: account credits pay for App compute. An always-on App bills its machines 24/7; an on-demand App only while awake.
 
 ```ts
-const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });
-await apps.waitUntilReady(db.app_id);                 // instance.status 'running', no operation in flight
-await apps.update(site.app_id, { uses: ['db'] });     // the site may mint db tokens and bind to it
-const { env } = await apps.credentials(db.app_id);    // capability admin_credentials (audited)
-await apps.deployments.create(db.app_id, { source: { kind: 'convex', revision: gitSha } }); // record a CLI deploy
-const { snapshots } = await apps.snapshots.list(db.app_id);
-await apps.remove(db.app_id, { confirm: 'db' });      // an App with snapshots needs its typed slug
+await apps.deployments.create(api.app_id, {
+  artifact_id, source: { kind: 'oci_image', image, command: ['node', 'server.js'] },
+  config: {                                              // the release config (kortix.yaml apps.<name>)
+    processes: { app: '', worker: 'node worker.js' },
+    http_service: { internal_port: 3000, access: 'app', processes: ['app'] },
+    mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10, processes: ['app'] }],
+  },
+});
+const machines = await apps.machines.list(api.app_id);  // machine_id stays across releases
+await apps.scale(api.app_id, { worker: 3 });            // 0-20 per group, applied in the background
+const { exit_code, stdout } = await apps.exec(api.app_id, { command: ['ls', '/data'] });  // project.app.admin
+const [data] = await apps.volumes.list(api.app_id);
+const snap = await apps.volumes.snapshot(api.app_id, data.volume_id);
+await apps.volumes.restore(api.app_id, data.volume_id, snap.snapshot_id);  // project.app.admin
+await apps.update(site.app_id, { uses: ['api'], labels: ['frontend'] });    // the site may mint api tokens and bind to it
+await apps.update(api.app_id, { display: { preview: 'none' } });           // its Apps-tab card shows an icon, not a live thumbnail
 ```
+
+`@kortix/sdk/react` adds `useAppMachines`, `useAppVolumes`, and `useAppVolumeSnapshots`.
 
 `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
@@ -491,6 +502,8 @@ and the runtime config document stay hidden or empty on a pi session.
 Every session saves its transcript at the end of each turn. `useSession` reads saved
 messages from the platform database while `/start` continues. It uses the
 server-validated runtime session id and lets the live read reconcile the saved messages by ID.
+A live read that returns no messages keeps the saved messages on screen: it means the computer
+lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
@@ -558,9 +571,10 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
+| `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, and the capability calls: `snapshots.list/create/delete/restore`, `credentials`, `rotateCredentials`, `token`, `log`, `waitUntilReady`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
@@ -667,6 +681,47 @@ events it replaced.
 
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
+
+## Session log types
+
+The root entry exports the types of the Kortix session log, `kortix.session/2`
+minor 1: `SessionLog`, `SessionLogThread`, `SessionLogMessage` and
+`SessionLogBlock`, the block variants `TextBlock`, `ReasoningBlock`,
+`AttachmentBlock`, `ToolCallBlock`, `CompactionBlock`, `SubtaskBlock`,
+`StepBlock` and `HarnessBlock`, the grade types (`RestoreGrade`, `GradeCounts`),
+and the constants `SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR` and
+`KNOWN_TOOL_KINDS`. They are types and constants only: this package has no
+`zod` dependency. The validators (`SessionLogSchema` and the rest) stay in the
+private `@kortix/api-contract` package. The types are a copy of the api-contract
+session-log types, and a test fails when the two differ. See the
+[reference](https://kortix.com/docs/sdk/reference#session-log-types).
+
+`@kortix/sdk/react` adds `useSessionLog(session)` and
+`useSessionLogThread(session, threadId?)`: the log of a session `useSession`
+owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
+reads only when the runtime lists `session.log.v2`, the project flag
+`session_log` is on, and the API holds a log for an OpenCode session. Every
+other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+conversion of the v1 rows, with the turn that runs kept open. Pass the session's
+`runtimeSessionId`; without it, or before the first row, they return `null`. The
+v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
+either way. See the
+[reference](https://kortix.com/docs/sdk/react#read-the-session-log).
+
+Two transitional functions bridge a host that renders blocks while its rows are
+still v1:
+
+- `toolCallBlock(part)`: the `ToolCallBlock` of a v1 tool part, the block
+  `fromV1` builds for it. An open call stays open; a call that streams its input
+  has the text so far as its `input`. One block per part object. It goes away in
+  the SDK major that removes the v1 rows.
+- `toolCallMetadata(call)`: the harness's display metadata of a tool call, the
+  whole `state.metadata` of the v1 part it came from (bash `command`, read
+  `loaded`, task `sessionId`, edit `filediff`). It stays until the session-log
+  schema carries display metadata of its own.
+
+`toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and
+`shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part.
 
 ## Kortix as a Backend (server-side)
 
@@ -995,7 +1050,7 @@ const client = createKortix(auth.clientConfig());  // talks to Kortix through /p
 ```
 
 `@kortix/sdk/react` adds `useKortixViewer()` and `<SignInWithKortix />`.
-Full guide: `/docs/sdk/sign-in`. Example: `examples/11-sign-in-with-kortix.ts`.
+Full guide: `/docs/sdk/auth#sign-in-with-kortix`. Example: `examples/11-sign-in-with-kortix.ts`.
 
 ### A Kortix-hosted App is already signed in
 
@@ -1013,13 +1068,13 @@ the API refused (after an access-policy change) and replays the call once.
 In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
 origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
 A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
-Guide: `/docs/sdk/apps`.
+Guide: `/docs/apps#build-on-apps-from-typescript`.
 
 ### One member on every runtime: sign-in tokens, groups, roles
 
 ```ts
-const db = kortixBinding('db');                                                  // an App this App uses, same origin
-convex = new ConvexReactClient(db.url); convex.setAuth(db.token);                // its client, signed in as the viewer
+const backend = kortixBinding('backend');                                        // an App this App uses, same origin
+convex = new ConvexReactClient(backend.url); convex.setAuth(backend.token);      // its client, signed in as the viewer
 const token = await kortixToken()();                                             // a token for this App itself
 const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // a server function
 const caller = await verifyKortixToken(bearer);                                  // a server App (Kortix injects KORTIX_AUTH_*)
@@ -1040,7 +1095,7 @@ header, sign-in token) into one `KortixMember`: `userId`, `email`, `name`,
 `forbidden`). In React, read the member with a `members:me` query (`readKortixMember(await ctx.auth.getUserIdentity())` in `convex/members.ts`, then `useQuery(api.members.me)`: `undefined` loading, `null` signed out). Never call `useConvexAuth()`: it throws under a plain `ConvexProvider`. Kortix injects `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` (the App's own id) and `KORTIX_AUTH_JWKS` into every server App, so do not set `KORTIX_AUTH_*` in its `env`. `verifyKortixToken` takes the key set inline or as an https URL
 (`auth.jwks_uri`), and refuses every token when no audience is set (option or
 `KORTIX_AUTH_AUDIENCE`): one project key signs every App's tokens, so `aud` is
-the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
+the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/apps#build-on-apps-from-typescript`.
 
 ### Headless sign-in (your users, straight through the API)
 

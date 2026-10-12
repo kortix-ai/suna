@@ -95,30 +95,66 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
-# A `convex` App (kind: convex) is a Convex backend in an always-on machine.
+# Each block is the App's release config: a deploy creates an immutable release of
+# its artifact and this config (processes, http_service, services, mounts, vm,
+# deploy). `kortix apps launch --template convex` writes the `backend` block
+# below (a self-hosted Convex backend: data, functions, realtime, files) plus
+# `backend-dashboard` (admins only, the Dashboard tab of `backend`, signed in by
+# the BACKEND_ADMIN_KEY secret).
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
-# A static App (files, no machine) ignores run mode, budget, resources, env
-# and secrets. A server App runs always on (default) or on demand; always on
-# costs about 73 USD/month on the default machine and takes no budget.
-# Only an on-demand server App takes `monthly_budget_usd`.
+# Code lives in one folder per App, apps/<name>/ by default (`path` is free-form:
+# group by team or topic when that fits better). The backend's functions live in
+# apps/backend/convex (`npx convex deploy`); its image needs no `path`.
+# A static App (files, no machine) ignores run mode, resources, env
+# and secrets. A server App runs always on (default, billed 24/7) or on demand
+# (billed while awake). Apps have no budget:
+# `monthly_budget_usd` is retired and `kind` is retired (the validator warns).
 apps:
-  db:
-    path: apps/db              # a package.json + convex/ directory
-    kind: convex               # fixed at create; `web` is the default
+  backend:
+    type: oci_image
+    image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
+    command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
+    labels: [backend]          # tags only; no behavior depends on them
+    display: { preview: none } # an icon card; listed | preview (live | none) | parent
+    always_on: true
+    vm: { cpu: 1, memory_gb: 1, disk_gb: 10 }
+    mounts:                    # a volume: outlives every release and machine
+      - { source: data, destination: /convex/data, initial_size_gb: 10 }
+    http_service:              # the App's own host
+      internal_port: 3210
+      access: public           # public | app (the App's policy) | admins
+      checks: [{ type: http, path: /version }]
+    services:                  # more ports, each on <App host>--<name>
+      - { name: site, internal_port: 3211, access: public }
+  backend-dashboard:           # Convex's dashboard is a second image, so a second App
+    path: apps/backend/dashboard # Dockerfile + start.js, written by `launch`
+    type: dockerfile
+    command: [node, /kortix/start.js]
+    display: { parent: backend } # the Dashboard tab of backend, not a card of its own
+    uses: [backend]
+    always_on: false           # sleeps when idle
+    http_service: { internal_port: 6791, access: admins }
+    secrets:                   # env name → project secret identifier
+      NEXT_PUBLIC_ADMIN_KEY: BACKEND_ADMIN_KEY # written by `launch`; the dashboard opens signed in
   storefront:
-    path: web/dist             # build first; deploy the output directory
+    path: apps/storefront/dist # build first (in apps/storefront); deploy the output directory
     type: static
     spa: true
-    uses: [db]                 # may bind to db and mint its sign-in tokens
+    uses: [backend]            # may bind to backend and mint its sign-in tokens
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     port: 3000
     readiness_path: /health
     always_on: false           # on demand: stops when idle, wakes on request
+    processes:                 # process groups; default: one group, `app`
+      app: ""                  # "" runs the image's own command
+      worker: "node worker.js" # no service: a worker, never idle-stopped
+    deploy:
+      strategy: bluegreen      # rolling | immediate | bluegreen | canary
+      release_command: "node migrate.js"   # once per release; a failure aborts it
     idle_timeout_seconds: 300
-    monthly_budget_usd: 10     # on-demand server Apps only
     resources:
       cpu: 1
       memory_gb: 2

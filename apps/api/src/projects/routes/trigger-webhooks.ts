@@ -12,7 +12,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
-import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
@@ -210,10 +210,11 @@ export function registerTriggerWebhooksRoutes(): void {
       if (!result.requeued) {
         await raiseTriggerAlert({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, source: 'fire', error });
       }
-      // The model gate is account state, not a server fault: answer the billing
-      // gate's convention (402 + a machine-readable code) so the sender can act.
-      if (result.errorCode === 'no_usable_model') {
-        return c.json({ error, code: 'no_usable_model' }, 402);
+      // Model and billing gates are account state, not a server fault: answer
+      // the billing gate's convention (402 + a machine-readable code) so the
+      // sender can act.
+      if (result.errorCode && ACCOUNT_STATE_FIRE_CODES.has(result.errorCode)) {
+        return c.json({ error, code: result.errorCode }, 402);
       }
       return c.json({ error }, 500);
     }

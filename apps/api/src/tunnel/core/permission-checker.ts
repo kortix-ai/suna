@@ -3,20 +3,12 @@ import { eq, and } from 'drizzle-orm';
 import { tunnelPermissions } from '@kortix/db';
 import type { TunnelFilesystemScope, TunnelShellScope, TunnelPermissionScope } from '@kortix/db';
 import { db } from '../../shared/db';
-import {
-  desktopFeatureForMethod,
-  validateTunnelPermissionScope,
-  type TunnelCapability,
-} from 'agent-tunnel';
+import { validateTunnelPermissionScope, type TunnelCapability } from 'agent-tunnel';
 
 export interface PermissionCheckResult {
   allowed: boolean;
   permissionId?: string;
   reason?: string;
-}
-
-interface TunnelDesktopScope {
-  features?: string[];
 }
 
 export async function checkPermission(
@@ -86,8 +78,11 @@ export function validateScopeForOperation(
       return validateFilesystemScope(scope as TunnelFilesystemScope, operation, args);
     case 'shell':
       return validateShellScope(scope as TunnelShellScope, operation, args);
+    // Desktop is one grant ("Screen & keyboard"). A legacy `features` list
+    // (pairings before 2026-10-10) no longer narrows it: every pairing granted
+    // all features, and a per-tool map refused every tool it did not list.
     case 'desktop':
-      return validateDesktopScope(scope as TunnelDesktopScope, operation, args);
+      return { allowed: true };
     default:
       return {
         allowed: false,
@@ -185,32 +180,6 @@ function validateShellScope(
         reason: `Timeout exceeds limit ${scope.maxTimeout}`,
       };
     }
-  }
-
-  return { allowed: true };
-}
-
-function validateDesktopScope(
-  scope: TunnelDesktopScope,
-  operation: string,
-  args: Record<string, unknown>,
-): PermissionCheckResult {
-  if (!scope.features || scope.features.length === 0) {
-    return { allowed: true };
-  }
-
-  const method = `desktop.${operation}`;
-  const feature = desktopFeatureForMethod(method, args);
-
-  if (!feature) {
-    return { allowed: false, reason: `Unknown desktop method: "${method}"` };
-  }
-
-  if (!scope.features.includes(feature)) {
-    return {
-      allowed: false,
-      reason: `Feature "${feature}" not in allowed features`,
-    };
   }
 
   return { allowed: true };

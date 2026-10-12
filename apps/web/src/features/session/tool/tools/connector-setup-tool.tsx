@@ -16,10 +16,10 @@ import { useMemo } from 'react';
 
 import { parseConnectorSetupOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ConnectorSetupTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const data = useMemo(() => parseConnectorSetupOutput(output || ''), [output]);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
   // it, and this row asked it twice per render — once for the subtitle, once for

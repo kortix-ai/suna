@@ -84,8 +84,10 @@ flow(
     });
 
     await ctx.step('a flood is rate limited → 429 with Retry-After; another user still passes', async () => {
+      // The limiter is replica-local (10/min per process): a target with N API
+      // tasks admits about 10 x N, so flood until any one task refuses.
       let limited = false;
-      for (let i = 0; i < 15 && !limited; i++) {
+      for (let i = 0; i < 200 && !limited; i++) {
         const r = await ctx.client.as(ctx.P.OWNER).post('/v1/feedback', {
           kind: 'idea',
           message: `flood ${i}`,

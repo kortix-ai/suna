@@ -63,7 +63,6 @@ import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-p
 import { createRuntimeAuditRelay } from '../shared/audit-relay'
 import {
   claimInitialTurn,
-  claimedRuntimeSessionPin,
   initialTurnClaim,
   relayPermission,
   relayRuntimeSession,
@@ -97,6 +96,7 @@ import {
 } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
+import { startOpenCodeSessionLog } from './session-log'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
@@ -653,6 +653,9 @@ async function startSessionRuntime(
   await reconcileManagedModels(opencode, cfg, bootMark)
   // One relay for every harness (shared/audit-relay.ts). A spool an older
   // daemon left behind is renamed first, or loading it would fail the runtime.
+  // The session log (P2.6), before the event loop and the first prompt, so the
+  // first turn's end flushes it.
+  startOpenCodeSessionLog()
   const auditSpoolPath = resolveOpenCodeAuditSpoolPath(process.env)
   try {
     migratePreW3AuditSpool(auditSpoolPath)

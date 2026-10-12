@@ -89,6 +89,29 @@ afterEach(async () => {
   pathname = '/';
 });
 
+/** Open the drawer at mobile width and return its root element. */
+async function openDrawer() {
+  (win as unknown as { innerWidth: number }).innerWidth = 480;
+  await mountNavbar();
+  const open = container!.querySelector(
+    '[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]',
+  );
+  expect(open).not.toBeNull();
+  await act(async () => {
+    lib.click(open!);
+  });
+  expect(win.document.body.style.overflow).toBe('hidden');
+  return container!.querySelector('.bg-background.fixed.inset-0');
+}
+
+/** Re-render with `next` as the committed pathname: the mock `usePathname` reads it. */
+async function commitNavigation(next: string) {
+  pathname = next;
+  await act(async () => {
+    root!.render(React.createElement(Navbar));
+  });
+}
+
 const header = () => container!.querySelector('header');
 
 test('the bar renders the brand, the desktop nav and a GitHub stars chip', async () => {
@@ -118,23 +141,98 @@ test('the mobile drawer locks body scroll while open and unlocks on close', asyn
   expect(win.document.body.style.overflow).toBe('');
 });
 
-test('a drawer row click closes the drawer and unlocks body scroll', async () => {
-  (win as unknown as { innerWidth: number }).innerWidth = 480;
-  await mountNavbar();
-  const open = container!.querySelector('[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]');
-  await act(async () => {
-    lib.click(open!);
-  });
-  expect(win.document.body.style.overflow).toBe('hidden');
-  const drawer = container!.querySelector('.bg-background.fixed.inset-0');
-  expect(drawer).not.toBeNull();
-  const row = drawer!.querySelector<HTMLAnchorElement>('a[href="/pricing"]');
+test('a drawer row tap keeps the drawer up until the navigation commits', async () => {
+  await openDrawer();
+  const drawer = () => container!.querySelector('.bg-background.fixed.inset-0');
+  const row = drawer()!.querySelector<HTMLAnchorElement>('a[href="/pricing"]');
   expect(row).not.toBeNull();
   await act(async () => {
     lib.click(row!);
   });
-  // The drawer closed either way.
+  // Closing on tap left a ~2 s dead wait: the old page sat frozen with no
+  // feedback (KRTX-1591). The drawer stays up instead, and the tapped row
+  // shows the pending spinner.
+  expect(drawer()).not.toBeNull();
+  expect(win.document.body.style.overflow).toBe('hidden');
+  expect(drawer()!.innerHTML).toContain('animate-spinner');
+  // The navigation commits: the drawer closes and unlocks the page.
+  await commitNavigation('/pricing');
+  expect(drawer()).toBeNull();
   expect(win.document.body.style.overflow).toBe('');
+});
+
+test('the drawer login button waits for its navigation the same way', async () => {
+  await openDrawer();
+  const drawer = () => container!.querySelector('.bg-background.fixed.inset-0');
+  const login = drawer()!.querySelector<HTMLAnchorElement>('a[href="/auth"]');
+  expect(login).not.toBeNull();
+  await act(async () => {
+    lib.click(login!);
+  });
+  expect(drawer()).not.toBeNull();
+  expect(win.document.body.style.overflow).toBe('hidden');
+  await commitNavigation('/auth');
+  expect(drawer()).toBeNull();
+  expect(win.document.body.style.overflow).toBe('');
+});
+
+test('a tap on the row of the page already committed closes the drawer at once', async () => {
+  pathname = '/pricing';
+  await openDrawer();
+  const row = container!.querySelector<HTMLAnchorElement>(
+    '.bg-background.fixed.inset-0 a[href="/pricing"]',
+  );
+  expect(row).not.toBeNull();
+  await act(async () => {
+    lib.click(row!);
+  });
+  // No navigation is in flight: the drawer must not hang on a commit that
+  // never comes.
+  expect(container!.querySelector('.bg-background.fixed.inset-0')).toBeNull();
+  expect(win.document.body.style.overflow).toBe('');
+});
+
+test('an off-site drawer row closes the drawer at once', async () => {
+  await openDrawer();
+  const row = container!.querySelector<HTMLAnchorElement>(
+    '.bg-background.fixed.inset-0 a[href="https://x.com/kortix"]',
+  );
+  expect(row).not.toBeNull();
+  await act(async () => {
+    lib.click(row!);
+  });
+  // The row opens a new tab; this page never commits, so the drawer closes.
+  expect(container!.querySelector('.bg-background.fixed.inset-0')).toBeNull();
+  expect(win.document.body.style.overflow).toBe('');
+});
+
+test('closing the drawer clears a pending navigation so no row stays marked', async () => {
+  await openDrawer();
+  const drawer = () => container!.querySelector('.bg-background.fixed.inset-0');
+  await act(async () => {
+    lib.click(drawer()!.querySelector<HTMLAnchorElement>('a[href="/pricing"]')!);
+  });
+  expect(drawer()!.innerHTML).toContain('animate-spinner');
+  // The reader backs out with the close button instead of waiting.
+  const close = container!.querySelector(
+    '[aria-label="componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu"]',
+  );
+  await act(async () => {
+    lib.click(close!);
+  });
+  expect(drawer()).toBeNull();
+  // A later reopen on the same component instance shows no stale pending
+  // mark: only the effect that clears `pendingHref` on close makes this
+  // hold (a fresh mount would trivially pass with fresh state).
+  const openAgain = container!.querySelector(
+    '[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]',
+  );
+  await act(async () => {
+    lib.click(openAgain!);
+  });
+  const reopened = container!.querySelector('.bg-background.fixed.inset-0');
+  expect(reopened).not.toBeNull();
+  expect(reopened!.innerHTML).not.toContain('animate-spinner');
 });
 
 test('a signed-in visitor sees the projects button; a signed-out one sees Get Started', async () => {

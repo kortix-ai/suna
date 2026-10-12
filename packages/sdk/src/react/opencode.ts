@@ -137,6 +137,8 @@ export {
   type SessionMessagesOptions,
   type SessionMessagesSource,
 } from './use-session-messages';
+// The session log (`kortix.session/2`) of a session `useSession` owns; null while it reads v1.
+export { useSessionLog, useSessionLogThread } from './use-session-log';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,
