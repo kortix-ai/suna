@@ -3,7 +3,6 @@
 import { createContext, useContext } from 'react';
 import { type ToolOutcome } from './tool-outcome';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
-import { type ToolPart } from '@/ui';
 import { toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 export const ToolRunningContext = createContext(false);
