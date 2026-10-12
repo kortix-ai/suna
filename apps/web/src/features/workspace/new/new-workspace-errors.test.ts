@@ -89,12 +89,13 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     expect(gated).toBe(true);
   });
 
-  test('the retry control reuses the Log out treatment — no third button weight', () => {
-    // `Log out` (top-right) is the page's original secondary control:
-    // variant="ghost" size="sm" className="text-muted-foreground
-    // hover:text-foreground". The retry control must match that exact
-    // color/weight treatment rather than inventing another style (e.g. a
-    // full-contrast button).
+  test('the retry control keeps the muted-ghost treatment — no third button weight', () => {
+    // The page's original secondary control (`Log out`, top-right) was a
+    // ghost button with className="text-muted-foreground
+    // hover:text-foreground". #9687's top-bar rework moved Log out into the
+    // account menu and the bar no longer carries the class, so the retry
+    // control is now the page's ONLY muted-ghost control: the count below
+    // pins that no third weight appears beside the primary submit and it.
     const alertStart = page.indexOf('role="alert"');
     expect(alertStart).toBeGreaterThan(0);
     const containerStart = page.lastIndexOf('<div', alertStart);
@@ -103,14 +104,8 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // count below cannot tell which element carries the treatment.
     expect(region).toContain('text-muted-foreground hover:text-foreground');
 
-    // One user of the treatment left in this file: `Try again`. `Back to
-    // projects` moved into the shared `AccountTopBar` with the rest of the top
-    // row and carries the same treatment there; Log out moved into that bar's
-    // account menu.
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
     expect(treatmentMatches).toHaveLength(1);
-    const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
-    expect(bar).toContain('text-muted-foreground hover:text-foreground');
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {
