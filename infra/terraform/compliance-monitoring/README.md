@@ -33,8 +33,8 @@ It manages:
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
 - VPC flow logs for the dev (us-east-2) and staging (eu-west-2) VPCs, which had
-  none until 2026-10-12 (Drata DCF-406). The prod VPC and the us-west-2 default
-  VPC carry flow logs created by CLI.
+  none until 2026-10-12 (Drata DCF-406). The prod VPC carries a flow log created
+  by CLI. us-west-2 has no VPC since 2026-10-12.
 - A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
   backups. Velero retains backups for 30 days. S3 expires current and
   noncurrent object versions after 35 days.
