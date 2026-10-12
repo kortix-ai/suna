@@ -798,10 +798,14 @@ export function ProfileTab() {
   // definitive "isn't available on this deployment" claim mid-retry — found
   // live against the local stack. `errorUpdatedAt > dataUpdatedAt` survives the
   // clearing: it stays true until a successful answer lands, so the failed
-  // row (and its Retry) holds while the retry is in flight.
+  // row (and its Retry) holds while the retry is in flight. The failed shape
+  // is for an UNKNOWN answer only — `!deletionStatus`: on a failed refetch
+  // query-core keeps the previous answer, and a user with a scheduled
+  // deletion must keep that row (schedule + cancel) over a network blip.
   const isDeletionStatusFailed =
-    isDeletionStatusError ||
-    (deletionStatusFetchStatus === 'fetching' && deletionStatusFailedAt > deletionStatusAnsweredAt);
+    !deletionStatus &&
+    (isDeletionStatusError ||
+      (deletionStatusFetchStatus === 'fetching' && deletionStatusFailedAt > deletionStatusAnsweredAt));
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);

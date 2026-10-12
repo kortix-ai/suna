@@ -219,4 +219,45 @@ describe('ProfileTab — a failed deletion-status check fails closed', () => {
       client.clear();
     }
   });
+
+  /** A failed REFETCH on a query that still holds data must not swallow the
+   *  row's real state: query-core keeps the previous answer on a failed
+   *  refetch, so a user with a scheduled deletion would otherwise see the
+   *  failed row (and lose the schedule + cancel control) over a network
+   *  blip. The failed shape is for an UNKNOWN answer only — no data. */
+  test('a stale answer with a failed refetch keeps the armed row', async () => {
+    const success = deletionStatusAnswer;
+    deletionStatusAnswer = {
+      data: { has_pending_deletion: true, deletion_scheduled_for: '2026-11-01T00:00:00.000Z', supported: true },
+      isLoading: false,
+      isError: true,
+      fetchStatus: 'fetching',
+      errorUpdatedAt: 5,
+      dataUpdatedAt: 4,
+      refetch: () => {},
+    };
+    const { renderer, client } = await mountTab();
+    try {
+      const root = renderer.root;
+      const failedCopy = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'deletionStatusCheckFailed',
+      );
+      expect(failedCopy).toHaveLength(0);
+      const retry = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'retry' && n.props.onClick,
+      );
+      expect(retry).toHaveLength(0);
+      const scheduled = root.findAll(
+        (n) =>
+          n.children.length === 1 &&
+          typeof n.children[0] === 'string' &&
+          n.children[0].startsWith('scheduledForDeletionOn'),
+      );
+      expect(scheduled).not.toHaveLength(0);
+    } finally {
+      deletionStatusAnswer = success;
+      await act(async () => renderer.unmount());
+      client.clear();
+    }
+  });
 });
