@@ -22,12 +22,16 @@ describe('session route page', () => {
     'utf8',
   );
 
-  test('moves a route-keyed prefill onto the chat id, where SessionChat reads it', () => {
-    const from = page.indexOf('migrateStash(sessionId, chatSessionId);');
+  test('moves a route-keyed prefill onto the chat id, where SessionChat reads it, every time one lands', () => {
+    // Keyed on the waiting prefill: a second Quick Entry prompt for the session
+    // already on screen lands after the chat resolved. Keyed on the ids alone,
+    // it stayed under the route id and never sent.
+    const from = page.indexOf('const routePrefillId');
     expect(from).toBeGreaterThan(-1);
-    expect(page.slice(from, from + 400)).toContain(
-      'useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);',
-    );
+    const effect = page.slice(from, page.indexOf('// ── Readiness benchmarking marks', from));
+    expect(effect).toContain('useSessionComposerPrefillStore((s) => s.prefillBySession[sessionId]?.id)');
+    expect(effect).toContain('useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);');
+    expect(effect).toContain('}, [sessionId, chatSessionId, routePrefillId]);');
   });
 });
 

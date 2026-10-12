@@ -1497,15 +1497,22 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
-    // A desktop Quick Entry prompt for this session waits under the route id
-    // until the chat exists; SessionChat reads prefills by `chatSessionId`.
-    useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);
     // No queue hand-off beside it any more. The browser queue was keyed by the
     // OpenCode session id, which changes as the pin resolves, so the instant
     // shell's messages had to be moved from the route id onto the pin or they
     // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
     // route id — which never changes, so there is nothing to adopt.
   }, [sessionId, chatSessionId]);
+
+  // A desktop Quick Entry prompt for this session lands under the route id
+  // (the only id the producer knows); SessionChat reads prefills by
+  // `chatSessionId`. Keyed on the waiting prefill too: a second prompt while
+  // this page is open lands after the chat resolved, and must move as well.
+  const routePrefillId = useSessionComposerPrefillStore((s) => s.prefillBySession[sessionId]?.id);
+  useEffect(() => {
+    if (!chatSessionId || routePrefillId === undefined) return;
+    useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);
+  }, [sessionId, chatSessionId, routePrefillId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────
   useEffect(() => {
