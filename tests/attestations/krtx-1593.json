@@ -1,0 +1,20 @@
+{
+  "source_hash": "9c27ac7911ef428f4eacfea1f82b32e38a58c27838c53f764e3c825d74828a24",
+  "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/channels/email/installs.ts",
+    "apps/api/src/channels/install-store.ts",
+    "apps/api/src/channels/slack/installs.ts",
+    "apps/api/src/channels/teams/installs.ts",
+    "apps/api/src/channels/telegram-webhook.ts"
+  ],
+  "diff_hash": "1deae6aed4397919dc7b273a7843a32835f1db74a2b3fc40713e456e3cf72662",
+  "head": "48479e3358ccb7a5469649045ee218c1d06c9b28",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T04:25:31.537Z"
+}
