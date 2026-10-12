@@ -24,9 +24,12 @@
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
  * are written before the transaction. `content_hash` is always the hash of the
  * record as sent, so the manifest the daemon reconciles against does not change.
+ * A second exception: lone UTF-16 surrogates are replaced with U+FFFD
+ * (`wellFormedJson`), because Postgres jsonb rejects them outright.
  *
  * Two writers, one apply path (`applyBatch`):
- * - The journal. Its first committed batch sets `session_logs.journal_seen_at`.
+ * - The journal. Its first committed batch with a put or a tombstone sets
+ *   `session_logs.journal_seen_at`.
  * - The transcript capture of a box without a journal (P2.7,
  *   `session-log-capture.ts`): `fromV1` of the v1 mirror, at generation 0, with
  *   revs below `SESSION_LOG_CAPTURE_REV_LIMIT`. It writes only while
@@ -110,12 +113,30 @@ async function sessionExists(scope: SessionLogScope): Promise<boolean> {
 export const sessionLogContentHash = (message: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(message)).digest('hex')}`;
 
+/**
+ * Postgres jsonb rejects lone UTF-16 surrogates (`\ud800`–`\udfff` without
+ * their pair) with `unsupported Unicode escape sequence`: a harness slicing
+ * an emoji mid-code-point emits one in a block text, JSON keeps it as an
+ * escape, and ONE poisoned record failed the whole INSERT — which the daemon
+ * then re-sent forever (2026-10-12: 243 5xx in a day on this route, one
+ * 730 kB batch retried 171 times). Replace every lone surrogate with U+FFFD
+ * before anything is hashed or written, the way a terminal renders it. The
+ * round-trip is exact for parsed-JSON data (no undefined/Date/Map values),
+ * so the stored record and its `content_hash` keep describing each other.
+ */
+const wellFormedJson = <T>(value: T): T =>
+  JSON.parse(
+    JSON.stringify(value, (_key, v: unknown) =>
+      typeof v === 'string' && !v.isWellFormed() ? v.toWellFormed() : v,
+    ),
+  ) as T;
+
 /** Apply one journal batch. `batch` is the request body as sent, already validated by `SessionLogJournalRequestSchema`. */
 export async function ingestSessionLogJournal(
   scope: SessionLogScope,
-  batch: SessionLogJournalRequest,
+  request: SessionLogJournalRequest,
 ): Promise<SessionLogJournalOutcome> {
-  return (await applyBatch(scope, batch, null)) as SessionLogJournalOutcome;
+  return (await applyBatch(scope, request, null)) as SessionLogJournalOutcome;
 }
 
 /**
@@ -133,9 +154,10 @@ export async function writeCapturedSessionLog(
 
 async function applyBatch(
   scope: SessionLogScope,
-  batch: SessionLogJournalRequest,
+  request: SessionLogJournalRequest,
   capture: CaptureWrite | null,
 ): Promise<SessionLogJournalOutcome | 'skipped'> {
+  const batch = wellFormedJson(request);
   if (!(await sessionExists(scope))) return NO_SESSION;
   // One put at a time: at most one large text is in memory twice.
   const records: SessionLogPut['message'][] = [];
@@ -199,6 +221,9 @@ async function upsertSession(
     .where(eq(sessionLogs.sessionId, scope.sessionId))
     .limit(1);
   if (capture && row?.journalSeenAt) return 'journal';
+  // A batch with no put and no tombstone (the boot session patch, the empty flush at stop) proves no journal:
+  // the capture keeps writing until a message arrives.
+  const writes = batch.puts.length + batch.tombstones.length > 0;
   if (row && batch.generation < row.generation) return row.generation;
   const patch = batch.session;
   if (!row) {
@@ -214,11 +239,11 @@ async function upsertSession(
       restoreGrade: patch?.restore_grade ?? 'native',
       gradeCounts: patch?.grade_counts ?? null,
       record: (patch ?? {}) as Record<string, unknown>,
-      journalSeenAt: capture ? null : sql`now()`,
+      journalSeenAt: capture || !writes ? null : sql`now()`,
     });
     return null;
   }
-  const firstJournal = !capture && !row.journalSeenAt;
+  const firstJournal = !capture && writes && !row.journalSeenAt;
   if (!patch && batch.generation === row.generation && !firstJournal) return null;
   await tx
     .update(sessionLogs)

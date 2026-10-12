@@ -177,13 +177,13 @@ jobs:
       matrix:
         root:
           - infra/terraform/environments/prod
-          - infra/terraform/environments/staging
-          - infra/terraform/environments/dev
+          - infra/terraform/environments/staging-eu-west-2
+          - infra/terraform/environments/dev-us-east-2
           # The *-web roots own the frontend ALBs, their WAF associations, and
           # the web task roles. They were missing here, so #6344's WAF change
           # could drift unseen.
-          - infra/terraform/environments/dev-web
-          - infra/terraform/environments/staging-web
+          - infra/terraform/environments/dev-web-us-east-2
+          - infra/terraform/environments/staging-web-eu-west-2
           - infra/terraform/environments/prod-web
           # Not under environments/ — these stacks live at the terraform root.
           - infra/terraform/security-baseline

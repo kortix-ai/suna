@@ -180,7 +180,7 @@ describe('deployed production validation', () => {
   it('rejects a deployed frontend that points at another backend', async () => {
     const wrongBackendScript = `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify({
       ...config,
-      BACKEND_URL: 'https://api-use2-shadow.kortix.com/v1',
+      BACKEND_URL: 'https://api-other.kortix.com/v1',
     })};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`;
 
     await assert.rejects(

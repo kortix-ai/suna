@@ -31,15 +31,15 @@ service_json() {
       local failed=''
       [ "$AWS_STUB_SCENARIO" = rolledback-gone ] || failed=',
  {"status":"ACTIVE","rolloutState":"FAILED","rolloutStateReason":"ECS deployment circuit breaker: tasks failed to start.",
-  "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+  "taskDefinition":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500",
   "desiredCount":0,"runningCount":0,"pendingCount":0}'
       cat <<JSON
 {"services":[{"status":"ACTIVE","runningCount":1,"desiredCount":1,"pendingCount":0,
 "deployments":[
  {"status":"PRIMARY","rolloutState":"COMPLETED","rolloutStateReason":"ECS deployment ecs-svc/2 completed.",
-  "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+  "taskDefinition":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499",
   "desiredCount":1,"runningCount":1,"pendingCount":0}$failed],
-"events":[{"createdAt":"2026-09-28T19:30:00+00:00","message":"STUB_EVENT_ROLLBACK (service kortix-dev-web) rolling back to deployment ecs-svc/2."}]}]}
+"events":[{"createdAt":"2026-09-28T19:30:00+00:00","message":"STUB_EVENT_ROLLBACK (service kortix-dev-use2-web) rolling back to deployment ecs-svc/2."}]}]}
 JSON
       return 0 ;;
     completed) rollout=COMPLETED; reason='ECS deployment ecs-svc/1 completed.' ;;
@@ -48,28 +48,28 @@ JSON
   esac
   cat <<JSON
 {"services":[{"status":"ACTIVE","runningCount":$AWS_STUB_SERVICE_RUNNING,"desiredCount":1,"pendingCount":$AWS_STUB_PENDING,
-"taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+"taskDefinition":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499",
 "deployments":[
  {"status":"PRIMARY","rolloutState":"$rollout","rolloutStateReason":"$reason",
-  "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+  "taskDefinition":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500",
   "desiredCount":1,"runningCount":$AWS_STUB_RUNNING,"pendingCount":$AWS_STUB_PENDING},
  {"status":"ACTIVE","rolloutState":"COMPLETED","rolloutStateReason":"-",
-  "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+  "taskDefinition":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499",
   "desiredCount":1,"runningCount":1,"pendingCount":0}],
 "events":[
- {"createdAt":"2026-09-18T20:04:41+00:00","message":"STUB_EVENT_NEWEST service kortix-dev-web was unable to place a task."},
- {"createdAt":"2026-09-18T20:01:10+00:00","message":"STUB_EVENT_SECOND (service kortix-dev-web) has started 1 tasks."}]}]}
+ {"createdAt":"2026-09-18T20:04:41+00:00","message":"STUB_EVENT_NEWEST service kortix-dev-use2-web was unable to place a task."},
+ {"createdAt":"2026-09-18T20:01:10+00:00","message":"STUB_EVENT_SECOND (service kortix-dev-use2-web) has started 1 tasks."}]}]}
 JSON
 }
 
 task_definition_json() {
   cat <<'JSON'
-{"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
-"family":"kortix-dev-web","revision":499,"status":"ACTIVE","cpu":"1024","memory":"2048",
+{"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499",
+"family":"kortix-dev-use2-web","revision":499,"status":"ACTIVE","cpu":"1024","memory":"2048",
 "containerDefinitions":[{"name":"web","image":"kortix/kortix-web:old",
 "environment":[{"name":"KEEP","value":"unchanged"}],"secrets":[],
 "logConfiguration":{"logDriver":"awslogs","options":{
-  "awslogs-group":"/ecs/kortix-dev-web","awslogs-stream-prefix":"stub-prefix","awslogs-region":"us-west-2"}}}]}
+  "awslogs-group":"/ecs/kortix-dev-use2-web","awslogs-stream-prefix":"stub-prefix","awslogs-region":"us-east-2"}}}]}
 JSON
 }
 
@@ -80,13 +80,13 @@ case "$ARGS" in
     echo "Waiter ServicesStable failed: Max attempts exceeded" >&2
     exit 255 ;;
   *"secretsmanager describe-secret"*)
-    printf 'arn:aws:secretsmanager:us-west-2:111:secret:kortix-dev-web-env-AbCdEf' ;;
+    printf 'arn:aws:secretsmanager:us-east-2:111:secret:kortix-dev-use2-web-env-AbCdEf' ;;
   *"secretsmanager get-secret-value"*)
     printf '{"SOME_KEY":"some-value"}' ;;
   *"describe-task-definition"*)
     task_definition_json ;;
   *"register-task-definition"*)
-    printf 'arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500' ;;
+    printf 'arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500' ;;
   *"update-service"*)
     printf '{"service":{"status":"ACTIVE"}}' ;;
   *"list-tasks"*"--desired-status RUNNING"*)
@@ -95,19 +95,19 @@ case "$ARGS" in
     # absent here; "mixed" is the moment before ECS decides to stop it.
     case "$AWS_STUB_SCENARIO" in
       rolledback|rolledback-gone)
-        printf '["arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new"]\n'
+        printf '["arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/eeee5555serving-new"]\n'
         exit 0 ;;
       draining)
-        printf '["arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new"]\n'
+        printf '["arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/eeee5555serving-new"]\n'
         exit 0 ;;
       mixed)
-        printf '["arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new","arn:aws:ecs:us-west-2:111:task/kortix-dev-web/ffff6666serving-old"]\n'
+        printf '["arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/eeee5555serving-new","arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/ffff6666serving-old"]\n'
         exit 0 ;;
     esac
     cat <<'JSON'
 [
-    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/aaaa1111pending",
-    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/bbbb2222pending"
+    "arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/aaaa1111pending",
+    "arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/bbbb2222pending"
 ]
 JSON
     ;;
@@ -118,9 +118,9 @@ JSON
     else
       cat <<'JSON'
 [
-    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/deadbeefcafe",
-    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef",
-    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/0ld0ld0ld"
+    "arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/deadbeefcafe",
+    "arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/feedfacebeef",
+    "arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/0ld0ld0ld"
 ]
 JSON
     fi
@@ -128,19 +128,19 @@ JSON
   *"describe-tasks"*serving-old*)
     cat <<'JSON'
 {"tasks":[
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new",
-"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/eeee5555serving-new",
+"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500",
 "lastStatus":"RUNNING","desiredStatus":"RUNNING","containers":[{"name":"web","lastStatus":"RUNNING"}]},
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/ffff6666serving-old",
-"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/ffff6666serving-old",
+"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499",
 "lastStatus":"RUNNING","desiredStatus":"RUNNING","containers":[{"name":"web","lastStatus":"RUNNING"}]}]}
 JSON
     ;;
   *"describe-tasks"*serving-new*)
     cat <<'JSON'
 {"tasks":[
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new",
-"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/eeee5555serving-new",
+"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500",
 "lastStatus":"RUNNING","desiredStatus":"RUNNING","containers":[{"name":"web","lastStatus":"RUNNING"}]}]}
 JSON
     ;;
@@ -148,11 +148,11 @@ JSON
     # The PENDING wedge: nothing stopped, tasks blocked on an image pull.
     cat <<'JSON'
 {"tasks":[
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/aaaa1111pending",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/aaaa1111pending",
 "lastStatus":"PENDING","desiredStatus":"RUNNING",
 "containers":[{"name":"web","lastStatus":"PENDING",
 "reason":"STUB_PENDING_REASON CannotPullContainerError: manifest unknown"}]},
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/bbbb2222pending",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/bbbb2222pending",
 "lastStatus":"PROVISIONING","desiredStatus":"RUNNING",
 "containers":[{"name":"web","lastStatus":"PENDING"}]}]}
 JSON
@@ -160,18 +160,18 @@ JSON
   *"describe-tasks"*)
     cat <<'JSON'
 {"tasks":[
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/deadbeefcafe",
-"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/deadbeefcafe",
+"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500",
 "lastStatus":"STOPPED","stopCode":"EssentialContainerExited",
 "stoppedReason":"STUB_STOPPED_REASON Essential container in task exited",
 "containers":[{"name":"web","exitCode":1,"reason":"STUB_CONTAINER_REASON Cannot find module 'next'"}]},
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef",
-"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/feedfacebeef",
+"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500",
 "lastStatus":"STOPPED","stopCode":"TaskFailedToStart",
 "stoppedReason":"STUB_SECOND_STOPPED_REASON CannotPullContainerError",
 "containers":[{"name":"web","exitCode":null,"reason":"STUB_NULL_EXIT_REASON image not found"}]},
-{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/0ld0ld0ld",
-"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+{"taskArn":"arn:aws:ecs:us-east-2:111:task/kortix-dev-use2-web/0ld0ld0ld",
+"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499",
 "lastStatus":"STOPPED","stopCode":"ServiceSchedulerInitiated",
 "stoppedReason":"STUB_OLD_REVISION_STOPPED_REASON Scaling activity initiated by deployment",
 "containers":[{"name":"web","exitCode":0}]}]}
@@ -180,7 +180,7 @@ JSON
   *"describe-services"*"services[0].status"*)
     printf 'ACTIVE' ;;
   *"describe-services"*"services[0].taskDefinition"*)
-    printf 'arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499' ;;
+    printf 'arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499' ;;
   *"describe-services"*"--output table"*)
     printf 'stub summary table\n' ;;
   *"describe-services"*)
@@ -218,7 +218,7 @@ function runDeploy(
 
   const newDeploymentUp = scenario === 'completed' || scenario === 'draining' || scenario === 'mixed';
   const startedAt = Date.now();
-  const result = spawnSync('bash', [scriptPath, 'dev', 'kortix/kortix-web:dev-ec6cbdb7', '--service', 'web', ...extraArgs], {
+  const result = spawnSync('bash', [scriptPath, 'dev-use2', 'kortix/kortix-web:dev-ec6cbdb7', '--service', 'web', ...extraArgs], {
     cwd: root,
     encoding: 'utf8',
     env: {
@@ -261,7 +261,7 @@ describe('ECS rollout stabilization budget', () => {
 
     expect(run.stderr).not.toContain('unhandled call');
     expect(run.status).toBe(0);
-    expect(run.stdout).toContain('✔ registered arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500');
+    expect(run.stdout).toContain('✔ registered arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500');
     expect(run.stdout).toContain('✔ update-service issued (desired count unchanged)');
     expect(run.stdout).toContain('rollout COMPLETED');
     // Nothing failed, so no diagnostics were printed.
@@ -304,7 +304,7 @@ describe('ECS rollout stabilization budget', () => {
     // Deployment detail: every deployment's counts + rolloutStateReason.
     expect(run.stderr).toContain('status=PRIMARY rolloutState=IN_PROGRESS');
     expect(run.stderr).toContain('rolloutStateReason=ECS deployment ecs-svc/1 in progress.');
-    expect(run.stderr).toContain('taskDefinition=arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500');
+    expect(run.stderr).toContain('taskDefinition=arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500');
 
     // Service events, newest first, with timestamps.
     expect(run.stderr).toContain('2026-09-18T20:04:41+00:00');
@@ -316,7 +316,7 @@ describe('ECS rollout stabilization budget', () => {
     // Both tasks are reported, and only real task ARNs are counted.
     // Only tasks of the revision this roll registered: the stopped task of the
     // previous revision is filtered out.
-    expect(run.stderr).toContain('stopped tasks of arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500 (newest 2)');
+    expect(run.stderr).toContain('stopped tasks of arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:500 (newest 2)');
     expect(run.stderr).not.toContain('STUB_OLD_REVISION_STOPPED_REASON');
     expect(run.stderr).toContain('STUB_STOPPED_REASON');
     expect(run.stderr).toContain('exitCode=1');
@@ -326,8 +326,8 @@ describe('ECS rollout stabilization budget', () => {
     expect(run.stderr).toContain('exitCode=- reason=STUB_NULL_EXIT_REASON');
 
     // The awslogs hint, as a copy-pasteable command.
-    expect(run.stderr).toContain('/ecs/kortix-dev-web');
-    expect(run.stderr).toContain('aws logs tail /ecs/kortix-dev-web');
+    expect(run.stderr).toContain('/ecs/kortix-dev-use2-web');
+    expect(run.stderr).toContain('aws logs tail /ecs/kortix-dev-use2-web');
 
     // The live-task lastStatus breakdown: the signal that distinguishes a
     // PENDING wedge from a task that died. pendingCount also leads the headline.
@@ -400,7 +400,7 @@ describe('ECS rollout --wait-for serving', () => {
     expect(run.stderr).not.toContain('unhandled call');
     expect(run.status).toBe(0);
     expect(run.stdout).toContain('rollout SERVING');
-    expect(run.stdout).toContain('kortix-dev-web:500');
+    expect(run.stdout).toContain('kortix-dev-use2-web:500');
     expect(run.stdout).not.toContain('rollout COMPLETED');
   });
 
@@ -473,7 +473,7 @@ describe('ECS rollout: only the registered revision counts', () => {
       expect(run.stdout).not.toMatch(/rollout (SERVING|COMPLETED)/);
       expect(run.stdout).not.toContain('now on kortix/kortix-web:dev-ec6cbdb7');
       expect(run.stderr).toContain(
-        'the PRIMARY deployment runs arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499',
+        'the PRIMARY deployment runs arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499',
       );
       expect(run.stderr).toContain('ECS deployment circuit breaker: tasks failed to start.');
       expect(run.stderr).toContain('STUB_EVENT_ROLLBACK');
@@ -492,7 +492,7 @@ describe('ECS rollout: only the registered revision counts', () => {
       expect(run.status).toBe(1);
       expect(run.stdout).not.toMatch(/rollout (SERVING|COMPLETED)/);
       expect(run.stderr).toContain(
-        'the PRIMARY deployment runs arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499',
+        'the PRIMARY deployment runs arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2-web:499',
       );
     });
   }

@@ -5,5 +5,5 @@ The `kortix-dev-use2-web` ECS service and its origin record
 `kortix-dev-use2-web-env` secret in us-east-2. Remote state:
 `dev-us-east-2/ecs-web.tfstate`.
 
-`dev.kortix.com` stays on `../dev-web` until the switch-over. The runbook is in
-`../dev-us-east-2/README.md`. Apply this root after `../dev-us-east-2`.
+`dev.kortix.com` is a CNAME that Deploy Dev's `publish-web-ecs-dns` job points
+at this root's ALB. Apply this root after `../dev-us-east-2`.
