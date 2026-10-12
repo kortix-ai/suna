@@ -104,9 +104,10 @@ export type FromV1Options = {
   resolveAttachment?: (part: KortixFilePart) => V1Attachment | null;
   /**
    * The rows are a live view (a client's v1 store), not the mirror at rest: no closure rule. An
-   * open call keeps `pending`/`running` with no result, an open reply or compaction is
-   * `streaming`, and the residual is taken against those blocks, so `toV1` stays exact and a
-   * running call keeps its metadata. Default false.
+   * open call keeps `pending`/`running` with no result (a pending call that streams its input
+   * has the text so far, `raw`, as its `input`), an open reply or compaction is `streaming`,
+   * and the residual is taken against those blocks, so `toV1` stays exact and a running call
+   * keeps its metadata. Default false.
    */
   live?: boolean;
 };
@@ -362,6 +363,7 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
   const exit = isObj(st.metadata) && num(st.metadata.exit) !== undefined ? { exit_code: st.metadata.exit as number } : {};
   let status: ToolCallBlock['status'];
   let result: ToolCallBlock['result'];
+  let input: unknown = st.input ?? null;
   if (st.status === 'completed') {
     const atts: ToolResultContent[] = (Array.isArray(st.attachments) ? st.attachments : []).filter(isObj).map((a) => {
       const { bytes: _bytes, ...content } = attachment(a, c, lost);
@@ -379,6 +381,8 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
     result = { content: error !== undefined ? [{ type: 'text', text: error }] : [], is_error: true, ...(error !== undefined && { error: { message: error } }), ...exit };
   } else if (c.live) {
     status = st.status === 'pending' ? 'pending' : 'running';
+    // A call that streams its input: the text so far is its input (OpenCode keeps it in `raw`).
+    if (status === 'pending' && str(st.raw) && !(isObj(st.input) && Object.keys(st.input).length)) input = st.raw;
   } else {
     // C2 closure rule: a call that never ended, at rest.
     const text = INTERRUPTED[c.h];
@@ -388,7 +392,7 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
   const started = iso(time.start);
   const ended = iso(time.end);
   return {
-    type: 'tool_call', id, call_id: p.callID, name: p.tool, kind: kindOf(p.tool), input: st.input ?? null, status, ...(result && { result }),
+    type: 'tool_call', id, call_id: p.callID, name: p.tool, kind: kindOf(p.tool), input, status, ...(result && { result }),
     ...(str(st.title) && { title: st.title }), ...(started && { started_at: started }), ...(ended && { ended_at: ended }),
   };
 }

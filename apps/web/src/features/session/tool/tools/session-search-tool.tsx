@@ -16,11 +16,11 @@ import { parseSessionSearchHits } from '@kortix/shared/tool-output';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
-export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const query = (input.query as string) || '';
 
   const hits = useMemo(() => parseSessionSearchHits(output), [output]);

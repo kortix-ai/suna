@@ -5,9 +5,9 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function ProjectDeleteTool({ part }: ToolProps) {
+export function ProjectDeleteTool({ call }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
+  const input = partInput(call);
   const project = (input.project as string) || '';
   return (
     <BasicTool

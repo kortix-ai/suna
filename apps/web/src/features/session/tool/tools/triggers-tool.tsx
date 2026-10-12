@@ -26,10 +26,10 @@ import { useTranslations } from '@/i18n/use-translations';
 import { parseTriggerLines } from '@kortix/shared/tool-output';
 import { useMemo } from 'react';
 
-export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function TriggersTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const action = (input.action as string) || 'list';
 
   const { title, subtitle, icon, args } = useMemo(() => {

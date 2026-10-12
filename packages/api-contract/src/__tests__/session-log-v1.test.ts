@@ -416,7 +416,8 @@ describe('fromV1 live: the turn that runs is not closed', () => {
   test('an open call keeps its v1 status and has no result; its residual keeps what the block does not carry', () => {
     const m03 = message(live, 'msg_r03');
     expect(block(m03, 'prt_r03b')).toMatchObject({ status: 'running', input: { command: 'sleep 9' }, title: 'sleep 9' });
-    expect(block(m03, 'prt_r03c')).toMatchObject({ status: 'pending', input: {} });
+    // A call that streams its input: the text so far is its input (OpenCode keeps it in `raw`).
+    expect(block(m03, 'prt_r03c')).toMatchObject({ status: 'pending', input: '{"pattern":' });
     expect((block(m03, 'prt_r03b') as ToolCallBlock).result).toBeUndefined();
     expect((block(m03, 'prt_r03c') as ToolCallBlock).result).toBeUndefined();
     // The raw partial input of the pending call survives in the residual.
@@ -449,6 +450,7 @@ describe('fromV1 live: the turn that runs is not closed', () => {
     const m = message(fromV1(json(x), { live: true }), 'msg_l02');
     expect(m.status).toBe('streaming');
     expect(m.blocks.map((b) => (b as ToolCallBlock).status)).toEqual(['pending', 'running', 'running', 'running']);
+    expect((m.blocks[0] as ToolCallBlock).input).toBe('{"filePath":"/w/a.ts","content":"exp');
   });
 
   test('an open reply is streaming; a reply with an error keeps its error status', () => {

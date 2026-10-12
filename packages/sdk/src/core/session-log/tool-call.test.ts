@@ -44,7 +44,8 @@ describe('toolCallBlock: the session-log block of a v1 tool part', () => {
     });
     expect(toolCallBlock(PARTS.task!)).toMatchObject({ status: 'running', kind: 'task', title: 'sub' });
     expect(toolCallBlock(PARTS.task!).result).toBeUndefined();
-    expect(toolCallBlock(PARTS.pending!)).toMatchObject({ status: 'pending', input: {} });
+    // A call that streams its input carries the text so far (the part's `raw`) as its input.
+    expect(toolCallBlock(PARTS.pending!)).toMatchObject({ status: 'pending', input: '{"filePath":"/w/c.ts"' });
     expect(toolCallBlock(PARTS.failed!)).toMatchObject({ status: 'error', result: { is_error: true, error: { message: 'File not found' } } });
   });
 
