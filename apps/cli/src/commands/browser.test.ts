@@ -4,9 +4,12 @@ import { stripAnsi } from '../style.ts';
 import { browserLabel, formatBrowserError, formatBrowserList, formatUsed, runBrowser } from './browser.ts';
 
 describe('browser output', () => {
-  test('use success matches the protocol example', () => {
-    expect(stripAnsi(formatUsed({ name: 'Chrome · Work', os: 'macOS' }))).toBe(
-      '  ✓  Using Chrome · Work (macOS)\n     Drive it: agent-browser --cdp 9333 open https://example.com',
+  test('use success matches the protocol example, and names the tab scope', () => {
+    expect(stripAnsi(formatUsed({ name: 'Chrome · Work', os: 'macOS', tabScope: 'all' }))).toBe(
+      "  ✓  Using Chrome · Work (macOS)\n     Tabs: all of the user's tabs, every window (`agent-browser --cdp 9333 tab list`); you start in a tab of your own\n     Drive it: agent-browser --cdp 9333 open https://example.com",
+    );
+    expect(stripAnsi(formatUsed({ name: 'Chrome · Work', os: 'macOS', tabScope: 'own' }))).toContain(
+      'Tabs: only the tabs you open',
     );
   });
 
