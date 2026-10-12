@@ -8,14 +8,19 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 - CloudTrail KMS CMK + multi-region trail + log-file validation + S3 data events (DCF-54 / DCF-478 / DCF-406)
 - GuardDuty detectors with 15-minute finding publication and managed EC2/EKS/ECS
   Runtime Monitoring agents in all 17 opted-in commercial regions (DCF-87)
-- Regional GuardDuty EventBridge rules forwarding every finding to the existing
-  central operations alert topic (DCF-87)
+- Regional GuardDuty EventBridge rules forwarding every Medium+ finding to the
+  eu-west-2 event bus, where `kortix-guardduty-failures` delivers it to the
+  confirmed `kortix-compliance-alerts` topic (DCF-87). us-west-2 was this hub
+  until 2026-10-12.
 - Cross-region EventBridge alerting for every successful AWS root-account
-  console login, delivered to the confirmed operations topic (DCF-90)
+  console login: us-east-1 and us-west-2 forward to eu-west-2, where
+  `kortix-root-login-failures` delivers to the same topic (DCF-90)
 - EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
-- VPC Flow Logs delivery role + log group (DCF-406)
+- VPC Flow Logs delivery role + the us-west-2 log group of the default VPC's
+  flow log (DCF-406). `compliance-monitoring` adds flow logs for the dev
+  (us-east-2) and staging (eu-west-2) VPCs.
 - IAM groups, attachments, memberships + 4 customer-managed policies (DCF-776)
 - Weekly SSM security-patch installation and reboot-if-needed for every current
   and replacement dev/prod EKS worker, serialized one node at a time
@@ -32,8 +37,8 @@ in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
 - The WAFv2 WebACL definitions themselves. This stack discovers all ALBs and
   manages their associations, but reads the existing regional
   `kortix-alb-waf` WebACLs as data sources.
-  - WebACL `kortix-alb-waf` exists in us-west-2 and eu-west-2 and is associated
-    with every current ALB in those regions.
+  - WebACL `kortix-alb-waf` exists in eu-west-2 and is associated with every
+    current ALB there. The us-west-2 copy protects nothing since 2026-10-12.
   - DO NOT block on the `*_BODY` managed sub-rules: this is an API that legitimately carries
     arbitrary user/agent payloads (prompts full of code, file paths like `/etc/passwd`, IPs
     like `127.0.0.1`, git binary thin-packs, bodies well over 8 KB). On 2026-06-04 the
@@ -57,8 +62,8 @@ in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
     `redirect_uri` starts with `http://localhost` or `http://127.0.0.1`.
     KnownBadInputs and AmazonIpReputationList must still inspect these requests.
     The API validates the complete redirect URI against the registered client.
-    Keep this scope-down statement identical in the live us-west-2 and eu-west-2
-    WebACLs and the Terraform-managed us-east-2 WebACL.
+    Keep this scope-down statement identical in the live eu-west-2 WebACL and
+    the Terraform-managed us-east-2 WebACL.
 
 ## First adoption (resources already exist live)
 ```bash

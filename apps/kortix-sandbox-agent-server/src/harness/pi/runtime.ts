@@ -515,6 +515,7 @@ export class PiRuntime {
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
         projectPackages: project.entries,
+        packageRoot: this.projectRoot() ?? this.workspace,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
