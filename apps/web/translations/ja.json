@@ -20198,7 +20198,7 @@
     "calendarPreviousMonth": "前の月",
     "calendarNextMonth": "次の月",
     "calendarMore": "他 {count} 件",
-    "calendarMoreOn": "{date} の他 {count} 件のリマインダー",
+    "calendarMoreOn": "{date} の他 {count, plural, other {# 件のリマインダー}}",
     "calendarSession": "セッション",
     "calendarEmptyWeek": "今週の実行予定はありません",
     "calendarEmptyDay": "この日の実行予定はありません",
