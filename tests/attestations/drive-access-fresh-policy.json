@@ -1,0 +1,15 @@
+{
+  "source_hash": "dc1b89ebccc192d6a384b04e5d5edca24511c3b82fc7827a1bc6e1b11c83844b",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-drive-access-enforcement.test.ts"
+  ],
+  "diff_hash": "398778bdb686896ef4b47e13ce155f74bae861900d7f3a0fc6c93f8b75885ff5",
+  "head": "7ded338bba0ddc887d886c3bb6bb370fb4f24f4d",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T08:22:39.452Z"
+}
