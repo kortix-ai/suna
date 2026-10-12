@@ -108,6 +108,13 @@ export interface GroupLogTurnsOptions {
 }
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
+/** The last item that passes `test` (the ES2023 array method needs a lib not every consumer compiles with). */
+function last<T, U extends T>(list: readonly T[], test: (item: T) => item is U): U | undefined;
+function last<T>(list: readonly T[], test: (item: T) => boolean): T | undefined;
+function last<T>(list: readonly T[], test: (item: T) => boolean): T | undefined {
+  for (let i = list.length - 1; i >= 0; i--) if (test(list[i]!)) return list[i];
+  return undefined;
+}
 const isCall = (b: SessionLogBlock): b is ToolCallBlock => b.type === 'tool_call';
 const isOpen = (b: ToolCallBlock) => b.status === 'pending' || b.status === 'running';
 /** Closed by the harness, not by the tool (C2 closure rule): the call never ended. */
@@ -273,7 +280,7 @@ const NONE: readonly string[] = [];
 export function groupLogIntoTurns(thread: SessionLogThread, options: GroupLogTurnsOptions = {}): LogTurn[] {
   const held = new Set(options.held ?? NONE);
   const list = drafts(thread.messages, held);
-  const lastReply = thread.messages.findLast((m) => m.role === 'assistant');
+  const lastReply = last(thread.messages, (m) => m.role === 'assistant');
   const retrying = !!lastReply && hasRetryingAssistantTurn(v1RowsOf(lastReply));
   const working = resolveWorkingTurn({
     turns: list.map((d) => ({
@@ -283,7 +290,7 @@ export function groupLogIntoTurns(thread: SessionLogThread, options: GroupLogTur
     hintMessageId: options.liveMessageId,
     unrunTurnIds: held,
   });
-  const anchor = list.findLast(writesPlan) ?? list[list.length - 1];
+  const anchor = last(list, writesPlan) ?? list[list.length - 1];
   return list.map((d) => {
     const blocks = d.assistant.flatMap((m) => m.blocks);
     for (const m of d.assistant) for (const b of m.blocks) messageOfBlock.set(b, m);
@@ -294,21 +301,21 @@ export function groupLogIntoTurns(thread: SessionLogThread, options: GroupLogTur
     const key = `${d.partial}|${live}|${queued}|${d === anchor}|${retries}|${threads.join(',')}`;
     const prev = cache.get(d.user);
     if (prev && prev.key === key && prev.pricing === options.pricing && prev.assistant.length === d.assistant.length && prev.assistant.every((m, i) => m === d.assistant[i])) return prev.turn;
-    const last = d.assistant[d.assistant.length - 1];
+    const reply = d.assistant[d.assistant.length - 1];
     const turn: LogTurn = {
       id: d.user.message_id,
       user: d.user,
       assistant: d.assistant,
       partial: d.partial,
       blocks,
-      status: retries ? 'streaming' : last ? last.status : d.user.kind === 'compaction' ? d.user.status : 'pending',
+      status: retries ? 'streaming' : reply ? reply.status : d.user.kind === 'compaction' ? d.user.status : 'pending',
       error: errorOf(d),
       cost: costOf(d.assistant, options.pricing),
       compaction: compactionOf(d.user),
       threads,
       plan: d === anchor,
       shell: shellOf(d),
-      response: blocks.findLast((b): b is TextBlock => b.type === 'text' && !!b.text.trim()) ?? null,
+      response: last(blocks, (b): b is TextBlock => b.type === 'text' && !!b.text.trim()) ?? null,
       attachments: d.user.blocks.filter((b): b is AttachmentBlock => b.type === 'attachment' && (b.mime.startsWith('image/') || b.mime === 'application/pdf')),
       live,
       queued,
