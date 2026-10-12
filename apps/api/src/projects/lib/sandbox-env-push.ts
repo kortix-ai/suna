@@ -36,7 +36,7 @@ export const FANOUT_CONCURRENCY = 6;
  *
  * INCIDENT (2026-09-27): this memo is in-PROCESS, and the API runs at more
  * than one replica (`desired_count = 2` on dev; see
- * `infra/terraform/environments/dev/main.tf`). A load balancer round-robins
+ * `infra/terraform/environments/dev-us-east-2/main.tf`). A load balancer round-robins
  * requests, so a session's consecutive turns routinely land on DIFFERENT
  * replicas — each one's memo is cold for a sandbox it has never personally
  * pushed to, so it re-posted `/kortix/env` and re-triggered a full OpenCode
