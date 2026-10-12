@@ -4,6 +4,7 @@ import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-tho
 import { DisclosureContent } from '@/components/ui/disclosure';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { memo } from 'react';
+import type { ToolCallBlock } from '@kortix/sdk';
 import type { Step } from '../action-panel/shared/group-steps';
 import { ActivityStep, iconFor } from './activity-step';
 import { ChainStepTrigger } from './chain-step-trigger';
@@ -45,12 +46,10 @@ import { samePartsList } from './same-parts';
 function ActivityGroupStepImpl({
   step,
   sessionId,
-  running,
   disableNavigation,
 }: {
-  step: Step;
+  step: Step<ToolCallBlock>;
   sessionId: string;
-  running: boolean;
   disableNavigation?: boolean;
 }) {
   const Icon = iconFor(step.parts[0]);
@@ -99,12 +98,11 @@ function ActivityGroupStepImpl({
         */}
         <div className="mt-3 pl-7">
           <ChainOfThought>
-            {step.parts.map((part) => (
-              <ChainOfThoughtStep key={part.id}>
+            {step.parts.map((call) => (
+              <ChainOfThoughtStep key={call.id}>
                 <ActivityStep
-                  part={part}
+                  call={call}
                   sessionId={sessionId}
-                  running={running}
                   disableNavigation={disableNavigation}
                 />
               </ChainOfThoughtStep>
@@ -163,9 +161,8 @@ function ActivityGroupStepImpl({
  * there can never hold and would only add a failed comparison.
  */
 type ActivityGroupStepProps = {
-  step: Step;
+  step: Step<ToolCallBlock>;
   sessionId: string;
-  running: boolean;
   disableNavigation?: boolean;
 };
 
@@ -182,7 +179,6 @@ export function sameActivityGroupStepProps(
 ): boolean {
   return (
     a.sessionId === b.sessionId &&
-    a.running === b.running &&
     a.disableNavigation === b.disableNavigation &&
     a.step.status === b.step.status &&
     a.step.label === b.step.label &&

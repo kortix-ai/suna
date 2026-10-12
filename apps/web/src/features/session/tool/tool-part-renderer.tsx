@@ -28,7 +28,8 @@ import {
   getChildSessionId,
   shouldShowToolPart,
 } from '@/ui';
-import { toolCallBlock, toolKind } from '@kortix/sdk';
+import { toolKind, type ToolCallBlock } from '@kortix/sdk';
+import { isInterruptedCall, openCall } from '@/features/session/tool/shared/call-liveness';
 import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -92,15 +93,13 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   );
 }
 
-/**
- * The v1 tool part the callers still hold. This is the one choke point that
- * turns it into a session-log tool call block (`toolCallBlock`); every renderer
- * below reads the block. The callers move to blocks with the transcript (P5.2).
- */
-type CallerPart = Parameters<typeof toolCallBlock>[0];
-
 interface ToolPartRendererProps {
-  part: CallerPart;
+  /**
+   * The session-log tool call. A caller that still holds a v1 part passes
+   * `toolCallBlock(part)` (the transcript until P5.2c). A closure-rule block is
+   * read open (`openCall`), so a dead call renders the same on v1 and v2.
+   */
+  call: ToolCallBlock;
   permission?: PermissionRequest;
   question?: QuestionRequest;
   onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
@@ -111,7 +110,7 @@ interface ToolPartRendererProps {
 }
 
 function ToolPartRendererImpl({
-  part,
+  call: given,
   sessionId,
   permission,
   question,
@@ -122,9 +121,9 @@ function ToolPartRendererImpl({
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // One block per part object (the SDK caches it), so the memos below and the
-  // renderers' own memos hold while the part is unchanged.
-  const call = toolCallBlock(part);
+  // One open block per call object (`openCall` caches it), so the memos below
+  // and the renderers' own memos hold while the call is unchanged.
+  const call = openCall(given);
   const toolDurationMs = useMemo(() => {
     const s = call.started_at ? Date.parse(call.started_at) : undefined;
     const e = call.ended_at ? Date.parse(call.ended_at) : undefined;
@@ -226,7 +225,7 @@ function ToolPartRendererImpl({
   // the frozen-looking row under a status line that was still saying
   // "Making changes...".
   const isStalePending =
-    !turnLive && call.status === 'pending' && Object.keys(partStreamingInput(call)).length === 0;
+    isInterruptedCall(call, turnLive) && call.status === 'pending' && Object.keys(partStreamingInput(call)).length === 0;
 
   const isRunning = !isStalePending && (call.status === 'running' || call.status === 'pending');
 
@@ -292,7 +291,7 @@ function ToolPartRendererImpl({
  * computed the props — so without a boundary here, a fifty-turn transcript
  * re-parses every tool's output on every SSE frame.
  *
- * The default shallow compare is right: `part` objects are replaced, not
+ * The default shallow compare is right: `call` objects are replaced, not
  * mutated, when they change; `onPermissionReply` and `onQuestionReply` are
  * `useCallback`s; `permission` is either `undefined` or a store object.
  *

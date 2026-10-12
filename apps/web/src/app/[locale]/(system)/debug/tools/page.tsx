@@ -13,6 +13,7 @@ import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/t
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
 import { useState } from 'react';
+import { toolCallBlock } from '@kortix/sdk';
 
 /**
  * /debug/tools
@@ -1843,7 +1844,7 @@ export default function DebugToolsPage() {
                     </div>
                     <div className="border-border/40 bg-card/30 rounded-md border px-4 py-3">
                       <ToolPartRenderer
-                        part={row.node as any}
+                        call={toolCallBlock(row.node as any)}
                         sessionId="debug"
                         disableNavigation
                       />
