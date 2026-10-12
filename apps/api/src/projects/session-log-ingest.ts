@@ -112,15 +112,7 @@ async function sessionExists(scope: SessionLogScope): Promise<boolean> {
 export const sessionLogContentHash = (message: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(message)).digest('hex')}`;
 
-/**
- * Postgres refuses two things a harness record can carry: a NUL (`\u0000` escape in
- * jsonb, a raw 0x00 byte in a text parameter) and an unpaired surrogate. Every string
- * the ingest stores passes through `jsonbSafeValue` (`lib/jsonb-safe.ts`), which
- * replaces each bad code unit with U+FFFD — the same replacement a UTF-8 decoder
- * emits for an undecodable byte. `content_hash` is computed from the record as sent
- * (`sessionLogContentHash` reads `put.message`, never a sanitized copy), so the
- * manifest reconcile contract survives.
- */
+/** `content_hash` is computed from the record as sent (`sessionLogContentHash` reads `put.message`, never the sanitized copy), so the manifest reconcile contract survives. */
 
 /** Apply one journal batch. `batch` is the request body as sent, already validated by `SessionLogJournalRequestSchema`. */
 export async function ingestSessionLogJournal(

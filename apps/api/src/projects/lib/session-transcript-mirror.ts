@@ -255,7 +255,6 @@ function stringBudget(total: number) {
   };
 }
 
-
 /**
  * Pure: a JSON value with every `data:` URL string removed, and every other
  * string passed through `bound`. A removed array element is dropped, a removed
