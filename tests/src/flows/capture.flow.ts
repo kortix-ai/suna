@@ -237,7 +237,7 @@ interface Hit {
   chunk_id: string;
 }
 
-async function ingestedWorld(ctx: FlowContext, label: string) {
+async function ingestedWorld(ctx: FlowContext, label: string, displays: 1 | 2 = 1) {
   const { team, member } = await captureAccount(ctx);
   await enableCapture(ctx, team.id);
   const machineKey = syntheticMachineKey(ctx.fixtures.name(label));
@@ -245,7 +245,7 @@ async function ingestedWorld(ctx: FlowContext, label: string) {
   const store = await localCaptureStore();
   // Audio is off by default: turn it on first, so the audio item indexes too.
   (await ctx.client.as(ctx.P.OWNER).put(path(R.policyPut), { policy: { layers: { screen: true, actions: true, audio: true } } }, { params: { accountId: team.id } })).status(200);
-  const day = vendoredDevice({ prefix: device.prefix, deviceId: device.device_id, machineKeySha256: machineKey });
+  const day = vendoredDevice({ prefix: device.prefix, deviceId: device.device_id, machineKeySha256: machineKey, displays });
   await uploadCaptureObjects(store, day.objects);
   const asMember = ctx.client.as(member);
   await awaitIndexed(ctx, asMember, team.id, device.device_id, day.day, (t) => (t.chunks?.length ?? 0) >= day.expected.chunks, 'every item to index');
@@ -547,20 +547,12 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.devices, R.sync, R.timeline, R.items, R.search, R.frame],
+    routes: [R.devices, R.sync, R.timeline, R.items, R.search, R.frame, R.policyPut],
   },
   async (ctx) => {
-    const { team, member } = await captureAccount(ctx);
-    await enableCapture(ctx, team.id);
-    const machineKey = syntheticMachineKey(ctx.fixtures.name('cap6'));
-    const device = await signInDevice(ctx, member, team.id, machineKey);
-    const store = await localCaptureStore();
     // A dual-monitor device: every screen item once per display, display 1 focused.
-    const day = vendoredDevice({ prefix: device.prefix, deviceId: device.device_id, machineKeySha256: machineKey, displays: 2 });
-    await uploadCaptureObjects(store, day.objects);
-    const asMember = ctx.client.as(member);
+    const { team, member, device, day, asMember } = await ingestedWorld(ctx, 'cap6', 2);
     const params = { accountId: team.id };
-    await awaitIndexed(ctx, asMember, team.id, device.device_id, day.day, (t) => (t.chunks?.length ?? 0) >= day.expected.chunks, 'both displays to index');
     const [main, external] = FIXTURE_DISPLAYS;
     const perDisplay = day.expected.frames / 2;
 
