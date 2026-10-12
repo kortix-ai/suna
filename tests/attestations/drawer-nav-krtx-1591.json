@@ -1,0 +1,17 @@
+{
+  "source_hash": "bd883d31d7951d988fc272c55341d1a17346eddd4d9810cafaea562c980a3436",
+  "diff_files": [
+    "apps/web/src/components/home/navbar.test.tsx",
+    "apps/web/src/components/home/navbar.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "ea88a46c0a4f778cb4d36a9c9f32d250f0a33a0b0489a251d0dcc35c135a9d6d",
+  "head": "1b9962125a00f0412806796d0a7990290e60ca68",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T00:21:23.520Z"
+}
