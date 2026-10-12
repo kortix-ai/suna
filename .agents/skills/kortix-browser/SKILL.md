@@ -83,14 +83,22 @@ A sandbox runs the new kortixd and CLI only after the API serves them
 
 ## Publish to the Chrome Web Store
 
-1. `bun run build`, then zip `dist/`.
-2. For the FIRST upload only, add `key.pem` at the zip root. That keeps the ID
-   `gefbbnjgoiljpbnalgafbhbfdhikgjek`. Get the key with:
-   `dotenvx get BROWSER_EXTENSION_KEY_PEM_B64 -f apps/api/.env | base64 -d > key.pem`.
-   The Keychain also holds it under `kortix/BROWSER_EXTENSION_KEY_PEM_B64`.
-3. Justify the `debugger`, `<all_urls>` and `identity` permissions in the listing.
-   The web app's "Add to Chrome" button links to
+The store rejects a manifest with `key` ("key field is not allowed in manifest").
+`key` exists only so unpacked dev builds get the same ID.
+
+1. `bun run build`, then copy `dist/` and delete `key` from the copy's `manifest.json`.
+2. **First upload only:** add `key.pem` at the zip root. The store then assigns the ID
+   `gefbbnjgoiljpbnalgafbhbfdhikgjek`, which the web app, API and docs link to. Get the key with
+   `dotenvx get BROWSER_EXTENSION_KEY_PEM_B64 -f apps/api/.env | base64 -d > key.pem`
+   (the Keychain also holds it under `kortix/BROWSER_EXTENSION_KEY_PEM_B64`).
+3. Later uploads: the same zip without `key.pem`, with a higher `version` in `src/manifest.json`.
+4. Listing text, permission justifications and data disclosures: keep them in step with
+   the permissions in `src/manifest.json`. The "Add to Chrome" buttons link to
    `https://chromewebstore.google.com/detail/gefbbnjgoiljpbnalgafbhbfdhikgjek`.
+5. The store fetches the Homepage and Support URLs before it allows a submit. A 404 blocks it
+   ("Support URL is not reachable"). The listing uses `https://kortix.com/support`.
+6. Submit only after prod serves `/v1/browsers`. Reviewers sign in at kortix.com. Before that,
+   the extension tells them "kortix.com does not have Kortix Browser yet".
 
 ## Troubleshooting
 
