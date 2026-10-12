@@ -12,25 +12,16 @@ import { reviewHref } from '@/features/workspace/capabilities/shared/capability-
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import type { SidebarNavVisibility } from '@/stores/sidebar-nav-store';
 
 /**
  * The sidebar's "Review" row: the one entry point into the Review Center, a
  * project page of its own (`reviewHref`). Change requests, approvals and agent
- * outputs all live there. It is one of the customizable nav rows at the top
- * of the panel (`sidebar-nav-store.ts`). By default it is always listed for a
- * person who may read reviews — an empty inbox is still a place to go — and
- * `visibility="active"` lists it only while the count is above zero, or while
- * the inbox is open. Its badge counts the SAME unified `needs_you` set the
+ * outputs all live there. It sits in the footer group, above Reminders and
+ * Files, and is always listed for a person who may read reviews — an empty
+ * inbox is still a place to go. Its badge counts the SAME unified `needs_you` set the
  * per-session row dots read, so the row and the dots agree on one number.
  */
-export function ProjectChangeRequestsNavItem({
-  projectId,
-  visibility = 'always',
-}: {
-  projectId: string;
-  visibility?: SidebarNavVisibility;
-}) {
+export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
   const pathname = usePathname();
   const isMobile = useIsMobile();
@@ -38,15 +29,12 @@ export function ProjectChangeRequestsNavItem({
   const canRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ).allowed === true;
   const count = useReviewSessionSummary(projectId).totalNeedsYou;
 
-  const href = reviewHref(projectId);
-  const isActive = pathname?.startsWith(href) === true;
-
-  if (!canRead || visibility === 'never') return null;
-  if (visibility === 'active' && count === 0 && !isActive) return null;
+  if (!canRead) return null;
 
   // The pill is one sidebar row: a three-digit count would push the label into
   // an ellipsis, so it clamps instead. The exact number lives in the inbox.
   const countLabel = count > 99 ? '99+' : String(count);
+  const href = reviewHref(projectId);
 
   // This row NAVIGATES, and it navigates through an anchor, not a handler. It
   // is permanently mounted in the sidebar, and `router.push` would run the RSC
@@ -57,7 +45,7 @@ export function ProjectChangeRequestsNavItem({
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
-        isActive={isActive}
+        isActive={pathname?.startsWith(href) === true}
         tooltip={t('review')}
         className="group/menu-button text-sidebar-foreground relative"
       >

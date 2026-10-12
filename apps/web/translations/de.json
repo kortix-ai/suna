@@ -1632,19 +1632,7 @@
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
     },
     "drive": "Drive",
-    "repo": "Repo",
-    "customizeSidebar": "Seitenleiste anpassen",
-    "customizeSidebarDescription": "Ziehe Elemente zwischen den beiden Gruppen.",
-    "resetSidebar": "Auf Standard zurücksetzen",
-    "reorderItem": "{name} verschieben",
-    "reorderHint": "Zum Neuordnen ziehen. Oder die Pfeiltasten nach oben und unten drücken; über „Mehr“ hinaus blendet das Element in der Seitenleiste aus.",
-    "reorderAnnouncement": "{name}: {group}, Position {position} von {total}",
-    "more": "Mehr",
-    "inSidebar": "Seitenleiste",
-    "underMore": "Mehr",
-    "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
-    "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
-    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation."
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19568,9 +19556,7 @@
       "text8d54763edcd8": "Nicht eingebunden",
       "textffeb0c99532f": "Snapshots {value0} Tage aufbewahrt",
       "text6f52b07880a0": "Jetzt Snapshot erstellen",
-      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
-      "texta37dd5ef6ef2": "Seitenleiste anpassen",
-      "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar"
+      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

@@ -95,7 +95,6 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
-import { openCustomizeSidebar } from '@/stores/sidebar-nav-store';
 import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -1744,11 +1743,6 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
-  const handleCustomizeSidebar = useCallback(() => {
-    close();
-    openCustomizeSidebar();
-  }, [close]);
-
   const handleTogglePanelMode = useCallback(() => {
     close();
     const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
@@ -2064,7 +2058,6 @@ export function CommandPalette() {
       // the action branch runs — same arrangement as `conversationDensity`.
       reviewChanges: handleReviewChanges,
       toggleSidebar: handleToggleSidebar,
-      customizeSidebar: handleCustomizeSidebar,
       togglePanelMode: handleTogglePanelMode,
       // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
       // before the action branch runs. If that map entry is ever removed, the
@@ -2089,7 +2082,6 @@ export function CommandPalette() {
       handleOpenProjectMembers,
       handleReviewChanges,
       handleToggleSidebar,
-      handleCustomizeSidebar,
       handleTogglePanelMode,
       goToPage,
       handleOpenSessionTerminal,

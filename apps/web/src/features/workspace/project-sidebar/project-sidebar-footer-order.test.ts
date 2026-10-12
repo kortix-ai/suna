@@ -3,19 +3,19 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The sidebar has two groups around the session list.
+ * The sidebar's footer group is bottom-anchored (`mt-auto`), so it grows
+ * upward: every item that mounts late shoves everything ABOVE it up the page.
+ * Billing items mount late by nature — they wait on account state.
  *
- * Top: New session, then the customizable nav rows (`ProjectNavItems`:
- * Customize, Apps, Review, Reminders, Files — order and visibility from
- * "Customize sidebar", `sidebar-nav-store.ts`).
+ * That argued for putting all of them above the permanent nav, and this file
+ * pinned exactly that until 2026-09-03. `SidebarUpgradeButton` moved to LAST
+ * on Jay's call: it is the only paid call to action in the group, and above
+ * Files / Connect GPT it put a sell between the user and the links they use.
+ * The placement is the product decision; the shift is the cost of it, and it
+ * is one row of movement on a resolve that happens once per page load.
  *
- * Footer: status and the two connect rows only (Jay, 2026-10-12): "keep the
- * bottom part as low as possible". The footer is bottom-anchored (`mt-auto`),
- * so every row that mounts late shoves everything above it up the page. Fewer
- * rows down here is less of that.
- *
- * `SidebarUpgradeButton` stays last (Jay, 2026-09-03): it is the only paid
- * call to action in the group, and it renders only on a free plan.
+ * `SidebarBalanceWarning` did NOT move. It is an alert rather than an offer,
+ * and it is still pinned above the nav below.
  *
  * Asserted against the source because the alternative is mounting the whole
  * sidebar (sidebar + auth + query + i18n providers) to observe pure ordering.
@@ -28,56 +28,65 @@ function orderOf(component: string): number {
   return at;
 }
 
-const footerStart = source.indexOf('<SidebarGroup className="mt-auto">');
-const footer = source.slice(footerStart, source.indexOf('</SidebarGroup>', footerStart));
-
-describe('project sidebar layout', () => {
-  test('the nav rows render in the top group, above the session list', () => {
-    expect(orderOf('ProjectNavItems')).toBeLessThan(orderOf('ProjectSessionList'));
+describe('project sidebar footer ordering', () => {
+  test('the balance alert renders above the permanent nav', () => {
+    // Unchanged rule, narrowed to the row it still covers: an alert about the
+    // wallet is not something to scroll past the nav to find.
+    expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectFilesNavItem'));
   });
 
-  test('the footer holds status and the two connect rows, nothing else', () => {
-    expect(footer.match(/<(Project|Sidebar)\w+(?=[\s/>])/g)).toEqual([
-      '<SidebarGroup',
-      '<SidebarMenu',
-      '<ProjectSandboxAlert',
-      '<ProjectManifestUpgradeAlert',
-      '<SidebarBalanceWarning',
-      '<SidebarMenu',
+  test('Reminders sits directly above Files in the permanent nav', () => {
+    // It only renders while a reminder can still fire, so it joins the nav
+    // block rather than the alerts above it; below the balance alert, above Files.
+    expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectRemindersNavItem'));
+    expect(orderOf('ProjectRemindersNavItem')).toBeLessThan(orderOf('ProjectFilesNavItem'));
+  });
+
+  test('the upgrade button is last in the group', () => {
+    // The one deliberate exception to the rule above (Jay, 2026-09-03). Pinned
+    // in its new position rather than deleted, so moving it back is also a
+    // decision someone has to make on purpose.
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(orderOf('ProjectFilesNavItem'));
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(
+      orderOf('ProjectChatGptConnectNavItem'),
+    );
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(orderOf('ProjectComputerNavItem'));
+  });
+
+  test('the computer row sits below the ChatGPT connect entry, Connect MCP between', () => {
+    // "Connect" rows: ChatGPT, then Connect MCP, then your computer.
+    const between = source.slice(
+      orderOf('ProjectChatGptConnectNavItem'),
+      orderOf('ProjectComputerNavItem'),
+    );
+    expect(orderOf('ProjectComputerNavItem')).toBeGreaterThan(
+      orderOf('ProjectChatGptConnectNavItem'),
+    );
+    expect(between.match(/<Project\w+/g)).toEqual([
+      '<ProjectChatGptConnectNavItem',
       '<ProjectMcpNavItem',
-      '<ProjectComputerNavItem',
-      '<SidebarUpgradeButton',
     ]);
   });
 
-  test('no nav row and no ChatGPT row is rendered directly by the sidebar', () => {
-    for (const row of [
-      'ProjectCustomizeNavItem',
-      'ProjectAppsNavItem',
-      'ProjectChangeRequestsNavItem',
-      'ProjectRemindersNavItem',
-      'ProjectFilesNavItem',
-      'ProjectChatGptConnectNavItem',
-      'ProjectSettingsNavItem',
-      'ProjectConnectorsNavItem',
-      'ProjectSkillsNavItem',
-      'ProjectCommandsNavItem',
-    ]) {
-      expect(source).not.toContain(`<${row}`);
-    }
+  test('the permanent nav keeps its own order', () => {
+    // Connectors/Skills/Commands/Customize collapsed into one Settings entry,
+    // which held the Customize row's old line — bottom of the footer group,
+    // below Files, above the ChatGPT connect entry. That Settings row is gone
+    // now too (Jay, 2026-08-17): it opened the same User Settings overlay a
+    // click on the workspace switcher already opens, one level up. Files
+    // sits directly above the ChatGPT connect entry with nothing between them.
+    expect(orderOf('ProjectFilesNavItem')).toBeLessThan(orderOf('ProjectChatGptConnectNavItem'));
+    expect(source).not.toContain('<ProjectSettingsNavItem');
   });
 
-  test('the Customize sidebar modal is mounted outside <Sidebar>', () => {
-    // The mobile sheet unmounts its content on close, which would close the
-    // modal with it.
-    expect(orderOf('CustomizeSidebarModal')).toBeGreaterThan(source.indexOf('</Sidebar>'));
-  });
-
-  test('a hidden row stays reachable: the More row lists every "Show in More" row', () => {
-    // Hiding Review or Files must never strand the page (Jay, 2026-10-12).
-    const nav = readFileSync(join(import.meta.dir, 'project-nav-items.tsx'), 'utf8');
-    expect(nav.indexOf('<MoreNavItem')).toBeGreaterThan(nav.indexOf('<NavItem'));
-    expect(nav).toContain("e.visibility === 'never'");
-    expect(nav).toContain('openCustomizeSidebar');
+  test('Customize sits up top; nothing stands in for the old Settings row', () => {
+    // One entry, one destination: Customize above the session list.
+    expect(orderOf('ProjectCustomizeNavItem')).toBeLessThan(orderOf('ProjectSessionList'));
+    // The three capability rows are gone for good — they are tabs of the one
+    // page Customize links to. `ProjectCustomizeNavItem` is NOT in this list:
+    // the name was reused for the top row.
+    expect(source).not.toContain('<ProjectConnectorsNavItem');
+    expect(source).not.toContain('<ProjectSkillsNavItem');
+    expect(source).not.toContain('<ProjectCommandsNavItem');
   });
 });

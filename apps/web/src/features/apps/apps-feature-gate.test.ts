@@ -47,20 +47,16 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
     resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
     'utf8',
   );
-  const navStore = readFileSync(resolve(root, 'stores/sidebar-nav-store.ts'), 'utf8');
 
-  // It is a project surface you configure and operate, so it belongs with the
-  // Customize row in the top nav group — not among the bottom-anchored alerts,
-  // which shift as late-arriving billing and sandbox state lands. The rows are
-  // customizable now; this pins the default order and the group they render in.
-  const defaults = navStore.slice(navStore.indexOf('SIDEBAR_NAV_DEFAULTS'));
-  const customizeAt = defaults.indexOf("id: 'customize'");
-  const appsAt = defaults.indexOf("id: 'apps'");
-  const filesAt = defaults.indexOf("id: 'files'");
+  // It is a project surface you configure and operate, so it belongs on the
+  // Customize row — not below Files among the bottom-anchored alerts, which
+  // shift as late-arriving billing and sandbox state lands.
+  const customizeAt = sidebar.indexOf('<ProjectCustomizeNavItem />');
+  const appsAt = sidebar.indexOf('<ProjectAppsNavItem />');
+  const filesAt = sidebar.indexOf('<ProjectFilesNavItem />');
   expect(customizeAt).toBeGreaterThan(-1);
   expect(appsAt).toBeGreaterThan(customizeAt);
   expect(appsAt).toBeLessThan(filesAt);
-  expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
 });
 
 test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {

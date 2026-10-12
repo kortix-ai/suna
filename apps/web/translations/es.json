@@ -1632,19 +1632,7 @@
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
     },
     "drive": "Drive",
-    "repo": "Repo",
-    "customizeSidebar": "Personalizar barra lateral",
-    "customizeSidebarDescription": "Arrastra los elementos entre los dos grupos.",
-    "resetSidebar": "Restablecer",
-    "reorderItem": "Reordenar {name}",
-    "reorderHint": "Arrastra para reordenar. O pulsa las flechas arriba y abajo; pasar de «Más» oculta el elemento de la barra lateral.",
-    "reorderAnnouncement": "{name}: {group}, posición {position} de {total}",
-    "more": "Más",
-    "inSidebar": "Barra lateral",
-    "underMore": "Más",
-    "sidebarEmpty": "Arrastra un elemento aquí para mostrarlo en la barra lateral.",
-    "moreEmpty": "Arrastra un elemento aquí para moverlo a Más.",
-    "moreCaption": "Los elementos en Más se abren desde el menú Más, bajo la navegación."
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "Panel",
@@ -19568,9 +19556,7 @@
       "text8d54763edcd8": "Sin montar",
       "textffeb0c99532f": "Instantáneas guardadas {value0} días",
       "text6f52b07880a0": "Tomar instantánea ahora",
-      "text91dc861375bc": "Política de versiones móviles consultada",
-      "texta37dd5ef6ef2": "Personalizar barra lateral",
-      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar"
+      "text91dc861375bc": "Política de versiones móviles consultada"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
