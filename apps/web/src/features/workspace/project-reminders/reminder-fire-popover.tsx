@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ProjectReminder } from '@kortix/sdk';
 import { chalkColors } from '@kortix/shared';
-import { ChatCircleIcon, ClockIcon, XIcon } from '@phosphor-icons/react';
+import { AlarmIcon, ChatCircleIcon, ClockIcon, XIcon } from '@phosphor-icons/react';
 import {
   createContext,
   useCallback,
@@ -177,7 +177,6 @@ function FireCard({
   const actions = useContext(CalendarActions);
   const { reminder } = fire;
   const { locale } = ctx;
-  const colors = reminderColors(reminder);
   const status = fireStatus(fire);
   const sessionHref = `/projects/${ctx.projectId}/sessions/${reminder.session_id}`;
   const date = dateFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(
@@ -202,7 +201,7 @@ function FireCard({
       </div>
       <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-3">
         <span className={cn(ICON_COLUMN, 'h-5 items-center')} aria-hidden>
-          <span className="size-3 rounded-xs" style={{ background: colors.border }} />
+          <AlarmIcon className={ICON} />
         </span>
         <p
           className="text-foreground line-clamp-2 min-w-0 text-sm font-medium"

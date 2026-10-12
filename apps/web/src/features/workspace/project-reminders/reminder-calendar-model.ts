@@ -195,6 +195,8 @@ export type ChipLayout = {
   lane: number;
   lanes: number;
   span: number;
+  /** Chips that overlap, directly or through a chain, share a cluster. */
+  cluster: number;
 };
 
 /**
@@ -211,7 +213,9 @@ export function layoutChips(
   const out: ChipLayout[] = [];
   let cluster: ChipLayout[] = [];
   let laneEnds: number[] = [];
+  let clusters = 0;
   const close = () => {
+    clusters += 1;
     for (const chip of cluster) chip.lanes = laneEnds.length;
     cluster = [];
     laneEnds = [];
@@ -222,7 +226,7 @@ export function layoutChips(
     let lane = laneEnds.findIndex((end) => end <= top);
     if (lane === -1) lane = laneEnds.push(0) - 1;
     laneEnds[lane] = top + span;
-    const chip = { fire, top, lane, lanes: 1, span };
+    const chip = { fire, top, lane, lanes: 1, span, cluster: clusters };
     cluster.push(chip);
     out.push(chip);
   }
@@ -233,6 +237,36 @@ export function layoutChips(
     if (chip.lanes === 1 && room && chip.top + tall <= DAY_MINUTES) chip.span = tall;
   });
   return out;
+}
+
+/** The fires a capped cluster could not show: one "+N" chip in its last lane. */
+export type MoreLayout = { top: number; lane: number; lanes: number; fires: ReminderFire[] };
+
+/**
+ * At most `max` lanes per cluster. A wider cluster keeps its first
+ * `max - 1` lanes and folds every other fire into one "+N" in the last
+ * lane, at the first folded fire's time. Ten lanes in a seventh of the
+ * screen read as a row of clipped digits.
+ */
+export function capLanes(
+  chips: readonly ChipLayout[],
+  max: number,
+): { chips: ChipLayout[]; more: MoreLayout[] } {
+  const kept: ChipLayout[] = [];
+  const folded = new Map<number, MoreLayout>();
+  for (const chip of chips) {
+    if (chip.lanes <= max) {
+      kept.push(chip);
+    } else if (chip.lane < max - 1) {
+      kept.push({ ...chip, lanes: max });
+    } else {
+      const more = folded.get(chip.cluster);
+      if (more) more.fires.push(chip.fire);
+      else
+        folded.set(chip.cluster, { top: chip.top, lane: max - 1, lanes: max, fires: [chip.fire] });
+    }
+  }
+  return { chips: kept, more: [...folded.values()] };
 }
 
 /** A frequent reminder's day: its first upcoming (else first) fire, and how many. */
@@ -248,10 +282,12 @@ export type CalendarDay = {
   total: number;
 };
 
+/** A frequent reminder with a fire on screen, and its first upcoming (else first) fire. */
+export type ReminderFrequent = { reminder: ProjectReminder; fire: ReminderFire };
+
 export type CalendarModel = {
   days: CalendarDay[];
-  /** Frequent reminders with a fire on screen, and their first upcoming (else first) fire. */
-  frequent: { reminder: ProjectReminder; fire: ReminderFire }[];
+  frequent: ReminderFrequent[];
   total: number;
   /** The clock the days were built with. */
   now: number;

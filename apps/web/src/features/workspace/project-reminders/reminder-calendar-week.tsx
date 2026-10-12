@@ -3,8 +3,10 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { CaretDownIcon } from '@phosphor-icons/react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import {
+  capLanes,
   clockTime,
   dateFormat,
   DAY_MINUTES,
@@ -16,8 +18,9 @@ import {
   weekdayIndex,
   type CalendarDay,
   type CalendarModel,
+  type ReminderFrequent,
 } from './reminder-calendar-model';
-import { FireCard, FirePill } from './reminder-fire-chip';
+import { FireCard, FirePill, MoreCard } from './reminder-fire-chip';
 import { reminderTitle } from './reminder-format';
 import {
   useCalendarHighlight,
@@ -31,6 +34,12 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const CHIP_MINUTES = 30;
 const TALL_MINUTES = 60;
 const SCROLL_TO_HOUR = 8;
+/**
+ * Side-by-side lanes a Week column shows before folding the rest into "+N".
+ * A seventh of the screen fits three readable titles. The Day column is the
+ * whole width, so it never folds.
+ */
+const WEEK_LANES = 3;
 /** The gutter is `w-14`; columns split the rest of the scroller's width by 7. */
 const GUTTER = 'calc(var(--spacing) * 14)';
 /**
@@ -71,6 +80,7 @@ export const CalendarWeek = memo(function CalendarWeek({
   request,
   onTop,
   onSettle,
+  onOpenDay,
 }: {
   /** 7 (Week) or 1 (Day). */
   daysInView: 7 | 1;
@@ -84,6 +94,8 @@ export const CalendarWeek = memo(function CalendarWeek({
   request: ScrollRequest;
   onTop: (day: Date) => void;
   onSettle: (top: GridTop) => void;
+  /** A "+N" was pressed: show that day in the Day range. */
+  onOpenDay: (date: Date) => void;
 }) {
   const t = useTranslations('reminders');
   const scroller = useRef<HTMLDivElement>(null);
@@ -195,23 +207,10 @@ export const CalendarWeek = memo(function CalendarWeek({
             ))}
           </div>
           {model.frequent.length > 0 ? (
-            <div className="flex border-t">
-              <span className="bg-background text-muted-foreground sticky left-0 z-10 w-14 shrink-0 py-1.5 pr-2 text-right text-xs">
-                {daysInView === 1 ? t('calendarAllDay') : t('calendarAllWeek')}
-              </span>
-              <div
-                className="sticky left-14 flex min-w-0 flex-wrap gap-1 border-l p-1.5"
-                style={{ width: `calc(100cqw - ${GUTTER})` }}
-              >
-                {model.frequent.map(({ reminder, fire }) => (
-                  <FirePill
-                    key={reminder.id}
-                    fire={fire}
-                    label={`${reminderTitle(reminder)} · ${t('calendarEvery', { period: reminder.every ?? '' })}`}
-                  />
-                ))}
-              </div>
-            </div>
+            <FrequentLane
+              frequent={model.frequent}
+              label={daysInView === 1 ? t('calendarAllDay') : t('calendarAllWeek')}
+            />
           ) : null}
         </div>
         <div ref={grid} className="relative flex">
@@ -230,6 +229,8 @@ export const CalendarWeek = memo(function CalendarWeek({
               loading={loading}
               now={isSameDay(day.date, todayDate) ? now : null}
               highlighted={highlightDay === day.date.getTime()}
+              maxLanes={daysInView === 1 ? Infinity : WEEK_LANES}
+              onOpenDay={onOpenDay}
             />
           ))}
         </div>
@@ -269,6 +270,61 @@ const DayHeader = memo(function DayHeader({
   );
 });
 
+/**
+ * Reminders that fire more than four times a day, kept out of the hours.
+ * Collapsed to one line of pills: a project with forty hourly follow-ups
+ * once spent half the screen here. The count opens the full, scrollable set.
+ */
+function FrequentLane({ frequent, label }: { frequent: ReminderFrequent[]; label: string }) {
+  const t = useTranslations('reminders');
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex border-t">
+      <span className="bg-background text-muted-foreground sticky left-0 z-10 w-14 shrink-0 py-2 pr-2 text-right text-xs">
+        {label}
+      </span>
+      <div
+        className="sticky left-14 flex min-w-0 items-start gap-2 border-l p-1.5"
+        style={{ width: `calc(100cqw - ${GUTTER})` }}
+      >
+        <div
+          id="reminder-frequent-lane"
+          className={cn(
+            'flex min-w-0 flex-1 flex-wrap gap-1',
+            open ? 'max-h-32 overflow-y-auto' : 'h-6 overflow-hidden',
+          )}
+        >
+          {frequent.map(({ reminder, fire }) => (
+            <FirePill
+              key={reminder.id}
+              fire={fire}
+              title={reminderTitle(reminder)}
+              period={t('calendarEvery', { period: reminder.every ?? '' })}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls="reminder-frequent-lane"
+          onClick={() => setOpen((value) => !value)}
+          data-testid="reminder-frequent-toggle"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-xs tabular-nums transition-colors outline-none focus-visible:ring-2"
+        >
+          {open ? t('calendarShowFewer') : t('calendarRepeating', { count: frequent.length })}
+          <CaretDownIcon
+            aria-hidden
+            className={cn(
+              'size-3 transition-transform duration-(--duration-fast)',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Hour labels, and the current time in red on today's row. Sticky on the left. */
 function TimeGutter({ locale, now }: { locale: string; now: number }) {
   return (
@@ -297,6 +353,8 @@ const DayColumn = memo(function DayColumn({
   loading,
   now,
   highlighted,
+  maxLanes,
+  onOpenDay,
 }: {
   index: number;
   day: CalendarDay;
@@ -306,6 +364,8 @@ const DayColumn = memo(function DayColumn({
   now: number | null;
   /** A jump landed on this day: a focus ring, held briefly, then faded. */
   highlighted: boolean;
+  maxLanes: number;
+  onOpenDay: (date: Date) => void;
 }) {
   const weekday = weekdayIndex(day.date);
   return (
@@ -319,31 +379,17 @@ const DayColumn = memo(function DayColumn({
     >
       {/* Always mounted, so the ring fades out instead of vanishing. */}
       <span aria-hidden className={cn(LANDED_RING, highlighted ? 'opacity-100' : 'opacity-0')} />
-      {loading
-        ? SKELETON_CHIPS.filter(([skeletonDay]) => skeletonDay === weekday).map(([, hour]) => (
-            <Skeleton
-              key={hour}
-              className="absolute inset-x-1 py-0"
-              style={{ top: pct(hour * 60), height: pct(CHIP_MINUTES * 2) }}
-            />
-          ))
-        : layoutChips(day.chips, CHIP_MINUTES, TALL_MINUTES).map(
-            ({ fire, top, lane, lanes, span }) => (
-              <FireCard
-                key={`${fire.reminder.id}-${fire.at}`}
-                fire={fire}
-                locale={locale}
-                tall={span > CHIP_MINUTES}
-                style={{
-                  // A fire after 23:30 still fits inside the column.
-                  top: pct(Math.min(top, DAY_MINUTES - span)),
-                  height: pct(span),
-                  left: `${(lane / lanes) * 100}%`,
-                  width: `calc(${100 / lanes}% - 2px)`,
-                }}
-              />
-            ),
-          )}
+      {loading ? (
+        SKELETON_CHIPS.filter(([skeletonDay]) => skeletonDay === weekday).map(([, hour]) => (
+          <Skeleton
+            key={hour}
+            className="absolute inset-x-1 py-0"
+            style={{ top: pct(hour * 60), height: pct(CHIP_MINUTES * 2) }}
+          />
+        ))
+      ) : (
+        <DayFires day={day} locale={locale} maxLanes={maxLanes} onOpenDay={onOpenDay} />
+      )}
       {now !== null ? (
         <div
           className="bg-kortix-red pointer-events-none absolute inset-x-0 z-10 h-0.5"
@@ -355,3 +401,54 @@ const DayColumn = memo(function DayColumn({
     </div>
   );
 });
+
+/** Where a card sits in its column: its minutes down, its lane across. */
+const place = (top: number, span: number, lane: number, lanes: number): CSSProperties => ({
+  // A fire after 23:30 still fits inside the column.
+  top: pct(Math.min(top, DAY_MINUTES - span)),
+  height: pct(span),
+  left: `${(lane / lanes) * 100}%`,
+  width: `${100 / lanes}%`,
+});
+
+/** A day's cards, at most `maxLanes` across; a crowded hour ends in "+N", which opens the day. */
+function DayFires({
+  day,
+  locale,
+  maxLanes,
+  onOpenDay,
+}: {
+  day: CalendarDay;
+  locale: string;
+  maxLanes: number;
+  onOpenDay: (date: Date) => void;
+}) {
+  const t = useTranslations('reminders');
+  const { chips, more } = capLanes(layoutChips(day.chips, CHIP_MINUTES, TALL_MINUTES), maxLanes);
+  const name = dateFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' }).format(
+    day.date,
+  );
+  return (
+    <>
+      {chips.map(({ fire, top, lane, lanes, span }) => (
+        <FireCard
+          key={`${fire.reminder.id}-${fire.at}`}
+          fire={fire}
+          locale={locale}
+          tall={span > CHIP_MINUTES}
+          narrow={lanes > 1}
+          style={place(top, span, lane, lanes)}
+        />
+      ))}
+      {more.map(({ top, lane, lanes, fires }) => (
+        <MoreCard
+          key={`more-${top}`}
+          count={fires.length}
+          label={t('calendarMoreOn', { count: fires.length, date: name })}
+          style={place(top, CHIP_MINUTES, lane, lanes)}
+          onOpen={() => onOpenDay(day.date)}
+        />
+      ))}
+    </>
+  );
+}

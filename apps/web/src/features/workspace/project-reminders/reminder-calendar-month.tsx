@@ -29,12 +29,18 @@ import {
 } from './use-calendar-scroll';
 
 const isWeekend = (date: Date) => weekdayIndex(date) >= 5;
+/**
+ * Lines a day cell lists before "+N more". Every row is the same height, so
+ * a month reads as a grid: one day with forty follow-ups once made its week
+ * a screen tall. The rest is a click away, in the Day range.
+ */
+const MONTH_LINES = 4;
 /** A month as one number, year * 12 + month. */
 const monthKey = (date: Date) => date.getFullYear() * 12 + date.getMonth();
 
 /**
- * The Month range: a vertical list of Monday-first week rows. A row is as
- * tall as its fullest day; every fire is listed. The toolbar title follows
+ * The Month range: a vertical list of Monday-first week rows. A day lists
+ * up to `MONTH_LINES` fires; a fuller day ends in "+N more", which opens it. The toolbar title follows
  * the week at the top through `onTop`.
  *
  * It snaps to each week's start. A week taller than the view scrolls freely
@@ -264,16 +270,43 @@ function DayCell({
           </span>
         </button>
         {loading ? <Skeleton className="h-4 w-full py-0" /> : null}
-        {monthEntries(day).map(({ fire, count }) => (
-          <FireRow
-            key={`${fire.reminder.id}-${fire.at}`}
-            fire={fire}
-            locale={locale}
-            count={count}
-            card={isToday}
-          />
-        ))}
+        <DayLines day={day} locale={locale} name={name} onOpenDay={onOpenDay} />
       </div>
     </div>
+  );
+}
+
+function DayLines({
+  day,
+  locale,
+  name,
+  onOpenDay,
+}: {
+  day: CalendarDay;
+  locale: string;
+  name: string;
+  onOpenDay: (date: Date) => void;
+}) {
+  const t = useTranslations('reminders');
+  const entries = monthEntries(day);
+  const shown = entries.length > MONTH_LINES ? entries.slice(0, MONTH_LINES - 1) : entries;
+  const rest = entries.length - shown.length;
+  return (
+    <>
+      {shown.map(({ fire, count }) => (
+        <FireRow key={`${fire.reminder.id}-${fire.at}`} fire={fire} locale={locale} count={count} />
+      ))}
+      {rest > 0 ? (
+        <button
+          type="button"
+          onClick={() => onOpenDay(day.date)}
+          aria-label={t('calendarMoreOn', { count: rest, date: name })}
+          data-testid="reminder-fire-more"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 flex w-full shrink-0 rounded-sm px-1 py-px text-left text-xs font-medium tabular-nums transition-colors outline-none focus-visible:ring-2"
+        >
+          {t('calendarMore', { count: rest })}
+        </button>
+      ) : null}
+    </>
   );
 }

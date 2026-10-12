@@ -2,6 +2,7 @@ import type { ProjectReminder } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   calendarModel,
+  capLanes,
   clockTime,
   dateParam,
   daysBetween,
@@ -143,7 +144,9 @@ describe('labels', () => {
     // Day: the one day in view, in full. The comma after the weekday is the ICU
     // build's as well ("Wednesday, 14" vs "Wednesday 14"), so pin the date, not
     // the punctuation.
-    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toMatch(/^Wednesday,? 14 October 2026$/);
+    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toMatch(
+      /^Wednesday,? 14 October 2026$/,
+    );
   });
 
   test('clock time is 24-hour; relative time scales minute → hour → day', () => {
@@ -185,6 +188,30 @@ describe('layoutChips', () => {
   test('a lone chip with free room below is drawn tall; a crowded one stays short', () => {
     const chips = layoutChips([fire(9, 0), fire(9, 45), fire(14, 0), fire(23, 30)], 30, 60);
     expect(chips.map((c) => c.span)).toEqual([30, 60, 60, 30]);
+  });
+
+  test('capLanes keeps a cluster within the lane limit and folds the rest into one +N', () => {
+    const fires = [
+      fire(16, 30),
+      fire(16, 35),
+      fire(16, 40),
+      fire(16, 45),
+      fire(16, 50),
+      fire(18, 0),
+    ];
+    const { chips, more } = capLanes(layoutChips(fires, 30), 3);
+    expect(chips.map((c) => [c.top, c.lane, c.lanes])).toEqual([
+      [990, 0, 3],
+      [995, 1, 3],
+      [1080, 0, 1],
+    ]);
+    expect(more.map((m) => [m.top, m.lane, m.lanes, m.fires.length])).toEqual([[1000, 2, 3, 3]]);
+  });
+
+  test('capLanes leaves a cluster at the limit alone', () => {
+    const { chips, more } = capLanes(layoutChips([fire(9, 0), fire(9, 10), fire(9, 20)], 30), 3);
+    expect(chips.map((c) => c.lanes)).toEqual([3, 3, 3]);
+    expect(more).toEqual([]);
   });
 });
 
