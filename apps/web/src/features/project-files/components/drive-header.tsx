@@ -28,6 +28,8 @@ interface DriveHeaderProps {
   isDownloading?: boolean;
   /** Offer "Find a file" (⌘P) in the `⋯` menu. */
   showSearch?: boolean;
+  /** Turn the `⋯` menu's sort picker off: the folder is only partly loaded. */
+  sortDisabled?: boolean;
   /**
    * Draw the page-level sidebar opener. Only the standalone Files page needs
    * it: ProjectShell does not render a web opener, and the embedded session
@@ -82,6 +84,7 @@ export function DriveHeader({
   onDownloadDir,
   isDownloading,
   showSearch = false,
+  sortDisabled = false,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -150,6 +153,7 @@ export function DriveHeader({
         onDownloadDir={onDownloadDir}
         isDownloading={isDownloading}
         showSearch={showSearch}
+        sortDisabled={sortDisabled}
       />
     </div>
   );
