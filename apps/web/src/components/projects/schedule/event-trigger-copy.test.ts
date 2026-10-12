@@ -1,14 +1,30 @@
-import type { ProjectTriggerEvent } from '@kortix/sdk';
+import type {
+  ProjectTrigger,
+  ProjectTriggerEvent,
+  ProjectTriggerEventApp,
+  ProjectTriggerEventConnector,
+} from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  accountToStore,
+  appConnectors,
   configProblem,
   configToDraft,
   connectorHref,
   defaultConfigDraft,
   defaultEventPrompt,
+  describeAccount,
+  describeEventTitle,
+  eventAppName,
+  fallbackAccount,
+  accountToWrite,
+  indexEventApps,
+  describeEventSource,
   describeEventStatus,
+  eventSourceName,
+  eventTriggersOn,
   describePollHint,
   draftToConfig,
   groupEventApps,
@@ -16,6 +32,8 @@ import {
   newConnectorSlug,
   parseConfigErrors,
   payloadVariables,
+  profileConnected,
+  selectedAccountLabel,
   schemaFields,
 } from './event-trigger-copy';
 
@@ -139,8 +157,8 @@ describe('delivery and prompt', () => {
     expect(
       payloadVariables({ properties: { title: { description: 'Title' }, number: {} } }),
     ).toEqual([
-      { token: '{{ event.data.title }}', description: 'Title' },
-      { token: '{{ event.data.number }}', description: null },
+      { field: 'title', token: '{{ event.data.title }}', description: 'Title' },
+      { field: 'number', token: '{{ event.data.number }}', description: null },
     ]);
     expect(payloadVariables(null)).toEqual([]);
   });
@@ -181,9 +199,28 @@ describe('status and links', () => {
     expect(describeEventStatus(event('pending'), testUiTranslator).label).toBe('Activating');
   });
 
+  test('the app in the detail is the catalog name, else the slug as written', () => {
+    const index = indexEventApps([{ app: 'github', name: 'GitHub' } as ProjectTriggerEventApp]);
+    expect(describeEventStatus(event('needs_connection'), testUiTranslator, index).detail).toBe(
+      'Connect a shared GitHub account to activate this trigger.',
+    );
+  });
+
+  test("needs_connection uses the catalog name over the server's slug text, unless an account is named", () => {
+    const index = indexEventApps([{ app: 'github', name: 'GitHub' } as ProjectTriggerEventApp]);
+    const generic = event('needs_connection', 'Finish connecting the shared github account to activate this trigger.');
+    expect(describeEventStatus(generic, testUiTranslator, index).detail).toBe(
+      'Connect a shared GitHub account to activate this trigger.',
+    );
+    const labelled = { ...event('needs_connection', 'Connect a shared GitHub account labelled "acme-bot" on github-work.'), account: 'acme-bot' };
+    expect(describeEventStatus(labelled, testUiTranslator, index).detail).toBe(
+      'Connect a shared GitHub account labelled "acme-bot" on github-work.',
+    );
+  });
+
   test('needs_connection tells the person what to connect', () => {
     expect(describeEventStatus(event('needs_connection'), testUiTranslator).detail).toBe(
-      'Connect a shared Github account to activate this trigger.',
+      'Connect a shared github account to activate this trigger.',
     );
   });
 
@@ -277,5 +314,171 @@ describe('newConnectorSlug', () => {
     expect(newConnectorSlug('googlecalendar', ['googlecalendar', 'googlecalendar-2'])).toBe(
       'googlecalendar-3',
     );
+  });
+});
+
+const profile: ProjectTriggerEventConnector = {
+  slug: 'github-work',
+  name: 'GitHub work',
+  accounts: [
+    { label: 'Project connection', connected_as: 'acme-org', is_default: true, connected: true },
+    { label: 'acme-bot', connected_as: null, is_default: false, connected: true },
+  ],
+};
+
+function eventOf(patch: Partial<ProjectTriggerEvent>): ProjectTriggerEvent {
+  return {
+    connector: 'github',
+    app: 'github',
+    type: 'GITHUB_PULL_REQUEST_EVENT',
+    config: {},
+    status: 'active',
+    error: null,
+    last_event_at: null,
+    ...patch,
+  } as ProjectTriggerEvent;
+}
+
+const githubIndex = indexEventApps([{ app: 'github', name: 'GitHub' } as ProjectTriggerEventApp]);
+
+describe('describeEventSource', () => {
+  test('names the app alone when the connector is the app and the default account feeds it', () => {
+    expect(describeEventSource(eventOf({}), testUiTranslator)).toBe('github');
+    expect(describeEventSource(eventOf({}), testUiTranslator, githubIndex)).toBe('GitHub');
+  });
+  test('ends with the event source adapter by display name; an unmapped id is capitalized', () => {
+    expect(describeEventSource(eventOf({ source: 'composio' }), testUiTranslator, githubIndex)).toBe('GitHub · via Composio');
+    expect(describeEventSource(eventOf({ provider: 'composio' }), testUiTranslator, githubIndex)).toBe('GitHub · via Composio');
+    expect(describeEventSource(eventOf({ source: 'acme_hooks' }), testUiTranslator, githubIndex)).toBe('GitHub · via Acme hooks');
+    expect(eventSourceName(eventOf({ source: 'composio' }))).toBe('Composio');
+    expect(eventSourceName(eventOf({}))).toBeNull();
+  });
+  test('adds the connector when it is a different profile, and the account it runs as', () => {
+    expect(
+      describeEventSource(eventOf({ connector: 'github-work', account: 'acme-bot', source: 'composio' }), testUiTranslator, githubIndex),
+    ).toBe('GitHub · github-work · acme-bot · via Composio');
+    expect(
+      describeEventSource(eventOf({ connector: 'github-work', connected_as: 'acme-org' }), testUiTranslator, githubIndex),
+    ).toBe('GitHub · github-work · acme-org');
+  });
+});
+
+describe('event titles and app names', () => {
+  const gmail = { app: 'gmail', name: 'Gmail' } as ProjectTriggerEventApp;
+  const index = indexEventApps([gmail]);
+
+  test('an app name comes from the catalog; without it the slug stays as written', () => {
+    expect(eventAppName(eventOf({ app: 'gmail', connector: 'gmail' }), index)).toBe('Gmail');
+    expect(eventAppName(eventOf({ app: 'docs-mcp', connector: 'docs-mcp' }), index)).toBe('docs-mcp');
+    expect(eventAppName(eventOf({ app: null, connector: 'github-work' }))).toBe('github-work');
+  });
+
+  test('the adapter name wins when the catalog has it', () => {
+    const names = new Map([['GMAIL_NEW_GMAIL_MESSAGE', 'New Gmail Message']]);
+    expect(describeEventTitle(eventOf({ app: 'gmail', type: 'GMAIL_NEW_GMAIL_MESSAGE' }), names)).toBe(
+      'New Gmail Message',
+    );
+  });
+
+  test('without the catalog the id loses its app prefix and noise suffix, in title case', () => {
+    expect(describeEventTitle(eventOf({ type: 'GITHUB_PULL_REQUEST_CREATED' }))).toBe('Pull Request Created');
+    expect(describeEventTitle(eventOf({ type: 'GITHUB_COMMIT_EVENT' }))).toBe('Commit');
+    expect(describeEventTitle(eventOf({ type: 'GITHUB_BRANCH_CREATED_TRIGGER' }))).toBe('Branch Created');
+  });
+
+  test('never repeats the app: "<event> on <App>" is gone, and the app name inside the event is kept right', () => {
+    const title = describeEventTitle(
+      eventOf({ app: 'gmail', connector: 'gmail', type: 'GMAIL_NEW_GMAIL_MESSAGE' }),
+      undefined,
+      'Gmail',
+    );
+    expect(title).toBe('New Gmail Message');
+    expect(title).not.toMatch(/ on /);
+  });
+});
+
+describe('accounts of a connector', () => {
+  test('the default account is selected when a trigger names none', () => {
+    expect(selectedAccountLabel(profile, null)).toBe('Project connection');
+    expect(selectedAccountLabel(profile, 'acme-bot')).toBe('acme-bot');
+  });
+  test('with no default flagged, the first connected account is selected, else the first', () => {
+    const none: ProjectTriggerEventConnector = {
+      ...profile,
+      accounts: [
+        { label: 'a-pending', connected_as: null, is_default: false, connected: false },
+        { label: 'b-live', connected_as: null, is_default: false, connected: true },
+      ],
+    };
+    expect(fallbackAccount(none)?.label).toBe('b-live');
+    expect(selectedAccountLabel(none, null)).toBe('b-live');
+    const allPending = { ...none, accounts: [none.accounts[0]] };
+    expect(selectedAccountLabel(allPending, null)).toBe('a-pending');
+    expect(selectedAccountLabel({ ...none, accounts: [] }, null)).toBeNull();
+  });
+  test('a new trigger names the account it will use only when the connector has no default', () => {
+    const none: ProjectTriggerEventConnector = {
+      ...profile,
+      accounts: [{ label: 'b-live', connected_as: null, is_default: false, connected: true }],
+    };
+    expect(accountToWrite(none, null)).toBe('b-live');
+    expect(accountToWrite(profile, null)).toBeNull();
+    expect(accountToWrite(profile, 'acme-bot')).toBe('acme-bot');
+    expect(accountToWrite(null, null)).toBeNull();
+  });
+  test('only a non-default account is stored', () => {
+    expect(accountToStore(profile, 'Project connection')).toBeNull();
+    expect(accountToStore(profile, 'acme-bot')).toBe('acme-bot');
+    expect(accountToStore(profile, null)).toBeNull();
+  });
+  test('an account row leads with the identity and keeps the label as detail', () => {
+    expect(describeAccount(profile.accounts[0])).toEqual({
+      title: 'acme-org',
+      detail: 'Project connection',
+    });
+    expect(describeAccount(profile.accounts[1])).toEqual({ title: 'acme-bot', detail: null });
+  });
+});
+
+describe('connectors of an app', () => {
+  const base = {
+    provider: 'composio',
+    app: 'github',
+    name: 'GitHub',
+    logo: null,
+    event_count: 3,
+    connector: 'github-work',
+    connected: true,
+  } as ProjectTriggerEventApp;
+
+  test('uses the listed profiles, else the one connector the API names', () => {
+    expect(appConnectors({ ...base, connectors: [profile] })).toEqual([profile]);
+    expect(appConnectors(base)).toEqual([{ slug: 'github-work', name: 'GitHub', accounts: [] }]);
+    expect(appConnectors({ ...base, connector: null })).toEqual([]);
+  });
+  test('a profile is connected when one of its accounts is; without account data the app decides', () => {
+    expect(profileConnected({ ...base, connectors: [profile] }, 'github-work')).toBe(true);
+    expect(
+      profileConnected(
+        {
+          ...base,
+          connectors: [
+            {
+              ...profile,
+              accounts: [{ ...profile.accounts[0], connected: false }],
+            },
+          ],
+        },
+        'github-work',
+      ),
+    ).toBe(false);
+    expect(profileConnected(base, 'github-work')).toBe(true);
+    expect(profileConnected(base, 'other')).toBe(false);
+  });
+  test('lists the event triggers of one connector only', () => {
+    const t = (slug: string, type: string, connector: string) =>
+      ({ slug, type, event: type === 'event' ? eventOf({ connector }) : null }) as ProjectTrigger;
+    const list = [t('a', 'event', 'github'), t('b', 'event', 'github-work'), t('c', 'cron', 'github')];
+    expect(eventTriggersOn(list, 'github').map((x) => x.slug)).toEqual(['a']);
   });
 });

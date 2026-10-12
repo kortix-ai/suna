@@ -6,13 +6,16 @@
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
+import { connectedAsOf } from '../../connectors/connection-identity';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
 import { connectionRowIsReachable } from '../lib/connection-access';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
-import { eventSourceFor } from './registry';
+import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from './flag';
+import { eventSourceFor, unknownSourceMessage } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
 
@@ -48,6 +51,24 @@ export function desiredHash(
 const errorText = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 500);
 
+/** The project-owned account of a connector with this label (labels are unique per connector). */
+async function sharedConnectionIdByLabel(connectorId: string, label: string): Promise<string | null> {
+  const [row] = await db
+    .select({ connectionId: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(and(
+      eq(connectorConnections.connectorId, connectorId),
+      eq(connectorConnections.ownerType, 'project'),
+      eq(connectorConnections.label, label),
+    ))
+    .limit(1);
+  return row?.connectionId ?? null;
+}
+
+/** Who the connection acts as: the authorized identity, else its label. */
+export const connectionIdentity = (row: { label: string; metadata: unknown }): string =>
+  connectedAsOf(row.metadata) ?? row.label;
+
 export async function resolveSource(
   projectId: string,
   accountId: string,
@@ -66,6 +87,17 @@ export async function resolveSource(
   if (!connector) {
     return { kind: 'error', message: `Connector "${event.connector}" is not declared in kortix.yaml. Add it under \`connectors:\`.` };
   }
+  // The adapter is the declared `source`, else the connector's own provider.
+  if (event.source) {
+    const unknown = unknownSourceMessage(event.source);
+    if (unknown) return { kind: 'error', message: unknown };
+    if (event.source !== connector.provider) {
+      return {
+        kind: 'error',
+        message: `Connector "${event.connector}" is a ${connector.provider} connector; source "${event.source}" needs a ${event.source} connector.`,
+      };
+    }
+  }
   const provider = eventSourceFor(connector.provider);
   if (!provider) {
     return { kind: 'error', message: `Connector "${event.connector}" (${connector.provider}) has no app-event source. Use an app connector.` };
@@ -78,14 +110,22 @@ export async function resolveSource(
     return { kind: 'error', message: `Connector "${event.connector}" does not name an app.`, providerId: provider.id };
   }
   // People read these messages: name the app as the project's connector does ("GitHub", not "github").
-  const label = connector.name?.trim() || app;
+  // A connector named after its own slug (CLI default) says nothing a person can read: name the app instead.
+  const name = connector.name?.trim();
+  const label = name && name !== event.connector ? name : app;
+  const named = event.account?.trim();
   const needs: Resolution = {
     kind: 'needs_connection',
-    message: `Connect a shared ${label} account to activate this trigger.`,
+    message: named
+      ? `Connect a shared ${label} account labelled "${named}" on ${event.connector}.`
+      : `Connect a shared ${label} account to activate this trigger.`,
   };
-  // A trigger is unattended: it runs on the project's shared default account,
-  // never a member's private one (connection-access.ts).
-  const connectionId = await defaultConnectionIdForConnector(connector.connectorId);
+  // A trigger is unattended: it runs on one of the connector's SHARED accounts
+  // (the one named by `account`, else the default), never a member's private
+  // one (connection-access.ts).
+  const connectionId = named
+    ? await sharedConnectionIdByLabel(connector.connectorId, named)
+    : await defaultConnectionIdForConnector(connector.connectorId);
   if (!connectionId) return { ...needs, providerId: provider.id };
   const [row] = await db
     .select({
@@ -100,7 +140,7 @@ export async function resolveSource(
   // Event data lands in a session prompt. An account narrowed to named people
   // must not feed it, so only an account open to the whole project qualifies.
   const audience = (await loadConnectionAudience({ projectId, accountId, userId: null }))(connectionId);
-  if (row && row.status === 'active' && audience !== 'open') {
+  if (row && row.status === 'active' && audience !== 'open' && !named) {
     return {
       kind: 'error',
       providerId: provider.id,
@@ -110,6 +150,8 @@ export async function resolveSource(
   if (
     !row ||
     row.status !== 'active' ||
+    // A named account that is narrowed to people is not usable by a trigger: same text as "not found".
+    (named && audience !== 'open') ||
     !connectionRowIsReachable(
       { ...row, providerType: connector.provider, connectorConfig: connector.config },
       { userId: '', isServiceAccount: true, agentPrincipal: null },
@@ -143,9 +185,13 @@ async function reconcileOne(
   accountId: string,
   spec: GitTriggerSpec,
   prev: store.EventSubscriptionRow | undefined,
+  flagOff: boolean,
 ): Promise<void> {
   const event = spec.event!;
-  const resolved = await resolveSource(projectId, accountId, event);
+  // Flag off: the trigger stays declared but is never subscribed; a live instance is dropped below.
+  const resolved: Resolution & { providerId?: string } = flagOff
+    ? { kind: 'error', message: EVENT_TRIGGERS_OFF_MESSAGE }
+    : await resolveSource(projectId, accountId, event);
   const providerId = resolved.providerId ?? prev?.provider ?? 'composio';
   const base = {
     projectId,
@@ -215,9 +261,11 @@ export async function reconcileEventSubscriptions(
       const desired = specs.filter((s) => s.type === 'event' && s.enabled && s.event);
       const desiredSlugs = new Set(desired.map((s) => s.slug));
       const rows = new Map((await store.listByProject(projectId)).map((r) => [r.slug, r]));
+      const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+      const flagOff = eventTriggersOffForProject(project?.metadata);
       for (const spec of desired) {
         try {
-          await reconcileOne(projectId, accountId, spec, rows.get(spec.slug));
+          await reconcileOne(projectId, accountId, spec, rows.get(spec.slug), flagOff);
         } catch (error) {
           logger.warn('[trigger-events] reconcile failed', { projectId, slug: spec.slug, error: errorText(error) });
         }

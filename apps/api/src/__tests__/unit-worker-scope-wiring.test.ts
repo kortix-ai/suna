@@ -53,6 +53,10 @@ const WORKERS: Record<string, string> = {
   'account-deletion': 'workers/account-deletion-worker.ts',
   'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
+  'drive-conflict-scan': 'workers/drive-worker.ts',
+  'volume-deletions': 'workers/drive-worker.ts',
+  'drive-mount-revocations': 'workers/drive-worker.ts',
+  'notification-digest': 'workers/notification-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -90,11 +94,13 @@ const STARTS: Record<string, string> = {
   startAuditArchiveWorker: 'audit-archive',
   startProjectSnapshotWorker: 'project-snapshots',
   startGrantExpirySweeper: 'iam-grant-expiry',
+  startDriveWorkers: 'drive-conflict-scan',
   startOAuthSweeper: 'oauth-sweep',
   startBillingRotation: 'billing-trial-expiry',
   startAccountDeletionSchedule: 'account-deletion',
   startSlackTurnGc: 'slack-turn-gc',
   startTeamsTurnGc: 'teams-turn-gc',
+  startNotificationWorker: 'notification-digest',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',

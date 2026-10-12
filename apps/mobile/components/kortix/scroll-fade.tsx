@@ -25,7 +25,6 @@
 import * as React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useColorScheme } from 'nativewind';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -36,17 +35,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { withAlpha } from '@/lib/utils/theme';
+import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 /** The bottom gradient's height above the safe-area inset. */
 export const BOTTOM_FADE_HEIGHT = 56;
 /** The top gradient's height, and the scroll distance over which it comes in. */
-export const TOP_FADE_HEIGHT = 24;
-
-function usePageBackground(): string {
-  const { colorScheme } = useColorScheme();
-  return colorScheme === 'dark' ? THEME.dark.background : THEME.light.background;
-}
+const TOP_FADE_HEIGHT = 24;
 
 /** The scroll handler for an `Animated.ScrollView`, and the top fade's style. */
 export function useScrollFade() {
@@ -61,7 +56,7 @@ export function useScrollFade() {
 }
 
 export function TopFade({ style }: { style: StyleProp<AnimatedStyle<StyleProp<ViewStyle>>> }) {
-  const background = usePageBackground();
+  const background = useThemePalette().background;
   return (
     <Animated.View
       pointerEvents="none"
@@ -76,7 +71,7 @@ export function TopFade({ style }: { style: StyleProp<AnimatedStyle<StyleProp<Vi
 
 export function BottomFade() {
   const insets = useSafeAreaInsets();
-  const background = usePageBackground();
+  const background = useThemePalette().background;
   return (
     <View
       pointerEvents="none"

@@ -1,6 +1,8 @@
 import { revokeAppViewerTokens } from './viewer';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
+import type { AppEnv } from '../types';
 import {
   appArtifacts,
   appDeploymentEvents,
@@ -10,7 +12,6 @@ import {
   apps,
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
-import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
@@ -25,35 +26,36 @@ import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-wo
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
-import { rollBackActiveDeployment } from './retention';
+import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
+import { appVolumesSupported, destroyAppVolumes, listAppVolumes } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError, alwaysOnBudgetWarning, appMonthlyEstimateUsd, defaultAppBudgetUsd } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
   AppLimitError,
-  assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
   assertAppQuotaAvailable,
 } from './limits';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { projectsApp } from '../projects/lib/app';
-import { requireFeatureFlag } from '../feature-flags/gate';
+import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
   appsOpenableByUser,
   appAccessSessionUrl,
-  appVisibleToUser,
   filterAppsVisibleToUser,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
-  type AppAccessMode,
 } from './access';
+import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
+import { AppObject, appJson, appsJson } from './serialize';
+import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
+import { registerAppCapabilityRoutes } from './capability-routes';
+import { registerAppFleetRoutes } from './fleet-routes';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -70,18 +72,9 @@ function appLimitResponse(c: any, error: unknown): Response | null {
   if (error instanceof AppAccountUnfundedError) {
     return c.json({ error: error.message, code: error.reason, ...error.detail }, 402);
   }
-  if (error instanceof AppBudgetExceededError) {
-    return c.json({
-      error: error.message,
-      code: 'app_budget_exceeded',
-      spent_usd: error.spentUsd,
-      budget_usd: error.budgetUsd,
-    }, 402);
-  }
   return null;
 }
 
-const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
 const ArtifactObject = z.object({}).passthrough().openapi('KortixAppArtifact');
 /** Deployment states the worker still drives. Deleting one would race its build. */
@@ -92,6 +85,20 @@ const ImageReleaseObject = z.object({ released: z.number().int(), pending: z.num
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const APP_ENV_NAME = /^(?!KORTIX_|OPENCODE_)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const APP_SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/**
+ * The Apps (by slug, in this App's project) this App uses: it may mint their
+ * sign-in tokens. Each must exist and be visible to the caller. Empty, the default: none.
+ */
+const UsesSchema = z
+  .array(z.string().regex(APP_SLUG, 'an App slug: lowercase letters, numbers and single hyphens'))
+  .max(20)
+  .transform((slugs) => [...new Set(slugs)]);
+/** Where Kortix shows the App (`AppDisplay`). Replaced whole; `{}` restores the defaults. */
+const DisplaySchema = z.object({
+  listed: z.boolean().optional(),
+  preview: z.enum(['live', 'none']).optional(),
+  parent: z.string().regex(APP_SLUG, 'an App slug').optional(),
+}).strict();
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -120,7 +127,8 @@ const SourceSchema = z.discriminatedUnion('kind', [
     kind: z.literal('dockerfile'),
     dockerfile: z.string().optional(),
     command: z.array(z.string()).min(1),
-    port: z.number().int(),
+    /** The primary service's port; omitted for a worker-only App (process groups, no service). */
+    port: z.number().int().optional(),
     readiness_path: z.string().optional(),
     restart_limit: z.number().int().optional(),
   }),
@@ -128,7 +136,8 @@ const SourceSchema = z.discriminatedUnion('kind', [
     kind: z.literal('oci_image'),
     image: z.string(),
     command: z.array(z.string()).min(1),
-    port: z.number().int(),
+    /** The primary service's port; omitted for a worker-only App (process groups, no service). */
+    port: z.number().int().optional(),
     readiness_path: z.string().optional(),
     restart_limit: z.number().int().optional(),
   }),
@@ -168,62 +177,6 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
   }
 }
 
-/**
- * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the
- * verdict that put this App in their list — a project manager sees every App so
- * that a private one stays manageable, and may or may not be allowed to open
- * it. The client needs both: without this it optimistically mints an access
- * session per card and collects a 403 for every App it may only manage.
- *
- * Defaults to true so the single-App serializations that have already run the
- * check are not forced to restate it.
- */
-type AppHostingType = 'sandbox' | 'static';
-
-/** The hosting type of each App's active deployment, in one query. */
-async function activeHostingTypes(rows: Array<typeof apps.$inferSelect>): Promise<Map<string, AppHostingType>> {
-  const ids = rows.map((row) => row.activeDeploymentId).filter((id): id is string => !!id);
-  if (ids.length === 0) return new Map();
-  const found = await db.select({ deploymentId: appDeployments.deploymentId, hostingType: appDeployments.hostingType })
-    .from(appDeployments).where(inArray(appDeployments.deploymentId, ids));
-  return new Map(found.map((row) => [row.deploymentId, row.hostingType as AppHostingType]));
-}
-
-/** One App as JSON, with its active deployment's hosting type. */
-async function appJson(row: typeof apps.$inferSelect) {
-  const hosting = await activeHostingTypes([row]);
-  return serializeApp(row, true, row.activeDeploymentId ? hosting.get(row.activeDeploymentId) ?? null : null);
-}
-
-function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true, hostingType: AppHostingType | null = null) {
-  return {
-    app_id: row.appId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    slug: row.slug,
-    name: row.name,
-    url: appPublicUrl(row),
-    access_mode: row.accessMode as AppAccessMode,
-    access_revision: row.accessRevision,
-    desired_state: row.desiredState,
-    active_deployment_id: row.activeDeploymentId,
-    machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
-    idle_timeout_seconds: row.idleTimeoutSeconds,
-    always_on: row.alwaysOn,
-    monthly_budget_usd: Number(row.monthlyBudgetUsd),
-    /** `static`: served from storage, no runtime. `sandbox`: a server App. null: never deployed. */
-    hosting_type: hostingType,
-    /** Ready deployments kept besides the active one (rollback targets). */
-    retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
-    /** A server App's machine running 24/7 for a month at list compute rates. A static App runs none. */
-    estimated_monthly_usd: hostingType === 'static' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
-    last_request_at: row.lastRequestAt?.toISOString() ?? null,
-    viewer_can_access: viewerCanAccess,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
-}
-
 function serializeArtifact(row: typeof appArtifacts.$inferSelect) {
   return {
     artifact_id: row.artifactId,
@@ -251,6 +204,10 @@ function serializeDeployment(row: typeof appDeployments.$inferSelect) {
     hosting_provider: row.hostingProvider,
     runtime_spec: row.runtimeSpec,
     build_spec: row.buildSpec,
+    /** The release config, its deploy strategy and the release command's outcome. */
+    config: row.config,
+    strategy: row.strategy,
+    release_command_status: row.releaseCommandStatus,
     error_code: row.errorCode,
     error: row.error,
     attempt_count: row.attemptCount,
@@ -272,68 +229,6 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
   return 'human';
 }
 
-/** The App capability a route needs. Apps own these leaves outright — they no
- *  longer borrow project.customize.write / project.gitops.read, so a custom
- *  role can grant or revoke Apps without touching any other capability. */
-type AppCapability = 'read' | 'write' | 'deploy';
-
-const APP_CAPABILITY_ACTION: Record<AppCapability, string> = {
-  read: PROJECT_ACTIONS.PROJECT_APP_READ,
-  write: PROJECT_ACTIONS.PROJECT_APP_WRITE,
-  deploy: PROJECT_ACTIONS.PROJECT_APP_DEPLOY,
-};
-
-/**
- * Membership + capability + `apps` flag, in that order. Returns the loaded
- * project on success, or the Response the route must return:
- *   • 404 — the project does not exist or the caller is not a member (a
- *     non-member must not be able to distinguish the two).
- *   • 403 `feature_disabled` — the caller IS a member, but the project has the
- *     `apps` flag off. A member already knows the project exists, so the honest
- *     "turn it on in Settings" answer beats a misleading 404.
- * A capability denial still throws (403) from assertProjectCapability.
- */
-async function authorizedProject(
-  c: any,
-  projectId: string,
-  capability: AppCapability = 'read',
-) {
-  const loaded = await loadProjectForUser(c, projectId, capability === 'read' ? 'read' : 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404) as Response;
-  await assertProjectCapability(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    APP_CAPABILITY_ACTION[capability],
-  );
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
-  if (gate) return gate;
-  return loaded;
-}
-
-async function scopedApp(projectId: string, appId: string) {
-  const [row] = await db
-    .select()
-    .from(apps)
-    .where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt)))
-    .limit(1);
-  return row ?? null;
-}
-
-/**
- * The App a caller may act on, or null. Holding project.app.read is necessary
- * but not sufficient: the App access policy decides WHICH Apps in the project
- * the caller sees (see appVisibleToUser). An App the caller cannot see answers
- * 404, never 403 — a member must not learn that a teammate's private App
- * exists from the status code.
- */
-async function visibleApp(projectId: string, appId: string, userId: string) {
-  const row = await scopedApp(projectId, appId);
-  if (!row) return null;
-  return (await appVisibleToUser(row, userId)) ? row : null;
-}
-
 const AppAccessSchema = z.object({
   mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
   revision: z.number().int().positive(),
@@ -345,10 +240,41 @@ const AppAccessSchema = z.object({
 
 export { agentsGrantingApp } from './agent-grants';
 
+/**
+ * The Apps `uses` names, resolved among the live Apps of the project that
+ * `userId` can see; the 400 `app_not_found` to answer for any other slug
+ * (a missing App and one the caller cannot see answer alike). Writes nothing.
+ */
+async function resolveLinksOrRefuse(
+  c: Context<AppEnv>,
+  app: typeof apps.$inferSelect,
+  uses: string[],
+  userId: string,
+): Promise<Array<{ appId: string }> | Response> {
+  try {
+    return await resolveAppLinks(app, uses, userId);
+  } catch (error) {
+    if (!(error instanceof UnknownLinkedAppError)) throw error;
+    return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
+  }
+}
+
+/** Sets the Apps a just-created App uses; the 400 to answer when a slug names no App the caller can see. */
+async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, uses: string[], userId: string): Promise<Response | null> {
+  const found = await resolveLinksOrRefuse(c, app, uses, userId);
+  if (found instanceof Response) return found;
+  await db.transaction((tx) => writeAppLinks(tx, app.appId, found));
+  return null;
+}
+
 export function registerAppsRoutes(): void {
+  registerAppCapabilityRoutes();
+  registerAppFleetRoutes();
   projectsApp.openapi(
     createRoute({
       method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
+      description: 'Only the Apps the caller may open under each App\'s access policy (a project manager: every App). ' +
+        'An App left out answers 404 on GET, the same as a missing one.',
       request: { params: z.object({ projectId: z.string().uuid() }) },
       responses: { 200: json(z.object({ apps: z.array(AppObject) }), 'Apps'), ...errors(403, 404) },
     }),
@@ -359,14 +285,12 @@ export function registerAppsRoutes(): void {
       const rows = await db.select().from(apps)
         .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
         .orderBy(desc(apps.createdAt));
+      // Only the Apps the caller may see AND open: no card that is listed and
+      // then refuses to open. An App left out answers 404 on GET, never 403.
       const visible = await filterAppsVisibleToUser(rows, loaded.userId);
       const openable = await appsOpenableByUser(visible, loaded.userId);
-      const hosting = await activeHostingTypes(visible);
-      return c.json({ apps: visible.map((row) => serializeApp(
-        row,
-        openable.has(row.appId),
-        row.activeDeploymentId ? hosting.get(row.activeDeploymentId) ?? null : null,
-      )) });
+      const accessible = visible.filter((row) => openable.has(row.appId));
+      return c.json({ apps: await appsJson(accessible, loaded.userId, openable) });
     },
   );
 
@@ -493,6 +417,8 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, 'preview');
+      if (refusal) return refusal;
       if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
         return c.json({ error: 'App access denied' }, 403);
       }
@@ -517,16 +443,17 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
+      description: 'Account credits pay for App compute: there is no per-App budget.',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
-          cpu: CpuSchema.default(1),
-          memory_gb: MemorySchema.default(2),
-          disk_gb: DiskSchema.default(10),
+          cpu: CpuSchema.optional(),
+          memory_gb: MemorySchema.optional(),
+          disk_gb: DiskSchema.optional(),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           always_on: z.boolean().optional(),
-          monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          uses: UsesSchema.default([]),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -538,30 +465,25 @@ export function registerAppsRoutes(): void {
       const body = c.req.valid('json');
       const slug = body.slug.toLowerCase();
       if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
+      const machine = { cpu: body.cpu ?? 1, memoryGb: body.memory_gb ?? 2, diskGb: body.disk_gb ?? 10 };
       try {
-        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-        assertAppBudgetWithinLimits(body.monthly_budget_usd);
+        assertAppMachineWithinLimits(machine);
         await assertAppQuotaAvailable(loaded.row.accountId);
       } catch (error) {
         const refusal = appLimitResponse(c, error);
         if (refusal) return refusal;
         throw error;
       }
+      let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
-        const budget = body.monthly_budget_usd
-          ?? defaultAppBudgetUsd({ cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb, alwaysOn }, config.getDefaultProvider());
-        const [row] = await db.insert(apps).values({
+        [row] = (await db.insert(apps).values({
           accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
-          cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
+          cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
           alwaysOn,
-          monthlyBudgetUsd: budget.toFixed(2),
-          monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
-        }).returning();
-        const warning = alwaysOnBudgetWarning(row!, config.getDefaultProvider());
-        return c.json({ ...serializeApp(row!), warnings: warning ? [warning] : [] }, 201);
+        }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
         // error.cause.code, NOT error.code — reading error.code left this branch
@@ -571,6 +493,12 @@ export function registerAppsRoutes(): void {
           return c.json({ error: 'An App with this slug already exists' }, 409);
         throw error;
       }
+      const linked = body.uses.length ? await linkOrRefuse(c, row, body.uses, loaded.userId) : null;
+      if (linked) {
+        await db.delete(apps).where(eq(apps.appId, row.appId));
+        return linked;
+      }
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] }, 201);
     },
   );
 
@@ -654,22 +582,27 @@ export function registerAppsRoutes(): void {
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
-      return row ? c.json(await appJson(row)) : c.json({ error: 'Not found' }, 404);
+      return row ? c.json(await appJson(row, loaded.userId)) : c.json({ error: 'Not found' }, 404);
     },
   );
 
   projectsApp.openapi(
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
+      description:
+        '`display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
-          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(),
+          uses: UsesSchema.optional(),
+          labels: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/)).max(10).optional(),
+          display: DisplaySchema.optional(),
         }) } } },
       },
-      responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
+      responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -680,56 +613,58 @@ export function registerAppsRoutes(): void {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
-      try {
-        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-        assertAppBudgetWithinLimits(body.monthly_budget_usd);
-      } catch (error) {
-        const refusal = appLimitResponse(c, error);
-        if (refusal) return refusal;
-        throw error;
-      }
-      // A budget nobody set follows the machine and run mode; one a person set never moves.
       const nextMachine = {
         cpuCores: body.cpu ?? current.cpuCores,
         memoryGb: body.memory_gb ?? current.memoryGb,
         diskGb: body.disk_gb ?? current.diskGb,
         alwaysOn: body.always_on ?? current.alwaysOn,
       };
-      const machineChanged = [body.cpu, body.memory_gb, body.disk_gb, body.always_on].some((value) => value !== undefined);
-      const derivedBudget = body.monthly_budget_usd === undefined && !current.monthlyBudgetExplicit && machineChanged
-        ? defaultAppBudgetUsd(nextMachine, config.getDefaultProvider())
-        : undefined;
-      const [row] = await db.update(apps).set({
-        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-        ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
-        ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
-        ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
-        ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
-        ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
-        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
-        ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
-        updatedAt: new Date(),
-      }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+      try {
+        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+      } catch (error) {
+        const refusal = appLimitResponse(c, error);
+        if (refusal) return refusal;
+        throw error;
+      }
+      const sizeChanged = nextMachine.cpuCores !== current.cpuCores || nextMachine.memoryGb !== current.memoryGb
+        || nextMachine.diskGb !== current.diskGb;
+      // Every refusal comes before any write: the links resolve (400), the
+      // resize claims its operation (402/409), then one transaction writes the
+      // links and the row, so a refused PATCH changes nothing.
+      const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
+      if (links instanceof Response) return links;
+      const [row] = await db.transaction(async (tx) => {
+        if (links) await writeAppLinks(tx, appId, links);
+        return tx.update(apps).set({
+          ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+          ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
+          ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
+          ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
+          ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
+          ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
+          ...(body.labels !== undefined ? { labels: [...new Set(body.labels as string[])] } : {}),
+          ...(body.display !== undefined ? { display: body.display } : {}),
+          updatedAt: new Date(),
+        }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+      });
       if (!row) return c.json({ error: 'Not found' }, 404);
-      // Warn only when this change touched the run mode, the machine or the budget.
-      const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
-        .some((value) => value !== undefined);
-      const [active] = row.activeDeploymentId
-        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
-            .from(appDeployments).where(eq(appDeployments.deploymentId, row.activeDeploymentId)).limit(1)
-        : [];
-      const warning = costChanged && active?.hostingType !== 'static'
-        ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
-        : null;
-      return c.json({ ...serializeApp(row, true, (active?.hostingType as AppHostingType | undefined) ?? null), warnings: warning ? [warning] : [] });
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] });
     },
   );
 
   projectsApp.openapi(
     createRoute({
       method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-      responses: { 200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'), ...errors(403, 404) },
+      description:
+        'The App stops serving at once; its machines and images go. An App with volumes needs `project.app.admin`: ' +
+        'each volume keeps a final snapshot for 7 days, then Kortix purges it.',
+      request: {
+        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+      },
+      responses: {
+        200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'),
+        ...errors(400, 403, 404, 409, 502),
+      },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -737,6 +672,11 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      // Deleting an App destroys its volumes: the same power as `volumes destroy`.
+      if ((await listAppVolumes(appId)).length > 0) {
+        const admin = await authorizedProject(c, projectId, 'admin');
+        if (admin instanceof Response) return admin;
+      }
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
@@ -766,6 +706,8 @@ export function registerAppsRoutes(): void {
       // then counts it gone (`removeAppRuntime`), so a dead provider never blocks
       // the delete. Its compute meter closes either way.
       await teardownAppRuntimes(runtimes);
+      // Volumes leave with the App: a final snapshot each, purged after 7 days.
+      await destroyAppVolumes(appId);
       // Each deployment build left one provider image. Platinum counts them
       // against a per-org template cap, so the App is not gone until they are.
       // A build still running may register its image after this request, so it
@@ -787,17 +729,27 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
+      description:
+        'Queue a release of an uploaded artifact (`artifact_id` + `source`); answers 202. `config` is the release ' +
+        'config (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
+        'command, readiness_path, always_on and resources map onto it). Without it the release runs one `app` ' +
+        'process group on the source port, sized like the App. An invalid config answers 400 `app_config_invalid` ' +
+        'with `issues: [{path, message}]`; a mount on a provider without volumes answers 400 `app_volumes_unsupported`.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
-          artifact_id: z.string().uuid(),
+          artifact_id: z.string().uuid().optional(),
           source: SourceSchema,
           provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),
+          config: ReleaseConfigSchema.optional(),
         }) } } },
       },
-      responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 403, 404, 409) },
+      responses: {
+        202: json(DeploymentObject, 'Deployment queued'),
+        ...errors(400, 403, 404, 409),
+      },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -806,6 +758,7 @@ export function registerAppsRoutes(): void {
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
       const body = c.req.valid('json');
+      if (!body.artifact_id) return c.json({ error: 'artifact_id is required' }, 400);
       const [artifact] = await db.select().from(appArtifacts).where(and(
         eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
       )).limit(1);
@@ -814,6 +767,19 @@ export function registerAppsRoutes(): void {
       if (artifact.kind === 'archive' && body.source.kind === 'oci_image') return c.json({ error: 'Archive artifacts cannot use an oci_image source' }, 400);
       if (body.source.kind === 'oci_image' && body.source.image !== artifact.imageReference) return c.json({ error: 'source.image must match the immutable artifact image' }, 400);
       const source = sourceFromWire(body.source);
+      // A static site runs no machine: it has no release config.
+      let releaseConfig = null;
+      if (source.kind !== 'static') {
+        const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
+        if ('issues' in resolved) {
+          return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
+        }
+        releaseConfig = resolved.config;
+        const provider = body.provider ?? config.getDefaultProvider();
+        if (releaseConfig.mounts.length > 0 && !appVolumesSupported(provider)) {
+          return c.json({ error: `Volumes need the platinum provider, not ${provider}.`, code: 'app_volumes_unsupported' }, 400);
+        }
+      }
       const deployment = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
         const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
@@ -832,6 +798,8 @@ export function registerAppsRoutes(): void {
             secrets: body.secrets ?? {},
           },
           runtimeSpec: {},
+          config: releaseConfig,
+          strategy: releaseConfig?.deploy.strategy ?? null,
         }).returning();
         return row!;
       });
@@ -1092,7 +1060,7 @@ export function registerAppsRoutes(): void {
             }, 503);
           }
         }
-        return c.json(serializeApp(row!, true, 'sandbox'));
+        return c.json(await appJson(row!, loaded.userId));
       },
     );
   }
@@ -1100,8 +1068,12 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
+      description:
+        'Roll back to an earlier release: a NEW release (the next version) from that release\'s artifact and ' +
+        'config, rolled out on its strategy like any deploy. Volumes keep their data. Answers 202 ' +
+        'with the App and the queued release in `deployment`.',
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
-      responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
+      responses: { 202: json(AppObject, 'App'), ...errors(403, 404, 409) },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -1109,66 +1081,48 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, 'rollback');
+      if (refusal) return refusal;
       const { deployment_id: deploymentId } = c.req.valid('json');
-      const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
-      if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
-      // A static deployment is served from storage: nothing to start.
-      const isStatic = deployment.hostingType === 'static';
-      const [targetRuntime] = isStatic ? [] : await db.select().from(appRuntimes)
-        .where(eq(appRuntimes.deploymentId, deploymentId))
-        .orderBy(desc(appRuntimes.createdAt))
-        .limit(1);
-      if (!isStatic && !targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
-
-      const [runningApp] = await db.update(apps)
-        .set({ desiredState: 'running', updatedAt: new Date() })
-        .where(eq(apps.appId, appId))
-        .returning();
-      const hosting = new AppHostingProvider();
-      try {
-        if (targetRuntime) await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
-      } catch (error) {
-        await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
-          .where(eq(apps.appId, appId));
-        if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 409 | 503);
-        const refusal = appLimitResponse(c, error);
-        if (refusal) return refusal;
-        return c.json({
-          error: 'Rollback runtime failed to start',
-          detail: error instanceof Error ? error.message : String(error),
-        }, 503);
-      }
-
-      const previousDeploymentId = app.activeDeploymentId;
-      // A concurrent delete or retention can retire the target after the ready
-      // check above. Move traffic only while the target is still ready.
-      const row = await rollBackActiveDeployment(appId, deploymentId);
-      if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
-      await db.insert(appDeploymentEvents).values({
-        deploymentId,
-        runtimeId: targetRuntime?.runtimeId ?? null,
-        type: 'deployment_rollback',
-        message: 'Rollback deployment is serving traffic',
-        data: { previousDeploymentId },
+      const [target] = await db.select().from(appDeployments).where(and(
+        eq(appDeployments.deploymentId, deploymentId),
+        eq(appDeployments.appId, appId),
+        eq(appDeployments.status, 'ready'),
+      )).limit(1);
+      if (!target) return c.json({ error: 'Only a ready release can be rolled back to', code: 'release_not_ready' }, 409);
+      if (!target.artifactId) return c.json({ error: 'That release has no artifact to rebuild', code: 'release_not_rebuildable' }, 409);
+      const release = await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+        const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
+          .where(eq(appDeployments.appId, appId));
+        const [row] = await tx.insert(appDeployments).values({
+          appId,
+          artifactId: target.artifactId,
+          version: Number(versionRow?.value ?? 0) + 1,
+          status: 'queued',
+          sourceKind: target.sourceKind,
+          hostingProvider: target.hostingProvider,
+          createdBy: loaded.userId,
+          sourceSessionId: callerKortixSessionId(c),
+          actorType: appDeploymentActorType(c),
+          runtimeVersion: APP_RUNTIME_VERSION,
+          buildSpec: target.buildSpec,
+          runtimeSpec: {},
+          config: target.config,
+          strategy: target.strategy,
+        }).returning();
+        await tx.update(apps).set({ desiredState: 'running', updatedAt: new Date() }).where(eq(apps.appId, appId));
+        return row!;
       });
-      if (previousDeploymentId && previousDeploymentId !== deploymentId) {
-        const [previousRuntime] = await db.select().from(appRuntimes)
-          .where(and(
-            eq(appRuntimes.deploymentId, previousDeploymentId),
-            inArray(appRuntimes.status, ['starting', 'running']),
-          ))
-          .orderBy(desc(appRuntimes.createdAt))
-          .limit(1);
-        if (previousRuntime) {
-          await hosting.stop(previousRuntime.provider as SandboxProviderName, previousRuntime.externalId);
-          const stoppedAt = new Date();
-          await db.update(appRuntimes)
-            .set({ status: 'stopped', stoppedAt, updatedAt: stoppedAt })
-            .where(eq(appRuntimes.runtimeId, previousRuntime.runtimeId));
-          await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
-        }
-      }
-      return c.json(serializeApp(row!, true, deployment.hostingType as AppHostingType));
+      await db.insert(appDeploymentEvents).values({
+        deploymentId: release.deploymentId,
+        type: 'deployment_rollback',
+        message: `Rollback to v${target.version}`,
+        data: { rollbackOf: target.deploymentId, rollbackVersion: target.version, previousDeploymentId: app.activeDeploymentId },
+      });
+      triggerAppDeploymentWorker();
+      const [row] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
+      return c.json({ ...(await appJson(row!, loaded.userId)), deployment: serializeDeployment(release) }, 202);
     },
   );
 }

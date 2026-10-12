@@ -53,6 +53,8 @@ import { turnTopGap } from '@/lib/session/auto-scroll';
 import { THEME } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
+import { splitPastedContent } from '@kortix/shared';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { webSpace } from '@/lib/session/user-message';
 import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson } from '@/lib/session/participants';
@@ -123,7 +125,9 @@ export function SessionConnecting({
   // The floating composer area's height: the content above rests over it.
   const [bottomHeight, setBottomHeight] = React.useState(0);
   const files = firstFiles ?? [];
-  const hasFiles = files.length > 0;
+  // The home send carries pastes inline: tiles here, the typed words in the bubble.
+  const firstPrompt = React.useMemo(() => splitPastedContent(firstMessage ?? ''), [firstMessage]);
+  const hasFiles = files.length > 0 || firstPrompt.pastes.length > 0;
   const turns = React.useMemo(
     () => (messages && messages.length > 0 ? (groupMessagesIntoTurns(messages) as unknown as Turn[]) : []),
     [messages],
@@ -175,6 +179,14 @@ export function SessionConnecting({
                 showsHorizontalScrollIndicator={false}
                 className="flex-grow-0"
                 contentContainerStyle={{ gap: webSpace(2) }}>
+                {firstPrompt.pastes.map((paste) => (
+                  <AttachmentTile
+                    key={`pasted:${paste.id}`}
+                    filename="Pasted text"
+                    preview={paste.text}
+                    onPress={() => openPastedText(paste)}
+                  />
+                ))}
                 {files.map((file, index) => (
                   <AttachmentTile
                     key={`${file.uri}-${index}`}
@@ -187,9 +199,9 @@ export function SessionConnecting({
                 ))}
               </ScrollView>
             ) : null}
-            {firstMessage ? (
+            {firstPrompt.text ? (
               <UserMessageBubble isDark={isDark}>
-                <MessageBody text={firstMessage} sessions={NO_SESSIONS} />
+                <MessageBody text={firstPrompt.text} sessions={NO_SESSIONS} />
               </UserMessageBubble>
             ) : null}
           </View>

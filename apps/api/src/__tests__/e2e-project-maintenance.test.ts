@@ -92,6 +92,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   listBranches: async () => [],
   remoteBranchExists: async () => true,

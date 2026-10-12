@@ -10,6 +10,7 @@ import {
   agentTunnelHome,
   buildServiceShellCommand,
   getServicePaths,
+  installedAppRunner,
   runnerPartsFor,
   serviceLabelFor,
   isEphemeralRunnerPath,
@@ -28,7 +29,32 @@ describe('agent tunnel service definitions', () => {
     const command = buildServiceShellCommand();
     expect(command).toContain("'run'");
     expect(command).toContain("'--service'");
-    expect(command).toStartWith('exec ');
+    // `export …;` first when it runs on the installed Kortix app (ELECTRON_RUN_AS_NODE).
+    expect(command).toMatch(/^(export [^;]+; )?exec /);
+  });
+
+  test('a CLI install on a Mac with the Kortix app runs on the app runtime', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-app-'));
+    try {
+      const app = join(root, 'Kortix.app');
+      expect(installedAppRunner([app], 'darwin')).toBeNull();
+      mkdirSync(join(app, 'Contents', 'MacOS'), { recursive: true });
+      mkdirSync(join(app, 'Contents', 'Resources', 'agent-tunnel'), { recursive: true });
+      writeFileSync(join(app, 'Contents', 'MacOS', 'Kortix'), '');
+      writeFileSync(join(app, 'Contents', 'Resources', 'agent-tunnel', 'agent-cli.js'), '');
+      const runner = installedAppRunner([join(root, 'Missing.app'), app], 'darwin')!;
+      expect(runner).toEqual({
+        execPath: join(app, 'Contents', 'MacOS', 'Kortix'),
+        script: join(app, 'Contents', 'Resources', 'agent-tunnel', 'agent-cli.js'),
+      });
+      expect(installedAppRunner([app], 'linux')).toBeNull();
+      const parts = runnerPartsFor(runner.script, { execPath: runner.execPath, electron: 'installed-app' });
+      expect(parts.command).toBe(runner.execPath);
+      expect(parts.args).toEqual([runner.script, 'run', '--service']);
+      expect(parts.env?.ELECTRON_RUN_AS_NODE).toBe('1');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('launchd plist restarts and runs at login', () => {

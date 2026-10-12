@@ -64,7 +64,11 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 
 /* ─── DB helpers (used by the gateway + CRUD) ─────────────────────────────── */
 
-/** Resolve a user's group memberships → the subject the gateway authorizes with. */
+/** Resolve a user's group memberships → the subject the gateway authorizes with.
+ *  Read fresh on every call: a membership added between two connector calls
+ *  must authorize (or deny) the second one, and no TTL can honor that without
+ *  an invalidation hook the admin routes and the flows' direct seeds don't
+ *  share. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
   const rows = await groupIdsOfUser(userId);
   return { userId, groupIds: rows.map((r) => r.groupId) };

@@ -21,7 +21,12 @@ let createCalls: Array<Record<string, unknown>> = [];
 let enqueueDeduped = false;
 
 mock.module('../../config', () => ({
-  config: {},
+  // LLM_GATEWAY_ENABLED: the model gate's enablement read is AND-gated by the
+  // platform flag (resolveFeatureFlag → def.available()); the empty config of
+  // the old mock kept every project native and the gate unreachable.
+  // DEFAULT_ENABLED stays false so only a project's explicit
+  // `experimental.llm_gateway` override turns the gateway on here.
+  config: { LLM_GATEWAY_ENABLED: true, LLM_GATEWAY_DEFAULT_ENABLED: false },
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['daytona'],
   KORTIX_MARKUP: 1.2,
@@ -67,9 +72,28 @@ mock.module('../session-lifecycle', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 
+// The fire's model gate (KRTX-1505) reads the servable catalog. Mocked with a
+// fixture instead of serving it off the db shim: the gate's contract is the
+// catalog's `enabled` stamps, not the read models beneath them.
+let catalogFixture: { models: Record<string, { name: string; enabled: boolean }> } = { models: {} };
+let catalogCalls: Array<Record<string, unknown>> = [];
+const realServableCatalog = await import('../../llm-gateway/models/servable-catalog');
+mock.module('../../llm-gateway/models/servable-catalog', () => ({
+  ...realServableCatalog,
+  servableProjectCatalog: async (input: Record<string, unknown>) => {
+    catalogCalls.push(input);
+    return catalogFixture;
+  },
+}));
+
 const { fireGitTrigger } = await import('./triggers');
 
 const project = { projectId: 'proj-1', accountId: 'acct-1' } as never;
+const gatewayProject = {
+  projectId: 'proj-1',
+  accountId: 'acct-1',
+  metadata: { experimental: { llm_gateway: true } },
+} as never;
 const baseSpec = {
   slug: 'daily',
   type: 'cron',
@@ -87,6 +111,8 @@ beforeEach(() => {
   drainCalls = [];
   createCalls = [];
   enqueueDeduped = false;
+  catalogFixture = { models: {} };
+  catalogCalls = [];
 });
 
 describe('fireGitTrigger — durable prompt delivery', () => {
@@ -195,5 +221,59 @@ describe('fireGitTrigger — durable prompt delivery', () => {
     expect(enqueueCalls).toHaveLength(0);
     expect(createCalls).toHaveLength(1);
     expect(result).toMatchObject({ status: 'fired', sessionId: 'sess-new' });
+  });
+});
+
+describe('fireGitTrigger — model gate on the fresh-create path (KRTX-1505)', () => {
+  const fire = () =>
+    fireGitTrigger({
+      spec: baseSpec as never,
+      project: gatewayProject,
+      payload: {},
+      renderedPrompt: 'do the thing',
+      source: 'cron',
+    });
+
+  test('a gateway project with zero enabled models fails the fire before any session is created', async () => {
+    catalogFixture = { models: {} };
+
+    const result = await fire();
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      errorCode: 'no_usable_model',
+    });
+    expect(result.error).toContain('No usable model');
+    expect(createCalls).toHaveLength(0);
+    expect(enqueueCalls).toHaveLength(0);
+    // The run executes as the automation actor, so its personal keys count.
+    expect(catalogCalls).toEqual([
+      { projectId: 'proj-1', accountId: 'acct-1', principalUserId: 'actor-1' },
+    ]);
+  });
+
+  test('a gateway project with one enabled model fires', async () => {
+    catalogFixture = { models: { 'kortix/glm-5.3-flash': { name: 'glm-5.3-flash', enabled: true } } };
+
+    const result = await fire();
+
+    expect(result).toMatchObject({ status: 'fired', sessionId: 'sess-new' });
+    expect(createCalls).toHaveLength(1);
+  });
+
+  test('a native (non-gateway) project with an empty catalog skips the gate', async () => {
+    catalogFixture = { models: {} };
+
+    const result = await fireGitTrigger({
+      spec: baseSpec as never,
+      project,
+      payload: {},
+      renderedPrompt: 'do the thing',
+      source: 'cron',
+    });
+
+    expect(result).toMatchObject({ status: 'fired', sessionId: 'sess-new' });
+    expect(catalogCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(1);
   });
 });

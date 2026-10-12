@@ -64,7 +64,13 @@ for real use) running Linux, and a domain you control.
    `logs` / `doctor` are your friends while it comes up.
 
 4. **Finish in the dashboard.** Open `https://app.example.com` and sign up
-   with the admin email from step 2, then:
+   with the admin email from step 2. Until email is configured, sign-up is
+   open and needs no email confirmation, so anyone who reaches the URL can
+   create an account for any address, the admin address included. Sign up
+   first, then close it: `kortix self-host env set EMAIL_URL=smtp://…` makes
+   new accounts confirm their email, and `kortix self-host env set
+   DISABLE_SIGNUP=true` turns self sign-up off. `kortix self-host doctor`
+   fails (`open-sign-up`) until one of them is set. Then:
    - **Settings → Git** — connect a GitHub App (or PAT) so the platform can
      create project repos. This one dashboard flow replaces the old
      env-var-only managed-git setup.

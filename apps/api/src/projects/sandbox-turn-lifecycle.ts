@@ -469,6 +469,8 @@ export async function clearSandboxTurn(
   reason: SessionTurnEndReason = 'runtime_gone',
   /** What the control plane saw, recorded only when the turn has no cause yet. */
   cause: SessionTurnEndErrorRecord | null = null,
+  /** Clear only while the box's deadline has passed, read in this statement. */
+  onlyPastDeadline = false,
 ): Promise<boolean> {
   const metadata = jsonbObject(sql`s.metadata`);
   const result = await execute(sql`
@@ -483,7 +485,8 @@ export async function clearSandboxTurn(
         FROM kortix.session_sandboxes s
        WHERE s.sandbox_id = ${sandboxId}::uuid
          AND s.status = 'active'
-         AND ${metadata}->'activeTurns'->${token}->>'token' = ${token}
+         AND ${metadata}->'activeTurns'->${token}->>'token' = ${token}${
+           onlyPastDeadline ? sql` AND s.deadline_at <= now()` : sql``}
        FOR UPDATE OF s
     )
     UPDATE kortix.session_sandboxes s

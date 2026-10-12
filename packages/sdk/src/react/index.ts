@@ -155,6 +155,11 @@ export {
   useProjectApps,
   useAppDeployments,
   useAppDeployment,
+  useAppMachines,
+  useAppVolumes,
+  useAppVolumeSnapshots,
+  appMachinesKey,
+  appVolumesKey,
   useAppAccess,
   projectAppsKey,
   appDeploymentsKey,
@@ -216,9 +221,12 @@ export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
 export * from './use-sessions-needing-input';
+// The caller's notification inbox, preferences and session watch (KRTX-1742).
+export * from './use-notifications';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`
 // (`@kortix/sdk/server`): the viewer hook and the sign-in link.

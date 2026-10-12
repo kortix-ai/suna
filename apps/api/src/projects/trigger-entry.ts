@@ -107,16 +107,28 @@ export function parseEventFields(
       return { error: `${key} is not valid on an event trigger — events are driven by the connected app` };
     }
   }
-  return { connector, type, config: (configRaw as Record<string, unknown> | undefined | null) ?? {} };
+  const accountRaw = row[configKey === 'config' ? 'account' : 'event_account'];
+  if (accountRaw !== undefined && accountRaw !== null && (typeof accountRaw !== 'string' || !accountRaw.trim())) {
+    return { error: 'account must be the label of a shared account on the connector' };
+  }
+  const sourceRaw = row[configKey === 'config' ? 'source' : 'event_source'];
+  if (sourceRaw !== undefined && sourceRaw !== null && (typeof sourceRaw !== 'string' || !sourceRaw.trim())) {
+    return { error: 'source must be the event source adapter id, such as "composio"' };
+  }
+  // Omitted (not null) when unset, so an event's schedule revision stays what it was before `account` and `source` existed.
+  const account = typeof accountRaw === 'string' ? accountRaw.trim() : '';
+  const source = typeof sourceRaw === 'string' ? sourceRaw.trim() : '';
+  return { connector, ...(account ? { account } : {}), ...(source ? { source } : {}), type, config: (configRaw as Record<string, unknown> | undefined | null) ?? {} };
 }
 
-/** connector/event/config belong to event triggers only; returns the error text or null. */
+/** connector/account/source/event/config belong to event triggers only; returns the error text or null. */
 export function eventOnlyKeyError(
   row: Record<string, unknown>,
   configKey: 'config' | 'event_config',
   type: string,
 ): string | null {
-  for (const key of ['connector', 'event', configKey]) {
+  const prefixed = configKey !== 'config';
+  for (const key of ['connector', prefixed ? 'event_account' : 'account', prefixed ? 'event_source' : 'source', 'event', configKey]) {
     if (row[key] !== undefined && row[key] !== null) {
       return `${key} is only valid on an event trigger (type is "${type}")`;
     }
@@ -328,6 +340,8 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     }
   } else if (spec.type === 'event' && spec.event) {
     entry.connector = spec.event.connector;
+    if (spec.event.account) entry.account = spec.event.account;
+    if (spec.event.source) entry.source = spec.event.source;
     entry.event = spec.event.type;
     if (Object.keys(spec.event.config).length > 0) entry.config = spec.event.config;
   } else if (spec.secretEnv) {

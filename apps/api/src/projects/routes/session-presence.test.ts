@@ -9,6 +9,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realInboxRead from '../../notifications/inbox-read';
 import * as realAccess from '../lib/access';
 import * as realDeadline from '../sandbox-deadline';
 
@@ -20,12 +21,16 @@ const TAB_ID = '66666666-6666-4666-8666-666666666666';
 let mayStartSession = true;
 let leaseWrites = 0;
 let leaseDeletes = 0;
+let leaseValues: Array<Record<string, unknown>> = [];
+let leaseUpdates: Array<Record<string, unknown>> = [];
+let sessionsMarkedRead: Array<{ userId: string; sessionId: string }> = [];
 let extensions: Array<{ target: unknown; grantMs: number }> = [];
+let projectMetadata: Record<string, unknown> = {};
 
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
-    row: { accountId: '44444444-4444-4444-8444-444444444444' },
+    row: { accountId: '44444444-4444-4444-8444-444444444444', metadata: projectMetadata },
     userId: USER_ID,
     actor: { credential: { kind: 'jwt' } },
   }),
@@ -39,9 +44,11 @@ mock.module('../lib/access', () => ({
 mock.module('../../shared/db', () => ({
   db: {
     insert: () => ({
-      values: () => ({
-        onConflictDoUpdate: async () => {
+      values: (values: Record<string, unknown>) => ({
+        onConflictDoUpdate: async (conflict: { set: Record<string, unknown> }) => {
           leaseWrites += 1;
+          leaseValues.push(values);
+          leaseUpdates.push(conflict.set);
         },
       }),
     }),
@@ -50,6 +57,15 @@ mock.module('../../shared/db', () => ({
         leaseDeletes += 1;
       },
     }),
+  },
+}));
+
+// KRTX-1742: an active tab marks the caller's notifications of the session read.
+mock.module('../../notifications/inbox-read', () => ({
+  ...realInboxRead,
+  markSessionNotificationsRead: async (userId: string, sessionId: string) => {
+    sessionsMarkedRead.push({ userId, sessionId });
+    return 0;
   },
 }));
 
@@ -85,7 +101,11 @@ beforeEach(() => {
   mayStartSession = true;
   leaseWrites = 0;
   leaseDeletes = 0;
+  leaseValues = [];
+  leaseUpdates = [];
+  sessionsMarkedRead = [];
   extensions = [];
+  projectMetadata = { experimental: { notification_center: true } };
 });
 
 describe('PUT .../presence', () => {
@@ -109,5 +129,36 @@ describe('PUT .../presence', () => {
     expect(res.status).toBe(200);
     expect(leaseDeletes).toBe(1);
     expect(extensions).toEqual([]);
+    expect(sessionsMarkedRead).toEqual([]);
+  });
+
+  // KRTX-1742: only a tab that raises its own OS notification holds back the phone.
+  test('alerts defaults to false and is written on insert and on refresh', async () => {
+    expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
+    expect((await put({ tab_id: TAB_ID, active: true, alerts: true })).status).toBe(200);
+    expect(leaseValues.map((v) => v.alerts)).toEqual([false, true]);
+    expect(leaseUpdates.map((v) => v.alerts)).toEqual([false, true]);
+  });
+
+  test('an active tab marks the caller\'s notifications of this session read', async () => {
+    expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
+    expect(sessionsMarkedRead).toEqual([{ userId: USER_ID, sessionId: SESSION_ID }]);
+  });
+
+  test('with the notification_center flag off, an active tab holds its lease and marks nothing read', async () => {
+    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+      projectMetadata = metadata;
+      expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
+    }
+    expect(leaseWrites).toBe(2);
+    expect(extensions).toHaveLength(2);
+    expect(sessionsMarkedRead).toEqual([]);
+  });
+
+  test('a missing body or a non-boolean alerts → 400 and nothing is written', async () => {
+    expect((await put({ tab_id: TAB_ID, active: true, alerts: 'yes' })).status).toBe(400);
+    expect((await put({ active: true })).status).toBe(400);
+    expect(leaseWrites).toBe(0);
+    expect(sessionsMarkedRead).toEqual([]);
   });
 });

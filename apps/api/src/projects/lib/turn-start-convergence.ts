@@ -59,7 +59,6 @@
 
 import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { configReleasesEnabled } from '../../config-releases/enabled';
 import { resolveDesiredRelease } from '../../config-releases/desired';
 import { ownerMayUseAgent } from '../../config-releases/repoint';
 import {
@@ -132,7 +131,6 @@ interface SessionTarget {
   repoUrl: string;
   defaultBranch: string;
   manifestPath: string | null;
-  projectMetadata: unknown;
   baseRef: string;
   agentName: string | null;
   sessionMetadata: unknown;
@@ -150,7 +148,6 @@ const sessionMemo = ttlMemo({
         repoUrl: projects.repoUrl,
         defaultBranch: projects.defaultBranch,
         manifestPath: projects.manifestPath,
-        projectMetadata: projects.metadata,
         baseRef: projectSessions.baseRef,
         agentName: projectSessions.agentName,
         sessionMetadata: projectSessions.metadata,
@@ -297,7 +294,6 @@ export interface TurnStartConvergenceDeps {
   /** One `GET /kortix/health`. Asked only when the API does not know already. */
   probeRunningRelease: (sessionId: string) => Promise<string | null | undefined>;
   converge: (sessionId: string) => Promise<SessionConfigConvergenceOutcome>;
-  releasesEnabled: (metadata: unknown) => boolean;
   now: () => number;
 }
 
@@ -420,12 +416,11 @@ const defaultDeps: TurnStartConvergenceDeps = {
       schedule: 'turn-start',
       refreshRepo: false,
     }),
-  releasesEnabled: configReleasesEnabled,
   now: () => Date.now(),
 };
 
 export type TurnStartDecision =
-  /** The flag is off for this project, or the session is gone. Nothing ran. */
+  /** The session is gone, or this gate threw. Nothing ran. */
   | 'skipped'
   /** The box already runs the desired release. Nothing ran, no network call. */
   | 'current'
@@ -456,10 +451,6 @@ export async function convergeBeforeTurnStart(
   try {
     const target = await deps.loadTarget(sessionId);
     if (!target) return done('skipped', null);
-    // CHOKEPOINT — the `config_releases` flag on the turn path. Off ⇒ the box
-    // keeps reading its workspace config dir and no release is ever resolved,
-    // so nothing here may cost the turn a single call.
-    if (!deps.releasesEnabled(target.projectMetadata)) return done('skipped', null);
 
     const desired = await deps.desiredReleaseId(target, sessionId).catch(() => null);
     let running = deps.runningReleaseId(sessionId);

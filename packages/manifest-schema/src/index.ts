@@ -20,6 +20,8 @@ import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
+import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
+import { appReleaseInputFromBlock } from './app-config';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -57,7 +59,10 @@ import {
   validateDefaultAgentV2,
   validateHarnessesV2,
   validateRuntimeV2,
+  validateToolsV2,
   validateTriggerAgentRefsV2,
+  warnUnknownAgentTools,
+  type AppBlockV2,
 } from './index.v2';
 
 /**
@@ -89,6 +94,7 @@ export {
   MEMORY_DIR,
   OPENCODE_CONFIG_DIR,
   SKILLS_DIR,
+  TOOL_FILE_PATTERN,
   agentFileCandidates,
   defaultAgentFile,
   legacyConfigDir,
@@ -96,6 +102,7 @@ export {
   opencodeConfigDirCandidates,
   piConfigDirCandidates,
   safeAgentFile,
+  safeToolFile,
   safeRepoPath,
   skillDirs,
 } from './layout';
@@ -112,6 +119,7 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export { appReleaseInputFromBlock } from './app-config';
 
 export {
   type ImportableKey,
@@ -193,6 +201,12 @@ export {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  HARNESS_TOOL_NAMES,
+  KORTIX_TOOL_NAMES,
+  KORTIX_TOOL_PREFIX,
+  kortixToolRef,
+  selectedKortixTools,
+  TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -213,12 +227,14 @@ export {
   type PermissionConfigObjectV2,
   type PermissionConfigV2,
   type GrantSetV2,
+  type AgentToolsV2,
   type AgentBlockV2,
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
   type HarnessesV2,
   type PiPackageEntryV2,
+  resolveAgentTools,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -381,7 +397,9 @@ function validateManifestBodyV2(
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
+  validateToolsV2(parsed.tools, 'tools', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
+  warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
@@ -941,8 +959,11 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'uses', 'resources', 'env', 'secrets',
+  'processes', 'http_service', 'services', 'mounts', 'vm', 'deploy', 'labels', 'display',
 ]);
+/** An App slug as the Apps API accepts it (`uses` entries name live Apps). */
+const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 function validateAppStringMap(
   node: unknown,
@@ -975,6 +996,44 @@ function validateAppStringMap(
   }
 }
 
+const APP_LABEL_RE = /^[a-z0-9][a-z0-9-]{0,30}$/;
+
+/**
+ * The release-config fields of an App block: shapes first, then every rule the
+ * deploy engine relies on (`appReleaseConfigIssues`), so `kortix validate`
+ * refuses what the API would refuse. A static App runs no machine: skipped.
+ */
+function validateAppReleaseConfig(block: AppBlockV2, where: string, issues: ManifestIssue[]): void {
+  if (block.labels !== undefined && (
+    !Array.isArray(block.labels) || block.labels.length > 10
+    || block.labels.some((label: unknown) => typeof label !== 'string' || !APP_LABEL_RE.test(label))
+  )) {
+    issues.push({ path: `${where}.labels`, message: 'must be at most 10 labels of lowercase letters, digits and "-".', severity: 'error' });
+  }
+  if (block.type === 'static') return;
+  const shapes: Array<[string, unknown, (value: unknown) => boolean, string]> = [
+    ['processes', block.processes, (v) => isTable(v) && Object.values(v).every((c) => typeof c === 'string'), 'must map a group name to a command string.'],
+    ['http_service', block.http_service, isTable, 'must be an object.'],
+    ['services', block.services, (v) => Array.isArray(v) && v.every(isTable), 'must be a list of objects.'],
+    ['mounts', block.mounts, (v) => Array.isArray(v) && v.every(isTable), 'must be a list of objects.'],
+    ['vm', block.vm, (v) => isTable(v) || (Array.isArray(v) && v.every(isTable)), 'must be an object or a list of objects.'],
+    ['deploy', block.deploy, isTable, 'must be an object.'],
+  ];
+  let shapeError = false;
+  for (const [key, value, ok, message] of shapes) {
+    if (value !== undefined && !ok(value)) {
+      issues.push({ path: `${where}.${key}`, message, severity: 'error' });
+      shapeError = true;
+    }
+  }
+  if (shapeError) return;
+  const input = appReleaseInputFromBlock(block);
+  if (!input) return;
+  for (const issue of appReleaseConfigIssues(resolveAppReleaseConfig(input))) {
+    issues.push({ path: `${where}.${issue.path}`, message: issue.message, severity: 'error' });
+  }
+}
+
 function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined) return;
   if (!isTable(node)) {
@@ -991,8 +1050,42 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
       continue;
     }
     for (const key of Object.keys(value)) {
-      if (!APP_KEYS.has(key)) {
+      if (key === 'backends') {
+        issues.push({ path: `${where}.backends`, message: 'is retired: list the Apps this App uses in `uses`.', severity: 'error' });
+      } else if (key === 'monthly_budget_usd') {
+        issues.push({ path: `${where}.monthly_budget_usd`, message: 'is retired and ignored: Apps have no budget. Remove it.', severity: 'warning' });
+      } else if (key === 'kind') {
+        issues.push({
+          path: `${where}.kind`,
+          message: "is retired: an App's shape comes from its config; see the kortix-apps skill templates.",
+          severity: 'warning',
+        });
+      } else if (!APP_KEYS.has(key)) {
         issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
+      }
+    }
+    validateAppReleaseConfig(value as AppBlockV2, where, issues);
+    if (value.display !== undefined) {
+      const displayIssues = appDisplayIssues(value.display, slug);
+      for (const issue of displayIssues) {
+        issues.push({ path: issue.path ? `${where}.display.${issue.path}` : `${where}.display`, message: issue.message, severity: 'error' });
+      }
+      const parent = isTable(value.display) ? value.display.parent : undefined;
+      if (!displayIssues.some((issue) => issue.path === 'parent') && typeof parent === 'string' && !(parent in node)) {
+        issues.push({ path: `${where}.display.parent`, message: 'names no App in this file.', severity: 'error' });
+      }
+    }
+    if (value.uses !== undefined) {
+      if (!Array.isArray(value.uses)) {
+        issues.push({ path: `${where}.uses`, message: 'must be a list of App slugs.', severity: 'error' });
+      } else {
+        value.uses.forEach((used: unknown, index: number) => {
+          if (typeof used !== 'string' || !APP_SLUG_RE.test(used)) {
+            issues.push({ path: `${where}.uses[${index}]`, message: 'must be an App slug: lowercase letters, numbers and single hyphens.', severity: 'error' });
+          } else if (used === slug) {
+            issues.push({ path: `${where}.uses[${index}]`, message: 'an App cannot use itself.', severity: 'error' });
+          }
+        });
       }
     }
     const type = value.type;
@@ -1023,8 +1116,12 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
         issues.push({ path: `${where}.command`, message: `is required for ${type} Apps.`, severity: 'error' });
       }
     }
-    if ((type === 'dockerfile' || type === 'oci_image') && value.port === undefined) {
-      issues.push({ path: `${where}.port`, message: `is required for ${type} Apps.`, severity: 'error' });
+    // The port of the primary service: `port`, or `http_service.internal_port`. A
+    // worker-only App (`processes`, no service) serves no port.
+    if ((type === 'dockerfile' || type === 'oci_image') && value.port === undefined
+        && !(isTable(value.http_service) && value.http_service.internal_port !== undefined)
+        && !isTable(value.processes)) {
+      issues.push({ path: `${where}.port`, message: `is required for ${type} Apps (or set http_service.internal_port).`, severity: 'error' });
     }
     if (type === 'oci_image' && (typeof value.image !== 'string' || !value.image.trim())) {
       issues.push({ path: `${where}.image`, message: 'is required for oci_image Apps.', severity: 'error' });
@@ -1039,10 +1136,6 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
     if (value.always_on !== undefined && typeof value.always_on !== 'boolean') {
       issues.push({ path: `${where}.always_on`, message: 'must be true or false.', severity: 'error' });
-    }
-    if (value.monthly_budget_usd !== undefined &&
-        (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
-      issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {
@@ -1192,7 +1285,10 @@ function validateMonitorTrigger(
  * `type: event` — the fourth trigger type: "when <app event> happens on
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
- * config (validated by the provider at subscribe time, not here). Wiring for
+ * config (validated by the provider at subscribe time, not here). `account`
+ * optionally names one shared account of that connector by label. `source`
+ * optionally names the event source adapter (default: the connector's
+ * provider); event ids belong to that adapter. Wiring for
  * the other three types is hard-rejected — a manifest must not claim a
  * schedule the event source never reads.
  *
@@ -1218,6 +1314,20 @@ function validateEventTrigger(
     issues.push({
       path: `${where}.config`,
       message: 'config must be an object.',
+      severity: 'error',
+    });
+  }
+  if (entry.account !== undefined && (typeof entry.account !== 'string' || !entry.account.trim())) {
+    issues.push({
+      path: `${where}.account`,
+      message: 'account must be the label of a shared account on the connector.',
+      severity: 'error',
+    });
+  }
+  if (entry.source !== undefined && (typeof entry.source !== 'string' || !entry.source.trim())) {
+    issues.push({
+      path: `${where}.source`,
+      message: 'source must be the event source adapter id, such as "composio".',
       severity: 'error',
     });
   }
@@ -1388,7 +1498,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       validateEventTrigger(entry, where, issues);
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
-      for (const key of ['connector', 'event', 'config']) {
+      for (const key of ['connector', 'account', 'source', 'event', 'config']) {
         if (entry[key] !== undefined) {
           issues.push({
             path: `${where}.${key}`,

@@ -57,7 +57,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint, readSessionMessageTip, removeRuntimeMessage } from './runtime-client';
+import { resolveSessionOpencodeEndpoint, readSessionMessageTip, retractSessionMessage } from './runtime-client';
 import {
   type PlacementTipMessage,
   reachedPlacement,
@@ -165,10 +165,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
   // abort in the common case, so it stamps the open turn itself. A turn a late
   // delivery opened after the hold is stopped by this call alone.
   abort: (sessionId) => abortRuntimeTurn(sessionId, { requestedStop: true }),
-  async removeMessage(sessionId, messageId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
-  },
+  removeMessage: (sessionId, messageId) => retractSessionMessage(sessionId, messageId, 'inbox-hold'),
   async holdAsQueued(commandId) {
     await db
       .update(sessionLifecycleCommands)

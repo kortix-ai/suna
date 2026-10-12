@@ -37,6 +37,8 @@ mock.module('../../shared/supabase', () => ({
         },
       },
     },
+    // Session files: an empty bucket (account erasure lists each project).
+    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
   }),
 }));
 

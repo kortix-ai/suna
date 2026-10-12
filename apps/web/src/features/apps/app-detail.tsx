@@ -9,6 +9,7 @@ import Hint from '@/components/ui/hint';
 
 import Loading from '@/components/ui/loading';
 import { Modal, ModalContent } from '@/components/ui/modal';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 
 import { successToast } from '@/components/ui/toast';
 
@@ -20,14 +21,16 @@ import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, CurrencyDollarIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
 import { AppPreview } from './app-preview';
+import { frameKey, reloadFrame } from './app-preview-pool';
 import { AppAccessModal } from './app-access';
-import { AppBudgetModal } from './app-budget';
-import { localizedAppCopy, appCommand, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { AppConnectDialog } from './app-connect';
+import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
+import { localizedAppCopy, appCan, appCommand, appHost, appStatus, appTabLabel, childApps, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -35,12 +38,18 @@ import { localizedAppCopy, appCommand, appHost, appStatus, deployNotice, DeployC
  * Opening an App used to mean a new browser tab, which left Kortix behind and
  * lost every control the moment you arrived. The App now runs in place and the
  * actions that used to crowd the card sit in one bar over the top of it.
+ *
+ * The body and the capability items of the menu follow `app.capabilities`:
+ * `preview` frames the App itself, and Connect shows for the Apps that offer
+ * `member_tokens`.
  */
 export function AppDetailModal({
   projectId,
   app,
   canWrite,
   canDeploy,
+  canAdmin = false,
+  onOpenLinked,
   open,
   onOpenChange,
 }: {
@@ -48,6 +57,10 @@ export function AppDetailModal({
   app: App;
   canWrite: boolean;
   canDeploy: boolean;
+  /** project.app.admin: restore a volume. */
+  canAdmin?: boolean;
+  /** Open another App of the project by slug: the uses / used-by links in the header. */
+  onOpenLinked: (slug: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -55,12 +68,41 @@ export function AppDetailModal({
   const appCopy = localizedAppCopy(tI18nComplete);
   const apps = useProjectApps(projectId);
   const deployments = useAppDeployments(projectId, app.app_id);
+  const preview = appCan(app, 'preview');
   const canAccess = app.viewer_can_access !== false;
-  const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess });
+  const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess && preview });
   const [versionsOpen, setVersionsOpen] = useState(false);
+  /** The bottom panel's tab: releases, or (by capability) machines and volumes. */
+  const [panelTab, setPanelTab] = useState<'releases' | 'machines' | 'volumes'>('releases');
   // The deployment whose events and build log are unfolded in the version drawer.
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<'access' | 'delete' | 'budget' | null>(null);
+  const [overlay, setOverlay] = useState<
+    'access' | 'delete' | 'connect' | null
+  >(null);
+  // Apps shown as tabs of this one (`display.parent`): a backend's dashboard.
+  // An App that hides its own thumbnail opens on its first tab.
+  const children = childApps(apps.data ?? [], app, canAdmin);
+  const [view, setView] = useState(() =>
+    app.display?.preview === 'none' && children[0] ? children[0].app_id : app.app_id,
+  );
+  const viewedChild = children.find((child) => child.app_id === view) ?? null;
+  // The tab on screen decides what Open and Refresh act on.
+  const childAccess = useAppAccess(projectId, viewedChild?.app_id ?? null, {
+    policy: false,
+    session: !!viewedChild && viewedChild.viewer_can_access !== false && appCan(viewedChild, 'preview'),
+  });
+  const viewed = viewedChild ?? app;
+  const viewedSession = viewedChild ? childAccess.session : access.session;
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const fresh = await viewedSession.refetch();
+      if (fresh.data?.url) reloadFrame(frameKey(viewed), fresh.data.url);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const latest = deployments.data?.[0];
   const status = appStatus(app, tI18nComplete);
   const notice = deployNotice(latest, tI18nComplete);
@@ -70,9 +112,12 @@ export function AppDetailModal({
   const isStatic =
     app.hosting_type === 'static' ||
     deployments.data?.find((row) => row.deployment_id === app.active_deployment_id)?.hosting_type === 'static';
+  // An App with a runtime.
   const isServer = status.deployed && !isStatic;
+  const canSleep = appCan(app, 'sleep');
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
+  const viewedUrl = viewedChild ? (childAccess.session.data?.url ?? viewedChild.url) : liveUrl;
 
   const lifecycle = async (action: 'start' | 'stop') => {
     try {
@@ -130,6 +175,16 @@ export function AppDetailModal({
                   running case needs a screen-reader-only label — but rendering
                   it unconditionally alongside the visible one made every
                   non-running state read its status out twice. */}
+              {children.length ? (
+                <Tabs value={view} onValueChange={setView} className="shrink-0">
+                  <TabsListCompact>
+                    <TabsTriggerCompact value={app.app_id}>{app.name}</TabsTriggerCompact>
+                    {children.map((child) => (
+                      <TabsTriggerCompact key={child.app_id} value={child.app_id}>{appTabLabel(child, app)}</TabsTriggerCompact>
+                    ))}
+                  </TabsListCompact>
+                </Tabs>
+              ) : null}
               {status.live ? (
                 <span className="sr-only">{status.label}</span>
               ) : (
@@ -150,6 +205,21 @@ export function AppDetailModal({
                   </Badge>
                 </button>
               ) : null}
+              {/* How this App connects to the others: the Apps it uses (its
+                  code mints their sign-in tokens and binds them) and the Apps
+                  that use it. Each slug opens that App. */}
+              <AppLinks label={tI18nComplete.raw('text9e6151acb057')} slugs={app.uses} onOpen={onOpenLinked} />
+              {/* A tab of this App already shows it: not listed again as a user. */}
+              <AppLinks
+                label={tI18nComplete.raw('text681bf81aba87')}
+                slugs={app.used_by?.filter((slug) => !children.some((child) => child.slug === slug))}
+                onOpen={onOpenLinked}
+              />
+              {/* Its other services (each on its own host) and its labels. */}
+              <AppServices app={app} />
+              {(app.labels ?? []).map((label) => (
+                <Badge key={label} variant="secondary" size="xs" className="hidden shrink-0 md:inline-flex">{label}</Badge>
+              ))}
             </div>
 
             {/* Two registers, and the gap is what separates them: the App's own
@@ -159,7 +229,7 @@ export function AppDetailModal({
                 `ghost` for the same reason — chrome, not an action. */}
             <div className="flex shrink-0 items-center gap-2">
               <ButtonGroup>
-                {canDeploy && isServer ? (
+                {canDeploy && canSleep ? (
                   <Hint
                     label={
                       running
@@ -189,21 +259,37 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                <Hint
-                  label={tI18nComplete('text06ce842278f6', { value0: appHost(app.url) })}
-                  side="bottom"
-                >
-                  <Button asChild size="icon" variant="outline">
-                    <a
-                      href={liveUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+                {appCan(viewed, 'preview') && viewed.active_deployment_id ? (
+                  <Hint label={tI18nComplete.raw('text5b529abadacc')} side="bottom">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      disabled={refreshing}
+                      aria-label={tI18nComplete.raw('text5b529abadacc')}
+                      onClick={() => void refresh()}
+                      data-testid="app-preview-refresh"
                     >
-                      <ArrowSquareOutIcon className="size-4 shrink-0" />
-                    </a>
-                  </Button>
-                </Hint>
+                      {refreshing ? <Loading className="size-4 shrink-0" /> : <ArrowClockwiseIcon className="size-4 shrink-0" />}
+                    </Button>
+                  </Hint>
+                ) : null}
+                {appCan(viewed, 'preview') ? (
+                  <Hint
+                    label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
+                    side="bottom"
+                  >
+                    <Button asChild size="icon" variant="outline">
+                      <a
+                        href={viewedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+                      >
+                        <ArrowSquareOutIcon className="size-4 shrink-0" />
+                      </a>
+                    </Button>
+                  </Hint>
+                ) : null}
                 {/* Everything rare or configural, behind one control. Three
                     icon buttons became one, and Delete came UP out of the
                     version drawer — a destructive action does not belong
@@ -232,16 +318,7 @@ export function AppDetailModal({
                         </span>
                       </DropdownMenuItem>
                     ) : null}
-                    {canWrite && isServer ? (
-                      <DropdownMenuItem onClick={() => setOverlay('budget')}>
-                        <CurrencyDollarIcon className="size-3.5 shrink-0" />
-                        {tI18nComplete.raw('textc247593b2c0f')}
-                        <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                          ${app.monthly_budget_usd}
-                        </span>
-                      </DropdownMenuItem>
-                    ) : null}
-                    {canWrite && !isStatic ? (
+                    {canWrite && canSleep ? (
                       <DropdownMenuCheckboxItem
                         checked={app.always_on === true}
                         disabled={apps.update.isPending}
@@ -251,13 +328,8 @@ export function AppDetailModal({
                       >
                         <span className="flex flex-col">
                           {tI18nComplete.raw('text044ba8a9ae43')}
-                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('textb2fceee88a51')}</span>
+                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('text853696d5a64d')}</span>
                         </span>
-                        {isServer && app.estimated_monthly_usd ? (
-                          <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                            {tI18nComplete('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) })}
-                          </span>
-                        ) : null}
                       </DropdownMenuCheckboxItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
@@ -266,6 +338,13 @@ export function AppDetailModal({
                         ? tI18nComplete.raw('text26b1a7703eac')
                         : tI18nComplete.raw('text401dc1a55cb9')}
                     </DropdownMenuItem>
+                    {/* Capability items: only the Apps that offer them list them. */}
+                    {appCan(app, 'member_tokens') ? (
+                      <DropdownMenuItem onClick={() => setOverlay('connect')}>
+                        <PlugsConnectedIcon className="size-3.5 shrink-0" />
+                        {tI18nComplete.raw('textc0e20f6d5a3a')}
+                      </DropdownMenuItem>
+                    ) : null}
                     {canWrite ? (
                       <>
                         <DropdownMenuSeparator />
@@ -293,14 +372,25 @@ export function AppDetailModal({
           </header>
 
           <div className="relative min-h-0 flex-1">
-            <AppPreview
-              key={app.active_deployment_id ?? app.app_id}
-              app={app}
-              url={access.session.data?.url ?? null}
-              accessError={!canAccess || access.session.isError}
-              interactive
-              className="absolute inset-0 size-full"
-            />
+            {viewedChild ? (
+              <AppPreview
+                key={viewedChild.app_id}
+                app={viewedChild}
+                url={childAccess.session.data?.url ?? null}
+                accessError={viewedChild.viewer_can_access === false || childAccess.session.isError}
+                interactive
+                className="absolute inset-0 size-full"
+              />
+            ) : preview ? (
+              <AppPreview
+                key={app.active_deployment_id ?? app.app_id}
+                app={app}
+                url={access.session.data?.url ?? null}
+                accessError={!canAccess || access.session.isError}
+                interactive
+                className="absolute inset-0 size-full"
+              />
+            ) : null}
           </div>
 
           {versionsOpen ? (
@@ -330,8 +420,7 @@ export function AppDetailModal({
                         ? tI18nComplete.raw('text044ba8a9ae43')
                         : tI18nComplete.raw('text7be15cd189a3')
                       : null,
-                    isServer ? tI18nComplete('text89ea53a8d7ac', { value0: app.monthly_budget_usd }) : null,
-                    app.retained_deployments !== undefined
+                    appCan(app, 'rollback') && app.retained_deployments !== undefined
                       ? tI18nComplete('text04957fa46a70', { value0: app.retained_deployments })
                       : null,
                   ]
@@ -339,41 +428,58 @@ export function AppDetailModal({
                     .join(' · ')}
                 </span>
               </div>
-              {deployments.isLoading ? (
-                <Loading className="text-muted-foreground" />
-              ) : deployments.data?.length ? (
-                <div className="space-y-1">
-                  {deployments.data.map((deployment) => (
-                    <DeploymentRow
-                      key={deployment.deployment_id}
-                      projectId={projectId}
-                      deployment={deployment}
-                      expanded={expandedId === deployment.deployment_id}
-                      onToggle={() =>
-                        setExpandedId((current) =>
-                          current === deployment.deployment_id ? null : deployment.deployment_id,
-                        )
-                      }
-                      active={deployment.deployment_id === app.active_deployment_id}
-                      canDeploy={canDeploy}
-                      rollbackPending={deployments.rollback.isPending}
-                      onRollback={async () => {
-                        try {
-                          await deployments.rollback.mutateAsync(deployment.deployment_id);
-                          successToast(
-                            tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
-                          );
-                        } catch {
-                          // Failure is already toasted by the query client's global mutations.onError.
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
+              {appCan(app, 'machines') || appCan(app, 'volumes') ? (
+                <Tabs value={panelTab} onValueChange={(value) => setPanelTab(value as typeof panelTab)} className="mb-2">
+                  <TabsListCompact>
+                    <TabsTriggerCompact value="releases">{tI18nComplete.raw('text1a6f7cae06cc')}</TabsTriggerCompact>
+                    {appCan(app, 'machines') ? <TabsTriggerCompact value="machines">{tI18nComplete.raw('textc061da196eae')}</TabsTriggerCompact> : null}
+                    {appCan(app, 'volumes') ? <TabsTriggerCompact value="volumes">{tI18nComplete.raw('text53a480e304c0')}</TabsTriggerCompact> : null}
+                  </TabsListCompact>
+                </Tabs>
+              ) : null}
+              {panelTab === 'machines' && appCan(app, 'machines') ? (
+                <AppMachinesPanel projectId={projectId} app={app} canDeploy={canDeploy} />
+              ) : panelTab === 'volumes' && appCan(app, 'volumes') ? (
+                <AppVolumesPanel projectId={projectId} app={app} canDeploy={canDeploy} canAdmin={canAdmin} />
               ) : (
-                <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('textf1fc77ca3b24')}
-                </p>
+                <>
+                {deployments.isLoading ? (
+                  <Loading className="text-muted-foreground" />
+                ) : deployments.data?.length ? (
+                  <div className="space-y-1">
+                    {deployments.data.map((deployment) => (
+                      <DeploymentRow
+                        key={deployment.deployment_id}
+                        projectId={projectId}
+                        deployment={deployment}
+                        expanded={expandedId === deployment.deployment_id}
+                        onToggle={() =>
+                          setExpandedId((current) =>
+                            current === deployment.deployment_id ? null : deployment.deployment_id,
+                          )
+                        }
+                        active={deployment.deployment_id === app.active_deployment_id}
+                        canDeploy={canDeploy && appCan(app, 'rollback')}
+                        rollbackPending={deployments.rollback.isPending}
+                        onRollback={async () => {
+                          try {
+                            await deployments.rollback.mutateAsync(deployment.deployment_id);
+                            successToast(
+                              tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
+                            );
+                          } catch {
+                            // Failure is already toasted by the query client's global mutations.onError.
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {tI18nComplete.raw('textf1fc77ca3b24')}
+                  </p>
+                )}
+                </>
               )}
             </div>
           ) : null}
@@ -401,12 +507,10 @@ export function AppDetailModal({
           }
         }}
       />
-      {overlay === 'budget' ? (
-        <AppBudgetModal
-          projectId={projectId}
+      {overlay === 'connect' ? (
+        <AppConnectDialog
           app={app}
-          open
-          onOpenChange={(next) => setOverlay(next ? 'budget' : null)}
+          onOpenChange={(next) => setOverlay(next ? 'connect' : null)}
         />
       ) : null}
       {overlay === 'access' ? (
@@ -419,6 +523,21 @@ export function AppDetailModal({
         />
       ) : null}
     </Modal>
+  );
+}
+
+/** "Uses db, auth": the linked Apps by slug, each one a button that opens it. Nothing when there are none. */
+function AppLinks({ label, slugs, onOpen }: { label: string; slugs?: string[]; onOpen: (slug: string) => void }) {
+  if (!slugs?.length) return null;
+  return (
+    <span className="text-muted-foreground hidden shrink-0 items-center gap-1 text-xs md:flex">
+      {label}
+      {slugs.map((slug) => (
+        <Button key={slug} size="xs" variant="ghost" onClick={() => onOpen(slug)}>
+          {slug}
+        </Button>
+      ))}
+    </span>
   );
 }
 

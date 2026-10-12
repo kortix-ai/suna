@@ -156,6 +156,7 @@ export function registerTurnStreamRoutes(): void {
           sessionId: projectSessions.sessionId,
           accountId: projectSessions.accountId,
           createdBy: projectSessions.createdBy,
+          origin: projectSessions.origin,
           metadata: projectSessions.metadata,
           opencodeSessionId: projectSessions.runtimeSessionId,
         })
@@ -199,6 +200,7 @@ export function registerTurnStreamRoutes(): void {
             turnStreamSession: {
               accountId: turnStreamSession.accountId,
               createdBy: turnStreamSession.createdBy,
+              origin: turnStreamSession.origin ?? null,
             },
           });
         case 'runtime_session':

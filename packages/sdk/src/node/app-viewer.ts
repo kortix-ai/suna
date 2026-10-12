@@ -35,7 +35,17 @@ export const APP_VIEWER_SECRET_ENV = 'KORTIX_APP_VIEWER_SECRET';
 export interface KortixAppViewer {
   userId: string;
   email: string | null;
+  /** Display name from the viewer's profile. Null from an older gate. */
+  name?: string | null;
+  /** Profile picture URL. Null from an older gate. */
+  picture?: string | null;
   groupIds: string[];
+  /** Names of the same groups, unique within the account. Empty from an older gate. */
+  groups?: string[];
+  /** The viewer's account role: `owner`, `admin` or `member`. Null from an older gate. */
+  role?: string | null;
+  /** The project that owns the App. Null from an older gate. */
+  projectId?: string | null;
   accountId: string;
   appId: string;
   /** The App's access mode when the gate authorized this request. */
@@ -83,7 +93,12 @@ interface SignedPayload {
   appId: string;
   userId: string;
   email: string | null;
+  name?: string | null;
+  picture?: string | null;
   groupIds: string[];
+  groups?: string[];
+  role?: string | null;
+  projectId?: string | null;
   accountId: string;
   accessMode: string;
   iat: number;
@@ -142,11 +157,23 @@ export async function readAppViewer(
   if (payload.email !== undefined && payload.email !== null && typeof payload.email !== 'string') {
     return null;
   }
+  if (payload.groups !== undefined) {
+    if (!Array.isArray(payload.groups)) return null;
+    if (payload.groups.some((name) => typeof name !== 'string')) return null;
+  }
+  for (const field of [payload.name, payload.picture, payload.role, payload.projectId]) {
+    if (field !== undefined && field !== null && typeof field !== 'string') return null;
+  }
 
   return {
     userId: payload.userId,
     email: payload.email ?? null,
+    name: payload.name ?? null,
+    picture: payload.picture ?? null,
     groupIds: payload.groupIds ?? [],
+    groups: payload.groups ?? [],
+    role: payload.role ?? null,
+    projectId: payload.projectId ?? null,
     accountId: payload.accountId,
     appId: payload.appId,
     accessMode: payload.accessMode,

@@ -45,11 +45,18 @@ export interface TriggerSessionAccess {
 
 /** Subscription state of a `type: event` trigger. */
 export interface ProjectTriggerEvent {
+  /** The connector (profile) the event happens on. */
   connector: string;
+  /** Declared `account` label; null = the connector's default shared account. */
+  account?: string | null;
+  /** Identity (or label) of the shared account actually feeding the trigger; null when none. */
+  connected_as?: string | null;
   /** Provider event type id, e.g. `GITHUB_PULL_REQUEST_EVENT`. */
   type: string;
   config: Record<string, unknown>;
-  /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
+  /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+  source?: string | null;
+  /** @deprecated Same value as `source`. */
   provider: string | null;
   /** Provider app slug (e.g. `github`). Null when unresolved. */
   app: string | null;
@@ -198,7 +205,11 @@ export interface CreateProjectTriggerInput {
   expect_event_within?: string;
   /** Required for type='event'. Connector slug the event happens on. */
   connector?: string;
-  /** Required for type='event'. Provider event type id from {@link listProjectTriggerEventTypes}. */
+  /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
+  event_account?: string | null;
+  /** For type='event'. Event source adapter id such as `composio`; omit for the connector's provider. */
+  event_source?: string | null;
+  /** Required for type='event'. The adapter's event type id from {@link listProjectTriggerEventTypes}. */
   event?: string;
   /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
   event_config?: Record<string, unknown>;
@@ -245,9 +256,13 @@ export interface UpdateProjectTriggerInput {
   interval?: string | null;
   /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
   expect_event_within?: string | null;
-  /** For type='event'. Connector slug. */
+  /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
   connector?: string;
-  /** For type='event'. Provider event type id. */
+  /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */
+  event_account?: string | null;
+  /** For type='event'. Event source adapter id; null clears it to the connector's provider. Changing `connector` clears it unless sent. */
+  event_source?: string | null;
+  /** For type='event'. The adapter's event type id. */
   event?: string;
   /** For type='event'. Replaces the provider event config. */
   event_config?: Record<string, unknown>;
@@ -350,28 +365,57 @@ export interface ProjectTriggerEventType {
 }
 
 export interface ProjectTriggerEventTypes {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   app: string;
   event_types: ProjectTriggerEventType[];
 }
 
 /**
- * The app events a connector can trigger on. Throws 404 for an unknown
- * connector and 409 `event_source_unavailable` when its provider has no event source.
+ * The app events a connector, or an app with no connector, can trigger on.
+ * Throws 404 for an unknown connector (`app_not_found` for an app with no
+ * events), 400 for an unknown `source`, and 409 `event_source_unavailable`
+ * when no event source serves it.
  */
 export async function listProjectTriggerEventTypes(
   projectId: string,
-  params: { connector: string },
+  params: { connector: string } | { app: string; source?: string },
 ) {
+  const query =
+    'connector' in params
+      ? `connector=${encodeURIComponent(params.connector)}`
+      : `app=${encodeURIComponent(params.app)}${params.source ? `&source=${encodeURIComponent(params.source)}` : ''}`;
   return unwrap(
-    await backendApi.get<ProjectTriggerEventTypes>(
-      `/projects/${projectId}/triggers/event-types?connector=${encodeURIComponent(params.connector)}`,
-    ),
+    await backendApi.get<ProjectTriggerEventTypes>(`/projects/${projectId}/triggers/event-types?${query}`),
   );
+}
+
+/** One shared account of a connector: the only kind that can feed an event trigger. */
+export interface ProjectTriggerEventAccount {
+  /** The account's label; unique per connector. This is the trigger's `account`. */
+  label: string;
+  /** Identity the account was authorized as; null when unknown. */
+  connected_as: string | null;
+  /** The connector's default shared account: used when a trigger names no `account`. */
+  is_default: boolean;
+  /** Authorization finished; a trigger can run on it. */
+  connected: boolean;
+}
+
+/** A connector (profile) of an app, with its shared accounts. */
+export interface ProjectTriggerEventConnector {
+  slug: string;
+  name: string;
+  accounts: ProjectTriggerEventAccount[];
 }
 
 /** An app that can trigger events, with the project's state for it. */
 export interface ProjectTriggerEventApp {
+  /** Event source adapter id, such as `composio`. The trigger's `event_source`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   /** Provider app slug. */
   app: string;
@@ -382,6 +426,10 @@ export interface ProjectTriggerEventApp {
   connector: string | null;
   /** The project has an active shared account for this app. An event trigger runs on it. */
   connected: boolean;
+  /** Every connector (profile) of this app with its shared accounts. */
+  connectors?: ProjectTriggerEventConnector[];
+  /** Slug to give a new connector for this app (never a reserved or taken one). */
+  new_connector_slug?: string;
 }
 
 export interface ProjectTriggerEventApps {

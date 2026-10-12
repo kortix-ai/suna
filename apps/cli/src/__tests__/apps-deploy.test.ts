@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -16,6 +16,10 @@ let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let uploaded: Uint8Array | null = null;
 /** Fields every App response carries in the current test. */
 let appFields: Record<string, unknown> = {};
+/** Project secrets that already hold a value. */
+let configuredSecrets: string[] = [];
+/** Slugs of the Apps created during the test (one id serves them all). */
+let created: string[] = [];
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -53,7 +57,6 @@ function app(overrides: Record<string, unknown> = {}) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -134,10 +137,11 @@ function startServer(): string {
         });
       }
       if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'GET') {
-        return Response.json({ apps: [] });
+        return Response.json({ apps: created.map((slug) => app({ slug, name: slug })) });
       }
       if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'POST') {
         const input = body as { slug: string; name: string };
+        created.push(input.slug);
         return Response.json(app({ slug: input.slug, name: input.name }));
       }
       if (path === `/v1/projects/${PROJECT}/apps/artifacts` && req.method === 'POST') {
@@ -171,6 +175,18 @@ function startServer(): string {
       }
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'GET') {
         return Response.json(app());
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
+        return Response.json(app(body as Record<string, unknown>));
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/exec` && req.method === 'POST') {
+        return Response.json({ exit_code: 0, stdout: 'Admin key:\nsynthetic-admin-key|0123\n', stderr: '', truncated: false });
+      }
+      if (path === `/v1/projects/${PROJECT}/secrets` && req.method === 'GET') {
+        return Response.json({ items: configuredSecrets.map((name) => ({ identifier: name, name, configured: true })), required: [], optional: [] });
+      }
+      if (path === `/v1/projects/${PROJECT}/secrets` && req.method === 'POST') {
+        return Response.json({ identifier: (body as { name: string }).name, name: (body as { name: string }).name, configured: true });
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -225,6 +241,8 @@ describe('kortix apps deploy (characterization)', () => {
     calls = [];
     uploaded = null;
     appFields = {};
+    configuredSecrets = [];
+    created = [];
   });
 
   afterEach(() => {
@@ -246,6 +264,7 @@ describe('kortix apps deploy (characterization)', () => {
         '    path: web',
         '    type: bundle',
         '    output_dir: dist',
+        '    uses: [db]',
         '    resources:',
         '      cpu: 2',
         '      memory_gb: 4',
@@ -267,16 +286,107 @@ describe('kortix apps deploy (characterization)', () => {
     const create = calls.find(
       (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
     );
-    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4 });
+    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, uses: ['db'] });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
     expect(deploymentCall()?.body).toEqual({
       artifact_id: 'art-1',
       source: { kind: 'bundle', output_dir: 'build' },
       environment: { NODE_ENVIRONMENT: 'production' },
       secrets: { DATABASE_URL: 'database-primary' },
+      // The block's release config: here only its machine size.
+      config: { resources: { cpu: 2, memory_gb: 4 } },
     });
     expect(r.stdout).toContain('deployment ready');
     expect(r.stdout).toContain('storefront.kortix.test');
+  });
+
+  test('an explicit path still uses the matching kortix.yaml block (spa, mounts, services, labels, display reach the deploy)', async () => {
+    mkdirSync(join(tmp, 'apps', 'web', 'dist'), { recursive: true });
+    writeFileSync(join(tmp, 'apps', 'web', 'dist', 'index.html'), '<!doctype html>');
+    mkdirSync(join(tmp, 'db'), { recursive: true });
+    writeFileSync(join(tmp, 'db', 'Dockerfile'), 'FROM busybox\n');
+    writeFileSync(join(tmp, 'kortix.yaml'), [
+      'kortix_version: 2',
+      'apps:',
+      '  web:',
+      '    path: apps/web/dist',
+      '    type: static',
+      '    spa: true',
+      '  api:',
+      '    path: db',
+      '    type: dockerfile',
+      '    command: ["/start.sh"]',
+      '    labels: [backend]',
+      '    display: { preview: none }',
+      '    http_service: { internal_port: 3210, access: public }',
+      '    services:',
+      '      - { name: site, internal_port: 3211, access: public }',
+      '    mounts:',
+      '      - { source: data, destination: /data, initial_size_gb: 10 }',
+      '',
+    ].join('\n'));
+    const config = writeConfig(startServer());
+    // The fieldops agent did exactly this and lost `spa: true`.
+    const web = await runCli(['apps', 'deploy', 'apps/web/dist', '--project', PROJECT], config);
+    expect(web.code).toBe(0);
+    expect((deploymentCall()?.body as { source: { spa?: boolean } }).source.spa).toBe(true);
+    calls = [];
+    // The path `db` is the `api` block's path: the block applies.
+    const api = await runCli(['apps', 'deploy', 'db', '--project', PROJECT], config);
+    expect(api.code).toBe(0);
+    const body = deploymentCall()?.body as { source: Record<string, unknown>; config: Record<string, unknown> };
+    expect(body.source).toMatchObject({ kind: 'dockerfile', command: ['/start.sh'], port: 3210 });
+    expect(body.config).toEqual({
+      http_service: { internal_port: 3210, access: 'public' },
+      services: [{ name: 'site', internal_port: 3211, access: 'public' }],
+      mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10 }],
+    });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ labels: ['backend'], display: { preview: 'none' } });
+  });
+
+  test('launch --template convex: the dashboard is a tab of the backend, signed in by a secret the launch creates once', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--name', 'crm-data', '--project', PROJECT], config);
+    expect(r.stderr).not.toContain('✗');
+    expect(r.code).toBe(0);
+    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    expect(yaml.apps['crm-data']!.display).toEqual({ preview: 'none' });
+    expect(yaml.apps['crm-data-dashboard']!.display).toEqual({ parent: 'crm-data' });
+    expect(yaml.apps['crm-data-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'CRM_DATA_ADMIN_KEY' });
+    expect(yaml.apps['crm-data-dashboard']!.path).toBe('apps/crm-data/dashboard');
+    expect(r.stdout).toContain('wrote apps/crm-data/dashboard/start.js');
+    // Backend first, then the key from its machine, then the dashboard that reads it.
+    const order = calls.filter((c) => c.method === 'POST' && /\/(deployments|exec|secrets)$/.test(c.path)).map((c) => c.path.split('/').pop());
+    expect(order).toEqual(['deployments', 'exec', 'secrets', 'deployments']);
+    expect(calls.find((c) => c.path.endsWith('/secrets') && c.method === 'POST')?.body).toEqual({ name: 'CRM_DATA_ADMIN_KEY', value: 'synthetic-admin-key|0123' });
+    expect(r.stdout + r.stderr).not.toContain('synthetic-admin-key');
+    expect(r.stdout).toContain('CRM_DATA_ADMIN_KEY');
+  });
+
+  test('launch without --name names the Convex App for what it is: backend, backend-dashboard, BACKEND_ADMIN_KEY', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    expect(Object.keys(yaml.apps)).toEqual(['backend', 'backend-dashboard']);
+    expect(yaml.apps['backend-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'BACKEND_ADMIN_KEY' });
+    expect(yaml.apps['backend-dashboard']!.path).toBe('apps/backend/dashboard');
+  });
+
+  test('launch rewrites a secret an earlier App of the same name left, and keeps a file the user already has', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    mkdirSync(join(tmp, 'apps', 'crm-data', 'dashboard'), { recursive: true });
+    writeFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), '// mine\n');
+    configuredSecrets = ['CRM_DATA_ADMIN_KEY'];
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--name', 'crm-data', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.some((c) => c.path.endsWith('/exec'))).toBe(true);
+    expect(calls.find((c) => c.path.endsWith('/secrets') && c.method === 'POST')?.body).toEqual({ name: 'CRM_DATA_ADMIN_KEY', value: 'synthetic-admin-key|0123' });
+    expect(readFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), 'utf8')).toBe('// mine\n');
+    expect(readFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'Dockerfile'), 'utf8')).toContain('ENV BACKEND=crm-data');
   });
 
   test('a directory source is archived and inferred as a bundle from package.json', async () => {
@@ -386,28 +496,27 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stderr).toContain('kortix.yaml has no apps.nope block');
   });
 
-  test('--budget sets the new App\'s monthly budget; a server App below its 24/7 estimate is warned on stderr', async () => {
+  test('the retired --budget flag is ignored with a notice: its value is never read as the path, and nothing sends a budget', async () => {
     appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'deploy', 'site', '--budget', '20', '--project', PROJECT], config);
+    const r = await runCli(['apps', 'deploy', '--budget', '20', 'site', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
-    expect(create?.body).toEqual({ slug: 'site', name: 'site', monthly_budget_usd: 20 });
-    // The fake server answers with the default $5 budget.
-    expect(r.stderr).toContain('runs 24/7, about $73.48/month at list compute rates, but its monthly budget is $5.00');
+    expect(create?.body).toEqual({ slug: 'site', name: 'site' });
+    expect(r.stderr).toContain('--budget is ignored: Apps have no budget');
     expect(r.stdout).toContain('deployment ready');
   });
 
-  test('a static deploy and an App whose budget covers 24/7 are not warned', async () => {
+  test('a static deploy and an always-on App print no budget warning', async () => {
     appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
     const config = writeConfig(startServer());
     const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
     expect(staticRun.code).toBe(0);
     expect(staticRun.stderr).not.toContain('runs 24/7');
-    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 100 };
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const serverRun = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
@@ -415,26 +524,21 @@ describe('kortix apps deploy (characterization)', () => {
     expect(serverRun.stderr).not.toContain('runs 24/7');
   });
 
-  test('a server deploy prints the 24/7 cost line; a static deploy and an on-demand App do not', async () => {
-    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 74 };
+  test('a server deploy prints the 24/7 run line and no price; a static deploy and an on-demand App do not', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const config = writeConfig(startServer());
     const server = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
-    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)');
+    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB');
+    expect(server.stdout).not.toMatch(/\$|USD|month/);
+    expect(server.stdout).not.toContain('budget');
     const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
     expect(staticRun.stdout).not.toContain('Runs 24/7');
     appFields = { always_on: false, estimated_monthly_usd: 73.48 };
     const onDemand = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
     expect(onDemand.stdout).not.toContain('Runs 24/7');
-  });
-
-  test('--budget must be a positive number', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'deploy', 'site', '--budget', 'lots', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('--budget must be positive');
   });
 
   test('an unknown deploy flag is rejected', async () => {

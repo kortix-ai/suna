@@ -16,11 +16,11 @@ import { getChildSessionId } from '@/ui';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
-export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentMessageTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
   const rawMessage = (input.message as string) || '';
   const taskId = (input.id as string) || (input.agent_id as string) || '';
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
@@ -31,7 +31,7 @@ export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
   );
   const [modalOpen, setModalOpen] = useState(false);
 
-  const childSessionId = useMemo(() => getChildSessionId(part), [part]);
+  const childSessionId = useMemo(() => getChildSessionId(call), [call]);
   const hasSession = !!childSessionId;
 
   return (

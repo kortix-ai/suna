@@ -149,6 +149,29 @@ export const qk = {
       [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
+  /**
+   * The caller's notifications (KRTX-1742): the inbox, the preference record,
+   * and whether the caller watches one session. Every member answers for the
+   * CALLER, so the user id is segment 2 — the `qk.accounts` rule: without it,
+   * an in-tab identity swap shows user B user A's inbox until the next poll.
+   * `null`/`undefined` route to the `'anonymous'` slot, which no hook writes
+   * (each is gated on a user id). The member literal is segment 3, so no user
+   * id can alias another member.
+   */
+  notifications: {
+    /** Invalidation prefix covering every member for every user. Never a `queryKey`. */
+    scope: () => ['kx', 'notifications'] as const,
+    /** `listNotifications({ limit })` — the newest page. The page size changes the response. */
+    inbox: (userId: string | null | undefined, limit: number) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'inbox', limit] as const,
+    /** `getNotificationPreferences()`. */
+    preferences: (userId: string | null | undefined) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'preferences'] as const,
+    /** `getSessionWatch(projectId, sessionId)` — the caller's watch on one session. */
+    sessionWatch: (userId: string | null | undefined, projectId: string, sessionId: string) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'session-watch', projectId, sessionId] as const,
+  },
+
   projects: {
     /** Invalidation prefix covering every account's list AND the accountless
      *  slot. Never pass this as a `queryKey` — `list(accountId)` and
@@ -159,6 +182,37 @@ export const qk = {
 
     /** Every project the account can see. `undefined` means the active account. */
     list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
+  },
+
+  /**
+   * Drives (`listDrives`, `listDriveFiles`, …). A drive list holds the
+   * caller's own personal drives, so it is keyed by user like
+   * `accounts.list`. Every per-drive key sits under `drive(id)`: a write or a
+   * restore invalidates that one prefix and reaches the drive's files and
+   * versions. The `'list'` / `'drive'` / `'session'` segments keep the three
+   * shapes from ever colliding.
+   */
+  drives: {
+    /** Invalidation prefix for every drive key. Never a `queryKey`. */
+    scope: () => ['kx', 'drives'] as const,
+    list: (
+      userId: string | null | undefined,
+      scope?: { projectId?: string; accountId?: string },
+    ) =>
+      [
+        ...qk.drives.scope(),
+        'list',
+        userId ?? 'anonymous',
+        scope?.projectId ? `project:${scope.projectId}` : scope?.accountId ? `account:${scope.accountId}` : 'primary',
+      ] as const,
+    /** Prefix for one drive's files and versions. */
+    drive: (driveId: string) => [...qk.drives.scope(), 'drive', driveId] as const,
+    files: (driveId: string, path: string) => [...qk.drives.drive(driveId), 'files', path] as const,
+    versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
+    grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
+    conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    session: (projectId: string, sessionId: string) =>
+      [...qk.drives.scope(), 'session', projectId, sessionId] as const,
   },
 
   project: {
@@ -385,6 +439,13 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** Machines of one App (capability `machines`). */
+    appMachines: (id: string, appId: string) => [...qk.project.apps(id), appId, 'machines'] as const,
+    /** Volumes of one App (capability `volumes`). */
+    appVolumes: (id: string, appId: string) => [...qk.project.apps(id), appId, 'volumes'] as const,
+    /** Snapshots of one volume (capability `snapshots`). */
+    appVolumeSnapshots: (id: string, appId: string, volumeId: string) =>
+      [...qk.project.appVolumes(id, appId), volumeId, 'snapshots'] as const,
     /** One deployment and its events (build log included). */
     appDeployment: (id: string, appId: string, deploymentId: string) =>
       [...qk.project.appDeployments(id, appId), deploymentId] as const,

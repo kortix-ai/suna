@@ -5,7 +5,108 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (display)
+- `AppDisplay` (`listed`, `preview`: `live` | `none`, `parent`): where Kortix
+  shows an App. `App.display` reads it; `UpdateAppInput.display` replaces it
+  whole (`{}` restores the defaults). Presentation only. Additive: a server
+  that predates it omits the field.
+
+### Removed
+- Apps have no monthly budget. `App.monthly_budget_usd`,
+  `CreateAppInput.monthly_budget_usd` and `UpdateAppInput.monthly_budget_usd`
+  are gone: account credits pay for App compute, and the billing `402` is the
+  only cost gate. A server that still sends the field is ignored; a client
+  that still sends it gets `200` and the server ignores it.
+- The unreleased `convex` App kind is gone before any release carried it
+  (0.13.53, the last published version, has none of these names): `AppKind`,
+  `App.kind`, `App.instance` and the `AppInstance*` types, `AppSnapshot*`,
+  `AppCredentials`, `DeleteAppOptions`, `DeleteAppResult`, `GetAppLogOptions`,
+  `WaitForAppOptions`, `getAppCredentials`, `rotateAppCredentials`,
+  `listAppSnapshots`, `createAppSnapshot`, `deleteAppSnapshot`,
+  `restoreAppSnapshot`, `getAppLog`, `waitForApp`, `useAppSnapshots`,
+  `appSnapshotsKey`, and the `'convex'` source kind. A Convex backend is now an
+  ordinary server App with a volume (the `convex` template of
+  `kortix apps launch`). No published name is removed.
+
 ### Added
+- Apps: releases, machines, volumes.
+  `CreateAppBuildInput.config` (`AppReleaseConfigInput`) carries a release's
+  config: `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`
+  (`strategy`, `release_command`). An invalid config answers
+  `400 app_config_invalid` with `issues`. `UpdateAppInput.labels` replaces an
+  App's labels. `App` gains `capabilities` (`AppCapability`), `labels`,
+  `scale`, `services` (`AppServiceSummary[]`, each with its URL), `machines`
+  (`total`, `running`, `stopped`), `volumes` (`count`, `size_gb`), `config`
+  (the live release's `AppReleaseConfig`), `uses`, `used_by`, `auth`
+  (`AppAuth`), `always_on`, `hosting_type`, `estimated_monthly_usd` (each
+  group's `vm` × its scale, 24/7), `retained_deployments`, and `warnings`.
+  Machines: `listAppMachines`, `startAppMachine`, `stopAppMachine`,
+  `restartAppMachine`, `destroyAppMachine`, `scaleApp` (0-20 machines per
+  process group), `execInApp` (project admins). Volumes: `listAppVolumes`,
+  `createAppVolume`, `updateAppVolume` (grow, retention), `destroyAppVolume`
+  (`confirmName`), `listAppVolumeSnapshots`, `createAppVolumeSnapshot`,
+  `restoreAppVolume`, `forkAppVolume`. Sign-in: `createAppToken` (capability
+  `member_tokens`). Facade: `project(pid).apps.{machines.{list, start, stop,
+  restart, destroy}, scale, exec, volumes.{list, create, update, destroy,
+  snapshots, snapshot, restore, fork}, token}`. Types: `AppMachine`,
+  `AppMachineState`, `AppVolume`, `AppVolumeSnapshot`, `AppExecInput`,
+  `AppExecResult`, `CreateAppVolumeInput`, `AppReleaseConfig`,
+  `AppReleaseConfigInput`, `AppServiceConfig`, `AppServiceAccess`,
+  `AppAutoStop`, `AppCheck`, `AppMountConfig`, `AppVmConfig`,
+  `AppDeployStrategy`, `AppServiceSummary`, `AppCapability`, `AppAuth`,
+  `AppToken`, `CreateAppBuildInput`.
+- `@kortix/sdk/react`: `useAppMachines(projectId, appId)` (5 s poll; `start`,
+  `stop`, `restart`, `destroy`, `scale`), `useAppVolumes(projectId, appId)`
+  (`snapshot`, `restore`, `fork`, `extend`, `destroy`),
+  `useAppVolumeSnapshots(projectId, appId, volumeId)`, `useAppDeployment`,
+  and the keys `appMachinesKey`, `appVolumesKey`, plus
+  `qk.project.appMachines`, `qk.project.appVolumes`,
+  `qk.project.appVolumeSnapshots`.
+- `FeatureFlagKey` gains `notification_center` (also in `FEATURE_FLAG_KEYS`
+  and `KortixProject.experimental`). Off by default. It gates the KRTX-1742
+  notification entries below per project. Turn it on with
+  `updateFeatureFlag(projectId, 'notification_center', true)`.
+- Notifications (KRTX-1742), behind the `notification_center` project flag,
+  off by default. While it is off, the server writes no inbox row and sends
+  no Web Push and no email for that project, and the session watch routes
+  answer `403` `feature_disabled`. The caller's inbox: `listNotifications({ limit?,
+  before? })` → `InboxNotificationPage` (`notifications`, `unread_count`,
+  `next_before`) and `markNotificationsRead({ ids } | { all: true } |
+  { sessionId })`. Push and email choices per kind:
+  `getNotificationPreferences()` and `updateNotificationPreferences(patch)` →
+  `NotificationPreferences` (`kinds`, `email_available`). Web Push:
+  `getWebPushPublicKey()`, `registerWebPushSubscription({ endpoint, keys })`,
+  `unregisterWebPushSubscription(endpoint)`. Session watch:
+  `getSessionWatch(projectId, sessionId)` and `setSessionWatch(projectId,
+  sessionId, watching)`, also `session(pid, sid).watch()` and `.setWatch()`.
+  Facade: `kortix.notifications.{list, markRead, preferences,
+  updatePreferences, webPushPublicKey, registerWebPushSubscription,
+  unregisterWebPushSubscription}`. Types: `InboxNotification`,
+  `InboxNotificationKind`, `InboxNotificationPage`, `NotificationPreferences`,
+  `NotificationPreferencesPatch`, `WebPushSubscriptionInput`. Constants:
+  `INBOX_NOTIFICATION_KINDS`, `DEFAULT_NOTIFICATION_PREFERENCES`.
+- `@kortix/sdk/react`: `useNotificationInbox({ userId, limit?, enabled? })`
+  (60 s poll while visible, `unreadCount`, optimistic `markRead`,
+  `markAllRead`, `markSessionRead`), `useNotificationPreferences({ userId })`
+  (optimistic `update`), `useSessionWatch({ userId, projectId, sessionId })`
+  (optimistic `setWatching`), `notificationInboxQueryOptions`, and the
+  `qk.notifications` key family (`scope`, `inbox`, `preferences`,
+  `sessionWatch`, keyed by user). Each hook takes `enabled`; a host passes
+  `useFeatureFlag(projectId, 'notification_center').enabled`.
+- `session(pid, sid).presence()` accepts `alerts?: boolean`, and
+  `useSession({ presenceAlerts })` sends it: with `notification_center` on,
+  the server skips the phone and Web Push only while an alerting tab is in
+  use. A change is sent at once, without dropping the lease. A second
+  argument `{ keepalive?: boolean }` lets the request outlive a closing page;
+  default on for an absent report, off for a present one.
+- `useSession({ presencePageExit })`, default `false`: `pagehide` reports
+  absent, and every absent report is sent with `keepalive`, so a closed tab
+  ends its lease at once. Off is the presence from before: no `pagehide`
+  report and no `keepalive`. A closing tab still turns hidden and reports
+  absent, but the browser can cancel that request as the page unloads, and
+  the lease then lives to its 90 s expiry. Pass the project's
+  `notification_center` flag. A change applies without a new presence
+  report.
 - `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
   `action`, `maxPages`, `nextArgs`): `paginateConnector` and
   `connector(slug).paginate` throw it when `maxPages` (default 100) ends a
@@ -162,6 +263,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Changed
+- `rollbackApp` creates a NEW release from the
+  target's artifact and config and answers `202` with the App plus the queued
+  release in `deployment`; it no longer moves traffic to the old release in
+  place. It resolves with the new `AppRollback` type (`App & { deployment }`),
+  a subtype of the `App` it returned before. `AppDeployment` gains `config`,
+  `strategy` and `release_command_status`.
+- `getAppAuthEnv(projectId, appId)` (facade `apps.authEnv(appId)`) and `AppAuthEnv`:
+  `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and the project key set inline as a
+  `data:` URL, for a backend that verifies App sign-in tokens without a network call.
+- `App.estimated_monthly_usd` is deprecated: Kortix shows no prices. The field
+  stays on the wire; hosts must not display it. `DockerfileAppSource.port` and `OciImageAppSource.port` are optional:
+  omit them for a worker-only release (a `config` with `processes` and no
+  service).
 - Every turn start goes through the session's durable prompt inbox
   (`POST .../prompts`), as the web composer and the CLI already did.
   `session(pid, sid).send(text)` resolves with the `CreateSessionPromptResult`
@@ -189,6 +303,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown until the probe answers, as before.
 
 ### Deprecated
+- The `config_releases` member of `FeatureFlagKey`. Config releases graduated
+  out of the flag system: every session runs its base branch's config release.
+  It is absent from `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'config_releases')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'config_releases', …)` answers `400`. Removed in the
+  next major.
 - `createCheckoutSession`, `confirmCheckoutSession` and `scheduleDowngrade`
   (and the facade's `kortix.billing.checkout.{createSession,confirmSession}`
   and `kortix.billing.subscription.scheduleDowngrade`). The API retired their

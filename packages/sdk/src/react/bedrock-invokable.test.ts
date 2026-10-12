@@ -144,7 +144,21 @@ describe('the SampleCo repro, against the real catalog', () => {
     expect(healed!.modelID).not.toBe('xai.grok-4.6');
     expect(bedrockInferenceProfileRank(healed!.modelID)).toBeGreaterThan(0);
     expect(isOfferedModel(models, healed!)).toBe(true);
-    expect(healed!.modelID).toBe('global.anthropic.claude-opus-5');
+
+    // The exact id depends on what the daily catalog refresh brought in, so it
+    // is derived from the heal's documented rule, never pinned to one day's
+    // data (the catalog refresh of 2026-10-11 added `global.xai.grok-4.6` and
+    // turned a hard-coded `global.anthropic.claude-opus-5` red). The rule:
+    // the pinned model's own `global.` twin, else its regional twin, else the
+    // catalog default. The no-twin branch is pinned on fixtures above.
+    const ids = models.map((model) => model.modelID);
+    const twin =
+      ids.find((id) => id === `global.${pinned.modelID}`) ??
+      ids.find(
+        (id) => bedrockInferenceProfileRank(id) === 1 && id.slice(id.indexOf('.') + 1) === pinned.modelID,
+      );
+    const seeded = (list as { default?: Record<string, string> }).default!['amazon-bedrock'];
+    expect(healed!.modelID).toBe(twin ?? seeded);
   });
 
   test('the catalog default itself is already invokable and the heal leaves it alone', () => {

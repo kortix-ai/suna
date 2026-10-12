@@ -77,6 +77,7 @@ capitalized only at the start of a sentence or as a UI label.
 | channel | A chat surface where a bot starts sessions: Slack, Microsoft Teams, email. | "Add Kortix to Slack." | integration, "Telegram channel" |
 | trigger | A cron schedule or a signed webhook that starts sessions. | "A trigger starts a session." | automation (as the noun for one trigger) |
 | reminder | A prompt that re-prompts one existing session later, once or on repeat. Stored in the database, not in `kortix.yaml`. | "Set a reminder." | trigger (they differ) |
+| backend | What an App of kind `convex` is: a database, server functions, realtime queries, file storage and schedules, powered by Convex. The web app labels the kind "Backend". CLI: `kortix apps create <slug> --kind convex` (D13). | "Create a backend." | database, DB, Convex project, app backend |
 | computer | A person's own machine connected to Kortix. Name no machine class (laptop, desktop, server) and no operating system (Q20). Not a sandbox. | "Connect your computer." | sandbox or "cloud computer" as a synonym |
 | memory | The living company brain. Plain files today. | "company memory" | vector database (external copy) |
 | `kortix-sandbox-agent-server` | The daemon a sandbox boots with: it clones the repo, cuts the branch, loads config into a live runtime, and exposes prompting, streaming, files and terminal. Internal: do not use it in customer copy. | `kortix-sandbox-agent-server` in mono, in engineering text only | "agent server", "runtime" |
@@ -361,17 +362,17 @@ Tone: a colleague in a thread. One short message. The agent speaks as "I".
 
 Tone: instructional, exact, second person. The reader wants to finish a task.
 
-**Rule.** Write a docs page with a noun title, a one-sentence description that ends with a period, and a lead paragraph that defines the thing in its first sentence: "A session is one unit of agent work." — *Why:* `apps/web/content/docs/work/sessions.mdx` and `connect/reminders.mdx` open this way. — *Where:* docs. — *When silent:* title = the noun; first sentence = the definition.
+**Rule.** Write a docs page with a noun title, a one-sentence description that ends with a period, and a lead paragraph that defines the thing in its first sentence: "A session is one unit of agent work." — *Why:* `apps/web/content/docs/work/sessions.mdx` and `connect/triggers.mdx` open this way. — *Where:* docs. — *When silent:* title = the noun; first sentence = the definition.
 
-**Rule.** Write steps as numbered imperatives. Write UI labels in bold, exactly as the UI spells them. Write paths with an arrow: Settings → Feature flags. Write commands and flags in mono. — *Why:* `docs/connect/teams.mdx` and `project/secrets.mdx`. The reader matches the page to the screen. — *Where:* docs. — *When silent:* copy the label from the UI string.
+**Rule.** Write steps as numbered imperatives. Write UI labels in bold, exactly as the UI spells them. Write paths with an arrow: Settings → Feature flags. Write commands and flags in mono. — *Why:* `docs/connect/channels.mdx` and `project/secrets.mdx`. The reader matches the page to the screen. — *Where:* docs. — *When silent:* copy the label from the UI string.
 
 **Rule.** Use a table for a closed set of options and a callout for one warning. Put the working rule in a callout ("The working rule") at the top of a section that people misread. — *Why:* `secrets.mdx` does this for exposure. — *Where:* docs. — *When silent:* a table when a reader compares; a paragraph when a reader follows.
 
-**Rule.** Mark a feature that is not stable at its first mention: "Email is experimental — enable AgentMail Email under Settings → Feature flags." — *Why:* A reader must not build on a flagged feature by accident. — *Where:* docs | CLI help. — *When silent:* name the flag and its default.
+**Rule.** Mark a feature that is not stable in one line where the page describes it: "Email is experimental — enable AgentMail Email under Settings → Feature flags." Never open a page with a stability banner, and never narrate history ("graduated", "previously"). — *Why:* A reader must not build on a flagged feature by accident, and a banner above the definition buries what the thing is. — *Where:* docs | CLI help. — *When silent:* name the flag and its default.
 
 **Rule.** Flag a deprecated or legacy surface in the page. Do not describe it as current. — *Why:* CLAUDE.md: "flag legacy/deprecated surfaces in-doc rather than documenting them as current". — *Where:* docs. — *When silent:* "Deprecated. Use {replacement}."
 
-- Approved: "A reminder sends a prompt into one existing session at a time you set. It fires once, or it repeats until someone removes it." (`connect/reminders.mdx`)
+- Approved: "A reminder sends a prompt into one existing session at a time you set. It fires once, or it repeats until someone removes it." (`connect/triggers.mdx`)
 - Rejected: "Kortix is the Autonomous Company Operating System — a cloud computer where a workforce of AI agents runs your company." (retired line; `content/docs/index.mdx:6`)
 
 ### 5.8 Deck notes

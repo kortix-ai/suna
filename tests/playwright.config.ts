@@ -28,9 +28,10 @@ export function resolveBrowserWorkers(value: string | undefined): number {
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
   // Two workers everywhere. CI ran one per shard while lanes lived in a
   // 6 vCPU / 12 GiB Daytona guest (removed 2026-08-26), to keep cold Next.js
-  // route compilation under its memory limit. The shards now run on 8 vCPU /
-  // 32 GB Blacksmith runners, and one worker spent ~85% of the slowest shard's
-  // wall clock (browser-3: 17 tests, 7.0 min of 9.8, 2026-09-28).
+  // route compilation under its memory limit. On 8 vCPU / 32 GB runners one
+  // worker spent ~85% of the slowest shard's wall clock (browser-3: 17 tests,
+  // 7.0 min of 9.8, 2026-09-28). The shards now run on 4 vCPU / 16 GB
+  // GitHub-hosted runners.
   return 2;
 }
 
@@ -63,6 +64,14 @@ function union(sources: string[]): RegExp | undefined {
  * metacharacters, so the literal and its escaped form are identical.
  */
 const QUARANTINE_TAG = '@quarantine';
+
+/**
+ * The tag a journey carries when it needs the local stack: it pushes into a
+ * local bare repository or writes rows straight into the database. A deployed
+ * lane (KE2E_TARGET set) leaves it out at collection, so the strict release
+ * lane sees it absent, not skipped. The local stack still runs it.
+ */
+const LOCAL_ONLY_TAG = '@local-only';
 
 /**
  * Tag and title filters for the browser lane, read from the environment.
@@ -108,6 +117,7 @@ export function resolveGrepFilters(env: NodeJS.ProcessEnv = process.env): GrepFi
   if (includes.length === 0 && !excludes.includes(QUARANTINE_TAG)) {
     excludes.unshift(QUARANTINE_TAG);
   }
+  if (env.KE2E_TARGET && !excludes.includes(LOCAL_ONLY_TAG)) excludes.push(LOCAL_ONLY_TAG);
   const filters: GrepFilters = {};
   const grep = union(includes);
   const grepInvert = union(excludes);

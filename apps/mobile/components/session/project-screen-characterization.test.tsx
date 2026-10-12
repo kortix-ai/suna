@@ -23,6 +23,10 @@ let thread: any;
 let threadRenders = 0;
 let reviewData: any[] = [];
 let actionsSheet: any;
+let inbox: any;
+let inboxOptions: any;
+let pendingOpen: any;
+let project: any;
 let tree: ReactTestRenderer | undefined;
 let ProjectScreen: typeof import('./ProjectScreen').ProjectScreen;
 
@@ -39,7 +43,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   'expo-router/react-navigation': { useFocusEffect: (callback: () => void) => React.useEffect(callback, [callback]), useNavigation: () => root,
     StackActions: { push: (...args: any[]) => ({ type: 'push', args }), replace: (...args: any[]) => ({ type: 'replace', args }), popTo: (...args: any[]) => ({ type: 'popTo', args }) },
     CommonActions: { reset: (value: any) => ({ type: 'reset', value }) } },
-  '@/components/session/ProjectRoutes': { PROJECT_HOME_ROUTE: 'index', PROJECT_VIEW_ROUTE: 'view', PROJECT_PAGE_ROUTE: 'page', PROJECT_SESSIONS_ROUTE: 'sessions', PROJECT_FILES_ROUTE: 'files', PROJECT_ACCOUNT_ROUTE: 'account', ProjectRouteProvider: ({ value, children }: any) => { route = value; return React.createElement(React.Fragment, null, value.home, value.view, children); }, backFromSubPage: spy('backSubPage') },
+  '@/components/session/ProjectRoutes': { PROJECT_HOME_ROUTE: 'index', PROJECT_VIEW_ROUTE: 'view', PROJECT_PAGE_ROUTE: 'page', PROJECT_SESSIONS_ROUTE: 'sessions', PROJECT_FILES_ROUTE: 'files', PROJECT_ACCOUNT_ROUTE: 'account', PROJECT_INBOX_ROUTE: 'inbox', ProjectRouteProvider: ({ value, children }: any) => { route = value; return React.createElement(React.Fragment, null, value.home, value.view, children); }, backFromSubPage: spy('backSubPage') },
   '@/components/session/ProjectHome': { ProjectHome: (props: any) => { homeRenders++; home = props; return null; } },
   '@/components/session/SessionConnecting': { SessionConnecting: (props: any) => { connecting = props; return null; } },
   '@/components/session/SessionPage': { SessionPage: (props: any) => { threadRenders++; thread = props; return null; } },
@@ -52,9 +56,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/contexts/SandboxContext': { useSandboxContext: () => sandbox },
   '@/contexts': { useAuthContext: () => ({ user: null }) },
   '@/stores/last-project-store': { useLastProjectStore: { getState: () => ({ remember() {} }) } },
-  '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen: null }), { getState: () => ({ setViewingSessionId() {}, takeOpen: () => null }) }) },
+  '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen }), { getState: () => ({ setViewingSessionId() {}, takeOpen: (projectId: string) => { const open = pendingOpen?.projectId === projectId ? pendingOpen : null; if (open) pendingOpen = null; return open; } }) }) },
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector(upgradeStore) },
-  '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
+  '@/lib/projects/hooks': { useProject: () => ({ data: project }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
   '@tanstack/react-query': { useQueryClient: () => queryClient },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: reviewData }) },
   '@/lib/session/needs-you': { needsYouBySession: (items: any[]) => new Map(items.map((item) => [item.session_id, item])) },
@@ -70,15 +74,18 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/hooks/useWarmProjectSession': { useWarmProjectSession() {} },
   '@/lib/haptics': { haptics: { tap: spy('tap') } },
   '@/lib/logger': { log: { log() {}, warn() {}, error() {} } },
-  '@kortix/sdk/react': { KortixProjectProvider: ({ children }: any) => children },
+  '@kortix/sdk/react': { KortixProjectProvider: ({ children }: any) => children, useNotificationInbox: (options: any) => { inboxOptions = options; return inbox; } },
+  '@/lib/notifications/inbox': { NOTIFICATION_INBOX_LIMIT: 50 },
   '@/hooks/useSavedCopy': { useSavedCopy: () => ({ messages: undefined, empty: false }) },
   '@/lib/session/session-store': { addOptimisticMessage: spy('optimistic'), markOptimisticAccepted() {}, sessionMessageIds: () => [], sessionRows: () => [], sessionStatus: () => undefined, setLocalSessionStatus() {} },
-  '@/lib/notifications/registration': { requestPushPermissionOnce() {} },
+  '@/lib/notifications/registration': { requestPushPermissionOnce() {}, carryOverLegacyKinds: async () => { spy('carryOver')(); } },
   '@/stores/composer-draft-store': { clearComposerDraftIfSent: spy('clearDraft') },
   '@/lib/session/create-session': { createSessionCommitted: async () => 'fresh-1' },
   '@/lib/session/new-session-input': { newSessionCreateInput: () => ({}) },
   '@/lib/session/composer-draft': { draftKey: () => 'draft' },
   'expo-crypto': { randomUUID: () => 'fresh-1' },
+  // A prompt with no paste tiles: the draft compare sees the text as sent.
+  '@kortix/shared': { splitPastedContent: (text: string) => ({ text, pastes: [] }) },
 };
 
 for (const [, name] of source.matchAll(/from ['"]([^'"]+)['"]/g)) {
@@ -108,7 +115,10 @@ beforeEach(() => {
   homeRenders = 0;
   threadRenders = 0;
   reviewData = [];
-  route = drawer = home = connecting = back = stackListener = thread = actionsSheet = undefined;
+  route = drawer = home = connecting = back = stackListener = thread = actionsSheet = inboxOptions = pendingOpen = undefined;
+  inbox = { isSuccess: true, unreadCount: 2, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); } };
+  // KRTX-1742 cases run with the project's `notification_center` flag on; the flag-off cases say so.
+  project = { project_id: 'project-1', experimental: { notification_center: true } };
   tab = { activeSessionId: null, activePageId: null, setScope: spy('scope'), navigateToSession: spy('navigateSession') };
   routes = [{ key: 'home-key', name: 'index', params: { id: 'project-1' } }];
   response = async () => ({ stage: 'ready', retriable: false, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1', sandbox_id: 'box-1' } });
@@ -118,6 +128,7 @@ beforeEach(() => {
 afterEach(async () => { if (tree) await act(async () => tree?.unmount()); tree = undefined; });
 
 async function renderHook() { await act(async () => { tree = create(React.createElement(ProjectScreen)); }); }
+async function rerender() { await act(async () => { tree?.update(React.createElement(ProjectScreen)); }); }
 async function focus(names: string[]) {
   routes = names.map((name, index) => ({ key: `${name}-${index}`, name, params: { id: 'project-1' } }));
   await act(async () => stackListener({ route: routes.at(-1), navigation: top }).focus());
@@ -259,6 +270,140 @@ describe('ProjectScreen connect and stack', () => {
     await act(async () => route.openDrawer());
     expect(route).not.toBe(before);
     expect(route.isDrawerOpen).toBe(true);
+  });
+
+  test('the drawer gets the unread notification count from the inbox', async () => {
+    await renderHook();
+    expect(inboxOptions).toMatchObject({ limit: 50, enabled: true });
+    expect(drawer.notificationsEnabled).toBe(true);
+    expect(drawer.notificationsUnreadCount).toBe(2);
+  });
+
+  test("a flag-on project carries this phone's opt-outs into the user's record", async () => {
+    await renderHook();
+    expect(seen('carryOver')).toHaveLength(1);
+  });
+
+  test('notification_center off: no inbox poll, no drawer pill, no read, no carry-over', async () => {
+    project = { project_id: 'project-1', experimental: { notification_center: false } };
+    // The disabled query is not `isSuccess`.
+    inbox = { ...inbox, isSuccess: false, unreadCount: 0 };
+    await renderHook();
+    expect(inboxOptions).toMatchObject({ enabled: false });
+    expect(drawer.notificationsEnabled).toBe(false);
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(0);
+    expect(seen('carryOver')).toHaveLength(0);
+  });
+
+  test('while the project loads the flag reads off; once it loads on, the session on screen is read', async () => {
+    project = undefined;
+    inbox = { ...inbox, isSuccess: false, unreadCount: 0 };
+    response = () => new Promise(() => {});
+    await renderHook();
+    expect(inboxOptions).toMatchObject({ enabled: false });
+    expect(drawer.notificationsEnabled).toBe(false);
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(0);
+    project = { project_id: 'project-1', experimental: { notification_center: true } };
+    await rerender();
+    expect(drawer.notificationsEnabled).toBe(true);
+    expect(seen('markSessionRead').map((call) => call.args)).toEqual([['ps-1']]);
+    expect(seen('carryOver')).toHaveLength(1);
+  });
+
+  test('opening a session marks its notifications read', async () => {
+    await renderHook();
+    expect(seen('markSessionRead')).toHaveLength(0);
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead').map((call) => call.args)).toEqual([['ps-1']]);
+  });
+
+  test('a new unread notification of the session on screen is marked read; other sessions are not', async () => {
+    // `/start` never answers: ps-1 stays on screen, connecting.
+    response = () => new Promise(() => {});
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(1);
+    // A refetch (a push that arrived, a return to the app) shows a new unread row of another session.
+    inbox = { ...inbox, data: { notifications: [{ id: 'n-1', session_id: 'ps-2', read: false }] } };
+    await rerender();
+    expect(seen('markSessionRead')).toHaveLength(1);
+    // Then one of the session on screen.
+    inbox = { ...inbox, data: { notifications: [{ id: 'n-2', session_id: 'ps-1', read: false }] } };
+    await rerender();
+    expect(seen('markSessionRead').map((call) => call.args)).toEqual([['ps-1'], ['ps-1']]);
+    // Marked read: nothing more is sent.
+    inbox = { ...inbox, data: { notifications: [{ id: 'n-2', session_id: 'ps-1', read: true }] } };
+    await rerender();
+    expect(seen('markSessionRead')).toHaveLength(2);
+  });
+
+  test('a failed read that restores the same unread row is not sent again', async () => {
+    response = () => new Promise(() => {});
+    const row = { id: 'n-1', session_id: 'ps-1', read: false };
+    inbox = { ...inbox, data: { notifications: [row] }, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); throw new Error('503'); } };
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(1);
+    // The SDK writes the row read before the POST, then restores it when the POST fails.
+    for (let cycle = 0; cycle < 3; cycle++) {
+      inbox = { ...inbox, data: { notifications: [{ ...row, read: true }] } };
+      await rerender();
+      inbox = { ...inbox, data: { notifications: [row] } };
+      await rerender();
+    }
+    expect(seen('markSessionRead')).toHaveLength(1);
+  });
+
+  test('after a failed read, a new unread row of the session on screen is sent once', async () => {
+    response = () => new Promise(() => {});
+    const row = { id: 'n-1', session_id: 'ps-1', read: false };
+    inbox = { ...inbox, data: { notifications: [row] }, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); throw new Error('503'); } };
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    inbox = { ...inbox, data: { notifications: [{ ...row, read: true }] } };
+    await rerender();
+    inbox = { ...inbox, data: { notifications: [row] } };
+    await rerender();
+    expect(seen('markSessionRead')).toHaveLength(1);
+    // A push arrived and the inbox refetched: a newer row of ps-1, listed first.
+    const newer = { id: 'n-2', session_id: 'ps-1', read: false };
+    inbox = { ...inbox, data: { notifications: [newer, row] } };
+    await rerender();
+    expect(seen('markSessionRead').map((call) => call.args)).toEqual([['ps-1'], ['ps-1']]);
+    // That read fails too and restores both rows: nothing more is sent.
+    inbox = { ...inbox, data: { notifications: [{ ...newer, read: true }, { ...row, read: true }] } };
+    await rerender();
+    inbox = { ...inbox, data: { notifications: [newer, row] } };
+    await rerender();
+    expect(seen('markSessionRead')).toHaveLength(2);
+  });
+
+  test('with nothing unread, opening a session sends no read', async () => {
+    inbox = { ...inbox, unreadCount: 0 };
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(0);
+  });
+
+  test('a tapped session notification opens its session', async () => {
+    await renderHook();
+    pendingOpen = { projectId: 'project-1', sessionId: 'ps-7', navigated: true };
+    await act(async () => drawer.onOpenSwitcher());
+    expect(pendingOpen).toBeNull();
+    expect(seen('start').at(-1)?.args).toEqual(['project-1', 'ps-7']);
+  });
+
+  test('a tapped alert without a session returns the project to its home', async () => {
+    await renderHook();
+    await focus(['index', 'inbox']);
+    pendingOpen = { projectId: 'project-1', sessionId: null, navigated: true };
+    await act(async () => drawer.onOpenSwitcher());
+    expect(pendingOpen).toBeNull();
+    const action = seen('dispatch').at(-1)?.args[0];
+    expect([action?.type, action?.args[0]]).toEqual(['popTo', 'index']);
+    expect(seen('start')).toHaveLength(0);
   });
 
   test('the drawer gets the latest Needs you sessions', async () => {

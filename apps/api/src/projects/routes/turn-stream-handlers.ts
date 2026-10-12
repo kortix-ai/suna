@@ -18,6 +18,8 @@ import {
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { db } from '../../shared/db';
+import { turnEndNotificationContext } from '../lib/notification-recipients';
+import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
@@ -52,7 +54,8 @@ export interface TurnEndContext {
   /** Coordinator-spawned worker: its idle tail is minutes, not the default grace. */
   childSession: boolean;
   turnStreamMetadata: Record<string, unknown>;
-  turnStreamSession: { accountId: string; createdBy: string | null };
+  /** `origin` is the session's policy class (user|trigger|schedule|backend|system). */
+  turnStreamSession: { accountId: string; createdBy: string | null; origin?: string | null };
 }
 
 /**
@@ -366,11 +369,13 @@ async function publishTurnEnd(
 ): Promise<Response> {
   const { projectId, sessionId, childSession, turnStreamMetadata, turnStreamSession } = ctx;
   const { status, errorInfo, turnCompletion } = settled;
-  // Push the session creator's devices. Only an end that closed a turn in
-  // THIS call notifies (see turnEndPushType); replays and aborts do not,
-  // and a promoted queued prompt means the session is still running, so
-  // it gets no completion push. Fire-and-forget: a push must never delay
-  // or fail the relay.
+  // Tell the person who prompted the turn and the session's watchers
+  // (notifications/session-push.ts); with the project's notification_center
+  // flag off, the session creator's phones only. Only an end that closed a
+  // turn in THIS call notifies (see turnEndPushType); replays and aborts do
+  // not, and a promoted queued prompt means the session is still running, so
+  // it gets no completion. Fire-and-forget: the flag read, the prompter lookup
+  // and the delivery must never delay or fail the relay.
   const pushType = turnEndPushType({
     outcome: turnCompletion.outcome,
     status,
@@ -379,12 +384,30 @@ async function publishTurnEnd(
     promoted: promotedPromptId !== null,
   });
   if (pushType) {
-    void notifySessionEvent({ type: pushType, sessionId, projectId }).catch((err) =>
+    const turnMessageId = typeof body.turn_message_id === 'string' ? body.turn_message_id : null;
+    void notifySessionEvent(
+      { type: pushType, sessionId, projectId, turnMessageId, errorMessage: errorInfo?.message ?? null },
+      {
+        context: () =>
+          turnEndNotificationContext(
+            {
+              sessionId,
+              projectId,
+              accountId: turnStreamSession.accountId,
+              metadata: turnStreamMetadata,
+              origin: turnStreamSession.origin,
+            },
+            turnMessageId,
+          ),
+      },
+    ).catch((err) =>
       console.warn('[push] turn-end notification failed', err instanceof Error ? err.message : err),
     );
   }
-  // A trigger session's creator is the agent's service account, so the push
-  // above reaches nobody. Record the run on its trigger and tell the owner.
+  // A trigger session's creator is the agent's service account, so the turn
+  // end above reaches only a person who prompted it. Record the run on its
+  // trigger: a failed or recovered run alerts the trigger's watchers (flag
+  // off: a failed run pushes the account owner, as before KRTX-1742).
   try {
     await recordTriggerRunEnd({
       projectId,
@@ -465,8 +488,29 @@ export async function settleTurnEnd(
   ctx: TurnEndContext,
 ): Promise<Response> {
   const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
+  // Started beside the promotion, awaited before the acknowledgement.
+  const sessionList = refreshSessionListAtTurnEnd(ctx);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
-  return publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+  const response = await publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+  await sessionList;
+  return response;
+}
+
+/**
+ * THE TURN ENDED, SO ITS SUBAGENT CHILDREN EXIST — store the box's state
+ * document, which writes the session's list of runtime conversations
+ * (`writeRuntimeSessionList`). Awaited before the turn end is acknowledged:
+ * the daemon re-sends an unacknowledged turn end, so an API that stops
+ * mid-write (a deploy) gets the turn end again and writes the list then
+ * (R7.4). Never throws.
+ */
+async function refreshSessionListAtTurnEnd(ctx: TurnEndContext): Promise<void> {
+  const userId = ctx.turnStreamSession.createdBy;
+  if (!userId) return;
+  await refreshRuntimeProjection(
+    { sessionId: ctx.sessionId, projectId: ctx.projectId, accountId: ctx.turnStreamSession.accountId, userId },
+    { force: true },
+  );
 }
 
 // `runtime_session` carries the canonical runtime ROOT id the sandbox just

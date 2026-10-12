@@ -20,7 +20,7 @@ import * as realOpencodeMapping from '../opencode-mapping';
 import * as realProviders from '../../platform/providers';
 import * as realRuntimeIdentity from '../runtime-identity';
 import * as realRuntimeWakeFence from '../session-lifecycle/runtime-wake-fence';
-import * as realConfigReleases from '../../config-releases/enabled';
+import * as realAdmitRunningSandbox from '../../runtime-convergence/admit-running-sandbox';
 
 /** Scriptable statement results, shifted in program order. */
 let selectQueue: unknown[][] = [];
@@ -114,9 +114,10 @@ mock.module('../opencode-mapping', () => ({
   ensureOpencodeSessionPin: async () => pinResults.shift() ?? { pin: null, changed: false, reason: 'not_ready' },
 }));
 
-mock.module('../../config-releases/enabled', () => ({
-  ...realConfigReleases,
-  configReleasesEnabled: () => false,
+/** Runtime admission runs on every open of a running box; it admits every box here. */
+mock.module('../../runtime-convergence/admit-running-sandbox', () => ({
+  ...realAdmitRunningSandbox,
+  admitRunningSandbox: async () => ({ admitted: true }),
 }));
 
 /** The guarantee wiring pulls sandbox-proxy/backend into the module graph; never load it here. */

@@ -41,6 +41,7 @@ import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { sheetHandleIndicatorStyle } from '@/components/kortix/sheet';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { blobToDataURL } from '@/lib/files/hooks';
 import { PortalHost } from '@rn-primitives/portal';
 
 /** Portal host inside the viewer's native `Modal`: the root host draws under it. */
@@ -121,12 +122,9 @@ export function FileViewer({
       const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
       let source: string | null = null;
       if (imageBlob && isBinaryFile && !blobTooLarge) {
-        const reader = new FileReader();
-        const base64Data = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-          reader.onerror = reject;
-          reader.readAsDataURL(imageBlob);
-        });
+        // The hook already made the `data:...;base64,` URL for the preview; the
+        // bytes after the comma are the base64 payload.
+        const base64Data = (await blobToDataURL(imageBlob, file.path)).split(',')[1];
         await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
         source = fileUri;
       } else if (textContent) {
@@ -188,20 +186,24 @@ export function FileViewer({
     setEditing(true);
   }, [textContent]);
 
-  const handleCancelEdit = useCallback(() => {
-    if (dirty) {
+  const confirmDiscard = useCallback(
+    (onDiscard: () => void) => {
+      if (!dirty) return onDiscard();
       confirm({
         title: 'Discard changes?',
         description: 'Your edits will be lost.',
         cancelLabel: 'Keep editing',
         confirmLabel: 'Discard',
         destructive: true,
-        onConfirm: () => setEditing(false),
+        onConfirm: onDiscard,
       });
-      return;
-    }
-    setEditing(false);
-  }, [dirty, confirm]);
+    },
+    [dirty, confirm],
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    confirmDiscard(() => setEditing(false));
+  }, [confirmDiscard]);
 
   const handleSave = useCallback(async () => {
     if (!file || !sandboxUrl) return;
@@ -217,22 +219,11 @@ export function FileViewer({
   }, [file, sandboxUrl, draft, writeMutation]);
 
   const handleCloseGuarded = useCallback(() => {
-    if (editing && dirty) {
-      confirm({
-        title: 'Discard changes?',
-        description: 'Your edits will be lost.',
-        cancelLabel: 'Keep editing',
-        confirmLabel: 'Discard',
-        destructive: true,
-        onConfirm: () => {
-          setEditing(false);
-          handleClose();
-        },
-      });
-      return;
-    }
-    handleClose();
-  }, [editing, dirty, handleClose, confirm]);
+    confirmDiscard(() => {
+      setEditing(false);
+      handleClose();
+    });
+  }, [confirmDiscard, handleClose]);
 
   const insets = useSafeAreaInsets();
 

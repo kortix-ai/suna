@@ -191,8 +191,15 @@ export type MonitorMode = 'poll' | 'stream';
 /** A `type: event` trigger's source + subscription state. */
 export interface ProjectTriggerEvent {
   connector: string;
+  /** Declared `account` label; null = the connector's default shared account. */
+  account?: string | null;
+  /** Identity (or label) of the shared account feeding the trigger; null when none. */
+  connected_as?: string | null;
   type: string;
   config: Record<string, unknown>;
+  /** Event source adapter: the declared `source`, else the connector's provider. */
+  source?: string | null;
+  /** The connector's own provider; differs from `source` only when a declared source mismatches. */
   provider: string | null;
   app: string | null;
   status: 'active' | 'needs_connection' | 'error' | 'pending';
@@ -213,22 +220,47 @@ export interface TriggerEventType {
 }
 
 export interface TriggerEventTypesResponse {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   app: string;
   event_types: TriggerEventType[];
 }
 
+/** One shared account of a connector. Only shared accounts can feed an event trigger. */
+export interface TriggerEventAccount {
+  label: string;
+  connected_as: string | null;
+  is_default: boolean;
+  connected: boolean;
+}
+
+/** A connector (profile) of an app, with its shared accounts. */
+export interface TriggerEventConnector {
+  slug: string;
+  name: string;
+  accounts: TriggerEventAccount[];
+}
+
 /** One app from `GET /projects/:id/triggers/event-apps`. */
 export interface TriggerEventApp {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   app: string;
   name: string;
   logo: string | null;
   event_count: number;
+  /** Slug for a new connector of this app (never reserved or taken). */
+  new_connector_slug?: string;
   /** Slug of the project's connector for this app; null until one is added. */
   connector: string | null;
   /** The project has an active shared account for this app. */
   connected: boolean;
+  /** Every connector (profile) of this app with its shared accounts. */
+  connectors?: TriggerEventConnector[];
 }
 
 export interface TriggerEventAppsResponse {

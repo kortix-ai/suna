@@ -33,10 +33,12 @@ describe('GET /config authorizes before it reads session state', () => {
     expect(read).toBeGreaterThan(leaf);
   });
 
-  test('the flag is the chokepoint for the release block', () => {
-    expect(CONFIG).toContain('const releasesEnabled = configReleasesEnabled(loaded.row.metadata)');
-    expect(CONFIG.indexOf('const releasesEnabled')).toBeLessThan(CONFIG.indexOf('resolveDesiredRelease('));
-    expect(CONFIG).toContain('if (releasesEnabled && running.configReleases && running.release)');
+  test('the daemon alone decides the release block; no project flag gates it', () => {
+    // Config releases graduated: a value a project stored under the old
+    // `config_releases` flag must not hide the block or skip the resolve.
+    expect(CONFIG).not.toContain('configReleasesEnabled');
+    expect(CONFIG).not.toContain('releasesEnabled');
+    expect(CONFIG).toContain('if (running.configReleases && running.release)');
   });
 
   test('the release resolve never refreshes the mirror a second time (KRTX-629)', () => {
@@ -112,13 +114,11 @@ describe('the read decides the agent re-point exactly as the assignment does', (
 describe('the managed-model catalog is visible on GET /config regardless of releases', () => {
   // 2026-09-26: a stale box's catalog was invisible everywhere except a daemon
   // log line. `managed_catalog` closes that — computed ONCE, spread into BOTH
-  // branches, so a project with config releases off still sees it.
-  test('computed once, before the releases-flag branch, from the same read', () => {
+  // branches, so a box on the pre-release path still sees it.
+  test('computed once, before the release branch, from the same read', () => {
     const computed = CONFIG.indexOf('const managedCatalog = {');
     const read = CONFIG.indexOf('readSandboxConfigState(');
-    const releasesBranch = CONFIG.indexOf(
-      'if (releasesEnabled && running.configReleases && running.release)',
-    );
+    const releasesBranch = CONFIG.indexOf('if (running.configReleases && running.release)');
     expect(computed).toBeGreaterThan(read);
     expect(computed).toBeLessThan(releasesBranch);
     expect(CONFIG).toContain('running.runtime?.running?.managed_model_ids');

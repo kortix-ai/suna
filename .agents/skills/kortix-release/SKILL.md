@@ -61,7 +61,7 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 `main` takes PRs with no required CI: the developer's own box is the pre-merge
 check (the **testing** skill, "your machine is the pre-merge gate"). A person
 may add the `test` label for one explicit six-lane run (the **contributing**
-skill). A daily `schedule` runs the six `Tests` lanes on `main` as a **non-blocking trunk
+skill). A daily `schedule` runs the `Tests` lanes on `main` as a **non-blocking trunk
 signal** (a push does not), and an automated "repair main" pass opens fix-forward PRs
 (`fix(...): repair main after <sha> (...)`) when that scheduled run is red. **Neither
 the scheduled run nor the repair pass blocks a promotion** — do not wait for either
@@ -89,8 +89,8 @@ against whatever `origin/main` HEAD is right now.
 
 ### Step 3 — the staging PR is the gate
 
-The PR into `staging` runs the full six-lane `Tests` suite (`core`,
-`browser-1`…`browser-4`, `packages`) plus CodeQL (`Analyze
+The PR into `staging` runs the full ten-lane `Tests` suite (`core`,
+`browser-1`…`browser-8`, `packages`) plus CodeQL (`Analyze
 javascript-typescript`), Trivy filesystem scan, gitleaks, the `packages/db`
 migration gates (`Migrations are sequential`, `Migration files are well-formed`,
 `Applies cleanly to a fresh DB`, `Schema matches migrations`, `Squawk
@@ -207,12 +207,12 @@ triggers on that PR.
 ### Step 8 — release gate triage
 
 `tests-release.yml`'s `full suite + quality gates` job is the only *required*
-check in the repository (on the PR into `prod`). Staging's API and its database
-run in different AWS regions today (`us-west-2` API, `eu-west-2` DB — PR #7844
-merged the colocation fix but it is not yet applied to the live staging infra),
-so a `503 request_deadline` (55 s) or a flow timeout on the release gate is
-**environmental**, not a product regression (owner decision, 2026-09-29).
-Classify it as such in a PR comment and move on. Every other failure is fixed on
+check in the repository (on the PR into `prod`). Until 2026-10-06 staging's API
+ran in `us-west-2` and its database in `eu-west-2`, so the owner decision of
+2026-09-29 classified a `503 request_deadline` (55 s) or a flow timeout on the
+release gate as **environmental**. Since 2026-10-06 both run in `eu-west-2`, so
+that cross-region reason no longer holds: confirm with the owner before you
+classify a timeout as environmental. Every other failure is fixed on
 `main` and re-promoted through Steps 2–7 (a new staging SHA means the release
 PR must be re-dispatched too). Rerun a failed job once; a shard that
 never gets past its own bootstrap gives no signal, so rerun it rather than
@@ -327,8 +327,9 @@ no `vX.Y.Z` Release.
    API host.
    1. Generate a random 32-byte key. Never print it.
    2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
-      `kortix-<env>-env` (needs an MFA session) and to `apps/api/.env.<env>` with
-      `dotenvx set`.
+      `kortix-<env>-env` in its primary region (the **dotenvx-secrets** skill,
+      "Which region to edit"; needs an MFA session) and to
+      `apps/api/.env.<env>` with `dotenvx set`.
    3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
       gateway `GET /v1/models` with a PAT still returns 200.
    4. Only then `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the

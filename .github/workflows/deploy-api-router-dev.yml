@@ -19,7 +19,7 @@ concurrency:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/dev'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}

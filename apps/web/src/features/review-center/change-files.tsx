@@ -12,29 +12,12 @@ import { useTranslations } from '@/i18n/use-translations';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat } from '@/components/ui/status';
+import { splitPath, splitUnifiedPatch } from '@/features/changes';
 import { DiffRenderer } from '@/features/project-files/components/diff-renderer';
 import { useChangeRequestDiff } from '@/features/project-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
 import { CaretDownIcon as ChevronDown } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
-
-/** Split a unified diff into per-file patch chunks keyed by the new (b/) path. */
-function splitPatchByFile(patch: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const chunk of patch.split(/^(?=diff --git )/m)) {
-    if (!chunk.trim()) continue;
-    const m = chunk.match(/^diff --git a\/.*? b\/(.+?)$/m);
-    if (m?.[1]) map.set(m[1].trim(), chunk);
-  }
-  return map;
-}
-
-/** `src/features/constant/index.ts` → name `index.ts`, dir `src/features/constant`. */
-function splitPath(path: string): { name: string; dir: string } {
-  const slash = path.lastIndexOf('/');
-  if (slash < 0) return { name: path, dir: '' };
-  return { name: path.slice(slash + 1), dir: path.slice(0, slash) };
-}
 
 export function ChangeFiles({ crId }: { crId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -42,10 +25,14 @@ export function ChangeFiles({ crId }: { crId: string }) {
   // Every file starts open — the diff is what a reviewer came for. Collapsing
   // is per file and remembered until the page is left.
   const [closed, setClosed] = useState<Set<string>>(new Set());
-  const patchByPath = useMemo(() => splitPatchByFile(data?.patch ?? ''), [data?.patch]);
+  const patchByPath = useMemo(() => splitUnifiedPatch(data?.patch ?? ''), [data?.patch]);
 
   const files = data?.files ?? [];
   const allClosed = files.length > 0 && closed.size === files.length;
+  // The server could not produce patch text at all (a diff whose output
+  // outgrows the API's exec buffer, or a git timeout) — the file list still
+  // stands, but every body has to say so instead of staying blank.
+  const patchTruncated = data?.patch_truncated === true;
 
   let body: React.ReactNode;
   if (isLoading) {
@@ -97,10 +84,18 @@ export function ChangeFiles({ crId }: { crId: string }) {
               className="shrink-0 text-xs"
             />
           </button>
-          {open && patch ? (
-            <div className="border-border border-t">
-              <DiffRenderer patch={patch} />
-            </div>
+          {open ? (
+            patch ? (
+              <div className="border-border border-t">
+                <DiffRenderer patch={patch} />
+              </div>
+            ) : (
+              <div className="border-border bg-hover/40 text-muted-foreground border-t px-4 py-3 text-center text-xs">
+                {tI18nComplete.raw(
+                  patchTruncated ? 'texte3d92a0125e7' : 'text903237107ab6',
+                )}
+              </div>
+            )
           ) : null}
         </section>
       );

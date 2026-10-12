@@ -240,8 +240,12 @@ Subcommands:
                                     alone, the default) or \`project\` (shared
                                     with every member; needs
                                     project.connector.write).
+       [--label <name>]             Name a NEW account (a second Gmail). The
+                                    human confirms the name and who can use
+                                    the account in the setup dialog.
   connect-finalize <slug>           Confirm authorization completed. Accepts
-       [--connection-id <uuid>]     the IDs returned by \`connect\`.
+       [--owner me|project]         the IDs returned by \`connect\`. Pass the
+       [--connection-id <uuid>]     same --owner the link was started with.
        [--request-id <id>]
   apps [<query>] [--category <c>]   Search the Composio toolkit catalog — the
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
@@ -277,7 +281,6 @@ Subcommands:
   authorize <slug> --device         Same, on a server that supports the OAuth
                                     2.0 device flow: prints a code + URL and
                                     polls until it is approved.
-  mcp                               Run the stdio MCP server.
 
 \`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
 named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
@@ -433,6 +436,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.default = takeFlagValue(rest, ['--default']);
     f.expires = takeFlagValue(rest, ['--expires']);
     f.owner = takeFlagValue(rest, ['--owner']);
+    f.label = takeFlagValue(rest, ['--label']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
     f.connectionId = takeFlagValue(rest, ['--connection-id']);
     f.requestId = takeFlagValue(rest, ['--request-id']);
@@ -807,6 +811,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.owner !== undefined && owner === undefined) {
           return fail('--owner must be me or project');
         }
+        // `--label` mints the same setup link as the MCP `connect` tool: a
+        // dialog where the human names the new account and picks who can use it.
+        if (f.label !== undefined) {
+          const label = f.label.trim();
+          if (!label) return missing('--label <account name>');
+          const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string; label?: string | null }>(
+            `/projects/${ctx.projectId}/connect-requests`,
+            {
+              slug,
+              label,
+              ...(owner ? { owner } : {}),
+              ...(expires ? { expires_in_minutes: expires } : {}),
+            },
+          );
+          const output = { slug, owner: owner ?? 'me', label: link.label ?? label, app: link.app ?? null, url: link.url, expires_at: link.expires_at ?? null };
+          if (json) {
+            emitJson(output);
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}Connect ${slug} as "${output.label}"${C.reset}\n  ${C.cyan}${output.url}${C.reset}\n\n` +
+              `  ${C.dim}Hand the URL to the human. They confirm the name and who can use the account.${C.reset}\n\n`,
+          );
+          return 0;
+        }
         const resp = await ctx.client.post<{
           provider: string;
           app?: string | null;
@@ -850,6 +879,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'connect-finalize': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
+        // Finalize the account the link authorized: `connect --owner project`
+        // starts a shared one, and the API looks for a private one by default.
+        const finalizeOwner: 'me' | 'project' | undefined =
+          f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
+        if (f.owner !== undefined && finalizeOwner === undefined) {
+          return fail('--owner must be me or project');
+        }
         const resp = await ctx.client.post<{
           provider: string;
           connected?: boolean;
@@ -857,6 +893,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           connectionId?: string;
           isNoAuth?: boolean;
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`, {
+          ...(finalizeOwner ? { owner: finalizeOwner } : {}),
           ...(f.connectionId ? { connection_id: f.connectionId } : {}),
           ...(f.requestId ? { request_id: f.requestId } : {}),
         });

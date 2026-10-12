@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../config';
 import { supabaseAuth } from '../middleware/auth';
@@ -12,7 +11,7 @@ import { creditsRouter } from './routes/credits';
 import { paymentsRouter } from './routes/payments';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { webhooksRouter } from './routes/webhooks';
-import { bearerToken } from '../shared/bearer-token';
+import { hasInternalServiceKey } from '../shared/internal-service-key';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -65,22 +64,8 @@ billingApp.route('/', creditsRouter);
 accountDeletionApp.use('*', supabaseAuth);
 accountDeletionApp.route('/', accountDeletionRouter);
 
-function timingSafeStringEqual(a: string, b: string): boolean {
-  const aa = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return aa.length === bb.length && timingSafeEqual(aa, bb);
-}
-
 function requireInternalCronAuth(c: Context<AppEnv>): Response | null {
-  const authHeader = c.req.header('Authorization');
-  const bearer = bearerToken(authHeader) ?? '';
-  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
-  const expected = config.INTERNAL_SERVICE_KEY;
-  const ok =
-    (bearer && timingSafeStringEqual(bearer, expected)) ||
-    (header && timingSafeStringEqual(header, expected));
-
-  if (!ok) {
+  if (!hasInternalServiceKey(c)) {
     return c.json({ error: 'Internal cron authentication required' }, 401);
   }
   return null;

@@ -19,6 +19,12 @@ export interface CachedPlatformSetting<T> {
   read(): T;
   /** Force a fresh database read into the cache. Never throws. */
   refresh(): Promise<void>;
+  /**
+   * Async read straight from the database, for an answer that must not rest on
+   * this instance's stale or cold cache (another instance may have just written
+   * the row). Also refreshes the cache. Never throws.
+   */
+  readFresh(): Promise<T>;
   /** Overwrite the row, then await a cache refresh. */
   write(value: unknown): Promise<void>;
   /** Delete the row, then await a cache refresh. */
@@ -33,8 +39,12 @@ export function createCachedPlatformSetting<T>(
 ): CachedPlatformSetting<T> {
   let cache: { value: T; at: number } | null = null;
   let inflight: Promise<void> | null = null;
+  // Reads can finish out of order; an older read never overwrites a newer one.
+  let started = 0;
+  let stored = 0;
 
-  async function refresh(): Promise<void> {
+  async function load(): Promise<T> {
+    const seq = ++started;
     let value: T = parse(undefined);
     try {
       const { hasDatabase, db } = await import('../../shared/db');
@@ -51,7 +61,15 @@ export function createCachedPlatformSetting<T>(
     } catch {
       /* database hiccup -> "nothing stored"; consumers fall back to env */
     }
-    cache = { value, at: Date.now() };
+    if (seq > stored) {
+      stored = seq;
+      cache = { value, at: Date.now() };
+    }
+    return value;
+  }
+
+  async function refresh(): Promise<void> {
+    await load();
   }
 
   function ensureFresh(): void {
@@ -91,6 +109,7 @@ export function createCachedPlatformSetting<T>(
       return cache ? cache.value : parse(undefined);
     },
     refresh,
+    readFresh: load,
     write: (value: unknown) => persist(value),
     clear: () => persist(null),
     __setForTests(value: unknown): void {

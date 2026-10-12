@@ -4,7 +4,8 @@
  * The card is `Composer`, the same one the project home renders (design.md
  * §5): text on top, then add · model · send. This file adds what only a thread
  * has: @mentions, slash commands, the message queue slot, file upload at pick
- * (`useComposerAttachments`, COR-185),
+ * (`useComposerAttachments`, COR-185), long pastes as "Pasted text" tiles
+ * (`usePastedTiles`),
  * AutoContinue, and the model sheet with the active model's thinking levels.
  * The agent is chosen in the model sheet's Agent tab (`ModelPickerSheet`).
  */
@@ -29,12 +30,15 @@ import {
 } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import type { SessionPromptPart } from '@kortix/sdk';
+import { serializePromptWithPastes, splitPastedContent } from '@kortix/shared';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { planComposerSend } from '@/lib/session/send-plan';
 import { uploadErrorMessage } from '@/lib/session/composer-uploads';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useComposerAttachments } from './useComposerAttachments';
 import { useRecoverPendingPick } from './useRecoverPendingPick';
+import { usePastedTiles } from './use-pasted-tiles';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
@@ -137,9 +141,9 @@ interface SessionChatInputProps {
   commands?: Command[];
   /** Called when a command is submitted (staged command + optional args) */
   onCommand?: (command: Command, args?: string) => void;
-  /** Initial text to populate the input with (e.g. restored after question prompt) */
+  /** Initial text to populate the input with (e.g. restored after question prompt). Its `<pasted_content>` blocks become tiles again. */
   initialText?: string;
-  /** Called whenever the input text changes — used to track current text externally */
+  /** Called whenever the input text or its paste tiles change, with the tiles inline (`serializePromptWithPastes`) — used to track current text externally */
   onTextChange?: (text: string) => void;
   /** Persists the typed text under this key (`draftKey`, COR-143). Omit for no draft. */
   draftKey?: string | null;
@@ -191,7 +195,9 @@ function SessionChatInputImpl({
   onTextChange,
   draftKey = null,
 }: SessionChatInputProps) {
-  const [text, setText] = useState(initialText);
+  // `initialText` is what `onTextChange` handed out: the draft with its tiles inline.
+  const [initial] = useState(() => splitPastedContent(initialText));
+  const [text, setText] = useState(initial.text);
   useComposerDraft(draftKey, text, setText);
   // The rendered text, for handlers that must keep one identity across
   // keystrokes (the memoized sheets below take them as props).
@@ -251,12 +257,29 @@ function SessionChatInputImpl({
   const attachments = useComposerAttachments(projectId);
   const [preparing, setPreparing] = useState(false);
   useRecoverPendingPick(attachments.add);
+  // A long paste leaves the field as a tile; a send carries it inline.
+  const pasted = usePastedTiles(attachments.add, initial.pastes);
+  const { takePaste, getPastes, onSelectionChange: trackPasteSelection } = pasted;
+  // The parent keeps the draft across an unmount (a question card): it gets the tiles inline.
+  const emitText = useCallback(
+    (t: string) => {
+      const pastes = getPastes();
+      onTextChange?.(pastes.length > 0 ? serializePromptWithPastes(t, pastes) : t);
+    },
+    [getPastes, onTextChange],
+  );
+  const emitTextRef = useRef(emitText);
+  emitTextRef.current = emitText;
+  useEffect(() => {
+    emitTextRef.current(textRef.current);
+  }, [pasted.pastes]);
 
   const handleTextChange = useCallback(
-    (newText: string) => {
+    (changed: string) => {
+      const newText = takePaste(textRef.current, changed);
       textRef.current = newText;
       setText(newText);
-      onTextChange?.(newText);
+      emitText(newText);
       mention.prune(newText);
       skill.prune(newText);
 
@@ -271,15 +294,16 @@ function SessionChatInputImpl({
         }
       }
     },
-    [mention, skill, stagedCommand],
+    [mention, skill, stagedCommand, takePaste, emitText],
   );
 
   const handleSelectionChange = useCallback(
     (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      trackPasteSelection(e);
       mention.detect(textRef.current, e.nativeEvent.selection.end);
       skill.detect(textRef.current, e.nativeEvent.selection.end);
     },
-    [mention, skill],
+    [mention, skill, trackPasteSelection],
   );
 
   const handleMentionSelect = useCallback(
@@ -348,8 +372,11 @@ function SessionChatInputImpl({
 
     const trimmedRaw = text.trim();
     const fileCount = attachments.files.length;
+    const pastes = pasted.pastes;
+    // The draft as the agent reads it: every paste tile inline, then the text.
+    const draftWithPastes = serializePromptWithPastes(trimmedRaw, pastes);
     const plan = planComposerSend({
-      text: trimmedRaw,
+      text: draftWithPastes,
       fileCount,
       disabled: disabled || preparing,
       isBusy,
@@ -368,8 +395,9 @@ function SessionChatInputImpl({
 
     // Staged command — execute it with args
     if (stagedCommand) {
-      onCommand?.(stagedCommand, trimmedRaw || undefined);
+      onCommand?.(stagedCommand, draftWithPastes || undefined);
       setText('');
+      pasted.clear();
       setStagedCommand(null);
       return;
     }
@@ -389,13 +417,16 @@ function SessionChatInputImpl({
     // A picked "#skill" token resolves like the staged "/" command above —
     // a structured dispatch that runs immediately, mirroring apps/web's
     // `planDraftSubmission` exactly (see `lib/session/skill-mentions.ts`).
-    // A skill deleted since it was picked — or a draft that carries files or
-    // `@` mentions, which a command dispatch cannot carry — degrades to the
+    // A skill deleted since it was picked — or a draft that carries files,
+    // pastes or `@` mentions, which a command dispatch cannot carry — degrades to the
     // "/name args" plain-text fallback and falls through to the normal send
     // path below, which sends the uploaded files and keeps the mentions.
     let trimmed = trimmedRaw;
     if (skill.mentions.length > 0) {
-      const skillPlan = skill.resolveSubmission(text, fileCount > 0 || mention.mentions.length > 0);
+      const skillPlan = skill.resolveSubmission(
+        text,
+        fileCount > 0 || pastes.length > 0 || mention.mentions.length > 0,
+      );
       if (skillPlan.kind === 'command') {
         onCommand?.(skillPlan.command, skillPlan.args);
         setText('');
@@ -407,8 +438,12 @@ function SessionChatInputImpl({
       trimmed = skillPlan.text;
     }
 
-    if (auto.dispatch(trimmed)) {
+    // Built once: the send, the queue, and a failed send's retry all carry it.
+    const outgoing = serializePromptWithPastes(trimmed, pastes);
+
+    if (auto.dispatch(outgoing)) {
       setText('');
+      pasted.clear();
       setSlashFilter(null);
       setSlashIndex(0);
       mention.reset();
@@ -425,8 +460,9 @@ function SessionChatInputImpl({
     if (plan === 'queue' && onEnqueue) {
       // Keep the draft on a refused write; server acceptance is the durability boundary.
       try {
-        await onEnqueue(trimmed, options, trackedMentions);
+        await onEnqueue(outgoing, options, trackedMentions);
         setText('');
+        pasted.clear();
         mention.reset();
         skill.reset();
       } catch { /* The queue handler reports the refusal. */ }
@@ -436,9 +472,10 @@ function SessionChatInputImpl({
     if (fileCount === 0) {
       // Clear input immediately for snappy UX
       setText('');
+      pasted.clear();
       mention.reset();
       skill.reset();
-      onSend(trimmed, options, trackedMentions);
+      onSend(outgoing, options, trackedMentions);
       return;
     }
 
@@ -455,11 +492,12 @@ function SessionChatInputImpl({
     }
     setPreparing(false);
     setText('');
+    pasted.clear();
     mention.reset();
     skill.reset();
     attachments.clearAfterSend();
-    onSend(trimmed, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
-  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, auto, attachments]);
+    onSend(outgoing, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
+  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, auto, attachments, pasted]);
 
   // One submission at a time: two taps inside one frame both read the same
   // draft (the cleared text has not rendered yet), so the second would send
@@ -624,7 +662,8 @@ function SessionChatInputImpl({
             onSelectionChange={handleSelectionChange}
             onSubmit={handleSubmit}
             placeholder={stagedCommand ? 'Add details, then send' : placeholder}
-            maxLength={10000}
+            // A paste must reach `handleTextChange` whole: a lower cap cuts it before the tile sees it.
+            maxLength={200_000}
             disabled={disabled || preparing}
             sending={preparing}
             allowEmptySend={!!stagedCommand}
@@ -636,6 +675,9 @@ function SessionChatInputImpl({
             onAttach={handleAddPress}
             attachLabel="Add"
             onRemoveAttachment={attachments.remove}
+            pastes={pasted.pastes}
+            onRemovePaste={pasted.remove}
+            onOpenPaste={openPastedText}
             chip={
               modelsLoading
                 ? null

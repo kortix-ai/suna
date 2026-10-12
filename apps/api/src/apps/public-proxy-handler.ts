@@ -4,19 +4,19 @@ import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { ingressTargetUrl } from '../platform/providers/ingress-url';
-import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError } from './limits';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
-import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse, appViewerContextHeader } from './public-proxy-access';
+import { authorizeAppRequest, authorizeServiceRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
+  appTokenResponse, appViewerContextHeader } from './public-proxy-access';
 import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
-import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetResponse, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
-import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
+import { appPublicStatusResponse, publicDeploymentStatus, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
+import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake, releaseServes } from './public-proxy-runtime';
 import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
 import { serveStaticDeployment } from './static-site';
 import { APP_API_PROXY_PREFIX, appApiProxyResponse } from './public-proxy-api';
 const ACTIVITY_LEASE_MS = 60_000;
-type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
+type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal' | 'service'>;
 
 const ACTIVITY_WRITE_EVERY_MS = 10_000;
 // replica-local: a write throttle only. Each replica records a runtime's
@@ -88,10 +88,14 @@ async function routeAppPublicRequest(
   if (!verifyAppEdgeRequest(request, url, matched.local, matched.publicHost)) {
     return Response.json({ error: 'Invalid App edge signature' }, { status: 403 });
   }
-  const state = await loadPublicAppState(matched.routeKey);
+  const state = await loadPublicAppState(matched.routeKey, matched.service);
   if (!state) return Response.json({ error: 'App not found' }, { status: 404 });
+  // A named service the active release does not declare.
+  if (matched.service !== 'http' && !state.service) {
+    return Response.json({ error: 'Service not found', code: 'app_service_not_found' }, { status: 404 });
+  }
   const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
-  const accessResponse = await authorizeAppRequest(request, url, gateApp);
+  const accessResponse = await authorizeServiceRequest(request, url, gateApp, state.service?.access ?? 'app');
   if (accessResponse) return accessResponse;
   const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
   if (sessionViewer) bindAppViewerSession(sessionViewer);
@@ -99,6 +103,14 @@ async function routeAppPublicRequest(
   // must never wake a sleeping sandbox.
   if (url.pathname === '/_kortix/viewer') {
     return appViewerEndpointResponse(request, url, gateApp);
+  }
+  if (url.pathname === '/_kortix/token') {
+    return appTokenResponse(request, url, gateApp);
+  }
+  // The bindings mount: an App it uses (./bindings.ts). Loaded on use, like the links graph.
+  if (url.pathname.startsWith('/_kortix/apps/')) {
+    const { appBindingResponse } = await import('./bindings');
+    return appBindingResponse(request, url, matched.publicHost, gateApp);
   }
   if (forwardApi && url.pathname.startsWith(`${APP_API_PROXY_PREFIX}/`)) {
     return appApiProxyResponse(request, url, matched.publicHost, gateApp, forwardApi);
@@ -123,23 +135,25 @@ async function routeAppPublicRequest(
   if (
     !state.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
-    state.deployment.status !== 'ready' ||
+    !releaseServes(state.deployment, state.app.activeDeploymentId) ||
     !state.runtime
   ) {
     return appPublicStatusResponse(request, state.app, publicDeploymentStatus(state.deployment));
   }
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
   const hosting = new AppHostingProvider();
+  // A named service goes straight to its own port; `http` through the supervisor's ingress.
+  const servicePort = matched.service !== 'http' ? state.service?.internal_port : undefined;
   const coldStart = appRuntimeNeedsWake(state.runtime, new Date(), state.app.alwaysOn);
   if (coldStart) {
     await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
       console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
     });
   }
-  return proxyRunningApp(request, url, matched.publicHost, viewer, loaded, hosting, coldStart);
+  return proxyRunningApp(request, url, matched.publicHost, viewer, loaded, hosting, coldStart, servicePort);
 }
 
-async function proxyRunningApp(
+export async function proxyRunningApp(
   request: Request,
   url: URL,
   publicHost: string,
@@ -147,12 +161,12 @@ async function proxyRunningApp(
   loaded: LoadedApp,
   hosting: AppHostingProvider,
   coldStart: boolean,
+  servicePort?: number,
 ): Promise<Response> {
   let runtime: typeof loaded.runtime;
   try {
     runtime = await ensureAppRuntimeRunning(loaded, hosting);
   } catch (error) {
-    if (error instanceof AppBudgetExceededError) return appPublicBudgetResponse(request, loaded.app);
     // An unfunded account or an account at its App-concurrency cap is a paused
     // App, not a broken one. Say so instead of showing an endless spinner.
     if (error instanceof AppAccountUnfundedError) {
@@ -167,7 +181,7 @@ async function proxyRunningApp(
 
   const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
   const fetchUpstream = async () => {
-    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId);
+    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId, 'http', servicePort);
     const upstreamUrl = ingressTargetUrl(ingress, `${url.pathname}${url.search}`);
     return fetch(upstreamUrl, {
       method: request.method,

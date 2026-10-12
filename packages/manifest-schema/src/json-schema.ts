@@ -40,7 +40,7 @@
  */
 
 import { IMPORT_PATH_PATTERN } from './imports';
-import { AGENT_FILE_PATTERN } from './layout';
+import { AGENT_FILE_PATTERN, TOOL_FILE_PATTERN } from './layout';
 import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
@@ -70,6 +70,9 @@ import {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  KORTIX_TOOL_NAMES,
+  KORTIX_TOOL_PREFIX,
+  TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -86,6 +89,42 @@ import {
  *  since this module hand-assembles the tree; ajv is what checks it's legal. */
 // biome-ignore lint: recursive JSON Schema shape, `unknown` would fight every builder below
 export type JsonSchemaFragment = Record<string, any>;
+
+
+const APP_CHECK_SCHEMA = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['http', 'tcp'] },
+    port: { type: 'integer', minimum: 1, maximum: 65535 },
+    path: { type: 'string', pattern: '^/' },
+    interval_s: { type: 'integer', minimum: 1, maximum: 3600 },
+    timeout_s: { type: 'integer', minimum: 1, maximum: 600 },
+    grace_period_s: { type: 'integer', minimum: 0, maximum: 3600 },
+  },
+  additionalProperties: false,
+} as const;
+
+const APP_SERVICE_PROPERTIES = {
+  internal_port: { type: 'integer', minimum: 1, maximum: 65535, not: { enum: [7331, 8080] } },
+  protocol: { type: 'string', enum: ['http', 'tcp'] },
+  access: { type: 'string', enum: ['public', 'app', 'admins'] },
+  auto_stop_machines: { type: 'string', enum: ['off', 'stop', 'suspend'] },
+  auto_start_machines: { type: 'boolean' },
+  min_machines_running: { type: 'integer', minimum: 0, maximum: 100 },
+  processes: { type: 'array', items: { type: 'string' } },
+  checks: { type: 'array', items: APP_CHECK_SCHEMA },
+} as const;
+
+const APP_VM_SCHEMA = {
+  type: 'object',
+  properties: {
+    cpu: { type: 'integer', minimum: 1, maximum: 32 },
+    memory_gb: { type: 'integer', minimum: 1, maximum: 128 },
+    disk_gb: { type: 'integer', minimum: 1, maximum: 500 },
+    processes: { type: 'array', items: { type: 'string' } },
+  },
+  additionalProperties: false,
+} as const;
 
 export const KORTIX_SCHEMA_BASE_URL = 'https://kortix.com/schema';
 const DRAFT = 'https://json-schema.org/draft/2020-12/schema';
@@ -398,6 +437,10 @@ function triggerSchema(): JsonSchemaFragment {
       // `type: event` only — the connector slug, the provider event type id
       // and the provider event config (opaque here; the provider validates it).
       connector: { type: 'string', minLength: 1 },
+      // Optional: the label of one shared account of that connector.
+      account: { type: 'string', minLength: 1 },
+      // Optional: the event source adapter (default: the connector's provider).
+      source: { type: 'string', minLength: 1 },
       event: { type: 'string', minLength: 1 },
       config: { type: 'object' },
     },
@@ -450,7 +493,7 @@ function triggerSchema(): JsonSchemaFragment {
       {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
-        then: { properties: { connector: false, event: false, config: false } },
+        then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -618,6 +661,47 @@ function agentEntryV1Schema(): JsonSchemaFragment {
   };
 }
 
+/** `agents.<name>.tools` — which tools the agent may use (`AgentToolsV2`). */
+function agentToolsSchema(): JsonSchemaFragment {
+  const names = { type: 'array', items: NON_EMPTY_STRING };
+  return {
+    description:
+      'Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). ' +
+      '`all` (default) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.',
+    oneOf: [
+      { type: 'string', enum: ['all', 'none'] },
+      names,
+      { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
+      { type: 'object', not: { required: ['exclude'] }, additionalProperties: { type: 'boolean' } },
+    ],
+  };
+}
+
+/**
+ * Top-level `tools` — project tools, by name, and the Kortix tools the project
+ * keeps. A Kortix tool name takes `kortix:<name>` or a module path; any other
+ * name takes a module path. `null` (a `tools:` key with every line deleted)
+ * lists nothing.
+ */
+function projectToolsSchema(): JsonSchemaFragment {
+  const module = { type: 'string', pattern: TOOL_FILE_PATTERN };
+  return {
+    type: ['object', 'null'],
+    description:
+      'Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. ' +
+      'Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. ' +
+      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.',
+    propertyNames: { pattern: TOOL_NAME_RE.source },
+    properties: Object.fromEntries(
+      KORTIX_TOOL_NAMES.map((name) => [
+        name,
+        { anyOf: [{ const: `${KORTIX_TOOL_PREFIX}${name}`, description: `The Kortix ${name} tool, maintained by Kortix.` }, module] },
+      ]),
+    ),
+    additionalProperties: module,
+  };
+}
+
 /** `agents.<name>` (v2) — GOVERNANCE ONLY (spec §2.2). Every OpenCode
  *  behavioral field is a hard validation error here — modeled by simply
  *  never listing them in `properties` + `additionalProperties: false`, so
@@ -632,7 +716,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         description: "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md.",
       },
       enabled: { type: 'boolean' },
-      tools: { type: 'object', additionalProperties: { type: 'boolean' } },
+      tools: agentToolsSchema(),
       sandbox: SLUG_SCHEMA,
       // Declaration only; no provider network boundary enforces this yet.
       network_egress: {
@@ -751,7 +835,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       readiness_path: { type: 'string', pattern: '^/' },
       idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
       always_on: { type: 'boolean' },
-      monthly_budget_usd: { type: 'number', minimum: 0 },
+      uses: { type: 'array', items: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' } },
       resources: {
         type: 'object',
         properties: {
@@ -763,12 +847,58 @@ function appBlockV2Schema(): JsonSchemaFragment {
       },
       env: appStringMapSchema(),
       secrets: appStringMapSchema(),
+      // The release config. `kortix validate` checks the rules; the schema checks shapes.
+      processes: { type: 'object', additionalProperties: { type: 'string' } },
+      http_service: { type: 'object', properties: APP_SERVICE_PROPERTIES, additionalProperties: false },
+      services: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { name: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,30}$' }, ...APP_SERVICE_PROPERTIES },
+          required: ['name', 'internal_port'],
+          additionalProperties: false,
+        },
+      },
+      mounts: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            source: { type: 'string', pattern: '^[a-z0-9_]{1,30}$' },
+            destination: { type: 'string', pattern: '^/.+[^/]$' },
+            initial_size_gb: { type: 'integer', minimum: 1, maximum: 100 },
+            snapshot_retention_days: { type: 'integer', minimum: 1, maximum: 60 },
+            processes: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['source', 'destination'],
+          additionalProperties: false,
+        },
+      },
+      vm: { anyOf: [APP_VM_SCHEMA, { type: 'array', items: APP_VM_SCHEMA }] },
+      deploy: {
+        type: 'object',
+        properties: {
+          strategy: { type: 'string', enum: ['rolling', 'immediate', 'bluegreen', 'canary'] },
+          release_command: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      labels: { type: 'array', maxItems: 10, items: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,30}$' } },
+      display: {
+        type: 'object',
+        properties: {
+          listed: { type: 'boolean' },
+          preview: { type: 'string', enum: ['live', 'none'] },
+          parent: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+        },
+        additionalProperties: false,
+      },
     },
     additionalProperties: false,
     allOf: [
       {
         if: { properties: { type: { enum: ['dockerfile', 'oci_image'] } }, required: ['type'] },
-        then: { required: ['command', 'port'] },
+        then: { required: ['command'] },
       },
       {
         if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
@@ -849,7 +979,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
     properties: {
       kortix_version: { const: 2 },
       // Other YAML files (or directories of them) whose `triggers`,
-      // `connectors`, `agents`, and `apps` merge into this manifest.
+      // `connectors`, `agents`, `apps` and `tools` merge into this manifest.
       imports: {
         type: 'array',
         items: { type: 'string', pattern: IMPORT_PATH_PATTERN },
@@ -861,6 +991,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       // Per-harness native settings. `pi.packages`: pi packages
       // (https://pi.dev/packages) in pi's own settings format, for every agent.
       harnesses: harnessesSchema('project'),
+      tools: projectToolsSchema(),
       agents: {
         type: 'object',
         minProperties: 1,

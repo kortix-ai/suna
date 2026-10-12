@@ -9,6 +9,11 @@ const configState: Record<string, unknown> = {
 mock.module('../config', () => ({ config: configState }));
 mock.module('../sandbox-proxy/backend', () => ({
   resolveExternalIdFromHostLabel: async () => null,
+  // Backend hosts reach their machine through the sandbox ingress; no test here proxies.
+  resolveSandboxIngress: async () => {
+    throw new Error('no ingress in this test');
+  },
+  invalidatePreviewLink: () => {},
 }));
 mock.module('../apps/public-proxy', () => ({ loadPublicAppState: async () => null }));
 

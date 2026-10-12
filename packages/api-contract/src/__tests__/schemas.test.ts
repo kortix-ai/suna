@@ -144,8 +144,14 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       secrets_egress: false,
       pooled_provider_secrets: false,
       pi_harness: false,
-      config_releases: true,
       us_region: false,
+      event_triggers: false,
+      notification_center: false,
+      volumes: false,
+      stateless_sessions: false,
+      drives: false,
+      ephemeral_sandboxes: false,
+      session_log: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -532,8 +538,11 @@ describe('TriggerSchema', () => {
   test('accepts an event trigger with its subscription state', () => {
     const event = {
       connector: 'github',
+      account: 'acme-bot',
+      connected_as: 'bot@example.test',
       type: 'GITHUB_PULL_REQUEST_EVENT',
       config: { owner: 'acme' },
+      source: 'composio',
       provider: 'composio',
       app: 'github',
       status: 'needs_connection',
@@ -545,6 +554,8 @@ describe('TriggerSchema', () => {
     expect(
       TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, status: 'bogus' } })).success,
     ).toBe(false);
+    // `account` is null for the connector default and `connected_as` null when no account feeds it.
+    expect(TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, account: null, connected_as: null } })).success).toBe(true);
   });
 
   // `monitor` is the third trigger type:
@@ -740,8 +751,14 @@ describe('envelopes', () => {
       'secrets_egress',
       'pooled_provider_secrets',
       'pi_harness',
-      'config_releases',
       'us_region',
+      'event_triggers',
+      'notification_center',
+      'volumes',
+      'stateless_sessions',
+      'drives',
+      'ephemeral_sandboxes',
+      'session_log',
     ]);
   });
 

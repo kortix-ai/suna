@@ -28,7 +28,11 @@ const deleteUser = mock(async (_id: string): Promise<{ error: null | { status: n
 const realStripe = await import('../../shared/stripe');
 const realSupabase = await import('../../shared/supabase');
 mock.module('../../shared/stripe', () => ({ ...realStripe, getStripe: () => ({ subscriptions: { cancel: stripeCancel } }) }));
-mock.module('../../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ auth: { admin: { deleteUser } } }) }));
+mock.module('../../shared/supabase', () => ({
+  ...realSupabase,
+  // Session files: an empty bucket (account erasure lists each project).
+  getSupabase: () => ({ auth: { admin: { deleteUser } }, storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) } }),
+}));
 
 const { db } = await import('../../shared/db');
 const { processScheduledDeletions, deleteAccountImmediately } = await import('./account-deletion');

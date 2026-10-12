@@ -17,6 +17,8 @@ async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
     connectionString: databaseUrl,
     ssl: local ? false : { rejectUnauthorized: false },
   });
+  // A dropped connection must fail the next query, not crash the runner.
+  client.on('error', () => {});
   await client.connect();
   return client;
 }
@@ -124,6 +126,35 @@ export async function setDatabaseEnterpriseDemo(
        ON CONFLICT (account_id)
        DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
       [accountId, enabled],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Set one feature-flag override on a project row, as the operator route
+ * (`PUT /v1/admin/api/projects/:id/features`) does. For browser journeys that
+ * need the internal-only flag `apps`: a project owner cannot
+ * write those through `PATCH /projects/:id/features`.
+ */
+export async function setDatabaseProjectFeature(
+  env: Env,
+  projectId: string,
+  feature: string,
+  enabled: boolean,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "set a feature flag for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.projects
+       SET metadata = coalesce(metadata, '{}'::jsonb)
+         || jsonb_build_object('experimental', coalesce(metadata->'experimental', '{}'::jsonb) || jsonb_build_object($2::text, $3::boolean)),
+         updated_at = now()
+       WHERE project_id = $1::uuid`,
+      [projectId, feature, enabled],
     );
   } finally {
     await client.end();

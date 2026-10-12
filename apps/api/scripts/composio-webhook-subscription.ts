@@ -19,7 +19,13 @@ import { parseArgs } from 'node:util';
 
 const BASE = (process.env.COMPOSIO_BASE_URL || 'https://backend.composio.dev').replace(/\/+$/, '');
 const PATH = '/api/v3.1/webhook_subscriptions';
-const ENABLED_EVENTS = ['composio.trigger.message', 'composio.trigger.disabled', 'composio.connected_account.expired'];
+const ENABLED_EVENTS = [
+  'composio.trigger.message',
+  'composio.trigger.disabled',
+  'composio.connected_account.expired',
+  // A person finished connecting outside an open Kortix page: finalize it server-side.
+  'composio.connected_account.activated',
+];
 
 const { values } = parseArgs({
   options: {

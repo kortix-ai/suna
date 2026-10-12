@@ -16,10 +16,10 @@ import { useCallback, useMemo } from 'react';
 
 import { parseProjectSelectOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ProjectSelectTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const project = (input.project as string) || '';
   const data = useMemo(() => parseProjectSelectOutput(output || ''), [output]);

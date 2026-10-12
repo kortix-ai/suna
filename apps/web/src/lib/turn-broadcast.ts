@@ -21,6 +21,9 @@ export interface TurnCompleteMsg {
   /** Project the session belongs to, captured on the publishing tab's URL —
    *  a receiving tab may be on a page where the project is not in the path. */
   projectId?: string | null;
+  /** That project's `notification_center` flag in the publishing tab's cache.
+   *  A receiving tab often never loaded the project. Absent: no answer. */
+  notificationCenter?: boolean;
   at: number;
 }
 

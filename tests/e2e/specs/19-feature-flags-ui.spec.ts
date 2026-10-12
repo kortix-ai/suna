@@ -42,6 +42,8 @@ interface FeatureFlagView {
   available: boolean;
   enabled: boolean;
   overridden: boolean;
+  operator_only?: boolean;
+  scope?: string;
 }
 
 interface ProjectResponse {
@@ -102,6 +104,10 @@ function flagRow(panel: Locator, page: Page, name: string): Locator {
 
 /** The origin line under a flag (`originLabel` in experimental-tab.tsx). */
 function originLabel(flag: FeatureFlagView): string {
+  // One value for every project of the organization (`volumes`, #9592).
+  if (flag.scope === "organization") return "Whole organization, managed by Kortix";
+  // `apps` while on: listed read-only, only a Kortix operator writes it.
+  if (flag.operator_only) return "Managed by Kortix";
   if (flag.overridden) return "Overridden for this project";
   return flag.enabled ? "Default on" : "Default off";
 }
@@ -227,6 +233,7 @@ test.describe("19 — Feature flags UI", () => {
           "aria-checked",
           String(flag.enabled),
         );
+        if (flag.operator_only) await expect(row.getByRole("switch")).toBeDisabled();
       }
 
       // (c) toggling one flag issues the canonical PATCH and persists.

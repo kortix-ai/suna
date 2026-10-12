@@ -76,4 +76,10 @@ describe('Kortix Apps React Query bindings', () => {
       qk.project.apps('project-1'),
     ]);
   });
+
+  test('the App list does not poll for an instance and has no credential mutation', () => {
+    const apps = useProjectApps('project-1') as any;
+    expect(apps.refetchInterval({ state: { data: [{ instance: { status: 'provisioning', operation: 'resizing' } }] } })).not.toBe(2_000);
+    expect('rotateCredentials' in apps).toBe(false);
+  });
 });

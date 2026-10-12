@@ -22,11 +22,11 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const sessionId = (input.session_id as string) || '';
   const mode = (input.mode as string) || 'summary';
   const pattern = (input.pattern as string) || '';

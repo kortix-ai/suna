@@ -29,6 +29,7 @@ import {
   shouldUseNextLink,
 } from '@/components/markdown/unified-markdown-utils';
 import { remarkSetupLinkBlocks } from '@/components/markdown/setup-link-blocks';
+import { rehypeStreamWords, STREAM_WORD_CLASS, StreamWord } from '@/components/markdown/stream-words';
 import { SetupLinkButton, SetupLinkInlineContext } from '@/components/setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from '@/components/setup-links/util';
 import { Button } from '@/components/ui/button';
@@ -220,7 +221,7 @@ const MARKDOWN_COMPONENTS = {
   hr: () => <hr className="border-border my-6 h-px border-0 border-t" />,
 
   table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="border-border my-5 overflow-x-auto rounded-md border">
+    <div className="kx-md-table border-border my-5 overflow-x-auto rounded-md border">
       <table className="!m-0 w-full text-sm">{children}</table>
     </div>
   ),
@@ -371,6 +372,11 @@ const MARKDOWN_COMPONENTS = {
     node: _node,
     ...props
   }: React.HTMLAttributes<HTMLSpanElement> & { node?: unknown }) => {
+    // A streamed word (see `rehypeStreamWords`): it inherits its parent's
+    // colour, so it must not take the `text-foreground` below.
+    if (spanClassName === STREAM_WORD_CLASS) {
+      return <StreamWord>{children}</StreamWord>;
+    }
     if (isKatexClassName(spanClassName)) {
       return (
         <span
@@ -424,6 +430,9 @@ export interface UnifiedMarkdownProps {
  */
 const REMARK_PLUGINS_WITH_SETUP_LINKS = [...katexRemarkPlugins, remarkSetupLinkBlocks];
 const REMARK_PLUGINS_WITH_FILE_LINKS = [...REMARK_PLUGINS_WITH_SETUP_LINKS, remarkWorkspaceFileLinks];
+// Last, so the words it wraps are the final, sanitized text.
+const STREAMING_REHYPE_PLUGINS = [...katexRehypePlugins, rehypeStreamWords];
+const STREAMING_REHYPE_PLUGINS_NO_RAW = [...katexRehypePluginsNoRaw, rehypeStreamWords];
 
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
@@ -493,7 +502,17 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             }
             // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
             // new array each render made every block re-parse on every token.
-            rehypePlugins={policy.rawHtml ? katexRehypePlugins : katexRehypePluginsNoRaw}
+            // While streaming, each word also fades in as it mounts. Dropping
+            // the plugin at the end re-renders every block once as plain text.
+            rehypePlugins={
+              isStreaming
+                ? policy.rawHtml
+                  ? STREAMING_REHYPE_PLUGINS
+                  : STREAMING_REHYPE_PLUGINS_NO_RAW
+                : policy.rawHtml
+                  ? katexRehypePlugins
+                  : katexRehypePluginsNoRaw
+            }
           >
             {finalContent}
           </Streamdown>

@@ -59,8 +59,7 @@ export async function previewTlsCheckStatus(
 
 /**
  * 200 if `domain` is a hostname this deployment actually serves — an App or a
- * sandbox preview. Checked in that order; they cannot both match, because the
- * two families sit under different base domains.
+ * sandbox preview. No two can match: previews sit under a different base domain.
  */
 export async function edgeTlsCheckStatus(
   domain: string | null | undefined,

@@ -4,6 +4,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -17,9 +18,17 @@ import {
 import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
-import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { isFeatureFlagKey } from '../../feature-flags/registry';
-import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
+import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
+import {
+  featureFlagDef,
+  isDerivedFeatureFlag,
+  isFeatureFlagKey,
+  isOperatorOnlyFeatureFlag,
+  isOrganizationFeatureFlag,
+} from '../../feature-flags/registry';
+import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
+import { writeOrganizationFeatureFlag, writeProjectFeatureFlag } from '../../feature-flags/write';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
   requestProviderTransition,
@@ -110,38 +119,49 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
   }
+  if (isDerivedFeatureFlag(feature)) {
+    return c.json({ error: `'${feature}' follows the organization's Volumes setting and cannot be set per project` }, 400);
+  }
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
   }
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
-  // would lose an update one level down when two flags are toggled
-  // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
-  // set writes only `experimental.<feature>`; clear removes it (dropping the
-  // whole `experimental` key once the last override is gone). The metadata key
-  // name `experimental` is a stable storage detail. Every write preserves the
-  // routing pin.
-  const metadataExpr =
-    enabled === null
-      ? metadataClearSubtreeKey('experimental', feature)
-      : metadataMergeSubtree('experimental', { [feature]: enabled });
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: metadataExpr, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
+  // An internal-only flag (`apps`) starts billable machines, and an
+  // organization flag (`volumes`) is experimental, so Kortix decides them: only a platform operator writes it, never a project
+  // admin and never an agent session. An operator acting in a customer
+  // project through impersonation passes (`userId` stays the operator's).
+  if (isOperatorOnlyFeatureFlag(feature)) {
+    const operator = !isProjectSessionPrincipal(c) && (await isPlatformAdmin(c.get('userId')));
+    if (!operator) {
+      return c.json(
+        {
+          error: `${featureFlagDef(feature)?.name ?? feature} is managed by Kortix. Contact Kortix to change it.`,
+          code: FEATURE_OPERATOR_ONLY_CODE,
+          feature,
+        },
+        403,
+      );
+    }
+  }
+  // An organization flag (`volumes`) writes the organization's entry in the
+  // store it reads (the Volumes policy row), never the project's metadata.
+  if (isOrganizationFeatureFlag(feature)) {
+    if (!featureFlagDef(feature).available()) {
+      return c.json({ error: `${featureFlagDef(feature).name} is not available on this deployment` }, 400);
+    }
+    if (feature === 'stateless_sessions' && enabled === true) {
+      const { volumesEnabledForFresh } = await import('../../platform/services/boot-mode-setting');
+      if (!(await volumesEnabledForFresh(loaded.row.accountId))) {
+        return c.json({ error: 'Turn on Volumes first' }, 400);
+      }
+    }
+    await writeOrganizationFeatureFlag(loaded.row.accountId, feature, enabled);
+    return c.json(serializeProject(loaded.row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+  }
+  const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
-  // Convergence work (connector materialization, sandbox env fan-out) runs
-  // behind the response; runFeatureFlagToggleEffects retries once and logs
-  // failures at error level. See feature-flags/toggle-effects.ts.
-  void runFeatureFlagToggleEffects({
-    key: feature,
-    projectId,
-    accountId: row.accountId,
-    metadata: row.metadata,
-  });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 
@@ -257,7 +277,7 @@ export function registerProjectSettingsRoutes(): void {
     try {
       repoDeleted = await deleteManagedProjectRepo(loaded.row);
     } catch (error) {
-      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+      logger.error('[projects] failed to delete the managed repo', { projectId, error: String(error) });
       return c.json({ error: 'Failed to delete managed project repository' }, 502);
     }
 
@@ -270,6 +290,10 @@ export function registerProjectSettingsRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
+    // Its sessions' state volumes go with it (durable queue, retried while a box still mounts one).
+    await import('../../platform/services/ephemeral-sandbox')
+      .then(({ queueProjectSessionStateVolumes }) => queueProjectSessionStateVolumes(projectId))
+      .catch((error) => logger.warn('[projects] could not queue the session state volumes', { projectId, error: String(error) }));
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );

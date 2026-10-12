@@ -13,10 +13,14 @@ import { assertAgentScope, isBorrowedSessionPrincipal, isProjectSessionPrincipal
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, loadVisibleSessionsForList } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { notificationsEnabled } from '../../notifications/enabled';
+import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { logger } from '../../lib/logger';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -75,8 +79,10 @@ export function registerSessionRemindersRoutes(): void {
   // GET /v1/projects/:projectId/reminders
   //
   // Every reminder on a session the caller can open, for the project Reminders
-  // page. Visibility is `loadVisibleSession`, once per distinct session, so the
-  // list can never show a reminder whose session the caller could not open.
+  // page. Visibility runs through `loadVisibleSessionsForList`: one batched
+  // read for every distinct session (KRTX-532), so the list can never show a
+  // reminder whose session the caller could not open — and never saturates the
+  // per-task pool doing it.
   // Pause/resume/remove go through the session-scoped routes below.
 
   projectsApp.openapi(
@@ -109,13 +115,18 @@ export function registerSessionRemindersRoutes(): void {
       const rows = await listProjectReminders(projectId);
       const sessionIds = [...new Set(rows.map((row) => row.sessionId as string))];
       const names = new Map<string, string | null>();
-      await Promise.all(
-        sessionIds.map(async (sessionId) => {
-          const visible = await loadVisibleSession(loaded, sessionId, binding, binding);
-          if (!visible || sessionIsTombstoned(visible.row)) return;
-          names.set(sessionId, serializeSession(visible.row, { viewerId: loaded.userId }).name ?? null);
-        }),
-      );
+      // One batched visibility read for the whole list (KRTX-532): the
+      // per-session fan-out below used to issue the full session read — row,
+      // share subject, grants, owner probe — once per DISTINCT session, all in
+      // one Promise.all: 64 db statements measured on one request against the
+      // 5-connection per-task pool, queuing every concurrent statement behind
+      // it. loadVisibleSessionsForList answers the same verdicts with a
+      // bounded number of reads and the same security rules.
+      const visible = await loadVisibleSessionsForList(loaded, sessionIds, binding, binding);
+      for (const [sessionId, access] of visible) {
+        if (sessionIsTombstoned(access.row)) continue;
+        names.set(sessionId, serializeSession(access.row, { viewerId: loaded.userId }).name ?? null);
+      }
       return c.json({
         reminders: rows
           .filter((row) => names.has(row.sessionId as string))
@@ -212,6 +223,23 @@ export function registerSessionRemindersRoutes(): void {
         now,
       });
       if ('error' in inserted) return c.json({ error: inserted.error }, 409);
+      // The person who set the reminder hears when it fails (KRTX-1742); an
+      // agent's reminder goes to the person the agent acts for. Only with the
+      // `notification_center` flag on.
+      const watcher = notificationsEnabled(loaded.row.metadata)
+        ? triggerWatcherOf({
+            authType: c.get('authType'),
+            userId: c.get('userId'),
+            sessionId: c.get('sessionId'),
+            onBehalfOfUserId: getRequestOnBehalfOf(c),
+          })
+        : null;
+      // Best-effort: the reminder is already stored, so a failed write must not
+      // fail the route (a retry would set a second reminder).
+      if (watcher) {
+        await upsertTriggerWatcher({ accountId: loaded.row.accountId, projectId, slug: spec.slug, userId: watcher })
+          .catch((err) => logger.warn('[trigger-watchers] reminder follow failed', { projectId, slug: spec.slug, error: err instanceof Error ? err.message : String(err) }));
+      }
       return c.json(serializeSessionReminder(inserted.row), 201);
     },
   );

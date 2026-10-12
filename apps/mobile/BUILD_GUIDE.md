@@ -57,6 +57,24 @@ git tag mobile-v1.4.4 && git push origin mobile-v1.4.4            # the submitte
 (new native module, permission, Expo SDK, anything under `ios/` or `android/`)
 needs a new version and a store build: OTA cannot ship it.
 
+## Require a minimum app version
+
+An old build keeps running until its owner updates it. To ask old builds to
+update, set these on the API (the EAS environment is for the app, not these):
+
+| Variable | Meaning |
+|---|---|
+| `MOBILE_MIN_VERSION` | `major.minor.patch`. A build below it shows a blocking "Update required" screen. Unset: no gate. A malformed value stops the API at boot. |
+| `MOBILE_STORE_URL_IOS` | App Store page the Update button opens on iOS. Unset: no button. |
+| `MOBILE_STORE_URL_ANDROID` | Play Store page the Update button opens on Android. Unset: no button. |
+
+The app reads `GET /v1/clients/mobile` (no auth) at start and on return to the
+foreground, and compares it to the native binary version (`nativeAppVersion`).
+The gate fails open: a network error, a non-200 answer, a missing or unparsable
+minimum never blocks the app. The gate lives in the JS bundle, so an OTA update
+(below) delivers it to every existing build with the same `runtimeVersion`.
+Unset `MOBILE_MIN_VERSION` to lift it.
+
 ## OTA updates
 
 `.github/workflows/mobile-ota.yml` publishes the JS/TS bundle with

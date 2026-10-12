@@ -1,3 +1,4 @@
+import type { PastedContent } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 
 import type { AttachedFile } from '../types';
@@ -62,6 +63,8 @@ export interface StoredDraft {
    * when non-empty; `deserializeDraft` always returns an array.
    */
   quotes?: string[];
+  /** The pasted-text tiles, in order. Optional, no version bump, written only when non-empty — as `quotes`. */
+  pastes?: PastedContent[];
 }
 
 /** The `<kind>:<id>` half of the storage key. The family prefix is the store's. */
@@ -88,21 +91,30 @@ export function serializeDraft(input: {
   documentIsEmpty: boolean;
   files: readonly AttachedFile[];
   quotes?: readonly string[];
+  pastes?: readonly PastedContent[];
   userId: string;
 }): StoredDraft | null {
   if (!input.userId) return null;
   const files = input.files.filter(isRemote);
   const quotes = input.quotes ?? [];
-  if (input.documentIsEmpty && files.length === 0 && quotes.length === 0) return null;
+  const pastes = input.pastes ?? [];
+  if (input.documentIsEmpty && files.length === 0 && quotes.length === 0 && pastes.length === 0)
+    return null;
   const draft: StoredDraft = {
     v: DRAFT_ENVELOPE_VERSION,
     u: input.userId,
     doc: input.doc,
     files,
     ...(quotes.length > 0 ? { quotes: [...quotes] } : {}),
+    ...(pastes.length > 0 ? { pastes: [...pastes] } : {}),
   };
-  if (JSON.stringify(draft).length > MAX_DRAFT_BYTES) return null;
-  return draft;
+  if (JSON.stringify(draft).length <= MAX_DRAFT_BYTES) return draft;
+  // Over the cap: drop the pastes (the likeliest bulk) and keep the typed text.
+  if (draft.pastes) {
+    const { pastes: _dropped, ...rest } = draft;
+    if (JSON.stringify(rest).length <= MAX_DRAFT_BYTES) return rest;
+  }
+  return null;
 }
 
 /**
@@ -126,12 +138,19 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
     const text = quote.trim();
     if (text && !quotes.includes(text)) quotes.push(text);
   }
+  // Only `{ id, text }` with both set crosses back; anything else in storage is dropped.
+  const storedPastes: unknown[] = Array.isArray(candidate.pastes) ? candidate.pastes : [];
+  const pastes = storedPastes.flatMap((p) => {
+    const { id, text } = (p ?? {}) as Partial<PastedContent>;
+    return typeof id === 'string' && id && typeof text === 'string' && text ? [{ id, text }] : [];
+  });
   return {
     v: candidate.v,
     u: candidate.u,
     doc: legacy.doc,
     files: candidate.files.filter(isRemote),
     quotes,
+    pastes,
   };
 }
 

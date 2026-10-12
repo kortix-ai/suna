@@ -49,6 +49,40 @@ export function requestTimingLogField(durationMs: number, status: number): strin
   return formatStageEntries(stageSnapshot()).join(', ');
 }
 
+/** Per-statement db wall past which the db stage reads as connection-pool
+ *  queueing rather than statement cost. Prod statements are ~2.5 ms server-side
+ *  (KRTX-532's pg_stat_statements cross-check) and the chronically contended
+ *  200 tail sat near ~275 ms per statement, while every 25 s deadline death of
+ *  the 2026-10-04 saturation episode measured 1.6–3.6 s per statement
+ *  (KRTX-1571). 1 s sits between the two regimes. */
+const DB_POOL_WAIT_SUSPECT_MS_PER_STATEMENT = 1_000;
+
+const DB_STAGE_RE = /\bdb;dur=(\d+);desc="n=(\d+)"/;
+
+/**
+ * Whether a slow completion's `Server-Timing` breakdown reads as the request
+ * having queued for a db pool connection instead of running expensive
+ * statements — `db;dur ÷ n` far above per-statement exec cost.
+ *
+ * KRTX-1571 (prod, 2026-10-04): `GET /v1/projects/:id` 5xx'd 503s whose own
+ * completion lines carried `db;dur=20755;desc="n=6"` — ~3.5 s per statement
+ * for statements that execute in ~2.5 ms, i.e. the request spent its budget
+ * waiting for a pool connection. Attributing that from the raw `server_timing`
+ * string took a manual division plus the pg_stat_statements cross-check; this
+ * derives the same verdict per line so the NEXT saturation episode names
+ * itself in one grep (`db_pool_wait_suspected: true`) instead of a
+ * four-session investigation. Only the `db` stage counts: auth/iam wall is
+ * mostly the same statements (stages overlap), and an `n`-less or unparseable
+ * entry proves nothing.
+ */
+export function dbPoolWaitSuspected(serverTiming: string): boolean {
+  const match = DB_STAGE_RE.exec(serverTiming);
+  if (!match) return false;
+  const statements = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(statements) || statements <= 0) return false;
+  return Number.parseInt(match[1], 10) / statements >= DB_POOL_WAIT_SUSPECT_MS_PER_STATEMENT;
+}
+
 /**
  * Whether the post-request `Request completed:` line is suppressed entirely as
  * expected sandbox-proxy noise — a designed answer, not a server failure.
@@ -64,6 +98,15 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  *     carries the state. Prod, 24 h to 2026-09-29: ~40 such 503s a day on the
  *     data-path GET routes alone, each one the client's reconnect hydrate
  *     racing a park (KRTX-397).
+ *   - `daemon` 503 on a GET where the daemon itself answered 503 — the box's
+ *     own daemon answered `runtime_not_ready` while its opencode runtime
+ *     restarts behind a live box, and the proxy passed it through on purpose
+ *     (no retry; the client re-polls, the box recovers within seconds). The
+ *     passthrough carries the attribution (forward/retry.ts), so the hop plus
+ *     the upstream status tell this designed answer apart from every other
+ *     503. Prod, 26 h to 2026-10-09: 8 such 503s, each inside a multi-route
+ *     boot-window burst that recovered within seconds (KRTX-397
+ *     reoccurrence).
  *   - long-poll/SSE event-stream reads (/global/event, /session/status,
  *     /session/:id/message) timing out at ~30 s (504), or the boot window
  *     answering 502/503.
@@ -71,9 +114,12 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  *     answering 502/503/504 before services are ready.
  *
  * Everything else stays logged: a 502/503 the proxy dialled for
- * (`daemon`/`provider_ingress`/`upstream_port` hop, or no hop header at all),
- * any mutation, and a FAILED health probe. The wire response is untouched —
- * suppression is about the log line only, and the span is still emitted.
+ * (`provider_ingress`/`upstream_port` hop, or no hop header at all — including
+ * the daemon's 503s that carry no boot-phase signature), the give-up 502 (it
+ * logs at its internal 502 with the honest `upstream_status` — the edge
+ * rewrite to 503 happens after this line), any mutation, and a FAILED health
+ * probe. The wire response is untouched — suppression is about the log line
+ * only, and the span is still emitted.
  */
 export function shouldSuppressRequestLog(input: {
   method: string;
@@ -82,10 +128,19 @@ export function shouldSuppressRequestLog(input: {
   durationMs: number;
   /** Value of the `X-Kortix-Proxy-Hop` response header when the proxy set one. */
   proxyHop: string | null;
+  /** Status the failing hop itself returned, from `X-Kortix-Upstream-Status`. */
+  upstreamStatus: number | null;
 }): boolean {
-  const { method, path, status, durationMs, proxyHop } = input;
+  const { method, path, status, durationMs, proxyHop, upstreamStatus } = input;
   if (method !== 'GET') return false;
   if (status === 503 && proxyHop === 'control_plane') return true;
+  // The daemon's own boot-phase answer: a 503 the proxy passed through
+  // BECAUSE the daemon named `runtime_not_ready` — see sandbox-proxy/forward/
+  // retry.ts. The upstream status must be the daemon's own 503: a give-up
+  // logs at its 502 with that status in `X-Kortix-Upstream-Status`, and that
+  // outage signal stays logged. So does an unattributed 503 and one without
+  // an upstream status (every attempt threw — the port never answered).
+  if (status === 503 && proxyHop === 'daemon' && upstreamStatus === 503) return true;
   const isSandboxProxyPath = path.includes('/v1/p/');
   const isProxyLongPoll =
     isSandboxProxyPath &&

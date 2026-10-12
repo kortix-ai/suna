@@ -1,36 +1,29 @@
 'use client';
 
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The panel behind a row click.
  *
- * **What changed and why.** This used to be a flat column of seven equal
- * sections — Name, Schedule, Prompt template, Delivery filter, Agent & model,
- * Properties — each with its own Save button that appeared and vanished as you
- * typed, and no `SheetTitle` at all (so the dialog had no accessible name).
- * Everything sat at one level, which is what "no hierarchy, showing random
- * things" describes: the trigger's source file path had the same visual weight
- * as the instruction the agent actually runs.
+ * It is the trigger composer, in edit mode. The body is the same When → Then →
+ * Name → Options stack built from the same pieces (`WhenSchedule`,
+ * `WhenEvent`, `ThenFields`, `TriggerOptions`), over a `ComposerDraft` built
+ * from the saved trigger. Nothing saves on its own: one footer, "Save changes"
+ * and "Discard", appears while the draft differs from the saved trigger, and
+ * Save sends one PATCH holding only the fields that changed (`triggerPatch`).
  *
- * Now the panel answers four questions in order, each in its own titled block:
- * what it does, when it runs (or how it is called), who runs it, and what it
- * remembers between runs. Everything that is a fact rather than a setting —
- * the id, the file it lives in, the last run — moved into a collapsed Details
- * block at the bottom, where it is available without being in the way.
+ * Above the form, a callout shows only what needs action: a failed run, an
+ * event trigger that needs a connection or is in error, or events being off
+ * for the project. A viewer who may not update the trigger sees the same facts
+ * as one read-only list.
  */
 
-import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -42,80 +35,63 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ModelSelector } from '@/features/session/model-selector';
-import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
-import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
+import { agentDisplayLabel } from '@/features/session/session-chat-input';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
-import { cn } from '@/lib/utils';
+import { type ProjectTrigger, updateProjectTrigger } from '@kortix/sdk';
 import {
-  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
-  type ProjectTrigger,
-  type UpdateProjectTriggerInput,
-  listProjectSessions,
-  updateProjectTrigger,
-} from '@kortix/sdk';
-import {
-  type ModelKey,
-  contract,
-  modelKeyToWire,
-  qk,
+  type Agent,
   useFeatureFlag,
+  useProjectTriggerEventApps,
   useProjectTriggerEventTypes,
-  useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { buildWebhookSampleRequest } from '@kortix/shared';
-import {
-  CaretDownIcon,
-  DotsThreeIcon,
-  LightningIcon,
-  PauseIcon,
-  PencilSimpleIcon,
-  PlayIcon,
-  TimerIcon,
-  TrashIcon,
-  WarningCircleIcon,
-  WebhooksLogoIcon,
-} from '@phosphor-icons/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import type { TriggerControls } from './trigger-controls';
-import { triggerSessionAccessCopy } from './trigger-session-access-copy';
+import { DotsThreeIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
+import { useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { describeEventStatus, payloadVariables } from './event-trigger-copy';
-import { EventPanel, EventStatusBanner } from './event-trigger-panel';
+import { FoldTrigger, InlineError, type PatchDraft } from './composer-parts';
 import {
-  CUSTOM_TIMING_LABEL,
-  type SessionMode,
-  describeCadence,
+  accountToWrite,
+  appConnectors,
+  describeEventSource,
+  describeEventStatus,
+  indexEventApps,
+  parseConfigErrors,
+  schemaFields,
+} from './event-trigger-copy';
+import {
   describeLastRun,
-  describeRunLocation,
-  describeSecurity,
   describeNextRun,
   describeWhen,
+  triggerBadgeState,
   triggerName,
-  triggerStatus,
 } from './schedule-copy';
+import { PropertyList } from './schedule-fields';
+import { ThenFields } from './then-fields';
+import { TriggerCallouts } from './trigger-callouts';
 import {
-  type ConditionRow,
-  ConditionsEditor,
-  CopyBlock,
-  PanelSection,
-  PropertyList,
-  RunLocationFields,
-  SaveButton,
-  TimezoneField,
-  conditionsToRows,
-  rowsToConditions,
-  sameConditions,
-} from './schedule-fields';
+  type ComposerBlock,
+  type ComposerDraft,
+  findDraftApp,
+  resolveProfile,
+  validate,
+} from './trigger-composer-logic';
+import type { TriggerControls } from './trigger-controls';
+import { draftFromTrigger, triggerPatch } from './trigger-edit-logic';
+import { TriggerOptions } from './trigger-options';
+import { TriggerReadOnly } from './trigger-readonly';
+import { TriggerStatusBadge } from './trigger-status-badge';
+import { TriggerTile } from './trigger-tile';
+import { useEventAppConnect } from './use-event-app-connect';
+import { WhenEvent } from './when-event';
+import { WhenEventSummary } from './when-event-summary';
+import { WhenSchedule } from './when-schedule';
+import { WhenWebhookAddress } from './when-webhook-address';
 
-const PLACEHOLDERS = ['{{ message.text }}', '{{ message.source }}', '{{ fired_at }}'];
-
-/** Shared formatter, hoisted so render does not rebuild the Intl machinery per
- *  call. Options mirror `toLocaleString()`'s defaults — identical output. */
+/** Shared formatter, hoisted so render does not rebuild the Intl machinery per call. */
 const lastRunFormatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: 'numeric',
@@ -125,1009 +101,511 @@ const lastRunFormatter = new Intl.DateTimeFormat(undefined, {
   second: 'numeric',
 });
 
-/**
- * The one trigger-update lifecycle the editable panels share: post the
- * payload, toast the success line, then invalidate through `onMutated`; on
- * failure toast the fallback without invalidating. Each panel keeps its own
- * payload builder and success copy. `afterSave` runs between the toast and
- * the invalidation — the timing editor closes its editing state there, so a
- * failed save leaves the editor open. The header's enable/disable toggle
- * stays a separate mutation: it maps the `enabled` argument to its own copy
- * instead of a fixed one.
- */
-function useTriggerUpdate<TInput = void>(
-  projectId: string,
-  trigger: ProjectTrigger,
-  onMutated: () => void,
-  update: {
-    success: string;
-    errorFallback: string;
-    payload: (input: TInput) => UpdateProjectTriggerInput;
-    afterSave?: () => void;
-  },
-) {
-  return useMutation({
-    mutationFn: (input: TInput) =>
-      updateProjectTrigger(projectId, trigger.slug, update.payload(input)),
-    onSuccess: () => {
-      successToast(update.success);
-      update.afterSave?.();
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || update.errorFallback),
-  });
-}
-
-export function ScheduleDetailSheet({
-  projectId,
-  trigger,
-  controls,
-  open,
-  onOpenChange,
-  onRun,
-  running,
-  onDelete,
-  onMutated,
-}: {
+export interface ScheduleDetailSheetProps {
   projectId: string;
   trigger: ProjectTrigger | null;
   controls: TriggerControls;
+  /** The project flag `event_triggers`. Off: no event catalog is requested and an event trigger is not editable. */
+  eventsEnabled: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRun: () => void;
   running: boolean;
   onDelete: () => void;
   onMutated: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tTriggers = useI18nTranslations('triggers');
-  const toggle = useMutation({
-    mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger!.slug, { enabled }),
-    onSuccess: (_data, enabled) => {
-      successToast(
-        enabled ? tI18nComplete.raw('texta97d32ddb6ba') : tI18nComplete.raw('texte159b06187d3'),
-      );
-      onMutated();
-    },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text43ec39943667')),
-  });
+}
 
+export function ScheduleDetailSheet(props: ScheduleDetailSheetProps) {
+  const { trigger, open, onOpenChange } = props;
   if (!trigger) return null;
-
-  // The edit panels change the trigger: `project.trigger.update`.
-  const canWrite = controls.canUpdate;
-  const nextRun = describeNextRun(trigger);
-  const isCron = trigger.type === 'cron';
-  const event = trigger.type === 'event' ? trigger.event : null;
-  const baseStatus = triggerStatus(trigger.enabled, tI18nComplete);
-  // A paused event trigger reads Paused; an enabled one reads its subscription state.
-  const eventStatus = event && trigger.enabled ? describeEventStatus(event, tI18nComplete) : null;
-  const status = eventStatus
-    ? { ...baseStatus, label: eventStatus.label as typeof baseStatus.label }
-    : baseStatus;
-  const KindIcon = isCron ? TimerIcon : event ? LightningIcon : WebhooksLogoIcon;
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      {/* `overflow-y-auto` on the CONTENT, not on a flex child.
-
-          This sheet used to be `flex flex-col` with the scrolling delegated to
-          `SheetBody` (`flex-1 min-h-0 overflow-y-auto`). That is the textbook
-          pattern and the merged classes were provably correct — and it still
-          would not scroll. The one sheet in this app that reliably scrolls a
-          long body (`app/admin/accounts/page.tsx:1139`) does not use the flex
-          pattern at all: it scrolls the content element itself. So this does
-          the same, rather than keep defending a chain that reads right and
-          behaves wrong.
-
-          `!overflow-y-auto` is the important part, and the `!` is load-bearing:
-          `sheetVariants`' base sets `overflow-hidden`, and twMerge does NOT
-          treat that as conflicting with `overflow-y-auto` — they are different
-          utility groups, so BOTH survive the merge. `overflow: hidden` then
-          still clamps the y axis depending on which rule the stylesheet emits
-          last. Verified by computing the merged string: without the `!`, the
-          class list contains `overflow-hidden … overflow-y-auto` together.
-          The important flag settles it regardless of source order. */}
+      {/* `!overflow-y-auto` on the CONTENT, not on a flex child, and the `!` is
+          load-bearing: `sheetVariants` sets `overflow-hidden`, and twMerge does
+          not treat that as conflicting with `overflow-y-auto` (different
+          utility groups), so both survive the merge and the stylesheet order
+          decides. The important flag settles it. This element is the sheet's
+          one scroller: the header and footer stick to it, and nothing inside
+          scrolls on its own. */}
       <SheetContent side="right" className="w-full gap-0 !overflow-y-auto p-0 sm:max-w-xl">
-        {/* `text-left` is not redundant: SheetHeader's base is
-            `text-center sm:text-left`, which would centre the description on
-            a phone while the title row beside it stays left-aligned. */}
-        {/* Sticky, because the content element is now what scrolls: without
-            this the Run now / Pause actions would scroll away and you would
-            have to come back up to reach them. `bg-sidebar` matches the
-            sheet's own surface so content passes behind it, not through it. */}
-        <SheetHeader className="bg-sidebar sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left">
-          <div className="flex min-w-0 items-center gap-3 pr-10">
-            <span
-              className={cn(
-                'flex size-9 shrink-0 items-center justify-center rounded-sm',
-                status.tileClassName,
-              )}
-              aria-hidden="true"
-            >
-              <KindIcon weight="fill" className={cn('size-5 shrink-0', status.iconClassName)} />
-            </span>
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <SheetTitle className="truncate text-base font-semibold tracking-tight">
-                  {triggerName(trigger)}
-                </SheetTitle>
-                <Badge
-                  variant={eventStatus ? eventStatus.variant : status.active ? 'kortix' : 'muted'}
-                  size="sm"
-                >
-                  {status.label}
-                </Badge>
-              </div>
-              <SheetDescription className="text-xs">
-                {describeWhen(trigger)}
-                {nextRun ? ` · ${nextRun}` : null}
-              </SheetDescription>
-            </div>
-          </div>
+        <SheetPanel key={trigger.slug} {...props} trigger={trigger} />
+      </SheetContent>
+    </Sheet>
+  );
+}
 
-          {controls.canFire || controls.canUpdate || controls.canDelete ? (
-            <div className="flex items-center gap-1.5">
-              {controls.canFire ? (
-                <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
-                  {running ? (
-                    <Loading className="size-3.5 shrink-0" />
-                  ) : (
-                    <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                  )}
-                  {tI18nComplete.raw('text0991397702fa')}
-                </Button>
-              ) : null}
-              {controls.canUpdate ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
-                  onClick={() => toggle.mutate(!trigger.enabled)}
-                  disabled={toggle.isPending}
-                >
-                  {toggle.isPending ? (
-                    <Loading className="size-3.5 shrink-0" />
-                  ) : status.active ? (
-                    <PauseIcon weight="fill" className="size-3.5 shrink-0" />
-                  ) : (
-                    <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                  )}
-                  {status.active ? 'Pause' : 'Resume'}
-                </Button>
-              ) : null}
-              <div className="min-w-2 flex-1" />
-              {controls.canDelete ? (
+/* ─── Header, data, and the readiness gate ──────────────────────────────── */
+
+function SheetPanel({
+  projectId,
+  trigger,
+  controls,
+  eventsEnabled,
+  onRun,
+  running,
+  onDelete,
+  onMutated,
+}: ScheduleDetailSheetProps & { trigger: ProjectTrigger }) {
+  const t = useI18nTranslations('hardcodedUi.i18nComplete');
+  const event = trigger.type === 'event' ? trigger.event : null;
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger.slug, { enabled }),
+    onSuccess: (_data, enabled) => {
+      successToast(enabled ? t.raw('texta97d32ddb6ba') : t.raw('texte159b06187d3'));
+      onMutated();
+    },
+    onError: (err) => errorToast(err instanceof Error ? err.message : t.raw('text43ec39943667')),
+  });
+
+  const agents = useVisibleAgents({ projectId });
+  // A null project id keeps both hooks idle: with events off, the sheet asks for no event data.
+  const catalogOn = eventsEnabled && event !== null;
+  const apps = useProjectTriggerEventApps(catalogOn ? projectId : null);
+  // Ask for the connector's events only when the catalog lists it: an unknown connector answers 404.
+  const listed = (apps.data?.apps ?? []).some((a) =>
+    appConnectors(a).some((c) => c.slug === event?.connector),
+  );
+  const eventTypes = useProjectTriggerEventTypes(
+    catalogOn && listed ? projectId : null,
+    event?.connector ?? null,
+  );
+  const appIndex = useMemo(() => indexEventApps(apps.data?.apps), [apps.data]);
+  const eventNames = useMemo(
+    () => new Map((eventTypes.data?.event_types ?? []).map((e) => [e.type, e.name] as const)),
+    [eventTypes.data],
+  );
+  const gateway = useFeatureFlag(projectId, 'llm_gateway');
+  const savedModel = trigger.model
+    ? storedModelRefToKey(trigger.model, gateway.enabled === true)
+    : null;
+  const savedEventType = useMemo(
+    () => eventTypes.data?.event_types.find((e) => e.type === event?.type) ?? null,
+    [eventTypes.data, event?.type],
+  );
+
+  const canWrite = controls.canUpdate;
+  const active = trigger.enabled;
+  const nextRun = describeNextRun(trigger);
+  const when = describeWhen(trigger, eventNames);
+  const status = event ? describeEventStatus(event, t, appIndex) : null;
+  const state = triggerBadgeState(trigger);
+  const reason =
+    state === 'error' || state === 'needs_connection'
+      ? (status?.detail ?? trigger.last_error)
+      : null;
+  // The form needs the event's schema to build its settings; wait for it, never flash a half-built form.
+  const loading = catalogOn && (apps.isLoading || eventTypes.isLoading);
+
+  return (
+    <>
+      {/* Sticky, because the content element is what scrolls: without this the
+          Run now / Pause actions would scroll away. `bg-sidebar` matches the
+          sheet's own surface so content passes behind it, not through it.
+          `text-left` is not redundant: SheetHeader's base centres on a phone. */}
+      <SheetHeader className="bg-sidebar sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left">
+        <div className="flex min-w-0 items-center gap-3 pr-10">
+          <TriggerTile
+            trigger={trigger}
+            logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
+          />
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <SheetTitle className="truncate text-base font-semibold tracking-tight">
+                {triggerName(trigger)}
+              </SheetTitle>
+              <TriggerStatusBadge trigger={trigger} hint={reason} />
+            </div>
+            <SheetDescription className="text-xs">
+              {[
+                // The name often is the event's own name: say it once.
+                when === triggerName(trigger) ? null : when,
+                nextRun,
+                event ? describeEventSource(event, t, appIndex) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </SheetDescription>
+          </div>
+        </div>
+
+        {controls.canFire || controls.canUpdate || controls.canDelete ? (
+          <div className="flex items-center gap-1.5">
+            {controls.canFire ? (
+              <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
+                {running ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                )}
+                {t.raw('text0991397702fa')}
+              </Button>
+            ) : null}
+            {controls.canUpdate ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => toggle.mutate(!active)}
+                disabled={toggle.isPending}
+              >
+                {toggle.isPending ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : active ? (
+                  <PauseIcon weight="fill" className="size-3.5 shrink-0" />
+                ) : (
+                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                )}
+                {active ? 'Pause' : 'Resume'}
+              </Button>
+            ) : null}
+            <div className="min-w-2 flex-1" />
+            {controls.canDelete ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-                  >
+                  <Button size="icon" variant="ghost" aria-label={t.raw('textf8d46c2570e7')}>
                     <DotsThreeIcon className="size-4 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <TrashIcon className="size-3.5 shrink-0" />
-                    {isCron
-                      ? tI18nComplete.raw('textd8d0bd5c5106')
+                    {trigger.type === 'cron'
+                      ? t.raw('textd8d0bd5c5106')
                       : event
-                        ? tI18nComplete.raw('textf2f698118cc1')
-                        : tI18nComplete.raw('text60f85e57e4a7')}
+                        ? t.raw('textf2f698118cc1')
+                        : t.raw('text60f85e57e4a7')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              ) : null}
-            </div>
-          ) : null}
-        </SheetHeader>
-
-        {/* `items-stretch` overrides SheetBody's `items-start`, which would
-            otherwise shrink-wrap every panel to its content width.
-
-            Deliberately NOT a scroll container any more: the content element
-            above owns scrolling now, and a second `overflow-y-auto` here would
-            recreate exactly the nested-scroller bug this sheet already had —
-            the wheel going to whichever surface the cursor sits over.
-
-            `flex-none` and `!overflow-visible` are load-bearing, not tidying.
-            SheetBody's base is `flex min-h-0 flex-1 … overflow-y-auto`.
-            Omitting `flex-1`/`min-h-0` from THIS className does not cancel
-            them — twMerge only drops a base utility when the override
-            supplies another utility from the SAME group, and nothing here
-            was in the `flex-grow`/`flex-shrink` group. So this box stayed a
-            shrinkable flex child, free to compress below its content's
-            natural height — which is what actually clipped every panel
-            below the fold, not a missing scrollbar. `overflow-visible` had
-            the same problem from the other side: it and the base's
-            `overflow-y-auto` are different twMerge groups (`overflow` vs
-            `overflow-y`), so both survived the merge, and which one wins is
-            decided by Tailwind's internal stylesheet order — not by which
-            appears later in this string. `!overflow-visible` forces the
-            outcome instead of leaving it to that ordering. Verify with
-            `getComputedStyle(sheetBodyEl).flexGrow === '0'` and
-            `.overflowY === 'visible'` before touching this again. */}
-        <SheetBody className="flex-none items-stretch gap-0 space-y-4 !overflow-visible px-4 pt-0 pb-8">
-          {trigger.last_status === 'failed' ? (
-            <InfoBanner
-              tone="destructive"
-              icon={WarningCircleIcon}
-              title={tTriggers('runFailed.label')}
-              className="text-xs"
-            >
-              {trigger.last_error ? `${trigger.last_error} ` : ''}
-              {tTriggers('runFailed.nextRun')}
-            </InfoBanner>
-          ) : null}
-          {event ? <EventStatusBanner projectId={projectId} event={event} canWrite={canWrite} /> : null}
-          <WhatItDoesPanel
-            projectId={projectId}
-            trigger={trigger}
-            canWrite={canWrite}
-            onMutated={onMutated}
-          />
-
-          {event ? (
-            <>
-              <EventPanel
-                key={event.type}
-                projectId={projectId}
-                trigger={trigger}
-                event={event}
-                canWrite={canWrite}
-                onMutated={onMutated}
-              />
-              <ConditionsPanel
-                projectId={projectId}
-                trigger={trigger}
-                canWrite={canWrite}
-                onMutated={onMutated}
-              />
-            </>
-          ) : isCron ? (
-            <WhenItRunsPanel
-              projectId={projectId}
-              trigger={trigger}
-              canWrite={canWrite}
-              onMutated={onMutated}
-            />
-          ) : (
-            <>
-              <AddressPanel
-                projectId={projectId}
-                trigger={trigger}
-                canWrite={canWrite}
-                onMutated={onMutated}
-              />
-              <ConditionsPanel
-                projectId={projectId}
-                trigger={trigger}
-                canWrite={canWrite}
-                onMutated={onMutated}
-              />
-            </>
-          )}
-
-          <AgentPanel
-            projectId={projectId}
-            trigger={trigger}
-            canWrite={canWrite}
-            onMutated={onMutated}
-          />
-
-          <MemoryPanel
-            projectId={projectId}
-            trigger={trigger}
-            canWrite={canWrite}
-            onMutated={onMutated}
-          />
-
-          <AccessPanel
-            key={[
-              trigger.slug,
-              trigger.session_access.mode,
-              trigger.session_access.memberIds.join(','),
-              trigger.session_access.groupIds.join(','),
-            ].join(':')}
-            projectId={projectId}
-            trigger={trigger}
-            canWrite={canWrite}
-            onMutated={onMutated}
-          />
-
-          <DetailsPanel trigger={trigger} />
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-/* ─── What it does — name + instruction ─────────────────────────────────── */
-
-function WhatItDoesPanel({
-  projectId,
-  trigger,
-  canWrite,
-  onMutated,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  canWrite: boolean;
-  onMutated: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const eventTypes = useProjectTriggerEventTypes(
-    projectId,
-    trigger.type === 'event' ? (trigger.event?.connector ?? null) : null,
-  );
-  const placeholders =
-    trigger.type === 'event'
-      ? [
-          '{{ event.data }}',
-          ...payloadVariables(
-            eventTypes.data?.event_types.find((e) => e.type === trigger.event?.type)
-              ?.payload_schema,
-          )
-            .slice(0, 6)
-            .map((v) => v.token),
-        ]
-      : PLACEHOLDERS;
-  const [name, setName] = useState(trigger.name);
-  const [instruction, setInstruction] = useState(trigger.prompt_template);
-
-  useEffect(() => {
-    setName(trigger.name);
-  }, [trigger.name]);
-  useEffect(() => {
-    setInstruction(trigger.prompt_template);
-  }, [trigger.prompt_template]);
-
-  const save = useTriggerUpdate(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('textb5c120b316c2'),
-    errorFallback: tI18nComplete.raw('text16efcd21d74f'),
-    payload: () => ({ name: name.trim(), prompt_template: instruction }),
-  });
-
-  if (!canWrite) {
-    return (
-      <PanelSection
-        title={tI18nComplete.raw('textc74ea9dc9cd2')}
-        description={tI18nComplete.raw('text79e527fa7dd1')}
-      >
-        <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
-          {trigger.prompt_template}
-        </p>
-      </PanelSection>
-    );
-  }
-
-  const dirty =
-    (name.trim() !== trigger.name && name.trim().length > 0) ||
-    instruction !== trigger.prompt_template;
-  const valid = name.trim().length > 0 && instruction.trim().length > 0;
-
-  return (
-    <PanelSection
-      title={tI18nComplete.raw('textc74ea9dc9cd2')}
-      description={tI18nComplete.raw('text6744f8cb9594')}
-      action={
-        <SaveButton dirty={dirty && valid} pending={save.isPending} onSave={() => save.mutate()} />
-      }
-    >
-      <div className="space-y-1.5">
-        <Label htmlFor="schedule-name" className="text-xs">
-          {tI18nComplete.raw('textdcd1d5223f73')}
-        </Label>
-        <Input
-          id="schedule-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={64}
-          placeholder={tI18nComplete.raw('textc8cf587a3b6c')}
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="schedule-instruction" className="text-xs">
-          {tI18nComplete.raw('text112f3ccb1b36')}
-        </Label>
-        <Textarea
-          id="schedule-instruction"
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          rows={5}
-          className="resize-y leading-relaxed"
-          placeholder={tI18nComplete.raw('text2438ee64fbf9')}
-        />
-        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          {tI18nComplete.raw('textb560dc33f1db')}{' '}
-          {placeholders.map((p, i) => (
-            <span key={p}>
-              {i > 0 ? ', ' : ''}
-              <code className="font-mono">{p}</code>
-            </span>
-          ))}
-          .
-        </p>
-      </div>
-    </PanelSection>
-  );
-}
-
-/* ─── When it runs — schedules only ─────────────────────────────────────── */
-
-function WhenItRunsPanel({
-  projectId,
-  trigger,
-  canWrite,
-  onMutated,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  canWrite: boolean;
-  onMutated: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [editing, setEditing] = useState(false);
-  const [cron, setCron] = useState(trigger.cron ?? '0 0 9 * * *');
-  const [runAt, setRunAt] = useState<string | null>(trigger.run_at);
-  const [timezone, setTimezone] = useState(trigger.timezone);
-
-  useEffect(() => {
-    if (editing) return;
-    setCron(trigger.cron ?? '0 0 9 * * *');
-    setRunAt(trigger.run_at);
-    setTimezone(trigger.timezone);
-  }, [trigger.cron, trigger.run_at, trigger.timezone, editing]);
-
-  const save = useTriggerUpdate(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('text5e2e76e79516'),
-    errorFallback: tI18nComplete.raw('text0aef01b447e9'),
-    // `run_at` and `cron` are mutually exclusive, so switching between
-    // them means explicitly clearing the other.
-    payload: () =>
-      runAt
-        ? { run_at: runAt, cron: null, timezone }
-        : { cron: cron.trim(), run_at: null, timezone },
-    afterSave: () => setEditing(false),
-  });
-
-  const action = !canWrite ? null : editing ? (
-    <ButtonGroup>
-      <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-        {tI18nComplete.raw('text19766ed6ccb2')}
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-1.5"
-        disabled={save.isPending || (!runAt && !cron.trim())}
-        onClick={() => save.mutate()}
-      >
-        {save.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-        {tI18nComplete.raw('text1509f561f241')}
-      </Button>
-    </ButtonGroup>
-  ) : (
-    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setEditing(true)}>
-      <PencilSimpleIcon className="size-3.5 shrink-0" />
-      {tI18nComplete.raw('text464c4ffd019e')}
-    </Button>
-  );
-
-  if (canWrite && editing) {
-    return (
-      <PanelSection title={tI18nComplete.raw('text1bd739e67b5e')} action={action}>
-        <ScheduleBuilder
-          value={cron}
-          onChange={setCron}
-          allowOnce
-          runAt={runAt}
-          onRunAtChange={setRunAt}
-        />
-        {!runAt && <TimezoneField value={timezone} onChange={setTimezone} />}
-      </PanelSection>
-    );
-  }
-
-  // Only surface the raw expression when the plain summary can't carry it —
-  // otherwise the sentence above is the whole truth and cron syntax is noise.
-  const custom =
-    !trigger.run_at && trigger.cron ? describeCadence(trigger.cron) === CUSTOM_TIMING_LABEL : false;
-
-  return (
-    <PanelSection title={tI18nComplete.raw('text1bd739e67b5e')} action={action}>
-      <PropertyList
-        rows={[
-          { label: tI18nComplete.raw('text848f54e89660'), value: describeWhen(trigger) },
-          ...(trigger.run_at
-            ? []
-            : [{ label: tI18nComplete.raw('text4ceca1d52ced'), value: trigger.timezone }]),
-          ...(custom
-            ? [
-                {
-                  label: tI18nComplete.raw('textfc4e84255a41'),
-                  value: <code className="font-mono text-xs">{trigger.cron}</code>,
-                },
-              ]
-            : []),
-        ]}
-      />
-    </PanelSection>
-  );
-}
-
-/* ─── Address — webhooks only ───────────────────────────────────────────── */
-
-function AddressPanel({
-  projectId,
-  trigger,
-  canWrite,
-  onMutated,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  canWrite: boolean;
-  onMutated: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const url = trigger.webhook_url ?? '';
-  const sample = useMemo(() => buildWebhookSampleRequest(url), [url]);
-  const security = describeSecurity(trigger, tI18nComplete);
-
-  const [secretName, setSecretName] = useState(trigger.secret_env ?? '');
-  useEffect(() => {
-    setSecretName(trigger.secret_env ?? '');
-  }, [trigger.secret_env]);
-
-  const save = useTriggerUpdate(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('textd5c147e93f23'),
-    errorFallback: tI18nComplete.raw('text966761671cbc'),
-    payload: () => ({ secret_env: secretName.trim() }),
-  });
-
-  const dirty = secretName.trim().length > 0 && secretName.trim() !== (trigger.secret_env ?? '');
-
-  return (
-    <PanelSection
-      title={tI18nComplete.raw('text56ef8f20955f')}
-      description={tI18nComplete.raw('text8e3784778668')}
-      action={
-        canWrite ? (
-          <SaveButton dirty={dirty} pending={save.isPending} onSave={() => save.mutate()} />
-        ) : null
-      }
-    >
-      <CopyBlock
-        value={url}
-        label={tI18nComplete.raw('text7c4e5224f9d4')}
-        copiedLabel={tI18nComplete.raw('texta26175817712')}
-      />
-
-      <InfoBanner tone={security.signed ? 'success' : 'warning'} className="text-xs">
-        {security.detail}
-      </InfoBanner>
-
-      {canWrite ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="webhook-signing-key" className="text-xs">
-            {tI18nComplete.raw('text49395b9594c2')}
-          </Label>
-          <Input
-            id="webhook-signing-key"
-            value={secretName}
-            onChange={(e) => setSecretName(e.target.value.toUpperCase())}
-            placeholder="WEBHOOK_MY_TRIGGER_SECRET"
-            className="font-mono text-sm"
-          />
-          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-            {tI18nComplete.raw('texte5c253036018')}
-          </p>
-        </div>
-      ) : null}
-
-      {/* Borderless on purpose — a bordered box here would be a second
-          rounded surface inside the panel, and the sample is a reference
-          most people never open. */}
-      <Disclosure className="group">
-        <DisclosureTrigger>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground -mx-2 w-[calc(100%+1rem)] justify-between px-2"
-          >
-            {tI18nComplete.raw('text4b8aec6e6cd2')}
-            <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-          </Button>
-        </DisclosureTrigger>
-        <DisclosureContent>
-          <div className="space-y-2 pt-2">
-            <CopyBlock
-              value={sample}
-              multiline
-              label={tI18nComplete.raw('text87365b87dda3')}
-              copiedLabel={tI18nComplete.raw('textc6092ea6beec')}
-            />
-            <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-              {tI18nComplete.raw('text75110f412649')}
-            </p>
+            ) : null}
           </div>
-        </DisclosureContent>
-      </Disclosure>
-    </PanelSection>
-  );
-}
+        ) : null}
+      </SheetHeader>
 
-/* ─── Conditions — webhooks only ────────────────────────────────────────── */
-
-function ConditionsPanel({
-  projectId,
-  trigger,
-  canWrite,
-  onMutated,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  canWrite: boolean;
-  onMutated: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [rows, setRows] = useState<ConditionRow[]>(() => conditionsToRows(trigger.filter));
-
-  // The list refetches every 10s and `trigger.filter` is a fresh object each
-  // time — resetting on its identity would wipe whatever is being typed. Key
-  // the reset off its value instead.
-  const saved = JSON.stringify(trigger.filter ?? {});
-  useEffect(() => {
-    setRows(conditionsToRows(JSON.parse(saved) as Record<string, string>));
-  }, [saved]);
-
-  const save = useTriggerUpdate(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('textfc62a0071f66'),
-    errorFallback: tI18nComplete.raw('text2371acc8f6df'),
-    payload: () => ({ filter: rowsToConditions(rows) }),
-  });
-
-  if (!canWrite) {
-    const entries = Object.entries(trigger.filter ?? {});
-    return (
-      <PanelSection
-        title={tI18nComplete.raw('text94c7226773af')}
-        description={tI18nComplete.raw('textd6627a42b6b2')}
-      >
-        {entries.length === 0 ? (
-          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textbce22443b335')}</p>
+      {/* `flex-none` and `!overflow-visible` are load-bearing. SheetBody's base
+          is `flex min-h-0 flex-1 … overflow-y-auto`; twMerge only drops a base
+          utility when the override supplies one of the SAME group, so this box
+          stayed a shrinkable flex child that clipped panels below the fold.
+          The content element above owns scrolling; a second scroller here
+          would send the wheel to whichever surface the cursor is over. */}
+      <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-2 pb-0">
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-16 rounded-md" />
+            <Skeleton className="h-28 rounded-md" />
+          </div>
         ) : (
-          <PropertyList
-            rows={entries.map(([path, value]) => ({
-              label: path,
-              value: <code className="font-mono text-xs">{value}</code>,
-            }))}
+          <SheetForm
+            projectId={projectId}
+            trigger={trigger}
+            canWrite={canWrite}
+            eventsEnabled={eventsEnabled}
+            appIndex={appIndex}
+            eventNames={eventNames}
+            agents={agents}
+            savedEventType={savedEventType}
+            savedModel={savedModel}
+            apps={apps}
+            onMutated={onMutated}
           />
         )}
-      </PanelSection>
-    );
-  }
-
-  return (
-    <PanelSection
-      title={tI18nComplete.raw('text94c7226773af')}
-      description={tI18nComplete.raw('text8e47e838d897')}
-      action={
-        <SaveButton
-          dirty={!sameConditions(rowsToConditions(rows), trigger.filter)}
-          pending={save.isPending}
-          onSave={() => save.mutate()}
-        />
-      }
-    >
-      <ConditionsEditor rows={rows} onChange={setRows} disabled={save.isPending} />
-    </PanelSection>
+      </SheetBody>
+    </>
   );
 }
 
-/* ─── Which agent ───────────────────────────────────────────────────────── */
+/* ─── The form ──────────────────────────────────────────────────────────── */
 
-function AgentPanel({
+function SheetForm({
   projectId,
   trigger,
   canWrite,
+  eventsEnabled,
+  appIndex,
+  eventNames,
+  agents,
+  savedEventType,
+  savedModel,
+  apps,
   onMutated,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
   canWrite: boolean;
+  eventsEnabled: boolean;
+  appIndex: ReturnType<typeof indexEventApps>;
+  eventNames: ReadonlyMap<string, string>;
+  agents: Agent[];
+  savedEventType: ReturnType<typeof draftFromTrigger>['eventType'];
+  savedModel: ReturnType<typeof draftFromTrigger>['model'];
+  apps: ReturnType<typeof useProjectTriggerEventApps>;
   onMutated: () => void;
 }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useRuntimeProviders();
-  const models = useMemo(() => flattenModels(providers), [providers]);
-  // Mode-aware read-back: a native (gateway-off) trigger pin is
-  // `provider/model` and must not be forced under the synthetic `kortix`
-  // provider, or the selector shows "unset" beside a pinned trigger.
-  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
-  const selectedModel = trigger.model
-    ? storedModelRefToKey(trigger.model, llmGatewayFlag.enabled === true)
-    : null;
+  const t = useI18nTranslations('hardcodedUi.i18nComplete');
+  const { add, canConnect } = useEventAppConnect(projectId);
 
-  const saveAgent = useTriggerUpdate<string>(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('textd24a95381c8e'),
-    errorFallback: tI18nComplete.raw('textc617ab4ba83d'),
-    payload: (agent) => ({ agent }),
-  });
-
-  const saveModel = useTriggerUpdate<ModelKey | null>(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('text4c658b4e952e'),
-    errorFallback: tI18nComplete.raw('text6ff3502ac059'),
-    payload: (model) => ({ model: model ? modelKeyToWire(model) : null }),
-  });
-
-  if (!canWrite) {
-    return (
-      <PanelSection title={tI18nComplete.raw('text7fcc18556e6e')}>
-        <PropertyList
-          rows={[
-            { label: tI18nComplete.raw('text11b39c93777e'), value: trigger.agent },
-            {
-              label: tI18nComplete.raw('text5e2c614c23f0'),
-              value: trigger.model ?? "The agent's usual model",
-            },
-          ]}
-        />
-      </PanelSection>
-    );
-  }
-
-  return (
-    <PanelSection
-      title={tI18nComplete.raw('text7fcc18556e6e')}
-      description={tI18nComplete.raw('textad7959257d8d')}
-    >
-      <div className="space-y-1.5">
-        <Label className="text-xs">{tI18nComplete.raw('text11b39c93777e')}</Label>
-        {/* `AgentSelector` comes from the chat composer, where it is a floating
-            pill in a rounded input bar. Wrapping it in `rounded-full bg-card
-            inline-flex` carried that chrome into a settings sheet, where every
-            other control is a full-width `rounded-md` bordered panel — so it
-            read as a stray chip rather than a field. Same component, this
-            surface's chrome. */}
-        <div className="bg-popover flex w-full items-center rounded-md border px-2 py-1.5">
-          <AgentSelector
-            agents={agents}
-            selectedAgent={trigger.agent}
-            onSelect={(next) => next && saveAgent.mutate(next)}
-            disabled={saveAgent.isPending}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <Label className="text-xs">{tI18nComplete.raw('text5e2c614c23f0')}</Label>
-          {trigger.model ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              disabled={saveModel.isPending}
-              onClick={() => saveModel.mutate(null)}
-            >
-              {tI18nComplete.raw('text6960ac83d152')}
-            </Button>
-          ) : null}
-        </div>
-        {/* Same treatment as the Agent control above — one shape for both, so
-            the two rows read as a pair of fields rather than two loose chips. */}
-        <div className="bg-popover flex w-full items-center rounded-md border px-2 py-1.5">
-          <ModelSelector
-            models={models}
-            providers={providers}
-            selectedModel={selectedModel}
-            unsetLabel={tI18nComplete.raw('text57069bbd0d2e')}
-            onSelect={(next) => saveModel.mutate(next)}
-          />
-        </div>
-      </div>
-    </PanelSection>
+  // What the server holds, as a draft. A refetch that changes nothing changes nothing here.
+  const server = useMemo(
+    () => draftFromTrigger(trigger, { eventType: savedEventType, model: savedModel }),
+    [trigger, savedEventType, savedModel],
   );
-}
+  const serverKey = JSON.stringify(server);
+  const [base, setBase] = useState(server);
+  const [draft, setDraft] = useState(server);
+  const patch: PatchDraft = (next) => setDraft((d) => ({ ...d, ...next }));
+  const [showProblems, setShowProblems] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [serverConfig, setServerConfig] = useState<{
+    sent: ComposerDraft['configDraft'];
+    errors: Record<string, string>;
+  } | null>(null);
+  const whenRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
-/* ─── Memory between runs (session_mode) ────────────────────────────────── */
+  const app = findDraftApp(apps.data?.apps ?? [], draft);
+  const configFields = useMemo(
+    () => schemaFields(draft.eventType?.config_schema),
+    [draft.eventType],
+  );
 
-function MemoryPanel({
-  projectId,
-  trigger,
-  canWrite,
-  onMutated,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  canWrite: boolean;
-  onMutated: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [mode, setMode] = useState<SessionMode>(trigger.session_mode);
-  const [pinned, setPinned] = useState<string | null>(trigger.session_id);
-  const [key, setKey] = useState(trigger.session_key ?? '');
+  // What Save writes. A new connector brings its own account list, so the account is resolved with it.
+  const effective: ComposerDraft = useMemo(() => {
+    if (draft.kind !== 'event' || !app) return draft;
+    const profile = resolveProfile(app, draft);
+    const moved = profile !== base.profile;
+    const connector = appConnectors(app).find((c) => c.slug === profile) ?? null;
+    return {
+      ...draft,
+      profile,
+      account: moved ? accountToWrite(connector, draft.account) : draft.account,
+    };
+  }, [draft, app, base.profile]);
+  const changes = triggerPatch(base, effective);
+  const needsConnector =
+    draft.kind === 'event' &&
+    app !== null &&
+    draft.appSlug !== base.appSlug &&
+    appConnectors(app).length === 0;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(base) || needsConnector;
 
+  // Follow the server while the form is clean; keep what the person typed while it is not.
+  const seenKey = useRef(serverKey);
   useEffect(() => {
-    setMode(trigger.session_mode);
-    setPinned(trigger.session_id);
-    setKey(trigger.session_key ?? '');
-  }, [trigger.session_mode, trigger.session_id, trigger.session_key]);
+    if (seenKey.current === serverKey) return;
+    seenKey.current = serverKey;
+    if (!dirty) setDraft(server);
+    setBase(server);
+  }, [serverKey, server, dirty]);
 
-  const sessions = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
-    enabled: canWrite && mode === 'pinned',
-    ...contract('inventory'),
+  const name = draft.nameOverride ?? '';
+  const problems = validate(draft, { name, configFields, app, edit: true }, t);
+  const shown = showProblems ? problems : [];
+  const blockError = (block: ComposerBlock) =>
+    shown.find((p) => p.block === block && !p.field)?.message;
+  const configErrors: Record<string, string> = {
+    ...(serverConfig?.sent === draft.configDraft ? serverConfig.errors : {}),
+  };
+  for (const p of shown) if (p.field) configErrors[p.field] ??= p.message;
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const body = { ...changes };
+      if (needsConnector && app) {
+        body.connector = await add({
+          app: app.app,
+          name: app.name,
+          connector: null,
+          newConnectorSlug: app.new_connector_slug,
+        });
+      }
+      return updateProjectTrigger(projectId, trigger.slug, body);
+    },
+    onSuccess: () => {
+      successToast(t.raw('textb5c120b316c2'));
+      setBase(draft);
+      setShowProblems(false);
+      setServerConfig(null);
+      onMutated();
+    },
+    onError: (e: Error) => {
+      if (draft.kind === 'event') {
+        // A bad event config comes back per field: show each under its input.
+        const { byField, general } = parseConfigErrors(e.message, configFields);
+        if (Object.keys(byField).length > 0) {
+          setServerConfig({ sent: draft.configDraft, errors: byField });
+          if (general) errorToast(general);
+          return;
+        }
+      }
+      errorToast(e.message || t.raw('text16efcd21d74f'));
+    },
   });
 
-  const save = useTriggerUpdate<UpdateProjectTriggerInput>(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('text3a5ecca188c0'),
-    errorFallback: tI18nComplete.raw('text43ec39943667'),
-    payload: (input) => input,
-  });
+  const submit = () => {
+    if (problems.length > 0) {
+      setShowProblems(true);
+      if (problems.some((p) => p.block === 'options')) setOptionsOpen(true);
+      setTimeout(
+        () =>
+          bodyRef.current
+            ?.querySelector('[role="alert"]')
+            ?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
+        0,
+      );
+      return;
+    }
+    save.mutate();
+  };
+  const discard = () => {
+    setDraft(base);
+    setShowProblems(false);
+    setServerConfig(null);
+  };
 
-  if (!canWrite) {
-    return (
-      <PanelSection title={tI18nComplete.raw('text345e6cf10469')}>
-        <p className="text-foreground text-sm">{describeRunLocation(trigger)}</p>
-      </PanelSection>
-    );
-  }
+  const editEvent = () => whenRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 
   return (
-    <PanelSection
-      title={tI18nComplete.raw('text345e6cf10469')}
-      description={tI18nComplete.raw('text319d909352ff')}
-    >
-      <RunLocationFields
-        mode={mode}
-        onModeChange={(next) => {
-          setMode(next);
-          setPinned(null);
-          // Pinned and per-conversation both need a second value before the
-          // write can be valid — stage them and save once it is supplied.
-          if (next === 'pinned' || next === 'keyed') return;
-          setKey('');
-          save.mutate({ session_mode: next, session_id: null, session_key: null });
-        }}
-        pinnedSessionId={pinned}
-        onPinnedSessionChange={(sid) => {
-          setPinned(sid);
-          save.mutate({ session_mode: 'pinned', session_id: sid, session_key: null });
-        }}
-        sessionKey={key}
-        onSessionKeyChange={setKey}
-        sessionKeyAction={
-          <SaveButton
-            dirty={
-              key.trim().length > 0 &&
-              !(trigger.session_mode === 'keyed' && key.trim() === trigger.session_key)
-            }
-            pending={save.isPending}
-            onSave={() =>
-              save.mutate({
-                session_mode: 'keyed',
-                session_key: key.trim(),
-                session_id: null,
-              })
-            }
-          />
-        }
-        sessions={sessions.data ?? []}
-        sessionsLoading={sessions.isLoading}
-        disabled={save.isPending}
+    <div ref={bodyRef} className="space-y-6">
+      <TriggerCallouts
+        projectId={projectId}
+        trigger={trigger}
+        canEditEvent={canWrite && (app !== null || (!draft.appSlug && !draft.profile))}
+        eventsEnabled={eventsEnabled}
+        apps={appIndex}
+        onEditEvent={editEvent}
       />
-    </PanelSection>
+
+      {canWrite ? (
+        <>
+          <section ref={whenRef} data-sheet-block data-block="when" className="space-y-3">
+            <Label>{t.raw('textcf9c7aa24a26')}</Label>
+            {draft.kind === 'cron' ? (
+              <WhenSchedule draft={draft} patch={patch} error={blockError('when')} />
+            ) : draft.kind === 'webhook' ? (
+              <WhenWebhookAddress trigger={trigger} draft={draft} patch={patch} canWrite />
+            ) : app || (!draft.appSlug && !draft.profile) ? (
+              <WhenEvent
+                projectId={projectId}
+                apps={apps}
+                draft={draft}
+                patch={patch}
+                setDraft={setDraft}
+                configFields={configFields}
+                configErrors={configErrors}
+                canConnect={canConnect}
+                error={blockError('when')}
+              />
+            ) : (
+              <WhenEventSummary
+                trigger={trigger}
+                apps={appIndex}
+                eventNames={eventNames}
+                loading={apps.isLoading}
+              />
+            )}
+          </section>
+
+          <section data-sheet-block data-block="then" className="space-y-3">
+            <Label>{t.raw('text0597f441dcca')}</Label>
+            <ThenFields
+              agents={agents}
+              draft={draft}
+              patch={patch}
+              payloadSchema={draft.eventType?.payload_schema}
+              error={blockError('then')}
+            />
+          </section>
+
+          <section data-sheet-block data-block="name" className="space-y-3">
+            <Label htmlFor="trigger-name">{t.raw('textdcd1d5223f73')}</Label>
+            <Input
+              id="trigger-name"
+              value={name}
+              onChange={(e) => patch({ nameOverride: e.target.value })}
+              placeholder={t.raw('textc8cf587a3b6c')}
+              maxLength={64}
+              aria-invalid={blockError('name') ? true : undefined}
+            />
+            <InlineError message={blockError('name')} />
+          </section>
+
+          <section data-sheet-block data-block="options">
+            <TriggerOptions
+              edit
+              projectId={projectId}
+              draft={draft}
+              patch={patch}
+              name={name}
+              open={optionsOpen}
+              onOpenChange={setOptionsOpen}
+              error={blockError('options')}
+            />
+          </section>
+        </>
+      ) : (
+        <TriggerReadOnly
+          trigger={trigger}
+          apps={appIndex}
+          eventNames={eventNames}
+          agentLabel={agentDisplayLabel(agents, trigger.agent)}
+        />
+      )}
+
+      <div className="pb-8">
+        <Details trigger={trigger} />
+      </div>
+
+      {dirty && canWrite ? (
+        /* In the sheet's own scroll container, after the body: it sticks to the
+           bottom edge while the form is long, and rests under the form when it is short. */
+        <SaveBar pending={save.isPending} onSave={submit} onDiscard={discard} />
+      ) : null}
+    </div>
   );
 }
 
-function accessSummary(access: ProjectTrigger['session_access']): string {
-  if (access.mode === 'project') return 'Every project member can open trigger-created sessions.';
-  if (access.mode === 'members') {
-    const count = access.memberIds.length + access.groupIds.length;
-    return `${count} selected ${count === 1 ? 'member or group can' : 'members or groups can'} open trigger-created sessions.`;
-  }
-  return 'The trigger agent and project Managers can open trigger-created sessions.';
-}
-
-function AccessPanel({
-  projectId,
-  trigger,
-  canWrite,
-  onMutated,
+/** The one footer: present only while the form differs from the saved trigger. */
+function SaveBar({
+  pending,
+  onSave,
+  onDiscard,
 }: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  canWrite: boolean;
-  onMutated: () => void;
+  pending: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
 }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [selection, setSelection] = useState<SharingSelection>(trigger.session_access);
-
-  const save = useTriggerUpdate(projectId, trigger, onMutated, {
-    success: tI18nComplete.raw('text416476d59f76'),
-    errorFallback: tI18nComplete.raw('text68d66e06fd0f'),
-    payload: () => ({ session_access: selection }),
-  });
-
-  if (!canWrite) {
-    return (
-      <PanelSection
-        title={tI18nComplete.raw('textbc9424d3f527')}
-        description={tI18nComplete.raw('text515ebffde3e4')}
-      >
-        <p className="text-foreground text-sm">{accessSummary(trigger.session_access)}</p>
-        {trigger.session_mode === 'pinned' ? (
-          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text60049ed7a3f8')}</p>
-        ) : null}
-      </PanelSection>
-    );
-  }
-
-  const dirty =
-    selection.mode !== trigger.session_access.mode ||
-    selection.memberIds.join(',') !== trigger.session_access.memberIds.join(',') ||
-    selection.groupIds.join(',') !== trigger.session_access.groupIds.join(',');
-
+  const t = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <PanelSection
-      title={tI18nComplete.raw('textbc9424d3f527')}
-      description={tI18nComplete.raw('texta4de16df5a99')}
-      action={<SaveButton dirty={dirty} pending={save.isPending} onSave={() => save.mutate()} />}
-    >
-      <SharingPicker
-        projectId={projectId}
-        value={selection}
-        onChange={setSelection}
-        showHeading={false}
-        copy={triggerSessionAccessCopy(tI18nComplete)}
-      />
-      {trigger.session_mode === 'pinned' ? (
-        <InfoBanner tone="info" className="text-xs">
-          {tI18nComplete.raw('textd33efef68fbd')}
-        </InfoBanner>
-      ) : null}
-    </PanelSection>
+    <div className="bg-sidebar border-border sticky bottom-0 z-10 -mx-4 mt-auto flex items-center justify-end gap-2 border-t px-4 py-3">
+      <Button variant="outline-ghost" size="sm" disabled={pending} onClick={onDiscard}>
+        {t.raw('texteb1a70e39274')}
+      </Button>
+      <Button size="sm" className="gap-1.5" disabled={pending} onClick={onSave}>
+        {pending ? <Loading className="size-3.5 shrink-0" /> : null}
+        {t.raw('textdd0ae7a5cbcf')}
+      </Button>
+    </div>
   );
 }
 
 /* ─── Details — facts, not settings ─────────────────────────────────────── */
 
-function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+function Details({ trigger }: { trigger: ProjectTrigger }) {
+  const t = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <Disclosure className="group bg-popover overflow-hidden rounded-md border">
-      <DisclosureTrigger>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground w-full justify-between rounded-none px-4 py-3"
-        >
-          {tI18nComplete.raw('text45989de49fb7')}
-          <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-        </Button>
-      </DisclosureTrigger>
+    <Disclosure className="group">
+      <FoldTrigger>{t.raw('text45989de49fb7')}</FoldTrigger>
       <DisclosureContent>
-        <div className="border-border/60 border-t px-4 py-4">
+        <div className="pt-3">
           <PropertyList
             rows={[
+              { label: 'ID', value: <code className="font-mono text-xs">{trigger.slug}</code> },
               {
-                label: 'ID',
-                value: <code className="font-mono text-xs">{trigger.slug}</code>,
-              },
-              {
-                label: tI18nComplete.raw('text456a1fdc1530'),
+                label: t.raw('text456a1fdc1530'),
                 value: <code className="font-mono text-xs">{trigger.path}</code>,
               },
               {
-                label: tI18nComplete.raw('text512a48218ba2'),
+                label: t.raw('text512a48218ba2'),
                 value: (
                   <span className="tabular-nums">
                     {trigger.last_fired_at

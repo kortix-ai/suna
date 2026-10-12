@@ -120,8 +120,9 @@ resource "aws_iam_role_policy" "gha_tf_apply_iam" {
 #
 # These two roots are not environment infrastructure. They manage the account
 # security baseline itself: IAM roles that are NOT kortix-<env>-* prefixed
-# (whatsapp-gateway-*, bedrock-logs, vpc-flow-logs-role), IAM groups and their
-# memberships, the account password policy, CloudTrail, GuardDuty in 17 regions,
+# (cloudtrail-cloudwatch-logs-role, vpc-flow-logs-role,
+# AWSBackupDefaultServiceRole), IAM groups and their memberships, the account
+# password policy, CloudTrail, GuardDuty in 17 regions,
 # the S3 account public-access block, WAF, and the compliance Lambdas.
 #
 # `iam:*` on `*` would be the easy grant and the wrong one: it is
@@ -186,11 +187,7 @@ locals {
     # compliance-monitoring manages the DrataSNSSubscriptionInspection inline
     # policy ON Drata's role (first global-apply run 403'd on GetRolePolicy).
     "arn:aws:iam::${local.account_id}:role/DrataAutopilotRole",
-    # legacy-roles.tf
-    "arn:aws:iam::${local.account_id}:role/whatsapp-gateway-*",
-    # bedrock-logs lives under an IAM path — role/bedrock-logs does NOT match
-    # (second global-apply run 403'd on GetRole). qa-portal is a legacy import.
-    "arn:aws:iam::${local.account_id}:role/service-role/bedrock-logs",
+    # qa-portal is a legacy import.
     "arn:aws:iam::${local.account_id}:role/qa-portal",
     # main.tf service-delivery roles
     "arn:aws:iam::${local.account_id}:role/cloudtrail-cloudwatch-logs-role",

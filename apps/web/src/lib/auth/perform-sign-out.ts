@@ -1,13 +1,23 @@
 'use client';
 
+import { stopWebPush } from '@/features/notifications/web-push';
 import { finalizeServerSignOut } from '@/lib/auth/sign-out-actions';
 import { stashSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { createClient } from '@/lib/supabase/client';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { resetClientState } from '@/lib/utils/reset-client-state';
+import { withTimeBudget } from '@/lib/utils/time-budget';
 
 export { SIGN_OUT_DESTINATION };
+
+/**
+ * How long removing this browser's Web Push subscription may hold up a
+ * sign-out. Two parallel calls: the push service's unsubscribe and the API's
+ * DELETE. Past the budget the sign-out goes on; a subscription the API still
+ * holds then fails at the push service and is deleted on the first send.
+ */
+export const WEB_PUSH_SIGN_OUT_BUDGET_MS = 1_500;
 
 /**
  * Expire this browser's Supabase auth cookie, chunks included.
@@ -77,6 +87,9 @@ export async function performSignOut(options?: { returnUrl?: string }): Promise<
   const destination = signOutDestination(options?.returnUrl);
   let left = false;
   try {
+    // First, while the access token still works: the next person on this
+    // browser must not get this person's notifications (KRTX-1742).
+    await withTimeBudget(stopWebPush(), WEB_PUSH_SIGN_OUT_BUDGET_MS);
     const supabase = createClient();
     await runSignOut({
       finalizeServerSession: finalizeServerSignOut,

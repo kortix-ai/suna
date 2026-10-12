@@ -3,6 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent, UsePromptAttachmentsResult, useRuntimeSessions } from '@kortix/sdk/react';
+import type { PastedContent } from '@kortix/shared';
 import { WarningIcon } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
 import type {
@@ -59,6 +60,8 @@ export interface ComposerCardDerived {
   promptAttachmentItems: UsePromptAttachmentsResult['attachments'];
   removeAttachedFile: (index: number) => void;
   retryAttachedFile: (id: string) => void;
+  pastes: PastedContent[];
+  removePaste: (id: string) => void;
   commandAttachmentPlan: ReturnType<typeof import('./command-attachments').planCommandAttachments>;
   editorDisabled: boolean;
   editorRef: RefObject<ComposerEditorHandle | null>;
@@ -107,6 +110,9 @@ export function ComposerCard({
   promptAttachmentItems,
   removeAttachedFile,
   retryAttachedFile,
+  pastes,
+  removePaste,
+  onOpenPastedContent,
   commandAttachmentPlan,
   editorDisabled,
   editorRef,
@@ -153,6 +159,7 @@ export function ComposerCard({
   lockForQuestion = false,
   lockForApproval = false,
   questionButtonLabel = null,
+  questionActive = false,
   submitLabel = null,
   questionCanAct = true,
   escCount = 0,
@@ -207,7 +214,10 @@ export function ComposerCard({
         cardClassName,
         isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
         // A strip above (`ComposerAboveCard`) owns the top corners.
-        (notice || (onModelChange && servedModel)) && 'rounded-t-none',
+        (notice || (onModelChange && servedModel) || questionActive) && 'rounded-t-none',
+        // The bottom half of the ring the docked question starts (see
+        // `ComposerAboveCard`); the clip drops it along the seam.
+        questionActive && 'ring-muted/15 ring-3 [clip-path:inset(0_-8px_-8px_-8px)]',
       )}
     >
       {/* What the dimmed card is asking for. Without it the drag state said
@@ -239,6 +249,11 @@ export function ComposerCard({
           uploads={promptAttachmentItems}
           onRemove={removeAttachedFile}
           onRetry={retryAttachedFile}
+          pastes={pastes}
+          onRemovePaste={removePaste}
+          onOpenPaste={
+            onOpenPastedContent ? (paste) => onOpenPastedContent(paste.id, paste.text) : undefined
+          }
         />
 
         {/*
@@ -270,7 +285,7 @@ export function ComposerCard({
           className={cn(
             'flex min-w-0 flex-col px-2 pb-2',
             lockForApproval && 'composer-locked-approval',
-            attachedFiles.length > 0 && 'pt-3',
+            (attachedFiles.length > 0 || pastes.length > 0) && 'pt-3',
           )}
         >
           {/*

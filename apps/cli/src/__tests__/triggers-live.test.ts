@@ -118,7 +118,8 @@ function startServer(timezone = 'UTC'): string {
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
-      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
+      const body =
+        req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const base = `/v1/projects/${PROJECT}/triggers`;
 
@@ -127,12 +128,25 @@ function startServer(timezone = 'UTC'): string {
         return Response.json(triggerList(eventRow('new-pr', currentEventConfig)));
       }
       if (url.pathname === `${base}/new-pr` && req.method === 'PATCH') {
-        return Response.json(triggerList(eventRow('new-pr', (body as { event_config?: Record<string, unknown> }).event_config ?? currentEventConfig)));
+        return Response.json(
+          triggerList(
+            eventRow(
+              'new-pr',
+              (body as { event_config?: Record<string, unknown> }).event_config ??
+                currentEventConfig,
+            ),
+          ),
+        );
       }
       if (url.pathname === base && req.method === 'POST') {
         const draft = body as Record<string, unknown>;
         if (draft.type === 'event') {
-          return Response.json(triggerList(eventRow(String(draft.slug), draft.event_config as Record<string, unknown>)), { status: 201 });
+          return Response.json(
+            triggerList(
+              eventRow(String(draft.slug), draft.event_config as Record<string, unknown>),
+            ),
+            { status: 201 },
+          );
         }
         if (draft.type === 'webhook') {
           return Response.json(
@@ -172,7 +186,14 @@ async function runCli(args: string[], configFile?: string) {
     KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     KORTIX_CONFIG_FILE: configFile,
   };
-  for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'BASH_ENV']) {
+  for (const key of [
+    'KORTIX_API_URL',
+    'KORTIX_CLI_TOKEN',
+    'KORTIX_FRONTEND_URL',
+    'KORTIX_PROJECT_ID',
+    'KORTIX_TOKEN',
+    'BASH_ENV',
+  ]) {
     delete env[key];
   }
   const proc = Bun.spawn({
@@ -210,7 +231,15 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('--help documents --apply, set, and every live-only flag', async () => {
     const r = await runCli(['triggers', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['set <slug>', '--run-at <iso>', '--session-mode <m>', '--session-key <tmpl>', '--session-access <mode>', '--filter <path=value>', '--enabled true|false']) {
+    for (const fragment of [
+      'set <slug>',
+      '--run-at <iso>',
+      '--session-mode <m>',
+      '--session-key <tmpl>',
+      '--session-access <mode>',
+      '--filter <path=value>',
+      '--enabled true|false',
+    ]) {
       expect(r.stdout).toContain(fragment);
     }
   });
@@ -218,7 +247,26 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('add --apply POSTs the full cron body', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'digest', '--apply', '--type', 'cron', '--cron', '0 0 9 * * 1-5', '--timezone', 'Europe/Berlin', '--prompt', 'Summarize yesterday', '--agent', 'writer', '--model', 'anthropic/claude', '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'digest',
+        '--apply',
+        '--type',
+        'cron',
+        '--cron',
+        '0 0 9 * * 1-5',
+        '--timezone',
+        'Europe/Berlin',
+        '--prompt',
+        'Summarize yesterday',
+        '--agent',
+        'writer',
+        '--model',
+        'anthropic/claude',
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(0);
@@ -243,7 +291,26 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('add --apply --type event POSTs connector, event, and event_config', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--config', 'owner=acme', '--config-json', '{"draft":false}', '--prompt', 'Review {{ event.data.title }}', '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'new-pr',
+        '--apply',
+        '--type',
+        'event',
+        '--connector',
+        'github',
+        '--event',
+        'GITHUB_PULL_REQUEST_EVENT',
+        '--config',
+        'owner=acme',
+        '--config-json',
+        '{"draft":false}',
+        '--prompt',
+        'Review {{ event.data.title }}',
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(0);
@@ -257,23 +324,58 @@ describe('kortix triggers — the live (--apply) path', () => {
       event: 'GITHUB_PULL_REQUEST_EVENT',
       event_config: { draft: false, owner: 'acme' },
     });
-    expect(r.stdout).toContain('new-pr (event) live on the project');
+    expect(r.stdout).toContain('new-pr (event) added to the project');
     expect(r.stdout).toContain('kortix connectors connect github --owner project');
     expect(r.stdout).toContain('A person must open the link');
   });
 
   const addEvent = (config: string, ...extra: string[]) =>
     runCli(
-      ['triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--prompt', 'p', '--project', PROJECT, ...extra],
+      [
+        'triggers',
+        'add',
+        'new-pr',
+        '--apply',
+        '--type',
+        'event',
+        '--connector',
+        'github',
+        '--event',
+        'GITHUB_PULL_REQUEST_EVENT',
+        '--prompt',
+        'p',
+        '--project',
+        PROJECT,
+        ...extra,
+      ],
       config,
     );
-  const postBody = () => calls.find((c) => c.method === 'POST')?.body as Record<string, unknown> | undefined;
+  const postBody = () =>
+    calls.find((c) => c.method === 'POST')?.body as Record<string, unknown> | undefined;
 
   test('add --apply converts --config values by the catalog schema', async () => {
     const config = writeConfig(startServer());
-    const r = await addEvent(config, '--config', 'owner=acme', '--config', 'limit=5', '--config', 'draft=true', '--config', 'labels=bug, ui', '--config', 'state=open');
+    const r = await addEvent(
+      config,
+      '--config',
+      'owner=acme',
+      '--config',
+      'limit=5',
+      '--config',
+      'draft=true',
+      '--config',
+      'labels=bug, ui',
+      '--config',
+      'state=open',
+    );
     expect(r.code).toBe(0);
-    expect(postBody()?.event_config).toEqual({ owner: 'acme', limit: 5, draft: true, labels: ['bug', 'ui'], state: 'open' });
+    expect(postBody()?.event_config).toEqual({
+      owner: 'acme',
+      limit: 5,
+      draft: true,
+      labels: ['bug', 'ui'],
+      state: 'open',
+    });
   });
 
   test('add --apply lists every invalid field and sends nothing', async () => {
@@ -288,9 +390,29 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('add --apply rejects an unknown event with the events command', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'add', 'x', '--apply', '--type', 'event', '--connector', 'github', '--event', 'NOPE', '--prompt', 'p', '--project', PROJECT], config);
+    const r = await runCli(
+      [
+        'triggers',
+        'add',
+        'x',
+        '--apply',
+        '--type',
+        'event',
+        '--connector',
+        'github',
+        '--event',
+        'NOPE',
+        '--prompt',
+        'p',
+        '--project',
+        PROJECT,
+      ],
+      config,
+    );
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain('Unknown event NOPE for github. Run `kortix triggers events --connector github`');
+    expect(r.stderr).toContain(
+      'Unknown event NOPE for github. Run `kortix triggers events --connector github`',
+    );
     expect(postBody()).toBeUndefined();
   });
 
@@ -308,28 +430,151 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('set --config merges into the current config', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'set', 'new-pr', '--config', 'limit=7', '--project', PROJECT], config);
+    const r = await runCli(
+      ['triggers', 'set', 'new-pr', '--config', 'limit=7', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
-    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ event_config: { owner: 'acme', repo: 'app', limit: 7 } });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({
+      event_config: { owner: 'acme', repo: 'app', limit: 7 },
+    });
   });
 
   test('set --config-json replaces the config', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'set', 'new-pr', '--config-json', '{"owner":"zed"}', '--project', PROJECT], config);
+    const r = await runCli(
+      ['triggers', 'set', 'new-pr', '--config-json', '{"owner":"zed"}', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
-    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ event_config: { owner: 'zed' } });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({
+      event_config: { owner: 'zed' },
+    });
+  });
+
+  test('add --apply --account sends event_account; omitted sends none', async () => {
+    const config = writeConfig(startServer());
+    const base = [
+      'triggers',
+      'add',
+      'new-pr',
+      '--apply',
+      '--type',
+      'event',
+      '--connector',
+      'github',
+      '--event',
+      'GITHUB_PULL_REQUEST_EVENT',
+      '--config',
+      'owner=acme',
+      '--prompt',
+      'p',
+      '--project',
+      PROJECT,
+    ];
+    const withAccount = await runCli([...base, '--account', 'acme-bot'], config);
+    expect(withAccount.code).toBe(0);
+    expect(postBody()?.event_account).toBe('acme-bot');
+    calls.length = 0;
+    await runCli(base, config);
+    expect(postBody()).not.toHaveProperty('event_account');
+    const bad = await runCli([...base, '--default-account'], config);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('--default-account only applies to `kortix triggers set`');
+  });
+
+  test('set --account PATCHes event_account; --default-account sends null; both is an error', async () => {
+    const config = writeConfig(startServer());
+    const set = await runCli(
+      ['triggers', 'set', 'new-pr', '--account', 'acme-bot', '--project', PROJECT],
+      config,
+    );
+    expect(set.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({
+      event_account: 'acme-bot',
+    });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).not.toHaveProperty('event_config');
+    calls.length = 0;
+    const clear = await runCli(
+      ['triggers', 'set', 'new-pr', '--default-account', '--project', PROJECT],
+      config,
+    );
+    expect(clear.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({ event_account: null });
+    calls.length = 0;
+    const both = await runCli(
+      ['triggers', 'set', 'new-pr', '--account', 'a', '--default-account', '--project', PROJECT],
+      config,
+    );
+    expect(both.code).toBe(2);
+    expect(both.stderr).toContain('exclusive');
+    expect(calls.find((c) => c.method === 'PATCH')).toBeUndefined();
+  });
+
+  test('add --apply --source sends event_source; omitted sends none', async () => {
+    const config = writeConfig(startServer());
+    const base = [
+      'triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github',
+      '--event', 'GITHUB_PULL_REQUEST_EVENT', '--config', 'owner=acme', '--prompt', 'p', '--project', PROJECT,
+    ];
+    const withSource = await runCli([...base, '--source', 'composio'], config);
+    expect(withSource.code).toBe(0);
+    expect(postBody()?.event_source).toBe('composio');
+    calls.length = 0;
+    await runCli(base, config);
+    expect(postBody()).not.toHaveProperty('event_source');
+  });
+
+  test('set --source PATCHes event_source', async () => {
+    const config = writeConfig(startServer());
+    const set = await runCli(['triggers', 'set', 'new-pr', '--source', 'composio', '--project', PROJECT], config);
+    expect(set.code).toBe(0);
+    const body = calls.find((c) => c.method === 'PATCH')?.body;
+    expect(body).toMatchObject({ event_source: 'composio' });
+    expect(body).not.toHaveProperty('event_config');
+  });
+
+  test('set --source on a non-event trigger fails', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['triggers', 'set', 'digest', '--source', 'composio', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+  });
+
+  test('set --account on a non-event trigger fails', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['triggers', 'set', 'digest', '--account', 'a', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).not.toBe(0);
   });
 
   test('set --config on a non-event trigger fails', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'set', 'digest', '--config', 'a=b', '--project', PROJECT], config);
+    const r = await runCli(
+      ['triggers', 'set', 'digest', '--config', 'a=b', '--project', PROJECT],
+      config,
+    );
     expect(r.code).not.toBe(0);
   });
 
   test('add --apply rejects event misuse before any request', async () => {
     const config = writeConfig(startServer());
     const base = ['triggers', 'add', 'x', '--apply', '--prompt', 'p', '--project', PROJECT];
-    const cron = await runCli([...base, '--type', 'event', '--connector', 'github', '--event', 'E', '--cron', '0 0 9 * * *'], config);
+    const cron = await runCli(
+      [
+        ...base,
+        '--type',
+        'event',
+        '--connector',
+        'github',
+        '--event',
+        'E',
+        '--cron',
+        '0 0 9 * * *',
+      ],
+      config,
+    );
     expect(cron.code).toBe(2);
     expect(cron.stderr).toContain('--cron is not valid on an event trigger');
     const stray = await runCli([...base, '--cron', '0 0 9 * * *', '--event', 'E'], config);
@@ -343,7 +588,18 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('add --apply --run-at sends a one-off instead of a cron', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'once', '--apply', '--run-at', '2026-03-01T09:00:00Z', '--prompt', 'Do it once', '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'once',
+        '--apply',
+        '--run-at',
+        '2026-03-01T09:00:00Z',
+        '--prompt',
+        'Do it once',
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(0);
@@ -356,7 +612,32 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('add --apply carries session wiring, access, and filters', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'hook', '--apply', '--type', 'webhook', '--secret-env', 'HOOK_SECRET', '--prompt', 'Handle {{ body.type }}', '--session-key', '{{ body.data.chat_jid }}', '--session-access', 'members', '--member', MEMBER, '--group', GROUP, '--filter', 'body.type=push', '--filter', 'body.ref=refs/heads/main', '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'hook',
+        '--apply',
+        '--type',
+        'webhook',
+        '--secret-env',
+        'HOOK_SECRET',
+        '--prompt',
+        'Handle {{ body.type }}',
+        '--session-key',
+        '{{ body.data.chat_jid }}',
+        '--session-access',
+        'members',
+        '--member',
+        MEMBER,
+        '--group',
+        GROUP,
+        '--filter',
+        'body.type=push',
+        '--filter',
+        'body.ref=refs/heads/main',
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(0);
@@ -377,17 +658,49 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('--member alone implies session_access members', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'x', '--apply', '--cron', '0 0 * * * *', '--prompt', 'p', '--member', MEMBER, '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'x',
+        '--apply',
+        '--cron',
+        '0 0 * * * *',
+        '--prompt',
+        'p',
+        '--member',
+        MEMBER,
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(0);
-    expect((calls[0].body as any).session_access).toEqual({ mode: 'members', memberIds: [MEMBER], groupIds: [] });
+    expect((calls[0].body as any).session_access).toEqual({
+      mode: 'members',
+      memberIds: [MEMBER],
+      groupIds: [],
+    });
   });
 
   test('--member with a non-members access mode is refused before the request', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'x', '--apply', '--cron', '0 0 * * * *', '--prompt', 'p', '--session-access', 'project', '--member', MEMBER, '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'x',
+        '--apply',
+        '--cron',
+        '0 0 * * * *',
+        '--prompt',
+        'p',
+        '--session-access',
+        'project',
+        '--member',
+        MEMBER,
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(2);
@@ -398,7 +711,20 @@ describe('kortix triggers — the live (--apply) path', () => {
   test('add --apply rejects --cron with --run-at', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['triggers', 'add', 'x', '--apply', '--cron', '0 0 * * * *', '--run-at', '2026-03-01T09:00:00Z', '--prompt', 'p', '--project', PROJECT],
+      [
+        'triggers',
+        'add',
+        'x',
+        '--apply',
+        '--cron',
+        '0 0 * * * *',
+        '--run-at',
+        '2026-03-01T09:00:00Z',
+        '--prompt',
+        'p',
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(r.code).toBe(2);
@@ -408,7 +734,23 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('add --apply rejects a malformed --filter', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'add', 'x', '--apply', '--cron', '0 0 * * * *', '--prompt', 'p', '--filter', 'nope', '--project', PROJECT], config);
+    const r = await runCli(
+      [
+        'triggers',
+        'add',
+        'x',
+        '--apply',
+        '--cron',
+        '0 0 * * * *',
+        '--prompt',
+        'p',
+        '--filter',
+        'nope',
+        '--project',
+        PROJECT,
+      ],
+      config,
+    );
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('--filter must look like path=value');
     expect(calls).toEqual([]);
@@ -416,7 +758,20 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('add WITHOUT --apply never touches the network', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'add', 'digest', '--cron', '0 0 9 * * 1-5', '--prompt', 'p', '--project', PROJECT], config);
+    const r = await runCli(
+      [
+        'triggers',
+        'add',
+        'digest',
+        '--cron',
+        '0 0 9 * * 1-5',
+        '--prompt',
+        'p',
+        '--project',
+        PROJECT,
+      ],
+      config,
+    );
     // No kortix.yaml in the temp dir, so the local edit fails — the point is
     // that the default path is still the manifest, not the API.
     expect(r.code).not.toBe(0);
@@ -425,7 +780,20 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('set PATCHes only the fields passed', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'set', 'digest', '--name', 'Weekday digest', '--agent', 'writer', '--project', PROJECT], config);
+    const r = await runCli(
+      [
+        'triggers',
+        'set',
+        'digest',
+        '--name',
+        'Weekday digest',
+        '--agent',
+        'writer',
+        '--project',
+        PROJECT,
+      ],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'PATCH',
@@ -437,47 +805,95 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('set --cron nulls run_at, and set --run-at nulls cron', async () => {
     const config = writeConfig(startServer('Europe/Berlin'));
-    const toCron = await runCli(['triggers', 'set', 'digest', '--cron', '0 0 7 * * *', '--project', PROJECT], config);
+    const toCron = await runCli(
+      ['triggers', 'set', 'digest', '--cron', '0 0 7 * * *', '--project', PROJECT],
+      config,
+    );
     expect(toCron.code).toBe(0);
     expect(calls[0].body).toEqual({ cron: '0 0 7 * * *', run_at: null });
 
     calls = [];
-    const toOnce = await runCli(['triggers', 'set', 'digest', '--run-at', '2026-03-01T09:00:00Z', '--timezone', 'Europe/Berlin', '--project', PROJECT], config);
+    const toOnce = await runCli(
+      [
+        'triggers',
+        'set',
+        'digest',
+        '--run-at',
+        '2026-03-01T09:00:00Z',
+        '--timezone',
+        'Europe/Berlin',
+        '--project',
+        PROJECT,
+      ],
+      config,
+    );
     expect(toOnce.code).toBe(0);
-    expect(calls[0].body).toEqual({ run_at: '2026-03-01T09:00:00Z', cron: null, timezone: 'Europe/Berlin' });
+    expect(calls[0].body).toEqual({
+      run_at: '2026-03-01T09:00:00Z',
+      cron: null,
+      timezone: 'Europe/Berlin',
+    });
   });
 
   test.each([
     ['--cron', '0 0 7 * * *', { cron: '0 0 7 * * *', run_at: null }],
     ['--run-at', '2026-03-01T09:00:00Z', { run_at: '2026-03-01T09:00:00Z', cron: null }],
-  ])('set %s preserves an omitted timezone and accepts an explicit timezone', async (flag, schedule, body) => {
-    const config = writeConfig(startServer('Europe/Berlin'));
-    const omitted = await runCli(['triggers', 'set', 'digest', flag, schedule, '--project', PROJECT], config);
-    expect(omitted.code).toBe(0);
-    expect(omitted.stderr).not.toContain('error:');
-    expect(calls[0].body).toEqual(body);
+  ])(
+    'set %s preserves an omitted timezone and accepts an explicit timezone',
+    async (flag, schedule, body) => {
+      const config = writeConfig(startServer('Europe/Berlin'));
+      const omitted = await runCli(
+        ['triggers', 'set', 'digest', flag, schedule, '--project', PROJECT],
+        config,
+      );
+      expect(omitted.code).toBe(0);
+      expect(omitted.stderr).not.toContain('error:');
+      expect(calls[0].body).toEqual(body);
 
-    calls = [];
-    const explicit = await runCli(['triggers', 'set', 'digest', flag, schedule, '--timezone', 'Europe/Berlin', '--project', PROJECT], config);
-    expect(explicit.code).toBe(0);
-    expect(calls[0].body).toEqual({ ...body, timezone: 'Europe/Berlin' });
-  });
+      calls = [];
+      const explicit = await runCli(
+        [
+          'triggers',
+          'set',
+          'digest',
+          flag,
+          schedule,
+          '--timezone',
+          'Europe/Berlin',
+          '--project',
+          PROJECT,
+        ],
+        config,
+      );
+      expect(explicit.code).toBe(0);
+      expect(calls[0].body).toEqual({ ...body, timezone: 'Europe/Berlin' });
+    },
+  );
 
   test('set --timezone updates only the timezone, including explicit UTC', async () => {
     const config = writeConfig(startServer('Europe/Berlin'));
-    const r = await runCli(['triggers', 'set', 'digest', '--timezone', 'UTC', '--project', PROJECT], config);
+    const r = await runCli(
+      ['triggers', 'set', 'digest', '--timezone', 'UTC', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls[0].body).toEqual({ timezone: 'UTC' });
   });
 
   test('set --enabled maps to a boolean and rejects anything else', async () => {
     const config = writeConfig(startServer());
-    const ok = await runCli(['triggers', 'set', 'digest', '--enabled', 'false', '--project', PROJECT], config);
+    const ok = await runCli(
+      ['triggers', 'set', 'digest', '--enabled', 'false', '--project', PROJECT],
+      config,
+    );
     expect(ok.code).toBe(0);
     expect(calls[0].body).toEqual({ enabled: false });
 
     calls = [];
-    const bad = await runCli(['triggers', 'set', 'digest', '--enabled', 'maybe', '--project', PROJECT], config);
+    const bad = await runCli(
+      ['triggers', 'set', 'digest', '--enabled', 'maybe', '--project', PROJECT],
+      config,
+    );
     expect(bad.code).toBe(2);
     expect(bad.stderr).toContain('--enabled must be true or false');
     expect(calls).toEqual([]);
@@ -500,14 +916,20 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('set surfaces a 404 from the API', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'set', 'gone', '--name', 'x', '--project', PROJECT], config);
+    const r = await runCli(
+      ['triggers', 'set', 'gone', '--name', 'x', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Not found');
   });
 
   test('enable/disable --apply PATCH {enabled}', async () => {
     const config = writeConfig(startServer());
-    const off = await runCli(['triggers', 'disable', 'digest', '--apply', '--project', PROJECT], config);
+    const off = await runCli(
+      ['triggers', 'disable', 'digest', '--apply', '--project', PROJECT],
+      config,
+    );
     expect(off.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'PATCH',
@@ -517,7 +939,10 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(off.stdout).toContain('Disabled digest');
 
     calls = [];
-    const on = await runCli(['triggers', 'enable', 'digest', '--apply', '--project', PROJECT], config);
+    const on = await runCli(
+      ['triggers', 'enable', 'digest', '--apply', '--project', PROJECT],
+      config,
+    );
     expect(on.code).toBe(0);
     expect(calls[0].body).toEqual({ enabled: true });
   });
@@ -536,7 +961,10 @@ describe('kortix triggers — the live (--apply) path', () => {
 
   test('rm --apply --json emits the remaining list', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['triggers', 'rm', 'digest', '--apply', '--project', PROJECT, '--json'], config);
+    const r = await runCli(
+      ['triggers', 'rm', 'digest', '--apply', '--project', PROJECT, '--json'],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout).triggers).toEqual([]);
   });

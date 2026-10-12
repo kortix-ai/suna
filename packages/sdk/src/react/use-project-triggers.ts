@@ -69,20 +69,27 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   return { ...query, create, update, remove, fire };
 }
 
+/** A connector slug, or an app with no connector. Slugs hold no `:`, so the two never share a key. */
+export type ProjectTriggerEventTarget = string | { app: string; source?: string };
+
+const targetKey = (target: ProjectTriggerEventTarget | null | undefined) =>
+  typeof target === 'object' && target ? `app:${target.source ?? 'composio'}:${target.app}` : (target ?? '');
+
 export const projectTriggerEventTypesKey = (
   projectId: string | null | undefined,
-  connector: string | null | undefined,
-) => qk.project.triggerEventTypes(projectId ?? '', connector ?? '');
+  target: ProjectTriggerEventTarget | null | undefined,
+) => qk.project.triggerEventTypes(projectId ?? '', targetKey(target));
 
-/** App events a connector can trigger on. Idle until a connector is chosen. */
+/** App events a connector, or an app with no connector (`{ app, source? }`), can trigger on. Idle until one is chosen. */
 export function useProjectTriggerEventTypes(
   projectId: string | null | undefined,
-  connector: string | null | undefined,
+  target: ProjectTriggerEventTarget | null | undefined,
 ) {
+  const chosen = typeof target === 'object' && target ? target.app : target;
   return useQuery<ProjectTriggerEventTypes>({
-    queryKey: projectTriggerEventTypesKey(projectId, connector),
-    queryFn: () => listProjectTriggerEventTypes(projectId as string, { connector: connector as string }),
-    enabled: !!projectId && !!connector,
+    queryKey: projectTriggerEventTypesKey(projectId, target),
+    queryFn: () => listProjectTriggerEventTypes(projectId as string, typeof target === 'object' ? (target as { app: string; source?: string }) : { connector: target as string }),
+    enabled: !!projectId && !!chosen,
     ...contract('config'),
   });
 }

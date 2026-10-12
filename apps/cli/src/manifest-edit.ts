@@ -8,6 +8,7 @@ import {
 import { resolveLocalManifestImports } from './manifest-imports.ts';
 
 type YamlDocument = ReturnType<typeof parseDocument>;
+type YamlComments = { commentBefore?: string | null; comment?: string | null };
 
 /**
  * Local manifest editing — the CLI mutates config IN THE FILE (the source of
@@ -521,4 +522,67 @@ function renderYamlMapPath(
   const lines = path.map((segment, index) => `${'  '.repeat(index)}${segment}:`);
   lines.push(`${'  '.repeat(path.length)}${key}: ${renderYamlScalar(value)}`);
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * Set `<map>.<key>: <value>` in one YAML file and end that line with
+ * `# <comment>`. Text surgery, so every other comment and the file's layout
+ * stay. The value of an existing entry is replaced, and its trailing comment
+ * with it: that comment described the old value. A new entry goes after the
+ * map's last entry. A map the file lacks is appended at the end of the file.
+ * Returns what changed.
+ */
+export function setYamlMapEntry(
+  file: string,
+  map: string,
+  key: string,
+  value: string,
+  comment?: string,
+): 'replaced' | 'added' | 'created' {
+  const text = readFileSync(file, 'utf8');
+  const doc = parseDocument(text);
+  const suffix = comment ? `  # ${comment}` : '';
+  const line = `${key}: ${renderYamlScalar(value)}${suffix}`;
+  const current = doc.getIn([map, key], true) as { range?: [number, number, number] } | undefined;
+  if (current?.range) {
+    const [start, end] = current.range;
+    const lineEnd = text.indexOf('\n', end) === -1 ? text.length : text.indexOf('\n', end);
+    // Only a comment (or nothing) may follow the value on its line.
+    const rest = /^[ \t]*(#.*)?$/.test(text.slice(end, lineEnd)) ? lineEnd : end;
+    writeFileSync(file, `${text.slice(0, start)}${renderYamlScalar(value)}${suffix}${text.slice(rest)}`, 'utf8');
+    return 'replaced';
+  }
+  const node = doc.get(map, true) as
+    | { flow?: boolean; items?: Array<{ key?: { range?: [number, number, number] } }>; range?: [number, number, number] }
+    | undefined;
+  const firstKey = node?.items?.[0]?.key?.range?.[0];
+  if (node?.range && !node.flow && firstKey !== undefined) {
+    const indent = text.slice(text.lastIndexOf('\n', firstKey - 1) + 1, firstKey);
+    // Right after the line of the last entry's value (`range[1]`), before any
+    // comment lines that follow the map (`range[2]` would include them).
+    const end = node.range[1];
+    const lineEnd = text.indexOf('\n', end);
+    const insertAt = text[end - 1] === '\n' ? end : lineEnd === -1 ? text.length : lineEnd + 1;
+    const head = text.slice(0, insertAt);
+    writeFileSync(file, `${head}${head.endsWith('\n') ? '' : '\n'}${indent}${line}\n${text.slice(insertAt)}`, 'utf8');
+    return 'added';
+  }
+  if (doc.has(map)) {
+    // `map:` with no entries (null) or a flow map: rebuild it through the AST,
+    // carrying the old node's comments over.
+    const old = doc.get(map, true) as YamlComments & { toJSON?: () => unknown };
+    const entries = old?.toJSON?.();
+    const fresh = doc.createNode({ ...(entries && typeof entries === 'object' ? entries : {}), [key]: value }) as YamlComments & {
+      get(key: string, keepScalar: true): YamlComments;
+    };
+    fresh.commentBefore = old?.commentBefore;
+    fresh.comment = old?.comment;
+    if (comment) fresh.get(key, true).comment = ` ${comment}`;
+    doc.set(map, fresh);
+    writeFileSync(file, doc.toString(), 'utf8');
+    return 'added';
+  }
+  const separator = text.length === 0 || text.endsWith('\n\n') ? '' : text.endsWith('\n') ? '\n' : '\n\n';
+  writeFileSync(file, `${text}${separator}${map}:\n  ${line}\n`, 'utf8');
+  return 'created';
 }

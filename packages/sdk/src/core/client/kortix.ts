@@ -37,6 +37,7 @@ import { getClient } from '../runtime/client';
 
 import { type KortixPlatformConfig, configureKortix } from '../http/config';
 import * as P from '../rest/projects-client';
+import { getMobileClientPolicy } from '../rest/platform-client/client-policy';
 
 function runtime(): RuntimeClient {
   return getClient();
@@ -126,11 +127,24 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
-    /** Push device registration for a native app (`/v1/notifications/device-token`). */
+    /**
+     * The caller's notifications (`/v1/notifications/*`): push device tokens
+     * for a native app, the inbox, per-kind push and email preferences, and
+     * Web Push for this browser. Muting one session is `session(pid, sid).setWatch`.
+     */
     notifications: {
       registerDeviceToken: P.registerDeviceToken,
       unregisterDeviceToken: P.unregisterDeviceToken,
+      list: P.listNotifications,
+      markRead: P.markNotificationsRead,
+      preferences: P.getNotificationPreferences,
+      updatePreferences: P.updateNotificationPreferences,
+      webPushPublicKey: P.getWebPushPublicKey,
+      registerWebPushSubscription: P.registerWebPushSubscription,
+      unregisterWebPushSubscription: P.unregisterWebPushSubscription,
     },
+    /** The operator's mobile release policy (`GET /v1/clients/mobile`). Public: needs no token. */
+    mobileClientPolicy: getMobileClientPolicy,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

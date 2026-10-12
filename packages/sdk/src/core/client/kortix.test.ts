@@ -51,6 +51,18 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).apps binds the project id on every capability call', async () => {
+  const apps = kortix.project('PID123').apps;
+  await apps.token('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/token' });
+  await apps.remove('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1' });
+  for (const retired of ['snapshots', 'credentials', 'rotateCredentials', 'log', 'waitUntilReady']) {
+    expect(retired in apps).toBe(false);
+  }
+  expect('backends' in kortix.project('PID123')).toBe(false);
+});
+
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
   const apps = kortix.project('PID123').apps;
 
@@ -154,6 +166,49 @@ test('session presence writes a tab-scoped lease through the authenticated backe
     method: 'PUT',
     body: { tab_id: tabId, active: true },
   });
+});
+
+// KRTX-1742: `alerts` says this tab shows its own notifications, so the server
+// skips the phone push only for an alerting tab. Leaving is sent with
+// `keepalive`, so the lease ends even when the tab is closing.
+test('session presence carries alerts, and an absent report survives the page unloading', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000002';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: true, alerts: true });
+  await handle.presence({ tab_id: tabId, active: false, alerts: true });
+  await handle.presence({ tab_id: tabId, active: true });
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: true, alerts: true },
+    { tab_id: tabId, active: false, alerts: true },
+    { tab_id: tabId, active: true },
+  ]);
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
+});
+
+// `useSession` sends an absent report without `keepalive` while the project's
+// `notification_center` flag is off, as before KRTX-1742.
+test('session presence takes an explicit keepalive, and the body stays the report', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000003';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: false });
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: true });
+  await handle.presence({ tab_id: tabId, active: false }, {});
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, true]);
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+  ]);
 });
 
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
@@ -572,6 +627,12 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
   await kortix.connectStatus();
   expect(last().url).toContain('/connectors/connect-status');
+});
+
+test('kortix.mobileClientPolicy hits the public clients endpoint', async () => {
+  await kortix.mobileClientPolicy();
+  expect(last().url).toContain('/v1/clients/mobile');
+  expect(last().method).toBe('GET');
 });
 
 test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {

@@ -24,7 +24,8 @@ import {
   renderMonitorLifecyclePrompt,
 } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
-import { fireGitTrigger } from './trigger-fire';
+import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
+import { raiseTriggerAlert } from './trigger-alerts';
 import { triggersPausedForProject } from './trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
@@ -191,6 +192,10 @@ export async function processMonitorEvent(
     if (result.status === 'fired' || result.status === 'queued') {
       await markMonitorEvent(row.eventId, 'fired', now, { sessionId: result.sessionId ?? null });
       await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
+      // The trigger's last_fired_at / last_status, as every other source stamps
+      // them; it also clears a failed fire recorded below. Display state only:
+      // a failed stamp must not send this fired event back to `pending`.
+      await markGitTriggerFired(row.projectId, row.slug, now, result.status).catch(() => {});
       return 'fired';
     }
     return await failMonitorEvent(row, now, result.error ?? result.reason ?? 'monitor fire failed');
@@ -201,7 +206,9 @@ export async function processMonitorEvent(
 
 /**
  * A failed attempt stays `pending` so the next tick retries it, until the
- * attempt ceiling turns it into a dead-lettered `failed` row.
+ * attempt ceiling turns it into a dead-lettered `failed` row. The trigger
+ * records every failed attempt, like a failed cron fire (KRTX-1743); the dead
+ * letter alerts its watchers (KRTX-1742).
  */
 async function failMonitorEvent(row: MonitorEventRow, now: Date, error: string): Promise<'failed'> {
   const terminal = row.attempts >= MONITOR_EVENT_MAX_ATTEMPTS;
@@ -212,6 +219,8 @@ async function failMonitorEvent(row: MonitorEventRow, now: Date, error: string):
       lastError: error.slice(0, 2_000),
     })
     .where(eq(projectMonitorEvents.eventId, row.eventId));
+  await markGitTriggerAttemptFailed(row.projectId, row.slug, now, error).catch(() => {});
+  if (terminal) await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
   return 'failed';
 }
 

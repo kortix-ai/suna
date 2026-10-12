@@ -7,7 +7,7 @@ import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-transla
 import type { UiTranslator } from '@/i18n/translator';
 
 import { cn } from '@/lib/utils';
-import { type App, type AppAccessMode, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
+import { type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
 
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
@@ -112,6 +112,55 @@ export function appStatus(
     // the only one that earns colour.
     dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
   };
+}
+
+/**
+ * Does this App offer `capability`? The ONE way the Apps UI branches between
+ * Apps: the server lists what each App supports (`app.capabilities`), and a
+ * control shows only for the Apps that support it.
+ */
+/**
+ * The Apps the grid shows as cards (`display`): not `listed: false`, and not a
+ * tab of a parent that exists. A tab whose parent is gone stays reachable as a card.
+ */
+export function gridApps(apps: App[], canAdmin = true): App[] {
+  const slugs = new Set(apps.map((app) => app.slug));
+  return apps.filter((app) =>
+    app.display?.listed !== false
+    && !(app.display?.parent && slugs.has(app.display.parent))
+    && (canAdmin || !appAdminsOnly(app)));
+}
+
+/** The Apps `app`'s detail shows as tabs (their `display.parent` is its slug). */
+export function childApps(apps: App[], app: App, canAdmin = true): App[] {
+  return apps.filter((row) => row.display?.parent === app.slug && (canAdmin || !appAdminsOnly(row)));
+}
+
+/**
+ * Its primary service is `access: admins` (a backend's admin dashboard): only
+ * project admins can open it, so nobody else is shown a card or tab for it.
+ */
+export function appAdminsOnly(app: App): boolean {
+  return app.services?.find((service) => service.name === 'http')?.access === 'admins';
+}
+
+/** A tab's label: the App's name without its parent's slug ("crm-data-dashboard" → "Dashboard"). */
+export function appTabLabel(child: App, parent: App): string {
+  const name = child.name.startsWith(`${parent.slug}-`) ? child.name.slice(parent.slug.length + 1) : child.name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+export function appCan(app: App, capability: AppCapability): boolean {
+  return app.capabilities?.includes(capability) ?? false;
+}
+
+/** "2 vCPU · 4 GB · 20 GB": the machine size of an App. */
+export function appSizeLabel(app: App, t: UiTranslator): string {
+  return t('textce0eabb01151', {
+    value0: app.machine.cpu,
+    value1: app.machine.memory_gb,
+    value2: app.machine.disk_gb,
+  });
 }
 
 /**

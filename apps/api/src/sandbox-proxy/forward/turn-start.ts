@@ -3,7 +3,6 @@ import type { ProvisionTimeline } from '../../platform/services/provision-timeli
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { bindSessionTurnIdentity } from '../../projects/lib/on-behalf-of';
-import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
   convergeBeforeTurnStart,
@@ -58,7 +57,6 @@ const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
   syncEnv: syncSandboxEnvForPrompt,
   remintGrant: remintGrantForAgentSwitch,
   bindTurnIdentity: bindSessionTurnIdentity,
-  scheduleSnapshot: scheduleOpencodeSnapshotSync,
   generateTitle: generateSessionTitleFromFirstPrompt,
 };
 

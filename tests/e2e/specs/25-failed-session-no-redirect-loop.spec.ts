@@ -100,31 +100,55 @@ test.describe("25 — A failed target cannot trap the user in a redirect loop", 
       // Delete the target out from under the browser.
       await deleteDatabaseProject(env, doomed.id);
 
-      // `/` redirects to the remembered project — one canonicalization hop.
-      // The dead target must render its terminal screen INLINE, not bounce.
+      // `/` follows the remembered project. On the 404 either the shell's
+      // self-heal clears the cookie and leaves for the landing door, or the
+      // access boundary renders the terminal screen inline. Deployed staging
+      // takes the self-heal every time (release gates 37557504543 and
+      // 37933459772). Both are correct; a loop back into the dead project is not.
       const navigations: string[] = [];
       page.on("framenavigated", (frame) => {
         if (frame === page.mainFrame()) navigations.push(frame.url());
       });
       await page.goto("/", { waitUntil: "domcontentloaded" });
-      await expect(
-        page.getByText("This project is gone.", { exact: true }),
-      ).toBeVisible({ timeout: 60_000 });
-      await expect(page).toHaveURL(new RegExp(`/projects/${doomed.id}`));
+      const gone = page.getByText("This project is gone.", { exact: true });
+      await expect
+        .poll(
+          async () =>
+            (await gone.isVisible()) || !page.url().includes(doomed.id),
+          { timeout: 60_000 },
+        )
+        .toBe(true);
 
-      // Bounded hops: the `/` entry plus its one redirect — never a loop of
-      // repeated navigations back into the dead project.
-      expect(navigations.length).toBeLessThanOrEqual(3);
+      // Bounded hops: the `/` entry, its redirect, and at most the self-heal's
+      // landing door and its target — never a loop back into the dead project.
+      expect(navigations.length).toBeLessThanOrEqual(4);
 
-      // The terminal screen forgets the dead project as the landing target.
+      // Either path forgets the dead project as the landing target. The
+      // self-heal's landing door then remembers the project it opened, so the
+      // cookie is either gone or names another project — never the dead one.
       await expect
         .poll(async () => {
           const cookie = (await page.context().cookies()).find(
             (item) => item.name === "kortix_last_project",
           );
-          return cookie?.value || null;
+          return cookie ? decodeURIComponent(cookie.value) : null;
         })
-        .toBeNull();
+        .not.toBe(`${user.id}:${doomed.id}`);
+
+      // Opened directly, the dead project renders its terminal screen inline.
+      // Deployed staging answers the access gate's project read after the
+      // detail read. Hold the gate's read 2 s so the local stack takes the
+      // same order: the shell must not remember the project from this
+      // device's cached detail and then self-heal away from the gone screen.
+      await page.route(new RegExp(`/v1/projects/${doomed.id}(\\?.*)?$`), async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        await route.continue();
+      });
+      await page.goto(`/projects/${doomed.id}`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(gone).toBeVisible({ timeout: 60_000 });
+      await expect(page).toHaveURL(new RegExp(`/projects/${doomed.id}`));
 
       // The escape link must not point back at the project that is failing.
       // With the cookie cleared it goes through the landing door, which

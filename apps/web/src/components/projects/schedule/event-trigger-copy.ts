@@ -9,8 +9,11 @@
 
 import type { UiTranslator } from '@/i18n/translator';
 import type {
+  ProjectTrigger,
   ProjectTriggerEvent,
+  ProjectTriggerEventAccount,
   ProjectTriggerEventApp,
+  ProjectTriggerEventConnector,
   ProjectTriggerEventType,
 } from '@kortix/sdk';
 
@@ -38,15 +41,89 @@ export function appLabel(app: string | null | undefined, fallback: string): stri
   return sentence[0].toUpperCase() + sentence.slice(1);
 }
 
-/** The list-row sentence: `GITHUB_PULL_REQUEST_CREATED` on github -> "Pull request created on Github". */
-export function describeEventWhen(event: ProjectTriggerEvent | null): string {
-  if (!event) return 'When an app event happens';
-  // The id repeats the app and often ends in a noise word; the sentence names the app once.
+/** App slug -> catalog entry: the one place a slug becomes the app's real name and logo. */
+export type EventAppIndex = ReadonlyMap<string, EventApp>;
+
+export function indexEventApps(apps: readonly EventApp[] | undefined): EventAppIndex {
+  return new Map((apps ?? []).map((a) => [a.app, a]));
+}
+
+/**
+ * The app's real name from the catalog (`GitHub`, `Gmail`). A trigger whose app
+ * is not in the catalog shows its slug as it is written: a capitalised slug
+ * ("Docs mcp") reads as a name and is wrong.
+ */
+export function eventAppName(
+  event: Pick<ProjectTriggerEvent, 'app' | 'connector'>,
+  index?: EventAppIndex,
+): string {
+  const slug = event.app ?? event.connector;
+  return index?.get(slug)?.name ?? slug;
+}
+
+/**
+ * The list-row title of an event: the adapter's event name where the catalog
+ * has it (`New Gmail Message`), else the event id without its app prefix and
+ * noise suffix, in title case (`GITHUB_PULL_REQUEST_CREATED` -> `Pull Request
+ * Created`). It never adds "on <App>": the event name already carries the app
+ * where that matters, and the app is the row's second line.
+ */
+export function describeEventTitle(
+  event: ProjectTriggerEvent | null,
+  names?: ReadonlyMap<string, string>,
+  appName?: string,
+): string {
+  if (!event) return 'App event';
+  const known = names?.get(event.type);
+  if (known) return known;
   const prefix = `${(event.app ?? '').toLowerCase()}_`;
-  const type = (
-    event.type.toLowerCase().startsWith(prefix) ? event.type.slice(prefix.length) : event.type
-  ).replace(/_(trigger|event)$/i, '');
-  return `${humanizeEventType(type || event.type)} on ${appLabel(event.app, event.connector)}`;
+  const lower = event.type.toLowerCase();
+  const bare = (
+    prefix.length > 1 && lower.startsWith(prefix) ? lower.slice(prefix.length) : lower
+  ).replace(/_(trigger|event)$/, '');
+  const slug = (event.app ?? '').toLowerCase();
+  const words = bare.split(/[_\s]+/).filter(Boolean);
+  if (words.length === 0) return humanizeEventType(event.type);
+  return words
+    .map((w) => (appName && w === slug ? appName : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+/** Display names of the event source adapters: the one place a source id becomes a name. */
+const EVENT_SOURCE_NAMES: Record<string, string> = { composio: 'Composio' };
+
+/** `composio` -> `Composio`; null when the event names no source. */
+export function eventSourceName(event: {
+  source?: string | null;
+  provider?: string | null;
+}): string | null {
+  const id = event.source ?? event.provider;
+  return id ? (EVENT_SOURCE_NAMES[id] ?? appLabel(id, id)) : null;
+}
+
+/**
+ * Where an event comes from, as one line: `GitHub · github-work · acme-bot · via Composio`.
+ * The connector shows only when it is not just the app's own name, and the
+ * account is the declared label, else the identity the default account runs as.
+ * The last part names the event source adapter. `index` gives the app's real name.
+ */
+export function describeEventSource(
+  event: ProjectTriggerEvent,
+  tI18nComplete: UiTranslator,
+  index?: EventAppIndex,
+): string {
+  const app = eventAppName(event, index);
+  const parts = [app];
+  const same = (a: string, b: string) =>
+    a.toLowerCase().replace(/[^a-z0-9]/g, '') === b.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!same(event.connector, event.app ?? '') && !same(event.connector, app)) {
+    parts.push(event.connector);
+  }
+  const account = event.account ?? event.connected_as ?? null;
+  if (account) parts.push(account);
+  const source = eventSourceName(event);
+  if (source) parts.push(tI18nComplete('text12a4656bfd2a', { source }));
+  return parts.join(' · ');
 }
 
 /* ─── Status ────────────────────────────────────────────────────────────── */
@@ -61,6 +138,7 @@ export interface EventStatusCopy {
 export function describeEventStatus(
   event: ProjectTriggerEvent,
   tI18nComplete: UiTranslator,
+  index?: EventAppIndex,
 ): EventStatusCopy {
   switch (event.status) {
     case 'active':
@@ -69,9 +147,11 @@ export function describeEventStatus(
       return {
         label: tI18nComplete.raw('textd919fde889e9'),
         variant: 'warning',
+        // The server names the app by slug ("github"); say it with the catalog name unless the
+        // text carries a named account the person must connect.
         detail:
-          event.error ??
-          tI18nComplete('text2a78b60b1056', { app: appLabel(event.app, event.connector) }),
+          (event.account ? event.error : null) ??
+          tI18nComplete('text2a78b60b1056', { app: eventAppName(event, index) }),
       };
     case 'error':
       return {
@@ -88,6 +168,18 @@ export function describeEventStatus(
 export function connectorHref(projectId: string, connector?: string | null): string {
   const base = `/projects/${projectId}/customize/connectors`;
   return connector ? `${base}?c=${encodeURIComponent(connector)}` : base;
+}
+
+/**
+ * An event description as one line of plain text: list bullets and emphasis
+ * marks go, and line breaks and runs of spaces collapse to one space.
+ */
+export function oneLineDescription(text: string): string {
+  return text
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/\*\*|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /* ─── Config schema -> form fields ──────────────────────────────────────── */
@@ -304,6 +396,89 @@ export function groupEventApps(
   return { yours, more };
 }
 
+/* ─── Connectors and accounts ───────────────────────────────────────────── */
+
+/** The connector profiles of an app. An API without `connectors` yields the one profile it names. */
+export function appConnectors(app: EventApp): ProjectTriggerEventConnector[] {
+  if (app.connectors && app.connectors.length > 0) return app.connectors;
+  return app.connector ? [{ slug: app.connector, name: app.name, accounts: [] }] : [];
+}
+
+/** The project has a connected shared account on this connector of the app. */
+export function profileConnected(app: EventApp, connector: string): boolean {
+  const profile = appConnectors(app).find((c) => c.slug === connector);
+  if (profile && profile.accounts.length > 0) return profile.accounts.some((a) => a.connected);
+  return app.connector === connector && app.connected;
+}
+
+/** The account a trigger runs on when it names none. */
+export function defaultAccount(
+  connector: ProjectTriggerEventConnector,
+): ProjectTriggerEventAccount | null {
+  return connector.accounts.find((a) => a.is_default) ?? null;
+}
+
+/**
+ * The account a connector falls back to when none is flagged default: its
+ * first connected one, else its first. A person must always see which account
+ * a trigger will use, so the form selects this one.
+ */
+export function fallbackAccount(
+  connector: ProjectTriggerEventConnector,
+): ProjectTriggerEventAccount | null {
+  return connector.accounts.find((a) => a.connected) ?? connector.accounts[0] ?? null;
+}
+
+/** The label the form highlights: the declared one, else the default's, else the fallback's. */
+export function selectedAccountLabel(
+  connector: ProjectTriggerEventConnector,
+  account: string | null,
+): string | null {
+  return account ?? (defaultAccount(connector) ?? fallbackAccount(connector))?.label ?? null;
+}
+
+/**
+ * The `event_account` a new trigger is written with. A connector with a default
+ * account needs none (the trigger follows the default). Without one, the
+ * account the form shows is named, so the trigger does not depend on an
+ * account nobody picked.
+ */
+export function accountToWrite(
+  connector: ProjectTriggerEventConnector | null,
+  account: string | null,
+): string | null {
+  if (account) return account;
+  if (!connector || defaultAccount(connector)) return null;
+  return fallbackAccount(connector)?.label ?? null;
+}
+
+/**
+ * The `account` a trigger stores for a picked label. The connector default is
+ * stored as null, so `kortix.yaml` names an account only when it differs.
+ */
+export function accountToStore(
+  connector: ProjectTriggerEventConnector,
+  label: string | null,
+): string | null {
+  if (!label || defaultAccount(connector)?.label === label) return null;
+  return label;
+}
+
+/** An account row: who it runs as, and its label when that differs. */
+export function describeAccount(account: ProjectTriggerEventAccount): {
+  title: string;
+  detail: string | null;
+} {
+  const identity = account.connected_as?.trim();
+  if (identity && identity !== account.label) return { title: identity, detail: account.label };
+  return { title: account.label, detail: null };
+}
+
+/** The app-event triggers that run on one connector, in list order. */
+export function eventTriggersOn(triggers: ProjectTrigger[], connector: string): ProjectTrigger[] {
+  return triggers.filter((t) => t.type === 'event' && t.event?.connector === connector);
+}
+
 /** The connector slug for a new app: the app slug, or one with a suffix when taken. */
 export function newConnectorSlug(app: string, taken: readonly string[]): string {
   const slug =
@@ -328,7 +503,9 @@ export function describePollHint(eventType: ProjectTriggerEventType): string | n
 /* ─── Prompt ────────────────────────────────────────────────────────────── */
 
 export interface PayloadVariable {
-  /** The template expression, e.g. `{{ event.data.title }}`. */
+  /** The field's name, e.g. `title`: what a chip shows. */
+  field: string;
+  /** The template expression, e.g. `{{ event.data.title }}`: what a click inserts. */
   token: string;
   description: string | null;
 }
@@ -342,6 +519,7 @@ export function payloadVariables(
   return Object.entries(properties).map(([key, raw]) => {
     const description = asRecord(raw)?.description;
     return {
+      field: key,
       token: `{{ event.data.${key} }}`,
       description:
         typeof description === 'string' && description.trim() ? description.trim() : null,

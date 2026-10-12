@@ -38,42 +38,21 @@
  * placeholder that opens the source in the browser on tap.
  */
 
-import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   TextStyle,
   View,
   Text as RNText,
-  Pressable,
   LogBox,
   Platform,
-  UIManager,
-  useWindowDimensions,
   type TextProps,
 } from 'react-native';
-import { UITextView } from 'react-native-uitextview';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
-import type { MarkdownTextInput as MarkdownTextInputComponent } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
-import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import * as Haptics from 'expo-haptics';
-import { CopyIcon as Copy } from '@/lib/icons';
-import {
-  markdownParser,
-  lightMarkdownStyle,
-  darkMarkdownStyle,
-} from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
-import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
-import * as Clipboard from 'expo-clipboard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { log } from '@/lib/logger';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
@@ -83,7 +62,6 @@ import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { mathPlugin } from '@/lib/markdown/math-plugin';
 import { markdownPalette, type MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { isMarkdownSeparatorBlock, splitMarkdown } from '@/lib/markdown/split-blocks';
-import { isSafeExternalLink } from '@/lib/markdown/safe-link';
 import { groupImageBlocks, imageSourceKey } from '@/lib/markdown/markdown-image';
 import { MarkdownImage, MarkdownImageGallery, MarkdownImagesContext, type MarkdownRemoteImages } from '@/components/markdown/markdown-image';
 import {
@@ -91,48 +69,29 @@ import {
   collapsedGap,
   kindOfNode,
   orderedListGutter,
-  RADIUS,
   TYPE,
   web,
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
 import {
-  nodeText,
-  TABLE_CELL_PADDING_X,
-  TABLE_CELL_PADDING_Y,
-  fitColumnWidths,
-  tableColumnWidths,
-  tableSections,
-} from '@/lib/markdown/table-layout';
-import { openLink } from '@/lib/utils/open-link';
+  MarkdownText,
+  openExternalLink,
+  IOS_TEXT_VIEW,
+} from '@/components/markdown/markdown-text';
+import {
+  MarkdownTable,
+  MarkdownSurfaceContext,
+  type AstNode,
+} from '@/components/markdown/markdown-table';
+import { IOSSelectableMarkdown } from '@/components/markdown/ios-selection-fallback';
 
-// The component's own module, not the package root: the root also exports
-// `parseExpensiMark`, which loads all of `expensify-common` (1.5 MB) at boot.
-// The app passes its own parser (`markdownParser`) and never calls it. A
-// `require`, so tsc reads the root's declarations and not the package source.
-const MarkdownTextInput: typeof MarkdownTextInputComponent =
-  require('@expensify/react-native-live-markdown/src/MarkdownTextInput').default;
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
-/**
- * The running iOS binary has `react-native-uitextview`'s native view. An OTA
- * update can reach a binary built before it: that binary renders plain `Text`
- * and keeps the double-tap selection sheet.
- */
-const IOS_TEXT_VIEW = Platform.OS === 'ios' && UIManager.hasViewManagerConfig('RNUITextView');
 
-/**
- * Every text node of the markdown. On iOS it is a `UITextView`: the outermost
- * one is the selectable view, nested ones are its styled spans, so every text
- * rule must use this and never `RNText`. Elsewhere it is React Native's `Text`,
- * which reads `selectable` from the outermost node only.
- */
-function MarkdownText(props: TextProps) {
-  return IOS_TEXT_VIEW ? <UITextView uiTextView {...props} /> : <RNText {...props} />;
-}
+function noop() {}
 
 /**
  * Android: a selectable text node with no press handler of its own never
@@ -144,7 +103,7 @@ function MarkdownText(props: TextProps) {
 const ANDROID_LINK_TAPS: Partial<TextProps> =
   Platform.OS === 'android' ? { onPress: noop, accessibilityRole: 'text' } : {};
 
-export interface SelectableMarkdownTextProps {
+interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
   /** Accepted for compatibility; the markdown renderer does not apply it. */
@@ -174,12 +133,6 @@ export interface SelectableMarkdownTextProps {
 /**
  * Opens a link from message markdown when its scheme is http(s) or mailto.
  * Any other scheme is ignored, and a failed open never becomes an unhandled
- * rejection.
- */
-function openExternalLink(href: unknown) {
-  if (!isSafeExternalLink(href)) return;
-  openLink(href).catch(() => {});
-}
 
 /**
  * `onLinkPress` for library rules the app does not override (`blocklink`, a
@@ -198,19 +151,6 @@ function handleLibraryLinkPress(url: string): boolean {
  */
 const OpenFenceContext = createContext(false);
 
-/** `SelectableMarkdownTextProps.surface`, for the tables below. */
-export const MarkdownSurfaceContext = createContext<string | undefined>(undefined);
-
-type AstNode = {
-  key: string;
-  type: string;
-  content?: string;
-  sourceInfo?: string;
-  markup?: string;
-  index: number;
-  attributes?: Record<string, unknown>;
-  children: AstNode[];
-};
 
 /**
  * Stacks rendered constructs with CSS-style collapsed margins: the gap between
@@ -436,206 +376,6 @@ function MarkdownRule({ palette }: { palette: MarkdownPalette }) {
   return <View style={{ height: 1, backgroundColor: palette.border }} />;
 }
 
-/** Inline content of a table cell: bold, italic, strike, code, links. */
-function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPalette): React.ReactNode {
-  const inline = cell.children ?? [];
-  // Cells usually hold one wrapper node around the actual inline content.
-  const nodes = inline.length === 1 && inline[0].children?.length ? inline[0].children : inline;
-  if (nodes.length === 0) return nodeText(cell);
-
-  return nodes.map((n, i) => {
-    switch (n.type) {
-      case 'text':
-        return n.content ?? '';
-      case 'softbreak':
-      case 'hardbreak':
-        return '\n';
-      case 'strong':
-        return (
-          <MarkdownText key={i} style={{ fontFamily: FONT_FAMILY.semibold, fontWeight: '600', color: palette.strong }}>
-            {nodeText(n)}
-          </MarkdownText>
-        );
-      case 'em':
-        return (
-          <MarkdownText key={i} style={{ fontStyle: 'italic', color: palette.em }}>
-            {nodeText(n)}
-          </MarkdownText>
-        );
-      case 's':
-        return (
-          <MarkdownText key={i} style={{ textDecorationLine: 'line-through', color: palette.muted }}>
-            {nodeText(n)}
-          </MarkdownText>
-        );
-      case 'code_inline':
-        return <InlineCode key={i} code={n.content ?? ''} isDark={isDark} line={TYPE.sm} />;
-      case 'math_inline':
-        return (
-          <InlineMath key={i} tex={n.content ?? ''} isDark={isDark} fontSize={TYPE.sm.fontSize} color={palette.strong} />
-        );
-      case 'link':
-        return (
-          <MarkdownText
-            key={i}
-            accessibilityRole="link"
-            style={{
-              color: palette.link,
-              fontFamily: FONT_FAMILY.medium,
-              fontWeight: '500',
-              textDecorationLine: 'underline',
-              textDecorationColor: palette.linkDecoration,
-            }}
-            onPress={() => openExternalLink(n.attributes?.href)}
-          >
-            {nodeText(n)}
-          </MarkdownText>
-        );
-      default:
-        return nodeText(n);
-    }
-  });
-}
-
-/** Width of the fade at a table edge that has more columns past it. */
-const TABLE_FADE_WIDTH = 24;
-const TABLE_BORDER_WIDTH = 0.5;
-
-/**
- * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
- * `text-sm`, `bg-muted` header, `px-4 py-2` cells. Mobile draws the full grid
- * (a divider between every row and every column), and fades an edge while
- * more columns lie past it. The frame holds the border, so it stays put while
- * the content scrolls.
- */
-export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
-  const fill = useContext(MarkdownSurfaceContext) ?? palette.tableBody;
-  const [fade, setFade] = useState({ left: false, right: false });
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const [viewport, setViewport] = useState(0);
-  const scroll = useRef({ x: 0, content: 0, viewport: 0, left: false, right: false });
-  // Sets state only when an edge flips, not on every scroll frame.
-  const updateFade = useCallback(() => {
-    const s = scroll.current;
-    const left = s.x > 1;
-    const right = s.x + s.viewport < s.content - 1;
-    if (left === s.left && right === s.right) return;
-    s.left = left;
-    s.right = right;
-    setFade({ left, right });
-  }, []);
-
-  const sections = tableSections(node);
-  const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
-  if (colCount === 0) return <View />;
-
-  const colWidths = fitColumnWidths(tableColumnWidths(sections, colCount), viewport);
-
-  let rowIndex = 0;
-  return (
-    <View
-      style={{
-        borderWidth: TABLE_BORDER_WIDTH,
-        borderColor: palette.border,
-        borderRadius: RADIUS.sm,
-        overflow: 'hidden',
-        backgroundColor: fill,
-      }}
-    >
-      <GHScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ minWidth: '100%' }}
-        scrollEventThrottle={16}
-        onScroll={(e) => {
-          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          Object.assign(scroll.current, { x: contentOffset.x, content: contentSize.width, viewport: layoutMeasurement.width });
-          updateFade();
-        }}
-        onContentSizeChange={(width) => {
-          scroll.current.content = width;
-          updateFade();
-        }}
-        onLayout={(e) => {
-          scroll.current.viewport = e.nativeEvent.layout.width;
-          setViewport(e.nativeEvent.layout.width);
-          updateFade();
-        }}
-      >
-        <View style={{ flexGrow: 1 }}>
-          {sections.map((section, sIdx) =>
-            section.rows.map((cells, rIdx) => {
-              const divider = rowIndex++ > 0;
-              return (
-                <View
-                  key={`${sIdx}-${rIdx}`}
-                  // GFM has one header row: the fade paints its colour over that height.
-                  onLayout={section.isHeader && rIdx === 0 ? (e) => setHeaderHeight(e.nativeEvent.layout.height) : undefined}
-                  style={{
-                    flexDirection: 'row',
-                    borderTopWidth: divider ? TABLE_BORDER_WIDTH : 0,
-                    borderTopColor: palette.border,
-                    backgroundColor: section.isHeader ? palette.tableHeader : undefined,
-                  }}
-                >
-                  {cells.map((cell, cIdx) => (
-                    <View
-                      key={cIdx}
-                      style={{
-                        width: colWidths[cIdx],
-                        // Every column is left-aligned: GFM `:---:` / `---:` markers are
-                        // ignored, and Yoga places the text, sized to its content, at the left edge.
-                        alignItems: 'flex-start',
-                        borderLeftWidth: cIdx > 0 ? TABLE_BORDER_WIDTH : 0,
-                        borderLeftColor: palette.border,
-                        paddingHorizontal: TABLE_CELL_PADDING_X,
-                        paddingVertical: TABLE_CELL_PADDING_Y,
-                      }}
-                    >
-                      <MarkdownText
-                        selectable
-                        numberOfLines={section.isHeader ? 1 : undefined}
-                        style={{
-                          fontFamily: section.isHeader ? FONT_FAMILY.semibold : FONT_FAMILY.regular,
-                          fontWeight: section.isHeader ? '600' : '400',
-                          fontSize: TYPE.sm.fontSize,
-                          lineHeight: TYPE.sm.lineHeight,
-                          color: palette.strong,
-                          textAlign: 'left',
-                        }}
-                      >
-                        {renderCellContent(cell, isDark, palette)}
-                      </MarkdownText>
-                    </View>
-                  ))}
-                </View>
-              );
-            }),
-          )}
-        </View>
-      </GHScrollView>
-      {fade.left ? <TableEdgeFade side="left" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
-      {fade.right ? <TableEdgeFade side="right" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
-    </View>
-  );
-}
-
-/** A fade from the table's fill (opaque at the edge) to clear: the header colour over the header row, the body fill below. */
-function TableEdgeFade({ side, headerHeight, header, body }: { side: 'left' | 'right'; headerHeight: number; header: string; body: string }) {
-  const colors = (fill: string) => (side === 'left' ? [fill, withAlpha(fill, 0)] : [withAlpha(fill, 0), fill]) as [string, string];
-  return (
-    <View
-      testID={`table-fade-${side}`}
-      pointerEvents="none"
-      style={{ position: 'absolute', top: 0, bottom: 0, [side]: 0, width: TABLE_FADE_WIDTH }}
-    >
-      {headerHeight > 0 ? (
-        <LinearGradient colors={colors(header)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ height: headerHeight }} />
-      ) : null}
-      <LinearGradient colors={colors(body)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
-    </View>
-  );
-}
 
 /** Web heading classes: `text-foreground font-semibold`, sizes and margins in markdown-layout. */
 const heading = (palette: MarkdownPalette, size: { fontSize: number; lineHeight: number }) => ({
@@ -744,154 +484,6 @@ type MarkdownRendererProps = MarkdownProps & {
 };
 const MarkdownRenderer = Markdown as unknown as React.ComponentType<MarkdownRendererProps>;
 
-/**
- * iOS Text Selection Modal
- * Opens on double-tap to allow text selection from raw content
- * Uses BottomSheetModal for consistent styling with rest of app
- */
-interface TextSelectionModalProps {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
-  text: string;
-  isDark: boolean;
-  onDismiss: () => void;
-}
-
-function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelectionModalProps) {
-  const insets = useSafeAreaInsets();
-  const snapPoints = useMemo(() => ['70%', '95%'], []);
-  const [copied, setCopied] = useState(false);
-  const [currentSnapIndex, setCurrentSnapIndex] = useState(0);
-  const { height: screenHeight } = useWindowDimensions();
-  
-  // Calculate available height based on current snap point
-  const snapPercent = currentSnapIndex === 1 ? 0.95 : 0.70;
-  const textInputHeight = screenHeight * snapPercent - 100 - insets.bottom;
-
-  const handleSheetChange = useCallback((index: number) => {
-    if (index >= 0) {
-      setCurrentSnapIndex(index);
-    }
-  }, []);
-
-  const colors = {
-    bg: isDark ? THEME.dark.background : THEME.light.background,
-    text: isDark ? THEME.dark.foreground : THEME.light.foreground,
-    muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
-    card: isDark ? THEME.dark.card : THEME.light.card,
-  };
-
-
-  const handleCopyAll = useCallback(async () => {
-    try {
-      await Clipboard.setStringAsync(text);
-      setCopied(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      log.error('Failed to copy:', err);
-    }
-  }, [text]);
-
-  return (
-    <KortixBottomSheetModal
-      ref={sheetRef}
-      snapPoints={snapPoints}
-      index={0}
-      enablePanDownToClose
-      enableDynamicSizing={false}
-      onChange={handleSheetChange}
-      onDismiss={onDismiss}
-      style={{
-        zIndex: 999,
-        elevation: Platform.OS === 'android' ? 50 : undefined,
-      }}
-    >
-      <BottomSheetView style={{ flex: 1 }}>
-        {/* Header - fixed at top */}
-        <View style={[drawerStyles.header, { paddingHorizontal: 24 }]}>
-          <RNText style={[drawerStyles.title, { color: colors.text }]}>
-            Select Text
-          </RNText>
-          <BottomSheetTouchable 
-            onPress={handleCopyAll} 
-            style={[drawerStyles.copyButton, { 
-              backgroundColor: 'transparent',
-              borderColor: isDark ? THEME.dark.border : THEME.light.border,
-            }]}
-          >
-            <Copy size={16} color={colors.text} />
-            <RNText style={[drawerStyles.copyButtonText, { color: colors.text }]}>
-              {copied ? 'Copied!' : 'Copy All'}
-            </RNText>
-          </BottomSheetTouchable>
-        </View>
-
-        {/* Hint */}
-        <RNText style={[drawerStyles.hint, { color: colors.muted, paddingHorizontal: 24 }]}>
-          Tap and hold text to select
-        </RNText>
-
-        {/* Scrollable + selectable using Expensify MarkdownTextInput */}
-        <View style={{ paddingHorizontal: 24 }}>
-          <MarkdownTextInput
-            value={text}
-            onChangeText={() => {}}
-            parser={markdownParser}
-            markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-            editable={false}
-            multiline={true}
-            scrollEnabled={true}
-            style={[
-              drawerStyles.textContent, 
-              { 
-                height: textInputHeight,
-                color: colors.text,
-                textAlignVertical: 'top',
-              }
-            ]}
-          />
-        </View>
-      </BottomSheetView>
-    </KortixBottomSheetModal>
-  );
-}
-
-const drawerStyles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontFamily: 'Roobert-SemiBold',
-  },
-  hint: {
-    fontSize: 13,
-    fontFamily: 'Roobert-Regular',
-    marginBottom: 16,
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  copyButtonText: {
-    fontSize: 14,
-    fontFamily: 'Roobert-Medium',
-  },
-  textContent: {
-    fontSize: 16,
-    lineHeight: 26,
-    fontFamily: 'Roobert-Regular',
-  },
-});
 
 
 /**
@@ -1030,56 +622,6 @@ function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: b
   );
 }
 
-const DOUBLE_TAP_DELAY_MS = 300;
-
-function noop() {}
-
-/**
- * iOS binary without `RNUITextView` only: a double tap opens the selection sheet. The sheet mounts on the first
- * double tap, not with every text part, and stays mounted after dismiss.
- * `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
- * text, so it must have no press animation at all.
- */
-function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; isDark: boolean; isStreaming?: boolean }) {
-  const bottomSheetRef = useRef<BottomSheetModal>(null);
-  const lastTapRef = useRef(0);
-  const presentOnMountRef = useRef(false);
-  const [sheetMounted, setSheetMounted] = useState(false);
-
-  useEffect(() => {
-    if (sheetMounted && presentOnMountRef.current) {
-      presentOnMountRef.current = false;
-      bottomSheetRef.current?.present();
-    }
-  }, [sheetMounted]);
-
-  const handlePress = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTapRef.current >= DOUBLE_TAP_DELAY_MS) {
-      lastTapRef.current = now;
-      return;
-    }
-    lastTapRef.current = 0;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (sheetMounted) {
-      bottomSheetRef.current?.present();
-    } else {
-      presentOnMountRef.current = true;
-      setSheetMounted(true);
-    }
-  }, [sheetMounted]);
-
-  return (
-    <>
-      <Pressable onPress={handlePress}>
-        <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
-      </Pressable>
-      {sheetMounted ? (
-        <TextSelectionModal sheetRef={bottomSheetRef} text={text} isDark={isDark} onDismiss={noop} />
-      ) : null}
-    </>
-  );
-}
 
 /**
  * SelectableMarkdownText
@@ -1099,7 +641,9 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
       <MarkdownImagesContext.Provider value={remoteImages}>
         <MarkdownSurfaceContext.Provider value={surface}>
           {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
-            <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
+            <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming}>
+              <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+            </IOSSelectableMarkdown>
           ) : (
             <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
           )}

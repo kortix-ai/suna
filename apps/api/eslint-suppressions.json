@@ -237,7 +237,7 @@
   },
   "src/apps/routes.ts": {
     "kortix-api/projects-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
       "count": 2
@@ -246,7 +246,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 21
+      "count": 20
     }
   },
   "src/apps/runtime-artifacts.ts": {
@@ -721,6 +721,11 @@
     },
     "no-console": {
       "count": 3
+    }
+  },
+  "src/channels/teams/installs.ts": {
+    "kortix-api/projects-surface": {
+      "count": 1
     }
   },
   "src/channels/teams/interactivity.ts": {
@@ -1593,11 +1598,6 @@
       "count": 1
     }
   },
-  "src/platform/services/provision-timeline.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/platform/services/session-sandbox.ts": {
     "kortix-api/projects-surface": {
       "count": 13
@@ -1911,11 +1911,6 @@
     },
     "no-console": {
       "count": 4
-    }
-  },
-  "src/projects/opencode-session-snapshot.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
     }
   },
   "src/projects/prompt-attachment-cleanup.ts": {
@@ -2286,9 +2281,6 @@
     }
   },
   "src/projects/routes/project-settings.ts": {
-    "no-console": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 2
     },
@@ -2431,11 +2423,6 @@
   "src/projects/routes/session-open-bundle.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/projects/routes/session-presence.ts": {
-    "no-restricted-imports": {
-      "count": 2
     }
   },
   "src/projects/routes/session-reminders.ts": {
@@ -2729,7 +2716,7 @@
   },
   "src/router/routes/proxy/handlers.ts": {
     "no-console": {
-      "count": 7
+      "count": 5
     },
     "no-restricted-syntax": {
       "count": 5
@@ -2777,7 +2764,7 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/runtime-assets/index.ts": {
@@ -2851,7 +2838,7 @@
   },
   "src/sandbox-proxy/forward/turn-start.ts": {
     "kortix-api/projects-surface": {
-      "count": 10
+      "count": 9
     },
     "no-console": {
       "count": 6
@@ -2880,7 +2867,7 @@
   },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
-      "count": 7
+      "count": 6
     },
     "no-console": {
       "count": 3

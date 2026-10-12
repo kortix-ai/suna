@@ -571,6 +571,13 @@ export function childSessionIdOf(part: unknown): string | undefined {
   if (SUBAGENT_TOOLS.has(tool)) {
     const fromMetadata = isRecord(state?.metadata) ? state.metadata.sessionId : undefined;
     if (typeof fromMetadata === 'string' && fromMetadata) return fromMetadata;
+    if (tool === 'task' && state?.status === 'error') {
+      // An errored task names its child only in the error text (the SDK's
+      // rule); the legacy title/output fallbacks never apply once it errored.
+      return typeof state.error === 'string'
+        ? state.error.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1]
+        : undefined;
+    }
     if (typeof state?.title === 'string' && state.title) {
       const match = state.title.match(SESSION_ID_IN_TEXT);
       if (match) return match[0];
@@ -638,18 +645,44 @@ export function childSessionsToCapture(input: {
  * Does this session's mirror still hold a row in the old stripped format? The
  * same question as `mirrorPartsAreStripped`, asked of the database: the wake
  * backfill reads the box again for such a history, because a mirror that
- * proved its head is otherwise left alone for good.
+ * proved its head is otherwise left alone for good. Scoped to `root`: a kept
+ * old root's rows cannot be read again from the current box.
  */
-export async function mirrorHoldsStrippedRows(sessionId: string): Promise<boolean> {
+export async function mirrorHoldsStrippedRows(sessionId: string, root: string): Promise<boolean> {
   const result = await db.execute(sql`
     SELECT EXISTS (
       SELECT 1 FROM kortix.session_transcript_messages
        WHERE session_id = ${sessionId}
+         AND opencode_session_id = ${root}
          AND parts @? '$[*] ? (@.type == "tool" && (@.state.status == "completed" || @.state.status == "error") && !(exists (@.state.input)))'
     ) AS stripped
   `);
   const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
   return (rows[0] as { stripped?: unknown } | undefined)?.stripped === true;
+}
+
+/**
+ * Record (`messageId`) or clear (`null`) the rewind marker of a session's
+ * root, when the sandbox proxy saw OpenCode accept `POST /session/:id/revert`
+ * or `/unrevert`. A capture deletes stored rows only after this marker (see
+ * `session_transcript_mirrors.rewind_message_id`). A session with no mirror
+ * row, or a revert of another OpenCode session, updates nothing: there are no
+ * rows of that root to delete.
+ */
+export async function setTranscriptRewindMarker(
+  sessionId: string,
+  runtimeSessionId: string,
+  messageId: string | null,
+): Promise<void> {
+  await db
+    .update(sessionTranscriptMirrors)
+    .set({ rewindMessageId: messageId })
+    .where(
+      and(
+        eq(sessionTranscriptMirrors.sessionId, sessionId),
+        eq(sessionTranscriptMirrors.runtimeSessionId, runtimeSessionId),
+      ),
+    );
 }
 
 /**

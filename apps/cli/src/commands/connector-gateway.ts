@@ -5,10 +5,10 @@ import { resolve } from 'node:path';
  * (Composio / Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), absorbed from the old in-sandbox
  * `connector` shim into the one kortix CLI.
  *
- * Three faces over ONE core (see ../connector-gateway/gateway.ts):
- *   - this CLI        (`kortix connectors call …`, the agent's primary path)
+ * Two faces over ONE core (see ../connector-gateway/gateway.ts):
+ *   - this CLI        (`kortix connectors call …`, the agent's path)
  *   - the SDK         (`@kortix/sdk`, durable TypeScript workflows)
- *   - the MCP server  (`kortix connectors mcp`, optional compatibility face)
+ * MCP clients outside a session use the hosted Kortix MCP server (/v1/mcp).
  *
  * Thin client: it never holds a third-party credential. Every tool call goes to
  * the Kortix Connector Gateway (/v1/connectors/*), which checks sharing, resolves
@@ -39,7 +39,6 @@ import {
   parseExecArgs,
   stringValue,
 } from '../connector-gateway/io.ts';
-import { runConnectorMcpServer } from '../connector-gateway/mcp.ts';
 import { saveResult } from '../connector-gateway/result-spill.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
@@ -435,13 +434,12 @@ const CONNECTORS_HELP = {
       'kortix connectors accounts <connector> [--json] [--default <label|id>] — the connected accounts a call may run as, default first; each is shared with the project or private to one member (the names --account takes). --default pins one so unnamed calls use it',
     connect:
       'kortix connectors connect <connector-slug> [--owner me|project] — start the connector provider authorization and hand the URL to the human; --owner project makes the account shared with every member',
-    mcp: 'kortix connectors mcp — run the optional stdio MCP compatibility server',
   },
 };
 
 // `accounts` is NOT dispatched here. It is the one gateway read a human
 // also runs, so it lives in connectors.ts: a table by default, and the
-// same JSON payload under --json. The MCP keeps its own `accounts` tool.
+// same JSON payload under --json.
 const HANDLERS: Record<string, Handler> = {
   connectors: listConnectors,
   ls: listConnectors,
@@ -478,9 +476,14 @@ async function dispatch(
 export async function runConnector(argv: string[]): Promise<number> {
   const { command, args, flags, repeated } = parseExecArgs(argv);
 
-  // The MCP server owns stdin/stdout for JSON-RPC; run it directly.
+  // Removed 2026-10-08. Name the replacements for anyone who configured it.
   if (command === 'mcp') {
-    return runConnectorMcpServer();
+    out({
+      ok: false,
+      error:
+        '`kortix connectors mcp` was removed. In a session, run `kortix connectors`. From an MCP client, use the hosted Kortix MCP server: <api>/v1/mcp.',
+    });
+    return 2;
   }
 
   try {

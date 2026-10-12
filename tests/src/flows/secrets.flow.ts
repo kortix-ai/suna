@@ -5,6 +5,34 @@ import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
 import { subscribe } from '../fixtures/billing';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { log } from '../core/log';
+import type { FlowContext } from '../core/types';
+
+/**
+ * Run a flow that inserts `active` sandbox rows for its session-bound tokens,
+ * then delete them. Release tests run against the staging DB, and no reaper
+ * reads a row without an `external_id` (box-queries.ts), so a leaked row stays
+ * `active` forever and keeps its session out of the stuck-session sweep.
+ */
+function deletingSandboxRows(body: (ctx: FlowContext, track: (accountId: string) => void) => Promise<void>) {
+  return async (ctx: FlowContext) => {
+    const accounts: string[] = [];
+    try {
+      await body(ctx, (accountId) => accounts.push(accountId));
+    } finally {
+      if (accounts.length > 0) {
+        const { Client: PgClient } = await import('pg');
+        const databaseUrl = ctx.env.databaseUrl!;
+        const db = new PgClient({ connectionString: databaseUrl,
+          ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+        await db.connect()
+          .then(() => db.query('DELETE FROM kortix.session_sandboxes WHERE account_id = ANY($1::uuid[]) AND external_id IS NULL', [accounts]))
+          .catch((error) => log.warn(`teardown sandbox rows of ${accounts.join(',')} failed: ${(error as Error)?.message ?? error}`))
+          .finally(() => db.end().catch(() => {}));
+      }
+    }
+  };
+}
 
 flow(
   "SEC-POOL-1",
@@ -253,6 +281,15 @@ flow(
     });
     await ctx.step('a shared session uses only keys shared with the whole project', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');
+      // Each API process caches project membership for up to 15 s: wait until
+      // 8 reads in a row see the member, so no process judges the session's
+      // owner a non-member (no_project_membership) instead of the key rule.
+      for (let streak = 0, deadline = Date.now() + 30_000; streak < 8; ) {
+        const read = await ctx.client.as(member).get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        if (read.statusCode !== 200 && Date.now() > deadline) throw new Error(`the member cannot read the project: ${read.statusCode}`);
+        streak = read.statusCode === 200 ? streak + 1 : 0;
+        if (streak < 8) await new Promise((resolve) => setTimeout(resolve, read.statusCode === 200 ? 100 : 1_000));
+      }
       const memberSession = await createDatabaseSession(ctx.env, {
         projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'project',
       });
@@ -574,10 +611,11 @@ flow('SEC-POOL-6', {
     'POST /v1/llm/chat/completions',
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const { randomUUID } = await import('node:crypto');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'user');
@@ -681,7 +719,7 @@ flow('SEC-POOL-6', {
       (await asMember.del('/v1/accounts/:accountId/secret-resources/:secretId', { params: { accountId: team.id, secretId } })).status(200);
     }
   });
-});
+}));
 
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
@@ -692,9 +730,10 @@ flow('SEC-POOL-3', {
     'PUT /v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId',
     'POST /v1/llm/chat/completions',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   const first = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
@@ -736,14 +775,15 @@ flow('SEC-POOL-3', {
     });
     result.status(400).body().has('$.error.code', 'provider_not_connected');
   });
-});
+}));
 
 flow('SEC-9', {
   domain: 'secrets', requires: ['database'],
   routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/secrets', 'GET /v1/projects/:projectId/secrets'],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   // A plain project manager launches the session: the run's OWNER is a platform
@@ -838,7 +878,7 @@ flow('SEC-9', {
     (await reader.post('/v1/projects/:projectId/secrets', { name: 'AGENT_READER_KEY', value: 'x' }, { params })).status(403);
     if (await stored('AGENT_READER_KEY')) throw new Error('an agent without secret write stored a row');
   });
-});
+}));
 
 flow(
   "SEC-1",
@@ -934,6 +974,58 @@ flow(
     });
   },
 );
+
+// SEC-3A — unset revokes the secret's outstanding intake links (the tombstone).
+// A minted link used to stay live until natural expiry and a submit on it
+// re-created the secret the owner had removed.
+flow("SEC-3A", {
+  domain: "secrets",
+  requires: ["database"],
+  routes: [
+    "DELETE /v1/projects/:projectId/secrets/:name",
+    "GET /v1/setup-links/secret/:token",
+    "POST /v1/setup-links/secret/:token",
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const owner = await team.addMember("owner");
+  await team.grantProjectRole(project.id, owner.userId!, "manager");
+  const asOwner = ctx.client.as(owner);
+  const params = { projectId: project.id };
+
+  const mint = async (name: string) => {
+    const r = await asOwner.post("/v1/projects/:projectId/secret-requests", { names: [name], scope: "runtime" }, { params });
+    r.status([200, 201]);
+    return decodeURIComponent(String(r.json<{ url: string }>().url).split("/secret-intake/")[1]!);
+  };
+  const anon = ctx.client.as(ctx.P.ANON);
+
+  await ctx.step("a live link accepts the value", async () => {
+    const token = await mint("TOMBSTONE_KEY");
+    (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY: "tombstone-v1" } }, { params: { token } })).status(200);
+  });
+
+  await ctx.step("unset the secret → its outstanding link dies", async () => {
+    const token = await mint("TOMBSTONE_KEY2");
+    (await asOwner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "TOMBSTONE_KEY2" } })).status(200);
+    (await anon.get("/v1/setup-links/secret/:token", { params: { token } })).status(409);
+    (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY2: "resurrected" } }, { params: { token } })).status(409);
+  });
+
+  await ctx.step("the deleted secret did not come back", async () => {
+    const r = await asOwner.get("/v1/projects/:projectId/secrets", { params });
+    r.status(200);
+    if (r.json<{ items: Array<Record<string, unknown>> }>().items.some((s) => s.name === "TOMBSTONE_KEY2")) {
+      throw new Error("the link resurrected the unset secret");
+    }
+  });
+
+  await ctx.step("a link minted after the unset still works", async () => {
+    const token = await mint("TOMBSTONE_KEY2");
+    (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY2: "fresh-value" } }, { params: { token } })).status(200);
+  });
+});
 
 flow(
   "SEC-6",
@@ -1573,10 +1665,11 @@ flow('SEC-AUD-1', {
     'POST /v1/connectors/call',
     'POST /v1/accounts/tokens',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { createServer } = await import('node:http');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   // The value's person, and a manager outside its audience: same role, so
   // only the audience separates what the two can use.
@@ -1708,7 +1801,7 @@ flow('SEC-AUD-1', {
     upstream.close();
     await db.end();
   }
-});
+}));
 
 /** A session of `userId` plus a session-bound token whose row names
  *  `serviceAccountId` — the credential an agent's sandbox runs with. */
@@ -1755,10 +1848,11 @@ flow('SEC-AUD-2', {
     'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
     'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { createServer } = await import('node:http');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   const holder = await team.addMember('member');
   await team.grantProjectRole(project.id, holder.userId!, 'manager');
@@ -1872,7 +1966,7 @@ flow('SEC-AUD-2', {
     upstream.close();
     await db.end();
   }
-});
+}));
 
 // ── SEC-AUD-3 — a secret link keeps the value to the person who asked ────
 flow('SEC-AUD-3', {

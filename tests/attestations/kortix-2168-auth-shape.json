@@ -1,0 +1,17 @@
+{
+  "source_hash": "eedecf15aa0054b94146ee0c2db646bf6762d54e5c4137723d7d5fa0195dc0c6",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-auth-header-shape.test.ts",
+    "apps/api/src/middleware/auth-characterization.test.ts",
+    "apps/api/src/middleware/auth.ts"
+  ],
+  "diff_hash": "ccedc4dd1fa8ff16a0ce8b23f154019e9047d2608e8956a0f93348f891a78359",
+  "head": "c54a545e61958b7faabfc4d70bed9dae8e457854",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T14:39:34.838Z"
+}

@@ -270,12 +270,12 @@ and demo for a change runs in your own box: the worktree's local stack, the
 local test suite, and agent-browser against the local web app. A pull request
 into `dev` runs **no** GitHub Actions job and is mergeable the moment it opens.
 Nothing runs automatically before the merge. A person can ask for CI on one PR,
-in the rare case they want it, by adding a label: `test` runs the six `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
+in the rare case they want it, by adding a label: `test` runs the `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
 Never add a label by default or from automation. CI otherwise runs in two places:
 
 | Where | What runs | Blocks? |
 |---|---|---|
-| Pull request into `dev` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
+| Pull request into `dev` | nothing, unless a person adds `test` (~20 min suite, once) or `preview` (~7 min deploy, once) | no |
 | Push to `dev` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
 | Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
@@ -551,19 +551,25 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Run the suite in your box before merging into `dev`: the narrowest relevant
   command first, then `pnpm test`. A pull request into `dev` runs no CI job
   unless a person adds `test` or `preview`. Your machine is the pre-merge gate.
-- Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
-  || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
-  GitHub-hosted label is the kill switch back to GitHub-hosted runners.
-- GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
-  — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The four browser lanes are quarters of one
-  sharded run (`--browser-shard=N/4`, Playwright's native `--shard`). The suite
-  measures 8m17s wall clock; `packages` (~8 min) is the slowest lane, so a fifth
-  browser shard buys nothing and the concurrency settings in
-  `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
+- Every Linux CI job runs on a free GitHub-hosted runner (`ubuntu-24.04`,
+  `ubuntu-24.04-arm`, `ubuntu-22.04`; 4 vCPU / 16 GB on this public repo) through
+  `runs-on: ${{ vars.CI_RUNNER_<tier> || '<label>' }}`. Setting a
+  `CI_RUNNER_<tier>` repository variable moves that tier to another pool
+  without a PR. Never default a job to a paid runner (Blacksmith, a GitHub
+  larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
+  GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
+  enforces the free default.
+- GitHub Actions runs ten lanes — `core`, `browser-1` … `browser-8`, `packages`
+  — natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The eight browser lanes are eighths of one
+  sharded run (`--browser-shard=N/8`, Playwright's native `--shard`), one
+  Playwright worker each: a 16 GB runner did not hold two. A lane takes about
+  3x its old Blacksmith time; `tests.yml` records the measured times. The
+  concurrency settings in `tests/bin/package-quality.ts` must not be raised.
+  Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The six lanes run daily on `dev` (`schedule`), on a pull request into `staging`,
+- The lanes run daily on `dev` (`schedule`), on a pull request into `staging`,
   once when a person adds the `test` label to a pull request, and on manual
   dispatch. A push to `dev` does not run them (Actions minutes, 2026-10-03). A
   scheduled run blocks nothing: a red run comments the failing lanes on the

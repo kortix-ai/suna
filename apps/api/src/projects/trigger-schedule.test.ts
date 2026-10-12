@@ -180,6 +180,21 @@ describe('schedule revision is pinned for non-event types', () => {
     expect(triggerScheduleRevision(event({ repo: 'api' }))).not.toBe(original);
     expect(triggerScheduleRevision(event({}, 'OTHER'))).not.toBe(original);
   });
+
+  test('an event revision tracks the account only when one is set', () => {
+    const event = (account?: string | null) =>
+      schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', ...(account === undefined ? {} : { account }), type: 'E', config: {} } });
+    const original = triggerScheduleRevision(event());
+    expect(triggerScheduleRevision(event('acme-bot'))).not.toBe(original);
+    expect(triggerScheduleRevision(event('acme-bot'))).not.toBe(triggerScheduleRevision(event('other-bot')));
+  });
+
+  test('an event with no account keeps the revision it had before accounts existed', () => {
+    // Characterization: a changed revision re-upserts the catalog row of every existing event trigger.
+    expect(
+      triggerScheduleRevision(schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', type: 'E', config: {} } })),
+    ).toBe('aebeec2d7fd43e59cd497b5d0fcb86933ad38c51c7316cc755252d702c520fbf');
+  });
 });
 
 // KRTX-1721: croner reads a 6-field cron seconds-first, so a cron that steps
@@ -211,5 +226,21 @@ describe('a stored cron that fires more than once a minute', () => {
     expect(
       nextTriggerScheduleSlot(schedule({ cron: '0 */30 * * * *', timezone: 'UTC' }), at)?.toISOString(),
     ).toBe('2026-07-27T10:30:00.000Z');
+  });
+});
+
+describe('type = "event" revision', () => {
+  const event = (overrides: NonNullable<GitTriggerSpec['event']>): GitTriggerSpec =>
+    schedule({ type: 'event', cron: null, timezone: 'UTC', event: overrides });
+  const base = { connector: 'github-work', account: 'acme-bot', type: 'GITHUB_PULL_REQUEST_CREATED', config: { repo: 'acme/api' } };
+
+  // `source` joins the hash only when set, so every event trigger cataloged before `source`
+  // existed keeps its revision (a changed revision re-upserts the catalog row).
+  test('is unchanged when source is unset and changes when it is set', () => {
+    expect(triggerScheduleRevision(event(base))).toBe('b49d4f780a9dcd704633f5a4a9764469846d3b5b19d49796c98ad9e951257bac');
+    expect(triggerScheduleRevision(event({ ...base, source: null }))).toBe(triggerScheduleRevision(event(base)));
+    expect(triggerScheduleRevision(event({ connector: base.connector, account: base.account, source: 'composio', type: base.type, config: base.config }))).not.toBe(
+      triggerScheduleRevision(event(base)),
+    );
   });
 });

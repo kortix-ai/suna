@@ -42,21 +42,44 @@ describe('sliding tab indicator measurement', () => {
   test('a fractional-width track puts the pill on the pixels its tab covers (2x)', () => {
     const rect = toLayoutRect(track, lastTab, trackLayout, NO_SCROLL, 2);
 
-    // Whole device pixels: 349 and 165 at 2x. The browser reported the same.
-    expect(rect).toEqual({ x: 174.5, y: 2, width: 82.5, height: 29 });
-    // The pill's painted edges are the tab's own snapped edges.
-    const origin = Math.round(track.left * 2) / 2;
-    expect(origin + rect!.x).toBe(Math.round(lastTab.left * 2) / 2);
-    expect(origin + rect!.x + rect!.width).toBe(Math.round((lastTab.left + lastTab.width) * 2) / 2);
+    expect(rect).toEqual({ x: 174.5625, y: 2, width: 82.5, height: 29 });
+    // The pill paints at the container's fractional origin plus the offset, so
+    // its painted edges land on the tab's own snapped edges.
+    expect(track.left + rect!.x).toBe(Math.round(lastTab.left * 2) / 2);
+    expect(track.left + rect!.x + rect!.width).toBe(
+      Math.round((lastTab.left + lastTab.width) * 2) / 2,
+    );
   });
 
   test('snaps to whole CSS pixels at 1x', () => {
     expect(toLayoutRect(track, lastTab, trackLayout, NO_SCROLL, 1)).toEqual({
-      x: 175,
-      y: 2,
+      // The track paints from 54 (53.5 snapped), so a 2.5 offset is a 2px gap.
+      x: 174.5625,
+      y: 2.5,
       width: 82,
       height: 29,
     });
+  });
+
+  // Measured on `/debug/tabs` at 2x with the track nudged to x = 29.25: the
+  // browser painted the track from 29.5, but the first tab's chip from 31.25,
+  // so the ring touched the track's left edge while the last tab's chip kept a
+  // 2.25px gap on the right. Both ends must keep the same gap.
+  test('the first and last chip keep the same gap on a fractional track (2x)', () => {
+    const at = { left: 29.25, top: 52.75, width: 258.953125, height: 33.109375 };
+    const layout = { width: at.width, height: at.height };
+    const first = { left: 31.25, top: 54.75, width: 91, height: 29.109375 };
+    const last = { left: 196.203125, top: 54.75, width: 90, height: 29.109375 };
+    const snap = (v: number) => Math.round(v * 2) / 2;
+    const paintedTrack = { left: snap(at.left), right: snap(at.left + at.width) };
+
+    const a = toLayoutRect(at, first, layout, NO_SCROLL, 2)!;
+    const b = toLayoutRect(at, last, layout, NO_SCROLL, 2)!;
+    const leftGap = at.left + a.x - paintedTrack.left;
+    const rightGap = paintedTrack.right - (at.left + b.x + b.width);
+
+    expect(leftGap).toBe(2);
+    expect(rightGap).toBe(2);
   });
 
   test('divides an ancestor transform back out of both axes', () => {

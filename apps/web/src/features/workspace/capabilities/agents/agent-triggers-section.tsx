@@ -27,7 +27,7 @@ import {
   triggerName,
   type TriggerKind,
 } from '@/components/projects/schedule/schedule-copy';
-import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
+import { TriggerComposer } from '@/components/projects/schedule/trigger-composer';
 import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +36,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import {
   deleteProjectTrigger,
@@ -101,6 +102,7 @@ export function AgentTriggersSection({
   const queryClient = useQueryClient();
   // One leaf per control, the same as on the Triggers page (KRTX-1720).
   const controls = useTriggerControls(projectId);
+  const eventsOn = useProjectFeatureFlags(projectId).flags.event_triggers === true;
   const canCreate = controls.canCreate;
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -240,7 +242,7 @@ export function AgentTriggersSection({
       </div>
 
       {canCreate ? (
-        <ScheduleCreateModal
+        <TriggerComposer
           projectId={projectId}
           open={createOpen}
           onOpenChange={setCreateOpen}
@@ -267,6 +269,7 @@ export function AgentTriggersSection({
         running={run.isPending && run.variables?.slug === selected?.slug}
         onDelete={() => selected && setDeleteTarget(selected)}
         onMutated={invalidate}
+        eventsEnabled={eventsOn}
       />
 
       <ConfirmDialog

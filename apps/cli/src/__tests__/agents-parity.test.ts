@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { ProjectConfigSummary } from '@kortix/sdk';
 
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
@@ -48,7 +49,42 @@ const REVIEWER_BLOCK = {
   opencode: { description: 'Reviews diffs', mode: 'primary', prompt: 'You review code.' },
 };
 
-function startServer(): string {
+/** The fake server serves exactly the /detail shape the API does, so the agent
+ *  rows are the SDK's own detail-agent type, not a hand-rolled copy. */
+type FakeAgent = ProjectConfigSummary['agents'][number];
+
+const DEFAULT_AGENTS: FakeAgent[] = [
+  {
+    name: 'default',
+    path: '.kortix/opencode/agents/default.md',
+    description: null,
+    mode: 'primary',
+  },
+  {
+    name: 'reviewer',
+    path: '.kortix/opencode/agents/reviewer.md',
+    description: 'Reviews diffs',
+    mode: 'primary',
+    model: 'kortix/deepseek-v4.1-flash',
+  },
+];
+
+const THREE_AGENTS: FakeAgent[] = [
+  ...DEFAULT_AGENTS,
+  {
+    name: 'watcher',
+    path: '.kortix/opencode/agents/watcher.md',
+    description: null,
+    mode: 'subagent',
+    enabled: false,
+    model: 'kortix/claude-sonnet-4',
+  },
+];
+
+function startServer(
+  agents: FakeAgent[] = DEFAULT_AGENTS,
+  opts: { detailStatus?: number } = {},
+): string {
   let defaultAgent = 'default';
   const agentModelPins: Record<string, string> = {};
   server = Bun.serve({
@@ -60,14 +96,14 @@ function startServer(): string {
       const p = url.pathname.replace(`/v1/projects/${PROJECT}`, '');
 
       if (p === '/detail' && req.method === 'GET') {
+        if (opts.detailStatus) {
+          return Response.json({ error: 'detail unavailable' }, { status: opts.detailStatus });
+        }
         return Response.json({
           project_id: PROJECT,
           config: {
             default_agent: defaultAgent,
-            agents: [
-              { name: 'default', path: '.kortix/opencode/agents/default.md', description: null, mode: 'primary' },
-              { name: 'reviewer', path: '.kortix/opencode/agents/reviewer.md', description: 'Reviews diffs', mode: 'primary' },
-            ],
+            agents,
           },
         });
       }
@@ -200,7 +236,10 @@ describe('kortix agents — default, scope, config', () => {
 
   test('the existing `model` surface is unchanged', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT], config);
+    const r = await runCli(
+      ['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'PUT',
@@ -237,7 +276,10 @@ describe('kortix agents — default, scope, config', () => {
 
   test('scope --show prints the block; a write PUTs only the named fields', async () => {
     const config = writeConfig(startServer());
-    const show = await runCli(['agents', 'scope', 'reviewer', '--show', '--project', PROJECT], config);
+    const show = await runCli(
+      ['agents', 'scope', 'reviewer', '--show', '--project', PROJECT],
+      config,
+    );
     expect(show.code).toBe(0);
     expect(show.stdout).toContain('secrets              all');
     expect(show.stdout).toContain('connectors           slack');
@@ -251,11 +293,17 @@ describe('kortix agents — default, scope, config', () => {
     calls = [];
     const write = await runCli(
       [
-        'agents', 'scope', 'reviewer',
-        '--secrets', 'none',
-        '--connectors', 'slack,github',
-        '--require-connector', 'gmail',
-        '--project', PROJECT,
+        'agents',
+        'scope',
+        'reviewer',
+        '--secrets',
+        'none',
+        '--connectors',
+        'slack,github',
+        '--require-connector',
+        'gmail',
+        '--project',
+        PROJECT,
       ],
       config,
     );
@@ -274,7 +322,15 @@ describe('kortix agents — default, scope, config', () => {
   test('scope --apps parses like --connectors and prints the apps row it wrote', async () => {
     const config = writeConfig(startServer());
     const list = await runCli(
-      ['agents', 'scope', 'reviewer', '--apps', 'reports-dashboard,example-org', '--project', PROJECT],
+      [
+        'agents',
+        'scope',
+        'reviewer',
+        '--apps',
+        'reports-dashboard,example-org',
+        '--project',
+        PROJECT,
+      ],
       config,
     );
     expect(list.code).toBe(0);
@@ -288,14 +344,20 @@ describe('kortix agents — default, scope, config', () => {
     expect(list.stdout).toContain('apps                 reports-dashboard, example-org');
 
     calls = [];
-    const all = await runCli(['agents', 'scope', 'reviewer', '--apps', 'all', '--project', PROJECT], config);
+    const all = await runCli(
+      ['agents', 'scope', 'reviewer', '--apps', 'all', '--project', PROJECT],
+      config,
+    );
     expect(all.code).toBe(0);
     expect(calls.at(-1)?.body).toEqual({ apps: 'all' });
     expect(all.stdout).toContain('apps                 all');
 
     // `none` has no literal on this route, exactly as for secrets/connectors.
     calls = [];
-    const none = await runCli(['agents', 'scope', 'reviewer', '--apps', 'none', '--project', PROJECT], config);
+    const none = await runCli(
+      ['agents', 'scope', 'reviewer', '--apps', 'none', '--project', PROJECT],
+      config,
+    );
     expect(none.code).toBe(0);
     expect(calls.at(-1)?.body).toEqual({ apps: [] });
     expect(none.stdout).toContain('apps                 none');
@@ -320,7 +382,10 @@ describe('kortix agents — default, scope, config', () => {
     expect(all.code).toBe(0);
     expect(calls.at(-1)?.body).toEqual({ env: 'all' });
 
-    const noName = await runCli(['agents', 'scope', '--secrets', 'all', '--project', PROJECT], config);
+    const noName = await runCli(
+      ['agents', 'scope', '--secrets', 'all', '--project', PROJECT],
+      config,
+    );
     expect(noName.code).toBe(2);
     expect(noName.stderr).toContain('Pass an agent name.');
   });
@@ -341,7 +406,10 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual(REVIEWER_BLOCK);
 
-    const j = await runCli(['agents', 'config', 'reviewer', '--project', PROJECT, '--json'], config);
+    const j = await runCli(
+      ['agents', 'config', 'reviewer', '--project', PROJECT, '--json'],
+      config,
+    );
     expect(JSON.parse(j.stdout).schema_version).toBe(2);
   });
 
@@ -349,10 +417,15 @@ describe('kortix agents — default, scope, config', () => {
     const config = writeConfig(startServer());
     const r = await runCli(
       [
-        'agents', 'config', 'reviewer',
-        '--set', 'opencode.model=glm-5.3-flash',
-        '--set', 'enabled=false',
-        '--project', PROJECT,
+        'agents',
+        'config',
+        'reviewer',
+        '--set',
+        'opencode.model=glm-5.3-flash',
+        '--set',
+        'enabled=false',
+        '--project',
+        PROJECT,
       ],
       config,
     );
@@ -402,5 +475,127 @@ describe('kortix agents — default, scope, config', () => {
     );
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('--set needs <key>=<value>');
+  });
+
+  test('ls lists the declared agents with path, model, and the web badges', async () => {
+    const config = writeConfig(startServer(THREE_AGENTS));
+    const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    // The journey's parity check: the same names the web Agents page lists.
+    expect(r.stdout).toContain('Agents (3)');
+    expect(r.stdout).toContain(
+      'default    .kortix/opencode/agents/default.md   model default · default agent',
+    );
+    expect(r.stdout).toContain(
+      'reviewer   .kortix/opencode/agents/reviewer.md   deepseek-v4.1-flash',
+    );
+    expect(r.stdout).toContain(
+      'watcher    .kortix/opencode/agents/watcher.md   claude-sonnet-4 · subagent · disabled',
+    );
+    // The provider prefix is stripped like the web card's model fact.
+    expect(r.stdout).not.toContain('kortix/deepseek-v4.1-flash');
+    // No pin was set, so no pin marker.
+    expect(r.stdout).not.toContain('· pin');
+  });
+
+  test('ls --json keeps the model-defaults fields and adds agents; a pin wins over the frontmatter', async () => {
+    const config = writeConfig(startServer(THREE_AGENTS));
+    const pin = await runCli(
+      ['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT],
+      config,
+    );
+    expect(pin.code).toBe(0);
+
+    const r = await runCli(['agents', 'ls', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      platformDefault: string;
+      agentDefaults: Record<string, string>;
+      agents: Array<{ name: string; path: string; model: string | null }>;
+    };
+    // Additive: the pre-existing model-defaults fields survive.
+    expect(parsed.platformDefault).toBe('glm-5.3-flash');
+    expect(parsed.agentDefaults).toEqual({ reviewer: 'glm-5.3-flash' });
+    expect(parsed.agents).toEqual([
+      { name: 'default', path: '.kortix/opencode/agents/default.md', model: null },
+      { name: 'reviewer', path: '.kortix/opencode/agents/reviewer.md', model: 'glm-5.3-flash' },
+      { name: 'watcher', path: '.kortix/opencode/agents/watcher.md', model: 'claude-sonnet-4' },
+    ]);
+
+    // Plain renders the pin over the frontmatter model, with the pin marker.
+    const plain = await runCli(['agents', 'ls', '--project', PROJECT], config);
+    expect(plain.code).toBe(0);
+    expect(plain.stdout).toContain(
+      'reviewer   .kortix/opencode/agents/reviewer.md   glm-5.3-flash · pin',
+    );
+  });
+
+  test('a pin whose agent is no longer declared gets its own block', async () => {
+    const config = writeConfig(
+      startServer([
+        {
+          name: 'default',
+          path: '.kortix/opencode/agents/default.md',
+          description: null,
+          mode: 'primary',
+        },
+      ]),
+    );
+    const pin = await runCli(
+      ['agents', 'model', 'ghost', 'glm-5.3-flash', '--project', PROJECT],
+      config,
+    );
+    expect(pin.code).toBe(0);
+    const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Pins without an agent');
+    expect(r.stdout).toContain('ghost');
+    expect(r.stdout).toContain('glm-5.3-flash');
+    expect(r.stdout).toContain('--clear');
+  });
+
+  test('a project with no agents prints an empty state', async () => {
+    const config = writeConfig(startServer([]));
+    const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('No agents declared in this project.');
+    expect(r.stdout).not.toContain('Agents (');
+  });
+
+  describe('when /detail is unavailable (fail open to the pre-detail output)', () => {
+    test('ls keeps exit 0 and prints the model-defaults chain and the pins, no agent block', async () => {
+      const config = writeConfig(startServer(THREE_AGENTS, { detailStatus: 500 }));
+      const pin = await runCli(
+        ['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT],
+        config,
+      );
+      expect(pin.code).toBe(0);
+      const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('Default (project → account → platform)');
+      expect(r.stdout).toContain('reviewer');
+      expect(r.stdout).toContain('glm-5.3-flash');
+      expect(r.stdout).toContain('1 pinned · the rest follow the default');
+      expect(r.stdout).not.toContain('Agents (');
+      expect(r.stdout).not.toContain('Pins without an agent');
+    });
+
+    test('ls --json omits the agents key instead of reporting an empty project', async () => {
+      const config = writeConfig(startServer(THREE_AGENTS, { detailStatus: 500 }));
+      const r = await runCli(['agents', 'ls', '--project', PROJECT, '--json'], config);
+      expect(r.code).toBe(0);
+      const parsed = JSON.parse(r.stdout) as { agents?: unknown; platformDefault: string };
+      expect(parsed.platformDefault).toBe('glm-5.3-flash');
+      expect('agents' in parsed).toBe(false);
+    });
+
+    test('ls with no pins prints the pre-detail pins hint, not the empty-agent state', async () => {
+      const config = writeConfig(startServer(THREE_AGENTS, { detailStatus: 500 }));
+      const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('No per-agent model pins — every agent follows the default.');
+      expect(r.stdout).not.toContain('No agents declared in this project.');
+      expect(r.stdout).not.toContain('Agents (');
+    });
   });
 });

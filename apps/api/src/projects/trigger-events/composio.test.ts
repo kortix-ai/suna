@@ -4,6 +4,7 @@ import { Composio } from '@composio/core';
 import { config } from '../../config';
 import { setComposioRuntimeForTest, type ComposioRuntime } from '../../connectors/composio';
 import { composioEventSource as provider, composioErrorMessage } from './composio';
+import { setComposioRestClientForTest } from '../../connectors/composio-catalog-search';
 import { eventSourceFor } from './registry';
 import { EventSignatureError, EventConnectionNotReadyError } from './types';
 
@@ -15,6 +16,7 @@ let prevKey: string | undefined;
 const calls: Array<[string, ...unknown[]]> = [];
 let listPages: Array<{ items: unknown[]; nextCursor?: string | null }> = [];
 let deleteError: unknown = null;
+const CONNECTION = '00000000-0000-4000-a000-0000000000c1';
 
 function installRuntime() {
   setComposioRuntimeForTest({
@@ -22,6 +24,9 @@ function installRuntime() {
       async listTypes(q: unknown) { calls.push(['listTypes', q]); return listPages.shift() as never; },
       async create(...a: unknown[]) { calls.push(['create', ...a]); return { triggerId: 'ti_synthetic1' }; },
       async delete(id: string) { calls.push(['delete', id]); if (deleteError) throw deleteError; return { triggerId: id }; },
+    },
+    connectedAccounts: {
+      async get(id: string) { calls.push(['getAccount', id]); return id === 'ca_known' ? { user_id: `kortix-connection:${CONNECTION}` } : null; },
     },
   } as unknown as ComposioRuntime);
 }
@@ -92,23 +97,29 @@ describe('listEventTypes', () => {
 });
 
 describe('listApps', () => {
-  test('keeps toolkits with events, either count key, sorted by name', async () => {
-    setComposioRuntimeForTest({
+  const toolkit = (slug: string, name: string, triggers: number, extra: Record<string, unknown> = {}) => ({
+    slug, name, auth_schemes: ['OAUTH2'], composio_managed_auth_schemes: ['OAUTH2'], meta: { triggers_count: triggers, ...(slug === 'zeta' ? { logo: 'z.png' } : {}) }, ...extra,
+  });
+  afterEach(() => setComposioRestClientForTest(null));
+
+  test('pages the whole catalogue, drops hidden toolkits and those without events, sorts by name', async () => {
+    const cursors: Array<string | undefined> = [];
+    setComposioRestClientForTest({
       toolkits: {
-        async get() {
-          return [
-            { slug: 'zeta', name: 'Zeta', meta: { logo: 'z.png', triggersCount: 2 } },
-            { slug: 'none', name: 'None', meta: { triggersCount: 0 } },
-            { slug: 'alpha', name: 'Alpha', meta: { triggers_count: 5 } },
-            { slug: 'bare', name: 'Bare', meta: {} },
-          ];
+        async list(q: { cursor?: string }) {
+          cursors.push(q.cursor);
+          return q.cursor
+            ? { items: [toolkit('late', 'Late', 3), toolkit('byo', 'Byo', 4, { composio_managed_auth_schemes: [] })], next_cursor: null }
+            : { items: [toolkit('zeta', 'Zeta', 2), toolkit('none', 'None', 0), toolkit('alpha', 'Alpha', 5)], next_cursor: 'p2' };
         },
       },
-    } as unknown as ComposioRuntime);
+    });
     expect(await provider.listApps()).toEqual([
       { app: 'alpha', name: 'Alpha', logo: null, eventCount: 5 },
+      { app: 'late', name: 'Late', logo: null, eventCount: 3 },
       { app: 'zeta', name: 'Zeta', logo: 'z.png', eventCount: 2 },
     ]);
+    expect(cursors).toEqual([undefined, 'p2']);
   });
 });
 
@@ -184,6 +195,20 @@ describe('receive: parsing', () => {
     expect(d.notices).toEqual([{ kind: 'subscription_disabled', externalId: 'ti_synthetic1', reason: 'auth failed' }]);
     const e = await run(v3('composio.connected_account.expired'));
     expect(e.notices).toMatchObject([{ kind: 'connection_expired', connectionExternalId: 'ca_1' }]);
+  });
+  test('an activated account names its Kortix connection, wherever the payload puts the user id', async () => {
+    const inData = await run(v3('composio.connected_account.activated', { metadata: {}, data: { id: 'ca_x', user_id: `kortix-connection:${CONNECTION}` } }));
+    expect(inData.notices).toEqual([{ kind: 'connection_activated', connectionId: CONNECTION }]);
+    const inMeta = await run(v3('composio.connected_account.activated', { metadata: { user_id: `kortix-connection:${CONNECTION}` }, data: {} }));
+    expect(inMeta.notices).toEqual([{ kind: 'connection_activated', connectionId: CONNECTION }]);
+    expect(calls.filter((c) => c[0] === 'getAccount')).toEqual([]);
+  });
+  test('without a user id in the payload the account is read; a foreign user id is ignored', async () => {
+    const read = await run(v3('composio.connected_account.activated', { metadata: { connected_account_id: 'ca_known' }, data: {} }));
+    expect(read.notices).toEqual([{ kind: 'connection_activated', connectionId: CONNECTION }]);
+    expect(calls).toContainEqual(['getAccount', 'ca_known']);
+    const foreign = await run(v3('composio.connected_account.activated', { metadata: { user_id: 'someone-else' }, data: { id: 'ca_unknown' } }));
+    expect(foreign.notices).toEqual([]);
   });
   test('unknown type is ignored; malformed JSON after a valid signature is empty', async () => {
     expect(await run(v3('composio.something.else'))).toEqual({ deliveries: [], notices: [] });

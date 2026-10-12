@@ -213,7 +213,6 @@ const envSchema = z.object({
   // Ready deployments an App keeps besides its active one (rollback targets).
   // Older ones are retired: runtime, image, files and archive are freed.
   KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
-  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: optInt(100_000),
   // New server Apps run 24/7 unless the request says otherwise. Existing Apps
   // keep their own setting. Static Apps have no runtime and ignore it.
   KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
@@ -283,12 +282,26 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
+  // Operator switch for the session-log journal ingest (`POST …/sessions/:s/log/journal`).
+  // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
+  // retries with backoff, so turning it back on loses nothing the boxes still hold.
+  SESSION_LOG_INGEST_ENABLED: optBoolTrue,
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
   // (see openapi/index.ts filterSpecPaths); this flag lets a hardened self-host
   // deployment turn the whole docs/spec surface OFF so no route shapes publish.
   OPENAPI_PUBLIC_DOCS: optBoolTrue,
+  // Mobile release policy, served by GET /v1/clients/mobile. A mobile build older
+  // than MOBILE_MIN_VERSION (`major.minor.patch`) shows a blocking "update
+  // required" screen. Unset: no gate. The store URLs are the update button's
+  // targets; unset: the screen has no button.
+  // A malformed value would make every device fail open, so it is a boot error.
+  MOBILE_MIN_VERSION: optStr.refine((v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()), {
+    message: 'Must be major.minor.patch',
+  }),
+  MOBILE_STORE_URL_IOS: optUrl(''),
+  MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a
   // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
   // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
@@ -443,24 +456,6 @@ const envSchema = z.object({
   OPENCODE_ZEN_API_KEY: optStr,
   // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
-  // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
-  // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
-  // connector meta-tools plus `secret_call`, the only way to use an
-  // HTTPS-broker secret — those have no env var and no readable value, so
-  // without a tool the model has to find a shell command in a prompt file.
-  //
-  // ON by default: the tools are the discoverable surface for capabilities the
-  // agent already has. This is the operator kill switch — it takes the MCP
-  // server away fleet-wide without a code change.
-  //
-  // optBoolTrue disables on the literal string `false` ONLY: `0`, `no` and
-  // `off` all leave it ON. Write `CONNECTORS_MCP_ENABLED=false`.
-  //
-  // The email channel sets the guest variable itself from durable session
-  // metadata (session-channel-env.ts) and keeps the face either way — that
-  // channel was the only consumer before this flag, so turning this off
-  // restores the previous behaviour rather than regressing email sessions.
-  CONNECTORS_MCP_ENABLED: optBoolTrue,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
@@ -547,11 +542,26 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
+  // Files: `off` boots every session without its folders (operator kill
+  // switch); unset or anything else mounts them. `on` for KORTIX_DRIVES_SYNC
+  // lets a project with Files boot sessions on a provider without volume
+  // mounts, with the folders synced in by the box's daemon.
+  KORTIX_DRIVES_SESSION_MOUNT: optStr,
+  KORTIX_DRIVES_SYNC: optStr,
+  // `off` keeps every new session box on stop/resume (an operator override
+  // under the Volumes switch).
+  KORTIX_EPHEMERAL_SANDBOXES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
+  // Boot artifacts: `<volume>@<tag>`, a Platinum volume holding one release's
+  // prebuilt runtime (daemon, CLI, OpenCode, managed skills), published by
+  // scripts/boot-artifacts/publish.ts. Every Platinum session mounts that tag
+  // read-only at /opt/kortix-artifacts and boots from it instead of
+  // downloading. Unset = off.
+  KORTIX_BOOT_ARTIFACTS: optStr,
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -650,6 +660,12 @@ const envSchema = z.object({
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
+  // Local development switch. `local` points the provider at a Platinum
+  // control plane on this machine (PLATINUM_API_URL_LOCAL / _KEY_LOCAL);
+  // unset or `prod` keeps PLATINUM_API_URL / PLATINUM_API_KEY above.
+  PLATINUM_TARGET: z.enum(['local', 'prod']).optional().default('prod'),
+  PLATINUM_API_URL_LOCAL: optStr,
+  PLATINUM_API_KEY_LOCAL: optStr,
 
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
@@ -743,6 +759,7 @@ const envSchema = z.object({
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
+  KORTIX_FEEDBACK_REQS_PER_MIN: optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
   // Per-credential bound on the LLM gateway mount (/v1/llm and its
@@ -997,9 +1014,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Config archives → the ONE object store ──────────────────────────────
-  // A project that turns on `config_releases` publishes config archives
-  // through the API's one object store (src/object-store/s3.ts); there is no
-  // second store and no fallback path that quietly writes somewhere else.
+  // Every project publishes config archives through the API's one object
+  // store (src/object-store/s3.ts); there is no second store and no fallback
+  // path that quietly writes somewhere else.
   // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
   // for every box. A warning, not an error: the store is a cache, and a
   // container with a stale env block must still boot.
@@ -1186,7 +1203,6 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
-  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: Math.max(1, env.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD),
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
@@ -1202,7 +1218,11 @@ export const config = {
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
+  SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
+  MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
+  MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
+  MOBILE_STORE_URL_ANDROID: env.MOBILE_STORE_URL_ANDROID,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
   KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 
@@ -1292,7 +1312,6 @@ export const config = {
   OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
   OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
   OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
-  CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
@@ -1324,6 +1343,10 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
+  KORTIX_BOOT_ARTIFACTS: env.KORTIX_BOOT_ARTIFACTS,
+  KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
+  KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
+  KORTIX_EPHEMERAL_SANDBOXES: env.KORTIX_EPHEMERAL_SANDBOXES,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1360,8 +1383,8 @@ export const config = {
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
 
-  PLATINUM_API_KEY: env.PLATINUM_API_KEY,
-  PLATINUM_API_URL: env.PLATINUM_API_URL,
+  PLATINUM_API_KEY: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_KEY_LOCAL : env.PLATINUM_API_KEY,
+  PLATINUM_API_URL: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_URL_LOCAL : env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   E2B_API_KEY: env.E2B_API_KEY,
@@ -1444,6 +1467,7 @@ export const config = {
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: env.KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN,
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
+  KORTIX_FEEDBACK_REQS_PER_MIN: env.KORTIX_FEEDBACK_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_LLM_GATEWAY_REQS_PER_MIN: env.KORTIX_LLM_GATEWAY_REQS_PER_MIN,

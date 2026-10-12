@@ -29,6 +29,7 @@ import {
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
@@ -228,6 +229,9 @@ async function startSingletonWorkers() {
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
   const { startOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   startOAuthSweeper();
+  // Kortix Drive: conflict-copy scanner + the volume deletion queue.
+  const { startDriveWorkers } = await import('./workers/drive-worker');
+  startDriveWorkers();
   // Hourly trial expiry + credit rotations. Idempotent per account and month,
   // so a leadership flap that runs one twice costs a scan, not money.
   startBillingRotation();
@@ -238,6 +242,8 @@ async function startSingletonWorkers() {
   // processor of the managed table — its SQL never reached `kortix` before
   // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
   startAccountDeletionSchedule();
+  // Notification inbox: the unread-row email digest and the 90-day retention sweep.
+  startNotificationWorker();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -257,10 +263,13 @@ async function stopSingletonWorkers() {
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   stopOAuthSweeper();
+  const { stopDriveWorkers } = await import('./workers/drive-worker');
+  stopDriveWorkers();
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
   await stopAccountDeletionSchedule();
+  stopNotificationWorker();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

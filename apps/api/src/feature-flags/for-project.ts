@@ -17,10 +17,10 @@ export async function projectFeatureFlagEnabled(
   key: FeatureFlagKey,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ metadata: projects.metadata })
+    .select({ metadata: projects.metadata, accountId: projects.accountId })
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!row) return false;
-  return resolveFeatureFlag(row.metadata, key);
+  return resolveFeatureFlag(row.metadata, key, row.accountId);
 }

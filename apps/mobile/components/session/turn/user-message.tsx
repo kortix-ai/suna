@@ -62,10 +62,12 @@ import {
   type MessageAttachment,
   queuedPromptStatusLabel,
   quoteMarginBottom,
+  userMessageCopyText,
   userMessageSentLabel,
   webSpace,
   type QueuedPromptState,
 } from '@/lib/session/user-message';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { MentionChip } from '../mention-chip';
 import { AttachmentOverflowTile, AttachmentRemoveButton, AttachmentTile } from '../attachment-tile';
 import { useSandboxImage } from './use-sandbox-image';
@@ -368,16 +370,18 @@ export function UserMessage({
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
+  // Copy writes each paste's text too, not its XML.
+  const copyText = userMessageCopyText(promptText, content.pasted);
   const openMenu = useCallback(() => {
-    if (!promptText) return;
+    if (!copyText) return;
     haptics.medium();
     // The menu draws under the keyboard otherwise: close it first.
     Keyboard.dismiss();
     menuRef.current?.open();
-  }, [promptText]);
+  }, [copyText]);
   const menuProps = {
     menuRef,
-    text: promptText,
+    text: copyText,
     timestamp,
     edited,
     onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
@@ -486,7 +490,20 @@ export function UserMessage({
     <Reanimated.View className="px-4" style={dimStyle}>
       <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(2) }}>
         {attachments.length > 0 || failed ? (
-          <MessageAttachments attachments={attachments} status={failed} onOpenPath={onFileMention} />
+          hasBubble || content.pasted.length === 0 ? (
+            <MessageAttachments attachments={attachments} status={failed} onOpenPath={onFileMention} />
+          ) : (
+            // A pastes-only message has no bubble: its tiles carry the menu
+            // (tap opens the paste, long press opens Copy · Edit).
+            <MessageMenu {...menuProps}>
+              <MessageAttachments
+                attachments={attachments}
+                status={failed}
+                onOpenPath={onFileMention}
+                onLongPressPaste={selecting ? undefined : openMenu}
+              />
+            </MessageMenu>
+          )
         ) : null}
 
         {sessionAuthor ? <SessionSourcePill author={sessionAuthor} onOpenSession={onSessionMention} /> : null}
@@ -896,7 +913,8 @@ export function UserMessageEditor({
   });
   // Text is required, attachments or not: a text-less replacement prompt does
   // not commit the staged rewind, so the original turn would stay (KRTX-962).
-  const canSend = Boolean(draft.trim()) && !pending;
+  // A kept paste is text too: it goes out as its `<pasted_content>` block.
+  const canSend = Boolean(draft.trim() || kept.some((file) => file.pasted)) && !pending;
 
   return (
     <View
@@ -965,10 +983,13 @@ export function MessageAttachments({
   attachments,
   status,
   onOpenPath,
+  onLongPressPaste,
 }: {
   attachments: MessageAttachment[];
   status?: UserMessageUploadStatus;
   onOpenPath?: (path: string) => void;
+  /** A paste tile's long press: the message menu, when no bubble carries it. */
+  onLongPressPaste?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { visible, overflowCount } = planAttachmentGrid(attachments, expanded);
@@ -979,7 +1000,7 @@ export function MessageAttachments({
       {visible.length > 0 ? (
         <View className="flex-row flex-wrap justify-end" style={{ gap: webSpace(2) }}>
           {visible.map((file) => (
-            <MessageAttachmentTile key={file.key} file={file} onOpenPath={onOpenPath} />
+            <MessageAttachmentTile key={file.key} file={file} onOpenPath={onOpenPath} onLongPressPaste={onLongPressPaste} />
           ))}
           {overflowCount > 0 ? (
             <AttachmentOverflowTile count={overflowCount} onPress={() => setExpanded(true)} />
@@ -1015,14 +1036,17 @@ export function MessageAttachments({
 /**
  * One sent attachment. An image in the sandbox loads through `useSandboxImage`
  * (HEAD probe, tap-to-load above the size limit); until it loads, or when it
- * fails, the tile is the named tile. Tapping opens the file in the file sheet.
+ * fails, the tile is the named tile. Tapping opens the file in the file sheet;
+ * a paste opens its text in the "Pasted text" sheet.
  */
 function MessageAttachmentTile({
   file,
   onOpenPath,
+  onLongPressPaste,
 }: {
   file: MessageAttachment;
   onOpenPath?: (path: string) => void;
+  onLongPressPaste?: () => void;
 }) {
   const source = localOrResolvedSource(file.localUri, file.src);
   const path = source && 'path' in source ? source.path : '';
@@ -1030,6 +1054,19 @@ function MessageAttachmentTile({
   const isImage = isPreviewableImage(file.filename, file.mime);
   const image = useSandboxImage(path, isImage && !!path);
   const open = path && onOpenPath ? () => onOpenPath(path) : undefined;
+
+  // After the hook (rules of hooks): a paste has no path, so it loads nothing.
+  if (file.pasted) {
+    const { pasted } = file;
+    return (
+      <AttachmentTile
+        filename={file.filename}
+        preview={pasted.text}
+        onPress={() => openPastedText(pasted)}
+        onLongPress={onLongPressPaste}
+      />
+    );
+  }
 
   if (isImage && directUri) {
     return (

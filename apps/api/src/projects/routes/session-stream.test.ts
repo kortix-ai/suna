@@ -21,6 +21,15 @@ import * as realAccess from '../lib/access';
 // Imported BEFORE the `mock.module` below replaces the module: the fake daemon
 // answers with real SSE bytes, so the route must keep the real parser.
 import { parseSseFrames as realParseSseFrames } from '../lib/session-runtime-transport';
+import {
+  SESSION_LOG_EVENTS,
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
+  isV1TranscriptEvent,
+  liveMessageFromV1,
+  type SessionLogEventType,
+  type V1Row,
+} from '@kortix/api-contract/session-log';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -48,7 +57,7 @@ let daemonAttach: (signal: AbortSignal) => Promise<
   | { ok: true; body: ReadableStream<Uint8Array>; epoch: string | null }
   | { ok: false; reason: string; status: number | null }
 >;
-let attachCalls: Array<{ since: number | null; epoch: string | null }> = [];
+let attachCalls: Array<{ since: number | null; epoch: string | null; schema?: string }> = [];
 let healthReads = 0;
 let nextHealth: () => { ok: true; health: Record<string, unknown> } | { ok: false; reason: string } = () => ({
   ok: true,
@@ -95,11 +104,18 @@ mock.module('../../shared/pg-broadcast', () => ({
 }));
 
 let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string; extendDeadline: boolean }> = [];
+let presenceExpiries: Array<{ userId: string; sessionId: string; tabId: string; wroteUntil: Date }> = [];
+const LEASE_WRITTEN_UNTIL = new Date('2026-10-09T12:01:30.000Z');
+/** What a renewal stored: the lease's new expiry, or null when the tab has no lease. */
+let renewResult: Date | null = LEASE_WRITTEN_UNTIL;
 mock.module('../lib/session-presence', () => ({
   PRESENCE_RENEW_MS: 30_000,
   renewSessionPresence: async (userId: string, sessionId: string, tabId: string, opts: { extendDeadline: boolean }) => {
     presenceRenewals.push({ userId, sessionId, tabId, extendDeadline: opts.extendDeadline });
-    return true;
+    return renewResult;
+  },
+  expireSessionPresence: async (userId: string, sessionId: string, tabId: string, wroteUntil: Date) => {
+    presenceExpiries.push({ userId, sessionId, tabId, wroteUntil });
   },
 }));
 /** Whether the caller holds `project.session.start` (may keep the computer awake). */
@@ -116,9 +132,9 @@ mock.module('../lib/access', () => ({
 mock.module('../lib/session-runtime-transport', () => ({
   openRuntimeEventStream: async (
     _target: unknown,
-    options: { since?: number | null; epoch?: string | null; signal: AbortSignal },
+    options: { since?: number | null; epoch?: string | null; schema?: string; signal: AbortSignal },
   ) => {
-    attachCalls.push({ since: options.since ?? null, epoch: options.epoch ?? null });
+    attachCalls.push({ since: options.since ?? null, epoch: options.epoch ?? null, ...(options.schema && { schema: options.schema }) });
     return daemonAttach(options.signal);
   },
   parseSseFrames: realParseSseFrames,
@@ -126,6 +142,18 @@ mock.module('../lib/session-runtime-transport', () => ({
     healthReads += 1;
     return nextHealth();
   },
+}));
+
+/** The v1 mirror the old-daemon converter numbers messages against. */
+let mirrorRows: V1Row[] = [];
+// Imported after the `shared/db` mock: the converter's default mirror read must never reach a pool.
+const realRelay = { ...(await import('../lib/session-log-relay')) };
+// The function itself, not the module binding: the mock below replaces that binding.
+const realCreateConverter = realRelay.createV1LogConverter;
+mock.module('../lib/session-log-relay', () => ({
+  ...realRelay,
+  createV1LogConverter: (options: Parameters<typeof realCreateConverter>[0]) =>
+    realCreateConverter({ ...options, readMirror: async () => ({ root_id: 'ses_abc', rows: mirrorRows }) }),
 }));
 
 mock.module('../lib/session-runtime-projection-refresh', () => ({
@@ -271,6 +299,8 @@ beforeEach(() => {
   runtimeTurnEnds = [];
   reachability = [];
   presenceRenewals = [];
+  presenceExpiries = [];
+  renewResult = LEASE_WRITTEN_UNTIL;
   mayStartSession = true;
   healthReads = 0;
   nextHealth = () => ({
@@ -281,6 +311,7 @@ beforeEach(() => {
   visibleSession = { row: { sessionId: SESSION_ID }, grants: [], canManageProject: true };
   sandboxRow = { externalId: 'box-1', status: 'active' };
   daemonAttach = async () => ({ ok: false, reason: 'test_default', status: null });
+  mirrorRows = [];
 });
 
 afterEach(() => __resetControlEventsForTests());
@@ -861,5 +892,206 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     await readFrames(await openStream('?tab_id=not-a-uuid'), 2, 200);
     expect(presenceRenewals).toEqual([]);
+    expect(presenceExpiries).toEqual([]);
+  });
+
+  const FLAG_ON = { experimental: { notification_center: true } };
+
+  // KRTX-1742: a closed tab's lease held back the phone and Web Push for up to 90 s.
+  test('the stream ending expires that tab lease at once; an open stream expires nothing', async () => {
+    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    const response = await openStream(`?tab_id=${TAB}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    expect(presenceRenewals).toHaveLength(1);
+    expect(presenceExpiries).toEqual([]);
+
+    await reader.cancel();
+    for (let i = 0; i < 20 && presenceExpiries.length === 0; i++) await Bun.sleep(5);
+    // Only the expiry this stream wrote: a newer stream's renewal survives.
+    expect(presenceExpiries).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, wroteUntil: LEASE_WRITTEN_UNTIL }]);
+  });
+
+  // KRTX-1742 review: a stream that never wrote the lease expired the one a
+  // newer stream of the same tab had just renewed.
+  test('a stream that renewed no lease expires nothing when it ends', async () => {
+    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    renewResult = null;
+    const response = await openStream(`?tab_id=${TAB}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    expect(presenceRenewals).toHaveLength(1);
+
+    await reader.cancel();
+    await Bun.sleep(50);
+    expect(presenceExpiries).toEqual([]);
+  });
+
+  // The notification_center flag off (the default): the lease lives to its
+  // expiry after the stream ends, as before KRTX-1742.
+  test('with the notification_center flag off, the stream ending expires nothing', async () => {
+    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+      loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata }, actor: { credential: { kind: 'jwt' } } } as never;
+      sandboxRow = { externalId: 'box-1', status: 'stopped' };
+      const response = await openStream(`?tab_id=${TAB}`);
+      const reader = response.body!.getReader();
+      await reader.read();
+      await reader.cancel();
+    }
+    await Bun.sleep(50);
+    expect(presenceRenewals).toHaveLength(2);
+    expect(presenceExpiries).toEqual([]);
+  });
+});
+
+// ─── P4.4: `?schema=v2`, the session log on the stream ───────────────────────
+
+/** Read the raw stream bytes for `ms`, then hang up. */
+async function readRaw(response: Response, ms = 400): Promise<string> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  const deadline = Date.now() + ms;
+  try {
+    while (Date.now() < deadline) {
+      const chunk = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(1, deadline - Date.now())).then(() => ({ done: true as const, value: undefined })),
+      ]);
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return text;
+}
+
+/** The raw runtime-channel frames of a stream, in order. */
+const runtimeBlocks = (raw: string) => raw.split('\n\n').filter((b) => b.includes('"channel":"runtime"')).map((b) => `${b}\n\n`);
+
+const sse = (type: string, body: Record<string, unknown>) =>
+  `event: ${type}\n${typeof body.seq === 'number' ? `id: ${body.seq}\n` : ''}data: ${JSON.stringify({ type, ...body })}\n\n`;
+
+const ROOT = 'ses_abc';
+const userInfo = (id: string, created: number) => ({ id, sessionID: ROOT, role: 'user', time: { created }, agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } });
+
+/** One turn as a daemon before P4.3 streams it on v1, with the frames around it. */
+const V1_TURN = [
+  sse('kortix.hello', { epoch: 'ep1', head_seq: 10, first_seq: 1, since: null, at: 1 }),
+  sse('session.status', { seq: 11, at: 2, payload: { sessionID: ROOT, status: { type: 'busy' } }, session: ROOT }),
+  sse('message.updated', { seq: 12, at: 3, payload: { sessionID: ROOT, info: userInfo('msg_u1', 1_791_700_000_000) }, session: ROOT }),
+  sse('message.part.updated', { seq: 13, at: 4, payload: { sessionID: ROOT, part: { id: 'prt_u1a', sessionID: ROOT, messageID: 'msg_u1', type: 'text', text: 'hi' } }, session: ROOT }),
+  sse('message.part.delta', { seq: 14, at: 5, payload: { sessionID: ROOT, messageID: 'msg_u1', partID: 'prt_u1a', field: 'text', delta: '!' }, session: ROOT }),
+  sse('permission.asked', { seq: 15, at: 6, payload: { id: 'per_1', sessionID: ROOT }, session: ROOT }),
+  sse('session.updated', { seq: 16, at: 7, payload: { info: { id: ROOT, title: 'Greeting', time: { created: 1, updated: 2 } } }, session: ROOT }),
+  sse('message.removed', { seq: 17, at: 8, payload: { sessionID: ROOT, messageID: 'msg_u1' }, session: ROOT }),
+  sse('kortix.turn', { seq: 18, at: 9, payload: { runtime_session_id: ROOT }, session: ROOT }),
+  sse('kortix.heartbeat', { at: 10, head_seq: 18 }),
+];
+
+describe('P4.4: schema — the v1 stream is unchanged', () => {
+  test('no schema, schema=v1 and an empty schema serve the same bytes, attached without schema', async () => {
+    const outputs: string[][] = [];
+    for (const query of ['', '?schema=v1', '?schema=']) {
+      daemonAttach = async () => ({ ok: true, epoch: 'ep1', body: daemonStream(V1_TURN, 500) });
+      outputs.push(runtimeBlocks(await readRaw(await openStream(query))));
+    }
+    expect(outputs[1]).toEqual(outputs[0]!);
+    expect(outputs[2]).toEqual(outputs[0]!);
+    expect(attachCalls.every((call) => call.schema === undefined)).toBe(true);
+    // The bytes the route wrote before P4.4: each daemon envelope plus channel and epoch, id `epoch|seq|cepoch|`.
+    const expected = V1_TURN.map((raw) => {
+      const data = JSON.parse(raw.slice(raw.indexOf('data: ') + 6)) as Record<string, unknown>;
+      const id = typeof data.seq === 'number' ? `id: ep1|${data.seq}|${CONTROL_EPOCH}|\n` : '';
+      return `event: ${data.type}\n${id}data: ${JSON.stringify({ ...data, channel: 'runtime', epoch: 'ep1' })}\n\n`;
+    });
+    expect(outputs[0]).toEqual(expected);
+  });
+
+  test('another schema value is a 400', async () => {
+    for (const value of ['bogus', 'V2', 'v3']) expect((await openStream(`?schema=${value}`)).status).toBe(400);
+  });
+});
+
+/** Every `log.*` frame of a stream validates against `SESSION_LOG_EVENTS`. */
+function expectValidLog(frames: WireFrame[]) {
+  for (const f of frames.filter((x) => String(x.event).startsWith('log.'))) {
+    const parsed = SESSION_LOG_EVENTS[f.event as SessionLogEventType].safeParse(f.data.payload);
+    expect(parsed.success, `${f.event}: ${parsed.success ? '' : parsed.error.message}`).toBe(true);
+  }
+}
+
+describe('P4.4: schema=v2 on a daemon that serves the session log', () => {
+  test('attaches with schema=v2 and relays every log.* frame with its envelope; non-transcript frames stay; a v1 transcript frame is dropped', async () => {
+    nextHealth = () => ({ ok: true, health: { status: 'ok', capabilities: ['session.compact', 'session.log.v2'], harness: { id: 'opencode', ready: true } } });
+    const message = liveMessageFromV1({ info: userInfo('msg_u1', 1_791_700_000_000) as never, parts: [] }, { seq: 4 });
+    const thread = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: ROOT, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '2026-10-11T00:00:00.000Z' };
+    const V2 = [
+      sse('kortix.hello', { epoch: 'lg1', head_seq: 0, first_seq: 1, since: null, at: 1 }),
+      sse('log.state', { seq: 1, at: 2, payload: { generation: 0, session: { title: null } } }),
+      sse('log.thread', { seq: 2, at: 3, payload: thread, session: ROOT }),
+      sse('log.message', { seq: 3, at: 4, payload: { rev: 1_791_700_000_000_000, message }, session: ROOT }),
+      sse('log.block.delta', { seq: 4, at: 5, payload: { thread_id: ROOT, message_id: 'msg_u1', block_id: 'prt_u1a', delta: 'hi' }, session: ROOT }),
+      sse('session.status', { seq: 5, at: 6, payload: { sessionID: ROOT, status: { type: 'idle' } }, session: ROOT }),
+      sse('message.part.updated', { seq: 6, at: 7, payload: { sessionID: ROOT, part: { id: 'p' } }, session: ROOT }),
+      sse('log.message', { seq: 7, at: 8, payload: { message_id: 'msg_u1', rev: 1_791_700_000_000_001 }, session: ROOT }),
+    ];
+    daemonAttach = async () => ({ ok: true, epoch: 'lg1', body: daemonStream(V2, 500) });
+    const frames = (await readFrames(await openStream('?schema=v2'), 12)).filter((f) => f.data.channel === 'runtime');
+    expect(attachCalls[0]).toEqual({ since: null, epoch: null, schema: 'v2' });
+    expect(frames.map((f) => f.event)).toEqual(['kortix.hello', 'log.state', 'log.thread', 'log.message', 'log.block.delta', 'session.status', 'log.message']);
+    expectValidLog(frames);
+    // The envelope as the daemon sent it, plus channel and epoch; the id carries the v2 cursor.
+    const put = frames.find((f) => f.event === 'log.message')!;
+    expect(put.data).toEqual({ type: 'log.message', seq: 3, at: 4, payload: { rev: 1_791_700_000_000_000, message }, session: ROOT, channel: 'runtime', epoch: 'lg1' });
+    expect(put.id).toBe(`lg1|3|${CONTROL_EPOCH}|`);
+  });
+});
+
+describe('P4.4: schema=v2 on an older daemon — the API converts', () => {
+  test('attaches on v1 and serves log.* in place of every transcript frame; every other frame is unchanged', async () => {
+    mirrorRows = [{ runtime_session_id: ROOT, info: userInfo('msg_u0', 1_791_600_000_000) as never, parts: [] }];
+    daemonAttach = async () => ({ ok: true, epoch: 'ep1', body: daemonStream(V1_TURN, 500) });
+    const frames = (await readFrames(await openStream('?schema=v2'), 16)).filter((f) => f.data.channel === 'runtime');
+    expect(attachCalls[0]).toEqual({ since: null, epoch: null });
+    expect(frames.map((f) => [f.event, f.data.seq])).toEqual([
+      ['kortix.hello', undefined],
+      ['session.status', 11],
+      ['log.message', 12],
+      ['log.message', 13],
+      ['log.block.delta', 14],
+      ['permission.asked', 15],
+      ['session.updated', 16],
+      ['log.state', 16],
+      ['log.message', 17],
+      ['kortix.turn', 18],
+      ['kortix.heartbeat', undefined],
+    ]);
+    expect(frames.some((f) => isV1TranscriptEvent(String(f.event)))).toBe(false);
+    expectValidLog(frames);
+    const puts = frames.filter((f) => f.event === 'log.message').map((f) => f.data.payload as any);
+    // seq: after the one stored message, as fromV1 of the mirror numbers it.
+    expect(puts[0].message).toMatchObject({ message_id: 'msg_u1', thread_id: ROOT, seq: 2 });
+    expect(puts[1].message.blocks).toEqual([{ type: 'text', id: 'prt_u1a', text: 'hi' }]);
+    expect(frames.find((f) => f.event === 'log.block.delta')!.data.payload).toEqual({ thread_id: ROOT, message_id: 'msg_u1', block_id: 'prt_u1a', delta: '!' });
+    expect(puts[2]).toEqual({ message_id: 'msg_u1', rev: expect.any(Number) });
+    expect(puts[2].rev).toBeGreaterThan(puts[1].rev);
+    // A non-transcript frame is the v1 bytes: the daemon envelope plus channel and epoch.
+    const permission = frames.find((f) => f.event === 'permission.asked')!;
+    expect(permission.data).toEqual({ type: 'permission.asked', seq: 15, at: 6, payload: { id: 'per_1', sessionID: ROOT }, session: ROOT, channel: 'runtime', epoch: 'ep1' });
+    // The converted frames keep the v1 cursor, so a reconnect resumes the daemon's v1 stream.
+    expect(frames.find((f) => f.event === 'log.state')!.id).toBe(`ep1|16|${CONTROL_EPOCH}|`);
+    // The live turn end still reaches the reconciler.
+    expect(runtimeTurnEnds.map((t) => t.runtimeSessionId)).toEqual([ROOT]);
+  });
+
+  test('a health read that fails fails the attach: the runtime is down with the reason, nothing attached', async () => {
+    nextHealth = () => ({ ok: false, reason: 'timeout' });
+    const frames = await readFrames(await openStream('?schema=v2'), 3, 800);
+    expect(frames.find((f) => f.event === 'kortix.runtime.status')?.data).toMatchObject({ state: 'down', reason: 'timeout' });
+    expect(attachCalls).toHaveLength(0);
   });
 });

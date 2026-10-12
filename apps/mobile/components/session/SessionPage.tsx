@@ -174,7 +174,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
-import { queueHeaderLabel, queueRowCaption } from '@/lib/session/queue-undo';
+import { queueHeaderLabel, queueRowCaption, queueRowText } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { Command } from '@/lib/session/runtime-data';
@@ -2564,7 +2564,7 @@ function QueuePanel({
                 })()}
                 <View className="flex-1">
                   <Text variant="small" numberOfLines={1} className="leading-5">
-                    {qm.text}
+                    {queueRowText(qm.text)}
                   </Text>
                   {queueRowCaption(qm) ? (
                     <Text variant="muted" numberOfLines={2}>

@@ -15,6 +15,8 @@ import { headlessAuthRouter } from './auth/headless';
 import { authEmailHookApp, registerSendEmailHookRoutes } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
 import { notificationsApp } from './notifications/routes';
+import { drivesApp } from './drives/routes';
+import { feedbackApp } from './feedback';
 import {
   emailWebhookApp,
   registerEmailWebhookRoutes,
@@ -54,6 +56,7 @@ import { tunnelApp } from './tunnel';
 import { installHttpMiddleware } from './http-middleware';
 import { installHttpErrors } from './http-errors';
 import { registerSystemRoutes } from './routes/system';
+import { registerClientRoutes } from './routes/clients';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
@@ -68,6 +71,7 @@ export { app };
 installHttpMiddleware(app);
 
 registerSystemRoutes(app);
+registerClientRoutes(app);
 
 // Retired routes answer 410 before any mount below can match them.
 registerRetiredRoutes(app);
@@ -141,7 +145,9 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route('/v1/drives', drivesApp); // personal, agent and company drives + their files and versions
 app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
+app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedback from agents, the CLI and the web app
 // Auth for the platform routes that need an identity. Scoped to these exact
 // paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.
@@ -161,6 +167,11 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 // pins this route too.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+// A project's sign-in token issuer: public OpenID configuration and key set
+// (apps/token-issuer-routes.ts). Mounted BEFORE projectsApp, whose `/*`
+// supabaseAuth would otherwise 401 an anonymous verifier.
+import { tokenIssuerApp } from './apps/token-issuer-routes';
+app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
@@ -271,6 +282,7 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 // sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.

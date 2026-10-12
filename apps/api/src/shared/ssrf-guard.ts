@@ -235,7 +235,10 @@ function pinnedRequest(target: EgressTarget): { url: URL; headersHost: string | 
   return { url: pinned, headersHost: target.url.host, serverName: target.url.hostname };
 }
 
-interface SafeFetchInit extends RequestInit, SafeEgressUrlOptions {}
+interface SafeFetchInit extends RequestInit, SafeEgressUrlOptions {
+  /** Redirects to follow (default {@link MAX_REDIRECTS}). 0: a 3xx throws. */
+  maxRedirects?: number;
+}
 
 /** Request headers a redirect to another origin must not carry (Fetch standard). */
 const CROSS_ORIGIN_STRIPPED_HEADERS = ['authorization', 'cookie', 'proxy-authorization'];
@@ -255,7 +258,7 @@ export async function safeEgressFetch(
   rawUrl: string,
   init: SafeFetchInit = {},
 ): Promise<Response> {
-  const { allowHttp, allowPrivateHosts, ...fetchInit } = init;
+  const { allowHttp, allowPrivateHosts, maxRedirects = MAX_REDIRECTS, ...fetchInit } = init;
   const guard = { allowHttp, allowPrivateHosts };
   let target = await resolveEgressTarget(rawUrl, guard);
   let url = target.url;
@@ -280,8 +283,8 @@ export async function safeEgressFetch(
     } as RequestInit);
     if (res.status < 300 || res.status >= 400) return res;
     // 3xx — follow manually with re-validation.
-    if (++hops > MAX_REDIRECTS) {
-      throw new UnsafeEgressError(`too many redirects (>${MAX_REDIRECTS})`, rawUrl);
+    if (++hops > maxRedirects) {
+      throw new UnsafeEgressError(`too many redirects (>${maxRedirects})`, rawUrl);
     }
     const location = res.headers.get('location');
     if (!location) return res; // malformed 3xx with no Location → let caller see it

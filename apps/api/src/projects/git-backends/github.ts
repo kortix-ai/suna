@@ -10,6 +10,7 @@ import {
   isGithubAppConfigured,
   isOrgAccount,
 } from '../github';
+import { GitHubApiError } from '../github-http';
 import { seedRepoViaGitPush } from './seed';
 import {
   type GitConnectionRef,
@@ -159,7 +160,15 @@ export const githubBackend: GitHostBackend = {
   async deleteRepo(ref: GitConnectionRef): Promise<void> {
     if (!ref.repoOwner || !ref.repoName) return;
     const auth = await managedAdminAuth();
-    await ghDeleteRepo({ owner: ref.repoOwner, repo: ref.repoName, auth });
+    try {
+      await ghDeleteRepo({ owner: ref.repoOwner, repo: ref.repoName, auth });
+    } catch (err) {
+      // Gone is the state a delete produces (as code-storage treats 404). An
+      // archived project keeps its managed connection after its repo was
+      // deleted, so account erasure deletes it again (KRTX-1734).
+      if (err instanceof GitHubApiError && err.status === 404) return;
+      throw err;
+    }
   },
 
   buildUpstream(ref: GitConnectionRef, token: string | null, _scope: GitScope): UpstreamGit {

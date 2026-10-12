@@ -9,6 +9,7 @@ import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
 import { sweepAppRetention } from '../apps/retention';
+import { sweepAppVolumes } from '../apps/volumes';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
@@ -432,9 +433,16 @@ function runMaintenanceSweeps() {
         logger.warn('[project-maintenance] App site blob reclaim failed:', err instanceof Error ? err.message : err);
         return { reclaimed: 0, errors: 1 };
       });
+      // Volumes: daily snapshots, retention, and the purge of destroyed ones.
+      const volumes = await sweepAppVolumes().catch((err) => {
+        logger.warn('[project-maintenance] App volume sweep failed:', err instanceof Error ? err.message : err);
+        return { purged: 0, snapshotted: 0, untagged: 0, errors: 1 };
+      });
       return {
         ...images,
-        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0),
+        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0) + volumes.errors,
+        volumesSnapshotted: volumes.snapshotted,
+        volumesPurged: volumes.purged,
         deploymentsRetired: retention.retired,
         artifactsReclaimed: retention.artifacts,
         siteBlobsReclaimed: blobs.reclaimed,

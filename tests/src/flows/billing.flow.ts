@@ -759,6 +759,8 @@ flow(
       ssl: local ? false : { rejectUnauthorized: false },
     });
     const team = await ctx.fixtures.team();
+    // A dropped connection must fail the next query, not crash the runner.
+    db.on('error', () => {});
     await db.connect();
     const sessionId = randomUUID();
     const blockerId = randomUUID();

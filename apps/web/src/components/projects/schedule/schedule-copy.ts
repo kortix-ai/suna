@@ -20,7 +20,7 @@ import type { UiTranslator } from '@/i18n/translator';
 
 import type { ProjectTrigger } from '@kortix/sdk';
 
-import { describeEventWhen } from './event-trigger-copy';
+import { describeEventTitle } from './event-trigger-copy';
 
 export type TriggerKind = 'cron' | 'webhook' | 'event';
 
@@ -171,9 +171,12 @@ export function describeOneOff(iso: string): string {
  * The one line that answers "when does this run?" — the same sentence in the
  * list, the detail panel, and the delete confirmation.
  */
-export function describeWhen(trigger: ProjectTrigger): string {
+export function describeWhen(
+  trigger: ProjectTrigger,
+  eventNames?: ReadonlyMap<string, string>,
+): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
-  if (trigger.type === 'event') return describeEventWhen(trigger.event);
+  if (trigger.type === 'event') return describeEventTitle(trigger.event, eventNames);
   if (trigger.run_at) return describeOneOff(trigger.run_at);
   if (trigger.cron) return describeCadence(trigger.cron);
   return CUSTOM_TIMING_LABEL;
@@ -208,25 +211,34 @@ export function triggerName(trigger: ProjectTrigger): string {
 export type TriggerStatus = {
   label: 'Active' | 'Paused';
   active: boolean;
-  /** Tint classes for the leading icon tile. */
-  tileClassName: string;
-  iconClassName: string;
 };
 
 export function triggerStatus(enabled: boolean, tI18nComplete: UiTranslator): TriggerStatus {
   return enabled
-    ? {
-        label: tI18nComplete.raw('text92340695899b'),
-        active: true,
-        tileClassName: 'bg-kortix-green/10',
-        iconClassName: 'text-kortix-green',
-      }
-    : {
-        label: tI18nComplete.raw('texte159b06187d3'),
-        active: false,
-        tileClassName: 'bg-muted',
-        iconClassName: 'text-muted-foreground',
-      };
+    ? { label: tI18nComplete.raw('text92340695899b'), active: true }
+    : { label: tI18nComplete.raw('texte159b06187d3'), active: false };
+}
+
+/* ─── Badge state ───────────────────────────────────────────────────────── */
+
+/**
+ * The one status a trigger shows on every surface: the list, the sheet header
+ * and the connector tab. Paused outranks the rest (a paused trigger holds no
+ * subscription), then the subscription's own state, then a failed last run.
+ */
+export type TriggerBadgeState = 'live' | 'needs_connection' | 'error' | 'pending' | 'paused';
+
+export function triggerBadgeState(trigger: ProjectTrigger): TriggerBadgeState {
+  if (!trigger.enabled) return 'paused';
+  const subscription = trigger.event?.status;
+  if (
+    subscription === 'needs_connection' ||
+    subscription === 'error' ||
+    subscription === 'pending'
+  ) {
+    return subscription;
+  }
+  return trigger.last_status === 'failed' ? 'error' : 'live';
 }
 
 /* ─── Last run ──────────────────────────────────────────────────────────── */

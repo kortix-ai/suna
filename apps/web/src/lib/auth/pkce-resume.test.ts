@@ -7,6 +7,7 @@ import {
   armPkceResumeGuard,
   consumePkceResumeGuard,
   readBrowserPkceVerifier,
+  seedBrowserPkceVerifier,
   seedPkceVerifierForResume,
   stashBrowserPkceVerifier,
 } from './pkce-resume';
@@ -79,7 +80,7 @@ function applyCookieWrite(value: string): void {
   }
   const kept = cookieJar.split('; ').filter((existing) => !existing.startsWith(`${name}=`));
   kept.push(`${name}=${val}`);
-  cookieJar = kept.join('; ');
+  cookieJar = kept.filter(Boolean).join('; ');
 }
 
 const fakeDocument = {
@@ -195,6 +196,59 @@ describe('stash and seed', () => {
     setVerifierCookie(null);
     expect(seedPkceVerifierForResume()).toBe(true);
     expect(readBrowserPkceVerifier()).toBe(VERIFIER);
+  });
+});
+
+describe('seedBrowserPkceVerifier', () => {
+  test('writes the action result verbatim so the ssr read path decodes it', () => {
+    // The prod failure: the server action's Set-Cookie never reaches the
+    // browser jar, so the seed source is the value the action RETURNS (the
+    // encoded cookie value it just wrote server-side), not a cookie read.
+    const encoded = `base64-${btoa(JSON.stringify(VERIFIER))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')}`;
+    expect(cookieJar).toBe('');
+
+    expect(seedBrowserPkceVerifier(encoded)).toBe(true);
+    expect(cookieJar).toBe(`${VERIFIER_COOKIE}=${encoded}`);
+    expect(readBrowserPkceVerifier()).toBe(VERIFIER);
+
+    // The page's wiring seeds then stashes: the stash must snapshot the
+    // seeded value, not still-empty state.
+    stashBrowserPkceVerifier();
+    expect(JSON.parse(fakeSessionStorage.getItem(STASH_KEY)!)).toMatchObject({ verifier: VERIFIER });
+  });
+
+  test('the seeded cookie reads back through the REAL @supabase/ssr storage', async () => {
+    const encoded = `base64-${btoa(JSON.stringify(VERIFIER))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')}`;
+    seedBrowserPkceVerifier(encoded);
+
+    const allCookies = () =>
+      cookieJar
+        .split('; ')
+        .filter(Boolean)
+        .map((part) => {
+          const [name, ...rest] = part.split('=');
+          return { name, value: rest.join('=') };
+        });
+    const chunked = await combineChunks(VERIFIER_COOKIE, async (chunkName) =>
+      allCookies().find(({ name }) => name === chunkName)?.value ?? null,
+    );
+    expect(chunked).toBe(encoded);
+    const decoded = atob(
+      encoded.slice('base64-'.length).replace(/-/g, '+').replace(/_/g, '/') +
+        '='.repeat((4 - (encoded.length - 'base64-'.length) % 4) % 4),
+    );
+    expect(JSON.parse(decoded)).toBe(VERIFIER);
+  });
+
+  test('refuses an empty value instead of writing a junk cookie', () => {
+    expect(seedBrowserPkceVerifier('')).toBe(false);
+    expect(cookieJar).toBe('');
   });
 });
 

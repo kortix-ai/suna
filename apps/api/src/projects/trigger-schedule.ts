@@ -24,7 +24,7 @@ export interface TriggerScheduleSpec {
   intervalSeconds?: number | null;
   expectEventWithinSeconds?: number | null;
   /** type=event only — see GitTriggerSpec. Absent for every other type. */
-  event?: { connector: string; type: string; config: Record<string, unknown> } | null;
+  event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
 }
@@ -50,6 +50,10 @@ export function validateTriggerCron(cron: string, timezone: string): string | nu
       error instanceof Error ? error.message : String(error)
     }`;
   }
+}
+
+function withSourceIfSet<T extends { source?: string | null }>({ source, ...rest }: T) {
+  return source ? { ...rest, source } : rest;
 }
 
 export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
@@ -85,7 +89,8 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
         }
       : {}),
     // Same rule again: event fields join the hash only for an event trigger.
-    ...(spec.type === 'event' ? { event: spec.event ?? null } : {}),
+    // `source` joins the event only when set, so earlier event revisions stay put.
+    ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
   };
