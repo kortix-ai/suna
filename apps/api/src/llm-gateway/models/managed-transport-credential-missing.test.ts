@@ -33,7 +33,6 @@ mock.module('../../config', () => ({
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'deepseek-v4.1-flash';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
-        if (key === 'AWS_BEDROCK_REGION') return 'us-west-2';
         if (key === 'AWS_BEDROCK_API_KEY') return 'bedrock-key';
         if (key === 'OPENROUTER_API_KEY') return undefined;
         if (key === 'MORPH_API_KEY') return undefined;

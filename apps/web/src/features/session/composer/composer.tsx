@@ -452,7 +452,7 @@ export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shri
  * rediscovered by the next notice that gets added.
  */
 export const COMPOSER_INPUT_SLOT_CLASS =
-  'bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden';
+  'bg-sidebar border-border flex w-full flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden';
 
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 export const EMPTY_AGENTS: Agent[] = [];

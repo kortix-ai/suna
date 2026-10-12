@@ -356,7 +356,7 @@ jobs:
       # is also the complete rollback.
       #
       # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
-      # in infra/terraform/environments/staging (module.project_snapshots; the
+      # in infra/terraform/environments/staging-eu-west-2 (module.project_snapshots; the
       # task role's grant comes with it). Naming the bucket turns on the
       # PRODUCER only (the leader worker prepares snapshots); no session
       # consumes one until KORTIX_PROJECT_SNAPSHOT_MODE or a project's
@@ -477,10 +477,8 @@ jobs:
             compatibility_date: "2026-06-01",
             bindings: ([
               {type:"plain_text", name:"ACTIVE_BACKEND", text:"eu-west-2"},
-              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"BACKEND_EU_WEST_2", text:"https://staging-api-euw2.kortix.com"},
               {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"eu-west-2"},
-              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"GATEWAY_BACKEND_EU_WEST_2", text:"https://gateway-staging-euw2.kortix.com"}
             ] + $ci)
           }')"

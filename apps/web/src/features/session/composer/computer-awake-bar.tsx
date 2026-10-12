@@ -45,9 +45,10 @@ export function useComputerAwakeLine(
  * person is here, and for how long (KRTX-1729). `computerAwakeLine` decides
  * whether it shows and what it says.
  *
- * The same chrome as the "still waking" notice in `ComposerAboveCard`. Under
- * the queue strip or on top it rounds its top; a docked question hides it.
- * The served-model strip under it stays square. The line wraps rather than
+ * The same chrome as the "still waking" notice in `ComposerAboveCard`. On top
+ * it rounds its top; under a visible queue strip the stack squares it
+ * (`data-composer-stack`); a docked question hides it. The served-model strip
+ * under it stays square. The line wraps rather than
  * truncates: the duration ends the sentence.
  *
  * The countdown is not a live region: `role="status"` is atomic, so a screen

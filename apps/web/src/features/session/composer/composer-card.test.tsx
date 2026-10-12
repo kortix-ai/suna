@@ -144,8 +144,13 @@ describe('ComposerCard (the moved card subtrees)', () => {
 
   // KRTX-1729: the "computer stays on" strip above owns the card's top corners.
   test('under the computer-awake strip the card squares its top; without it the top stays round', () => {
-    expect(render({ computerAwake: { kind: 'stays', minutes: 25 } })).toContain('rounded-t-none');
-    expect(render()).not.toContain('rounded-t-none');
+    // The card's own class tokens: it always carries the stack's CSS variant,
+    // whose text also contains `rounded-t-none`.
+    const cardClasses = (html: string) => (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
+    expect(cardClasses(render({ computerAwake: { kind: 'stays', minutes: 25 } }))).toContain(
+      'rounded-t-none',
+    );
+    expect(cardClasses(render())).not.toContain('rounded-t-none');
   });
 
   test('the hidden multi-file input keeps its accept list (the attach path)', () => {
