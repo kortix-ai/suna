@@ -584,6 +584,14 @@ export default function RootLayout() {
                                     name="accounts/[id]"
                                     options={{ fullScreenGestureEnabled: true }}
                                   />
+                                  {/* An invite (KRTX-1731): replaced in from `index`
+                                      (the first screen at boot) or pushed from the
+                                      switcher sheet. Accept resets the stack to the
+                                      project it lands in. */}
+                                  <Stack.Screen
+                                    name="invites/[id]"
+                                    options={{ animation: bootAnimation }}
+                                  />
                                 </Stack>
                               </AuthProtection>
                             </View>

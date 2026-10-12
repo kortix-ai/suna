@@ -162,6 +162,8 @@ Gate a control in your UI with `can` or `canBatch` on the action the route check
 
 `listMine()` lists pending invites addressed to your email. `describe(inviteId)`, `accept(inviteId)` and `decline(inviteId)` act on one invite. They need no account membership.
 
+`acceptAndLand(inviteId, invite?)` accepts and returns `{ accepted, landing }`. `landing` is where to open: `{ kind: 'project', projectId, accountId }` for the first project the invite granted, or `{ kind: 'account', accountId }` for a workspace invite. Pass the invite you already read (from `listMine()` or `describe()`): an accept that grants nothing, such as an admin invite, then lands in the first project the invite names. `accountInviteLanding(accepted, invite?)` is the same rule without the request, for an invite accepted earlier.
+
 ### `kortix.billing`
 
 | Method | What it does |
