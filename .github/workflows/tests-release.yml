@@ -23,9 +23,16 @@ on:
         required: true
         type: string
 
+# ONE gate against staging at a time, across every ref. Rehearsal 38278168762
+# (2026-10-12) ran beside two other branches' gates: staging dropped database
+# connections and boot prompts timed out, and the run proved nothing. Runs
+# queue; GitHub keeps one waiting run and a newer one replaces it, so do not
+# dispatch a rehearsal while a release gate waits. A run made stale by a newer
+# staging deploy fails its SHA assertion in seconds, so it barely delays the
+# next one.
 concurrency:
-  group: tests-release-${{ github.ref }}
-  cancel-in-progress: true
+  group: tests-release-staging
+  cancel-in-progress: false
 
 # Shared by every job. Top-level env is the only way to avoid repeating this
 # block per matrix job — GitHub Actions has no YAML anchors.

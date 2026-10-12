@@ -343,6 +343,11 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toMatch(/^name: Tests$/m);
   });
 
+  test('one release gate runs against staging at a time, across every ref', () => {
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    expect(release).toMatch(/^concurrency:\n {2}group: tests-release-staging\n {2}cancel-in-progress: false$/m);
+  });
+
   test('Promote to Production dispatches the release gate itself', () => {
     // A pull request opened with the workflow token runs its workflows only
     // after a person approves them. A dispatch needs no approval and its

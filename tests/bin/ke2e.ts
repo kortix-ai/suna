@@ -33,6 +33,9 @@ import { writeUiData } from '../src/core/ui-data';
 import { runCoverage } from '../src/coverage/check-coverage';
 import { runGc } from '../src/fixtures/gc';
 import { parseShardSpec, planShard } from '../src/core/shard';
+import { installPgConnectionGuard } from '../src/core/pg-connection-guard';
+
+installPgConnectionGuard();
 
 function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {
   const _: string[] = [];
