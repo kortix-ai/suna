@@ -1,0 +1,22 @@
+{
+  "source_hash": "5dbde62a6b4ca4783779449e37a0ebd2aa27434becd2227cd3f54efe534896c7",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-12T181056Z-bind-the-daemon-s-turn-begin-message-id-to-a-root-scoped-ope.md",
+    "apps/api/src/__tests__/integration-sandbox-turn-lifecycle.test.ts",
+    "apps/api/src/projects/routes/turn-stream-handlers.ts",
+    "apps/api/src/projects/sandbox-turn-lifecycle.ts",
+    "apps/api/src/projects/session-turn-ledger.ts",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "715f4ac129bdc6f60c7409c9abf9e75d2429000ae07a9d2df7b89020ef23449f",
+  "head": "9b5e9c7ddc1a5351cdb3ef4e93ed959862727793",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T19:27:21.053Z"
+}
