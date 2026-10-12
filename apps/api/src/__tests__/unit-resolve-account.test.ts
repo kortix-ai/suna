@@ -18,11 +18,18 @@ const projectMembers = { __table: 'projectMembers', projectId: 'projectId', user
 
 const state = {
   membership: null as { accountId: string } | null,
+  // When set, the account_members read throws the Postgres 22P02 error a
+  // uuid-typed column raises on a malformed literal — mirroring what prod did
+  // before the resolver guard (KRTX-211: a non-uuid `?account_id=` surfaced as
+  // an opaque 500). The guard must answer 403 before any read happens.
+  membershipThrows: false,
   creditAccount: null as { tier?: string | null; stripeSubscriptionId?: string | null } | null,
   legacyCustomer: null as { id?: string | null; email?: string | null } | null,
   customerSearchResults: [] as Array<{ id: string }>,
   subscriptionResults: {} as Record<string, any[]>,
 };
+
+let membershipReads = 0;
 
 const insertCalls: Array<{ table: string; data: Record<string, unknown> }> = [];
 const upsertCustomerCalls: Array<Record<string, unknown>> = [];
@@ -33,6 +40,12 @@ const stripeListCalls: string[] = [];
 function rowsForTable(table: { __table: string }) {
   switch (table.__table) {
     case 'accountMembers':
+      membershipReads += 1;
+      if (state.membershipThrows) {
+        throw Object.assign(new Error('invalid input syntax for type uuid: "directory"'), {
+          code: '22P02',
+        });
+      }
       return state.membership ? [state.membership] : [];
     case 'creditAccounts':
       return state.creditAccount ? [state.creditAccount] : [];
@@ -186,6 +199,8 @@ const { setImpersonationContext } = await import('../shared/impersonation');
 
 beforeEach(() => {
   state.membership = null;
+  state.membershipThrows = false;
+  membershipReads = 0;
   state.creditAccount = null;
   state.legacyCustomer = null;
   state.customerSearchResults = [];
@@ -319,6 +334,35 @@ describe('resolveAccountId under impersonation', () => {
     state.membership = { accountId: 'acct_someone_else' };
     const accountId = await actingAs(() => resolveAccountId('some-other-user'));
     expect(accountId).toBe('acct_someone_else');
+  });
+});
+
+describe('resolveScopedAccountId with a malformed account_id (KRTX-211)', () => {
+  test('answers the membership miss without touching the database', async () => {
+    // `?account_id=directory` — the observed prod shape (a literal segment a
+    // client aimed at a missing route). Postgres 22P02 must never happen.
+    state.membershipThrows = true;
+    let status: number | undefined;
+    let message: string | undefined;
+    try {
+      await resolveScopedAccountId(fakeRequest('directory'), 'query');
+    } catch (error) {
+      status = (error as { status?: number }).status;
+      message = (error as Error).message;
+    }
+    expect(status).toBe(403);
+    expect(message).toBe('Not a member of the requested account');
+    expect(membershipReads).toBe(0);
+  });
+
+  test('a valid uuid still reaches the membership read', async () => {
+    state.membership = { accountId: '00000000-0000-4000-a000-000000000101' };
+    const accountId = await resolveScopedAccountId(
+      fakeRequest('00000000-0000-4000-a000-000000000101'),
+      'query',
+    );
+    expect(accountId).toBe('00000000-0000-4000-a000-000000000101');
+    expect(membershipReads).toBe(1);
   });
 });
 
