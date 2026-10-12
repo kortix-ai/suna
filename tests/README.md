@@ -96,8 +96,9 @@ runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Core and
 package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight browser
 lanes run shards `1/8` through `8/8` with one Playwright worker each
 (`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
-`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight
-to Playwright's native `--shard`. The ten lanes are the parallel equivalent of
+`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
+each shard its spec files by path, balanced by measured duration (see
+"Browser shard balancing"). The ten lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
@@ -201,6 +202,27 @@ already sets at the workflow env level. It sends that header **alone**, without
 `x-vercel-set-bypass-cookie`: the cookie variant answers 307 instead of the body,
 and `fetch` keeps no cookie jar. `deployment-bypass.ts` owns both header forms so
 the browser lane and this one-shot read cannot drift.
+
+#### Browser shard balancing
+
+`--browser-shard=N/M` does not use Playwright's `--shard`, which splits by test
+count. `src/core/browser-shard.ts` packs whole spec files longest-first onto the
+lightest shard, using the per-file seconds in `e2e/shard-durations.json`
+(tie-break by path, so every job computes the same partition). A spec missing
+from the table takes the median weight. A spec file is the unit, so a
+`describe.serial` group never splits. One table per target: `local` for the
+`tests.yml` lanes, `deployed` for the release gate, which runs journeys the
+local stack skips. Refresh a table from green CI runs, reading the list
+reporter lines in the job logs (no artifact needed):
+
+```bash
+bun tests/bin/refresh-shard-durations.ts local <tests.yml run id>...
+bun tests/bin/refresh-shard-durations.ts deployed <tests-release.yml run id>...
+```
+
+A spec file that no run executed (quarantined, local-only) gets 0. A shard wall
+time is about `fixed overhead + sum of its files` at one worker: 295 s local, 105 s
+deployed. The largest file (`27-desktop-parity`, 520 s local) is the floor.
 
 #### Release gate shards
 
