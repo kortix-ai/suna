@@ -175,10 +175,28 @@ describe('a text over 256 kB is stored by reference', () => {
     const row = (await stored('msg_forged'))!.record;
     expect(row).toEqual(forged);
     expect(await rehydrateLargeTexts({ projectId: project.project_id, sessionId: session }, [row])).toEqual([row]);
+
+    // A text over 256 kB is offloaded whatever `ref` the daemon sent with it: the API's own `ref` replaces it.
+    const bloated = message('msg_bloated', 4, [{ type: 'text', id: 'prt_bloated', text: WIDE_TEXT, ref: `kortix-attachment://${foreign}`, bytes: 14 }]);
+    expect((await journal(batch([{ rev: REV + 6, message: bloated }]))).status).toBe(200);
+    const block = ((await stored('msg_bloated'))!.record as { blocks: Array<{ text: string; ref: string; bytes: number }> }).blocks[0]!;
+    // The same text as msg_user: the same object, and no second upload.
+    expect(block.ref).toBe(((await stored('msg_user'))!.record as { blocks: Array<{ ref: string }> }).blocks[0]!.ref);
+    expect(bucket.uploads).toHaveLength(2);
+    expect(block.bytes).toBe(300_000);
+    expect(block.text).toBe('€'.repeat(5_461));
     bucket.objects.delete(foreign);
   });
 
-  test('a 50 MB tool output: a page of 40 reads in under 10 ms server time, as fast as a session without it', async () => {
+  test('a Storage error degrades one text to its preview; the read still answers', async () => {
+    const tool = (await stored('msg_tool'))!.record;
+    bucket.failDownloads.next = 1;
+    const [served] = await rehydrateLargeTexts({ projectId: project.project_id, sessionId: session }, [tool]);
+    expect(served).toEqual(tool);
+    expect(bucket.failDownloads.next).toBe(0);
+  });
+
+  test('a 50 MB tool output stays out of the row: a page of 40 reads as fast as a session without it', async () => {
     const seed = async (last: unknown) => {
       const sessionId = await seedSession(project, OWNER);
       const puts = [
@@ -211,15 +229,10 @@ describe('a text over 256 kB is stored by reference', () => {
     };
     const service = (sessionId: string) => async () =>
       ((await readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: 40 })) as { messages: unknown[] }).messages.length;
-    const http = (sessionId: string) => async () => {
-      const res = await app.request(`${base(sessionId)}/log?limit=40`, { headers: { Authorization: `Bearer ${ownerToken}` } });
-      return ((await res.json()) as { messages: unknown[] }).messages.length;
-    };
-    const bigService = await measure('readSessionLogPage, 50 MB tool output', service(big));
-    await measure('readSessionLogPage, no large text', service(small));
-    await measure('GET /log?limit=40 in-process with auth, 50 MB tool output', http(big));
-    await measure('GET /log?limit=40 in-process with auth, no large text', http(small));
-    expect(bigService).toBeLessThan(10);
+    // Relative, not absolute: a loaded machine slows both reads alike. Reading the object would cost ~100x.
+    const withText = await measure('readSessionLogPage, 50 MB tool output', service(big));
+    const without = await measure('readSessionLogPage, no large text', service(small));
+    expect(withText).toBeLessThanOrEqual(2 * without + 1);
   }, 120_000);
 
   test('account erasure deletes the objects', async () => {

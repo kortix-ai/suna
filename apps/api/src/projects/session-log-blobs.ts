@@ -17,8 +17,10 @@
  * with the session (retention is P2.8).
  *
  * `GET .../log` serves rows as stored. The v1 reads serve whole bodies, so they
- * call `rehydrateLargeTexts`. A `ref` the daemon sent is stored as sent, and
- * `rehydrateLargeTexts` follows only a reference to the session's own folder.
+ * call `rehydrateLargeTexts`. A text over 256 kB is offloaded even when the
+ * daemon sent a `ref` with it (the API's `ref` replaces it). A smaller text
+ * keeps the `ref` the daemon sent, and `rehydrateLargeTexts` follows only a
+ * reference to the session's own folder.
  */
 import { createHash } from 'node:crypto';
 import { parseSessionAttachmentRef, sessionAttachmentRef } from '@kortix/shared';
@@ -56,7 +58,7 @@ function preview(bytes: Buffer): string {
 
 /** The record to store for `message`: each text over 256 kB becomes preview + `ref` + `bytes`. */
 export async function offloadLargeTexts<T>(scope: Scope, message: T): Promise<T> {
-  const large = (t: Text) => t.ref === undefined && Buffer.byteLength(t.text) > SESSION_LOG_OFFLOAD_BYTES;
+  const large = (t: Text) => Buffer.byteLength(t.text) > SESSION_LOG_OFFLOAD_BYTES;
   if (!textsOf(message).some(large)) return message;
   const record = structuredClone(message);
   for (const t of textsOf(record).filter(large)) {
@@ -84,7 +86,7 @@ async function storeOnce(object: Scope & { attachmentId: string }, sha256: strin
     .onConflictDoUpdate({ target: [sessionLogBlobs.sessionId, sessionLogBlobs.sha256], set: { deletedAt: null } });
 }
 
-/** The records with each F3 text of this session whole again. A missing object keeps its preview. */
+/** The records with each F3 text of this session whole again. An object Storage does not return keeps its preview. */
 export async function rehydrateLargeTexts<T>(scope: Scope, records: T[]): Promise<T[]> {
   return Promise.all(
     records.map(async (record) => {
@@ -93,11 +95,13 @@ export async function rehydrateLargeTexts<T>(scope: Scope, records: T[]): Promis
       for (const t of textsOf(copy)) {
         const object = parseSessionAttachmentRef(t.ref);
         if (!object || object.projectId !== scope.projectId || object.sessionId !== scope.sessionId) continue;
-        const blob = await sessionAttachmentStore().read(object);
-        if (!blob) {
-          logger.warn('[session-log] large text object missing; serving its preview', { sessionId: scope.sessionId, ref: t.ref });
-          continue;
-        }
+        // A Storage failure degrades this text to its preview; it never fails the whole v1 window.
+        const blob = await sessionAttachmentStore().read(object).catch((error: unknown) => {
+          logger.warn('[session-log] large text object unreadable; serving its preview', { sessionId: scope.sessionId, ref: t.ref, error: String(error) });
+          return undefined;
+        });
+        if (blob === null) logger.warn('[session-log] large text object missing; serving its preview', { sessionId: scope.sessionId, ref: t.ref });
+        if (!blob) continue;
         t.text = await blob.text();
         delete t.ref;
         delete t.bytes;

@@ -7,6 +7,8 @@ export function fakeSessionStorage() {
   const objects = new Map<string, Blob>();
   /** Every upload call, in order, existing keys included. */
   const uploads: string[] = [];
+  /** The next `failDownloads.next` downloads answer a 500. */
+  const failDownloads = { next: 0 };
   const storage = {
     from(bucket: string) {
       if (bucket !== 'session-attachments') throw new Error(`unexpected bucket ${bucket}`);
@@ -18,6 +20,10 @@ export function fakeSessionStorage() {
           return { data: { path: key }, error: null };
         },
         async download(key: string) {
+          if (failDownloads.next > 0) {
+            failDownloads.next--;
+            return { data: null, error: { statusCode: '500', message: 'Storage unavailable' } };
+          }
           const blob = objects.get(key);
           return blob ? { data: blob, error: null } : { data: null, error: { statusCode: '404', message: 'Object not found' } };
         },
@@ -32,5 +38,5 @@ export function fakeSessionStorage() {
       };
     },
   };
-  return { objects, uploads, storage };
+  return { objects, uploads, failDownloads, storage };
 }
