@@ -126,8 +126,11 @@ jobs:
           # there (browser-1 17.7 min vs 6.1), a 180 s journey timed out, and
           # one runner died mid-lane (run 37812339796). Half the tests per
           # runner and one worker keep each test near its old CPU budget.
-          # `--browser-shard` is Playwright's native `--shard`, which splits by
-          # test count, not by duration.
+          # `--browser-shard=N/M` splits whole spec files by measured duration
+          # (tests/src/core/browser-shard.ts; refresh the table with
+          # tests/bin/refresh-shard-durations.ts). Since 2026-10-12: Playwright's
+          # own `--shard` split by test count, and browser-4 took 21-29 min while
+          # browser-8 took 7-10.
           - lane: browser-1
             mode: browser
             args: --browser-only --browser-shard=1/8

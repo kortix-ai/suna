@@ -155,7 +155,8 @@ describe('native test-lane workflow', () => {
     // four shards of 137 flows were all killed by their cap ~60% through.
     expect(release).toContain('shard: [1, 2, 3, 4, 5, 6]');
     expect(release).toContain('pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6');
-    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3');
+    // Six browser shards, split by measured duration (tests/src/core/browser-shard.ts).
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/6');
     expect(release).toContain('fail-fast: false');
     // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
     // shards that were passing 76/87 and 68/77 of what they had run.
