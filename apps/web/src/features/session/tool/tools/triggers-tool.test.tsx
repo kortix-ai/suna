@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -29,7 +30,7 @@ const CREATE_PART = makePart(
 
 describe('TriggersTool', () => {
   test('the trigger row stays visible; its prompt folds', () => {
-    const html = renderToStaticMarkup(<TriggersTool part={CREATE_PART} defaultOpen />);
+    const html = renderToStaticMarkup(<TriggersTool call={toolCallBlock(CREATE_PART)} defaultOpen />);
 
     // The status line: which trigger, on what schedule, active or not.
     expect(html).toContain('daily-standup');
@@ -44,7 +45,7 @@ describe('TriggersTool', () => {
   test('panel surface: same fold once the row is open', () => {
     const html = renderToStaticMarkup(
       <ToolSurfaceContext.Provider value="panel">
-        <TriggersTool part={CREATE_PART} defaultOpen />
+        <TriggersTool call={toolCallBlock(CREATE_PART)} defaultOpen />
       </ToolSurfaceContext.Provider>,
     );
 

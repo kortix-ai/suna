@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -48,7 +49,7 @@ function makePart(input: Record<string, unknown>): ToolPart {
 describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
   test('inline surface: renders through the standard row, no bespoke div chrome, message preserved', () => {
     const html = renderToStaticMarkup(
-      withProviders(<ProjectDeleteTool part={makePart({ project: 'kortix-web' })} />),
+      withProviders(<ProjectDeleteTool call={toolCallBlock(makePart({ project: 'kortix-web' }))} />),
     );
 
     expect(html).toContain('Workspace delete disabled');
@@ -67,7 +68,7 @@ describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <ProjectDeleteTool part={makePart({})} />
+          <ProjectDeleteTool call={toolCallBlock(makePart({}))} />
         </ToolSurfaceContext.Provider>,
       ),
     );

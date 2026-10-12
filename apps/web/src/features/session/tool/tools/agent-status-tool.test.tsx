@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -31,7 +32,7 @@ const OUTPUT = [
 
 describe('AgentStatusTool joins the shared BasicTool shell', () => {
   test('inline surface renders the standard compact row, not bespoke chrome', () => {
-    const html = renderToStaticMarkup(<AgentStatusTool part={makePart(OUTPUT)} />);
+    const html = renderToStaticMarkup(<AgentStatusTool call={toolCallBlock(makePart(OUTPUT))} />);
 
     // Grammar: inline row = flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70.
     expect(html).toContain('items-center');
@@ -59,7 +60,7 @@ describe('AgentStatusTool joins the shared BasicTool shell', () => {
   test('panel surface renders a closed disclosure row, badge on the row', () => {
     const html = renderToStaticMarkup(
       <ToolSurfaceContext.Provider value="panel">
-        <AgentStatusTool part={makePart(OUTPUT)} />
+        <AgentStatusTool call={toolCallBlock(makePart(OUTPUT))} />
       </ToolSurfaceContext.Provider>,
     );
 
@@ -84,7 +85,7 @@ describe('AgentStatusTool joins the shared BasicTool shell', () => {
   test('panel surface opened: the task rows are the body, nothing is dropped', () => {
     const html = renderToStaticMarkup(
       <ToolSurfaceContext.Provider value="panel">
-        <AgentStatusTool part={makePart(OUTPUT)} defaultOpen />
+        <AgentStatusTool call={toolCallBlock(makePart(OUTPUT))} defaultOpen />
       </ToolSurfaceContext.Provider>,
     );
 

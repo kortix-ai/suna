@@ -5,7 +5,7 @@ import type { Message, Part } from '../runtime/runtime-types';
 import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, type SessionLogState } from './store';
 import type { SessionLog } from './types';
 import { fromV1, toV1, type V1Transcript } from './v1';
-import { sessionLogRowsFor, type V1MessageRow } from './v1-view';
+import { sessionLogOfV1Rows, sessionLogRowsFor, type V1MessageRow } from './v1-view';
 
 const CONTRACT_FIXTURES = join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log');
 const fixtures: Array<[string, SessionLog]> = readdirSync(CONTRACT_FIXTURES)
@@ -139,5 +139,47 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
     const second = sessionLogRowsFor({ kses_1: renamed }, ROOT, NONE);
     expect(second).toHaveLength(first.length);
     second.forEach((r, i) => expect(r).toBe(first[i]!));
+  });
+});
+
+describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store rows (v2 not negotiated)', () => {
+  const v1 = toV1(v1Golden);
+  const RS = v1.root_id!;
+  const T = 1_800_000_000_000;
+  // A turn that runs: a running bash and a pending write, no completion.
+  const live: V1MessageRow = {
+    info: { id: 'msg_zlive', sessionID: RS, role: 'assistant', time: { created: T }, parentID: 'msg_x', modelID: 'm', providerID: 'p', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } } as unknown as Message,
+    parts: [
+      { id: 'prt_zlive1', sessionID: RS, messageID: 'msg_zlive', type: 'tool', callID: 'call_1', tool: 'bash', state: { status: 'running', input: { command: 'sleep 5' }, title: 'sleep', metadata: { output: '' }, time: { start: T + 1 } } },
+      { id: 'prt_zlive2', sessionID: RS, messageID: 'msg_zlive', type: 'tool', callID: 'call_2', tool: 'write', state: { status: 'pending', input: {}, raw: '' } },
+    ] as unknown as Part[],
+  };
+  const rows = [...rowsOfV1({ ...v1, rows: v1.rows.filter((r) => r.runtime_session_id === RS) }), live];
+  const expected = (input: V1MessageRow[]) =>
+    fromV1({ session_id: 'kses_v1', root_id: RS, rows: input.map((r) => ({ runtime_session_id: RS, info: r.info as never, parts: r.parts as never })) }, { live: true });
+
+  test('equals fromV1 (live) of the same rows, compaction summaries folded, in any input order', () => {
+    expect(rows.some((r) => (r.info as { summary?: boolean }).summary)).toBe(true);
+    expect(sessionLogOfV1Rows('kses_v1', RS, rows)).toEqual(expected(rows));
+    expect(sessionLogOfV1Rows('kses_v1', RS, [...rows].reverse())).toEqual(expected(rows));
+    expect(sessionLogOfV1Rows('kses_v1', RS, [])).toEqual(expected([]));
+  });
+
+  test('an open call stays open: the live turn is streaming, not closed by the closure rule', () => {
+    const message = sessionLogOfV1Rows('kses_v1', RS, rows).threads[0]!.messages.at(-1)!;
+    expect(message).toMatchObject({ message_id: 'msg_zlive', status: 'streaming' });
+    expect(message.blocks.map((b) => (b as { status?: string }).status)).toEqual(['running', 'pending']);
+  });
+
+  test('the same rows array gives the same log; a changed row gives a new message for that row only', () => {
+    const first = sessionLogOfV1Rows('kses_v1', RS, rows);
+    expect(sessionLogOfV1Rows('kses_v1', RS, rows)).toBe(first);
+    const changed: V1MessageRow = { ...live, parts: [live.parts[0]!, { ...live.parts[1]!, state: { status: 'running', input: { filePath: '/w/a' }, time: { start: T + 2 } } } as unknown as Part] };
+    const next = sessionLogOfV1Rows('kses_v1', RS, [...rows.slice(0, -1), changed]);
+    expect(next).not.toBe(first);
+    const [a, b] = [first.threads[0]!.messages, next.threads[0]!.messages];
+    expect(b.slice(0, -1).every((m, i) => m === a[i])).toBe(true);
+    expect(b.at(-1)).not.toBe(a.at(-1));
+    expect(next).toEqual(expected([...rows.slice(0, -1), changed]));
   });
 });

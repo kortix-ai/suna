@@ -42,12 +42,12 @@ const PATCH_ICON = {
   edit: PencilSimpleIcon,
 } as const;
 
-export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ApplyPatchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const patchTypeStyle = useLocalizedUiCatalog(PATCH_TYPE_STYLE);
-  const metadata = partMetadata(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const metadata = partMetadata(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
   // it. Called from the render body it did that on every frame of the stream.
   const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);

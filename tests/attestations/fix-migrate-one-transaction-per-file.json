@@ -1,0 +1,19 @@
+{
+  "source_hash": "65220d2ddb1035225506a97c3dc0dd1ffb8d49581f7879fbcb4f1d10d46b965d",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-12T010756Z-apply-each-prod-migration-in-its-own-transaction-a-pending-b.md",
+    "packages/db/scripts/migrate.ts",
+    "packages/db/scripts/migration-target.ts",
+    "packages/db/scripts/migration-transaction-mode.integration.test.ts"
+  ],
+  "diff_hash": "d29a99e10fb216e1936a1f9cc1c79bec912b68287be71e54263c751325837af0",
+  "head": "04e064232191726522f587bc062e27c7bda2ea52",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T01:26:30.907Z"
+}

@@ -1103,6 +1103,8 @@
     "toSandboxAbsolutePath",
     "toToolView",
     "toWorkspaceRelative",
+    "toolCallBlock",
+    "toolCallMetadata",
     "toolInfo",
     "toolKind",
     "toolViewModel",
