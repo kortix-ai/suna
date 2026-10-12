@@ -84,6 +84,16 @@ describe('QueuedPromptList', () => {
     expect(count(markup, 'aria-label="Send now"')).toBe(1);
   });
 
+  test('a row the running turn already took — steer, no fallback — keeps only Remove; a steer row with a fallback still offers Send now', () => {
+    // A steered row is read at the turn's NEXT step: there is nothing left to
+    // hurry. A steer row whose fallback holds it for the turn's end is still
+    // waiting, so Send now (the promote) is meaningful there.
+    const markup = render({
+      rows: [row({ id: 'steer', steer: true as const }), row({ id: 'fallback', steer: true as const, steerFallback: 'turn_ended' })],
+    });
+    expect(count(markup, 'aria-label="Send now"')).toBe(1);
+  });
+
   test('a failed row keeps Retry and gets no second Send now — one primitive, one button', () => {
     const markup = render({
       rows: [row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false })],

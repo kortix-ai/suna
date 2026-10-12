@@ -20,6 +20,10 @@ const shellSend = readFileSync(
   fileURLToPath(new URL('./use-instant-session-send.ts', import.meta.url)),
   'utf8',
 );
+const queueList = readFileSync(
+  fileURLToPath(new URL('./composer/queued-prompt-list.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -306,6 +310,16 @@ describe('queue row actions address the inbox that holds the row', () => {
     expect(chat).not.toContain('handleQueueSendNow');
     expect(chat).not.toContain('stopThenSendNow');
     expect(chat).toContain('onRetry={handleRetryQueuedMessage}');
+    // And the affordance itself is this PR's decision (KRTX-1587): the list
+    // row's Send now branch exists and is gated to rows the viewer owns that
+    // the running turn has not already taken (`steer` with no fallback is
+    // already being read at the next step — nothing to hurry). The test-source
+    // reader inlines the catalog value after each `copy.raw('key')`, so the
+    // assertions match on the keys and the gate fragments.
+    expect(queueList).toContain("copy.raw('text588032878324')");
+    expect(queueList).toMatch(/row\.state === 'queued'/);
+    expect(queueList).toContain('!row.fromAnotherMember');
+    expect(queueList).toContain('!(row.steer && !row.steerFallback)');
     const resume = between(chat, 'const handleResumeQueue = useCallback(', '}, [promptInbox.hold]);');
     expect(resume).toContain('promptInbox.hold(false)');
     expect(resume).toContain('setResumePending(false)');
