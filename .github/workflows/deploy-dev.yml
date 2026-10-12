@@ -205,10 +205,7 @@ jobs:
             apps_router:
               - 'infra/cloudflare/workers/apps-router/**'
               - '.github/workflows/deploy-dev.yml'
-            # Every dev root this pipeline applies. environments/dev used to be
-            # excluded here because it read an operator-local terraform.tfvars
-            # and was applied by hand; those inputs are committed now, so the
-            # root is applied like any other (see terraform-apply.yml).
+            # Every dev root this pipeline applies (see terraform-apply.yml).
             terraform:
               - 'infra/terraform/environments/dev-us-east-2/**'
               - 'infra/terraform/environments/dev-web-us-east-2/**'

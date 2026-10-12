@@ -70,9 +70,13 @@ describe('api-router worker', () => {
     ]) {
       expect(deployWorkflow).toContain(binding);
     }
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(stagingVars).not.toContain('ECS_FARGATE');
+    expect(deployWorkflow).not.toContain('staging-api-ecs-fargate');
+    expect(deployWorkflow).not.toContain('gateway-staging-ecs-fargate');
   });
 
-  test('routes dev to its us-east-2 stack and keeps the us-west-2 origins as the undo', () => {
+  test('routes dev only to its us-east-2 stack', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
       'utf8',
@@ -85,8 +89,8 @@ describe('api-router worker', () => {
     expect(devVars).toContain('GATEWAY_ACTIVE_BACKEND = "us-east-2"');
     expect(devVars).toContain('BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"');
     expect(devVars).toContain('GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"');
-    expect(devVars).toContain('BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"');
-    expect(devVars).toContain('GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"');
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(devVars).not.toContain('ECS_FARGATE');
   });
 
   test('keeps the prepared US East 2 origins inactive in production config', () => {
@@ -272,7 +276,7 @@ describe('api-router worker', () => {
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
     const prodTerraform = readFileSync(

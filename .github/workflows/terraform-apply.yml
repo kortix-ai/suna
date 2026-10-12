@@ -27,12 +27,13 @@ name: Terraform Apply
 #     runs would break drift detection with "state snapshot was created by a
 #     newer Terraform". Bump both files together or neither.
 #
-# EVERY root under infra/terraform is now driven from here. environments/dev and
-# environments/prod were the last two manual ones: they read an operator-local,
-# gitignored terraform.tfvars, so CI planned inputs no operator ever used. Every
-# value from those files now lives in committed variable defaults, except
-# `api_image` — that one changes per deploy, so the caller passes it (see the
-# input below) and CI plans the exact image the same run ships.
+# EVERY root under infra/terraform is now driven from here. The old us-west-2
+# dev root and environments/prod were the last two manual ones: they read an
+# operator-local, gitignored terraform.tfvars, so CI planned inputs no operator
+# ever used. Every value from those files now lives in committed variable
+# defaults, except `api_image` — that one changes per deploy, so the caller
+# passes it (see the input below) and CI plans the exact image the same run
+# ships.
 # infra/terraform/README.md carries the full root-by-root table.
 
 on:
