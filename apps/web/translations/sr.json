@@ -19786,6 +19786,7 @@
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "managedUpgradeHint": "Надоградите да бисте користили Kortix управљане моделе или повежите сопственог добављача.",
     "pricingEstimate": "Процењена цена за корисника. Коришћена рута одређује наплату.",
     "pricingRoute": "{route}: {input} улаз / {cacheRead} кеш / {output} излаз по милион токена",
     "pricingPreferred": "Пожељна",
