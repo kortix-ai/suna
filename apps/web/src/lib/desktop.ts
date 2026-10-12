@@ -419,6 +419,20 @@ export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAcce
 export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
   desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
 
+/* ─── Quick Entry (desktop app) ───────────────────────────────────────────
+   The desktop app's global shortcut opens a prompt bar over any app. Enter
+   hands the text to this page, which starts a session with it
+   (`components/desktop/desktop-quick-entry.tsx`). Both return null in a
+   browser and on a desktop build that predates Quick Entry. */
+
+/** The prompt typed in the Quick Entry bar, once. Null when there is none. */
+export const takeDesktopQuickEntryPrompt = () =>
+  desktopCommand<{ text: string }>('quick_entry_take');
+
+/** The project a Quick Entry prompt starts its session in, for the bar's label. */
+export const setDesktopQuickEntryTarget = (target: { projectId: string; name: string | null } | null) =>
+  desktopCommand<null>('quick_entry_set_target', { target });
+
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and
  * `data-desktop-platform` on <html> so CSS can react before first paint —

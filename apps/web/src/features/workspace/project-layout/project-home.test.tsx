@@ -61,6 +61,12 @@ describe('ProjectHome first chat starters', () => {
     );
   });
 
+  test('a stored prefill keeps its submit flag, so a desktop Quick Entry prompt sends', () => {
+    expect(code).toContain(
+      'setPrefill({ text: pendingPrefill.text, id: Date.now(), submit: pendingPrefill.submit })',
+    );
+  });
+
   test('suggestions elsewhere still only fill the composer', () => {
     const applySuggestion = code.slice(
       code.indexOf('const applySuggestion'),

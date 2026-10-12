@@ -178,7 +178,7 @@ export function ProjectHome({
   useEffect(() => {
     if (!pendingPrefill) return;
     consumePrefill(projectId);
-    setPrefill({ text: pendingPrefill.text, id: Date.now() });
+    setPrefill({ text: pendingPrefill.text, id: Date.now(), submit: pendingPrefill.submit });
   }, [pendingPrefill, projectId, consumePrefill]);
 
   const handleCommand = useCallback(
