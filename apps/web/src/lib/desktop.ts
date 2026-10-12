@@ -430,14 +430,8 @@ export const setDesktopQuickEntryTarget = (
     projectId: string;
     name: string | null;
     sessions: { id: string; title: string; status: string; lastActiveAt: string }[];
-    /** A new session's agent, model and effort, as project home resolves them. */
-    composer: {
-      agents: { id: string; label: string }[];
-      agent: string | null;
-      models: { id: string; label: string; group: string; variants: string[] }[];
-      model: string | null;
-      variant: string | null;
-    } | null;
+    /** A new session's agent, as project home resolves it. */
+    composer: { agents: { id: string; label: string }[]; agent: string | null } | null;
   } | null,
 ) => desktopCommand<null>('quick_entry_set_target', { target });
 

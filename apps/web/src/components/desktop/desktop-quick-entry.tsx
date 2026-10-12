@@ -85,7 +85,7 @@ export function quickEntryCanSubmit(
   composer: QuickEntryComposerSnapshot | null,
 ): boolean {
   if (!files.some((file) => file.isImage)) return true;
-  return composer?.models.find((model) => model.id === composer.model)?.vision !== false;
+  return composer?.vision !== false;
 }
 
 /**
@@ -98,8 +98,8 @@ export function quickEntryCanSubmit(
  * semantics: a running turn is steered).
  *
  * It also tells the shell the project, its recent sessions, and a new
- * session's agent, model and effort (`QuickEntryComposer`), and applies the
- * picks the person makes in the bar. Renders nothing visible, and does nothing
+ * session's agent (`QuickEntryComposer`), and applies an agent the person
+ * picks in the bar. Renders nothing visible, and does nothing
  * outside the desktop app.
  */
 export function DesktopQuickEntry() {
@@ -140,7 +140,7 @@ export function DesktopQuickEntry() {
     composerRef.current = snapshot;
     setComposerKey(
       snapshot
-        ? JSON.stringify([snapshot.projectId, snapshot.agents, snapshot.agent, snapshot.models, snapshot.model, snapshot.variant])
+        ? JSON.stringify([snapshot.projectId, snapshot.agents, snapshot.agent])
         : '',
     );
   }, []);
@@ -148,20 +148,12 @@ export function DesktopQuickEntry() {
   useEffect(() => {
     if (!desktop || !userId) return;
     const snapshot = composerRef.current?.projectId === projectId ? composerRef.current : null;
-    const composer = snapshot
-      ? {
-          agents: snapshot.agents,
-          agent: snapshot.agent,
-          models: snapshot.models.map(({ id, label, group, variants }) => ({ id, label, group, variants })),
-          model: snapshot.model,
-          variant: snapshot.variant,
-        }
-      : null;
+    const composer = snapshot ? { agents: snapshot.agents, agent: snapshot.agent } : null;
     void setDesktopQuickEntryTarget(projectId ? { projectId, name, sessions: recent, composer } : null);
     if (projectId) router.prefetch(`/projects/${projectId}`);
   }, [desktop, userId, projectId, name, recent, composerKey, router]);
 
-  // An agent, model or effort picked in the bar, applied by the composer's own setters.
+  // An agent picked in the bar, applied by the composer's own setter.
   useEffect(() => {
     if (!desktop) return;
     const onSelect = (event: Event) => {
@@ -229,7 +221,6 @@ export function DesktopQuickEntry() {
     <KortixProjectProvider projectId={projectId}>
       <QuickEntryComposer
         projectId={projectId}
-        project={detail?.project}
         onChange={onComposer}
         selectRef={selectRef}
       />

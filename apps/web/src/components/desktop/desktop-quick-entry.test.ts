@@ -140,9 +140,7 @@ describe('quickEntryCanSubmit', () => {
       projectId: 'p1',
       agents: [],
       agent: null,
-      models: [{ id: 'm', label: 'M', group: 'G', variants: [], vision }],
-      model: 'm',
-      variant: null,
+      vision,
       overrides: { agent: null, model: null, variant: null },
     }) as QuickEntryComposerSnapshot;
   const image = quickEntryAttachedFile({ name: 's.png', type: 'image/png', bytes: new Uint8Array([1]) });
