@@ -2,7 +2,8 @@ name: Tests
 
 # The local suite: ten lanes (core, browser-1..8, packages) on GitHub-hosted
 # runners (free on this public repo). Each lane is the unchanged root command
-# `pnpm test -- <args>`.
+# `pnpm test -- <args>`. Together they cover `pnpm test --full` once: `core`
+# skips package quality (`--no-packages`) because `packages` runs it.
 #
 # It runs when ANY of these holds:
 #   1. a daily `schedule` on `dev`        — safety-net trunk signal
@@ -64,9 +65,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `--no-packages`: the `packages` lane runs package quality; core
+          # repeating it cost ~18 min per run (2026-10-11 release analysis).
           - lane: core
             mode: core
-            args: ""
+            args: --no-packages
           # Eight browser shards, one Playwright worker each, since 2026-10-08.
           # The lanes moved from Blacksmith 8 vCPU / 32 GB to free GitHub-hosted
           # 4 vCPU / 16 GB runners. Four shards x two workers ran ~3x slower

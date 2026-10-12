@@ -58,10 +58,10 @@ export function splitTerminalBuffer(content: string): {
   };
 }
 
-export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PtyReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
 
   const parsed = useMemo(() => {
     const block = ptyOutputBlock(output);

@@ -1134,7 +1134,8 @@
       "origin": {
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
-        "defaultOff": "Подразумевано искључено"
+        "defaultOff": "Подразумевано искључено",
+        "organization": "Cela organizacija, upravlja Kortix"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1209,6 +1210,14 @@
           "name": "Okidači događaja aplikacije",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru."
         },
+        "volumes": {
+          "name": "Volumeni",
+          "description": "Deljeni fajlovi i sesije na volumenima za celu organizaciju."
+        },
+        "stateless_sessions": {
+          "name": "Sesije bez stanja",
+          "description": "Svaki put nov računar; čuvaju se samo fajlovi i razgovor. Potrebno je uključiti volumene."
+        },
         "drives": {
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
@@ -1216,6 +1225,10 @@
         "ephemeral_sandboxes": {
           "name": "Privremeni sandbox-ovi",
           "description": "Zaustavljena sesija čuva datoteke i razgovor na volumenu i oslobađa svoj računar. Buđenje pokreće novi računar sa najnovijom slikom. Pokrenuti procesi ne preživljavaju zaustavljanje."
+        },
+        "session_log": {
+          "name": "Log sesije v2",
+          "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
         }
       }
     },
@@ -19779,6 +19792,7 @@
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "managedUpgradeHint": "Надоградите да бисте користили Kortix управљане моделе или повежите сопственог добављача.",
     "pricingEstimate": "Процењена цена за корисника. Коришћена рута одређује наплату.",
     "pricingRoute": "{route}: {input} улаз / {cacheRead} кеш / {output} излаз по милион токена",
     "pricingPreferred": "Пожељна",

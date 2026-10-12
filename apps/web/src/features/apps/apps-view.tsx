@@ -59,7 +59,7 @@ function AppsHeader({
         </div>
       ) : null}
       <Link
-        href="/docs/feature-flags/apps"
+        href="/docs/apps"
         target="_blank"
         rel="noopener noreferrer"
         prefetch={false}
@@ -172,14 +172,14 @@ export function AppsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : apps.data && gridApps(apps.data).length ? (
+          ) : apps.data && gridApps(apps.data, canAdmin).length ? (
             /* A gallery grid, sized by the space it has rather than by the
                window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
             <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
-              {gridApps(apps.data).map((app) => (
+              {gridApps(apps.data, canAdmin).map((app) => (
                 <AppCard
                   key={app.app_id}
                   projectId={projectId}

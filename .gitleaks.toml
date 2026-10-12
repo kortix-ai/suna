@@ -85,3 +85,14 @@ paths = [
 regexes = [
   '''(?i)linkedin''',
 ]
+
+[[allowlists]]
+description = "Placeholder tokens in public docs examples (`Bearer kortix_pat_...`, `kortix_gw_...`). The curl-auth-header rule matches any Authorization value. This exception requires a docs .mdx path AND a line whose token is the literal prefix followed by `...`, so a real token pasted into the docs still fails."
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/web/content/docs/.*\.mdx$''',
+]
+regexes = [
+  '''kortix_[a-z]+_\.\.\.''',
+]

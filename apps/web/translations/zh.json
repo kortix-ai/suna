@@ -1134,7 +1134,8 @@
       "origin": {
         "overridden": "已为此项目覆盖",
         "defaultOn": "默认开启",
-        "defaultOff": "默认关闭"
+        "defaultOff": "默认关闭",
+        "organization": "整个组织，由 Kortix 管理"
       },
       "search": "搜索功能",
       "loadFailed": "无法加载项目",
@@ -1209,6 +1210,14 @@
           "name": "应用事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。"
         },
+        "volumes": {
+          "name": "卷",
+          "description": "为整个组织提供共享文件和基于卷的会话。"
+        },
+        "stateless_sessions": {
+          "name": "无状态会话",
+          "description": "每次唤醒都是全新的计算机，只保留文件和聊天。需要先开启卷。"
+        },
         "drives": {
           "name": "云盘",
           "description": "与会话保持同步的共享文件夹：你自己的云盘、每个智能体一个云盘，以及管理员关联到项目的公司云盘。新会话可在 /drives 下看到它们。"
@@ -1216,6 +1225,10 @@
         "ephemeral_sandboxes": {
           "name": "临时沙盒",
           "description": "停止的会话会把文件和对话保存在卷上，并释放其计算机。唤醒时会用最新镜像启动一台新计算机。正在运行的进程不会在停止后保留。"
+        },
+        "session_log": {
+          "name": "会话日志 v2",
+          "description": "通过 v2 会话日志而不是 v1 转录读取会话。由 Kortix 按项目启用。"
         }
       }
     },
@@ -19779,6 +19792,7 @@
     "providerError": "无法更新提供商访问权限。",
     "managedTitle": "Kortix 托管模型",
     "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "managedUpgradeHint": "升级以使用 Kortix 托管模型，或连接你自己的提供商。",
     "pricingEstimate": "客户预估价格。实际费用取决于使用的路由。",
     "pricingRoute": "{route}：每百万 token 输入 {input} / 缓存 {cacheRead} / 输出 {output}",
     "pricingPreferred": "首选",

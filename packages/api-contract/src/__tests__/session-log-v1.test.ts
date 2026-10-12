@@ -213,6 +213,17 @@ describe('fromV1 / toV1 round trip', () => {
     for (const t of ['text', 'subtask', 'reasoning', 'file', 'tool', 'step-start', 'step-finish', 'snapshot', 'patch', 'agent', 'retry', 'compaction']) expect(types.has(t)).toBe(true);
   });
 
+  // A daemon adapter runs `fromV1` and then sets its own producer (P2.6), so its records carry
+  // the residuals under producer `opencode` or `pi`. `toV1` must be exact on them too (P4.2).
+  for (const [name, make, opts] of FIXTURES) {
+    const harness = opts?.harness ?? 'opencode';
+    test(`toV1 is exact on a journaled record (producer ${harness}): ${name}`, () => {
+      const log = json(fromV1(make(), opts));
+      for (const t of log.threads) for (const m of t.messages) m.producer = { harness, harness_version: '1.18.23', adapter_version: '1.0.0' };
+      expectExact(make(), toV1(log));
+    });
+  }
+
   test('row order does not change the result', () => {
     const x = mainFixture();
     const shuffled = { ...x, rows: [...x.rows].reverse() };
@@ -395,6 +406,70 @@ describe('fromV1 mapping', () => {
   });
 });
 
+describe('fromV1 live: the turn that runs is not closed', () => {
+  const live = fromV1(mainFixture(), { live: true });
+
+  test('toV1(fromV1(x, { live })) deep-equals x for every fixture', () => {
+    for (const [, make, opts] of FIXTURES) expectExact(make(), roundTrip(make(), { ...opts, live: true }));
+  });
+
+  test('an open call keeps its v1 status and has no result; its residual keeps what the block does not carry', () => {
+    const m03 = message(live, 'msg_r03');
+    expect(block(m03, 'prt_r03b')).toMatchObject({ status: 'running', input: { command: 'sleep 9' }, title: 'sleep 9' });
+    // A call that streams its input: the text so far is its input (OpenCode keeps it in `raw`).
+    expect(block(m03, 'prt_r03c')).toMatchObject({ status: 'pending', input: '{"pattern":' });
+    expect((block(m03, 'prt_r03b') as ToolCallBlock).result).toBeUndefined();
+    expect((block(m03, 'prt_r03c') as ToolCallBlock).result).toBeUndefined();
+    // The raw partial input of the pending call survives in the residual.
+    const back = toV1(json(live)).rows.find((r) => r.info.id === 'msg_r03')!;
+    expect(back.parts.find((p) => p.id === 'prt_r03c')).toMatchObject({ state: { status: 'pending', raw: '{"pattern":' } });
+  });
+
+  test('a running task keeps its child session id in the residual (no closure, no lost metadata)', () => {
+    const row = assistant(ROOT, 'msg_live', T0 + 30_000, 'msg_r01', (m) => [
+      tool(ROOT, m, 'prt_live', 'task', { status: 'running', input: { description: 'sub' }, title: 'sub', metadata: { sessionId: CHILD }, time: { start: T0 + 30_001 } }),
+    ], { finish: undefined, time: { created: T0 + 30_000 } });
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows: [row] }, { live: true });
+    expect(message(log, 'msg_live')).toMatchObject({ status: 'streaming', completed_at: null, finish: null, in_context: true });
+    expect(block(message(log, 'msg_live'), 'prt_live')).toMatchObject({ status: 'running', started_at: new Date(T0 + 30_001).toISOString() });
+    expect(toV1(json(log)).rows[0]!.parts[0]).toEqual(json(row.parts[0]));
+  });
+
+  test('round trip of a live turn: pending and running calls, an open question, an open reply', () => {
+    const rows: V1Row[] = [
+      user(ROOT, 'msg_l01', T0, (m) => [text(ROOT, m, 'prt_l01a', 'go')]),
+      assistant(ROOT, 'msg_l02', T0 + 100, 'msg_l01', (m) => [
+        tool(ROOT, m, 'prt_l02a', 'write', { status: 'pending', input: {}, raw: '{"filePath":"/w/a.ts","content":"exp' }),
+        tool(ROOT, m, 'prt_l02b', 'bash', { status: 'running', input: { command: 'sleep 1', description: 'Waits' }, title: 'Waits', metadata: { output: 'partial', description: 'Waits' }, time: { start: T0 + 110 } }),
+        tool(ROOT, m, 'prt_l02c', 'question', { status: 'running', input: { questions: [{ question: 'Which?', options: [{ label: 'A' }] }] }, metadata: {}, time: { start: T0 + 120 } }),
+        tool(ROOT, m, 'prt_l02d', 'task', { status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: { sessionId: CHILD, model }, time: { start: T0 + 130 } }),
+      ], { finish: undefined, time: { created: T0 + 100 } }),
+    ];
+    const x: V1Transcript = { session_id: 'sess-live', root_id: ROOT, rows };
+    expectExact(x, roundTrip(x, { live: true }));
+    const m = message(fromV1(json(x), { live: true }), 'msg_l02');
+    expect(m.status).toBe('streaming');
+    expect(m.blocks.map((b) => (b as ToolCallBlock).status)).toEqual(['pending', 'running', 'running', 'running']);
+    expect((m.blocks[0] as ToolCallBlock).input).toBe('{"filePath":"/w/a.ts","content":"exp');
+  });
+
+  test('an open reply is streaming; a reply with an error keeps its error status', () => {
+    expect(message(live, 'msg_r05')).toMatchObject({ status: 'streaming', in_context: true, completed_at: null });
+    expect(block(message(live, 'msg_r05'), 'prt_r05a')).toMatchObject({ status: 'pending', input: { url: 'https://example.com' } });
+    expect(message(live, 'msg_r03')).toMatchObject({ status: 'aborted', finish: 'aborted' });
+    expect(message(live, 'msg_r04')).toMatchObject({ status: 'error', in_context: false });
+  });
+
+  test('a compaction whose summary has not arrived is streaming, not interrupted', () => {
+    expect(message(live, 'msg_r10')).toMatchObject({ kind: 'compaction', status: 'streaming' });
+  });
+
+  test('settled calls and messages are the same as at rest', () => {
+    const rest = fromV1(mainFixture());
+    for (const id of ['msg_r01', 'msg_r02', 'msg_r04', 'msg_r06', 'msg_r11', 'msg_c02']) expect(message(live, id)).toEqual(message(rest, id));
+  });
+});
+
 describe('a mirror without a usable root keeps its conversation in context', () => {
   const inContext = (log: SessionLog) => log.threads[0].messages.map((m) => [m.message_id, m.in_context, m.hidden_reason]);
   const expected = [['msg_p01', true, undefined], ['msg_p02', true, undefined], ['msg_p03', true, undefined]];
@@ -450,8 +525,9 @@ describe('toV1 on native v2 records', () => {
     expect(toV1(log).rows.filter((r) => hidden.includes(r.info.id))).toEqual([]);
   });
 
-  test('a native harness block from an opencode/pi adapter is not passed through as a v1 part', () => {
+  test('a harness block on a native thread (no v1 ext, as the pi adapter writes) is not passed through as a v1 part', () => {
     const log = json(fromV1(piFixture(), { harness: 'pi' }));
+    delete log.threads[0].ext;
     const m = log.threads[0].messages[1];
     m.producer = { harness: 'pi', harness_version: '1.0.3', adapter_version: '1' };
     m.blocks.push({ type: 'harness', id: 'h1', harness: 'pi', kind: 'custom', data: { anything: true }, model_visible: false });

@@ -1134,7 +1134,8 @@
       "origin": {
         "overridden": "Remplacé pour ce projet",
         "defaultOn": "Activé par défaut",
-        "defaultOff": "Désactivé par défaut"
+        "defaultOff": "Désactivé par défaut",
+        "organization": "Toute l'organisation, géré par Kortix"
       },
       "search": "Rechercher des fonctionnalités",
       "loadFailed": "Impossible de charger le projet",
@@ -1209,6 +1210,14 @@
           "name": "Déclencheurs d'événements d'app",
           "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Fichiers partagés et sessions sur volumes pour toute l'organisation."
+        },
+        "stateless_sessions": {
+          "name": "Sessions sans état",
+          "description": "Un ordinateur neuf à chaque réveil ; seuls les fichiers et le chat sont conservés. Nécessite les volumes activés."
+        },
         "drives": {
           "name": "Drive",
           "description": "Des dossiers partagés synchronisés avec les sessions : votre propre drive, un par agent, et les drives d’entreprise qu’un administrateur associe au projet. Les nouvelles sessions les voient sous /drives."
@@ -1216,6 +1225,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes éphémères",
           "description": "Une session arrêtée garde ses fichiers et sa conversation sur un volume et libère sa machine. La réveiller démarre une nouvelle machine avec l’image la plus récente. Les processus en cours ne survivent pas à un arrêt."
+        },
+        "session_log": {
+          "name": "Journal de session v2",
+          "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
         }
       }
     },
@@ -19779,6 +19792,7 @@
     "providerError": "Impossible de modifier l’accès au fournisseur.",
     "managedTitle": "Modèles gérés par Kortix",
     "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
+    "managedUpgradeHint": "Passez à une offre supérieure pour utiliser les modèles gérés de Kortix, ou connectez votre propre fournisseur.",
     "pricingEstimate": "Prix client estimé. Le coût dépend de la route utilisée.",
     "pricingRoute": "{route} : {input} entrée / {cacheRead} cache / {output} sortie par million de tokens",
     "pricingPreferred": "Préférée",

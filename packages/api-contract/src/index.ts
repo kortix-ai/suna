@@ -16,6 +16,7 @@
  *      apps/api/src/__tests__/unit-api-contract-serializers.test.ts).
  */
 import { z } from 'zod';
+import { SessionLogPageSchema } from './session-log/wire';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -65,8 +66,11 @@ export const FeatureFlagMapSchema = z.object({
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
+  volumes: z.boolean(),
+  stateless_sessions: z.boolean(),
   drives: z.boolean(),
   ephemeral_sandboxes: z.boolean(),
+  session_log: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -90,6 +94,8 @@ export const FeatureFlagViewSchema = z.object({
   overridden: z.boolean(),
   /** Internal-only flag, listed only while on. Only a platform operator can change it. */
   operator_only: z.boolean().optional(),
+  /** `organization`: one value for every project of the organization; changing it needs `account.write`. */
+  scope: z.enum(['project', 'organization']).optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 
@@ -1839,6 +1845,16 @@ export const SessionSnapshotSchema = z.object({
     }),
     SessionSnapshotUnknownSchema,
   ]),
+  /**
+   * = `GET .../log` (P4.2): the first page of the root thread. Present only when the project
+   * flag `session_log` is on. `page: null`: the session has no stored log.
+   */
+  log: z
+    .union([
+      z.object({ known: z.literal(true), page: SessionLogPageSchema.nullable() }),
+      SessionSnapshotUnknownSchema,
+    ])
+    .optional(),
 });
 export type SessionSnapshot = z.infer<typeof SessionSnapshotSchema>;
 

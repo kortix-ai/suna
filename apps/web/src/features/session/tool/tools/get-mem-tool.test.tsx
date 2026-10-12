@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
@@ -70,7 +71,7 @@ Tags: preference, ui`;
 describe('GetMemTool joins the shared BasicTool shell', () => {
   test('inline surface: no bespoke gradient/shadow chrome, observation content preserved', () => {
     const html = renderToStaticMarkup(
-      withProviders(<GetMemTool part={makePart({ id: 42 }, OBSERVATION_OUTPUT)} defaultOpen />),
+      withProviders(<GetMemTool call={toolCallBlock(makePart({ id: 42 }, OBSERVATION_OUTPUT))} defaultOpen />),
     );
 
     expect(html).not.toContain('rounded-2xl');
@@ -95,7 +96,7 @@ describe('GetMemTool joins the shared BasicTool shell', () => {
   // reader gets the memory; the extraction record is one click away.
   test('inline surface: provenance folds closed, its labels are the triggers', () => {
     const html = renderToStaticMarkup(
-      withProviders(<GetMemTool part={makePart({ id: 42 }, OBSERVATION_OUTPUT)} defaultOpen />),
+      withProviders(<GetMemTool call={toolCallBlock(makePart({ id: 42 }, OBSERVATION_OUTPUT))} defaultOpen />),
     );
 
     // Every fold is closed, and each one still announces what it holds.
@@ -122,7 +123,7 @@ describe('GetMemTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <GetMemTool part={makePart({ id: 9 }, LTM_OUTPUT)} defaultOpen />
+          <GetMemTool call={toolCallBlock(makePart({ id: 9 }, LTM_OUTPUT))} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -160,7 +161,7 @@ describe('the closed get_mem row names the memory (gate finding 4)', () => {
     renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <GetMemTool part={part} />
+          <GetMemTool call={toolCallBlock(part)} />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -207,7 +208,7 @@ describe('the closed get_mem row names the memory (gate finding 4)', () => {
 // number as `Prompt # 14`.
 describe('the get_mem meta line (gate finding 3)', () => {
   const opened = renderToStaticMarkup(
-    withProviders(<GetMemTool part={makePart({ id: 42 }, OBSERVATION_OUTPUT)} defaultOpen />),
+    withProviders(<GetMemTool call={toolCallBlock(makePart({ id: 42 }, OBSERVATION_OUTPUT))} defaultOpen />),
   );
 
   test('the id span lays its icon out inline, so text and icon share a baseline', () => {

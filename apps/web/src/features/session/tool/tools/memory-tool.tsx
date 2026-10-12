@@ -104,12 +104,12 @@ export function isMemoryMarkdown(ext: string): boolean {
   return ext === 'md' || ext === 'mdx';
 }
 
-export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function MemoryTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   // Field selector, not the whole store: destructuring the hook subscribes this
   // row to every field, so opening ONE file preview re-rendered every memory row

@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
 import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
 import type { ToolPart } from '@/ui';
@@ -120,7 +121,7 @@ const SESSION_MESSAGES = [
 describe('BashTool renders rich output without pushing elements through Shiki', () => {
   test('a traceback renders the structured-output block instead of throwing', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('python main.py', TRACEBACK)} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('python main.py', TRACEBACK))} defaultOpen />),
     );
 
     // Pre-fix this render threw `code.slice is not a function`.
@@ -130,7 +131,7 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
 
   test('session metadata output renders the session list', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('kortix sessions list', SESSION_META)} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('kortix sessions list', SESSION_META))} defaultOpen />),
     );
 
     expect(html).toContain('Refactor pricing');
@@ -140,7 +141,7 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
   test('session messages output renders the message list', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <BashTool part={makePart('kortix sessions messages', SESSION_MESSAGES)} defaultOpen />,
+        <BashTool call={toolCallBlock(makePart('kortix sessions messages', SESSION_MESSAGES))} defaultOpen />,
       ),
     );
 
@@ -150,7 +151,7 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
 
   test('plain output still renders as monospace text, not a rich block', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('echo hi', 'hi')} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('echo hi', 'hi'))} defaultOpen />),
     );
 
     expect(cardText(html)).toContain('echo hi');
@@ -174,7 +175,7 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
 // the ampersand.
 describe('BashTool command card geometry', () => {
   const html = renderToStaticMarkup(
-    withProviders(<BashTool part={makePart('echo hi', 'hi')} defaultOpen />),
+    withProviders(<BashTool call={toolCallBlock(makePart('echo hi', 'hi'))} defaultOpen />),
   );
 
   test('command and output share one left edge', () => {
@@ -210,7 +211,7 @@ describe('BashTool command card geometry', () => {
     // sit 3.5px shorter than the region it speaks for and the card twitched
     // between a silent command and a one-line one.
     const empty = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('mkdir -p build', '')} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('mkdir -p build', ''))} defaultOpen />),
     );
     const marker = empty.indexOf('No output');
     const openTag = empty.slice(empty.lastIndexOf('<p', marker), marker);
@@ -244,7 +245,7 @@ describe('BashTool reports whether the command actually worked', () => {
   test('a failed command says so in words, without being expanded', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <BashTool part={makePart('bun test', 'FAIL 3 tests\n<exit_code>1</exit_code>')} />,
+        <BashTool call={toolCallBlock(makePart('bun test', 'FAIL 3 tests\n<exit_code>1</exit_code>'))} />,
       ),
     );
 
@@ -254,7 +255,7 @@ describe('BashTool reports whether the command actually worked', () => {
 
   test('a successful command keeps the neutral wording', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('ls', 'a.txt\n<exit_code>0</exit_code>')} />),
+      withProviders(<BashTool call={toolCallBlock(makePart('ls', 'a.txt\n<exit_code>0</exit_code>'))} />),
     );
 
     expect(html).toContain('Ran command');
@@ -264,7 +265,7 @@ describe('BashTool reports whether the command actually worked', () => {
   test('an untagged command is not accused of failing', () => {
     // No `<exit_code>` is an ABSENT verdict, not a bad one. Treating a missing
     // tag as 0 would be the same lie in the other direction.
-    const html = renderToStaticMarkup(withProviders(<BashTool part={makePart('ls', 'a.txt')} />));
+    const html = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(makePart('ls', 'a.txt'))} />));
 
     expect(html).toContain('Ran command');
     expect(html).not.toContain('Command failed');
@@ -273,7 +274,7 @@ describe('BashTool reports whether the command actually worked', () => {
   test('the exact code appears once, in the expanded card', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <BashTool part={makePart('bun test', 'FAIL\n<exit_code>2</exit_code>')} defaultOpen />,
+        <BashTool call={toolCallBlock(makePart('bun test', 'FAIL\n<exit_code>2</exit_code>'))} defaultOpen />,
       ),
     );
 
@@ -283,7 +284,7 @@ describe('BashTool reports whether the command actually worked', () => {
   test('a successful command carries no exit-code line', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <BashTool part={makePart('ls', 'a.txt\n<exit_code>0</exit_code>')} defaultOpen />,
+        <BashTool call={toolCallBlock(makePart('ls', 'a.txt\n<exit_code>0</exit_code>'))} defaultOpen />,
       ),
     );
 
@@ -363,7 +364,7 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
   test('a described call leads with the description and keeps the command beside it', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <BashTool part={makePart('pnpm install', 'done', 'install the workspace dependencies')} />,
+        <BashTool call={toolCallBlock(makePart('pnpm install', 'done', 'install the workspace dependencies'))} />,
       ),
     );
 
@@ -376,7 +377,7 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
   });
 
   test('a call with no description still reads "Ran command"', () => {
-    const html = renderToStaticMarkup(withProviders(<BashTool part={makePart('ls -la', 'out')} />));
+    const html = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(makePart('ls -la', 'out'))} />));
 
     expect(triggerTitle(html)).toBe(
       '<span class="min-w-0 truncate text-foreground">Ran command</span>',
@@ -387,11 +388,11 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <BashTool
-          part={makePart(
+          call={toolCallBlock(makePart(
             'bun test',
             'FAIL 3 tests\n<exit_code>1</exit_code>',
             'run the unit suite',
-          )}
+          ))}
         />,
       ),
     );
@@ -423,7 +424,7 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolRunningContext.Provider value>
-          <BashTool part={running} />
+          <BashTool call={toolCallBlock(running)} />
         </ToolRunningContext.Provider>,
       ),
     );
@@ -450,7 +451,7 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
         metadata: {},
       },
     } as unknown as ToolPart;
-    const html = renderToStaticMarkup(withProviders(<BashTool part={orphaned} />));
+    const html = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(orphaned)} />));
 
     expect(triggerTitle(html)).toBe(
       '<span class="min-w-0 truncate text-foreground">Install the workspace dependencies</span>',
@@ -479,10 +480,10 @@ describe('BashTool trigger drops the command once the card is showing it', () =>
   test('closed, the command is the row — open, it is the card', () => {
     const part = makePart('pnpm install', 'done', 'install the workspace dependencies');
 
-    const closed = renderToStaticMarkup(withProviders(<BashTool part={part} />));
+    const closed = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(part)} />));
     expect(triggerRegion(closed)).toContain('pnpm install');
 
-    const open = renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />));
+    const open = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(part)} defaultOpen />));
     // The row keeps the half the card does not repeat…
     expect(triggerRegion(open)).toContain('Install the workspace dependencies');
     // …and drops the half it does. The truncated copy also disagreed with the
@@ -495,11 +496,11 @@ describe('BashTool trigger drops the command once the card is showing it', () =>
   test('the +N line count goes with it', () => {
     const part = makePart('cat <<EOF\ntwo\nthree\nEOF', 'done');
 
-    expect(triggerRegion(renderToStaticMarkup(withProviders(<BashTool part={part} />)))).toContain(
+    expect(triggerRegion(renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(part)} />)))).toContain(
       '+3',
     );
     expect(
-      triggerRegion(renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />))),
+      triggerRegion(renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(part)} defaultOpen />))),
     ).not.toContain('+3');
   });
 
@@ -507,7 +508,7 @@ describe('BashTool trigger drops the command once the card is showing it', () =>
     // The exit-code strip is inside the card; the WORD "failed" is the row's.
     const part = makePart('bun test', 'FAIL\n<exit_code>1</exit_code>', 'run the unit suite');
     const open = triggerRegion(
-      renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />)),
+      renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(part)} defaultOpen />)),
     );
 
     expect(open).toContain('Command failed');
@@ -527,7 +528,7 @@ describe('BashTool trigger drops the command once the card is showing it', () =>
     const html = renderToStaticMarkup(
       withProviders(
         <ToolRunningContext.Provider value>
-          <BashTool part={running} defaultOpen />
+          <BashTool call={toolCallBlock(running)} defaultOpen />
         </ToolRunningContext.Provider>,
       ),
     );
@@ -545,14 +546,14 @@ describe('BashTool card, for the cases with nothing to show', () => {
     // A collapsed row drew line 1 of a 30-line heredoc and said nothing about
     // the other 29, so a whole script looked like a one-liner.
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('cat <<EOF\ntwo\nthree\nEOF', 'done')} />),
+      withProviders(<BashTool call={toolCallBlock(makePart('cat <<EOF\ntwo\nthree\nEOF', 'done'))} />),
     );
 
     expect(html).toContain('+3');
   });
 
   test('a single-line command carries no line count', () => {
-    const html = renderToStaticMarkup(withProviders(<BashTool part={makePart('ls -la', 'out')} />));
+    const html = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(makePart('ls -la', 'out'))} />));
 
     expect(html).not.toContain('+0');
   });
@@ -561,7 +562,7 @@ describe('BashTool card, for the cases with nothing to show', () => {
     // The region used to be omitted entirely, leaving a command card with dead
     // space under it — indistinguishable from output we failed to capture.
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('mkdir -p build', '')} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('mkdir -p build', ''))} defaultOpen />),
     );
 
     expect(html).toContain('No output');
@@ -576,7 +577,7 @@ describe('BashTool card, for the cases with nothing to show', () => {
       callID: 'call-1',
       state: { status: 'running', input: { command: 'sleep 10' }, metadata: {} },
     } as unknown as ToolPart;
-    const html = renderToStaticMarkup(withProviders(<BashTool part={running} defaultOpen />));
+    const html = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(running)} defaultOpen />));
 
     expect(html).not.toContain('No output');
   });
@@ -586,7 +587,7 @@ describe('BashTool card, for the cases with nothing to show', () => {
     // the command off the top of its own card — the reader lost the only line
     // saying what they were looking at. Two regions, two caps.
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('bun test', 'x\n'.repeat(200))} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('bun test', 'x\n'.repeat(200)))} defaultOpen />),
     );
 
     expect(html).toContain('max-h-64');
@@ -598,7 +599,7 @@ describe('BashTool card, for the cases with nothing to show', () => {
     // The command had one; the output — the half a reader wants to paste into
     // an issue — had none.
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('ls', 'a.txt')} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('ls', 'a.txt'))} defaultOpen />),
     );
 
     expect(html.match(/absolute top-2 right-2/g)?.length).toBe(2);
@@ -630,7 +631,7 @@ describe('BashTool command card de-nests on the panel (gate finding 5, fourth ca
   const part = makePart('echo hi', 'hi');
 
   function render(surface: 'inline' | 'panel') {
-    const tool = <BashTool part={part} defaultOpen />;
+    const tool = <BashTool call={toolCallBlock(part)} defaultOpen />;
     return renderToStaticMarkup(
       withProviders(
         surface === 'panel' ? (
@@ -694,7 +695,7 @@ describe('BashTool command card de-nests on the panel (gate finding 5, fourth ca
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <BashTool part={makePart('mkdir -p build', '')} defaultOpen />
+          <BashTool call={toolCallBlock(makePart('mkdir -p build', ''))} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -764,7 +765,7 @@ describe('dedentCommand — incidental indent never reaches the pane', () => {
 
   test('the rendered card starts the command at the pane inset, not two characters in', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('  echo hi', 'hi')} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('  echo hi', 'hi'))} defaultOpen />),
     );
 
     expect(cardText(html)).toContain('echo hi');
@@ -777,7 +778,7 @@ describe('BashTool indent is surface-aware', () => {
   const INDENT = 'ml-[var(--tool-indent,1.375rem)]';
 
   test('inline keeps the icon-gutter indent', () => {
-    const html = renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />));
+    const html = renderToStaticMarkup(withProviders(<BashTool call={toolCallBlock(part)} defaultOpen />));
 
     expect(html).toContain(INDENT);
     // NEW (Task 19): the seam is gated on the same condition as the indent, so
@@ -789,7 +790,7 @@ describe('BashTool indent is surface-aware', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <BashTool part={part} defaultOpen />
+          <BashTool call={toolCallBlock(part)} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -806,7 +807,7 @@ describe('BashTool renders a channel send as the outgoing message', () => {
   test('`teams send` shows the text the person received, badge first, command underneath', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <BashTool part={makePart("teams send 'Anything else I can help with?'", '{"ok":true,"delivered":"stream"}')} />,
+        <BashTool call={toolCallBlock(makePart("teams send 'Anything else I can help with?'", '{"ok":true,"delivered":"stream"}'))} />,
       ),
     );
     // The reply text is visible without opening anything: the row opens by default.
@@ -820,7 +821,7 @@ describe('BashTool renders a channel send as the outgoing message', () => {
 
   test('a file send names the attachment', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('slack send --file /out/report.pdf --text "Here it is"', '{"ok":true}')} />),
+      withProviders(<BashTool call={toolCallBlock(makePart('slack send --file /out/report.pdf --text "Here it is"', '{"ok":true}'))} />),
     );
     expect(html).toContain('report.pdf');
     expect(html).toContain('Here it is');
@@ -829,14 +830,14 @@ describe('BashTool renders a channel send as the outgoing message', () => {
 
   test('`teams step` and a failed send are ordinary commands', () => {
     const step = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('teams step "Reading the README"', '{"ok":true}')} defaultOpen />),
+      withProviders(<BashTool call={toolCallBlock(makePart('teams step "Reading the README"', '{"ok":true}'))} defaultOpen />),
     );
     expect(triggerTitle(step)).toContain('Ran command');
 
     const failed = renderToStaticMarkup(
       withProviders(
         <BashTool
-          part={makePart('teams send "hi"', 'No active Teams turn to answer.\n<exit_code>1</exit_code>')}
+          call={toolCallBlock(makePart('teams send "hi"', 'No active Teams turn to answer.\n<exit_code>1</exit_code>'))}
           defaultOpen
         />,
       ),

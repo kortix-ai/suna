@@ -1,8 +1,8 @@
 import { appReleaseInputFromBlock } from '@kortix/manifest-schema';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { APP_TEMPLATES, appTemplate, type AppTemplateSecret } from '@kortix/shared/app-templates';
 import { parseDocument } from 'yaml';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
 
 import { splitHelp } from '../command-argv.ts';
@@ -68,7 +68,7 @@ Subcommands:
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
                                     HTTP-action services, an admins-only dashboard).
-    --name <slug>                   Default: the template name.
+    --name <slug>                   Default: the template's default (convex: backend).
     --no-deploy                     Write kortix.yaml only.
   deploy [path]                     Deploy a directory or .tar.gz archive. With no
                                     path and a kortix.yaml of several apps,
@@ -486,7 +486,7 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   if (!templateName) return fail(`launch needs --template (${Object.keys(APP_TEMPLATES).join(', ')})`);
   const template = appTemplate(templateName);
   if (!template) return fail(`no template "${templateName}"; there is ${Object.keys(APP_TEMPLATES).join(', ')}`);
-  const slug = slugFrom(slugFlag ?? template.name);
+  const slug = slugFrom(slugFlag ?? template.defaultName);
   const path = resolve(process.cwd(), 'kortix.yaml');
   const text = readManifestOrNew(path);
   const doc = parseDocument(text);
@@ -495,6 +495,19 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   if (taken.length > 0) return fail(`kortix.yaml already has apps.${taken.join(', apps.')}; pick another --name`);
   writeFileSync(path, addAppBlocks(text, blocks));
   if (!json) process.stdout.write(`\n  ${status.ok(`added ${Object.keys(blocks).map((name) => `apps.${name}`).join(', ')} to kortix.yaml`)}\n`);
+  // The files the Apps build from (a Dockerfile, a start script). One that exists is the user's: kept.
+  for (const [file, content] of Object.entries(template.files?.(slug) ?? {})) {
+    const target = resolve(process.cwd(), file);
+    mkdirSync(dirname(target), { recursive: true });
+    // `wx` creates only: no check-then-write window in which a user's file could be replaced.
+    try {
+      writeFileSync(target, content, { flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw error;
+    }
+    if (!json) process.stdout.write(`  ${status.ok(`wrote ${file}`)}\n`);
+  }
   if (!noDeploy) {
     const secrets = template.secrets?.(slug) ?? [];
     const ctx = secrets.length > 0 ? await context(options) : null;
@@ -516,23 +529,19 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
 }
 
 /**
- * Create a template's project secret from the last line its command prints on
- * the App's machine. A secret that already holds a value is kept. The value is
- * never printed. Returns an error message, or null.
+ * Write a template's project secret from the last line its command prints on
+ * the App's machine. It belongs to the App just launched, so it is always
+ * rewritten: a value left by an earlier App of the same name is stale. The
+ * value is never printed. Returns an error message, or null.
  */
 async function ensureTemplateSecret(ctx: Ctx, secret: AppTemplateSecret, json: boolean): Promise<string | null> {
   return scoped(ctx, async () => {
-    const existing = await ctx.secrets.list();
-    if (existing.items.some((item) => item.identifier === secret.name && item.configured)) {
-      if (!json) process.stdout.write(`  ${status.ok(`kept the project secret ${secret.name}`)}\n`);
-      return null;
-    }
     const app = await resolveApp(ctx.apps, secret.app);
     const result = await ctx.apps.exec(app.app_id, { command: secret.command });
     const value = result.stdout.split('\n').map((line) => line.trim()).filter(Boolean).pop();
     if (result.exit_code !== 0 || !value) return `could not create the project secret ${secret.name}: \`${secret.command.join(' ')}\` on ${secret.app} exited ${result.exit_code}`;
     await ctx.secrets.upsert({ name: secret.name, value });
-    if (!json) process.stdout.write(`  ${status.ok(`created the project secret ${secret.name}`)}\n`);
+    if (!json) process.stdout.write(`  ${status.ok(`wrote the project secret ${secret.name}`)}\n`);
     return null;
   });
 }

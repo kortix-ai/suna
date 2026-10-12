@@ -74,15 +74,15 @@ function QuestionAnswerBlock({
 }
 
 export function QuestionTool({
-  part,
+  call,
   defaultOpen,
   forceOpen,
   locked,
   hasActiveQuestion,
 }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
 
   const questions = useMemo<ParsedQuestion[]>(() => {
     const raw = Array.isArray(input.questions) ? input.questions : [];
@@ -110,10 +110,10 @@ export function QuestionTool({
   }, [input.questions]);
 
   const answers = useMemo<string[][]>(() => {
-    const recorded = toToolView(part).answers;
+    const recorded = toToolView(call).answers;
     if (recorded && recorded.length > 0) return recorded;
     return parseQuestionAnswersFromOutput(output, questions.length) ?? [];
-  }, [part, output, questions.length]);
+  }, [call, output, questions.length]);
 
   const total = questions.length;
   const answeredCount = useMemo(() => answers.filter((a) => a && a.length > 0).length, [answers]);

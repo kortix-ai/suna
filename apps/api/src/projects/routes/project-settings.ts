@@ -19,9 +19,15 @@ import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
 import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { featureFlagDef, isDerivedFeatureFlag, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
+import {
+  featureFlagDef,
+  isDerivedFeatureFlag,
+  isFeatureFlagKey,
+  isOperatorOnlyFeatureFlag,
+  isOrganizationFeatureFlag,
+} from '../../feature-flags/registry';
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
-import { writeProjectFeatureFlag } from '../../feature-flags/write';
+import { writeOrganizationFeatureFlag, writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
@@ -122,8 +128,8 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`apps`) starts billable machines, so
-  // Kortix decides it: only a platform operator writes it, never a project
+  // An internal-only flag (`apps`) starts billable machines, and an
+  // organization flag (`volumes`) is experimental, so Kortix decides them: only a platform operator writes it, never a project
   // admin and never an agent session. An operator acting in a customer
   // project through impersonation passes (`userId` stays the operator's).
   if (isOperatorOnlyFeatureFlag(feature)) {
@@ -138,6 +144,21 @@ const patchFeatureFlagHandler = async (c: any) => {
         403,
       );
     }
+  }
+  // An organization flag (`volumes`) writes the organization's entry in the
+  // store it reads (the Volumes policy row), never the project's metadata.
+  if (isOrganizationFeatureFlag(feature)) {
+    if (!featureFlagDef(feature).available()) {
+      return c.json({ error: `${featureFlagDef(feature).name} is not available on this deployment` }, 400);
+    }
+    if (feature === 'stateless_sessions' && enabled === true) {
+      const { volumesEnabledForFresh } = await import('../../platform/services/boot-mode-setting');
+      if (!(await volumesEnabledForFresh(loaded.row.accountId))) {
+        return c.json({ error: 'Turn on Volumes first' }, 400);
+      }
+    }
+    await writeOrganizationFeatureFlag(loaded.row.accountId, feature, enabled);
+    return c.json(serializeProject(loaded.row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   }
   const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);

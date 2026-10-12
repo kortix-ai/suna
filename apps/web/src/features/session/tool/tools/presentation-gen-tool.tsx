@@ -49,11 +49,11 @@ const ACTIONS_WITH_OWN_SUCCESS_LINE = [
   'export_pptx',
 ];
 
-export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PresentationGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const action = input.action as string | undefined;
   const presentationName = input.presentation_name as string | undefined;

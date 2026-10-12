@@ -1134,7 +1134,8 @@
       "origin": {
         "overridden": "Für dieses Projekt überschrieben",
         "defaultOn": "Standardmäßig an",
-        "defaultOff": "Standardmäßig aus"
+        "defaultOff": "Standardmäßig aus",
+        "organization": "Ganze Organisation, von Kortix verwaltet"
       },
       "search": "Funktionen suchen",
       "loadFailed": "Projekt konnte nicht geladen werden",
@@ -1209,6 +1210,14 @@
           "name": "App-Ereignis-Trigger",
           "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Geteilte Dateien und Sitzungen auf Volumes für die ganze Organisation."
+        },
+        "stateless_sessions": {
+          "name": "Zustandslose Sitzungen",
+          "description": "Bei jedem Aufwecken ein frischer Computer; nur Dateien und Chat bleiben. Erfordert aktivierte Volumes."
+        },
         "drives": {
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
@@ -1216,6 +1225,10 @@
         "ephemeral_sandboxes": {
           "name": "Kurzlebige Sandboxes",
           "description": "Eine gestoppte Session behält ihre Dateien und ihr Gespräch auf einem Volume und gibt ihren Rechner ab. Beim Aufwecken startet ein neuer Rechner mit dem neuesten Image. Laufende Prozesse überstehen einen Stopp nicht."
+        },
+        "session_log": {
+          "name": "Session-Log v2",
+          "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
       }
     },
@@ -19779,6 +19792,7 @@
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "managedUpgradeHint": "Upgrade durchführen, um die verwalteten Modelle von Kortix zu nutzen, oder einen eigenen Anbieter verbinden.",
     "pricingEstimate": "Geschätzter Kundenpreis. Die genutzte Route bestimmt die Kosten.",
     "pricingRoute": "{route}: {input} Eingabe / {cacheRead} Cache / {output} Ausgabe pro 1 Mio. Token",
     "pricingPreferred": "Bevorzugt",

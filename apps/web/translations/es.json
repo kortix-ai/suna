@@ -1134,7 +1134,8 @@
       "origin": {
         "overridden": "Modificado para este proyecto",
         "defaultOn": "Activado de forma predeterminada",
-        "defaultOff": "Desactivado de forma predeterminada"
+        "defaultOff": "Desactivado de forma predeterminada",
+        "organization": "Toda la organización, gestionado por Kortix"
       },
       "search": "Buscar funciones",
       "loadFailed": "No se pudo cargar el proyecto",
@@ -1209,6 +1210,14 @@
           "name": "Disparadores de eventos de app",
           "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario."
         },
+        "volumes": {
+          "name": "Volúmenes",
+          "description": "Archivos compartidos y sesiones en volúmenes para toda la organización."
+        },
+        "stateless_sessions": {
+          "name": "Sesiones sin estado",
+          "description": "Un equipo nuevo en cada reactivación; solo se conservan archivos y chat. Requiere Volúmenes activados."
+        },
         "drives": {
           "name": "Drive",
           "description": "Carpetas compartidas que se mantienen sincronizadas con las sesiones: tu propio drive, uno por agente y los drives de empresa que un administrador asigna al proyecto. Las sesiones nuevas los ven en /drives."
@@ -1216,6 +1225,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes efímeros",
           "description": "Una sesión detenida conserva sus archivos y su conversación en un volumen y libera su equipo. Al reactivarla se inicia un equipo nuevo con la imagen más reciente. Los procesos en ejecución no sobreviven a una detención."
+        },
+        "session_log": {
+          "name": "Registro de sesión v2",
+          "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
         }
       }
     },
@@ -19779,6 +19792,7 @@
     "providerError": "No se pudo actualizar el acceso al proveedor.",
     "managedTitle": "Modelos gestionados por Kortix",
     "managedDescription": "Modelos gestionados que usan créditos de Kortix. No necesitas una clave API.",
+    "managedUpgradeHint": "Mejora tu plan para usar los modelos gestionados de Kortix o conecta tu propio proveedor.",
     "pricingEstimate": "Precio estimado para el cliente. La ruta utilizada determina el cargo.",
     "pricingRoute": "{route}: {input} entrada / {cacheRead} caché / {output} salida por millón de tokens",
     "pricingPreferred": "Preferida",

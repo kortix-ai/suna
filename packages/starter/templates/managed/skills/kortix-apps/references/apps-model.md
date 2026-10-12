@@ -129,12 +129,12 @@ App runs and who may open it do not change.
 display:
   listed: true          # a card in the Apps grid (default true)
   preview: none         # live (default): the card frames the App; none: an icon card
-  parent: db            # a tab in db's App detail, not a card of its own
+  parent: backend       # a tab in backend's App detail, not a card of its own
 ```
 
 - `parent` names another App of the same `kortix.yaml`. A tab whose parent
   does not exist stays a card. The tab label is the App's name without the
-  `<parent>-` prefix (`db-dashboard` → Dashboard).
+  `<parent>-` prefix (`backend-dashboard` → Dashboard).
 - An App with `preview: none` opens on its first tab.
 - `kortix apps deploy` writes the block's `display` to the App (absent = the
   defaults). `kortix apps show` prints it on the `shown` row.
@@ -142,15 +142,21 @@ display:
 ## Templates
 
 `kortix apps launch --template <name> [--name <slug>]` writes a ready-made
-App's blocks into `kortix.yaml` and deploys them. Templates are data: pinned
-images and config, nothing the platform runs specially. A template can also
-create project secrets: right after the named App deploys, `launch` runs a
-command on its machine and stores the last line it prints. A secret that
-already holds a value is kept. The value is never printed.
+App's blocks into `kortix.yaml`, writes the files its Apps build from, and
+deploys them. Templates are data: pinned images, config and files, nothing the
+platform runs specially.
+
+- **Files:** paths from the project root (for example
+  `apps/<name>/dashboard/Dockerfile`). A file that already exists is yours:
+  `launch` keeps it.
+- **Secrets:** right after the named App deploys, `launch` runs a command on
+  its machine and writes the last line it prints to a project secret. Every
+  launch rewrites it: the value belongs to the App just launched, and one left
+  by an earlier App of the same name is stale. The value is never printed.
 
 | Template | What it is | Reference |
 | --- | --- | --- |
-| `convex` | A self-hosted Convex backend + its dashboard (a tab of the backend, admins only, signed in) | convex.md |
+| `convex` | A self-hosted Convex backend + its dashboard (two images, so two Apps; the dashboard is a Dockerfile App in `apps/<name>/dashboard`, a tab of the backend, admins only, signed in) | convex.md |
 
 Not yet: TCP services (a Postgres or Redis client protocol; `protocol: tcp` is
 refused) and private networking between Apps. Until then a database that speaks raw TCP can only be

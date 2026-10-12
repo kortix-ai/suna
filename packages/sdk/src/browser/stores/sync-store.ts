@@ -16,6 +16,14 @@ import {
 	isWithinRewindWindow,
 	stageSessionRewind,
 } from "../../core/session/rewind";
+import type { SessionLogPage } from "../../core/session-log/source";
+import {
+	EMPTY_SESSION_LOG_STATE,
+	applySessionLogEvent,
+	applySessionLogPage,
+	type SessionLogEventInput,
+	type SessionLogState,
+} from "../../core/session-log/store";
 import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
@@ -266,8 +274,27 @@ interface SyncState {
 	 */
 	sessionRevertNeedsTailReconcile: Record<string, boolean>;
 
+	/**
+	 * The session log (`kortix.session/2`) of each session that negotiated v2, keyed
+	 * by the KORTIX session id (`core/session-log/store.ts` has the shape and the
+	 * merge rules). Empty for every v1 session. When it holds a thread, the v1
+	 * hooks read that thread through `toV1` (`selectSessionRows`).
+	 */
+	sessionLogs: Record<string, SessionLogState>;
+
 	// ---- Actions ----
+	/**
+	 * The v1 frames. A session log's `log.*` frames do not come through here:
+	 * they name no Kortix session, so the stream that carries them (it knows its
+	 * session) calls `applySessionLogEvent`.
+	 */
 	applyEvent: (event: RuntimeEvent) => void;
+	/** Merge one page of the session log (`GET …/log`) into session `sessionId`'s log. */
+	applySessionLogPage: (sessionId: string, page: SessionLogPage) => void;
+	/** Apply one `log.*` frame to session `sessionId`'s log, creating it when absent. */
+	applySessionLogEvent: (sessionId: string, event: SessionLogEventInput) => void;
+	/** Forget session `sessionId`'s log: its v1 hooks read the v1 store again. */
+	dropSessionLog: (sessionId: string) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
 	/**
@@ -1196,6 +1223,51 @@ function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 // ============================================================================
 
 /**
+ * Record that the delta event `id` for `tailKey` (`message:part:field`) is
+ * applied. False when it already was: a duplicate delivery, see
+ * `deltaEventTails`. Call it only once the delta has a target.
+ */
+function takeDeltaEventId(sessionID: string, tailKey: string, id: string): boolean {
+	let sessionTails = deltaEventTails.get(sessionID);
+	if (!sessionTails) {
+		sessionTails = new Map();
+		deltaEventTails.set(sessionID, sessionTails);
+	}
+	let appliedIds = sessionTails.get(tailKey);
+	if (appliedIds?.has(id)) return false;
+	if (!appliedIds) {
+		appliedIds = new Set();
+		sessionTails.set(tailKey, appliedIds);
+	}
+	appliedIds.add(id);
+	// Bounded window: a Set iterates in insertion order, so the first key is
+	// the oldest applied id.
+	if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
+		const oldest = appliedIds.values().next().value;
+		if (oldest !== undefined) appliedIds.delete(oldest);
+	}
+	return true;
+}
+
+/**
+ * One `log.*` frame into `sessionId`'s log. `log.block.delta` shares the v1
+ * delta path's duplicate-delivery check (keyed by thread, the runtime session
+ * id) and counts as runtime activity, as `message.part.delta` does.
+ */
+function applySessionLogFrame(sessionId: string, event: SessionLogEventInput): void {
+	const state = useSyncStore.getState();
+	const current = state.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
+	const next = applySessionLogEvent(current, event);
+	if (next === current) return;
+	if (event.type === "log.block.delta") {
+		const p = event.properties as { thread_id: string; message_id: string; block_id: string };
+		if (event.id && !takeDeltaEventId(p.thread_id, `${p.message_id}:${p.block_id}:log`, event.id)) return;
+		state.noteSessionActivity(p.thread_id);
+	}
+	useSyncStore.setState((s) => ({ sessionLogs: { ...s.sessionLogs, [sessionId]: next } }));
+}
+
+/**
  * Append wire deltas to one part field in ONE store update. `applyPartDelta`
  * passes one; a coalesced `message.part.delta` passes the run it stands for.
  * Each piece keeps its own duplicate-delivery check (`deltaEventTails`).
@@ -1238,31 +1310,11 @@ function appendPartDeltas(
 			// later LEGITIMATE redelivery of that same event once the part
 			// did exist. See "a delta that finds no target part does not
 			// consume the event id" in the test file.
-			if (piece.id) {
-				const tailKey = `${messageID}:${partID}:${field}`;
-				let sessionTails = deltaEventTails.get(sessionID);
-				if (!sessionTails) {
-					sessionTails = new Map();
-					deltaEventTails.set(sessionID, sessionTails);
-				}
-				let appliedIds = sessionTails.get(tailKey);
-				if (appliedIds?.has(piece.id)) {
-					// Already applied. If the part holds its text at the offset
-					// (a replay after a hydrate), the stream moves past it.
-					if (offset < text.length && text.startsWith(piece.delta, offset)) offset += piece.delta.length;
-					continue;
-				}
-				if (!appliedIds) {
-					appliedIds = new Set();
-					sessionTails.set(tailKey, appliedIds);
-				}
-				appliedIds.add(piece.id);
-				// Bounded window: a Set iterates in insertion order, so the
-				// first key is the oldest applied id.
-				if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
-					const oldest = appliedIds.values().next().value;
-					if (oldest !== undefined) appliedIds.delete(oldest);
-				}
+			if (piece.id && !takeDeltaEventId(sessionID, offsetKey, piece.id)) {
+				// Already applied. If the part holds its text at the offset
+				// (a replay after a hydrate), the stream moves past it.
+				if (offset < text.length && text.startsWith(piece.delta, offset)) offset += piece.delta.length;
+				continue;
 			}
 			// The part already holds this text where the stream says it goes:
 			// a hydrate wrote it before the delta arrived.
@@ -1300,6 +1352,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	todos: {},
 	sessionRevert: {},
 	sessionRevertNeedsTailReconcile: {},
+	sessionLogs: {},
 
 	// Compat alias
 	get statuses() {
@@ -2353,8 +2406,26 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			todos: {},
 			sessionRevert: {},
 			sessionRevertNeedsTailReconcile: {},
+			sessionLogs: {},
 		});
 	},
+
+	applySessionLogPage: (sessionId, page) =>
+		set((s) => {
+			const current = s.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
+			// A page's session record is a patch; the id it was read for is its `session_id`.
+			const next = applySessionLogPage(current, { ...page, session: { session_id: sessionId, ...page.session } });
+			return next === current ? s : { sessionLogs: { ...s.sessionLogs, [sessionId]: next } };
+		}),
+
+	applySessionLogEvent: (sessionId, event) => applySessionLogFrame(sessionId, event),
+
+	dropSessionLog: (sessionId) =>
+		set((s) => {
+			if (!(sessionId in s.sessionLogs)) return s;
+			const { [sessionId]: _dropped, ...rest } = s.sessionLogs;
+			return { sessionLogs: rest };
+		}),
 
 	// ---- Selector: join messages + parts into MessageWithParts[] ----
 

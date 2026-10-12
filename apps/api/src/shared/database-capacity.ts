@@ -29,19 +29,8 @@ export const PROD_DB_USABLE_CONNECTIONS = 237;
 /** ECS can autoscale the production API service to 10 tasks. */
 export const PROD_API_MAX_TASKS = 10;
 
-/**
- * Prod rolls its ECS API service one replacement at a time:
- * `deployment_maximum_percent = 100` means the fleet never exceeds
- * desired_count during a deploy, so the peak task count is PROD_API_MAX_TASKS
- * itself (the old 200% overlap would have held ten extra tasks — the window
- * where `SQLSTATE 53300` bursts happen, the 2026-09-27 incident). The paired
- * `deployment_minimum_healthy_percent = 50` lets replacements actually run
- * (AWS rounds minimum UP and maximum DOWN) and may dip capacity below
- * desired, which only shrinks this envelope — see the Terraform cross-check
- * in `database-capacity.test.ts`. Dev and staging keep the module's 200%
- * default for faster deploys; their DB budgets are separate.
- */
-export const ROLLING_TASK_OVERLAP = 1;
+/** ECS permits a 200% rolling deployment: 10 old tasks plus 10 new tasks. */
+export const ROLLING_TASK_OVERLAP = 2;
 
 /**
  * Slots reserved for Supabase, operators, migrations, and request-scoped probes.
