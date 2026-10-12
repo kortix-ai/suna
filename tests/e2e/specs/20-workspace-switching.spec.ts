@@ -5,6 +5,7 @@ import {
   createDatabaseProject,
   deleteDatabaseProject,
 } from "../../src/fixtures/database-project";
+import { queryDatabaseRows, runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createAuthUser,
@@ -12,7 +13,12 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, fulfillRewrittenJson, settingsPanel } from "../helpers/ui";
+import {
+  dismissOnboarding,
+  fulfillRewrittenJson,
+  selectAccountForUi,
+  settingsPanel,
+} from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:13738/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://localhost:13740";
@@ -69,6 +75,26 @@ function workspaceRows(picker: Locator): Locator {
     .getByRole("menuitem")
     .filter({ hasNotText: "Create a" })
     .filter({ hasNotText: "Account settings" });
+}
+
+/** The palette's account switch: Search → Accounts → the account's row
+ *  (`handleSelectAccount` in `features/workspace/command-palette.tsx`). */
+async function switchAccountInPalette(page: Page, name: string): Promise<void> {
+  await dismissOnboarding(page);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const palette = page.getByRole("dialog").filter({ has: page.locator("[cmdk-item]") });
+  await expect(palette).toBeVisible();
+  await palette.getByRole("option", { name: "Accounts", exact: true }).click();
+  await palette.locator("[cmdk-item]", { hasText: name }).click();
+}
+
+/** The account every account-scoped surface reads (`kortix.currentAccount`). */
+function selectedAccount(page: Page): () => Promise<string | null> {
+  return () =>
+    page.evaluate(() => {
+      const saved = localStorage.getItem("kortix.currentAccount");
+      return saved ? JSON.parse(saved).state.selectedAccountId : null;
+    });
 }
 
 test.describe("20 — Workspace switching", () => {
@@ -224,6 +250,133 @@ test.describe("20 — Workspace switching", () => {
     } finally {
       for (const projectId of projectIds) {
         await deleteDatabaseProject(env, projectId).catch(() => {});
+      }
+      await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+
+  // KRTX-1731: an account switch from the command palette went to the plain
+  // landing door, which reopened the project this browser remembered — in the
+  // account just left — and set the selected account back to it. The palette
+  // now asks the door for the picked account (`/projects/start?account=<id>`).
+  test("a command-palette account switch lands in that account's project", async ({
+    page,
+  }) => {
+    test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
+    test.setTimeout(240_000);
+
+    const runId = Date.now().toString(36);
+    const email = `e2e-palette-account-switch-${runId}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    const env = loadEnv();
+    const projectIds: string[] = [];
+    const accountIds: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    try {
+      // The personal account comes first; the two named accounts give the
+      // palette rows known labels (the personal one is named after the email).
+      await api<AccountSummary[]>(session.access_token, "GET", "/accounts");
+      const north = await api<{ account_id: string }>(
+        session.access_token,
+        "POST",
+        "/accounts",
+        { name: `Palette North ${runId}` },
+        201,
+      );
+      accountIds.push(north.account_id);
+      const south = await api<{ account_id: string }>(
+        session.access_token,
+        "POST",
+        "/accounts",
+        { name: `Palette South ${runId}` },
+        201,
+      );
+      accountIds.push(south.account_id);
+
+      const northHome = await createDatabaseProject(env, {
+        accountId: north.account_id,
+        userId: user.id,
+        name: `North Home ${runId}`,
+      });
+      projectIds.push(northHome.id);
+      const southOnly = await createDatabaseProject(env, {
+        accountId: south.account_id,
+        userId: user.id,
+        name: `South Only ${runId}`,
+      });
+      projectIds.push(southOnly.id);
+
+      await installBrowserSessionDirect(
+        page,
+        session,
+        `/projects/${northHome.id}`,
+        authOptions,
+      );
+      await selectAccountForUi(page, north.account_id);
+      await page.goto(`/projects/${northHome.id}`, {
+        waitUntil: "domcontentloaded",
+      });
+      await dismissOnboarding(page);
+      // The project shell remembers the project it opened (the last-project cookie).
+      await expect
+        .poll(() => page.evaluate(() => document.cookie), { timeout: 60_000 })
+        .toContain(northHome.id);
+
+      await test.step("switching to an account opens its project, not the remembered one", async () => {
+        await switchAccountInPalette(page, `Palette South ${runId}`);
+        await expect(page).toHaveURL(new RegExp(`/projects/${southOnly.id}(\\?|$)`), {
+          timeout: 60_000,
+        });
+        await expect.poll(selectedAccount(page)).toBe(south.account_id);
+      });
+
+      await test.step("switching back opens the first account's project", async () => {
+        await switchAccountInPalette(page, `Palette North ${runId}`);
+        await expect(page).toHaveURL(new RegExp(`/projects/${northHome.id}(\\?|$)`), {
+          timeout: 60_000,
+        });
+        await expect.poll(selectedAccount(page)).toBe(north.account_id);
+      });
+
+      await test.step("an account with several projects shows the selector, on that account", async () => {
+        const southTwo = await createDatabaseProject(env, {
+          accountId: south.account_id,
+          userId: user.id,
+          name: `South Two ${runId}`,
+        });
+        projectIds.push(southTwo.id);
+        // The door decides from the project lists the app holds (zero network
+        // on the first frame), so the person has seen South's second project:
+        // the selector lists it, then they go back to North Home.
+        await page.goto("/projects", { waitUntil: "domcontentloaded" });
+        await expect(page.getByText(`South Two ${runId}`).first()).toBeVisible({ timeout: 60_000 });
+        await page.goto(`/projects/${northHome.id}`, { waitUntil: "domcontentloaded" });
+        await expect
+          .poll(() => page.evaluate(() => document.cookie), { timeout: 60_000 })
+          .toContain(northHome.id);
+        await switchAccountInPalette(page, `Palette South ${runId}`);
+        // The door drops its own `account=` input on the way out.
+        await expect(page).toHaveURL(/\/projects(\?|$)/, { timeout: 60_000 });
+        await expect.poll(selectedAccount(page)).toBe(south.account_id);
+      });
+
+      expect(pageErrors).toEqual([]);
+    } finally {
+      for (const projectId of projectIds) {
+        await deleteDatabaseProject(env, projectId).catch(() => {});
+      }
+      // The personal account too: every account this user belongs to.
+      const memberships = await queryDatabaseRows<{ account_id: string }>(
+        "select distinct account_id::text from kortix.account_members where user_id = $1::uuid",
+        [user.id],
+      ).catch(() => []);
+      for (const accountId of new Set([...accountIds, ...memberships.map((row) => row.account_id)])) {
+        await runDatabaseSql("delete from kortix.accounts where account_id = $1::uuid", [
+          accountId,
+        ]).catch(() => {});
       }
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }

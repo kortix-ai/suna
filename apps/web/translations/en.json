@@ -7926,7 +7926,11 @@
       "line267JsxTextCheckpointHistory": "Version history",
       "line285JsxTextCopyPath": "Copy path",
       "line396JsxTextThisFolderIsEmpty": "This folder is empty",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here.",
+      "loadMoreItems": "Load more items",
+      "loadMoreFailed": "Could not load more items. Try again.",
+      "partialSortNote": "Showing {value0} items. Sorting applies once every item is loaded.",
+      "showingFirstItems": "Showing the first {value0} items"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-click to edit path",
@@ -8018,7 +8022,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Search files...",
       "line124JsxTextTypeToSearchFiles": "Type to search files...",
-      "line136JsxTextNoFilesFound": "No files found"
+      "line136JsxTextNoFilesFound": "No files found",
+      "searchContents": "Search contents",
+      "firstMatches": "Showing the first {value0} matches",
+      "searchContentsPlaceholder": "Search file contents...",
+      "typeToSearchContents": "Type to search file contents...",
+      "noMatchingLines": "No matching lines"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "A file or folder with that name already exists",
@@ -20188,9 +20197,8 @@
     "calendarNextWeek": "Next week",
     "calendarPreviousMonth": "Previous month",
     "calendarNextMonth": "Next month",
-    "calendarAllWeek": "All week",
-    "calendarAllDay": "All day",
-    "calendarEvery": "every {period}",
+    "calendarMore": "+{count} more",
+    "calendarMoreOn": "{count, plural, one {# more reminder} other {# more reminders}} on {date}",
     "calendarSession": "Session",
     "calendarEmptyWeek": "Nothing fires this week",
     "calendarEmptyDay": "Nothing fires this day",

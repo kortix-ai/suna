@@ -162,6 +162,8 @@ Gate a control in your UI with `can` or `canBatch` on the action the route check
 
 `listMine()` lists pending invites addressed to your email. `describe(inviteId)`, `accept(inviteId)` and `decline(inviteId)` act on one invite. They need no account membership.
 
+`acceptAndLand(inviteId, invite?)` accepts and returns `{ accepted, landing }`. `landing` is where to open: `{ kind: 'project', projectId, accountId }` for the first project the invite granted, or `{ kind: 'account', accountId }` for a workspace invite. Pass the invite you already read (from `listMine()` or `describe()`): an accept that grants nothing, such as an admin invite, then lands in the first project the invite names. `accountInviteLanding(accepted, invite?)` is the same rule without the request, for an invite accepted earlier.
+
 ### `kortix.billing`
 
 | Method | What it does |
@@ -233,10 +235,10 @@ These methods read the project repository. To read and write files in a running 
 
 | Method | What it does |
 | --- | --- |
-| `files.listDirectory({ ref?, path? })` | One folder level: `{ entries, truncated }`. Use it to build a file tree. |
+| `files.listDirectory({ ref?, path?, cursor?, limit? })` | One folder level: `{ entries, truncated, next_cursor }`. Use it to build a file tree. Without `cursor` or `limit`, one response carries up to 5,000 entries. With either, the response is a page of `limit` entries (default 500, at most 2,000). Pass `next_cursor` as `cursor` for the next page while it is a string: stop when it is `null` or absent (an API older than paging omits it). Every page reads the commit the first page read. |
 | `files.list(options?)` | Every file under a path, recursively, cut at 1,000. A cut response carries `X-Kortix-Truncated: 1`. |
 | `files.read(path, ref?)` · `files.history(path, { ref?, limit?, skip? })` | A file at a ref · its commits. |
-| `files.search(query, { content?, ref?, limit? })` | Search file names, or contents with `content: true`. |
+| `files.search(query, { content?, ref?, limit? })` | Search file names, or contents with `content: true`. A content match carries `line_number` and `line_text`. |
 | `files.archive(options?)` · `files.archiveRequest(options?)` | Download a tarball · the same as a request your host streams to disk. |
 | `git.commits()` · `git.commit(sha)` · `git.commitDiff(sha)` | The log · one commit · its diff. |
 | `git.branches()` · `git.versionDiff(…)` | Branches · the diff between two refs. |
@@ -245,6 +247,17 @@ These methods read the project repository. To read and write files in a running 
 | `changeRequests.list()` · `.get(crId)` · `.diff(crId)` · `.mergePreview(crId)` | Read change requests. |
 | `changeRequests.open(input)` · `.update(crId, input)` · `.merge(crId, input?)` · `.close(crId, input?)` · `.reopen(crId, input?)` | Change request lifecycle. |
 | `changeRequests.requestChanges(crId, input)` | Record feedback and, optionally, send it to the session that made the change. |
+
+Read a large folder page by page:
+
+```ts
+let cursor: string | undefined;
+do {
+  const page = await p.files.listDirectory({ path: 'src', limit: 500, cursor });
+  render(page.entries);
+  cursor = page.next_cursor ?? undefined; // null or absent ends the loop
+} while (cursor);
+```
 
 Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`, `/change-requests`. See [Git](/docs/git).
 

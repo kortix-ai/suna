@@ -37,8 +37,8 @@ import {
 /**
  * "Customize sidebar": the nav rows in two groups, "Sidebar" and "More". Where a row sits is the setting: drag it across the line to
  * move it under More, drag it back to show it. Changes apply as they are
- * made; there is no save step. Opened from the sidebar's More menu, the
- * workspace menu and the command palette through `openCustomizeSidebar()`.
+ * made; there is no save step. Opened from the sidebar's More menu and
+ * the command palette through `openCustomizeSidebar()`.
  */
 export function CustomizeSidebarModal({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');

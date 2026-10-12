@@ -10,10 +10,11 @@
  */
 import { KORTIX_WEB_URL } from './kortix-web';
 
-const SHARE_LINK_HOSTS = new Set(['kortix.com', 'www.kortix.com', 'staging.kortix.com']);
+/** The web hosts whose links the app reads (share links, invite links). */
+export const KORTIX_LINK_HOSTS = new Set(['kortix.com', 'www.kortix.com', 'staging.kortix.com']);
 
 /** `scheme://authority/path?query#fragment`, each part kept verbatim. */
-const URL_PARTS = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i;
+export const URL_PARTS = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i;
 
 /** `/share/<segment>` with a non-empty first segment. */
 const SHARE_PATH = /^\/share\/[^/?#]+/;
@@ -36,7 +37,7 @@ export function resolveShareLinkUrl(url: string): string | null {
   let origin: string;
 
   if (scheme === 'https') {
-    if (!SHARE_LINK_HOSTS.has(authority)) return null;
+    if (!KORTIX_LINK_HOSTS.has(authority)) return null;
     origin = `https://${authority}`;
   } else if (scheme === 'kortix') {
     if (authority === 'share') path = `/share${path}`;
