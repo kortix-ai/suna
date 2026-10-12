@@ -1,11 +1,16 @@
 {
-  "source_hash": "bdd18fb6e507f7479c7222f88658d53d7455668599bfc1bc7d0e57f7d8cb1890",
-  "head": "a1552813e2016c49487f52f97737577e21d7840e",
-  "passed": false,
+  "source_hash": "469df3d306344c6421a623b06863a8b41e09f309c78a07a811efba962905e334",
+  "diff_files": [
+    "apps/web/src/features/workspace/settings/tabs/sandbox-tab.empty-new.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/sandbox-tab.tsx"
+  ],
+  "diff_hash": "1c3a3b1989d2ece879a95e2425aa0f1c90819051ec58ef87b3ceb00b2f03ea1d",
+  "head": "36237fbd48ffb4f2bcc340d98b30dac030e30344",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-12T15:28:47.542Z"
+  "at": "2026-10-12T17:38:15.036Z"
 }
