@@ -24,6 +24,7 @@ import { runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createManifestProject,
+  fundAccount,
   isDeployedTarget,
   type ManifestProject,
 } from "../helpers/manifest-project";
@@ -1528,6 +1529,176 @@ for (const runtime of runtimes) {
           );
         } finally {
           await popup.close();
+        }
+      },
+    );
+    nativeTest?.(
+      "Quick Entry starts a session in the open project from the prompt bar",
+      async ({ page, desktopApp }) => {
+        if (!desktopApp)
+          throw new Error("native Electron application is required");
+        test.setTimeout(240_000);
+        const databaseUrl =
+          process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+        if (!databaseUrl)
+          throw new Error("Quick Entry requires the configured test database");
+        const email = `e2e-desktop-quick-entry-${randomUUID()}@example.test`;
+        const user = await createAuthUser(email, authOptions);
+        const session = await signIn(email, authOptions);
+        let project: ManifestProject | undefined;
+        try {
+          const accounts = await api<{ account_id: string }[]>(
+            session.access_token,
+            "GET",
+            "/accounts",
+          );
+          await fundAccount(databaseUrl, accounts[0].account_id);
+          project = await createManifestProject({
+            api,
+            accessToken: session.access_token,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+            name: "Quick Entry target",
+            databaseUrl,
+          });
+          const projectId = project.id;
+          const { resolvedForCaller: modelId } = await api<{
+            resolvedForCaller: string | null;
+          }>(session.access_token, "GET", `/projects/${projectId}/model-defaults`);
+          expect(modelId).toBeTruthy();
+          const picker = await api<Record<string, unknown>>(
+            session.access_token,
+            "GET",
+            `/projects/${projectId}/model-picker`,
+          );
+          const creates: { pending_prompt?: { text?: string } }[] = [];
+          await page.route("**/*", async (route) => {
+            const request = route.request();
+            const path = new URL(request.url()).pathname;
+            // The local profile has no managed model catalog: serve its
+            // resolved default so the composer can send (as in spec 28).
+            if (
+              !isDeployedTarget() &&
+              request.method() === "GET" &&
+              path === `/v1/projects/${projectId}/model-picker`
+            ) {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  ...picker,
+                  models: {
+                    [modelId!]: {
+                      id: modelId,
+                      name: "E2E managed model",
+                      provider: "openai",
+                      enabled: true,
+                      tool_call: true,
+                      attachment: true,
+                      limit: { context: 128_000, output: 8_000 },
+                    },
+                  },
+                  defaultModel: modelId,
+                }),
+              });
+              return;
+            }
+            // No warm session on any target, so the create carries the prompt.
+            if (
+              request.method() === "POST" &&
+              path === `/v1/projects/${projectId}/sessions/warm`
+            ) {
+              await route.fulfill({
+                status: 503,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  error: { message: "Injected warm-session refusal" },
+                }),
+              });
+              return;
+            }
+            if (
+              request.method() === "POST" &&
+              path === `/v1/projects/${projectId}/sessions`
+            ) {
+              creates.push(request.postDataJSON());
+            }
+            await route.continue();
+          });
+          await installBrowserSessionDirect(
+            page,
+            session,
+            `/projects/${projectId}`,
+            authOptions,
+          );
+          await dismissOnboarding(page);
+          await expect(
+            page.getByRole("textbox", { name: "Message input" }),
+          ).toBeVisible({ timeout: 60_000 });
+
+          // The default shortcut is registered for the whole OS. Linux under
+          // Wayland has no global shortcuts, so only macOS and Windows assert it.
+          if (process.platform === "darwin" || process.platform === "win32") {
+            expect(
+              await desktopApp.evaluate(({ globalShortcut }) =>
+                globalShortcut.isRegistered("CommandOrControl+Shift+Space"),
+              ),
+            ).toBe(true);
+          }
+
+          // File ▸ Open Quick Entry runs the same show() as the shortcut.
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.getApplicationMenu()
+              ?.getMenuItemById("kx-file-quick-entry")
+              ?.click();
+          });
+          await expect
+            .poll(() =>
+              desktopApp
+                .windows()
+                .some((window) => window.url().endsWith("/quick-entry.html")),
+            )
+            .toBe(true);
+          const bar = desktopApp
+            .windows()
+            .find((window) => window.url().endsWith("/quick-entry.html"))!;
+          await expect(bar.locator("#target")).toHaveText(
+            "New session in Quick Entry target",
+          );
+          const prompt = `Quick Entry prompt ${randomUUID()}`;
+          await bar.locator("#prompt").fill(prompt);
+          await bar.locator("#prompt").press("Enter");
+
+          await expect(page).toHaveURL(
+            new RegExp(`/projects/${projectId}/sessions/[^/?#]+`),
+            { timeout: 60_000 },
+          );
+          expect(creates).toHaveLength(1);
+          expect(creates[0]?.pending_prompt?.text).toBe(prompt);
+          await expect(page.getByText(prompt).first()).toBeVisible();
+          // The bar hid itself, and the prompt was taken exactly once.
+          expect(
+            await desktopApp.evaluate(({ BrowserWindow }) =>
+              BrowserWindow.getAllWindows()
+                .find((window) =>
+                  window.webContents.getURL().endsWith("/quick-entry.html"),
+                )
+                ?.isVisible(),
+            ),
+          ).toBe(false);
+          expect(
+            await page.evaluate(() =>
+              (
+                window as unknown as {
+                  __TAURI__: { core: { invoke: (cmd: string) => Promise<unknown> } };
+                }
+              ).__TAURI__.core.invoke("quick_entry_take"),
+            ),
+          ).toBeNull();
+        } finally {
+          await page.unrouteAll({ behavior: "ignoreErrors" });
+          await project?.dispose();
+          await deleteAuthUser(user.id, authOptions);
         }
       },
     );
