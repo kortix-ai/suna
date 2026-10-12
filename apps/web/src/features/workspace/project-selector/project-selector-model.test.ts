@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
+import type {
+  AccountInviteDescribeFull,
+  KortixAccount,
+  KortixProject,
+  MyAccountInvite,
+} from '@kortix/sdk';
 
 import {
   acceptedInviteLandingPath,
@@ -214,15 +219,15 @@ describe('inviteLandingPath — where an accepted invite lands', () => {
 
 describe('acceptedInviteLandingPath — a re-opened invite that was accepted before', () => {
   test('a project invite opens the project it names, not the account door', () => {
-    expect(
-      acceptedInviteLandingPath({
-        account_id: 'b',
-        projects: [
-          { project_id: 'pw', name: 'Website', role: 'member' },
-          { project_id: 'px', name: 'Docs', role: 'manager' },
-        ],
-      }),
-    ).toBe('/projects/pw');
+    // The shape `describeAccountInvite` returns to the invite page.
+    const described: Pick<AccountInviteDescribeFull, 'account_id' | 'projects'> = {
+      account_id: 'b',
+      projects: [
+        { project_id: 'pw', name: 'Website', role: 'member' },
+        { project_id: 'px', name: 'Docs', role: 'manager' },
+      ],
+    };
+    expect(acceptedInviteLandingPath(described)).toBe('/projects/pw');
   });
 
   test('a workspace invite, or an older API without projects, goes to the joined account door', () => {
