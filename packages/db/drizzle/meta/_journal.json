@@ -1037,6 +1037,13 @@
       "when": 1791733721574,
       "tag": "20261011154841_app_display_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1791766778285,
+      "tag": "20261012005938_session_logs_journal_seen_at",
+      "breakpoints": true
     }
   ]
 }

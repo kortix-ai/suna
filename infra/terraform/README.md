@@ -12,10 +12,10 @@ table is the source of truth for which root it drives.
 
 | Root | Applied by | Trigger | Region | OIDC role |
 | --- | --- | --- | --- | --- |
-| `environments/dev` | `deploy-dev.yml` -> `terraform-dev-api` | push to `dev` touching `environments/dev{,-web}/**`, `modules/**`, or either workflow | `us-west-2` | `kortix-gha-tf-apply-dev` |
-| `environments/dev-web` | `deploy-dev.yml` -> `terraform-dev` | same trigger, applied after `environments/dev` | `us-west-2` | `kortix-gha-tf-apply-dev` |
-| `environments/staging` | `deploy-staging.yml` -> `terraform-staging` | every staging deploy | `us-west-2` | `kortix-gha-tf-apply-staging` |
-| `environments/staging-web` | `deploy-staging.yml` -> `terraform-staging-web` | every staging deploy | `us-west-2` | `kortix-gha-tf-apply-staging` |
+| `environments/dev-us-east-2` | `deploy-dev.yml` -> `terraform-dev-api` | a dev deploy whose diff touches `environments/dev-us-east-2/**`, `environments/dev-web-us-east-2/**` or `modules/**` | `us-east-2` | `kortix-gha-tf-apply-dev` |
+| `environments/dev-web-us-east-2` | `deploy-dev.yml` -> `terraform-dev` | same trigger, applied after `environments/dev-us-east-2` | `us-east-2` | `kortix-gha-tf-apply-dev` |
+| `environments/staging-eu-west-2` | `deploy-staging.yml` -> `terraform-staging` | every staging deploy | `eu-west-2` | `kortix-gha-tf-apply-staging` |
+| `environments/staging-web-eu-west-2` | `deploy-staging.yml` -> `terraform-staging-web` | every staging deploy | `eu-west-2` | `kortix-gha-tf-apply-staging` |
 | `environments/prod` | `deploy-prod.yml` -> `terraform-prod-api` | every production release | `eu-west-2` | `kortix-gha-tf-apply-prod` |
 | `environments/prod-web` | `deploy-prod.yml` -> `terraform-prod` | every production release, after `environments/prod` | `eu-west-2` | `kortix-gha-tf-apply-prod` |
 | `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
@@ -25,9 +25,18 @@ table is the source of truth for which root it drives.
 Every root above, applied or not, is planned nightly by the `drift detection`
 matrix in `terraform-ci.yml`, so an unapplied change still shows up as drift.
 
+The "Region" column is where the resources live. Every state file except
+`prod-us-east-2-shadow` is still in the `kortix-terraform-state` bucket and the
+`kortix-terraform-locks` table in us-west-2 (each root's `backend.tf`).
+
+The us-west-2 roots `dev`, `dev-web`, `staging` and `staging-web`
+were destroyed on 2026-10-12 (dev 58, dev-web 2, staging 74, staging-web 19
+resources) and removed from the repository. Their stacks moved to the
+`-us-east-2` and `-eu-west-2` roots above.
+
 ## `api_image` is the only input CI supplies
 
-`environments/dev` and `environments/prod` were manual until 2026-08-11 because
+The old us-west-2 dev root and `environments/prod` were manual until 2026-08-11 because
 each read a `terraform.tfvars` that is gitignored (`.gitignore:133`,
 `infra/terraform/**/*.tfvars`) and lived only on an operator laptop. Every value
 in those two files now sits in a committed variable default, so CI plans exactly
@@ -42,17 +51,17 @@ through `terraform-apply.yml`'s `api_image` input (exported as
 
 | Root | Value | Source |
 | --- | --- | --- |
-| `environments/dev` | `kortix/kortix-api:dev-<sha8>` | `deploy-dev.yml` -> `needs.tag-api.outputs.image`, falling back to the committed `:dev-latest` when no API image was built |
+| `environments/dev-us-east-2` | `kortix/kortix-api:dev-<sha8>` | `deploy-dev.yml` -> `needs.tag-api.outputs.image`, falling back to the committed `:dev-latest` when no API image was built |
 | `environments/prod` | `kortix/kortix-api:<version>` | `deploy-prod.yml` -> `needs.version.outputs.version` |
 
-`api_secrets` is committed from the operator files, minus the keys of the
-retired hosted-deployment vendor and the retired Apps experiment flag (3 in dev,
-2 in prod), which
+`api_secrets` in `environments/prod` is committed from the operator file, minus
+the keys of the retired hosted-deployment vendor and the retired Apps experiment
+flag (2 keys), which
 `apps/api/src/__tests__/unit-hosted-deployment-vendor-removal.test.ts` forbids in
 any tracked file. Nothing reads them, and they remain in the env blob that ECS
 actually injects. Everything else is verbatim.
 
-`api_secrets` is inert today — both roots pass `secrets_blob_arn`, and
+`api_secrets` is inert today — the root passes `secrets_blob_arn`, and
 `modules/ecs-api` reads `var.secrets` only when that is empty (`main.tf:134` for
 the execution-role Resource list, `main.tf:459` for the container definition) —
 but it stays exact so removing the blob cannot silently drop a key. In prod that

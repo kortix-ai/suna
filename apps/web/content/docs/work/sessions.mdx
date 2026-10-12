@@ -376,7 +376,7 @@ A session's notifications go to:
 
 - **The bell**, at the top of the project sidebar and on the projects page, in the web and desktop apps. Choose a notification to open its session, or the **Triggers** or **Reminders** page for an alert. **Mark all as read** clears the count. Opening a session marks its notifications read, in every app. A new notification also shows as a toast, unless it is about the session on your screen.
 - **The mobile app** gets a push for each kind your **Push** switches allow. **Notifications** in the drawer lists them across projects.
-- **The browser**, with every Kortix tab closed, through Web Push in Chrome, Edge, Firefox, and Safari on macOS. Open **Settings → Notifications**, turn on **Enable notifications**, and allow it when the browser asks. The setting is per browser. Signing out stops it.
+- **The browser**, with every Kortix tab closed, through Web Push in Chrome, Edge, Firefox, and Safari on macOS. Open **Settings → Notifications**, turn on **Enable notifications**, and allow it when the browser asks. The setting is per browser. Signing out stops it. An account that requires MFA sends browser push only to a browser signed in with MFA; its super admins get it either way, as the app lets them in without MFA.
 - **The desktop app** checks about once a minute while its window is open. When the window is not in focus, it shows up to 3 new ones per check as OS notifications.
 - **Email:** `automation_failed` goes at once. A digest kind joins your next digest when it is still unread 15 minutes after it arrives. You get at most one digest per hour, listing up to 10 notifications plus a count of the rest. A self-hosted instance needs an email provider. Without one, the **Email** switches do not show.
 

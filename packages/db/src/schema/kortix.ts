@@ -2522,6 +2522,11 @@ export const sessionLogs = kortixSchema.table(
     gradeCounts: jsonb('grade_counts').$type<Record<string, number>>(),
     // The Session record without `threads`.
     record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    // When the daemon's journal first committed a batch for this session. Null:
+    // no journal has written (an old daemon, a dump-dir daemon, or posts that
+    // have not succeeded yet), so the API's transcript capture writes the log
+    // from the v1 mirror (P2.7). Set: the journal owns the rows; capture stops.
+    journalSeenAt: timestamp('journal_seen_at', { withTimezone: true }),
     // Row time. The session's own `created_at` lives in `record`.
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
