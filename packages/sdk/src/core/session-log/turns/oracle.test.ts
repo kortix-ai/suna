@@ -409,17 +409,20 @@ describe('the block turn layer equals the v1 turn helpers', () => {
 const REAL = process.env.SESSION_LOG_ORACLE_FILE;
 if (REAL) {
   describe(`real session: ${REAL}`, () => {
-    const real = JSON.parse(readFileSync(REAL, 'utf8')) as { rows: Rows; log: SessionLog; busy?: boolean };
+    const real = JSON.parse(readFileSync(REAL, 'utf8')) as { rows: Rows; log: SessionLog | null; busy?: boolean };
     const opts = { ...DEFAULT, busy: real.busy ?? false };
-    const root = real.log.threads.find((t) => t.parent_thread_id === null) ?? real.log.threads[0]!;
-    const threads = Object.fromEntries(real.log.threads.map((t) => [t.thread_id, t]));
-    const v1Children = Object.fromEntries(real.log.threads.map((t) => [t.thread_id, rowsOf(real.log, t)]));
-    for (const [label, rows, thread, children] of [
-      ['v1 view', real.rows, sessionLogOfV1Rows(real.log.session_id, root.thread_id, real.rows).threads[0]!, {}],
-      ['native', rowsOf(real.log, root), root, threads],
-    ] as const) {
+    const runtime = String((real.rows[0]?.info as { sessionID?: string } | undefined)?.sessionID ?? 'ses_real');
+    const root = real.log?.threads.find((t) => t.parent_thread_id === null) ?? real.log?.threads[0];
+    const heads = real.log?.threads ?? [];
+    const threads = Object.fromEntries(heads.map((t) => [t.thread_id, t]));
+    const v1Children = Object.fromEntries(heads.map((t) => [t.thread_id, rowsOf(real.log!, t)]));
+    const cases: Array<readonly [string, Rows, SessionLogThread, Record<string, SessionLogThread>]> = [
+      ['v1 view', real.rows, sessionLogOfV1Rows('kses_real', runtime, real.rows).threads[0]!, {}],
+      ...(real.log && root ? [['native', rowsOf(real.log, root), root, threads] as const] : []),
+    ];
+    for (const [label, rows, thread, children] of cases) {
       test(label, () => {
-        const found = differences(`real ${label}`, v1Side(rows, opts, v1Children), logSide(thread, opts, children, real.log.threads));
+        const found = differences(`real ${label}`, v1Side(rows, opts, v1Children), logSide(thread, opts, children, heads));
         for (const d of found) console.log(`${accepted(d) ? 'accepted' : 'UNEXPLAINED'} ${d.at}: v1=${JSON.stringify(d.v1)} log=${JSON.stringify(d.log)}`);
         expect(found.filter((d) => !accepted(d))).toEqual([]);
       });
