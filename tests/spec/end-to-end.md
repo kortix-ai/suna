@@ -173,7 +173,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 `INV-1` `GET /accounts/:id/invites` → member → list pending. Owners and admins see `{invite_id, email, initial_role, invited_by, invite_url}`; members see `[]`; NONMEMBER → 403. The invite email is trimmed and lower-cased. A member cannot resend or self-promote (403). Cancel removes the invite from the list.
 `INV-2` `DELETE /accounts/:id/invites/:inviteId` / `POST /accounts/:id/invites/:inviteId/resend` → `MEMBER_INVITE`.
-`INV-3` `GET /account-invites/:inviteId` → describe pending invite (auth; redacts on email mismatch).
+`INV-3` `GET /account-invites/:inviteId` → describe pending invite (auth; redacts on email mismatch). A malformed invite id → 404 on describe, accept and decline, never 500.
 `INV-10` A project invite's describe names the project. `POST /projects/:id/access/invite` for an address with no Kortix user → `201 {status:"invited", invite_id}`. The invitee's `GET /account-invites/:inviteId` → `projects:[{project_id, name, role}]`; anyone else → `projects: []` (KRTX-1731).
 `INV-4` `POST /account-invites/:inviteId/accept` → 200 membership created (rate-limited); already accepted by this user → 200 `{already_accepted:true}`; **expired → 410**; wrong email → 403.
 `INV-5` `POST /account-invites/:inviteId/decline` → 200; already accepted → 409; wrong email → 403; not found → 404.
