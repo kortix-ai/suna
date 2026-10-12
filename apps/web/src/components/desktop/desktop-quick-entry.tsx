@@ -69,7 +69,8 @@ export function quickEntryRecentSessions(
 
 /** A file the bar sent (a screenshot, a picked file) as a composer attachment. */
 export function quickEntryAttachedFile(input: { name: string; type: string; bytes: Uint8Array }): AttachedFile {
-  const file = new File([input.bytes], input.name, { type: input.type });
+  // A copy with a plain ArrayBuffer: the IPC hands over an ArrayBufferLike view.
+  const file = new File([new Uint8Array(input.bytes)], input.name, { type: input.type });
   // The composer stages it and makes its own preview URL.
   return { kind: 'local', file, localUrl: '', isImage: input.type.startsWith('image/'), attachedAt: Date.now() };
 }
