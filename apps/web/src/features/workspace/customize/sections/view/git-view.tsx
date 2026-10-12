@@ -64,7 +64,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from '@/components/site-link';
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
@@ -435,10 +435,19 @@ function RepositoryGroup({
     setManifestPath(project.manifest_path);
   }, [project.default_branch, project.manifest_path]);
 
+  // The last patch the autosave effect sent and that the input has not changed
+  // since. A failed save leaves the server values unchanged, so the effect's
+  // equality guard alone would re-fire the same patch on every `isPending`
+  // flip, forever. Skipping the attempted patch breaks that loop: a failed
+  // save idles until the user edits again (any settled edit that differs
+  // clears it), and a successful one clears it in `onSuccess`.
+  const attemptedPatch = useRef<{ default_branch: string; manifest_path: string } | null>(null);
+
   const mutation = useMutation({
     mutationFn: (patch: { default_branch: string; manifest_path: string }) =>
       updateProject(project.project_id, patch),
     onSuccess: (updated) => {
+      attemptedPatch.current = null;
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
       queryClient.setQueryData<ProjectDetail | undefined>(
         qk.project.detail(project.project_id),
@@ -461,9 +470,13 @@ function RepositoryGroup({
 
     const branch = debouncedBranch.trim();
     const manifest = debouncedManifest.trim();
+    const attempt = attemptedPatch.current;
+    if (attempt?.default_branch === branch && attempt?.manifest_path === manifest) return;
+    attemptedPatch.current = null;
     if (!branch) return;
     if (branch === project.default_branch && manifest === project.manifest_path) return;
 
+    attemptedPatch.current = { default_branch: branch, manifest_path: manifest };
     mutate({ default_branch: branch, manifest_path: manifest });
   }, [
     debouncedBranch,
