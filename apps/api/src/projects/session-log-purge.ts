@@ -18,10 +18,20 @@
  * - a session delete stamps the ISO string `project_sessions.metadata.deletedAt`
  *   (`deleteSession`; the account deletion stamps it too). Nothing un-deletes.
  * - a subscription end is `credit_accounts.stripe_subscription_status` in
- *   `canceled | unpaid | incomplete_expired` (webhooks `revertToFree`). That table
- *   keeps no date, so each tick records the first sight of a dead status in
- *   `account_subscription_ends` and deletes the record when the status is live again.
- *   Accounts that cancelled before this shipped start their 80 days at the first tick.
+ *   `SUBSCRIPTION_END_STATUSES`. THAT SET IS EMPTY, so the subscription path is inert and
+ *   only the session-delete path is live. Decision D6b (which signal ends a subscription)
+ *   is open: `revertToFree` writes `tier free` + `canceled` and the account then runs as a
+ *   free account, and an `unpaid` account still spends from its wallet while Stripe
+ *   retries. Neither is an ended customer. The machinery below is kept and tested against
+ *   a test set. `credit_accounts` keeps no date, so each tick records the first sight of
+ *   an ended status in `account_subscription_ends`; when the status is live again it
+ *   deletes that record and the account's `subscription_ended` markers (a reused session
+ *   can then be purged again).
+ *
+ * Known limits: an archived project stamps no session `deletedAt`; a RevenueCat end
+ * writes stripe status null; a rows purge that runs late (worker off, backlog) moves its
+ * objects phase past day 90 by the same delay; `deleteSession` already empties the
+ * session's attachment folder at delete time, so the day-37 phase is a backstop.
  *
  * A session is never touched while it is in use:
  * - a session that is not deleted, and whose account has no dead subscription;
@@ -49,21 +59,24 @@ import {
   sessionTranscriptMirrors,
 } from '@kortix/db';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
-import { DEAD_SUBSCRIPTION_STATUSES } from '../billing/services/billing-state';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { sessionAttachmentStore } from './lib/session-attachments';
 
-export const SESSION_DELETE_ROWS_DAYS = 30;
-export const SUBSCRIPTION_END_ROWS_DAYS = 80;
-export const OBJECTS_AFTER_ROWS_DAYS = 7;
+const SESSION_DELETE_ROWS_DAYS = 30;
+const SUBSCRIPTION_END_ROWS_DAYS = 80;
+const OBJECTS_AFTER_ROWS_DAYS = 7;
 export const PURGE_BATCH_SIZE = 200;
 
+/**
+ * The `credit_accounts.stripe_subscription_status` values that end a subscription.
+ * EMPTY until decision D6b names the signal: `canceled` is also what a downgrade to the
+ * free tier writes, and `unpaid` accounts still run. Empty means no account is ever
+ * marked ended and no session is purged by the subscription window.
+ */
+export const SUBSCRIPTION_END_STATUSES: readonly string[] = [];
+
 const DAY_MS = 86_400_000;
-const deadStatuses = sql.join(
-  [...DEAD_SUBSCRIPTION_STATUSES].map((status) => sql`${status}`),
-  sql`, `,
-);
 // What `deleteSession` and the account deletion write: an ISO instant. Anything else is skipped,
 // so one unreadable stamp cannot fail the query for every other session.
 const ISO_INSTANT =
@@ -76,20 +89,31 @@ type Store = Pick<ReturnType<typeof sessionAttachmentStore>, 'removeSession'>;
 type DueSession = { session_id: string; project_id: string; account_id: string; reason: string };
 export type PurgeResult = { sessions: number; objects: number; failed: number };
 
-/** Record each newly dead subscription once, and forget each one that is live again. */
-async function syncSubscriptionEnds(now: Date): Promise<void> {
+/**
+ * Record each newly ended subscription once. Forget each one that is live again, and with
+ * it the `subscription_ended` markers of that account: a session it reuses can then be
+ * purged again, and objects written after a marker are not left behind forever.
+ */
+async function syncSubscriptionEnds(now: Date, endStatuses: readonly string[]): Promise<void> {
+  if (endStatuses.length === 0) return;
+  const ended = sql.join(endStatuses.map((status) => sql`${status}`), sql`, `);
   await db.execute(sql`
     insert into kortix.account_subscription_ends (account_id, ended_at)
     select c.account_id, ${instant(now)}
     from kortix.credit_accounts c
-    where c.stripe_subscription_status in (${deadStatuses})
+    where c.stripe_subscription_status in (${ended})
       and exists (select 1 from kortix.accounts a where a.account_id = c.account_id)
     on conflict (account_id) do nothing`);
   await db.execute(sql`
-    delete from kortix.account_subscription_ends e
-    using kortix.credit_accounts c
-    where c.account_id = e.account_id
-      and coalesce(c.stripe_subscription_status, '') not in (${deadStatuses})`);
+    with live_again as (
+      delete from kortix.account_subscription_ends e
+      using kortix.credit_accounts c
+      where c.account_id = e.account_id
+        and coalesce(c.stripe_subscription_status, '') not in (${ended})
+      returning e.account_id)
+    delete from kortix.session_content_purges p
+    using live_again l
+    where p.account_id = l.account_id and p.reason = 'subscription_ended'`);
 }
 
 // ponytail: reads project_sessions whole each tick (no index on metadata.deletedAt). One
@@ -136,17 +160,26 @@ async function purgeRows(row: DueSession, now: Date): Promise<void> {
 }
 
 export async function purgeSessionContent(
-  options: { now?: Date; batchSize?: number; store?: Store } = {},
+  options: { now?: Date; batchSize?: number; store?: Store; endStatuses?: readonly string[] } = {},
 ): Promise<PurgeResult> {
   const now = options.now ?? new Date();
   const batchSize = options.batchSize ?? PURGE_BATCH_SIZE;
   const result: PurgeResult = { sessions: 0, objects: 0, failed: 0 };
 
-  await syncSubscriptionEnds(now);
+  await syncSubscriptionEnds(now, options.endStatuses ?? SUBSCRIPTION_END_STATUSES);
   for (const row of await dueSessions(now, batchSize)) {
-    await purgeRows(row, now);
-    result.sessions += 1;
-    logger.debug('[session-purge] rows purged', { sessionId: row.session_id, reason: row.reason });
+    try {
+      await purgeRows(row, now);
+      result.sessions += 1;
+      logger.debug('[session-purge] rows purged', { sessionId: row.session_id, reason: row.reason });
+    } catch (error) {
+      // The transaction rolled back: the session stays due and the other sessions go on.
+      result.failed += 1;
+      logger.debug('[session-purge] rows purge failed', {
+        sessionId: row.session_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   const objectsDueBefore = new Date(now.getTime() - OBJECTS_AFTER_ROWS_DAYS * DAY_MS);

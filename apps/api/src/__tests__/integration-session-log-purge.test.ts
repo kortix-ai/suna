@@ -26,7 +26,7 @@ import {
 } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { createSessionAttachmentStore } from '../projects/lib/session-attachments';
-import { purgeSessionContent } from '../projects/session-log-purge';
+import { purgeSessionContent, SUBSCRIPTION_END_STATUSES } from '../projects/session-log-purge';
 import { db } from '../shared/db';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
@@ -38,8 +38,10 @@ const USER = crypto.randomUUID();
 
 const bucket = fakeSessionStorage();
 const store = createSessionAttachmentStore(bucket.storage as never);
+// The production set of ending statuses is empty (decision D6b). The suite runs the
+// subscription machinery against a test set; the first test of that describe pins the default.
 const tick = (n: number, extra: Parameters<typeof purgeSessionContent>[0] = {}) =>
-  purgeSessionContent({ now: day(n), store, ...extra });
+  purgeSessionContent({ now: day(n), store, endStatuses: ['canceled'], ...extra });
 
 const seeded: SeededProject[] = [];
 const newProject = async (label: string, accountId?: string) => {
@@ -169,6 +171,21 @@ describe('a live or restored session', () => {
   });
 });
 
+describe('the production default', () => {
+  cleanup();
+
+  test('by default no status ends a subscription: nothing is marked and nothing is purged', async () => {
+    expect(SUBSCRIPTION_END_STATUSES).toEqual([]);
+    const p = await newProject('purge-inert');
+    await db.insert(creditAccounts).values({ accountId: p.account_id, stripeSubscriptionStatus: 'canceled' });
+    const s = await seedContent(p);
+    expect(await purgeSessionContent({ now: day(0), store })).toMatchObject({ sessions: 0 });
+    expect(await purgeSessionContent({ now: day(300), store })).toMatchObject({ sessions: 0, objects: 0, failed: 0 });
+    expect(await rowsOf(s.sessionId)).toEqual(ALL);
+    expect(await db.select().from(accountSubscriptionEnds).where(eq(accountSubscriptionEnds.accountId, p.account_id))).toHaveLength(0);
+  });
+});
+
 describe('an account whose subscription ended', () => {
   cleanup();
   const setStatus = (accountId: string, status: string | null) =>
@@ -237,6 +254,33 @@ describe('an account whose subscription ended', () => {
     expect(await rowsOf(s.sessionId)).toEqual(ALL);
   });
 
+  test('an account live again after a purge: its markers go, a reused session is purged again, and objects written later go too', async () => {
+    const p = await newProject('purge-resubscribed-after');
+    await setStatus(p.account_id, 'canceled');
+    const s = await seedContent(p);
+    await tick(0);
+    await tick(80);
+    await tick(87);
+    expect(await rowsOf(s.sessionId)).toEqual(NONE);
+    expect(objectsOf(s)).toBe(0);
+    await setStatus(p.account_id, 'active');
+    await tick(100);
+    expect(await bookkeeping(s.sessionId)).toBeUndefined();
+    // The session is reused: new rows and a new object.
+    await db.insert(sessionLogs).values({ sessionId: s.sessionId, projectId: s.projectId, accountId: s.accountId, v: 1, harnessCurrent: 'opencode', restoreGrade: 'A', record: {} });
+    bucket.objects.set(`${s.projectId}/${s.sessionId}/00000000-0000-4000-8000-000000000003`, new Blob(['late']));
+    await tick(150);
+    expect(await count(sessionLogs, s.sessionId)).toBe(1);
+    // It ends again: a new end date, a new 80 days.
+    await setStatus(p.account_id, 'canceled');
+    await tick(151);
+    expect(await tick(230)).toMatchObject({ sessions: 0 });
+    expect(await tick(231)).toMatchObject({ sessions: 1 });
+    expect(await count(sessionLogs, s.sessionId)).toBe(0);
+    expect(await tick(238)).toMatchObject({ objects: 1 });
+    expect(objectsOf(s)).toBe(0);
+  });
+
   test('an account with no subscription record, and a live one, are never purged', async () => {
     const none = await newProject('purge-no-sub');
     const live = await newProject('purge-live-sub');
@@ -288,6 +332,26 @@ describe('the tick is bounded and survives a failing store', () => {
     expect(objectsOf(c)).toBe(2);
     expect(await tick(41)).toMatchObject({ objects: 1, failed: 0 });
     expect(objectsOf(c)).toBe(0);
+  });
+
+  test('a session whose rows cannot be deleted counts as failed, stays due, and does not stop the others', async () => {
+    const project = await newProject('purge-rows-fail');
+    const broken = await seedContent(project, { deletedAt: day(-200) });
+    const fine = await seedContent(project, { deletedAt: day(-100) });
+    // A trigger that refuses to delete this one session's thread row, as a locked or corrupt row would.
+    await db.execute(sql.raw(`create or replace function kortix.purge_test_refuse() returns trigger language plpgsql as $$ begin raise exception 'refused'; end $$`));
+    await db.execute(sql.raw(`create trigger purge_test_refuse before delete on kortix.session_log_threads for each row when (old.session_id = '${broken.sessionId}') execute function kortix.purge_test_refuse()`));
+    try {
+      expect(await tick(0)).toMatchObject({ sessions: 1, failed: 1 });
+      expect(await rowsOf(broken.sessionId)).toEqual(ALL);
+      expect(await bookkeeping(broken.sessionId)).toBeUndefined();
+      expect(await rowsOf(fine.sessionId)).toEqual(NONE);
+    } finally {
+      await db.execute(sql.raw('drop trigger purge_test_refuse on kortix.session_log_threads'));
+      await db.execute(sql.raw('drop function kortix.purge_test_refuse()'));
+    }
+    expect(await tick(0)).toMatchObject({ sessions: 1, failed: 0 });
+    expect(await rowsOf(broken.sessionId)).toEqual(NONE);
   });
 
   test('an object of a live session outside any purged folder stays', async () => {

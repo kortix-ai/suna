@@ -287,7 +287,7 @@ const envSchema = z.object({
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
   SESSION_LOG_INGEST_ENABLED: optBoolTrue,
   // Operator switch for the retention purge of session content (P2.8, decision D6): session
-  // rows 30 days after a delete, 80 days after a subscription end, their files 7 days later.
+  // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).

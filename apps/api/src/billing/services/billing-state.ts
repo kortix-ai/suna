@@ -47,7 +47,7 @@ export type BillingState =
  * deciding who may spend without a wallet floor (see
  * PAYING_SUBSCRIPTION_STATUSES).
  */
-export const DEAD_SUBSCRIPTION_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
+const DEAD_SUBSCRIPTION_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
 
 /**
  * Statuses where Stripe is actually collecting money, and therefore the ONLY
