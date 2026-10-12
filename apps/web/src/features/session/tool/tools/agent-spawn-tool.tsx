@@ -1,5 +1,7 @@
 'use client';
 
+import { toolCallBlock } from '@kortix/sdk';
+
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -30,12 +32,12 @@ import { useContext, useMemo, useState } from 'react';
 
 import { cleanWorkerOutput } from '@/features/session/tool/shared/agent-helpers';
 
-export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentSpawnTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useContext(ToolSurfaceContext);
-  const input = partInput(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
   // Both walk the input's prose: `getAgentCardLabel` tries up to five fields and
   // `firstMeaningfulLine` splits each one on every newline before taking the
   // first non-blank. A spawn carries a whole prompt, so that is a full scan plus
@@ -49,7 +51,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
 
-  const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
+  const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
 
   const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
   const childToolParts = useMemo(() => {
@@ -62,7 +64,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const lastActivity = useMemo(() => {
     if (childToolParts.length === 0) return null;
     const last = childToolParts[childToolParts.length - 1];
-    const info = getToolInfo(last.tool, partInput(last) as Record<string, any>);
+    const info = getToolInfo(last.tool, partInput(toolCallBlock(last)) as Record<string, any>);
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 
@@ -123,7 +125,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
               ) : isCompleted && childToolParts.length > 0 ? (
                 <div className="space-y-0.5">
                   {childToolParts.slice(-3).map((tp) => {
-                    const info = getToolInfo(tp.tool, partInput(tp) as Record<string, any>);
+                    const info = getToolInfo(tp.tool, partInput(toolCallBlock(tp)) as Record<string, any>);
                     return (
                       <div
                         key={tp.id}

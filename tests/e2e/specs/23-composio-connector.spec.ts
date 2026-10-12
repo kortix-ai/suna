@@ -370,14 +370,16 @@ test.describe("23 — Composio managed connector", () => {
       name: "Add a Composio Search account",
     });
     await expect(addDialog).toBeVisible({ timeout: 60_000 });
-    const accountLabel = await addDialog.getByLabel("Name").inputValue();
-    expect(accountLabel).toMatch(/^Composio Search( \d+)?$/);
     const accountRequestPromise = page.waitForRequest(
       (request) =>
         request.url().endsWith(`/projects/${project.id}/connections`) &&
         request.method() === "POST",
     );
     await addDialog.getByRole("radio", { name: /^Everyone in / }).click();
+    // The proposal follows the account list until the user types (#9583), so
+    // read it at the moment Continue sends it, not when the dialog opens.
+    const accountLabel = await addDialog.getByLabel("Name").inputValue();
+    expect(accountLabel).toMatch(/^Composio Search( \d+)?$/);
     await addDialog.getByRole("button", { name: "Continue", exact: true }).click();
     // The account is created for the audience picked, under the connector just
     // created, with the name the dialog proposed.

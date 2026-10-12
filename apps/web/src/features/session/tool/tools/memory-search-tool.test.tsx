@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
@@ -83,7 +84,7 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <MemorySearchTool
-          part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)}
+          call={toolCallBlock(makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT))}
           defaultOpen
         />,
       ),
@@ -110,7 +111,7 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <MemorySearchTool
-          part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)}
+          call={toolCallBlock(makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT))}
           defaultOpen
         />,
       ),
@@ -134,7 +135,7 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
           <MemorySearchTool
-            part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)}
+            call={toolCallBlock(makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT))}
             defaultOpen
           />
         </ToolSurfaceContext.Provider>,
@@ -152,7 +153,7 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <MemorySearchTool part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)} />
+          <MemorySearchTool call={toolCallBlock(makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT))} />
         </ToolSurfaceContext.Provider>,
       ),
     );

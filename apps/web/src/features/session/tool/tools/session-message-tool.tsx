@@ -12,11 +12,11 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function SessionMessageTool({ part, forceOpen }: ToolProps) {
+export function SessionMessageTool({ call, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const sessionId = (input.session_id as string) || '';
   const message = (input.message as string) || '';
   const sid = sessionId.length > 16 ? `…${sessionId.slice(-12)}` : sessionId;
