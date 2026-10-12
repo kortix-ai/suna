@@ -495,16 +495,6 @@ jobs:
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: latest
-      - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
-        env:
-          npm_config_engine_strict: "false"
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -512,11 +502,10 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
+      - uses: ./.aws-env/.github/actions/prepare-migrate
         with:
-          keys: |
-            DATABASE_URL=kortix-dev-env:DATABASE_URL
+          bun-version: latest
+          database-url: DATABASE_URL=kortix-dev-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
         run: |
           set -euo pipefail
@@ -1111,11 +1100,6 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1123,20 +1107,12 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
+      - uses: ./.aws-env/.github/actions/publish-web-dns
         with:
-          role-to-assume: ''
-          keys: |
-            CLOUDFLARE_API_TOKEN
-      - name: Point the canonical Dev hostname at the web ALB
-        run: |
-          set -euo pipefail
-          alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-dev-use2-web-alb \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)"
-          node infra/scripts/sync-web-dns.mjs dev "$alb"
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          environment: dev
+          alb-name: kortix-dev-use2-web-alb
 
   verify-web-dev:
     name: Verify canonical Dev frontend on ECS
