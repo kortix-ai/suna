@@ -123,11 +123,13 @@ export interface ProfileTabCopy {
   dangerZone: string;
   deleteAccount: string;
   deletionUnavailable: string;
+  deletionStatusCheckFailed: string;
   scheduledForDeletionOn: string;
   scheduledForDeletion: string;
   cancelBeforeDeletion: string;
   deletionDescription: string;
   unavailable: string;
+  retry: string;
   keepMyAccount: string;
   deleteDialogTitle: string;
   immediateWarning: string;
@@ -174,12 +176,14 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   deleteAccount: 'Delete account',
   deletionUnavailable:
     "Account deletion isn't available on this deployment. Contact support to close your account.",
+  deletionStatusCheckFailed: "Couldn't confirm whether account deletion is available.",
   scheduledForDeletionOn: 'Scheduled for deletion on {date}.',
   scheduledForDeletion: 'Scheduled for deletion.',
   cancelBeforeDeletion: 'You can cancel any time before then.',
   deletionDescription:
     'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.',
   unavailable: 'Unavailable',
+  retry: 'Retry',
   keepMyAccount: 'Keep my account',
   deleteDialogTitle: 'Delete your account?',
   immediateWarning:
@@ -241,6 +245,8 @@ export interface ProfileTabViewProps {
   accountDeletionSupported?: boolean;
   hasPendingDeletion?: boolean;
   deletionScheduledForLabel?: string | null;
+  isDeletionStatusError?: boolean;
+  onRetryDeletionStatus?: () => void;
   showDeleteDialog?: boolean;
   onOpenDeleteDialog?: () => void;
   onCloseDeleteDialog?: () => void;
@@ -288,6 +294,8 @@ export function ProfileTabView({
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
+  isDeletionStatusError = false,
+  onRetryDeletionStatus = () => {},
   showDeleteDialog = false,
   onOpenDeleteDialog = () => {},
   onCloseDeleteDialog = () => {},
@@ -313,21 +321,29 @@ export function ProfileTabView({
     },
   };
   // The right-hand control of the Delete-account row, and the line under its
-  // label. Three states, one row — an unavailable or already-scheduled
-  // deletion changes what the row SAYS and what its control DOES, not which
-  // shape the pane is in. Before this, each state replaced the row with a
-  // paragraph or a banner, so the pane's last block moved as the state
-  // changed. Every gate is unchanged: `accountDeletionSupported` is still the
-  // only thing that decides whether a delete is offered at all.
-  const deleteAccountDescription = !accountDeletionSupported
-    ? copy.deletionUnavailable
-    : hasPendingDeletion
-      ? `${
-          deletionScheduledForLabel
-            ? copy.scheduledForDeletionOn.replace('{date}', deletionScheduledForLabel)
-            : copy.scheduledForDeletion
-        } ${copy.cancelBeforeDeletion}`
-      : copy.deletionDescription;
+  // label. Four states, one row — an errored status check, an unavailable or
+  // an already-scheduled deletion changes what the row SAYS and what its
+  // control DOES, not which shape the pane is in. Before this, each state
+  // replaced the row with a paragraph or a banner, so the pane's last block
+  // moved as the state changed. Every gate is unchanged:
+  // `accountDeletionSupported` is still the only thing that decides whether a
+  // delete is offered at all. An errored status check is not an answer
+  // (KRTX-2177): the row neither claims support nor borrows the unavailable
+  // copy — that copy asserts a definitive fact about the deployment, which a
+  // failed fetch cannot know. It states the check failed and offers Retry.
+  // The check comes first so no later branch can render a destructive
+  // control off an unknown answer.
+  const deleteAccountDescription = isDeletionStatusError
+    ? copy.deletionStatusCheckFailed
+    : !accountDeletionSupported
+      ? copy.deletionUnavailable
+      : hasPendingDeletion
+        ? `${
+            deletionScheduledForLabel
+              ? copy.scheduledForDeletionOn.replace('{date}', deletionScheduledForLabel)
+              : copy.scheduledForDeletion
+          } ${copy.cancelBeforeDeletion}`
+        : copy.deletionDescription;
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -431,7 +447,11 @@ export function ProfileTabView({
         <SettingsSubsectionHeader title={copy.dangerZone} />
         <SettingsRowGroup>
           <SettingsRow label={copy.deleteAccount} description={deleteAccountDescription}>
-            {!accountDeletionSupported ? (
+            {isDeletionStatusError ? (
+              <Button variant="outline" size="sm" onClick={onRetryDeletionStatus}>
+                {copy.retry}
+              </Button>
+            ) : !accountDeletionSupported ? (
               <span className="text-muted-foreground text-sm">{copy.unavailable}</span>
             ) : hasPendingDeletion ? (
               <Button
@@ -593,11 +613,13 @@ export function ProfileTab() {
       dangerZone: t('dangerZone'),
       deleteAccount: t('deleteAccount'),
       deletionUnavailable: t('deletionUnavailable'),
+      deletionStatusCheckFailed: t('deletionStatusCheckFailed'),
       scheduledForDeletionOn: t.raw('scheduledForDeletionOn'),
       scheduledForDeletion: t('scheduledForDeletion'),
       cancelBeforeDeletion: t('cancelBeforeDeletion'),
       deletionDescription: t('deletionDescription'),
       unavailable: t('unavailable'),
+      retry: t('retry'),
       keepMyAccount: t('keepMyAccount'),
       deleteDialogTitle: t('deleteDialogTitle'),
       immediateWarning: t('immediateWarning'),
@@ -750,12 +772,35 @@ export function ProfileTab() {
   const { accounts, isLoading: accountsLoading } = useAccountMemberships();
 
   // --- Delete account ---------------------------------------------------
-  const { data: deletionStatus, isLoading: isCheckingDeletionStatus } = useAccountDeletionStatus();
+  const {
+    data: deletionStatus,
+    isError: isDeletionStatusError,
+    dataUpdatedAt: deletionStatusAnsweredAt,
+    errorUpdatedAt: deletionStatusFailedAt,
+    fetchStatus: deletionStatusFetchStatus,
+    refetch: retryDeletionStatus,
+  } = useAccountDeletionStatus();
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
-  const accountDeletionSupported =
-    isBillingEnabled() && (deletionStatus?.supported ?? !isCheckingDeletionStatus);
+  // The gate fails closed: only a definitive `supported: true` from a
+  // successful status check arms the row. The old `?? !isCheckingDeletionStatus`
+  // mapped a rejected check — `data` undefined, `isLoading` false — to
+  // "supported", arming the destructive dialog against an endpoint of unknown
+  // state (KRTX-2177). `false` covers loading too: the row already renders the
+  // unavailable shape while the check runs, and the definitive `supported:
+  // false` answer renders the same shape, so neither branch changes.
+  const accountDeletionSupported = isBillingEnabled() && deletionStatus?.supported === true;
+  // "The freshest known outcome is a failure." A bare `isError` is not enough:
+  // the moment a retry starts, query-core clears the error of a data-less query
+  // (fetchState sets `status: 'pending'`), and the row would flash the
+  // definitive "isn't available on this deployment" claim mid-retry — found
+  // live against the local stack. `errorUpdatedAt > dataUpdatedAt` survives the
+  // clearing: it stays true until a successful answer lands, so the failed
+  // row (and its Retry) holds while the retry is in flight.
+  const isDeletionStatusFailed =
+    isDeletionStatusError ||
+    (deletionStatusFetchStatus === 'fetching' && deletionStatusFailedAt > deletionStatusAnsweredAt);
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);
@@ -833,6 +878,8 @@ export function ProfileTab() {
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}
+      isDeletionStatusError={isDeletionStatusFailed}
+      onRetryDeletionStatus={() => retryDeletionStatus()}
       showDeleteDialog={showDeleteDialog}
       onOpenDeleteDialog={openDeleteDialog}
       onCloseDeleteDialog={closeDeleteDialog}
