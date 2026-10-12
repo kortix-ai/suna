@@ -9,8 +9,10 @@ import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '@/harness/open-co
  * are being published", which is the only state a real reconnect happens in.
  */
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-import { KortixEventBus, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
+import { KortixEventBus, kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus, V1_TRANSCRIPT_EVENTS, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
 
 function collect(): { events: KortixEvent[]; listener: (e: KortixEvent) => void } {
   const events: KortixEvent[] = []
@@ -208,5 +210,51 @@ describe('R5.1: the ring holds a reconnect, bounded by bytes', () => {
     bus.publish('x', { text: 'z'.repeat(500) })
     expect(bus.firstSeq).toBe(2)
     expect(bus.subscribe(() => {}, { since: 1, epoch: 'e1' }).replay.map((e) => e.seq)).toEqual([2])
+  })
+})
+
+describe('taps and the v2 bus (P4.3b)', () => {
+  test('a tap sees each live event before the subscribers, replays nothing and is not a subscriber', () => {
+    const bus = new KortixEventBus('e1')
+    bus.publish('before', {})
+    const order: string[] = []
+    bus.subscribe((e) => void order.push(`sub:${e.type}`), {})
+    const off = bus.tap((e) => void order.push(`tap:${e.type}`))
+    expect(bus.subscriberCount).toBe(1)
+    bus.publish('a', {})
+    off()
+    bus.publish('b', {})
+    expect(order).toEqual(['tap:a', 'sub:a', 'sub:b'])
+  })
+
+  test('every KortixSessionEvent type is classified: the five transcript frames are left out of v2, the rest are kept', () => {
+    // The union, read from its declaration: a new event type fails here until it is classified.
+    const source = readFileSync(join(import.meta.dir, '../../../../packages/api-contract/src/transcript.ts'), 'utf8')
+    const union = source.slice(source.indexOf('export type KortixSessionEvent ='), source.indexOf('export type KortixSessionEventType'))
+    const declared = [...union.matchAll(/type: '([^']+)'/g)].map((m) => m[1]!).sort()
+    const kept = ['permission.asked', 'permission.replied', 'question.asked', 'question.rejected', 'question.replied', 'session.error', 'session.idle', 'session.status', 'todo.updated']
+    expect([...[...V1_TRANSCRIPT_EVENTS], ...kept].sort()).toEqual(declared)
+  })
+
+  test('every v1 frame but the transcript is copied onto the v2 bus, in order, with its payload and session', () => {
+    resetKortixEventBusForTests()
+    const v1 = kortixEventBus()
+    const status = { sessionID: 'ses_a', status: { type: 'busy' } }
+    for (const [type, payload] of [
+      ['session.status', status],
+      ['message.updated', { sessionID: 'ses_a', info: { id: 'msg_a' } }],
+      ['message.part.delta', { sessionID: 'ses_a', delta: 'x' }],
+      ['question.asked', { id: 'que_a', sessionID: 'ses_a' }],
+      ['message.part.removed', { sessionID: 'ses_a' }],
+      ['session.diff', { sessionID: 'ses_a' }],
+    ] as const) v1.publish(type, payload, 'ses_a')
+    v1.publishDaemon('kortix.turn', { verdict: 'idle' })
+    const v2 = sessionLogEventBus().subscribe(() => {}, { since: 0, epoch: sessionLogEventBus().epoch }).replay
+    expect(v2.map((e) => [e.seq, e.type, e.session])).toEqual([[1, 'session.status', 'ses_a'], [2, 'question.asked', 'ses_a'], [3, 'session.diff', 'ses_a'], [4, 'kortix.turn', undefined]])
+    expect(v2[0]!.payload).toBe(status)
+    // The v1 bus is unchanged: every frame, its own dense seqs, and the copy is not a subscriber.
+    expect(v1.subscribe(() => {}, { since: 0, epoch: v1.epoch }).replay.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(v1.subscriberCount).toBe(1)
+    resetKortixEventBusForTests()
   })
 })

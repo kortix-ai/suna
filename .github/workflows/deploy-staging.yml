@@ -44,7 +44,7 @@ jobs:
   preflight:
     name: Resolve staging ref
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     outputs:
       sha: ${{ steps.ref.outputs.sha }}
       sha8: ${{ steps.ref.outputs.sha8 }}
@@ -138,7 +138,7 @@ jobs:
   sync-secret:
     name: Sync staging secret bundle
     needs: preflight
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     env:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
@@ -286,7 +286,7 @@ jobs:
   migrate-db:
     name: Apply DB migrations to staging
     needs: [preflight, sync-secret]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -339,7 +339,7 @@ jobs:
         && needs.sync-secret.result == 'success'
         && needs.migrate-db.result == 'success'
         && (needs.terraform-staging.result == 'success' || needs.terraform-staging.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -391,7 +391,7 @@ jobs:
 
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # Non-blocking: deploy-web-vercel, verify, and promote-staging-channel
     # `needs:` this job, and a Cloudflare auth failure (403 since 2026-08-18)
     # silently skipped every staging web deploy for a week — the suite then
@@ -536,7 +536,7 @@ jobs:
         && needs.preflight.result == 'success'
         && needs.deploy-ecs.result == 'success'
         && (needs.terraform-staging-web.result == 'success' || needs.terraform-staging-web.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -590,7 +590,7 @@ jobs:
   publish-web-ecs-dns:
     name: Publish staging FE-ECS DNS
     needs: [deploy-web-ecs]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -629,7 +629,7 @@ jobs:
     name: Deploy staging web to Vercel
     # deploy-ecs gates the staging rollout: a failed ECS roll can't pass silently.
     needs: [preflight, wire-cloudflare, deploy-ecs]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -718,7 +718,7 @@ jobs:
   verify:
     name: Verify live staging on ECS and Vercel
     needs: [preflight, wire-cloudflare, deploy-web-vercel, publish-web-ecs-dns]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       # staging.kortix.com sits behind Vercel deployment protection (SSO);
       # VERCEL_BYPASS lets the web verification reach the app, not the Vercel
@@ -828,7 +828,7 @@ jobs:
   promote-staging-channel:
     name: Move :staging → staging-${{ needs.preflight.outputs.sha8 }}
     needs: [preflight, verify]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action

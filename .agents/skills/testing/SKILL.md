@@ -136,7 +136,7 @@ for a change runs in the developer's own box before the merge. CI runs on a
 schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
 them) and on release pull requests into `staging`
 and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
-runs the six lanes once (~9 min), `preview` deploys once (~7 min) with no tests. A push
+runs the lanes once (~20 min), `preview` deploys once (~7 min) with no tests. A push
 re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
 fails when a workflow other than the label-gated `tests.yml` and
 `deploy-preview.yml` triggers on a pull request into `main`: put a new check on
@@ -168,19 +168,19 @@ The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
 
-## Run CI lanes natively on Blacksmith
+## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs six lanes
-in parallel, each on one Blacksmith runner (`CI_RUNNER_L`, 8 vCPU / 32 GB).
-Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four
-browser lanes run shards `1/4` through `4/4` via
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs ten lanes
+in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
+`ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
+Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight
+browser lanes run shards `1/8` through `8/8`, one Playwright worker each, via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
 
 - Check out the requested SHA with `fetch-depth: 1`: the pushed `main` commit,
   or a release pull request's head.
-- Run `pnpm install --frozen-lockfile`; Blacksmith serves the pnpm store from
-  its cache transparently.
+- Run `pnpm install --frozen-lockfile`.
 - Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
   (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
   `pnpm exec supabase start --ignore-health-check` before the root command, and

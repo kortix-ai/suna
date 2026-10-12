@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
@@ -137,7 +138,7 @@ function render(
   } = {},
 ) {
   let tool = (
-    <TaskTool part={part} defaultOpen={opts.open} forceOpen={opts.forceOpen} locked={opts.locked} />
+    <TaskTool call={toolCallBlock(part)} defaultOpen={opts.open} forceOpen={opts.forceOpen} locked={opts.locked} />
   );
   if (opts.activatable) {
     tool = <BoundActivateContext.Provider value={() => {}}>{tool}</BoundActivateContext.Provider>;

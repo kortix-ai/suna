@@ -53,6 +53,9 @@ const WORKERS: Record<string, string> = {
   'account-deletion': 'workers/account-deletion-worker.ts',
   'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
+  'drive-conflict-scan': 'workers/drive-worker.ts',
+  'volume-deletions': 'workers/drive-worker.ts',
+  'drive-mount-revocations': 'workers/drive-worker.ts',
   'notification-digest': 'workers/notification-worker.ts',
 };
 
@@ -60,7 +63,6 @@ const WORKERS: Record<string, string> = {
 const NOT_WORKERS: Record<string, string> = {
   'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
-  'apps/kinds/convex/provision.ts': 'heartbeat of one convex App provision or operation; runs inside it (keepAlive)',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
@@ -92,6 +94,7 @@ const STARTS: Record<string, string> = {
   startAuditArchiveWorker: 'audit-archive',
   startProjectSnapshotWorker: 'project-snapshots',
   startGrantExpirySweeper: 'iam-grant-expiry',
+  startDriveWorkers: 'drive-conflict-scan',
   startOAuthSweeper: 'oauth-sweep',
   startBillingRotation: 'billing-trial-expiry',
   startAccountDeletionSchedule: 'account-deletion',

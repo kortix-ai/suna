@@ -1,6 +1,5 @@
 /**
- * The monthly unbilled-compute accrual, one copy for both readers
- * (`monitorMonthlyComputeCost`, `appMonthlyComputeCost`). A caller selects
+ * The monthly unbilled-compute accrual (`monitorMonthlyComputeCost`). A caller selects
  * `monthlyComputeColumns` over its own join and month filter; this module
  * sums the recorded cost and accrues each still-open window up to `now`.
  */
@@ -8,7 +7,7 @@ import { sandboxComputeSessions } from '@kortix/db';
 import type { ProviderName } from '../../platform/providers';
 import { calculateComputeCost } from './compute-metering';
 
-/** The select list of the monthly accrual, shared by both readers. */
+/** The select list of the monthly accrual. */
 export const monthlyComputeColumns = {
   costUsd: sandboxComputeSessions.costUsd,
   endedAtValue: sandboxComputeSessions.endedAt,

@@ -13,8 +13,10 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
+import { isProviderNotFound } from '../../platform/providers/status';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import type { SandboxProviderName } from '../../config';
 import type { StopReason } from '../stop-reason';
 import {
   type ReapCandidate,
@@ -23,6 +25,13 @@ import {
 } from './box-queries';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
+import {
+  carrySessionStateAcrossReset,
+  EPHEMERAL_RETIRED_KEY,
+  EphemeralRetireError,
+  retireEphemeralBox,
+  retireOnStopPlan,
+} from '../../platform/services/ephemeral-sandbox';
 
 export type StopBoxOutcome = 'stopped' | 'skipped' | 'errors';
 
@@ -122,11 +131,222 @@ export async function abortLiveTurnBeforeStop(input: {
   }
 }
 
+/** The daemon's last push of a synced box's drives; bounded, a big backlog keeps the rest local. */
+const DRIVE_SYNC_FLUSH_TIMEOUT_MS = 30_000;
+
+/**
+ * Drive sync: before a box off Platinum powers down (or before one of its
+ * drives leaves the session or turns read-only), ask its daemon to push the
+ * drive changes it has not sent yet. `driveId` limits the push to one drive.
+ * True only when the daemon said everything went up. Never throws: the daemon
+ * also pushes on SIGTERM, and keeps a drive it could not push aside instead
+ * of deleting it.
+ */
+export async function flushDriveSyncBeforeStop(input: {
+  sandboxId: string;
+  externalId: string;
+  provider: string;
+  metadata?: unknown;
+  driveId?: string;
+}): Promise<boolean> {
+  const { isDriveSyncBox } = await import('../../drives/sync');
+  if (!isDriveSyncBox({ provider: input.provider, metadata: input.metadata })) return true;
+  try {
+    const serviceKey = await resolveServiceKey(input.externalId);
+    if (!serviceKey) return false;
+    const ingress = await resolveSandboxIngress(input.externalId, { port: DAEMON_PORT, transport: 'http' });
+    const query = input.driveId ? `?driveId=${encodeURIComponent(input.driveId)}` : '';
+    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/drive-sync/flush${query}`, {
+      method: 'POST',
+      headers: {
+        ...ingress.headers,
+        Authorization: `Bearer ${serviceKey}`,
+        [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
+          { userId: 'system:stop', sandboxId: input.sandboxId, sandboxRole: 'platform_admin', scopes: ['*'] },
+          serviceKey,
+        ),
+      },
+      signal: AbortSignal.timeout(DRIVE_SYNC_FLUSH_TIMEOUT_MS),
+    });
+    if (res.status !== 200) {
+      logger.warn(`[stop] drive sync flush incomplete for sandbox ${input.sandboxId}: ${res.status}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn(`[stop] drive sync flush failed for sandbox ${input.sandboxId}`, { error: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+}
+
+/**
+ * Ephemeral sandboxes: a stop commits the session volume and DELETES the box.
+ *
+ *   null       — not an ephemeral box; stop it normally.
+ *   'retired'  — deleted, and the row is stopped with no external id.
+ *   'fallback' — the commit (or a first-stop migration) failed with the box
+ *                untouched; stop it normally, its own final commit keeps the
+ *                volume current and the session resumes the old way once.
+ *   'error'    — the delete failed; the row stays active for a retry.
+ */
+export async function retireEphemeralOnStop(input: {
+  sandboxId: string;
+  sessionId: string;
+  externalId: string;
+  stopReason: StopReason;
+  now: Date;
+  metadata?: Record<string, unknown>;
+}): Promise<'retired' | 'fallback' | 'error' | null> {
+  const plan = await retireOnStopPlan(input.sandboxId).catch((err) => {
+    logger.warn(`[ephemeral] retire plan for ${input.sandboxId} failed; stopping normally:`, { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  });
+  if (!plan) return null;
+  let timings;
+  try {
+    timings = await retireEphemeralBox({
+      externalId: input.externalId,
+      sessionId: input.sessionId,
+      metadata: plan.metadata,
+    });
+  } catch (err) {
+    const phase = err instanceof EphemeralRetireError ? err.phase : 'delete';
+    logger.error(`[ephemeral] retiring ${input.externalId} (session ${input.sessionId}) failed at ${phase}:`, { error: err instanceof Error ? err.message : String(err) });
+    return phase === 'delete' ? 'error' : 'fallback';
+  }
+  await applyStoppedState({
+    sandboxId: input.sandboxId,
+    sessionId: input.sessionId,
+    externalId: input.externalId,
+    stopReason: input.stopReason,
+    retiredExternalId: true,
+    metadata: {
+      ...(input.metadata ?? {}),
+      [EPHEMERAL_RETIRED_KEY]: input.externalId,
+      ephemeralRetiredAt: new Date().toISOString(),
+      ephemeralRetire: timings,
+    },
+    now: input.now,
+  });
+  logger.info(`[ephemeral] retired ${input.externalId} for session ${input.sessionId}`, { detail: timings });
+  return 'retired';
+}
+
+/**
+ * The chat could not be carried onto the session volume, so the reset stopped
+ * before deleting anything: the box and its root disk are untouched.
+ */
+export class ResetStateNotPreservedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResetStateNotPreservedError';
+  }
+}
+
+/** Waits between carry attempts: a box mid-start or a volume still releasing settles within these. */
+const RESET_CARRY_RETRY_DELAYS_MS = [2_000, 5_000];
+
+/**
+ * Reset a persistent machine: carry the session's chat onto its session volume
+ * (carrySessionStateAcrossReset), delete its box (Platinum deletes the root
+ * volume with it) and leave the row stopped with no external id, marked
+ * retired, so the caller claims it and provisions a fresh box from the current
+ * image. Throws when the delete fails; the row is then untouched.
+ *
+ * A carry that still fails after its retries stops the reset with
+ * ResetStateNotPreservedError and nothing deleted, unless the caller passed
+ * `discardState`: the explicit recovery for a machine past copying from, which
+ * resets anyway and reports `stateCarried: false`.
+ */
+export async function retirePersistentMachineBox(input: {
+  sandboxId: string;
+  sessionId: string;
+  externalId: string;
+  provider: string;
+  metadata?: unknown;
+  discardState?: boolean;
+  now: Date;
+  /** Tests only. */
+  carryRetryDelaysMs?: readonly number[];
+}): Promise<{ deleteMs: number; stateCarried: boolean }> {
+  await abortLiveTurnBeforeStop({ sandboxId: input.sandboxId, externalId: input.externalId });
+  const provider = getProvider(input.provider as SandboxProviderName);
+  const delays = input.carryRetryDelaysMs ?? RESET_CARRY_RETRY_DELAYS_MS;
+  let stateCarried = false;
+  let startedForCarry = false;
+  let lastError = '';
+  for (let attempt = 0; attempt <= delays.length && !stateCarried; attempt++) {
+    if (attempt > 0) await Bun.sleep(delays[attempt - 1]!);
+    try {
+      const carried = await carrySessionStateAcrossReset({
+        externalId: input.externalId,
+        sessionId: input.sessionId,
+        boxMetadata: input.metadata,
+        startBox: async () => {
+          await provider.start(input.externalId);
+          startedForCarry = true;
+        },
+      });
+      stateCarried = true;
+      logger.info(
+        `[persistent-machine] reset: carried session ${input.sessionId} chat onto its volume (${carried.bytes} bytes, ${carried.ms}ms, attempt ${attempt + 1}${carried.started ? ', started the box first' : ''})`,
+      );
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      logger.warn(`[persistent-machine] reset: carrying session ${input.sessionId} chat failed (attempt ${attempt + 1})`, {
+        external_id: input.externalId,
+        error: lastError,
+      });
+    }
+  }
+  if (!stateCarried && !input.discardState) {
+    // Leave the machine as the reset found it: a box started only to copy from goes back to stopped.
+    if (startedForCarry) {
+      await provider.stop(input.externalId).catch((err: unknown) =>
+        logger.warn(`[persistent-machine] reset: re-stopping ${input.externalId} after a failed carry failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+    throw new ResetStateNotPreservedError(lastError);
+  }
+  if (!stateCarried) {
+    logger.warn(`[persistent-machine] reset: discarding session ${input.sessionId} chat as requested`, {
+      external_id: input.externalId,
+    });
+  }
+  const t0 = Date.now();
+  try {
+    await provider.remove(input.externalId);
+  } catch (err) {
+    // Already gone counts as deleted.
+    if (!isProviderNotFound(err)) throw err;
+  }
+  const deleteMs = Date.now() - t0;
+  await applyStoppedState({
+    sandboxId: input.sandboxId,
+    sessionId: input.sessionId,
+    externalId: input.externalId,
+    stopReason: 'manual',
+    retiredExternalId: true,
+    metadata: {
+      [EPHEMERAL_RETIRED_KEY]: input.externalId,
+      machineResetAt: new Date().toISOString(),
+      machineResetDeleteMs: deleteMs,
+      machineResetStateCarried: stateCarried,
+    },
+    now: input.now,
+  });
+  logger.info(`[persistent-machine] reset: deleted ${input.externalId} for session ${input.sessionId} (${deleteMs}ms)`);
+  return { deleteMs, stateCarried };
+}
+
 /** The only fields an idle stop needs. */
 export type StoppableBox = Pick<
   ReapCandidate,
   'sandboxId' | 'sessionId' | 'externalId' | 'provider'
->;
+> &
+  Partial<Pick<ReapCandidate, 'metadata'>>;
 
 /**
  * `stopReason` is REQUIRED, not defaulted. It used to default to
@@ -155,6 +375,20 @@ export async function stopExpiredBox(
   // came from `reapCandidatePredicate` (status = 'active'), so the box can
   // plausibly still be running one — best-effort, never gates the stop below.
   await abortLiveTurnBeforeStop({ sandboxId: row.sandboxId, externalId: row.externalId });
+  await flushDriveSyncBeforeStop(row);
+
+  const retired = await retireEphemeralOnStop({
+    sandboxId: row.sandboxId,
+    sessionId: row.sessionId,
+    externalId: row.externalId,
+    stopReason,
+    now,
+  });
+  if (retired === 'retired') return 'stopped';
+  if (retired === 'error') {
+    await releaseSandboxStopClaim(row.sandboxId, claimToken);
+    return 'errors';
+  }
 
   try {
     await getProvider(row.provider).stop(row.externalId);

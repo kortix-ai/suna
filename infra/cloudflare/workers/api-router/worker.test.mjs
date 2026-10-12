@@ -484,6 +484,64 @@ describe('api-router worker', () => {
     expect(proxiedUserAgent).toBeNull();
   });
 
+  // A GET or HEAD that arrives carrying a body must still reach the origin.
+  // The Workers runtime throws inside `new Request` when a GET/HEAD carries a
+  // body, the origin request is built outside the try/catch, and Cloudflare
+  // answers the client with its bare "error code: 1101" 500 before the origin
+  // ever ran (reproduced on workerd: GET/HEAD with a body returned 500
+  // "TypeError: Request with a GET or HEAD method cannot have a body." at the
+  // origin-request construction). GET and HEAD bodies have no defined
+  // semantics, so the origin request never carries one: the body is dropped
+  // and the content-length that framed it goes with it. Bun's Request
+  // constructor does not enforce the GET/HEAD rule the Workers runtime does,
+  // so the incoming request is modeled by shadowing `body` on a real Request.
+  test.each(['GET', 'HEAD'])('a %s with a body reaches the origin without a body', async (method) => {
+    const incoming = new Request('https://api.kortix.com/v1/projects', { method });
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('unexpected'));
+        controller.close();
+      },
+    });
+    Object.defineProperty(incoming, 'body', { get: () => stream });
+    incoming.headers.set('content-length', '9');
+
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(incoming, env);
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.method).toBe(method);
+    expect(proxiedRequest.body).toBeNull();
+    expect(proxiedRequest.headers.get('content-length')).toBeNull();
+    expect(await proxiedRequest.text()).toBe('');
+  });
+
+  test('a POST body is forwarded to the origin unchanged', async () => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/projects', {
+        method: 'POST',
+        headers: { 'content-length': '7' },
+        body: 'payload',
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.headers.get('content-length')).toBe('7');
+    expect(await proxiedRequest.text()).toBe('payload');
+  });
+
   test('routes gateway hostnames to the gateway backend, independent of the API toggle', async () => {
     let proxiedUrl = '';
     globalThis.fetch = async (request) => {

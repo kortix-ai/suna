@@ -2,6 +2,7 @@ import { HTTPException } from 'hono/http-exception';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
 import { timeUpstream } from '../../../middleware/upstream-timing';
 import { config } from '../../../config';
+import { logger as appLogger } from '../../../lib/logger';
 import { resolveActorFromRequest } from '../../../shared/actor-context';
 import { assertSafeEgressUrl, UnsafeEgressError } from '../../../shared/ssrf-guard';
 import {
@@ -92,6 +93,97 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
   }
 }
 
+/**
+ * One upstream dispatch for all three auth modes (the fetch block used to be
+ * duplicated three times, KRTX-2073). Forward the upstream response verbatim
+ * — a provider's own 500 is the provider's answer, not ours to rewrite.
+ *
+ * A passed-through status never throws, so a provider-side 5xx used to be
+ * invisible in the logs: no error line, no reason, just a status in the
+ * completion line (36×500 on firecrawl /v2/scrape in 7 minutes, avg ≈46 s,
+ * zero error-level log lines). When the upstream answers 5xx, read its error
+ * body once and emit ONE bounded warn that names the service, the route and
+ * the upstream's own reason, with URLs masked (the target is caller data).
+ * 4xx stays silent: an expected, high-volume outcome the client handles.
+ *
+ * `reservation` refunds exactly as before: awaited on a dispatch error,
+ * fire-and-forget on an upstream error; null for the unbilled pure
+ * passthrough mode.
+ */
+async function forwardUpstream(
+  service: ProxyServiceConfig,
+  method: string,
+  subPath: string,
+  targetUrl: string,
+  headers: Headers,
+  body: Awaited<ReturnType<typeof getRequestBody>>,
+  reservation: Awaited<ReturnType<typeof reserveToolProxyCredits>>,
+): Promise<Response> {
+  let upstream: Response;
+  try {
+    // Attribute the upstream wait to `upstream_ms` so the completion log line
+    // can split provider latency from this API's own work (auth, reservation).
+    upstream = await timeUpstream(() =>
+      fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        // @ts-ignore
+        duplex: 'half',
+      }),
+    );
+  } catch (error) {
+    if (reservation) {
+      await refundToolReservation(
+        reservation,
+        `Tool reservation refund after dispatch error: ${service.name}`,
+      ).catch((refundError) =>
+        console.error('[PROXY] Tool reservation refund failed:', refundError),
+      );
+    }
+    throw error;
+  }
+
+  if (!upstream.ok && reservation) {
+    refundToolReservation(
+      reservation,
+      `Tool reservation refund after upstream error: ${service.name}`,
+    ).catch((err) => console.error('[PROXY] Tool reservation refund failed:', err));
+  }
+
+  if (upstream.status >= 500) {
+    let text: string | null = null;
+    try {
+      text = await upstream.text();
+    } catch {
+      text = null; // body already disturbed — pass the status through bodyless
+    }
+    const reason =
+      text === null
+        ? '(unreadable body)'
+        : text
+            .slice(0, 300)
+            .replace(/https?:\/\/\S+/g, '<url>')
+            .replace(/\s+/g, ' ')
+            .trim() || '(no body)';
+    appLogger.warn(
+      `[PROXY] ${service.name} upstream ${upstream.status} on ${method} ${subPath}: ${reason}`,
+      { upstream_status: upstream.status, upstream_reason: reason },
+    );
+    return new Response(text, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: upstream.headers,
+    });
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: upstream.headers,
+  });
+}
+
 // === Kortix User: match allowed route, inject our key, bill with route-specific pricing ===
 
 async function handleKortixProxy(
@@ -141,41 +233,7 @@ async function handleKortixProxy(
     `[PROXY] ${service.name} (kortix:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}]`,
   );
 
-  let upstream: Response;
-  try {
-    // Attribute the upstream wait to `upstream_ms` so the completion log line
-    // can split provider latency from this API's own work (auth, reservation).
-    upstream = await timeUpstream(() =>
-      fetch(targetUrl, {
-        method,
-        headers,
-        body,
-        // @ts-ignore
-        duplex: 'half',
-      }),
-    );
-  } catch (error) {
-    await refundToolReservation(
-      toolReservation,
-      `Tool reservation refund after dispatch error: ${service.name}`,
-    ).catch((refundError) =>
-      console.error('[PROXY] Tool reservation refund failed:', refundError),
-    );
-    throw error;
-  }
-
-  if (!upstream.ok) {
-    refundToolReservation(
-      toolReservation,
-      `Tool reservation refund after upstream error: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] Tool reservation refund failed:', err));
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: upstream.headers,
-  });
+  return forwardUpstream(service, method, subPath, targetUrl, headers, body, toolReservation);
 }
 
 // === Kortix user with own key: passthrough, billed the tool price ===
@@ -203,39 +261,7 @@ async function handleKortixPassthrough(
 
   console.log(`[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl}`);
 
-  let upstream: Response;
-  try {
-    upstream = await timeUpstream(() =>
-      fetch(targetUrl, {
-        method,
-        headers,
-        body,
-        // @ts-ignore
-        duplex: 'half',
-      }),
-    );
-  } catch (error) {
-    await refundToolReservation(
-      toolReservation,
-      `Tool reservation refund after dispatch error: ${service.name}`,
-    ).catch((refundError) =>
-      console.error('[PROXY] Tool reservation refund failed:', refundError),
-    );
-    throw error;
-  }
-
-  if (!upstream.ok) {
-    refundToolReservation(
-      toolReservation,
-      `Tool reservation refund after upstream error: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] Tool reservation refund failed:', err));
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: upstream.headers,
-  });
+  return forwardUpstream(service, method, subPath, targetUrl, headers, body, toolReservation);
 }
 
 // === Not Kortix user: pure passthrough ===
@@ -253,19 +279,5 @@ async function handlePassthrough(
 
   console.log(`[PROXY] ${service.name} (passthrough) ${method} ${subPath}`);
 
-  const upstream = await timeUpstream(() =>
-    fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      // @ts-ignore
-      duplex: 'half',
-    }),
-  );
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: upstream.headers,
-  });
+  return forwardUpstream(service, method, subPath, targetUrl, headers, body, null);
 }

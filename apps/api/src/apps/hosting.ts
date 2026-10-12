@@ -19,12 +19,36 @@ export const APP_CONTROL_PORT = 7331;
 export const APP_INGRESS_PORT = 8080;
 const APP_PROVIDER_WAKE_TIMEOUT_MS = 30_000;
 const APP_PROVIDER_WAKE_POLL_MS = 250;
+const APP_PROVIDER_STOP_SETTLE_TIMEOUT_MS = 30_000;
+const APP_PROVIDER_STOP_SETTLE_POLL_MS = 2_000;
 const APPD_RESTART_INTERVAL_MS = 5_000;
 
 export interface AppMachineSpec {
   cpuCores: number;
   memoryGb: number;
   diskGb: number;
+}
+
+/**
+ * A Platinum App template carries these minimal defaults; each machine passes
+ * its own size at create (Platinum enforces the template's as a floor), so a
+ * resize never rebuilds the image. Daytona and E2B size the box from the
+ * template, so there the template keeps the App's size.
+ */
+export const APP_TEMPLATE_MACHINE: AppMachineSpec = { cpuCores: 1, memoryGb: 1, diskGb: 1 };
+
+/** An instance's machine size for the meter: recorded at create, else the App's (a row from before machines). */
+export function instanceMachine(
+  instance: { metadata: unknown },
+  app: { cpuCores: number; memoryGb: number; diskGb: number },
+): AppMachineSpec {
+  const recorded = (instance.metadata as { machine?: AppMachineSpec } | null)?.machine;
+  return recorded ?? { cpuCores: app.cpuCores, memoryGb: app.memoryGb, diskGb: app.diskGb };
+}
+
+/** The size an App image is built with on this provider. */
+export function appTemplateMachine(provider: SandboxProviderName, machine: AppMachineSpec): AppMachineSpec {
+  return provider === 'platinum' ? APP_TEMPLATE_MACHINE : machine;
 }
 
 export interface BuildAppImageInput {
@@ -49,6 +73,8 @@ export interface StartAppRuntimeInput {
   envVars?: Record<string, string>;
   /** An always-on App: the provider must never auto-stop it (Platinum: auto_stop_minutes 0). */
   alwaysOn?: boolean;
+  /** Volumes mounted at create, keyed by guest path (Platinum volume names). */
+  volumes?: Record<string, { volume: string }>;
 }
 
 export interface AppRuntimeHandle extends ProvisionResult {
@@ -63,6 +89,9 @@ export interface AppdStatus {
   started_at?: string;
   restarts?: number;
   last_exit?: string;
+  /** Why the supervisor failed, e.g. `mount_missing` (a volume is not mounted in the guest). */
+  reason?: string;
+  checks?: Array<{ name: string; type: string; port: number; path?: string; status: string; output?: string; checked_at?: string }>;
 }
 
 interface HostingDependencies {
@@ -71,6 +100,7 @@ interface HostingDependencies {
   fetch: typeof globalThis.fetch;
   controlSecret: string;
   sleep: (ms: number) => Promise<void>;
+  stopSettleTimeoutMs: number;
 }
 
 function defaultDependencies(): HostingDependencies {
@@ -80,6 +110,7 @@ function defaultDependencies(): HostingDependencies {
     fetch: globalThis.fetch,
     controlSecret: config.API_KEY_SECRET,
     sleep: (ms) => Bun.sleep(ms),
+    stopSettleTimeoutMs: APP_PROVIDER_STOP_SETTLE_TIMEOUT_MS,
   };
 }
 
@@ -112,11 +143,9 @@ export class AppHostingProvider {
       {
         snapshotName: input.snapshotName,
         userDockerfile: input.dockerfile,
-        spec: {
-          cpu: input.machine.cpuCores,
-          memoryGb: input.machine.memoryGb,
-          diskGb: input.machine.diskGb,
-        },
+        spec: (({ cpuCores, memoryGb, diskGb }) => ({ cpu: cpuCores, memoryGb, diskGb }))(
+          appTemplateMachine(input.provider, input.machine),
+        ),
         slug: input.slug,
         runtimeProfile: 'app',
         appContext: {
@@ -140,6 +169,7 @@ export class AppHostingProvider {
       resourceSpec: input.machine,
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
+      ...(input.volumes && Object.keys(input.volumes).length > 0 ? { volumes: input.volumes, volumesRequired: true } : {}),
       // On-demand Apps keep the provider's idle backstop. An always-on App opts
       // out of it on Platinum, where 0 means persistent. Daytona clamps 0 to a
       // 1-minute stop and E2B ignores it, so there it keeps the backstop and
@@ -244,8 +274,29 @@ export class AppHostingProvider {
       // Provider stop endpoints are not consistently idempotent. Daytona, for
       // example, rejects a second stop after it already archived the sandbox.
       // Confirm provider truth before deciding whether the operation failed.
-      const status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+      let status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
       if (status === 'stopped' || status === 'removed') return;
+      // A conflict can also mean the sandbox is mid-flight between provider
+      // states: Daytona rejects a stop with "Sandbox state change in progress"
+      // while a start, archive or restore is running, and its reported state
+      // still reads running at that instant. The desired state is stopped
+      // either way, so give the transition a bounded window to settle — a
+      // sandbox that reports stopped or removed satisfies the request, and one
+      // that stays running accepts a stop retry. Exhausting the window keeps
+      // the enriched rethrow below.
+      const settleDeadline = Date.now() + this.dependencies.stopSettleTimeoutMs;
+      while (Date.now() < settleDeadline) {
+        if (status === 'running') {
+          const stopped = await runtimeProvider.stop(externalId).then(
+            () => true,
+            () => false,
+          );
+          if (stopped) return;
+        }
+        await this.dependencies.sleep(APP_PROVIDER_STOP_SETTLE_POLL_MS);
+        status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+        if (status === 'stopped' || status === 'removed') return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`${message} (provider status: ${status})`, { cause: error });
     }
@@ -257,15 +308,21 @@ export class AppHostingProvider {
     await runtimeProvider.remove(externalId);
   }
 
+  /** Run one command in the box through the provider's own channel (the release command). */
+  async exec(provider: SandboxProviderName, externalId: string, command: string[], timeoutMs: number) {
+    const runtimeProvider = this.dependencies.runtimeProvider(provider);
+    if (!runtimeProvider.exec) throw new Error(`The ${provider} provider cannot run a command in a machine`);
+    return runtimeProvider.exec(externalId, command, { timeoutMs });
+  }
+
   async ingress(
     provider: SandboxProviderName,
     externalId: string,
     transport: 'http' | 'websocket' = 'http',
+    /** A named service's own port; default the supervisor's ingress (the `http` service). */
+    port: number = APP_INGRESS_PORT,
   ): Promise<ResolvedSandboxIngress> {
-    return this.dependencies.runtimeProvider(provider).resolveIngress(externalId, {
-      port: APP_INGRESS_PORT,
-      transport,
-    });
+    return this.dependencies.runtimeProvider(provider).resolveIngress(externalId, { port, transport });
   }
 
   async status(
@@ -317,7 +374,7 @@ export class AppHostingProvider {
         const status = await this.status(provider, externalId, runtimeId);
         if (status.ready && status.status === 'running') return status;
         if (status.status === 'failed') {
-          throw new Error(`kortix-appd failed${status.last_exit ? `: ${status.last_exit}` : ''}`);
+          throw new Error(`kortix-appd failed${status.reason ? ` (${status.reason})` : ''}${status.last_exit ? `: ${status.last_exit}` : ''}`);
         }
         lastError = `status=${status.status} ready=${status.ready}`;
       } catch (error) {

@@ -6,10 +6,10 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PtyWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const ptyInput = (input.input as string) || (input.text as string) || '';
   const ptyId = (input.id as string) || (input.pty_id as string) || '';
 

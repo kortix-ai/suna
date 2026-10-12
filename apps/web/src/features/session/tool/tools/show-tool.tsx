@@ -56,9 +56,9 @@ function CarouselServicePreview({ url, label }: { url: string; label?: string })
   return <InlineServicePreview url={url} label={label} />;
 }
 
-export function ShowTool({ part, sessionId }: ToolProps) {
+export function ShowTool({ call, sessionId }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
+  const input = partInput(call);
   const running = useContext(ToolRunningContext);
 
   const fill = useContext(ToolSurfaceContext) === 'panel';

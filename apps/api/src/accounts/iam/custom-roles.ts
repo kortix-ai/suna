@@ -13,6 +13,7 @@ import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { accountCustomRoles, roleActionRows, systemRoleDescriptionRows } from '../../iam/role-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { FOLDER_ROLE_KEYS } from '../../iam/assignments';
 import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForRole } from '../../iam/cache-invalidation';
@@ -67,6 +68,9 @@ const SYSTEM_ROLE_ORDER = [
   'account:admin',
   'account:member',
   'project:agent-user',
+  'project:folder-reader',
+  'project:folder-writer',
+  'project:folder-manager',
 ];
 
 /**
@@ -253,8 +257,11 @@ export function registerIamCustomRolesRoutes(): void {
         listSystemRolesWithDescription(),
         accountCustomRoles(accountId),
       ]);
+      // The folder roles exist only as the level of a Files folder grant (the
+      // Files access dialog sets them); they are not roles a person picks here.
+      const listed = system.filter((r) => !(r.scopeType === 'project' && FOLDER_ROLE_KEYS.has(r.key)));
       return c.json({
-        roles: [...system.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
+        roles: [...listed.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
       });
     },
   );

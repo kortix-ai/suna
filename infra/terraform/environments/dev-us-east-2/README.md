@@ -126,8 +126,12 @@ us-west-2 `kortix-dev-env` and `kortix-dev-web-env`, and add this root and
 `.github/workflows/terraform-ci.yml`.
 
 No workflow reads the us-west-2 blobs. `aws-env` reads each blob from its row
-in `blob_region` (`.github/actions/aws-env/fetch.sh`). The same applies to
-staging's us-west-2 `kortix-staging-env` and `kortix-staging-web-env`.
+in `blob_region` (`.github/actions/aws-env/fetch.sh`), and
+`tests/unit/aws-env-action.test.ts` fails on a raw `get-secret-value` in a
+workflow outside its short allow-list. The same applies to staging's us-west-2
+`kortix-staging-env` and `kortix-staging-web-env`. The only remaining reader is
+the rollback path: the `dev` and `staging` targets of `infra/scripts/ecs-deploy.sh`.
+Remove those targets with the destroy.
 
 #### Data
 

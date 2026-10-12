@@ -1388,8 +1388,10 @@ flow(
     });
 
     await ctx.step('a manual fire that fails is recorded on the trigger: last_status failed, with the error', async () => {
+      // KRTX-1505: the account has no usable model here, so the fire is gated
+      // with 402 no_usable_model — recorded like any other failed fire.
       const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
-      fired.status(500);
+      fired.status(402);
       const error = fired.json<{ error?: string }>()?.error ?? '';
       const after = await digest();
       if (after?.last_status !== 'failed') throw new Error(`last_status is ${String(after?.last_status)}`);
@@ -1422,6 +1424,14 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
+    // A BYOK provider key gives the account a usable model, so the fires
+    // reach the backpressure path this flow exists to prove (KRTX-1505:
+    // without it the no-usable-model gate 402s before queuing).
+    (await owner.post(
+      '/v1/projects/:projectId/secrets',
+      { name: 'ANTHROPIC_API_KEY', value: 'sk-ant-ke2e-backpressure', strategy: 'broker', consumer: 'llm_gateway' },
+      { params },
+    )).status(200);
     const secret = `ke2e-hook-${crypto.randomUUID()}`;
     (await owner.post(
       '/v1/projects/:projectId/triggers',

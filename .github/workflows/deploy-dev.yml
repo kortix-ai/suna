@@ -75,7 +75,7 @@ jobs:
   # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────
   detect-changes:
     name: Detect changes
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     outputs:
       api: ${{ steps.outputs.outputs.api }}
       gateway: ${{ steps.outputs.outputs.gateway }}
@@ -334,7 +334,7 @@ jobs:
     name: Build API image (amd64)
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -348,16 +348,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
-        with:
-          cache-key: apps/api/Dockerfile:linux/amd64
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -381,13 +374,13 @@ jobs:
         # image ~22 min, ~2/3 of the whole run, for an image dev never boots. This
         # restores the deliberate `1ca937570d` state ("dev single-arch, multi-arch
         # on prod only") that the `cb9d12a1b3` pipeline rewrite silently undid.
-        # deploy-prod.yml keeps amd64+arm64. Layer cache lives on the Blacksmith
-        # sticky disk (setup-docker-builder above), so warm builds reuse layers
-        # instead of every build being cold.
+        # deploy-prod.yml keeps amd64+arm64. Layer cache lives in the registry
+        # (`dev-buildcache`), so warm builds reuse layers instead of every
+        # build being cold.
         # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
         # /v1/health reports it. The immutable :dev-<sha8> tag (see `tags:`)
         # is the artifact's real identity.
-        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -411,7 +404,7 @@ jobs:
     name: Scan + SBOM + sign API image
     needs: [detect-changes, build-api]
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       id-token: write
@@ -489,7 +482,7 @@ jobs:
     name: Apply DB migrations to dev
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -546,7 +539,7 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -687,7 +680,7 @@ jobs:
     name: Deploy Kortix Apps router
     needs: [detect-changes, deploy-api-ecs]
     if: ${{ always() && needs.detect-changes.outputs.apps_router == 'true' && (needs.deploy-api-ecs.result == 'success' || needs.deploy-api-ecs.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -748,7 +741,7 @@ jobs:
       && needs.detect-changes.outputs.api == 'true'
       && needs.build-api.result == 'success'
       && needs.deploy-api-ecs.result == 'success' }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -789,7 +782,7 @@ jobs:
     name: Build gateway image (amd64)
     needs: detect-changes
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -800,16 +793,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
-        with:
-          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -829,7 +815,7 @@ jobs:
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -850,7 +836,7 @@ jobs:
     name: Deploy gateway to dev (ECS Fargate)
     needs: [detect-changes, build-gateway]
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -877,7 +863,7 @@ jobs:
     name: Verify gateway dev commit parity
     needs: [detect-changes, deploy-gateway-ecs]
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
@@ -919,7 +905,7 @@ jobs:
       && needs.detect-changes.outputs.gateway == 'true'
       && needs.build-gateway.result == 'success'
       && needs.verify-gateway-dev-parity.result == 'success' }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -961,7 +947,7 @@ jobs:
     name: Build frontend image (amd64)
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -994,16 +980,9 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.detect-changes.outputs.version }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
-        with:
-          cache-key: apps/web/Dockerfile:linux/amd64
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1023,7 +1002,7 @@ jobs:
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -1056,7 +1035,7 @@ jobs:
         && needs.build-frontend.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -1111,7 +1090,7 @@ jobs:
     if: ${{ always()
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.deploy-web-ecs.result == 'success' }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -1153,7 +1132,7 @@ jobs:
     if: ${{ always()
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.publish-web-ecs-dns.result == 'success' }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1235,7 +1214,7 @@ jobs:
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.build-frontend.result == 'success'
       && needs.verify-web-dev.result == 'success' }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1286,7 +1265,7 @@ jobs:
     name: Build dev CLI (all targets)
     needs: detect-changes
     if: needs.detect-changes.outputs.cli == 'true'
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1379,7 +1358,7 @@ jobs:
     name: Publish dev-latest prerelease
     needs: [detect-changes, build-cli]
     if: needs.detect-changes.outputs.cli == 'true' && needs.build-cli.result == 'success'
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
     permissions:
       contents: write
     steps:
@@ -1433,7 +1412,7 @@ jobs:
       && (needs.detect-changes.outputs.api == 'true'
         || needs.detect-changes.outputs.gateway == 'true'
         || needs.detect-changes.outputs.frontend == 'true') }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read

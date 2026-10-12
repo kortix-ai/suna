@@ -68,8 +68,8 @@ There are **four environments**, each a separate encrypted file with its **own k
   the prod AWS IAM user, Daytona key, and Pipedream client today).
 - **`.env.dev` / `.env.staging` / `.env.prod` mirror the deployed env 1:1.**
   Runtime truth for a deployed env is the AWS Secrets Manager blob
-  `kortix-<env>-env` (ECS injects it as `KORTIX_ENV_JSON`; dev+staging in
-  us-west-2, prod in eu-west-2) plus the plain `environment` entries on the API
+  `kortix-<env>-env` (ECS injects it as `KORTIX_ENV_JSON`; dev in us-east-2,
+  staging and prod in eu-west-2) plus the plain `environment` entries on the API
   task definition (`KORTIX_PREVIEW_BASE_DOMAIN`, `LLM_GATEWAY_PROXY_TARGET`, …).
   Nothing syncs the files automatically: `kortix-dev-env` and `kortix-prod-env`
   are edited by operators, `kortix-staging-env` is rebuilt as existing blob +
@@ -82,6 +82,14 @@ There are **four environments**, each a separate encrypted file with its **own k
   `aws sts get-session-token --serial-number arn:aws:iam::935064898258:mfa/markokraemer-mfa --token-code <code>`).
   Direction rule: SM → file for anything already running; file → SM only as a
   deliberate change with a rollout (`aws secretsmanager put-secret-value`).
+- **Which region to edit.** CI reads each blob from the region of its row in
+  `blob_region` (`.github/actions/aws-env/fetch.sh`). Edit a blob in its
+  primary region: `aws secretsmanager describe-secret --region <row region>
+  --secret-id <blob> --query PrimaryRegion` names it (`null` means the row
+  region is the primary). A replica rejects writes. Until the cutover after the
+  next release, `kortix-ci-env`, `kortix-preview-env` and `kortix-prod-env` keep
+  their primary in us-west-2, and CI reads their replicas in us-east-2 and
+  eu-west-2.
 - Each profile owns its internal secrets (`INTERNAL_SERVICE_KEY`,
   `API_KEY_SECRET`, `GATEWAY_INTERNAL_TOKEN`, `TUNNEL_SIGNING_SECRET`).
   `INTERNAL_SERVICE_KEY` authenticates internal service calls such as the

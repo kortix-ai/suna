@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import Loading from '@/components/ui/loading';
 import { SESSION_NOTICE } from '@kortix/sdk';
 import { MoonIcon } from '@phosphor-icons/react';
@@ -39,6 +40,7 @@ export function ComposerAboveCard({
   servedModel = null,
   onModelChange,
   slashMenuPlacement = 'above',
+  questionActive = false,
 }: ComposerAboveCardProps) {
   const showQueueStrip = Boolean(inputSlot);
   // The strip explains the model selector, so it shows only where one exists.
@@ -107,7 +109,16 @@ export function ComposerAboveCard({
           shell around it kept painting as an empty sliver.
         */}
         {showQueueStrip && (
-          <div className={COMPOSER_INPUT_SLOT_CLASS}>
+          // A pending question docks onto the card as one surface: full
+          // width, and the card squares its top corners to meet it. One
+          // ring wraps both: each half clips its ring at the seam.
+          <div
+            className={cn(
+              COMPOSER_INPUT_SLOT_CLASS,
+              questionActive &&
+                'bg-background ring-muted/15 w-full ring-3 [clip-path:inset(-8px_-8px_0_-8px)]',
+            )}
+          >
             {inputSlot}
           </div>
         )}

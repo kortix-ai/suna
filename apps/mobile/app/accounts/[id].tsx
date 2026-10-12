@@ -14,7 +14,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+import { openLink } from '@/lib/utils/open-link';
 import {
   ArrowClockwiseIcon as RotateCw,
   GitBranchIcon as GitBranch,
@@ -58,7 +58,7 @@ export default function AccountDetailScreen() {
     (tab: 'members' | 'git' | 'audit') => {
       if (!accountId) return;
       haptics.tap();
-      WebBrowser.openBrowserAsync(accountHubUrl(KORTIX_WEB_URL, accountId, tab)).catch((error) => {
+      openLink(accountHubUrl(KORTIX_WEB_URL, accountId, tab)).catch((error) => {
         log.error('Error opening account web tab:', error);
       });
     },

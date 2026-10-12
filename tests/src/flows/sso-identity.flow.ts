@@ -568,6 +568,20 @@ flow(
       (await client.get('/v1/accounts/:accountId', { params })).statusCode,
       (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } })).statusCode,
     ];
+    // Each API process caches a caller's SSO verdict for up to 15 s, and a
+    // change clears only the process that took it. Poll until 8 reads in a row
+    // agree, so every process behind the load balancer answers the new state.
+    const settledReads = async (client: Client, expected: string, label: string) => {
+      const deadline = Date.now() + 30_000;
+      let streak = 0;
+      let codes: number[] = [];
+      while (streak < 8) {
+        if (Date.now() > deadline) throw new Error(`${label}: expected ${expected} 8 times in a row within 30 s, last ${codes}`);
+        codes = await reads(client);
+        streak = codes.join() === expected ? streak + 1 : 0;
+        if (streak < 8) await new Promise((resolve) => setTimeout(resolve, codes.join() === expected ? 100 : 1_000));
+      }
+    };
 
     await ctx.step('before enforcement every member reads the account and its project', async () => {
       await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
@@ -580,6 +594,7 @@ flow(
     await ctx.step('with the domain verified, the password identity gets 403 sso_required on the account and the project', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
       const asPassword = ctx.client.as(passwordPerson);
+      await settledReads(asPassword, '403,403', 'password identity after verification');
       (await asPassword.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
       (await asPassword.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
         .status(403)
@@ -596,8 +611,7 @@ flow(
 
     await ctx.step('break-glass: an operator marks the domain unverified and the password identity reads again', async () => {
       (await operatorVerifies(ctx, team.id, false)).status(200).body().has('$.domain_verified', false);
-      const codes = await reads(ctx.client.as(passwordPerson));
-      if (codes.join() !== '200,200') throw new Error(`expected 200,200 after break-glass, got ${codes}`);
+      await settledReads(ctx.client.as(passwordPerson), '200,200', 'password identity after break-glass');
     });
 
     await ctx.step('cleanup: remove the provider', async () => {

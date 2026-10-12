@@ -28,15 +28,15 @@ import { inputPath } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
-export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const surface = useContext(ToolSurfaceContext);
   const running = useContext(ToolRunningContext);
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';

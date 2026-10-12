@@ -129,6 +129,10 @@ export async function resolveProjectPrincipal(
       ? reconcileStoredSessionAgentGrant({
           projectId,
           sessionId: sessionIdentity.sessionId,
+          // The auth middleware just validated the token row and put its
+          // (already normalized) grant here — the same row the reconcile
+          // would otherwise re-read by session id.
+          storedGrant: storedAgentGrant,
         })
       : Promise.resolve(storedAgentGrant),
     sessionChannelConnectorSlugs(projectId, sessionIdentity.sessionId),

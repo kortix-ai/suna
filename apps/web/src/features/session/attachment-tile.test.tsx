@@ -185,9 +185,8 @@ describe('AttachmentTile preview (a pasted-text tile)', () => {
     expect(markup).not.toContain('>Pasted text<');
   });
 
-  test('is as tall as every tile, one step wider, with a folded corner', () => {
-    expect(markup).not.toContain(TILE_SURFACE);
-    expect(markup).toContain('h-28 w-32');
+  test('is the size of every tile, with a folded corner', () => {
+    expect(markup).toContain(TILE_SURFACE);
     expect(markup).toContain('rounded-tr-xl');
     expect(markup).toMatch(/aria-hidden="true" class="[^"]*size-5[^"]*rounded-bl-sm/);
   });

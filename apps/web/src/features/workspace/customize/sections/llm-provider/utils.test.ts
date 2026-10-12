@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  buildKortixManagedProvider,
   formatPricePerMillion,
   formatTokenCount,
   gatewayModelId,
+  managedProviderHint,
   orderProviderRows,
   pickInitialTab,
   prettyFieldLabel,
@@ -333,5 +335,59 @@ describe('prettyFieldLabel', () => {
     expect(prettyFieldLabel('OPENCODE_GO_API_KEY')).toBe('API key');
     expect(prettyFieldLabel('ZAI_CODING_PLAN_API_KEY')).toBe('API key');
     expect(prettyFieldLabel('AWS_REGION')).toBe('Region');
+  });
+});
+
+describe('buildKortixManagedProvider — the connected claim follows the served catalog', () => {
+  // The runtime provider snapshot the picker serves: `connected` is hardcoded
+  // to include `kortix` whenever the gateway exists, but `models` is what the
+  // account's plan actually lets it serve.
+  const snapshot = (modelIds: string[]) => ({
+    connected: ['kortix'],
+    all: [{ id: 'kortix', name: 'Kortix', models: Object.fromEntries(modelIds.map((id) => [id, {}])) }],
+  });
+  // A slice of MANAGED_MODEL_ID_SET — the ids the curated managed table knows.
+  const managedIds = new Set(['claude-sonnet-4-5', 'glm-5']);
+
+  test('a connected gateway with served managed models stays connected', () => {
+    const entry = buildKortixManagedProvider(snapshot(['claude-sonnet-4-5', 'glm-5']), managedIds, 'Included with your plan');
+    expect(entry?.id).toBe('kortix');
+    expect(entry?.models.map((m) => m.id)).toEqual(['claude-sonnet-4-5', 'glm-5']);
+  });
+
+  test('a served model outside the curated managed set is not a managed model', () => {
+    const entry = buildKortixManagedProvider(snapshot(['claude-sonnet-4-5', 'byok-only-model']), managedIds, 'Included with your plan');
+    expect(entry?.models.map((m) => m.id)).toEqual(['claude-sonnet-4-5']);
+  });
+
+  // KRTX-1482 — THE BUG. On a free plan with no servable platform default the
+  // picker serves zero managed models and shows "No models available — Upgrade
+  // or connect your own provider", while this entry still claimed the managed
+  // provider connected ("Included with your plan", zero models). The Providers
+  // tab must not make a claim the picker contradicts: no served managed models
+  // ⇒ no connected entry.
+  test('a connected gateway with ZERO served managed models is not reported connected', () => {
+    expect(buildKortixManagedProvider(snapshot([]), managedIds, 'Included with your plan')).toBeNull();
+    expect(buildKortixManagedProvider(snapshot(['byok-only-model']), managedIds, 'Included with your plan')).toBeNull();
+  });
+
+  test('the snapshot not carrying the gateway at all is not reported connected', () => {
+    expect(buildKortixManagedProvider({ connected: [], all: [] }, managedIds, 'Included with your plan')).toBeNull();
+    expect(buildKortixManagedProvider(undefined, managedIds, 'Included with your plan')).toBeNull();
+  });
+});
+
+describe('managedProviderHint — the managed row\u2019s note follows the served catalog', () => {
+  const copy = { managedDescription: 'Managed models billed with Kortix credits. No API key needed.', managedUpgradeHint: 'Upgrade to use Kortix\u2019s managed models, or connect your own provider.' };
+
+  test('with served managed models the note explains billing', () => {
+    expect(managedProviderHint([{}], copy)).toBe(copy.managedDescription);
+  });
+
+  // KRTX-1482 — with zero served managed models the billing copy invites a
+  // key-free connection the picker refuses; the note carries the upgrade path
+  // instead, the story the picker's empty state tells.
+  test('with zero served managed models the note carries the upgrade path', () => {
+    expect(managedProviderHint([], copy)).toBe(copy.managedUpgradeHint);
   });
 });

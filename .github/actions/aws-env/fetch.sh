@@ -16,15 +16,16 @@ set -euo pipefail
 DEFAULT_BLOB="kortix-ci-env"
 : "${GITHUB_ENV:?GITHUB_ENV is not set}"
 
-# The region each blob lives in. A blob moves region here, in one row, not in
-# every workflow that reads it. A blob without a row fails before any read.
-# The us-west-2 copies of kortix-dev-env, kortix-staging-env and the web blobs
-# are stale since the 2026-10-06 switch and have no row.
+# The region each blob is read from. A blob moves region here, in one row, not
+# in every workflow that reads it. A blob without a row fails before any read.
+# us-west-2 is being removed: no row may name it. kortix-ci-env,
+# kortix-preview-env (us-east-2) and kortix-prod-env (eu-west-2) are read from
+# replicas whose primary is still us-west-2 until the cutover after the next
+# release; edit a blob in its primary region (describe-secret PrimaryRegion).
 blob_region() {
   case "$1" in
-    kortix-ci-env | kortix-preview-env | kortix-prod-env) echo us-west-2 ;;
-    kortix-dev-env | kortix-dev-use2-web-env) echo us-east-2 ;;
-    kortix-staging-env | kortix-staging-euw2-web-env) echo eu-west-2 ;;
+    kortix-ci-env | kortix-preview-env | kortix-dev-env | kortix-dev-use2-web-env) echo us-east-2 ;;
+    kortix-prod-env | kortix-staging-env | kortix-staging-euw2-web-env) echo eu-west-2 ;;
     *) return 1 ;;
   esac
 }

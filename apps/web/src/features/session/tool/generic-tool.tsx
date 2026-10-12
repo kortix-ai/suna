@@ -31,10 +31,10 @@ export function parseToolName(tool: string): {
   return { server, display: humanizeToolName(tool) };
 }
 
-export function GenericTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const output = partOutput(part);
-  const input = partInput(part);
-  const { server, display } = useMemo(() => parseToolName(part.tool), [part.tool]);
+export function GenericTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const output = partOutput(call);
+  const input = partInput(call);
+  const { server, display } = useMemo(() => parseToolName(call.name), [call.name]);
 
   const subtitle = useMemo(() => {
     const keys = [
@@ -90,7 +90,7 @@ export function GenericTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       forceOpen={forceOpen}
       locked={locked}
     >
-      {output ? <ToolOutputFallback output={output} toolName={part.tool} /> : null}
+      {output ? <ToolOutputFallback output={output} toolName={call.name} /> : null}
     </BasicTool>
   );
 }

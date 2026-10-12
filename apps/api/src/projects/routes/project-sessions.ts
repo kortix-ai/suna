@@ -213,7 +213,7 @@ export function registerProjectSessionsRoutes(): void {
       201,
     );
   },
-  // The KaaB contract (backend.mdx, KORTIX_AS_A_BACKEND_GUIDE.md) promises coded
+  // The KaaB contract (apps/web/content/docs/sdk/sessions.mdx) promises coded
   // 400s for the three structured create fields. Schema validation runs before
   // the handler, so without this hook zod failures collapse into the generic
   // defaultHook envelope and the documented codes never reach HTTP callers.
@@ -558,6 +558,21 @@ export function registerProjectSessionsRoutes(): void {
               'A shared session uses only keys shared with the whole project, and none can run this model. ' +
               'Share a key with the whole project, or switch the session to another model, then share the session.',
             code: 'SHARED_SESSION_NEEDS_PROJECT_KEY',
+          },
+          409,
+        );
+      }
+    }
+
+    // Others prompt a shared session, and a personal drive is its owner's alone:
+    // it leaves the running sandbox first, or the session stays private.
+    if (intent.mode !== 'private') {
+      const { detachPersonalDrives } = await import('../../drives/service');
+      if (!(await detachPersonalDrives(sessionId))) {
+        return c.json(
+          {
+            error: 'Your personal drive could not be removed from this session. Try again in a moment.',
+            code: 'PERSONAL_DRIVE_DETACH_FAILED',
           },
           409,
         );

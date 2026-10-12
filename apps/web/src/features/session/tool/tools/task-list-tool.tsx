@@ -16,9 +16,9 @@ import { useMemo } from 'react';
 
 // Fully static, so it does not need rebuilding (object plus a fresh `args` array)
 // on every render of every task row in a streaming session.
-export function TaskListTool({ part, forceOpen }: ToolProps) {
+export function TaskListTool({ call, forceOpen }: ToolProps) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const output = partOutput(part);
+  const output = partOutput(call);
   // `isErrorOutput` trims the whole task list and attempts a `JSON.parse` over
   // it, from inside the JSX, on every render.
   const isError = useMemo(() => isErrorOutput(output), [output]);

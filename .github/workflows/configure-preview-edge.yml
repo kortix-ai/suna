@@ -21,12 +21,12 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write # OIDC -> AWS, to read each environment's API_KEY_SECRET
+  id-token: write # OIDC -> AWS (aws-env), to read each environment's API_KEY_SECRET
 
 jobs:
   configure:
     name: Configure and verify the preview edge
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 25
     env:
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
@@ -51,8 +51,15 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          # Each environment's edge secret is its own API_KEY_SECRET (the API
+          # verifies the edge signature with KORTIX_PREVIEW_EDGE_SECRET, falling
+          # back to API_KEY_SECRET; see shared/edge-signature.ts). Reading it from
+          # the blob that feeds that environment's ECS tasks keeps one copy.
           keys: |
             CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
+            DEV_EDGE_SECRET=kortix-dev-env:API_KEY_SECRET?
+            STAGING_EDGE_SECRET=kortix-staging-env:API_KEY_SECRET?
+            PROD_EDGE_SECRET=kortix-prod-env:API_KEY_SECRET?
 
       - name: Validate Cloudflare configuration
         run: |
@@ -77,40 +84,17 @@ jobs:
             any(.result[]; .pattern == "*.p.kortix.com/*" and .script == "kortix-preview-router")
           ' <<<"$routes"
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-          aws-region: us-west-2
-
-      - name: Sync each environment's edge secret from its own env blob
+      - name: Sync each environment's edge secret
         working-directory: infra/cloudflare/workers/preview-router
         run: |
           set -euo pipefail
-          # The API verifies the edge signature with KORTIX_PREVIEW_EDGE_SECRET,
-          # falling back to API_KEY_SECRET (see shared/edge-signature.ts). Rather
-          # than introduce a new secret that has to be copied into two systems by
-          # hand — and drift — read each environment's own API_KEY_SECRET from
-          # the Secrets Manager blob that already feeds its ECS tasks, and push
-          # that as the Worker secret. Nothing is printed, and no value is ever
-          # written to a file.
-          for pair in "dev:kortix-dev-env:DEV_EDGE_SECRET" \
-                      "staging:kortix-staging-env:STAGING_EDGE_SECRET" \
-                      "prod:kortix-prod-env:PROD_EDGE_SECRET"; do
-            env_name="${pair%%:*}"; rest="${pair#*:}"
-            blob="${rest%%:*}"; secret_name="${rest#*:}"
-            if ! value="$(aws secretsmanager get-secret-value \
-                  --secret-id "$blob" --query SecretString --output text 2>/dev/null)"; then
-              echo "::warning::$blob is not readable — $env_name previews will answer 503 until $secret_name is set."
+          for name in DEV_EDGE_SECRET STAGING_EDGE_SECRET PROD_EDGE_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "::warning::$name has no API_KEY_SECRET in its env blob — that environment's previews answer 503 until it is set."
               continue
             fi
-            key="$(jq -r '.API_KEY_SECRET // empty' <<<"$value")"
-            if [ -z "$key" ]; then
-              echo "::warning::$blob has no API_KEY_SECRET — skipping $secret_name."
-              continue
-            fi
-            printf '%s' "$key" | npx --yes wrangler@4.34.0 secret put "$secret_name" >/dev/null
-            echo "synced $secret_name from $blob"
+            printf '%s' "${!name}" | npx --yes wrangler@4.34.0 secret put "$name" >/dev/null
+            echo "synced $name"
           done
 
           secrets="$(npx --yes wrangler@4.34.0 secret list --format json)"

@@ -422,6 +422,37 @@ test('listConnectors GETs the project connectors list', async () => {
   expect(result.connectors[0]?.requestAuthType).toBe('hmac');
 });
 
+test('listConnectors carries lastError for a connector whose status is error', async () => {
+  const connector = {
+    slug: 'weather',
+    name: 'Weather',
+    provider: 'mcp',
+    status: 'error',
+    credentialMode: 'shared',
+    authorizationStrategy: 'project',
+    sensitive: false,
+    actions: [],
+    authSecret: null,
+    secretSet: true,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { ...connector, lastError: 'MCP tools/list failed: HTTP 401' },
+        { ...connector, slug: 'healthy', status: 'active', lastError: null },
+        // An older server sends no `lastError` key at all.
+        { ...connector, slug: 'older-server' },
+      ],
+    },
+  };
+  const result = await listConnectors('P1');
+  const reasons: Array<string | null | undefined> = result.connectors.map(
+    (entry) => entry.lastError,
+  );
+  expect(reasons).toEqual(['MCP tools/list failed: HTTP 401', null, undefined]);
+});
+
 test('listConnectors throws on a failed response', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listConnectors('P1')).rejects.toBeTruthy();

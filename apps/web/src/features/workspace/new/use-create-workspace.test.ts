@@ -497,6 +497,10 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
+      // A non-empty list by default: the tests below that pin the stamp's
+      // sequencing describe an account that already has projects. The
+      // first-project tests override this with `[]` or `undefined`.
+      projectsCachedForAccount: () => [fakeProject('prior')],
       completeOnboarding: async () => {},
       enterProject: () => {},
       now: () => 1_000,
@@ -541,6 +545,7 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => order.push('primeCache'),
       invalidateProjects: () => order.push('invalidate'),
       writeLastProjectId: () => order.push('writeCookie'),
+      projectsCachedForAccount: () => [fakeProject('prior')],
       completeOnboarding: async () => {
         order.push('stampOnboarding');
       },
@@ -630,6 +635,7 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
+      projectsCachedForAccount: () => [fakeProject('prior')],
       completeOnboarding: async () => {},
       enterProject: () => {},
       now: () => 1_000,
@@ -696,6 +702,75 @@ describe('runCreate: the full create() orchestration', () => {
     expect(handoffs).toEqual(['created-handoff']);
     expect(stamps.length).toBe(1);
     expect(handoffs.length).toBe(1);
+  });
+
+  /**
+   * KRTX-2092: the three-step onboarding wizard (work, apps, models) is the
+   * post-signup first run, and the create flow's unconditional stamp made it
+   * unreachable — the project shell mounts the wizard only while
+   * `metadata.onboarding_completed_at` is absent. A fresh account's first
+   * project therefore stays unstamped so the wizard opens on the landing,
+   * where its own Skip control closes it in place; projects on an account
+   * that already has one keep the implicit skip (KRTX-1419).
+   */
+  test('on success, leaves the account\'s FIRST project unstamped so the onboarding wizard opens on the landing', async () => {
+    const stamps: string[] = [];
+    const handoffs: string[] = [];
+    const result = await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient({ projectsCachedForAccount: () => [] }),
+        runCreateAttempt: async () => fakeProject('created-first'),
+        completeOnboarding: async (projectId) => {
+          stamps.push(projectId);
+        },
+        enterProject: (projectId) => handoffs.push(projectId),
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(stamps).toEqual([]);
+    // Unstamped does not mean unparked: the handoff itself is unchanged.
+    expect(handoffs).toEqual(['created-first']);
+  });
+
+  test('a cold project cache reads as a first project — the wizard is skippable, a missed first run is not', async () => {
+    const stamps: string[] = [];
+    const result = await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient({ projectsCachedForAccount: () => undefined }),
+        runCreateAttempt: async () => fakeProject('created-cold'),
+        completeOnboarding: async (projectId) => {
+          stamps.push(projectId);
+        },
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(stamps).toEqual([]);
+  });
+
+  test('on success, still stamps when the account already had projects — later creates keep landing directly', async () => {
+    const stamps: string[] = [];
+    const result = await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient({
+          projectsCachedForAccount: () => [fakeProject('earlier', 'acct-owner')],
+        }),
+        runCreateAttempt: async () => fakeProject('created-second'),
+        completeOnboarding: async (projectId) => {
+          stamps.push(projectId);
+        },
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(stamps).toEqual(['created-second']);
   });
 
   /**

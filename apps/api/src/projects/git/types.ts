@@ -152,6 +152,10 @@ export interface BranchDiffSummary {
   additions: number;
   deletions: number;
   patch: string;
+  /** True when the patch command itself failed (output over runGit's exec
+   *  cap, or the git timeout) — `patch` is then empty while `files` still
+   *  lists what changed, and the UI must say so instead of drawing blanks. */
+  patch_truncated: boolean;
   base_sha: string;
   head_sha: string;
   merge_base: string | null;

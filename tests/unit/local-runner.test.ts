@@ -38,6 +38,16 @@ describe('local test runner', () => {
     ]);
   });
 
+  it('--no-packages drops package quality from the core run and keeps it out of the flow args', () => {
+    const plan = buildLocalTestPlan(['--no-packages']);
+
+    expect(plan.mode).toBe('core');
+    expect(plan.lanes.map((lane) => lane.name)).not.toContain('package-quality');
+    expect(plan.stages.flat().map((lane) => lane.name)).not.toContain('package-quality');
+    expect(plan.lanes.find((lane) => lane.name === 'api-cli-flows')?.command).not.toContain('--no-packages');
+    expect(() => buildLocalTestPlan(['--packages-only', '--no-packages'])).toThrow('--no-packages');
+  });
+
   it('runs only the DB suites and passes path filters through', () => {
     const plan = buildLocalTestPlan(['--db-only', 'integration-prompt-inbox', 'tests/migration']);
 

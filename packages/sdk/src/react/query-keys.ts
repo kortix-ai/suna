@@ -184,6 +184,37 @@ export const qk = {
     list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
   },
 
+  /**
+   * Drives (`listDrives`, `listDriveFiles`, …). A drive list holds the
+   * caller's own personal drives, so it is keyed by user like
+   * `accounts.list`. Every per-drive key sits under `drive(id)`: a write or a
+   * restore invalidates that one prefix and reaches the drive's files and
+   * versions. The `'list'` / `'drive'` / `'session'` segments keep the three
+   * shapes from ever colliding.
+   */
+  drives: {
+    /** Invalidation prefix for every drive key. Never a `queryKey`. */
+    scope: () => ['kx', 'drives'] as const,
+    list: (
+      userId: string | null | undefined,
+      scope?: { projectId?: string; accountId?: string },
+    ) =>
+      [
+        ...qk.drives.scope(),
+        'list',
+        userId ?? 'anonymous',
+        scope?.projectId ? `project:${scope.projectId}` : scope?.accountId ? `account:${scope.accountId}` : 'primary',
+      ] as const,
+    /** Prefix for one drive's files and versions. */
+    drive: (driveId: string) => [...qk.drives.scope(), 'drive', driveId] as const,
+    files: (driveId: string, path: string) => [...qk.drives.drive(driveId), 'files', path] as const,
+    versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
+    grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
+    conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    session: (projectId: string, sessionId: string) =>
+      [...qk.drives.scope(), 'session', projectId, sessionId] as const,
+  },
+
   project: {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
     scope: (id: string) => ['kx', 'project', id] as const,
@@ -408,8 +439,13 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
-    /** Snapshots of one App (capability `snapshots`). */
-    appSnapshots: (id: string, appId: string) => [...qk.project.apps(id), appId, 'snapshots'] as const,
+    /** Machines of one App (capability `machines`). */
+    appMachines: (id: string, appId: string) => [...qk.project.apps(id), appId, 'machines'] as const,
+    /** Volumes of one App (capability `volumes`). */
+    appVolumes: (id: string, appId: string) => [...qk.project.apps(id), appId, 'volumes'] as const,
+    /** Snapshots of one volume (capability `snapshots`). */
+    appVolumeSnapshots: (id: string, appId: string, volumeId: string) =>
+      [...qk.project.appVolumes(id, appId), volumeId, 'snapshots'] as const,
     /** One deployment and its events (build log included). */
     appDeployment: (id: string, appId: string, deploymentId: string) =>
       [...qk.project.appDeployments(id, appId), deploymentId] as const,

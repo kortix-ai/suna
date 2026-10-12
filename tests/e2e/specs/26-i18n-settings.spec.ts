@@ -107,18 +107,17 @@ interface LocaleMessages {
   common: { close: string };
   projectOnboarding: {
     progress: string;
-    company: {
+    work: {
       title: string;
       description: string;
-      domain: string;
+      ariaLabel: string;
       continue: string;
+      options: Record<string, string>;
     };
-    tools: { title: string; searchPlaceholder: string; continue: string };
-    slack: { title: string; notNow: string };
-    plan: { title: string; continue: string };
-    done: { title: string; openProject: string };
+    apps: { title: string; searchPlaceholder: string; continue: string };
+    plan: { title: string; description: string; decideLater: string };
   };
-  firstChat: { question: string; recommendTools: string; updateMemory: string };
+  firstChat: { title: string; question: string; recommendTools: string; updateMemory: string };
   billing: {
     plan: {
       currentPlan: string;
@@ -789,100 +788,94 @@ test.describe("26 — Settings localization", () => {
             authOptions,
           );
           const wizard = page.getByRole("dialog");
+          const onboarding = copy.projectOnboarding;
           await expect(
             wizard.getByRole("heading", {
-              name: copy.projectOnboarding.company.title,
+              name: onboarding.work.title,
               exact: true,
             }),
           ).toBeVisible({ timeout: 30_000 });
           await expect(
             wizard.getByRole("progressbar", {
-              name: copy.projectOnboarding.progress,
+              name: onboarding.progress,
             }),
           ).toHaveAttribute("aria-valuenow", "1");
           await expect(
-            wizard.getByText(copy.projectOnboarding.company.description, {
+            wizard.getByText(onboarding.work.description, {
               exact: true,
             }),
           ).toBeVisible();
           await expect(
-            wizard.getByRole("textbox", {
-              name: copy.projectOnboarding.company.domain,
-            }),
+            wizard.getByRole("radiogroup", { name: onboarding.work.ariaLabel }),
           ).toBeVisible();
+          for (const option of Object.values(onboarding.work.options)) {
+            await expect(
+              wizard.getByRole("radio", { name: option, exact: true }),
+            ).toBeVisible();
+          }
+          await wizard
+            .getByRole("radio", {
+              name: onboarding.work.options.engineering,
+              exact: true,
+            })
+            .click();
           await wizard
             .getByRole("button", {
-              name: copy.projectOnboarding.company.continue,
+              name: onboarding.work.continue,
               exact: true,
             })
-            .first()
             .click();
 
-          await expect(
-            wizard.getByRole("heading", {
-              name: copy.projectOnboarding.tools.title,
-              exact: true,
-            }),
-          ).toBeVisible();
-          await expect(
-            wizard.getByRole("textbox", {
-              name: copy.projectOnboarding.tools.searchPlaceholder,
-            }),
-          ).toBeVisible();
-          await wizard
-            .getByRole("button", {
-              name: copy.projectOnboarding.tools.continue,
-              exact: true,
-            })
-            .first()
-            .click();
+          // The apps step exists only where connectors are enabled; the models
+          // step follows either way.
+          const appsHeading = wizard.getByRole("heading", {
+            name: onboarding.apps.title,
+            exact: true,
+          });
+          const planHeading = wizard.getByRole("heading", {
+            name: onboarding.plan.title,
+            exact: true,
+          });
+          await expect(appsHeading.or(planHeading)).toBeVisible();
+          if (await appsHeading.isVisible()) {
+            await expect(
+              wizard.getByRole("textbox", {
+                name: onboarding.apps.searchPlaceholder,
+              }),
+            ).toBeVisible();
+            await wizard
+              .getByRole("button", {
+                name: onboarding.apps.continue,
+                exact: true,
+              })
+              .click();
+          }
 
+          await expect(planHeading).toBeVisible();
           await expect(
-            wizard.getByRole("heading", {
-              name: copy.projectOnboarding.slack.title,
-              exact: true,
-            }),
+            wizard.getByText(onboarding.plan.description, { exact: true }),
           ).toBeVisible();
-          await wizard
-            .getByRole("button", {
-              name: copy.projectOnboarding.slack.notNow,
-              exact: true,
-            })
-            .first()
-            .click();
-
-          await expect(
-            wizard.getByRole("heading", {
-              name: copy.projectOnboarding.plan.title,
-              exact: true,
-            }),
-          ).toBeVisible();
-          await wizard
-            .getByRole("button", {
-              name: copy.projectOnboarding.plan.continue,
-              exact: true,
-            })
-            .first()
-            .click();
-
-          await expect(
-            wizard.getByRole("heading", {
-              name: copy.projectOnboarding.done.title,
-              exact: true,
-            }),
-          ).toBeVisible();
-          const openProjectButton = wizard
-            .getByRole("button", {
-              name: copy.projectOnboarding.done.openProject,
-              exact: true,
-            })
-            .first();
-          await expect(openProjectButton).toBeVisible();
-          await openProjectButton.click();
+          // "Decide later" is the same exit on every account; the primary
+          // button's label follows the account's billing state.
+          const decideLater = wizard.getByRole("button", {
+            name: onboarding.plan.decideLater,
+            exact: true,
+          });
+          await expect(decideLater).toBeVisible();
+          await decideLater.click();
+          await expect(wizard).toBeHidden();
           await expect(wizard).toBeHidden();
 
-          // Opening the project lands on its first chat, in this locale, with
-          // nothing sent: still project home, the welcome and both starters.
+          // Finishing the wizard in the project shell leaves the first chat one
+          // click away: the sidebar's "Your first chat" row opens it, in this
+          // locale, with nothing sent: still project home, the welcome and both
+          // starters.
+          await page
+            .getByRole("link", { name: copy.firstChat.title, exact: true })
+            .click();
+          await expect(page).toHaveURL(
+            new RegExp(`/projects/${projectId}\\?chat=first$`),
+          );
           await expect(
             page.getByText(copy.firstChat.question, { exact: true }),
           ).toBeVisible();
@@ -987,8 +980,12 @@ test.describe('public capability helpers and presentation decks', () => {
       for (const slug of ['security', 'platform', 'sales']) {
         await page.goto(`/presentations/${slug}`);
         await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
-        await page.keyboard.press('ArrowRight');
-        await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled();
+        // The deck's keydown listener attaches on hydration, which can land
+        // after `load`; a key pressed before it is lost. Press until it lands.
+        await expect(async () => {
+          await page.keyboard.press('ArrowRight');
+          await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled({ timeout: 1_000 });
+        }).toPass();
         await page.keyboard.press('Home');
         await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
         await page.keyboard.press('End');

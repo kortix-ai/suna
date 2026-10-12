@@ -39,6 +39,7 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
  */
 export const SERVICES = [
   'config-provider',
+  'drive-sync',
   'egress-shim',
   'event-bus',
   'llm-proxy',

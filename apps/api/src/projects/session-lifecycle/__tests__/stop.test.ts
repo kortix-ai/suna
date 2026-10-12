@@ -3,6 +3,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../../billing/services/compute-metering';
 import * as realProviders from '../../../platform/providers';
 import * as realBoxQueries from '../../reaping/box-queries';
+import * as realInboxRows from '../inbox-rows';
 import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 
 let sandboxRow: Record<string, unknown> | null = null;
@@ -154,6 +155,12 @@ mock.module('../../reaping/box-queries', () => ({
   },
 }));
 
+// The Stop's prompt hold is its own write, proven on real rows in
+// __tests__/integration-session-status-transitions.test.ts.
+mock.module('../inbox-rows', () => ({
+  ...realInboxRows,
+  holdInboxPrompts: async () => 0,
+}));
 const { stopSession } = await import('../stop');
 
 const baseInput = {

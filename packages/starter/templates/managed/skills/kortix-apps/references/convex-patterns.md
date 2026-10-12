@@ -1,4 +1,4 @@
-# Convex patterns for convex Apps
+# Convex patterns for a Convex backend App
 
 Short, correct patterns. `convex/_generated/ai/guidelines.md` (from
 `npx convex ai-files install`) is the full rulebook; read it first.
@@ -133,7 +133,8 @@ export const enrich = action({
 ```
 
 Set the variables with `npx convex env set NAME` and the value on stdin
-(after `eval "$(kortix apps credentials db)"`). Record the names, never the
+(with `CONVEX_SELF_HOSTED_URL` and `CONVEX_SELF_HOSTED_ADMIN_KEY` exported;
+convex.md, step 2). Record the names, never the
 values, in the App's README.
 
 ## HTTP actions (webhooks, public APIs)
@@ -157,7 +158,7 @@ http.route({
 export default http;
 ```
 
-The route answers on the App's `instance.site_url` (`kortix apps show <app> --json`).
+The route answers on the `site` service URL (`app.services` in `kortix apps show <app> --json`).
 It is public: authenticate inside the handler.
 
 ## Scheduling

@@ -420,7 +420,9 @@ describe('Kortix Apps schema', () => {
   test('stores provider runtimes and append-only deployment events', () => {
     expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
     expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
-    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+    // One live instance per machine (a release runs many machines).
+    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_machine');
+    expect(indexNames(appRuntimes)).not.toContain('app_runtimes_one_live_per_deployment');
   });
 
   test('covers the app_deployment_events runtime foreign key with an index', () => {

@@ -603,8 +603,11 @@ for (const runtime of runtimes) {
           await page.mouse.move(1300, 850);
         }
         await resize(720, 480);
+        // The sidebar is hidden at this width on both shells, so the toggle
+        // reads "Open sidebar" (#9566: the mobile Sheet's own state names it,
+        // not the desktop dock cookie).
         const opener = page.getByRole("button", {
-          name: desktop ? "Open sidebar" : "Collapse sidebar",
+          name: "Open sidebar",
           exact: true,
         });
         await expect(opener).toBeVisible();
