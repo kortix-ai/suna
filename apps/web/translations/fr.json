@@ -9542,6 +9542,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossible d’envoyer l’e-mail. Réessaie dans environ une heure.",
       "authRequestRateLimit": "Trop de demandes. Réessaie dans quelques minutes.",
+      "text0b6a47661327": "Propriétaire inconnu",
       "text1a9030082a20": "Créer la compétence",
       "text25ab55af92b1": "Téléversement de la pièce jointe démarré",
       "text38e64d6a8162": "Committe un SKILL.md sur la branche par défaut du projet. Ni modèle ni chat requis.",
@@ -9550,6 +9551,7 @@
       "text426699d5a8c0": "{count, plural, one {# caractère} other {# caractères}}",
       "text40078a553439": "Bloc de la pièce jointe téléversé",
       "text4c7f8000aabd": "Téléversement de la pièce jointe terminé",
+      "text8782b778c202": "Supprimer {value0}",
       "text91420d2587c2": "Téléversement de la pièce jointe supprimé",
       "text3aab5b3be2b9": "Descripteur de pièce jointe d’exécution résolu",
       "text0005b85debac": "Pack de sons joué pour les événements de session.",

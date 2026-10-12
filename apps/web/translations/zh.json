@@ -9542,6 +9542,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "无法发送邮件。请在大约一小时后重试。",
       "authRequestRateLimit": "请求过多。请在几分钟后重试。",
+      "text0b6a47661327": "未知所有者",
       "text1a9030082a20": "创建技能",
       "text25ab55af92b1": "已开始上传附件",
       "text38e64d6a8162": "将 SKILL.md 提交到项目的默认分支。无需模型或聊天。",
@@ -9550,6 +9551,7 @@
       "text426699d5a8c0": "{count, plural, other {# 个字符}}",
       "text40078a553439": "已上传附件分块",
       "text4c7f8000aabd": "附件上传完成",
+      "text8782b778c202": "删除{value0}",
       "text91420d2587c2": "已移除附件上传",
       "text3aab5b3be2b9": "已解析运行时附件描述符",
       "text0005b85debac": "为会话事件播放声音包。",
