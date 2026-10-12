@@ -1728,6 +1728,140 @@ for (const runtime of runtimes) {
       },
     );
     nativeTest?.(
+      "Quick Entry sends to a recent session picked in the bar",
+      async ({ page, desktopApp, baseURL }) => {
+        if (!desktopApp)
+          throw new Error("native Electron application is required");
+        test.setTimeout(240_000);
+        const databaseUrl =
+          process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+        if (!databaseUrl)
+          throw new Error("Quick Entry requires the configured test database");
+        const email = `e2e-desktop-quick-entry-pick-${randomUUID()}@example.test`;
+        const user = await createAuthUser(email, authOptions);
+        const session = await signIn(email, authOptions);
+        let project: ManifestProject | undefined;
+        type PickerMenu = {
+          items: { label: string; click: () => void }[];
+          closePopup: () => void;
+        };
+        type PickerHolder = { quickEntryPicker?: PickerMenu };
+        try {
+          const accounts = await api<{ account_id: string }[]>(
+            session.access_token,
+            "GET",
+            "/accounts",
+          );
+          await fundAccount(databaseUrl, accounts[0].account_id);
+          project = await createManifestProject({
+            api,
+            accessToken: session.access_token,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+            name: "Quick Entry picker",
+            databaseUrl,
+          });
+          const projectId = project.id;
+          const pickedId = await createDatabaseSession(loadEnv(), {
+            projectId,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+            metadata: { session_name: "Picked session target" },
+          });
+          await installBrowserSessionDirect(
+            page,
+            session,
+            `${baseURL}/projects/${projectId}`,
+            authOptions,
+          );
+          await dismissOnboarding(page);
+          await expect(
+            page.getByRole("textbox", { name: "Message input" }),
+          ).toBeVisible({ timeout: 60_000 });
+
+          // Playwright cannot click an OS menu: keep the menu the bar pops up,
+          // read its real items, and choose one through its own click handler.
+          await desktopApp.evaluate(({ Menu }) => {
+            const popup = Menu.prototype.popup;
+            Menu.prototype.popup = function (options) {
+              (globalThis as unknown as PickerHolder).quickEntryPicker =
+                this as unknown as PickerMenu;
+              return popup.call(this, options);
+            };
+          });
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.getApplicationMenu()
+              ?.getMenuItemById("kx-file-quick-entry")
+              ?.click();
+          });
+          await expect
+            .poll(() =>
+              desktopApp
+                .windows()
+                .some((window) => window.url().endsWith("/quick-entry.html")),
+            )
+            .toBe(true);
+          const bar = desktopApp
+            .windows()
+            .find((window) => window.url().endsWith("/quick-entry.html"))!;
+          await expect(bar.locator("#pick-label")).toHaveText(
+            "New session in Quick Entry picker",
+          );
+
+          // The list arrives with the sidebar's session query.
+          const readPicker = async () => {
+            await bar.locator("#pick").click();
+            const labels = await desktopApp.evaluate(() => {
+              const menu = (globalThis as unknown as PickerHolder).quickEntryPicker;
+              menu?.closePopup();
+              return menu?.items.map((item) => item.label) ?? [];
+            });
+            return labels;
+          };
+          await expect(async () => {
+            expect(await readPicker()).toEqual([
+              "New session in Quick Entry picker",
+              "",
+              "Recent sessions",
+              "Picked session target",
+            ]);
+          }).toPass({ timeout: 30_000 });
+          await bar.locator("#pick").click();
+          await desktopApp.evaluate(() => {
+            const menu = (globalThis as unknown as PickerHolder).quickEntryPicker!;
+            menu.closePopup();
+            menu.items[3].click();
+          });
+          await expect(bar.locator("#pick-label")).toHaveText(
+            "Picked session target",
+          );
+          await expect(bar.locator("#dot")).toBeVisible();
+
+          await bar.locator("#prompt").fill("Follow-up from Quick Entry");
+          await bar.locator("#prompt").press("Enter");
+          // The picked session's page opens; its composer sends once the chat
+          // resolves (a deployed target runs it; the local profile has no box).
+          await expect(page).toHaveURL(
+            new RegExp(`/projects/${projectId}/sessions/${pickedId}`),
+            { timeout: 60_000 },
+          );
+          // The pick goes with the draft: the next open starts a new session.
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.getApplicationMenu()
+              ?.getMenuItemById("kx-file-quick-entry")
+              ?.click();
+          });
+          await expect(bar.locator("#pick-label")).toHaveText(
+            "New session in Quick Entry picker",
+          );
+          await bar.locator("#prompt").press("Escape");
+        } finally {
+          await project?.dispose();
+          await deleteAuthUser(user.id, authOptions);
+        }
+      },
+    );
+    nativeTest?.(
       "dock activation recreates the main window with its persisted native state",
       async ({ desktopApp, baseURL }) => {
         if (!desktopApp)
