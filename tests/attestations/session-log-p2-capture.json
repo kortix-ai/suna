@@ -1,0 +1,23 @@
+{
+  "source_hash": "c4f179b390459f71e2c2e152667bbccde17499f9877c969166870e515e1bdb06",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-log-capture.test.ts",
+    "apps/api/src/projects/lib/session-transcript-capture.ts",
+    "apps/api/src/projects/session-log-capture.ts",
+    "apps/api/src/projects/session-log-ingest.ts",
+    "packages/api-contract/src/session-log/wire.ts",
+    "packages/db/drizzle/meta/20261012005938_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261012005938295_session_logs_journal_seen_at.sql",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "ae0d35a5a8378868b330391e212896c92362416e0282c0e5254746da67656f7d",
+  "head": "c691c21b18d61ac87b1079447794f4ae2b4f0124",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T01:20:49.611Z"
+}
