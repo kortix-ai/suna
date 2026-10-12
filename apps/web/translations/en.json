@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "Recordings from {device} will show up here"
       },
-      "layers": "Layers",
+      "layers": "Show",
+      "layersAll": "Everything",
+      "layersNone": "Nothing",
       "layer": {
         "screen": "Screen",
         "actions": "Actions",
@@ -20757,7 +20759,7 @@
         "os": "OS",
         "status": "Status",
         "lastFrame": "Last recorded",
-        "layers": "Layers",
+        "layers": "Records",
         "actions": "Actions"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "Organization settings",
       "description": "{name}: what every device in this organization records, excludes and keeps.",
-      "tabs": {
-        "label": "Organization settings sections",
-        "general": "General",
-        "recording": "Recording",
-        "exclusions": "Exclusions",
-        "retention": "Retention",
-        "notice": "Notice"
-      },
-      "layersTitle": "Layers",
+      "layersTitle": "What is recorded",
       "layer": {
         "screen": "Screen",
         "screenHint": "The screen, the app and window in front, and the text on screen.",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "Privacy",
       "masking": "Mask personal data",
-      "maskingHint": "Devices mask personal data in what they record, before it leaves the computer.",
-      "pause": "Pause recording",
-      "pauseHint": "Every device of this organization stops every layer until you turn this off.",
+      "maskingHint": "Devices replace names, email addresses, phone numbers, addresses, account numbers and secrets in what they record, on the computer, before saving it. Each computer first downloads a local model of about 1 GB and records nothing until it is ready.",
+      "pause": "Pause recording for everyone",
+      "pauseHint": "No device in this organization records until you turn this off. Members see that the organization paused recording.",
       "exclusions": {
         "group": {
           "password_managers": "Password managers",
@@ -20804,9 +20798,9 @@
           "bankingHint": "Bank and finance apps and about 950 bank and fintech websites."
         }
       },
-      "localHours": "On the device (hours)",
+      "localHours": "On the device",
       "localHoursHint": "How long a computer keeps its recordings after uploading them. 0 keeps them without a limit.",
-      "remoteDays": "In Kortix (days)",
+      "remoteDays": "In Kortix",
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
       "noticeTitle": "Notice",
       "noticePlaceholder": "Recording is on for this organization.",
@@ -20821,7 +20815,13 @@
       "loadFailed": "Could not load the settings.",
       "tryAgain": "Try again",
       "accessTitle": "Who sees recordings",
-      "accessBody": "Every member sees their own devices and timeline. Owners and admins also see everyone's (capture.read_all) and manage Capture (capture.manage). To give someone else that access, use a custom role under Account → Roles. Every view of another member goes into the audit log."
+      "accessBody": "Every member sees their own devices and timeline. Owners and admins also see everyone's (capture.read_all) and manage Capture (capture.manage). To give someone else that access, use a custom role under Account → Roles. Every view of another member goes into the audit log.",
+      "layersHint": "Every device in {org} records what is on here. Members see it on their computer and cannot change it.",
+      "exclusionsTitle": "Exclusions",
+      "retentionTitle": "Retention",
+      "pauseTitle": "Pause",
+      "hours": "hours",
+      "days": "days"
     },
     "dialog": {
       "product": "Kortix Capture",

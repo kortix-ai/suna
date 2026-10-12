@@ -97,7 +97,7 @@ export function ExclusionsEditor({
 
   return (
     <div className="space-y-6">
-      <p className="text-muted-foreground text-sm text-pretty">
+      <p className="text-muted-foreground text-xs text-pretty">
         {mode === 'org' ? t('orgIntro', { org }) : t('intro')}
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -112,6 +112,7 @@ export function ExclusionsEditor({
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
+            size="sm"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {

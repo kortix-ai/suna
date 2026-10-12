@@ -13,6 +13,8 @@
  * `:batch` POST per page load, not two.
  */
 
+import { useCaptureWorkspace } from '@kortix/sdk/react';
+
 import { isBillingEnabled } from '@/lib/config';
 import { usePermissions, type CanResult } from '@/lib/use-permission';
 
@@ -101,6 +103,9 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
+  // Kortix Capture's switch. Its settings section shows once it is on.
+  const captureOn = useCaptureWorkspace(accountId).data?.enabled === true;
+
   // Self-host billing-disabled: no Stripe plan controls to show. Session costs
   // remain available because they do not require the internal billing engine.
   const billingActive = isBillingEnabled();
@@ -145,8 +150,9 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     branding: canWriteAccount === true,
     // Reference copy — no data, no mutations, nothing to gate.
     help: true,
-    // GET/PUT .../capture/policy — `capture.manage` (capture/account-routes.ts).
-    capture: canManageCapture === true,
+    // GET/PUT .../capture/policy — `capture.manage` (capture/account-routes.ts),
+    // once Capture is on: the switch is in Settings, and this section configures it.
+    capture: canManageCapture === true && captureOn,
   };
 
   // Members is not unconditionally visible, so it cannot be the blanket

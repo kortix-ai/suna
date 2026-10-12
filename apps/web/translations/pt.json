@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "As gravações de {device} vão aparecer aqui"
       },
-      "layers": "Camadas",
+      "layers": "Mostrar",
+      "layersAll": "Tudo",
+      "layersNone": "Nada",
       "layer": {
         "screen": "Tela",
         "actions": "Ações",
@@ -20757,7 +20759,7 @@
         "os": "SO",
         "status": "Status",
         "lastFrame": "Última gravação",
-        "layers": "Camadas",
+        "layers": "Grava",
         "actions": "Ações"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "Configurações da organização",
       "description": "{name}: o que cada dispositivo desta organização grava, exclui e mantém.",
-      "tabs": {
-        "label": "Seções das configurações da organização",
-        "general": "Geral",
-        "recording": "Gravação",
-        "exclusions": "Exclusões",
-        "retention": "Retenção",
-        "notice": "Aviso"
-      },
-      "layersTitle": "Camadas",
+      "layersTitle": "O que é gravado",
       "layer": {
         "screen": "Tela",
         "screenHint": "A tela, o app e a janela em primeiro plano e o texto na tela.",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "Privacidade",
       "masking": "Mascarar dados pessoais",
-      "maskingHint": "Os dispositivos mascaram dados pessoais no que gravam, antes de sair do computador.",
-      "pause": "Pausar a gravação",
-      "pauseHint": "Todo dispositivo desta organização para todas as camadas até você desativar isto.",
+      "maskingHint": "Os dispositivos substituem nomes, e-mails, telefones, endereços, números de conta e segredos no que gravam, no computador, antes de salvar. Cada computador baixa primeiro um modelo local de cerca de 1 GB e não grava nada até ele estar pronto.",
+      "pause": "Pausar a gravação para todos",
+      "pauseHint": "Nenhum dispositivo desta organização grava até você desativar isto. Os membros veem que a organização pausou a gravação.",
       "exclusions": {
         "group": {
           "password_managers": "Gerenciadores de senhas",
@@ -20804,9 +20798,9 @@
           "bankingHint": "Apps de bancos e finanças e cerca de 950 sites de bancos e fintechs."
         }
       },
-      "localHours": "No dispositivo (horas)",
+      "localHours": "No dispositivo",
       "localHoursHint": "Por quanto tempo um computador mantém as gravações após enviá-las. 0 mantém sem limite.",
-      "remoteDays": "No Kortix (dias)",
+      "remoteDays": "No Kortix",
       "remoteDaysHint": "Por quanto tempo a Kortix mantém as gravações. 0 mantém sem limite.",
       "noticeTitle": "Aviso",
       "noticePlaceholder": "A gravação está ativa nesta organização.",
@@ -20821,7 +20815,13 @@
       "loadFailed": "Não foi possível carregar as configurações.",
       "tryAgain": "Tentar novamente",
       "accessTitle": "Quem vê as gravações",
-      "accessBody": "Cada membro vê os próprios dispositivos e a própria linha do tempo. Proprietários e administradores também veem os de todos (capture.read_all) e gerenciam o Capture (capture.manage). Para dar esse acesso a outra pessoa, use uma função personalizada em Conta → Funções. Cada visualização de outro membro vai para o log de auditoria."
+      "accessBody": "Cada membro vê os próprios dispositivos e a própria linha do tempo. Proprietários e administradores também veem os de todos (capture.read_all) e gerenciam o Capture (capture.manage). Para dar esse acesso a outra pessoa, use uma função personalizada em Conta → Funções. Cada visualização de outro membro vai para o log de auditoria.",
+      "layersHint": "Cada dispositivo de {org} grava o que está ativado aqui. Os membros veem isso no computador e não podem alterar.",
+      "exclusionsTitle": "Exclusões",
+      "retentionTitle": "Retenção",
+      "pauseTitle": "Pausa",
+      "hours": "horas",
+      "days": "dias"
     },
     "dialog": {
       "product": "Kortix Capture",

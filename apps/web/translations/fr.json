@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "Les enregistrements de {device} apparaîtront ici"
       },
-      "layers": "Couches",
+      "layers": "Afficher",
+      "layersAll": "Tout",
+      "layersNone": "Rien",
       "layer": {
         "screen": "Écran",
         "actions": "Actions",
@@ -20757,7 +20759,7 @@
         "os": "OS",
         "status": "Statut",
         "lastFrame": "Dernier enregistrement",
-        "layers": "Couches",
+        "layers": "Enregistre",
         "actions": "Actions"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "Paramètres de l’organisation",
       "description": "{name} : ce que chaque appareil de cette organisation enregistre, exclut et conserve.",
-      "tabs": {
-        "label": "Sections des paramètres de l’organisation",
-        "general": "Général",
-        "recording": "Enregistrement",
-        "exclusions": "Exclusions",
-        "retention": "Conservation",
-        "notice": "Avis"
-      },
-      "layersTitle": "Couches",
+      "layersTitle": "Ce qui est enregistré",
       "layer": {
         "screen": "Écran",
         "screenHint": "L'écran, l'app et la fenêtre au premier plan, et le texte à l'écran.",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "Confidentialité",
       "masking": "Masquer les données personnelles",
-      "maskingHint": "Les appareils masquent les données personnelles dans ce qu'ils enregistrent, avant que cela quitte l'ordinateur.",
-      "pause": "Mettre l'enregistrement en pause",
-      "pauseHint": "Tous les appareils de cette organisation arrêtent toutes les couches jusqu’à ce que vous le désactiviez.",
+      "maskingHint": "Les appareils remplacent les noms, e-mails, téléphones, adresses, numéros de compte et secrets dans ce qu'ils enregistrent, sur l'ordinateur, avant de l'enregistrer. Chaque ordinateur télécharge d'abord un modèle local d'environ 1 Go et n'enregistre rien avant qu'il soit prêt.",
+      "pause": "Suspendre l'enregistrement pour tous",
+      "pauseHint": "Aucun appareil de cette organisation n'enregistre tant que vous ne désactivez pas ceci. Les membres voient que l'organisation a suspendu l'enregistrement.",
       "exclusions": {
         "group": {
           "password_managers": "Gestionnaires de mots de passe",
@@ -20804,9 +20798,9 @@
           "bankingHint": "Apps bancaires et financières et environ 950 sites de banques et fintech."
         }
       },
-      "localHours": "Sur l'appareil (heures)",
+      "localHours": "Sur l'appareil",
       "localHoursHint": "Combien de temps un ordinateur garde ses enregistrements après leur envoi. 0 les garde sans limite.",
-      "remoteDays": "Dans Kortix (jours)",
+      "remoteDays": "Dans Kortix",
       "remoteDaysHint": "Combien de temps Kortix garde les enregistrements. 0 les garde sans limite.",
       "noticeTitle": "Avis",
       "noticePlaceholder": "L’enregistrement est activé pour cette organisation.",
@@ -20821,7 +20815,13 @@
       "loadFailed": "Impossible de charger les réglages.",
       "tryAgain": "Réessayer",
       "accessTitle": "Qui voit les enregistrements",
-      "accessBody": "Chaque membre voit ses propres appareils et sa chronologie. Les propriétaires et les admins voient aussi ceux de tout le monde (capture.read_all) et gèrent Capture (capture.manage). Pour donner cet accès à quelqu’un d’autre, utilisez un rôle personnalisé dans Compte → Rôles. Chaque consultation d’un autre membre est inscrite au journal d’audit."
+      "accessBody": "Chaque membre voit ses propres appareils et sa chronologie. Les propriétaires et les admins voient aussi ceux de tout le monde (capture.read_all) et gèrent Capture (capture.manage). Pour donner cet accès à quelqu’un d’autre, utilisez un rôle personnalisé dans Compte → Rôles. Chaque consultation d’un autre membre est inscrite au journal d’audit.",
+      "layersHint": "Chaque appareil de {org} enregistre ce qui est activé ici. Les membres le voient sur leur ordinateur et ne peuvent pas le modifier.",
+      "exclusionsTitle": "Exclusions",
+      "retentionTitle": "Conservation",
+      "pauseTitle": "Pause",
+      "hours": "heures",
+      "days": "jours"
     },
     "dialog": {
       "product": "Kortix Capture",

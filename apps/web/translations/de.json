@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "Aufnahmen von {device} erscheinen hier"
       },
-      "layers": "Ebenen",
+      "layers": "Anzeigen",
+      "layersAll": "Alles",
+      "layersNone": "Nichts",
       "layer": {
         "screen": "Bildschirm",
         "actions": "Aktionen",
@@ -20757,7 +20759,7 @@
         "os": "System",
         "status": "Status",
         "lastFrame": "Zuletzt aufgezeichnet",
-        "layers": "Ebenen",
+        "layers": "Zeichnet auf",
         "actions": "Aktionen"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "Organisationseinstellungen",
       "description": "{name}: was jedes Gerät dieser Organisation aufzeichnet, ausschließt und aufbewahrt.",
-      "tabs": {
-        "label": "Bereiche der Organisationseinstellungen",
-        "general": "Allgemein",
-        "recording": "Aufzeichnung",
-        "exclusions": "Ausschlüsse",
-        "retention": "Aufbewahrung",
-        "notice": "Hinweis"
-      },
-      "layersTitle": "Ebenen",
+      "layersTitle": "Was aufgezeichnet wird",
       "layer": {
         "screen": "Bildschirm",
         "screenHint": "Der Bildschirm, die App und das Fenster im Vordergrund sowie der Text auf dem Bildschirm.",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "Datenschutz",
       "masking": "Personenbezogene Daten maskieren",
-      "maskingHint": "Geräte maskieren personenbezogene Daten in ihren Aufnahmen, bevor diese den Computer verlassen.",
-      "pause": "Aufnahme pausieren",
-      "pauseHint": "Jedes Gerät dieser Organisation stoppt jede Ebene, bis du dies ausschaltest.",
+      "maskingHint": "Geräte ersetzen Namen, E-Mail-Adressen, Telefonnummern, Adressen, Kontonummern und Geheimnisse in der Aufzeichnung auf dem Computer, bevor sie gespeichert wird. Jeder Computer lädt zuerst ein lokales Modell von etwa 1 GB und zeichnet bis dahin nichts auf.",
+      "pause": "Aufzeichnung für alle pausieren",
+      "pauseHint": "Kein Gerät dieser Organisation zeichnet auf, bis du das ausschaltest. Mitglieder sehen, dass die Organisation die Aufzeichnung pausiert hat.",
       "exclusions": {
         "group": {
           "password_managers": "Passwort-Manager",
@@ -20804,9 +20798,9 @@
           "bankingHint": "Bank- und Finanz-Apps und rund 950 Bank- und Fintech-Websites."
         }
       },
-      "localHours": "Auf dem Gerät (Stunden)",
+      "localHours": "Auf dem Gerät",
       "localHoursHint": "Wie lange ein Computer seine Aufnahmen nach dem Hochladen behält. 0 behält sie ohne Limit.",
-      "remoteDays": "In Kortix (Tage)",
+      "remoteDays": "In Kortix",
       "remoteDaysHint": "Wie lange Kortix Aufnahmen behält. 0 behält sie ohne Limit.",
       "noticeTitle": "Hinweis",
       "noticePlaceholder": "Die Aufnahme ist für diese Organisation an.",
@@ -20821,7 +20815,13 @@
       "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
       "tryAgain": "Erneut versuchen",
       "accessTitle": "Wer Aufzeichnungen sieht",
-      "accessBody": "Jedes Mitglied sieht seine eigenen Geräte und seine Zeitleiste. Inhaber und Admins sehen zusätzlich die aller anderen (capture.read_all) und verwalten Capture (capture.manage). Vergib diesen Zugriff an andere über eine eigene Rolle unter Konto → Rollen. Jede Ansicht eines anderen Mitglieds landet im Audit-Log."
+      "accessBody": "Jedes Mitglied sieht seine eigenen Geräte und seine Zeitleiste. Inhaber und Admins sehen zusätzlich die aller anderen (capture.read_all) und verwalten Capture (capture.manage). Vergib diesen Zugriff an andere über eine eigene Rolle unter Konto → Rollen. Jede Ansicht eines anderen Mitglieds landet im Audit-Log.",
+      "layersHint": "Jedes Gerät in {org} zeichnet auf, was hier an ist. Mitglieder sehen das auf ihrem Computer und können es nicht ändern.",
+      "exclusionsTitle": "Ausschlüsse",
+      "retentionTitle": "Aufbewahrung",
+      "pauseTitle": "Pause",
+      "hours": "Stunden",
+      "days": "Tage"
     },
     "dialog": {
       "product": "Kortix Capture",

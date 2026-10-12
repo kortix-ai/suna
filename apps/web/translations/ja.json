@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "{device} の記録がここに表示されます"
       },
-      "layers": "レイヤー",
+      "layers": "表示",
+      "layersAll": "すべて",
+      "layersNone": "なし",
       "layer": {
         "screen": "画面",
         "actions": "操作",
@@ -20757,7 +20759,7 @@
         "os": "OS",
         "status": "ステータス",
         "lastFrame": "最終記録",
-        "layers": "レイヤー",
+        "layers": "記録内容",
         "actions": "アクション"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "組織の設定",
       "description": "{name}: この組織の各デバイスが記録・除外・保持する内容。",
-      "tabs": {
-        "label": "組織の設定のセクション",
-        "general": "一般",
-        "recording": "記録",
-        "exclusions": "除外",
-        "retention": "保持",
-        "notice": "お知らせ"
-      },
-      "layersTitle": "レイヤー",
+      "layersTitle": "記録する内容",
       "layer": {
         "screen": "画面",
         "screenHint": "画面、最前面のアプリとウインドウ、画面上のテキスト。",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "プライバシー",
       "masking": "個人データをマスク",
-      "maskingHint": "デバイスは、記録内容の個人データを、コンピューターの外に出る前にマスクします。",
-      "pause": "記録を一時停止",
-      "pauseHint": "これをオフにするまで、この組織のすべてのデバイスがすべてのレイヤーを停止します。",
+      "maskingHint": "デバイスは記録内容の氏名、メールアドレス、電話番号、住所、口座番号、シークレットを、保存前にコンピューター上で置き換えます。各コンピューターは最初に約 1 GB のローカルモデルをダウンロードし、準備ができるまで何も記録しません。",
+      "pause": "全員の記録を一時停止",
+      "pauseHint": "これをオフにするまで、この組織のデバイスは記録しません。メンバーには組織が記録を一時停止したことが表示されます。",
       "exclusions": {
         "group": {
           "password_managers": "パスワードマネージャー",
@@ -20804,9 +20798,9 @@
           "bankingHint": "銀行・金融アプリと約 950 の銀行・フィンテックのサイト。"
         }
       },
-      "localHours": "デバイス上（時間）",
+      "localHours": "デバイス上",
       "localHoursHint": "アップロード後、コンピューターが記録を保持する期間。0 の場合は無期限に保持します。",
-      "remoteDays": "Kortix 上（日）",
+      "remoteDays": "Kortix 上",
       "remoteDaysHint": "Kortix が記録を保持する期間。0 の場合は無期限に保持します。",
       "noticeTitle": "お知らせ",
       "noticePlaceholder": "この組織の録画はオンです。",
@@ -20821,7 +20815,13 @@
       "loadFailed": "設定を読み込めませんでした。",
       "tryAgain": "再試行",
       "accessTitle": "録画を閲覧できるユーザー",
-      "accessBody": "各メンバーは自分のデバイスとタイムラインを閲覧できます。オーナーと管理者は全員分も閲覧でき (capture.read_all)、Capture を管理できます (capture.manage)。このアクセス権をほかの人に付与するには、[アカウント] → [ロール] でカスタムロールを使います。ほかのメンバーの閲覧はすべて監査ログに記録されます。"
+      "accessBody": "各メンバーは自分のデバイスとタイムラインを閲覧できます。オーナーと管理者は全員分も閲覧でき (capture.read_all)、Capture を管理できます (capture.manage)。このアクセス権をほかの人に付与するには、[アカウント] → [ロール] でカスタムロールを使います。ほかのメンバーの閲覧はすべて監査ログに記録されます。",
+      "layersHint": "{org} のすべてのデバイスは、ここでオンの内容を記録します。メンバーは自分のコンピューターで確認できますが、変更できません。",
+      "exclusionsTitle": "除外",
+      "retentionTitle": "保存期間",
+      "pauseTitle": "一時停止",
+      "hours": "時間",
+      "days": "日"
     },
     "dialog": {
       "product": "Kortix Capture",

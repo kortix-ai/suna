@@ -108,7 +108,7 @@ export function DeviceActionsMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="icon-sm" variant="ghost" aria-label={t('actionsFor', { name })}>
+          <Button size="icon-base" variant="ghost" aria-label={t('actionsFor', { name })}>
             <DotsThreeIcon className="size-4 shrink-0" />
           </Button>
         </DropdownMenuTrigger>

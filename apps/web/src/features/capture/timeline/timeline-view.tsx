@@ -16,8 +16,10 @@ import {
   useCaptureTimelineItems,
 } from '@kortix/sdk/react';
 import {
+  CaretDownIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  EyeIcon,
   MinusIcon,
   PauseIcon,
   PlayIcon,
@@ -30,6 +32,13 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import {
   Select,
@@ -39,7 +48,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Toggle } from '@/components/ui/toggle';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -664,7 +672,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               <Hint label={t('previousDay')}>
                 <Button
                   variant="outline"
-                  size="icon-sm"
+                  size="icon-base"
                   aria-label={t('previousDay')}
                   onClick={() => dayJump(-1)}
                 >
@@ -675,7 +683,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               <Hint label={t('nextDay')}>
                 <Button
                   variant="outline"
-                  size="icon-sm"
+                  size="icon-base"
                   aria-label={t('nextDay')}
                   onClick={() => dayJump(1)}
                 >
@@ -710,23 +718,33 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 </SelectContent>
               </Select>
             ) : null}
-            <div
-              role="group"
-              aria-label={t('layers')}
-              className="bg-muted flex items-center gap-0.5 rounded-md p-0.5"
-            >
-              {CAPTURE_LAYERS.map((layer) => (
-                <Toggle
-                  key={layer}
-                  size="sm"
-                  pressed={layers[layer]}
-                  onPressedChange={(on) => setLayers((cur) => ({ ...cur, [layer]: on }))}
-                  className="data-[state=on]:bg-background h-7 px-2.5 data-[state=on]:shadow-xs"
-                >
-                  {t(`layer.${layer}`)}
-                </Toggle>
-              ))}
-            </div>
+            {/* What the stage and the track show; each layer turns on and off on its own. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5" aria-label={t('layers')}>
+                  <EyeIcon className="size-3.5 shrink-0" />
+                  {CAPTURE_LAYERS.every((layer) => layers[layer])
+                    ? t('layersAll')
+                    : CAPTURE_LAYERS.filter((layer) => layers[layer])
+                        .map((layer) => t(`layer.${layer}`))
+                        .join(', ') || t('layersNone')}
+                  <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>{t('layers')}</DropdownMenuLabel>
+                {CAPTURE_LAYERS.map((layer) => (
+                  <DropdownMenuCheckboxItem
+                    key={layer}
+                    checked={layers[layer]}
+                    onCheckedChange={(on) => setLayers((cur) => ({ ...cur, [layer]: on }))}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {t(`layer.${layer}`)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Hint label={t('liveHint')}>
               <Button
                 variant={live ? 'secondary' : 'outline'}

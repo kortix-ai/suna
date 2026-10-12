@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "{device} 的录制内容会显示在这里"
       },
-      "layers": "图层",
+      "layers": "显示",
+      "layersAll": "全部",
+      "layersNone": "无",
       "layer": {
         "screen": "屏幕",
         "actions": "操作",
@@ -20757,7 +20759,7 @@
         "os": "系统",
         "status": "状态",
         "lastFrame": "最近录制",
-        "layers": "录制层",
+        "layers": "录制内容",
         "actions": "操作"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "组织设置",
       "description": "{name}：此组织的每台设备录制、排除和保留的内容。",
-      "tabs": {
-        "label": "组织设置的各个部分",
-        "general": "常规",
-        "recording": "录制",
-        "exclusions": "排除",
-        "retention": "保留",
-        "notice": "通知"
-      },
-      "layersTitle": "图层",
+      "layersTitle": "录制内容",
       "layer": {
         "screen": "屏幕",
         "screenHint": "屏幕、最前面的应用和窗口，以及屏幕上的文字。",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "隐私",
       "masking": "遮盖个人数据",
-      "maskingHint": "设备会在录制内容离开电脑之前，遮盖其中的个人数据。",
-      "pause": "暂停录制",
-      "pauseHint": "在你关闭此项之前，此组织的每台设备都会停止所有录制层。",
+      "maskingHint": "设备在保存前，会在电脑上替换录制内容中的姓名、邮箱、电话、地址、账号和密钥。每台电脑会先下载约 1 GB 的本地模型，准备好之前不会录制任何内容。",
+      "pause": "为所有人暂停录制",
+      "pauseHint": "在你关闭此项之前，本组织的设备都不会录制。成员会看到组织已暂停录制。",
       "exclusions": {
         "group": {
           "password_managers": "密码管理器",
@@ -20804,9 +20798,9 @@
           "bankingHint": "银行与金融应用，以及约 950 个银行和金融科技网站。"
         }
       },
-      "localHours": "在设备上（小时）",
+      "localHours": "设备上",
       "localHoursHint": "电脑在上传后保留录制的时长。0 表示不限时长。",
-      "remoteDays": "在 Kortix 中（天）",
+      "remoteDays": "Kortix 中",
       "remoteDaysHint": "Kortix 保留录制的时长。0 表示不限时长。",
       "noticeTitle": "通知",
       "noticePlaceholder": "此组织已开启录制。",
@@ -20821,7 +20815,13 @@
       "loadFailed": "无法加载设置。",
       "tryAgain": "重试",
       "accessTitle": "谁能查看录制内容",
-      "accessBody": "每位成员都能查看自己的设备和时间线。所有者和管理员还能查看所有人的内容 (capture.read_all) 并管理 Capture (capture.manage)。如需将此权限授予他人，请在“账户 → 角色”中使用自定义角色。每次查看其他成员的内容都会记入审计日志。"
+      "accessBody": "每位成员都能查看自己的设备和时间线。所有者和管理员还能查看所有人的内容 (capture.read_all) 并管理 Capture (capture.manage)。如需将此权限授予他人，请在“账户 → 角色”中使用自定义角色。每次查看其他成员的内容都会记入审计日志。",
+      "layersHint": "{org} 的每台设备都会录制此处开启的内容。成员可在自己的电脑上看到，但无法更改。",
+      "exclusionsTitle": "排除项",
+      "retentionTitle": "保留期限",
+      "pauseTitle": "暂停",
+      "hours": "小时",
+      "days": "天"
     },
     "dialog": {
       "product": "Kortix Capture",

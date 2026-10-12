@@ -192,7 +192,7 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
         <AccountSwitcher accountId={accountId} />
         {area.canManage ? (
           <Hint label={t('nav.settings')}>
-            <Button asChild variant="ghost" size="icon-sm" aria-label={t('nav.settings')}>
+            <Button asChild variant="ghost" size="icon-base" aria-label={t('nav.settings')}>
               <HubLink to={hubTarget(accountId, { tab: 'capture' })}>
                 <GearSixIcon className="size-4 shrink-0" />
               </HubLink>
@@ -228,7 +228,7 @@ function ProfileMenu({ accountId, canManage }: { accountId: string; canManage: b
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon-base"
             className="rounded-full"
             aria-label={t('signedInAs', { email })}
           >

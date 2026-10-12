@@ -126,9 +126,9 @@ describe('account hub — every Access nav item maps to its own READ probe', () 
     }
   });
 
-  // Kortix Capture's pane reads and writes the policy, which asserts `capture.manage`.
+  // Kortix Capture's pane reads and writes the policy (`capture.manage`), once Capture is on.
   test('Kortix Capture gates on capture.manage, and the pane renders only then', async () => {
-    expect(sectionVisible).toContain('capture: canManageCapture === true');
+    expect(sectionVisible).toContain('capture: canManageCapture === true && captureOn');
     const code = await Bun.file(new URL('./account-hub-content.tsx', import.meta.url)).text();
     expect(code).toContain("activeSection === 'capture' && canManageCapture");
   });

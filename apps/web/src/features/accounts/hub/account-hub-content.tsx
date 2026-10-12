@@ -85,6 +85,7 @@ import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useBrandingScope } from '@/features/branding/branding-provider';
+import { CaptureAccountCard } from '@/features/capture/area/capture-account-card';
 import { CaptureSettingsPane } from '@/features/capture/settings/settings-view';
 import { Close } from '@/features/icon/icons/close';
 import { Plus } from '@/features/icon/icons/plus';
@@ -593,6 +594,14 @@ export function AccountHubContent() {
                   <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
+              </SettingsGroup>
+
+              {/* The feature switch. On, the Kortix Capture section in the
+                  sidebar configures it (`sections.ts`). */}
+              <SettingsGroup title={tCapture('account.title')}>
+                <SettingsRowGroup>
+                  <CaptureAccountCard accountId={account.account_id} />
+                </SettingsRowGroup>
               </SettingsGroup>
 
               {/* Tucked away, not headline: this reports whether the

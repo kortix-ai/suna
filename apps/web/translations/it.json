@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "Le registrazioni di {device} compariranno qui"
       },
-      "layers": "Livelli",
+      "layers": "Mostra",
+      "layersAll": "Tutto",
+      "layersNone": "Niente",
       "layer": {
         "screen": "Schermo",
         "actions": "Azioni",
@@ -20757,7 +20759,7 @@
         "os": "SO",
         "status": "Stato",
         "lastFrame": "Ultima registrazione",
-        "layers": "Livelli",
+        "layers": "Registra",
         "actions": "Azioni"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "Impostazioni dell’organizzazione",
       "description": "{name}: cosa registra, esclude e conserva ogni dispositivo di questa organizzazione.",
-      "tabs": {
-        "label": "Sezioni delle impostazioni dell’organizzazione",
-        "general": "Generali",
-        "recording": "Registrazione",
-        "exclusions": "Esclusioni",
-        "retention": "Conservazione",
-        "notice": "Avviso"
-      },
-      "layersTitle": "Livelli",
+      "layersTitle": "Cosa viene registrato",
       "layer": {
         "screen": "Schermo",
         "screenHint": "Lo schermo, l'app e la finestra in primo piano, e il testo sullo schermo.",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "Privacy",
       "masking": "Maschera i dati personali",
-      "maskingHint": "I dispositivi mascherano i dati personali in ciò che registrano, prima che lasci il computer.",
-      "pause": "Metti in pausa la registrazione",
-      "pauseHint": "Ogni dispositivo di questa organizzazione ferma ogni livello finché non lo disattivi.",
+      "maskingHint": "I dispositivi sostituiscono nomi, email, telefoni, indirizzi, numeri di conto e segreti in ciò che registrano, sul computer, prima di salvarlo. Ogni computer scarica prima un modello locale di circa 1 GB e non registra nulla finché non è pronto.",
+      "pause": "Metti in pausa la registrazione per tutti",
+      "pauseHint": "Nessun dispositivo di questa organizzazione registra finché non lo disattivi. I membri vedono che l'organizzazione ha messo in pausa la registrazione.",
       "exclusions": {
         "group": {
           "password_managers": "Gestori di password",
@@ -20804,9 +20798,9 @@
           "bankingHint": "App bancarie e finanziarie e circa 950 siti di banche e fintech."
         }
       },
-      "localHours": "Sul dispositivo (ore)",
+      "localHours": "Sul dispositivo",
       "localHoursHint": "Per quanto tempo un computer conserva le registrazioni dopo il caricamento. 0 le conserva senza limite.",
-      "remoteDays": "In Kortix (giorni)",
+      "remoteDays": "In Kortix",
       "remoteDaysHint": "Per quanto tempo Kortix conserva le registrazioni. 0 le conserva senza limite.",
       "noticeTitle": "Avviso",
       "noticePlaceholder": "La registrazione è attiva per questa organizzazione.",
@@ -20821,7 +20815,13 @@
       "loadFailed": "Impossibile caricare le impostazioni.",
       "tryAgain": "Riprova",
       "accessTitle": "Chi vede le registrazioni",
-      "accessBody": "Ogni membro vede i propri dispositivi e la propria cronologia. Proprietari e amministratori vedono anche quelli di tutti (capture.read_all) e gestiscono Capture (capture.manage). Per dare questo accesso a un'altra persona, usa un ruolo personalizzato in Account → Ruoli. Ogni visualizzazione di un altro membro finisce nel registro di audit."
+      "accessBody": "Ogni membro vede i propri dispositivi e la propria cronologia. Proprietari e amministratori vedono anche quelli di tutti (capture.read_all) e gestiscono Capture (capture.manage). Per dare questo accesso a un'altra persona, usa un ruolo personalizzato in Account → Ruoli. Ogni visualizzazione di un altro membro finisce nel registro di audit.",
+      "layersHint": "Ogni dispositivo di {org} registra ciò che è attivo qui. I membri lo vedono sul loro computer e non possono cambiarlo.",
+      "exclusionsTitle": "Esclusioni",
+      "retentionTitle": "Conservazione",
+      "pauseTitle": "Pausa",
+      "hours": "ore",
+      "days": "giorni"
     },
     "dialog": {
       "product": "Kortix Capture",

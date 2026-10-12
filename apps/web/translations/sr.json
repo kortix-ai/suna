@@ -20619,7 +20619,9 @@
       "empty": {
         "noDataTitle": "Снимци са уређаја {device} појавиће се овде"
       },
-      "layers": "Слојеви",
+      "layers": "Прикажи",
+      "layersAll": "Све",
+      "layersNone": "Ништа",
       "layer": {
         "screen": "Екран",
         "actions": "Радње",
@@ -20757,7 +20759,7 @@
         "os": "ОС",
         "status": "Статус",
         "lastFrame": "Poslednji snimak",
-        "layers": "Слојеви",
+        "layers": "Снима",
         "actions": "Радње"
       },
       "layer": {
@@ -20772,15 +20774,7 @@
     "settings": {
       "title": "Podešavanja organizacije",
       "description": "{name}: šta svaki uređaj ove organizacije snima, izuzima i čuva.",
-      "tabs": {
-        "label": "Odeljci podešavanja organizacije",
-        "general": "Opšte",
-        "recording": "Snimanje",
-        "exclusions": "Izuzeci",
-        "retention": "Čuvanje",
-        "notice": "Obaveštenje"
-      },
-      "layersTitle": "Слојеви",
+      "layersTitle": "Шта се снима",
       "layer": {
         "screen": "Екран",
         "screenHint": "Екран, апликација и прозор у првом плану, и текст на екрану.",
@@ -20791,9 +20785,9 @@
       },
       "privacyTitle": "Приватност",
       "masking": "Сакриј личне податке",
-      "maskingHint": "Уређаји сакривају личне податке у ономе што снимају, пре него што напусте рачунар.",
-      "pause": "Паузирај снимање",
-      "pauseHint": "Сваки уређај ове организације зауставља све слојеве док ово не искључите.",
+      "maskingHint": "Уређаји замењују имена, имејл адресе, бројеве телефона, адресе, бројеве рачуна и тајне у ономе што снимају, на рачунару, пре чувања. Сваки рачунар прво преузима локални модел од око 1 GB и ништа не снима док он није спреман.",
+      "pause": "Паузирај снимање за све",
+      "pauseHint": "Ниједан уређај ове организације не снима док ово не искључите. Чланови виде да је организација паузирала снимање.",
       "exclusions": {
         "group": {
           "password_managers": "Menadžeri lozinki",
@@ -20804,9 +20798,9 @@
           "bankingHint": "Bankarske i finansijske aplikacije i oko 950 sajtova banaka i fintech kompanija."
         }
       },
-      "localHours": "На уређају (sati)",
+      "localHours": "На уређају",
       "localHoursHint": "Koliko dugo računar čuva snimke nakon otpremanja. 0 ih čuva bez ograničenja.",
-      "remoteDays": "У Kortixу (dani)",
+      "remoteDays": "У Kortix-у",
       "remoteDaysHint": "Koliko dugo Kortix čuva snimke. 0 ih čuva bez ograničenja.",
       "noticeTitle": "Обавештење",
       "noticePlaceholder": "Снимање је укључено за ову организацију.",
@@ -20821,7 +20815,13 @@
       "loadFailed": "Podešavanja nije moguće učitati.",
       "tryAgain": "Покушај поново",
       "accessTitle": "Ко види снимке",
-      "accessBody": "Сваки члан види своје уређаје и своју временску линију. Власници и админи виде и туђе (capture.read_all) и управљају Capture-ом (capture.manage). Да бисте овај приступ дали неком другом, користите прилагођену улогу у Налог → Улоге. Свако гледање другог члана улази у дневник ревизије."
+      "accessBody": "Сваки члан види своје уређаје и своју временску линију. Власници и админи виде и туђе (capture.read_all) и управљају Capture-ом (capture.manage). Да бисте овај приступ дали неком другом, користите прилагођену улогу у Налог → Улоге. Свако гледање другог члана улази у дневник ревизије.",
+      "layersHint": "Сваки уређај у {org} снима оно што је овде укључено. Чланови то виде на свом рачунару и не могу да промене.",
+      "exclusionsTitle": "Изузеци",
+      "retentionTitle": "Чување",
+      "pauseTitle": "Пауза",
+      "hours": "сати",
+      "days": "дана"
     },
     "dialog": {
       "product": "Kortix Capture",

@@ -103,6 +103,8 @@ export function DeviceSearch({
         </InputGroupSearchIcon>
         <InputGroupSearchInput
           ref={inputRef}
+          size="sm"
+          className="h-8"
           aria-label={t('search.label')}
           placeholder={t('search.placeholder')}
           value={input}
