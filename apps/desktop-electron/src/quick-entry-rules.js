@@ -36,20 +36,49 @@ function shortcutLabel(accelerator, platform) {
     .join(' + ');
 }
 
-/** Centered on the display, its top edge a quarter of the way down, like Spotlight. */
+/**
+ * Centered at the bottom of the display, its bottom edge a tenth of the way up.
+ * The bar grows upward as the prompt grows, so the bottom stays put.
+ */
 function quickEntryBounds(workArea, width, height) {
   return {
     x: Math.round(workArea.x + (workArea.width - width) / 2),
-    y: Math.round(workArea.y + workArea.height / 4),
+    y: Math.round(workArea.y + workArea.height - height - workArea.height / 10),
     width,
     height,
   };
 }
 
-/** The pending prompt's text while it is fresh, else null. */
+/** At most this many files ride with one prompt, each at most this large. */
+const MAX_ATTACHMENTS = 10;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/**
+ * The files the bar hands over with a prompt: screenshots and picked files as
+ * `{ name, type, bytes }`. Anything malformed, empty or too large is dropped
+ * here, at the trust boundary between the bar page and the app.
+ */
+function normalizeAttachments(attachments) {
+  return (Array.isArray(attachments) ? attachments : [])
+    .filter((file) => file?.bytes instanceof Uint8Array && file.bytes.byteLength > 0 && file.bytes.byteLength <= MAX_ATTACHMENT_BYTES)
+    .slice(0, MAX_ATTACHMENTS)
+    .map((file) => ({
+      name: label(file.name, 'attachment').replace(/[\\/]/g, '_'),
+      type: typeof file.type === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(file.type) ? file.type : 'application/octet-stream',
+      bytes: file.bytes,
+    }));
+}
+
+/** "Screenshot 2026-10-12 at 15.04.31.png", the name macOS gives its own. */
+function screenshotName(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `Screenshot ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} at ${pad(date.getHours())}.${pad(date.getMinutes())}.${pad(date.getSeconds())}.png`;
+}
+
+/** The pending prompt while it is fresh, else null. */
 function freshPrompt(pending, now) {
   if (!pending || now - pending.at > PENDING_TTL_MS) return null;
-  return pending.text;
+  return pending;
 }
 
 /** The picker lists this many of the project's sessions, most recent first. */
@@ -145,8 +174,12 @@ module.exports = {
   normalizeTarget,
   pickedSession,
   pickerItems,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES,
+  normalizeAttachments,
   quickEntryBounds,
   relativeTime,
+  screenshotName,
   resolveShortcut,
   shortcutLabel,
 };

@@ -7,9 +7,13 @@ const {
   freshPrompt,
   normalizeTarget,
   pickerItems,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES,
+  normalizeAttachments,
   quickEntryBounds,
   relativeTime,
   resolveShortcut,
+  screenshotName,
   shortcutLabel,
 } = require('./quick-entry-rules');
 
@@ -41,21 +45,21 @@ describe('shortcutLabel', () => {
 });
 
 describe('quickEntryBounds', () => {
-  test('centers the bar a quarter of the way down the display under the cursor', () => {
-    expect(quickEntryBounds({ x: 0, y: 25, width: 1440, height: 875 }, 744, 120)).toEqual({
+  test('centers the bar at the bottom of the display under the cursor, a tenth of the way up', () => {
+    expect(quickEntryBounds({ x: 0, y: 25, width: 1440, height: 875 }, 744, 156)).toEqual({
       x: 348,
-      y: 244,
+      y: 657,
       width: 744,
-      height: 120,
+      height: 156,
     });
   });
 
   test('stays on a secondary display left of the primary one', () => {
-    expect(quickEntryBounds({ x: -1920, y: 0, width: 1920, height: 1080 }, 744, 120)).toEqual({
+    expect(quickEntryBounds({ x: -1920, y: 0, width: 1920, height: 1080 }, 744, 156)).toEqual({
       x: -1332,
-      y: 270,
+      y: 816,
       width: 744,
-      height: 120,
+      height: 156,
     });
   });
 });
@@ -63,9 +67,9 @@ describe('quickEntryBounds', () => {
 describe('freshPrompt', () => {
   const pending = { text: 'Summarize the open PRs', at: 1_000 };
 
-  test('returns the text while the app window can still take it', () => {
-    expect(freshPrompt(pending, 1_000)).toBe('Summarize the open PRs');
-    expect(freshPrompt(pending, 1_000 + PENDING_TTL_MS)).toBe('Summarize the open PRs');
+  test('returns the prompt while the app window can still take it', () => {
+    expect(freshPrompt(pending, 1_000)).toBe(pending);
+    expect(freshPrompt(pending, 1_000 + PENDING_TTL_MS)).toBe(pending);
   });
 
   test('drops a prompt typed more than ten minutes ago, so an agent never acts on it late', () => {
@@ -175,5 +179,38 @@ describe('relativeTime', () => {
       'Stopped · 3 h ago',
       'Running',
     ]);
+  });
+});
+
+describe('normalizeAttachments', () => {
+  const bytes = (n) => new Uint8Array(n).fill(1);
+
+  test('keeps a screenshot as it came', () => {
+    expect(normalizeAttachments([{ name: 'Screenshot.png', type: 'image/png', bytes: bytes(3) }])).toEqual([
+      { name: 'Screenshot.png', type: 'image/png', bytes: bytes(3) },
+    ]);
+  });
+
+  test('drops empty, oversized and malformed files, and caps the count', () => {
+    const files = normalizeAttachments([
+      { name: 'empty', type: 'text/plain', bytes: bytes(0) },
+      { name: 'huge', type: 'video/mp4', bytes: { byteLength: MAX_ATTACHMENT_BYTES + 1 } },
+      'junk',
+      ...Array.from({ length: 12 }, (_, i) => ({ name: `f${i}.txt`, type: 'text/plain', bytes: bytes(1) })),
+    ]);
+    expect(files).toHaveLength(MAX_ATTACHMENTS);
+    expect(files[0].name).toBe('f0.txt');
+  });
+
+  test('a path in a name or a strange type cannot travel further', () => {
+    expect(normalizeAttachments([{ name: '../../etc/passwd', type: 'x; evil', bytes: bytes(1) }])).toEqual([
+      { name: '.._.._etc_passwd', type: 'application/octet-stream', bytes: bytes(1) },
+    ]);
+  });
+});
+
+describe('screenshotName', () => {
+  test('names a screenshot the way macOS does', () => {
+    expect(screenshotName(new Date(2026, 9, 12, 15, 4, 31))).toBe('Screenshot 2026-10-12 at 15.04.31.png');
   });
 });

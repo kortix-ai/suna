@@ -14,16 +14,30 @@
 // also publishes the project and its recent sessions (`quick_entry_set_target`).
 // Rules (shortcuts, placement, expiry, picker items) are in quick-entry-rules.js.
 
-const { app, BrowserWindow, Menu, globalShortcut, ipcMain, nativeImage, screen } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  globalShortcut,
+  ipcMain,
+  nativeImage,
+  screen,
+  shell,
+  systemPreferences,
+} = require('electron');
+const { execFile } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const {
   freshPrompt,
+  normalizeAttachments,
   normalizeTarget,
   pickedSession,
   pickerItems,
   quickEntryBounds,
   resolveShortcut,
+  screenshotName,
 } = require('./quick-entry-rules');
 
 // The bar is 680 px wide. The window adds a 32 px margin on each side for the
@@ -35,8 +49,23 @@ const CHANNEL = {
   dismiss: 'kortix:quick-entry:dismiss',
   resize: 'kortix:quick-entry:resize',
   state: 'kortix:quick-entry:state',
-  pick: 'kortix:quick-entry:pick',
+  menu: 'kortix:quick-entry:menu',
+  screenshot: 'kortix:quick-entry:screenshot',
+  attach: 'kortix:quick-entry:attach',
+  notice: 'kortix:quick-entry:notice',
+  noticeAction: 'kortix:quick-entry:notice-action',
 };
+
+// The light dim behind the bar: a quarter of the dialog scrim (`bg-black/65`),
+// faded in over --duration-normal (150 ms).
+const SCRIM_HTML = 'data:text/html;charset=utf-8,' + encodeURIComponent(
+  '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'">' +
+    '<body style="margin:0;height:100vh;background:rgb(0 0 0 / 0.25)"></body>',
+);
+const SCRIM_FADE_STEPS = 6;
+const SCRIM_FADE_MS = 150;
+// The macOS privacy pane a screenshot needs (System Settings ▸ Privacy & Security ▸ Screen Recording).
+const SCREEN_RECORDING_SETTINGS = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
 
 // The sidebar's status colors (kortix-brand tokens: --kortix-green, -yellow,
 // -red). Every other status draws a hollow ring in the menu's text color.
@@ -81,7 +110,13 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   const settingsPath = path.join(dir, 'quick_entry.json');
   /** @type {BrowserWindow | null} */
   let win = null;
-  let height = 120;
+  /** @type {BrowserWindow | null} The dim behind the bar, on the bar's display. */
+  let scrim = null;
+  let height = 156;
+  /** A screenshot is being taken: the bar is hidden on purpose and comes back. */
+  let capturing = false;
+  /** The notice's action, if it has one. */
+  let noticeAction = null;
   /** @type {{ text: string, at: number } | null} */
   let pending = null;
   /** @type {ReturnType<typeof normalizeTarget>} */
@@ -129,8 +164,10 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
         sandbox: true,
       },
     });
-    // Clicking anywhere else dismisses the bar. The typed text stays for the next open.
-    bar.on('blur', () => bar.hide());
+    // Clicking anywhere else, the dim included, dismisses the bar. The typed text stays.
+    bar.on('blur', () => {
+      if (!capturing) hide();
+    });
     bar.on('closed', () => {
       if (win === bar) win = null;
     });
@@ -152,20 +189,64 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   }
 
   function reveal() {
-    if (!win.isVisible()) appWasHidden = process.platform === 'darwin' && app.isHidden();
+    if (!win.isVisible() && !capturing) appWasHidden = process.platform === 'darwin' && app.isHidden();
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    showScrim(display.bounds);
     win.setBounds(quickEntryBounds(display.workArea, WIDTH, height));
     win.webContents.send(CHANNEL.show, barState());
     win.show();
     win.focus();
   }
 
-  /** What the bar's picker button shows. */
+  /** Dim the display behind the bar. A click on the dim focuses it, which dismisses the bar, as Esc does. */
+  function showScrim(bounds) {
+    if (!scrim || scrim.isDestroyed()) {
+      scrim = new BrowserWindow({
+        show: false,
+        frame: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        hasShadow: false,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+        title: 'Quick Entry',
+        webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      });
+      scrim.on('focus', () => dismiss());
+      scrim.loadURL(SCRIM_HTML).catch(() => {});
+    }
+    scrim.setBounds(bounds);
+    scrim.setOpacity(0);
+    scrim.showInactive();
+    // Above the dim (floating), below native menus (pop-up-menu).
+    win.setAlwaysOnTop(true, 'modal-panel');
+    let step = 0;
+    const fade = setInterval(() => {
+      step += 1;
+      if (!scrim || scrim.isDestroyed() || !scrim.isVisible() || step >= SCRIM_FADE_STEPS) clearInterval(fade);
+      if (scrim && !scrim.isDestroyed()) scrim.setOpacity(Math.min(1, step / SCRIM_FADE_STEPS));
+    }, SCRIM_FADE_MS / SCRIM_FADE_STEPS);
+  }
+
+  function notify(text, action = null) {
+    noticeAction = action?.run ?? null;
+    if (win && !win.isDestroyed()) win.webContents.send(CHANNEL.notice, { text, action: action?.label ?? null });
+  }
+
+  /** What the bar shows: the target, the picked session, and the new session's agent, model and effort. */
   function barState() {
     const session = pickedSession(target, pickedId);
     return {
       target: target?.name ?? null,
       session: session ? { title: session.title, status: session.status } : null,
+      composer: null,
+      canScreenshot: process.platform === 'darwin',
     };
   }
 
@@ -200,7 +281,43 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   }
 
   function hide() {
+    if (scrim && !scrim.isDestroyed()) scrim.hide();
     if (win && !win.isDestroyed() && win.isVisible()) win.hide();
+  }
+
+  /**
+   * macOS: hide the bar, run the system's interactive capture (drag a region,
+   * or Space to pick a window; Esc cancels), then bring the bar back with the
+   * image attached. Needs Screen Recording access, which macOS asks for on first use.
+   */
+  function takeScreenshot() {
+    if (process.platform !== 'darwin' || capturing) return;
+    const access = systemPreferences.getMediaAccessStatus('screen');
+    if (access === 'denied' || access === 'restricted') {
+      notify('Kortix needs Screen Recording access to take a screenshot.', {
+        label: 'Open Settings',
+        run: () => shell.openExternal(SCREEN_RECORDING_SETTINGS),
+      });
+      return;
+    }
+    capturing = true;
+    hide();
+    const file = path.join(os.tmpdir(), `kortix-quick-entry-${process.pid}-${Date.now()}.png`);
+    execFile('/usr/sbin/screencapture', ['-i', '-x', '-o', '-t', 'png', file], () => {
+      let bytes = null;
+      try {
+        bytes = new Uint8Array(fs.readFileSync(file));
+        fs.rmSync(file, { force: true });
+      } catch {
+        /* cancelled: no file */
+      }
+      if (win && !win.isDestroyed()) {
+        reveal();
+        if (bytes?.byteLength) win.webContents.send(CHANNEL.attach, { name: screenshotName(new Date()), type: 'image/png', bytes });
+        else notify(null);
+      }
+      capturing = false;
+    });
   }
 
   /** Esc or the shortcut again: close the bar and leave Kortix hidden if it was. */
@@ -217,13 +334,15 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
 
   const fromBar = (event) => Boolean(win && !win.isDestroyed() && event.sender === win.webContents);
 
-  ipcMain.on(CHANNEL.submit, (event, text) => {
+  ipcMain.on(CHANNEL.submit, (event, text, attachments) => {
     if (!fromBar(event)) return;
     const prompt = String(text ?? '').trim();
-    if (!prompt) return;
+    const files = normalizeAttachments(attachments);
+    if (!prompt && !files.length) return;
     const session = pickedSession(target, pickedId);
     pending = {
       text: prompt,
+      files,
       at: Date.now(),
       ...(session ? { projectId: target.projectId, sessionId: session.id } : {}),
     };
@@ -241,14 +360,22 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   ipcMain.on(CHANNEL.dismiss, (event) => {
     if (fromBar(event)) dismiss();
   });
-  ipcMain.on(CHANNEL.pick, (event, anchor) => {
-    if (fromBar(event)) openPicker(anchor);
+  ipcMain.on(CHANNEL.menu, (event, kind, anchor) => {
+    if (!fromBar(event)) return;
+    if (kind === 'session') openPicker(anchor);
   });
-  // The page reports its height as the text grows; the window fits it.
+  ipcMain.on(CHANNEL.screenshot, (event) => {
+    if (fromBar(event)) takeScreenshot();
+  });
+  ipcMain.on(CHANNEL.noticeAction, (event) => {
+    if (fromBar(event)) noticeAction?.();
+  });
+  // The page reports its height as it grows; the window fits it, bottom edge fixed.
   ipcMain.on(CHANNEL.resize, (event, next) => {
     if (!fromBar(event)) return;
-    height = Math.min(480, Math.max(80, Math.round(Number(next) || 0)));
-    win.setSize(WIDTH, height);
+    height = Math.min(560, Math.max(80, Math.round(Number(next) || 0)));
+    const bounds = win.getBounds();
+    win.setBounds({ x: bounds.x, y: bounds.y + bounds.height - height, width: WIDTH, height });
   });
 
   function register() {
@@ -271,11 +398,11 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
      * new session, `{ text, projectId, sessionId }` for a picked one.
      */
     take() {
-      const text = freshPrompt(pending, Date.now());
-      const { projectId, sessionId } = pending ?? {};
+      const prompt = freshPrompt(pending, Date.now());
       pending = null;
-      if (!text) return null;
-      return sessionId ? { text, projectId, sessionId } : { text };
+      if (!prompt) return null;
+      const { text, files, projectId, sessionId } = prompt;
+      return { text, files, ...(sessionId ? { projectId, sessionId } : {}) };
     },
     /** The project a new session starts in, and its recent sessions, for the picker. */
     setTarget(value) {
@@ -302,7 +429,9 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
      */
     close() {
       if (win && !win.isDestroyed()) win.destroy();
+      if (scrim && !scrim.isDestroyed()) scrim.destroy();
       win = null;
+      scrim = null;
     },
   };
 }
