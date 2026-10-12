@@ -174,6 +174,9 @@ export type SessionLogBlock = TextBlock | ReasoningBlock | AttachmentBlock | Too
 /**
  * F3: a text over 256 kB keeps a 16 kB preview in `text` and the full text in the object `ref`
  * names; `bytes` is the UTF-8 length of the full text. Without `ref`, `text` is the whole text.
+ * The API sets both at ingest (P2.3). `ref` is `kortix-attachment://<project_id>/<session_id>/<attachment_id>`;
+ * `GET /v1/projects/<project_id>/sessions/<session_id>/attachments/<attachment_id>` serves the full
+ * text as `text/plain; charset=utf-8`. A tool result's text item follows the same rule.
  */
 export type TextBlock = BlockBase & { type: 'text'; text: string; model_text?: string; synthetic?: boolean; ref?: string; bytes?: number; ext?: Ext }
 
@@ -215,8 +218,8 @@ export type KnownToolKind = (typeof KNOWN_TOOL_KINDS)[number]
 /** F12: a harness may define its own kind. A reader renders a kind it does not know as 'other'. */
 export type ToolKind = KnownToolKind | (string & {})
 
-/** F13: a tool-result attachment follows the AttachmentBlock rule: no `ref` = the bytes are missing, `url` = the v1 url. */
-export type ToolResultContent = { type: 'text'; text: string } | { type: 'attachment'; ref?: string; mime: string; sha256?: string; url?: string }
+/** F3: a text item over 256 kB follows the TextBlock rule. F13: a tool-result attachment follows the AttachmentBlock rule: no `ref` = the bytes are missing, `url` = the v1 url. */
+export type ToolResultContent = { type: 'text'; text: string; ref?: string; bytes?: number } | { type: 'attachment'; ref?: string; mime: string; sha256?: string; url?: string }
 
 /**
  * C2. model: call_id, name, input, and `result.model_content ?? result.content`.

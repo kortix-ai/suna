@@ -20,7 +20,10 @@
  *
  * Records are stored as the daemon sent them, not as zod parsed them: the parse
  * drops fields this API does not know, and the record would lose them (the same
- * rule as `upcast`).
+ * rule as `upcast`). One exception, F3: a text over 256 kB is stored as a
+ * preview plus a reference to its object (`session-log-blobs.ts`). The objects
+ * are written before the transaction. `content_hash` is always the hash of the
+ * record as sent, so the manifest the daemon reconciles against does not change.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -36,6 +39,7 @@ import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, se
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
+import { offloadLargeTexts } from './session-log-blobs';
 
 export interface SessionLogScope {
   sessionId: string;
@@ -85,13 +89,16 @@ export async function ingestSessionLogJournal(
   batch: SessionLogJournalRequest,
 ): Promise<SessionLogJournalOutcome> {
   if (!(await sessionExists(scope))) return NO_SESSION;
+  // One put at a time: at most one large text is in memory twice.
+  const records: SessionLogPut['message'][] = [];
+  for (const put of batch.puts) records.push(await offloadLargeTexts(scope, put.message));
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
       const current = await upsertSession(tx, scope, batch);
       if (current !== null) return { status: 409 as const, body: { generation: current } };
       await upsertThreads(tx, scope.sessionId, batch);
-      for (const put of batch.puts) await applyPut(tx, scope.sessionId, batch.generation, put);
+      for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
       for (const t of batch.tombstones) {
         await tx
           .update(sessionLogMessages)
@@ -190,7 +197,7 @@ async function upsertThreads(tx: Tx, sessionId: string, batch: SessionLogJournal
 // ponytail: one INSERT per put, so a seq collision names its own pair without
 // parsing the error detail. A batch is at most 1 MB gzipped; batch the inserts
 // if a large boot reconcile (P6) makes the round trips show up.
-async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut): Promise<void> {
+async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
   const m = put.message;
   const createdAt = Date.parse(m.created_at);
   try {
@@ -213,7 +220,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         rev: put.rev,
         contentHash: sessionLogContentHash(m),
         deletedAt: null,
-        record: m as unknown as Record<string, unknown>,
+        record: record as unknown as Record<string, unknown>,
       })
       .onConflictDoUpdate({
         target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
