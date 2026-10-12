@@ -223,6 +223,26 @@ withDb('notification inbox read', () => {
     }
   });
 
+  test('a super admin of an MFA-required account sees its rows at aal1: the app lets them in', async () => {
+    const sessionId = await projectSession(CREATOR);
+    const id = await seedRow(MEMBER, { sessionId });
+    await db.update(accounts).set({ mfaRequired: true }).where(eq(accounts.accountId, project.account_id));
+    await db.execute(
+      sql`update kortix.account_memberships set is_super_admin = true where user_id = ${MEMBER}::uuid and account_id = ${project.account_id}::uuid`,
+    );
+    clearAuthorizeCaches();
+    try {
+      expect((await listInbox(MEMBER, { limit: 20 }, { mfaAal: 'aal1' })).notifications.map((n) => n.id)).toEqual([id]);
+      expect(await unreadCount(MEMBER, { mfaAal: 'aal1' })).toBe(1);
+    } finally {
+      await db.execute(
+        sql`update kortix.account_memberships set is_super_admin = false where user_id = ${MEMBER}::uuid and account_id = ${project.account_id}::uuid`,
+      );
+      await db.update(accounts).set({ mfaRequired: false }).where(eq(accounts.accountId, project.account_id));
+      clearAuthorizeCaches();
+    }
+  });
+
   test('a deleted (tombstoned) session hides its row', async () => {
     const live = await projectSession(CREATOR);
     const gone = await projectSession(CREATOR, { deletedAt: '2026-10-09T10:00:00.000Z' });
