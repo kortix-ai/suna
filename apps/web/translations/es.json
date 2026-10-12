@@ -7915,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Historial de versiones",
       "line285JsxTextCopyPath": "Copiar ruta",
       "line396JsxTextThisFolderIsEmpty": "Esta carpeta está vacía",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Todo lo que guarden tus agentes y los archivos de este proyecto aparecerán aquí."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Todo lo que guarden tus agentes y los archivos de este proyecto aparecerán aquí.",
+      "loadMoreItems": "Cargar más elementos",
+      "loadMoreFailed": "No se pudieron cargar más elementos. Inténtalo de nuevo.",
+      "partialSortNote": "Se muestran {value0} elementos. El orden se aplica cuando se cargan todos.",
+      "showingFirstItems": "Se muestran los primeros {value0} elementos"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Haz doble clic para editar la ruta",
@@ -8007,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Buscar archivos...",
       "line124JsxTextTypeToSearchFiles": "Escribe para buscar archivos...",
-      "line136JsxTextNoFilesFound": "No se encontraron archivos"
+      "line136JsxTextNoFilesFound": "No se encontraron archivos",
+      "searchContents": "Buscar en el contenido",
+      "firstMatches": "Se muestran las primeras {value0} coincidencias",
+      "searchContentsPlaceholder": "Buscar en el contenido de los archivos...",
+      "typeToSearchContents": "Escribe para buscar en el contenido de los archivos...",
+      "noMatchingLines": "No hay líneas coincidentes"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Ya existe un archivo o una carpeta con ese nombre",
@@ -19220,6 +19229,12 @@
       "servedModelInPlaceOf": "En lugar de",
       "servedModelBadge": "Ejecutándose en {model}",
       "servedModelBarDescription": "{requested} no respondió a la última solicitud",
+      "computerAwakeStays": "El entorno aislado sigue encendido mientras estés aquí · hasta {duration}",
+      "computerAwakeStops": "El entorno aislado se detiene en {duration}. Envía un mensaje para que siga encendido.",
+      "computerAwakeStopsSoon": "El entorno aislado se detiene pronto. Envía un mensaje para que siga encendido.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Solicitud de sesión en cola editada",
       "text52867b778586": "Un kortix.yaml.",
       "textd0dfd435b2f4": "Tu plantilla de IA, como código.",
@@ -20182,9 +20197,8 @@
     "calendarNextWeek": "Semana siguiente",
     "calendarPreviousMonth": "Mes anterior",
     "calendarNextMonth": "Mes siguiente",
-    "calendarAllWeek": "Toda la semana",
-    "calendarAllDay": "Todo el día",
-    "calendarEvery": "cada {period}",
+    "calendarMore": "+{count} más",
+    "calendarMoreOn": "{count, plural, one {# recordatorio más} other {# recordatorios más}} el {date}",
     "calendarSession": "Sesión",
     "calendarEmptyWeek": "Nada se ejecuta esta semana",
     "calendarEmptyDay": "Nada se ejecuta este día",

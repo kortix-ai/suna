@@ -5,6 +5,26 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (files)
+- `listProjectDirectory(projectId, { cursor?, limit? })` and
+  `files.listDirectory({ cursor?, limit? })` page a folder: `limit` entries
+  (1 to 2,000, default 500), and `ProjectDirectoryListing.next_cursor` while
+  entries remain. Every page reads the commit the first page read, so a push
+  between pages skips or repeats nothing. Additive: a call without `cursor`
+  or `limit` sends the same request as before (up to 5,000 entries), and a
+  server that predates paging omits `next_cursor`.
+
+### Added (presence)
+- `useSession().presenceAwake` (`{ until: Date; capAt: Date } | null`): with
+  `browserPresence`, when the session's sandbox stops after the latest
+  presence renewal, and the time presence cannot keep it on past. The view
+  re-sends present every 5 minutes while the person is present, when a turn
+  ends, when the control plane closes a turn, and when the sandbox becomes
+  ready, to read it again. A turn that starts, or a sandbox that stops,
+  clears it. `session.presence()` types its response body:
+  `{ ok, awake_until?, awake_cap_at? }`. Additive: a server that predates it
+  omits both fields, and `presenceAwake` stays `null`.
+
 ### Added (display)
 - `AppDisplay` (`listed`, `preview`: `live` | `none`, `parent`): where Kortix
   shows an App. `App.display` reads it; `UpdateAppInput.display` replaces it

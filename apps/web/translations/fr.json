@@ -7915,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Historique des versions",
       "line285JsxTextCopyPath": "Copier le chemin",
       "line396JsxTextThisFolderIsEmpty": "Ce dossier est vide",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tout ce que vos agents enregistrent et les fichiers de ce projet apparaîtront ici."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tout ce que vos agents enregistrent et les fichiers de ce projet apparaîtront ici.",
+      "loadMoreItems": "Charger plus d’éléments",
+      "loadMoreFailed": "Impossible de charger plus d’éléments. Réessayez.",
+      "partialSortNote": "{value0} éléments affichés. Le tri s’applique une fois tous les éléments chargés.",
+      "showingFirstItems": "Affichage des {value0} premiers éléments"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-cliquez pour modifier le chemin",
@@ -8007,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Rechercher des fichiers...",
       "line124JsxTextTypeToSearchFiles": "Saisissez pour rechercher des fichiers...",
-      "line136JsxTextNoFilesFound": "Aucun fichier trouvé"
+      "line136JsxTextNoFilesFound": "Aucun fichier trouvé",
+      "searchContents": "Rechercher dans le contenu",
+      "firstMatches": "Affichage des {value0} premiers résultats",
+      "searchContentsPlaceholder": "Rechercher dans le contenu des fichiers...",
+      "typeToSearchContents": "Saisissez pour rechercher dans le contenu des fichiers...",
+      "noMatchingLines": "Aucune ligne correspondante"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Un fichier ou un dossier portant ce nom existe déjà",
@@ -19220,6 +19229,12 @@
       "servedModelInPlaceOf": "À la place de",
       "servedModelBadge": "Exécuté sur {model}",
       "servedModelBarDescription": "{requested} n’a pas répondu à la dernière requête",
+      "computerAwakeStays": "Le bac à sable reste allumé tant que vous êtes là · jusqu’à {duration}",
+      "computerAwakeStops": "Le bac à sable s’arrête dans {duration}. Envoyez un message pour le garder allumé.",
+      "computerAwakeStopsSoon": "Le bac à sable s’arrête bientôt. Envoyez un message pour le garder allumé.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Invite de session en file d’attente modifiée",
       "text52867b778586": "Un seul kortix.yaml.",
       "textd0dfd435b2f4": "Vos équipes IA, sous forme de code.",
@@ -20182,9 +20197,8 @@
     "calendarNextWeek": "Semaine suivante",
     "calendarPreviousMonth": "Mois précédent",
     "calendarNextMonth": "Mois suivant",
-    "calendarAllWeek": "Toute la semaine",
-    "calendarAllDay": "Toute la journée",
-    "calendarEvery": "toutes les {period}",
+    "calendarMore": "+{count} de plus",
+    "calendarMoreOn": "{count, plural, one {# rappel de plus} other {# rappels de plus}} le {date}",
     "calendarSession": "Session",
     "calendarEmptyWeek": "Rien ne se déclenche cette semaine",
     "calendarEmptyDay": "Rien ne se déclenche ce jour-là",

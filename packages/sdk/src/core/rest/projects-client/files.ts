@@ -37,21 +37,35 @@ export interface ProjectDirectoryListing {
   entries: ProjectDirectoryEntry[];
   /** The folder has more entries than one response carries. */
   truncated: boolean;
+  /**
+   * Pass as `cursor` to read the next page. Null on the last page, and when
+   * the request sent neither `cursor` nor `limit`. An API older than paging
+   * omits it: loop while it is a string (`while (cursor)`), never until it
+   * is `null`.
+   */
+  next_cursor?: string | null;
 }
 
 /**
  * The immediate children of one folder (`path`, or the repository root).
  * Unlike `listProjectFiles`, which returns a recursive list cut at 1,000
  * files, every folder is complete up to its own entry cap.
+ *
+ * Without `cursor` or `limit`, one response carries up to 5,000 entries.
+ * With either, the listing is paged: `limit` entries (1 to 2,000, default
+ * 500), and `next_cursor` while entries remain. Every page reads the commit
+ * the first page read, so a push between pages skips or repeats nothing.
  */
 export async function listProjectDirectory(
   projectId: string,
-  options?: { ref?: string; path?: string },
+  options?: { ref?: string; path?: string; cursor?: string; limit?: number },
 ) {
   const params = new URLSearchParams();
   if (options?.ref) params.set('ref', options.ref);
   if (options?.path) params.set('path', options.path);
   params.set('depth', '1');
+  if (options?.cursor) params.set('cursor', options.cursor);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<ProjectDirectoryListing>(
       `/projects/${projectId}/files?${params.toString()}`,
