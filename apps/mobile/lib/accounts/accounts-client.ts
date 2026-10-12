@@ -8,7 +8,8 @@
  */
 
 export {
-  acceptAccountInvite,
+  acceptAccountInviteAndLand,
+  accountInviteLanding,
   addGroupMembers,
   cancelAccountInvite,
   declineAccountInvite,
@@ -31,6 +32,7 @@ export type {
   AccountDetail,
   AccountInvitation,
   AccountInviteDescribe,
+  AccountInviteLanding,
   AccountMember,
   InviteMemberResult,
   ListAuditFilter,

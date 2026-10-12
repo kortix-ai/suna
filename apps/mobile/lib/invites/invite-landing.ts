@@ -2,8 +2,8 @@
  * Invites on mobile (KRTX-1731): where an accepted invite lands, the invite
  * links the app reads, and the link kept across the sign-in detour.
  *
- * - `inviteLanding` mirrors web's `inviteLandingPath`
- *   (apps/web/src/features/workspace/project-selector/project-selector-model.ts).
+ * - Where an accepted invite lands is the SDK's `accountInviteLanding`, the
+ *   rule web reads too; the invite screen maps it to a route.
  * - `inviteIdFromUrl` reads `https://{kortix.com,www,staging}/invites/<uuid>`
  *   and `kortix://invites/<uuid>`. `app/+native-intent.ts` remembers the id;
  *   the start screen (`app/index.tsx`) takes it after sign-in.
@@ -11,25 +11,6 @@
  * Pure: no React Native imports, so bun tests run it directly.
  */
 import { KORTIX_LINK_HOSTS, URL_PARTS } from '@/lib/share-link';
-
-export type InviteLanding =
-  | { kind: 'project'; projectId: string; accountId: string }
-  | { kind: 'account'; accountId: string };
-
-/**
- * The first project the accept granted. Else the first project the invite
- * names: an admin invite (the API applies grants to members only) or an invite
- * accepted before this visit. Else the joined account.
- */
-export function inviteLanding(
-  accepted: { account_id: string; bootstrap_grants_applied?: ReadonlyArray<{ project_id: string }> },
-  described?: { projects?: ReadonlyArray<{ project_id: string }> } | null
-): InviteLanding {
-  const project = accepted.bootstrap_grants_applied?.[0] ?? described?.projects?.[0];
-  return project
-    ? { kind: 'project', projectId: project.project_id, accountId: accepted.account_id }
-    : { kind: 'account', accountId: accepted.account_id };
-}
 
 /** `/invites/<uuid>`, nothing after the id. The API's `invite_id` is a uuid. */
 const INVITE_PATH = /^\/invites\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;

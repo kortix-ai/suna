@@ -10,7 +10,7 @@
  * (Sign out and continue: sign-in comes back here); expired; already accepted
  * (lands at once); pending (Accept invite · Decline invite · Not now).
  *
- * Accept lands where web's `inviteLandingPath` does (`inviteLanding`): the
+ * Accept lands where every host does (`accountInviteLanding` in the SDK): the
  * invited project, else the joined account's first project, else its project
  * list. The account list is refetched first: the kept list predates the join,
  * and the Projects page resets a selection it does not list. The landing
@@ -28,16 +28,15 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext, useLanguage } from '@/contexts';
-import { acceptAccountInvite, declineAccountInvite } from '@/lib/accounts/accounts-client';
+import {
+  acceptAccountInviteAndLand,
+  accountInviteLanding,
+  declineAccountInvite,
+  type AccountInviteLanding,
+} from '@/lib/accounts/accounts-client';
 import { haptics } from '@/lib/haptics';
 import { inviteKeys, useInvite } from '@/lib/invites/hooks';
-import {
-  inviteLanding,
-  rememberInviteLink,
-  skippedInvites,
-  takeInviteLink,
-  type InviteLanding,
-} from '@/lib/invites/invite-landing';
+import { rememberInviteLink, skippedInvites, takeInviteLink } from '@/lib/invites/invite-landing';
 import { log } from '@/lib/logger';
 import { projectKeys } from '@/lib/projects/hooks';
 import { listAccounts, listProjectsForAccount } from '@/lib/projects/projects-client';
@@ -94,7 +93,7 @@ export default function InviteScreen() {
   }, [router]);
 
   const land = React.useCallback(
-    async (landing: InviteLanding) => {
+    async (landing: AccountInviteLanding) => {
       await queryClient
         .fetchQuery({ queryKey: projectKeys.accounts, queryFn: () => listAccounts(), staleTime: 0 })
         .catch(() => undefined);
@@ -130,14 +129,14 @@ export default function InviteScreen() {
   React.useEffect(() => {
     if (!invite?.email_matches_caller || !invite.accepted_at || landedRef.current) return;
     landedRef.current = true;
-    void land(inviteLanding({ account_id: invite.account_id }, invite));
+    void land(accountInviteLanding({ account_id: invite.account_id }, invite));
   }, [invite, land]);
 
   const accept = useMutation({
-    mutationFn: () => acceptAccountInvite(id),
-    onSuccess: (accepted) => {
+    mutationFn: () => acceptAccountInviteAndLand(id, invite?.email_matches_caller ? invite : null),
+    onSuccess: ({ landing }) => {
       haptics.success();
-      return land(inviteLanding(accepted, invite?.email_matches_caller ? invite : null));
+      return land(landing);
     },
     onError: (err) => toast.error(refusal(err, t('invites.acceptFailed', 'Could not accept the invite. Try again.'))),
   });

@@ -1,51 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import { redirectSystemPath } from '@/app/+native-intent';
-import { inviteIdFromUrl, inviteLanding, rememberInviteLink, takeInviteLink } from './invite-landing';
+import { inviteIdFromUrl, rememberInviteLink, takeInviteLink } from './invite-landing';
 
 const ID = '3f2b8c1e-9a4d-4e6f-8b2a-1c5d7e9f0a3b';
-
-describe('inviteLanding — where an accepted invite lands', () => {
-  test('a project invite opens the first project it granted', () => {
-    expect(
-      inviteLanding({ account_id: 'acc-b', bootstrap_grants_applied: [{ project_id: 'p1' }, { project_id: 'p2' }] })
-    ).toEqual({ kind: 'project', projectId: 'p1', accountId: 'acc-b' });
-  });
-
-  test('no grant applied (an admin invite): the first project the invite names', () => {
-    expect(
-      inviteLanding(
-        { account_id: 'acc-b', bootstrap_grants_applied: [] },
-        { projects: [{ project_id: 'p9' }] }
-      )
-    ).toEqual({ kind: 'project', projectId: 'p9', accountId: 'acc-b' });
-  });
-
-  test('an invite accepted before: the project the description names', () => {
-    expect(inviteLanding({ account_id: 'acc-b' }, { projects: [{ project_id: 'p9' }] })).toEqual({
-      kind: 'project',
-      projectId: 'p9',
-      accountId: 'acc-b',
-    });
-  });
-
-  test('a granted project wins over the described one', () => {
-    expect(
-      inviteLanding(
-        { account_id: 'acc-b', bootstrap_grants_applied: [{ project_id: 'p1' }] },
-        { projects: [{ project_id: 'p9' }] }
-      )
-    ).toEqual({ kind: 'project', projectId: 'p1', accountId: 'acc-b' });
-  });
-
-  test('a workspace invite opens the joined account', () => {
-    expect(inviteLanding({ account_id: 'acc-b', bootstrap_grants_applied: [] }, { projects: [] })).toEqual({
-      kind: 'account',
-      accountId: 'acc-b',
-    });
-    expect(inviteLanding({ account_id: 'acc-b' })).toEqual({ kind: 'account', accountId: 'acc-b' });
-  });
-});
 
 describe('inviteIdFromUrl — the invite links the app reads', () => {
   test('the web invite link on every Kortix host', () => {

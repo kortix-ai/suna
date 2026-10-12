@@ -1,4 +1,4 @@
-import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
+import type { AccountInviteLanding, KortixAccount, KortixProject } from '@kortix/sdk';
 
 import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/workspace-grouping';
 
@@ -161,47 +161,16 @@ export function countProjects(sections: AccountSection[]): number {
 }
 
 /**
- * Where Join goes. A project invite opens the first invited project. A plain
- * workspace invite has no project yet, so the caller stays on the selector
- * and the refreshed lists show the joined account.
+ * The route of an invite landing (KRTX-1731). `accountInviteLanding` in the
+ * SDK decides where an accepted invite lands, for every host: the invited
+ * project, or the joined account. An account lands on the door for that
+ * account; the plain door reopened the project this browser remembered, in
+ * the account the user came from.
  */
-export function joinDestination(invite: MyAccountInvite): string | null {
-  const first = invite.projects[0];
-  return first ? `/projects/${first.project_id}` : null;
-}
-
-/**
- * Where an accepted invite lands (KRTX-1731): the first project it granted,
- * or, for a workspace invite, the door for the joined account. The plain door
- * reopened the project this browser remembered, in the account the user came
- * from.
- */
-export function inviteLandingPath(accepted: {
-  account_id: string | null;
-  bootstrap_grants_applied?: ReadonlyArray<{ project_id: string }>;
-}): string {
-  const first = accepted.bootstrap_grants_applied?.[0];
-  if (first) return `/projects/${first.project_id}`;
-  return accepted.account_id
-    ? `/projects/start?account=${encodeURIComponent(accepted.account_id)}`
-    : '/projects/start';
-}
-
-/**
- * Where a re-opened invite lands when it was accepted before (a second click
- * on the email link, or an invite the account list claimed): the first project
- * it names, else the joined account's door — where a fresh accept lands. The
- * account door alone showed the selector to a project invitee whose account
- * has several projects.
- */
-export function acceptedInviteLandingPath(invite: {
-  account_id?: string | null;
-  projects?: ReadonlyArray<{ project_id: string }>;
-}): string {
-  return inviteLandingPath({
-    account_id: invite.account_id ?? null,
-    bootstrap_grants_applied: invite.projects,
-  });
+export function inviteLandingPath(landing: AccountInviteLanding): string {
+  return landing.kind === 'project'
+    ? `/projects/${landing.projectId}`
+    : `/projects/start?account=${encodeURIComponent(landing.accountId)}`;
 }
 
 /**

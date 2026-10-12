@@ -19,12 +19,10 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
 import {
-  acceptedInviteLandingPath,
-  inviteLandingPath,
-} from '@/features/workspace/project-selector/project-selector-model';
-import {
-  acceptAccountInvite,
+  acceptAccountInviteAndLand,
+  accountInviteLanding,
   declineAccountInvite,
   describeAccountInvite,
   type AccountInviteDescribe,
@@ -78,13 +76,14 @@ export default function InvitePage() {
     mutationFn: async () => {
       const current = inviteQuery.data;
       if (!current) throw new Error('Invite is still loading');
-      return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
+      // Only the addressee's description names projects; a redacted one has none.
+      return acceptAccountInviteAndLand(inviteId!, current.invite.email_matches_caller ? current.invite : null);
     },
-    onSuccess: (result) => {
+    onSuccess: ({ landing }) => {
       // Land a newly-joined member in the project the invite granted, or in the
       // account they just joined. The plain door reopened the project this
       // browser remembered, in the account they came from (KRTX-1731).
-      router.replace(inviteLandingPath(result.data));
+      router.replace(inviteLandingPath(landing));
     },
   });
 
@@ -110,7 +109,7 @@ export default function InvitePage() {
     // "wrong account" state instead. Auto-claimed invites (already accepted on
     // first sign-in) use the same destination as a manual accept.
     if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
-    router.replace(acceptedInviteLandingPath(inv));
+    router.replace(inviteLandingPath(accountInviteLanding({ account_id: inv.account_id }, inv)));
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {
