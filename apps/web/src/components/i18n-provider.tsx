@@ -15,9 +15,10 @@ import { preload } from 'react-dom';
  *
  * - SSR renders against the full catalog that the RSC layer loaded
  *   (`i18n/messages.ts`). The HTML carries no messages.
- * - The page head preloads `/i18n/<locale>.<hash>.json`, so the catalog
- *   downloads in parallel with the app JavaScript and is cached across pages,
- *   visits, and deploys that do not change it.
+ * - Non-default locales preload `/i18n/<locale>.<hash>.json` in the page head,
+ *   so the catalog downloads in parallel with the app JavaScript and is cached
+ *   across pages, visits, and deploys that do not change it. The default
+ *   locale needs no network at all: its catalog ships with the app bundle.
  * - On the client, the tree below this provider hydrates only once that catalog
  *   has resolved. Until then React keeps the server HTML (a dehydrated Suspense
  *   boundary), which already shows every string of the first paint. Content
@@ -57,8 +58,12 @@ export function I18nProvider({
   children: ReactNode;
   initialLocale?: Locale;
 }) {
-  // Emitted into <head> during SSR, ahead of the app scripts.
-  preload(catalogHref(initialLocale), { as: 'fetch', crossOrigin: 'anonymous' });
+  // Emitted into <head> during SSR, ahead of the app scripts. Only fetched
+  // locales benefit: the default locale's catalog rides in the app bundle, so
+  // preloading it would download bytes nothing consumes.
+  if (initialLocale !== defaultLocale) {
+    preload(catalogHref(initialLocale), { as: 'fetch', crossOrigin: 'anonymous' });
+  }
   return (
     <Suspense fallback={null}>
       <CatalogProvider initialLocale={initialLocale}>{children}</CatalogProvider>

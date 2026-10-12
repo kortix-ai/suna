@@ -1,0 +1,18 @@
+{
+  "source_hash": "f2b5cf7bacb4a2ff89726aebda7cf4775c036d251aff617334b1703b509e8345",
+  "diff_files": [
+    "apps/web/src/components/i18n-provider-hook-order.test.ts",
+    "apps/web/src/components/i18n-provider.tsx",
+    "apps/web/src/i18n/client-catalog.test.ts",
+    "apps/web/src/i18n/client-catalog.ts"
+  ],
+  "diff_hash": "151adcb6a27f95ff61cb6c14c102a9994291e51b057dcf58188fafb577c3d4a6",
+  "head": "be2e7c39f6088b99654f88bd2c8322c17b13f0e1",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T13:24:04.449Z"
+}
