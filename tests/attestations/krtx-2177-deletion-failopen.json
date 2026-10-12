@@ -1,0 +1,26 @@
+{
+  "source_hash": "d34c81b9a84ce88d36fac1133c955a09cc867e4a87d6bc88738460b8a9be7548",
+  "diff_files": [
+    "apps/web/src/features/workspace/settings/tabs/profile-tab.container.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/profile-tab.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/profile-tab.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "098f100906b92162a2846273e86bb93c5ffe39cc9a1a346eec8aa76d081a47c6",
+  "head": "90018eb41f09c83b2d62fb200bedd93939b78f49",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T21:18:25.772Z"
+}
