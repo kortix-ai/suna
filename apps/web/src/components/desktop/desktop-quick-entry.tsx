@@ -2,7 +2,10 @@
 
 import { sessionDisplayStatus, type SessionDisplayStatus } from '@/components/projects/session-label';
 import { useAuth } from '@/features/providers/auth-provider';
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import {
+  getSessionDisplayTitle,
+  sessionLastActivityAt,
+} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   isDesktop,
   setDesktopQuickEntryTarget,
@@ -34,12 +37,12 @@ export function quickEntryProjectId(
 
 /**
  * The sessions the picker offers: the person's most recent in the project,
- * newest activity first, with the sidebar's title and status. An unused warm
- * session is left out: it is not a conversation anyone started.
+ * newest activity first, with the sidebar's title, status and last activity.
+ * An unused warm session is left out: it is not a conversation anyone started.
  */
 export function quickEntryRecentSessions(
   sessions: readonly ProjectSession[],
-): { id: string; title: string; status: SessionDisplayStatus }[] {
+): { id: string; title: string; status: SessionDisplayStatus; lastActiveAt: string }[] {
   return sessions
     .filter((session) => (session.metadata as Record<string, unknown> | null)?.warm !== true)
     .slice(0, QUICK_ENTRY_RECENT_SESSIONS)
@@ -47,6 +50,7 @@ export function quickEntryRecentSessions(
       id: session.session_id,
       title: getSessionDisplayTitle(session),
       status: sessionDisplayStatus(session),
+      lastActiveAt: sessionLastActivityAt(session),
     }));
 }
 

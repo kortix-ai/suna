@@ -51,6 +51,12 @@ interface SessionComposerPrefillState {
   /** Called once the composer has been handed this session's prefill —
    *  removes it so a later remount doesn't re-apply stale text. */
   clearPrefill: (sessionId: string, expectedId?: number) => void;
+  /**
+   * Re-key a prefill from the Kortix session id (the route) onto the chat's
+   * runtime session id once the session page resolves it. A producer outside
+   * the session page (desktop Quick Entry) only knows the route id.
+   */
+  movePrefill: (fromSessionId: string, toSessionId: string) => void;
 
   /** sessionId → an incrementing marker asking the composer to open its
    *  attach (file-picker) flow. Same held-then-cleared shape as the prefill
@@ -89,6 +95,14 @@ export const useSessionComposerPrefillStore = create<SessionComposerPrefillState
       if (expectedId !== undefined && s.prefillBySession[sessionId]?.id !== expectedId) return s;
       const { [sessionId]: _removed, ...rest } = s.prefillBySession;
       return { prefillBySession: rest };
+    }),
+
+  movePrefill: (fromSessionId, toSessionId) =>
+    set((s) => {
+      const moved = s.prefillBySession[fromSessionId];
+      if (!moved || fromSessionId === toSessionId) return s;
+      const { [fromSessionId]: _removed, ...rest } = s.prefillBySession;
+      return { prefillBySession: { ...rest, [toSessionId]: moved } };
     }),
 
   attachRequestBySession: {},

@@ -15,3 +15,18 @@ describe('session page prefill', () => {
     expect(memo).toContain('...(sessionPrefill.submit ? { submit: true } : {})');
   });
 });
+
+describe('session route page', () => {
+  const page = readFileSync(
+    fileURLToPath(new URL('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx', import.meta.url)),
+    'utf8',
+  );
+
+  test('moves a route-keyed prefill onto the chat id, where SessionChat reads it', () => {
+    const from = page.indexOf('migrateStash(sessionId, chatSessionId);');
+    expect(from).toBeGreaterThan(-1);
+    expect(page.slice(from, from + 400)).toContain(
+      'useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);',
+    );
+  });
+});

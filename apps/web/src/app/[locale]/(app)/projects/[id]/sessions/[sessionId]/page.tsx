@@ -97,6 +97,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
+import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
@@ -1496,6 +1497,9 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
+    // A desktop Quick Entry prompt for this session waits under the route id
+    // until the chat exists; SessionChat reads prefills by `chatSessionId`.
+    useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);
     // No queue hand-off beside it any more. The browser queue was keyed by the
     // OpenCode session id, which changes as the pin resolves, so the instant
     // shell's messages had to be moved from the route id onto the pin or they

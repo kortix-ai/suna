@@ -7,7 +7,16 @@ import type { ProjectSession } from '@kortix/sdk';
 import { QUICK_ENTRY_RECENT_SESSIONS, quickEntryProjectId, quickEntryRecentSessions } from './desktop-quick-entry';
 
 function session(id: string, fields: Partial<ProjectSession> = {}): ProjectSession {
-  return { session_id: id, status: 'stopped', name: null, custom_name: null, metadata: {}, ...fields } as ProjectSession;
+  return {
+    session_id: id,
+    status: 'stopped',
+    name: null,
+    custom_name: null,
+    metadata: {},
+    created_at: '2026-10-12T09:00:00.000Z',
+    updated_at: '2026-10-12T10:00:00.000Z',
+    ...fields,
+  } as ProjectSession;
 }
 
 describe('quickEntryProjectId', () => {
@@ -44,9 +53,9 @@ describe('quickEntryRecentSessions', () => {
         session('c', { name: 'Old', custom_name: 'Renamed', status: 'failed' }),
       ]),
     ).toEqual([
-      { id: 'a', title: 'Fix login', status: 'running' },
-      { id: 'b', title: 'New session', status: 'starting' },
-      { id: 'c', title: 'Renamed', status: 'failed' },
+      { id: 'a', title: 'Fix login', status: 'running', lastActiveAt: '2026-10-12T10:00:00.000Z' },
+      { id: 'b', title: 'New session', status: 'starting', lastActiveAt: '2026-10-12T10:00:00.000Z' },
+      { id: 'c', title: 'Renamed', status: 'failed', lastActiveAt: '2026-10-12T10:00:00.000Z' },
     ]);
   });
 

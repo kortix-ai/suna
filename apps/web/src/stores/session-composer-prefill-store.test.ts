@@ -124,3 +124,24 @@ describe('desktop Quick Entry into a picked session', () => {
     expect(useSessionComposerPrefillStore.getState().prefillBySession['qe2']?.submit).toBeUndefined();
   });
 });
+
+describe('movePrefill', () => {
+  test('re-keys a route-id prefill onto the chat id, keeping text, id and submit', () => {
+    const store = useSessionComposerPrefillStore.getState();
+    store.setPrefill('kortix-route-id', 'Ship it', undefined, 'replace', { submit: true });
+    const before = useSessionComposerPrefillStore.getState().prefillBySession['kortix-route-id'];
+    useSessionComposerPrefillStore.getState().movePrefill('kortix-route-id', 'ses_runtime');
+    const state = useSessionComposerPrefillStore.getState().prefillBySession;
+    expect(state['kortix-route-id']).toBeUndefined();
+    expect(state['ses_runtime']).toEqual(before);
+  });
+
+  test('is a no-op with nothing to move, or when both ids are the same', () => {
+    const store = useSessionComposerPrefillStore.getState();
+    store.movePrefill('nothing-here', 'ses_x');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['ses_x']).toBeUndefined();
+    store.setPrefill('same', 'Keep me');
+    useSessionComposerPrefillStore.getState().movePrefill('same', 'same');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['same']?.text).toBe('Keep me');
+  });
+});

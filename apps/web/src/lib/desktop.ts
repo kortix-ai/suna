@@ -417,13 +417,13 @@ export const takeDesktopQuickEntryPrompt = () =>
 /**
  * The project a new Quick Entry session starts in, and the person's recent
  * sessions there (newest first, at most 5), for the bar's picker. `status` is
- * the sidebar's `SessionDisplayStatus`.
+ * the sidebar's `SessionDisplayStatus`; `lastActiveAt` is an ISO time.
  */
 export const setDesktopQuickEntryTarget = (
   target: {
     projectId: string;
     name: string | null;
-    sessions: { id: string; title: string; status: string }[];
+    sessions: { id: string; title: string; status: string; lastActiveAt: string }[];
   } | null,
 ) => desktopCommand<null>('quick_entry_set_target', { target });
 
