@@ -213,9 +213,7 @@ const CONFIG_FILES: Record<string, string> = {
 
 async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
   if (cmd !== 'git') return runOnce(cmd, args, cwd, input);
-  // `-c http.extraHeader=...` precedes the subcommand; find it for the retry rule.
-  const sub = args.findIndex((a, i) => i > 0 && args[i - 1] !== '-c' && !a.startsWith('-'));
-  return withTransientGitRetry(sub >= 0 ? args.slice(sub) : args, () => runOnce(cmd, args, cwd, input));
+  return withTransientGitRetry(args, () => runOnce(cmd, args, cwd, input));
 }
 
 async function runOnce(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {

@@ -37,6 +37,16 @@ describe('withTransientGitRetry', () => {
     }
   });
 
+  it('sees the subcommand behind -C and -c, and repeats a GitHub 500', async () => {
+    expect(isReplaySafeGit(['-C', '/tmp/x', 'push', 'origin', 'HEAD:refs/heads/main'])).toBe(true);
+    expect(isReplaySafeGit(['-c', 'a=b', '-C', '/tmp/x', 'commit', '-m', 'x'])).toBe(false);
+    let calls = 0;
+    await withTransientGitRetry(['-C', '/tmp/x', 'push', 'origin', 'x'], async () => {
+      if (++calls < 2) throw new Error('git push failed (1): remote: Internal Server Error\nremote: Request ID E02E');
+    });
+    expect(calls).toBe(2);
+  });
+
   it('never repeats a ref delete or a local command', async () => {
     expect(isReplaySafeGit(['push', 'origin', '--delete', 'x'])).toBe(false);
     expect(isReplaySafeGit(['commit', '-m', 'x'])).toBe(false);
