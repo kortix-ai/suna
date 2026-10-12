@@ -21,6 +21,7 @@ import {
   accountMembers,
   accounts,
   driveMountRevocations,
+  platformSettings,
   projectSessions,
   projects,
   serviceAccounts,
@@ -78,7 +79,7 @@ const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
 const { retryPendingRevocations } = await import('../workers/drive-worker');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
-const { __setBootModePolicyForTests } = await import('../platform/services/boot-mode-setting');
+const { setVolumesForOrg, BOOT_MODE_SETTING_KEY } = await import('../platform/services/boot-mode-setting');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -161,7 +162,11 @@ beforeAll(async () => {
     repoUrl: 'https://example.test/drive-enforcement.git',
     metadata: { experimental: { drives: true } },
   });
-  __setBootModePolicyForTests({ volumes: { orgs: { [ACCOUNT]: true } } });
+  // Volumes on for this organization the way production stores it: in the
+  // `session_boot_modes` policy row. The drive routes read the policy fresh
+  // from the database on every call (volumesEnabledForFresh), so seeding only
+  // the 30 s cache would be wiped by the first route's DB read.
+  await setVolumesForOrg(ACCOUNT, true);
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({
     serviceAccountId: RESEARCHER,
@@ -190,6 +195,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.delete(platformSettings).where(eq(platformSettings.key, BOOT_MODE_SETTING_KEY));
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
