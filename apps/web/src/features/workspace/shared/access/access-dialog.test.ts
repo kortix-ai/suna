@@ -5,18 +5,18 @@ import type { AccountRole } from '@kortix/sdk';
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
   ALL_AGENTS,
+  type AccessDialogCurrent,
+  type AccessDialogMode,
+  type AccessDialogScope,
   accessDialogCopy,
-  agentSelectionFromCurrent,
   agentAccessProjectId,
+  agentSelectionFromCurrent,
   bulkGroupPlan,
   diffAccessDraft,
   diffAgentGrants,
   fixedPrincipalsOf,
   roleScopeFor,
   writeAccountEdit,
-  type AccessDialogCurrent,
-  type AccessDialogMode,
-  type AccessDialogScope,
 } from './access-dialog';
 import { builtinRole, customRole } from './role-select';
 
@@ -372,7 +372,13 @@ describe('writeAccountEdit — the account edit write plan', () => {
     };
     const draft = { role: customRole('role-a'), agents: ALL_AGENTS, expiresAt: '' };
     const { calls, writers } = recordingWriters();
-    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    await writeAccountEdit(
+      diffAccessDraft(current, draft),
+      current,
+      draft.role,
+      undefined,
+      writers,
+    );
     expect(calls).toEqual(['revoke-custom', 'assign-custom:role-a:never']);
   });
 
@@ -380,7 +386,13 @@ describe('writeAccountEdit — the account edit write plan', () => {
     const current: AccessDialogCurrent = { role: customRole('role-a') };
     const draft = { role: customRole('role-b'), agents: ALL_AGENTS, expiresAt: '' };
     const { calls, writers } = recordingWriters();
-    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    await writeAccountEdit(
+      diffAccessDraft(current, draft),
+      current,
+      draft.role,
+      undefined,
+      writers,
+    );
     expect(calls).toEqual(['revoke-custom', 'set-builtin:member', 'assign-custom:role-b:never']);
   });
 
@@ -388,7 +400,13 @@ describe('writeAccountEdit — the account edit write plan', () => {
     const current: AccessDialogCurrent = { role: builtinRole('member') };
     const draft = { role: builtinRole('admin'), agents: ALL_AGENTS, expiresAt: '' };
     const { calls, writers } = recordingWriters();
-    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    await writeAccountEdit(
+      diffAccessDraft(current, draft),
+      current,
+      draft.role,
+      undefined,
+      writers,
+    );
     expect(calls).toEqual(['set-builtin:admin']);
   });
 
@@ -396,7 +414,13 @@ describe('writeAccountEdit — the account edit write plan', () => {
     const current: AccessDialogCurrent = { role: builtinRole('member') };
     const draft = { role: builtinRole('member'), agents: ALL_AGENTS, expiresAt: '' };
     const { calls, writers } = recordingWriters();
-    await writeAccountEdit(diffAccessDraft(current, draft), current, draft.role, undefined, writers);
+    await writeAccountEdit(
+      diffAccessDraft(current, draft),
+      current,
+      draft.role,
+      undefined,
+      writers,
+    );
     expect(calls).toEqual([]);
   });
 
@@ -470,11 +494,19 @@ describe('the dialog writes assignments, not policies', () => {
   });
 });
 
-
 describe('Azure group attachment agent inventory', () => {
-  const attach: AccessDialogMode = { kind: 'attach', principal: { type: 'group', id: 'azure-group', label: 'Azure' } };
+  const attach: AccessDialogMode = {
+    kind: 'attach',
+    principal: { type: 'group', id: 'azure-group', label: 'Azure' },
+  };
   test('loads the selected project instead of the empty attachment scope', () => {
-    expect(agentAccessProjectId({ kind: 'project', projectId: '', projectName: '' }, attach, 'chosen-project')).toBe('chosen-project');
+    expect(
+      agentAccessProjectId(
+        { kind: 'project', projectId: '', projectName: '' },
+        attach,
+        'chosen-project',
+      ),
+    ).toBe('chosen-project');
   });
   test('does not load agents before choosing a project', () => {
     expect(agentAccessProjectId(PROJECT, attach, '')).toBeUndefined();
