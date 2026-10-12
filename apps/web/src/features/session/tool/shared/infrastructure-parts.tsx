@@ -1,7 +1,8 @@
 'use client';
 
 import { stripBashMetadata } from '@kortix/shared/tool-output';
-import { type ToolPart, type TriggerTitle } from '@/ui';
+import { type TriggerTitle } from '@/ui';
+import { toolCallMetadata, type ToolCallBlock } from '@kortix/sdk';
 import { CheckIcon as Check, WarningCircleIcon as CircleAlert, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import Loading from '@/components/ui/loading';
 import { STATUS_TEXT } from '@/components/ui/status';
@@ -73,6 +74,10 @@ export function parsePartialJSON(raw: string): Record<string, unknown> {
  */
 const EMPTY_RECORD: Record<string, unknown> = Object.freeze({});
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function isEmptyObject(value: Record<string, unknown>): boolean {
   for (const key in value) {
     if (Object.hasOwn(value, key)) return false;
@@ -81,58 +86,53 @@ function isEmptyObject(value: Record<string, unknown>): boolean {
 }
 
 /**
- * A call's arguments, including the half-arrived ones — memoised per part.
+ * A call's arguments, including the half-arrived ones — memoised per call.
  *
- * While a call streams, its arguments live in `state.raw` as incomplete JSON,
- * and `parsePartialJSON` builds a fresh object out of it on every render. That
- * object is the dependency of the `useMemo`s inside the tool components, so
- * during exactly the period when a tool is doing the most re-rendering, all of
- * its memoisation was guaranteed to miss.
- *
- * The cache is keyed on the part and guarded on BOTH `state` and the raw text,
- * because a streaming part keeps its object while its buffer grows.
+ * While a call streams, the harness sends the arguments it has so far as the
+ * call's `input`. An input that arrives as text (partial JSON) is parsed with
+ * `parsePartialJSON`, which builds a fresh object on every call; the cache keeps
+ * one object per call so the `useMemo`s inside the tool components hold while
+ * the call streams. A call block is replaced, never mutated, when it changes, so
+ * its identity is the version.
  */
-const STREAMING_INPUT_CACHE = new WeakMap<
-  ToolPart,
-  { state: ToolPart['state']; raw: string; input: Record<string, unknown> }
->();
+const STREAMING_INPUT_CACHE = new WeakMap<ToolCallBlock, Record<string, unknown>>();
 
-export function partStreamingInput(part: ToolPart): Record<string, unknown> {
-  const input = part.state.input;
-  // A settled call's `input` is already one stable object owned by the part.
-  if (input && !isEmptyObject(input)) return input;
-
-  if (part.state.status === 'pending' || part.state.status === 'running') {
-    const raw = 'raw' in part.state ? ((part.state as { raw?: string }).raw ?? '') : '';
-    if (raw) {
-      const cached = STREAMING_INPUT_CACHE.get(part);
-      if (cached && cached.state === part.state && cached.raw === raw) return cached.input;
-
-      const parsed = parsePartialJSON(raw);
-      STREAMING_INPUT_CACHE.set(part, { state: part.state, raw, input: parsed });
-      return parsed;
-    }
-  }
-  return input ?? EMPTY_RECORD;
+export function partStreamingInput(call: ToolCallBlock): Record<string, unknown> {
+  const input = call.input;
+  // An object input is already one stable object owned by the call.
+  if (isRecord(input)) return isEmptyObject(input) ? EMPTY_RECORD : input;
+  if (typeof input !== 'string' || !input) return EMPTY_RECORD;
+  const cached = STREAMING_INPUT_CACHE.get(call);
+  if (cached) return cached;
+  const parsed = parsePartialJSON(input);
+  STREAMING_INPUT_CACHE.set(call, parsed);
+  return parsed;
 }
 
-export function partInput(part: ToolPart): Record<string, unknown> {
-  return partStreamingInput(part);
+export function partInput(call: ToolCallBlock): Record<string, unknown> {
+  return partStreamingInput(call);
 }
 
-export function partMetadata(part: ToolPart): Record<string, unknown> {
-  if (
-    part.state.status === 'completed' ||
-    part.state.status === 'running' ||
-    part.state.status === 'error'
-  ) {
-    return (part.state.metadata as Record<string, unknown>) ?? EMPTY_RECORD;
-  }
-  return EMPTY_RECORD;
+/** The harness's display metadata of a call that has started (`toolCallMetadata`). */
+export function partMetadata(call: ToolCallBlock): Record<string, unknown> {
+  return call.status === 'pending' ? EMPTY_RECORD : toolCallMetadata(call);
+}
+
+const RAW_OUTPUT_CACHE = new WeakMap<ToolCallBlock, string>();
+
+/** A completed call's output text as the tool returned it; `''` for any other call. */
+export function partRawOutput(call: ToolCallBlock): string {
+  if (call.status !== 'complete') return '';
+  const cached = RAW_OUTPUT_CACHE.get(call);
+  if (cached !== undefined) return cached;
+  let text = '';
+  for (const item of call.result?.content ?? []) if (item.type === 'text') text += item.text;
+  RAW_OUTPUT_CACHE.set(call, text);
+  return text;
 }
 
 /**
- * A completed tool's output, stripped of transport noise — memoised per part.
+ * A completed tool's output, stripped of transport noise — memoised per call.
  *
  * Nine call sites read this (`read`, `bash`, `edit`, `write`, `apply_patch`,
  * `web_search`, `generic`, `getToolDiagnostics`, the file-chip row), most of
@@ -141,28 +141,33 @@ export function partMetadata(part: ToolPart): Record<string, unknown> {
  * output — three full scans and two string copies of a payload that is routinely
  * tens of kilobytes, per row, per frame.
  *
- * Keyed the same way as `partOutcome`: a part is replaced rather than mutated
- * when it changes, so the object identity IS the version, and the guard on
- * `state` keeps the entry sound if a part object is ever reused.
+ * Keyed the same way as `partOutcome`: a call is replaced rather than mutated
+ * when it changes, so the object identity IS the version.
  */
-const OUTPUT_CACHE = new WeakMap<ToolPart, { state: ToolPart['state']; output: string }>();
+const OUTPUT_CACHE = new WeakMap<ToolCallBlock, string>();
 
-export function partOutput(part: ToolPart): string {
-  if (part.state.status !== 'completed') return '';
+export function partOutput(call: ToolCallBlock): string {
+  if (call.status !== 'complete') return '';
 
-  const cached = OUTPUT_CACHE.get(part);
-  if (cached && cached.state === part.state) return cached.output;
+  const cached = OUTPUT_CACHE.get(call);
+  if (cached !== undefined) return cached;
 
-  const output = stripBashMetadata(part.state.output ?? '')
+  const output = stripBashMetadata(partRawOutput(call))
     .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
     .trim();
 
-  OUTPUT_CACHE.set(part, { state: part.state, output });
+  OUTPUT_CACHE.set(call, output);
   return output;
 }
 
-export function partStatus(part: ToolPart): string {
-  return part.state.status;
+/** The error text of a failed call; `undefined` when it carries none. */
+export function partError(call: ToolCallBlock): string | undefined {
+  return call.status === 'error' ? call.result?.error?.message : undefined;
+}
+
+/** The status in the words the renderers compare: `pending`, `running`, `completed` or `error`. */
+export function partStatus(call: ToolCallBlock): string {
+  return call.status === 'complete' ? 'completed' : call.status;
 }
 
 export function firstMeaningfulLine(value: unknown, maxLength = 120): string {

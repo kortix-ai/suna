@@ -36,7 +36,10 @@ const markdownIn = (replay: Locator) => replay.locator('.kortix-markdown');
 async function layoutOf(root: Locator): Promise<string> {
   return root.evaluate((el) => {
     const origin = el.getBoundingClientRect();
+    // `.kx-stream-word` wraps each word for its fade-in while the message
+    // streams (#9420) and is gone once it settles; it moves nothing.
     return [...el.querySelectorAll('*')]
+      .filter((node) => !node.closest('.kx-stream-word'))
       .map((node) => {
         const r = node.getBoundingClientRect();
         return [node.tagName, r.left - origin.left, r.top - origin.top, r.width, r.height]
@@ -104,9 +107,11 @@ test.describe('32 — A setup link while its turn streams', () => {
     });
 
     // The label is still arriving. remend closes it for display; the reader
-    // sees the words, never Streamdown's placeholder or a blocked marker.
+    // sees the words, never Streamdown's placeholder or a blocked marker. The
+    // pacer (#9420) shows whole words only, so the half-arrived "Out" waits.
     let replay = await openReplay(page, until('[Connect Out'));
-    await expect(replay).toContainText('Connect Out');
+    await expect(replay).toContainText('Connect');
+    await expect(replay).not.toContainText('Connect Out');
     await expect(replay).not.toContainText('[blocked]');
     await expect(replay).not.toContainText('](');
     await expect(replay.locator('a')).toHaveCount(0);

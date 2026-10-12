@@ -39,7 +39,10 @@ describe('registry ↔ contract', () => {
         .sort(),
     ).toEqual(
       [...FEATURE_FLAG_KEYS]
-        .filter((key) => !REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.catalogHidden)
+        .filter((key) => {
+          const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
+          return !def?.catalogHidden && !def?.derivedFrom;
+        })
         .sort(),
     );
   });
@@ -331,8 +334,14 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only the internal-only surface is hidden: apps (it gates every App kind)', () => {
-    expect(HIDDEN_KEYS).toEqual(['apps']);
+  test('only internal-only surfaces are hidden: apps (it gates every App kind) and session_log (the v2 session-log rollout)', () => {
+    expect(HIDDEN_KEYS).toEqual(['apps', 'session_log']);
+  });
+
+  test('session_log is a behavioral flag that defaults off', () => {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log');
+    expect(def?.enforcement).toBe('behavioral');
+    expect(resolveFeatureFlag({}, 'session_log')).toBe(false);
   });
 
   for (const key of HIDDEN_KEYS) {
@@ -376,8 +385,9 @@ describe('catalogHidden', () => {
     });
   }
 
-  test('every offered flag is writable by project admins (operator_only false)', () => {
-    for (const f of buildFeatureFlagCatalog({})) {
+  test('every offered project flag is writable by project admins (operator_only false)', () => {
+    // An organization flag (`volumes`) is listed, but only a platform operator writes it.
+    for (const f of buildFeatureFlagCatalog({}).filter((f) => f.scope === 'project')) {
       expect(f.operator_only).toBe(false);
       expect(isOperatorOnlyFeatureFlag(f.key)).toBe(false);
     }

@@ -202,8 +202,9 @@ export async function retrySandboxProvisionCreate(
       const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry, maxAttempts);
       if (!willRetry) throw error;
-      // Snapshot-building keeps its separate long polling window. Deterministic
-      // provider capacity is terminal and never reaches this delay branch.
+      // Snapshot-building keeps its separate long polling window. Capacity
+      // fails this create fast and never reaches this delay branch: the
+      // session's next `/start` re-attempts it with backoff.
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
         : exponentialBackoffMs({ attempt, baseMs: RETRY_DELAY_BASE_MS, capMs: RETRY_DELAY_MAX_MS });

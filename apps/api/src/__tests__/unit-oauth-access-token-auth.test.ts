@@ -25,6 +25,12 @@ mock.module('../shared/crypto', () => ({
 
 mock.module('../oauth/access-token', () => ({
   isOAuthAccessToken: (t: string) => t.startsWith('kortix_oat_'),
+  isOAuthRefreshToken: (t: string) => t.startsWith('kortix_ort_'),
+  isOAuthScope: (s: string) => ['profile', 'email', 'kortix'].includes(s),
+  OAUTH_SCOPE_PROFILE: 'profile',
+  OAUTH_SCOPE_EMAIL: 'email',
+  OAUTH_SCOPE_KORTIX: 'kortix',
+  OAUTH_SCOPES: ['profile', 'email', 'kortix'],
   oauthScopeAllowsPath: (scopes: string[], path: string) =>
     scopes.includes('kortix') || path === '/v1/accounts/me' || path === '/v1/oauth/userinfo',
   validateOAuthAccessToken: async (t: string) => {
@@ -49,6 +55,9 @@ mock.module('../oauth/access-token', () => ({
         scopes: ['profile'],
       };
     }
+    if (t === 'kortix_oat_inactive_client') {
+      return { isValid: false, error: 'OAuth client is inactive' };
+    }
     return { isValid: false, error: 'Invalid OAuth access token' };
   },
 }));
@@ -64,7 +73,11 @@ mock.module('../repositories/api-keys', () => ({
   },
 }));
 
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (PatPolicyError reaches ../oauth through accounts/core/tokens).
+const realAccountTokens = await import('../repositories/account-tokens');
 mock.module('../repositories/account-tokens', () => ({
+  ...realAccountTokens,
   validateAccountToken: async () => ({ isValid: false, error: 'invalid' }),
 }));
 
@@ -98,6 +111,7 @@ mock.module('../lib/request-context', () => ({ ...realRequestContext, setContext
 mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
 const { combinedAuth, supabaseAuth } = await import('../middleware/auth');
+const { oauthApp } = await import('../oauth');
 
 function appWith(middleware: typeof combinedAuth) {
   const app = new Hono();
@@ -188,5 +202,20 @@ describe('OAuth access tokens on the auth middlewares', () => {
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
     expect(await a.json()).toEqual(await b.json());
+  });
+
+  test('an access token whose client is deactivated is rejected on /userinfo with 401 OAuth client is inactive', async () => {
+    const app = new Hono();
+    app.route('/v1/oauth', oauthApp);
+    app.onError((err, c) => {
+      if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+      return c.json({ error: (err as Error).message }, 500);
+    });
+    const res = await app.request('/v1/oauth/userinfo', {
+      headers: { Authorization: 'Bearer kortix_oat_inactive_client' },
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'OAuth client is inactive' });
+    expect(oauthValidations).toContain('kortix_oat_inactive_client');
   });
 });

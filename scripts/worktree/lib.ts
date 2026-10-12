@@ -31,3 +31,4 @@ export * from './lib/launch-env';
 export * from './lib/prune';
 export * from './lib/services';
 export * from './lib/deps';
+export * from './lib/supabase-cli';

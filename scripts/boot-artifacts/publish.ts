@@ -16,7 +16,7 @@
  * commit you deploy. A tag that is never configured costs nothing.
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync, chmodSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, chmodSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -45,8 +45,8 @@ function run(cmd: string, args: string[], cwd: string, env: Record<string, strin
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 // ── 1. gather ─────────────────────────────────────────────────────────────
-const stage = join(tmpdir(), `kortix-boot-artifacts-${process.pid}`);
-rmSync(stage, { recursive: true, force: true });
+// A fresh 0700 directory, never a predictable /tmp path another user could pre-create.
+const stage = mkdtempSync(join(tmpdir(), 'kortix-boot-artifacts-'));
 mkdirSync(join(stage, 'kortix'), { recursive: true });
 mkdirSync(join(stage, 'opencode/bin'), { recursive: true });
 

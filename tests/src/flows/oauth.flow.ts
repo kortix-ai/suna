@@ -214,7 +214,7 @@ flow(
       if (!body.code_challenge_methods_supported.includes("S256")) throw new Error("S256 missing");
       if (!body.scopes_supported.includes("kortix")) throw new Error("kortix scope missing");
       // The docs live on the web host (FRONTEND_URL), never a string edit of the API issuer.
-      if (!new URL(body.service_documentation).pathname.endsWith("/docs/sdk/sign-in")) throw new Error(`service_documentation: ${body.service_documentation}`);
+      if (!new URL(body.service_documentation).pathname.endsWith("/docs/sdk/auth")) throw new Error(`service_documentation: ${body.service_documentation}`);
     });
     await ctx.step("the /v1/oauth mirror serves the same document", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/.well-known/oauth-authorization-server");

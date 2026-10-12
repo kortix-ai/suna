@@ -411,3 +411,50 @@ test('the polls stand down only for a server that owns session state (sent korti
   expect(sessionStreamConnected('p1', 's1')).toBe(false);
   stream.close();
 });
+
+test('schema v2 (the session log): a subscriber that asks for it reconnects the runtime connection with schema=v2, at the same cursors', async () => {
+  const events: unknown[] = [];
+  const runtime = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, onRuntimeEvent: (e) => events.push(e), timing: TIMING });
+  await tick();
+  connections[0]!.push(queueFrame(3, []));
+  connections[0]!.push(runtimeFrame(41));
+  await tick();
+  const log = openSessionStream({ projectId: 'p1', sessionId: 's1', schema: 'v2', timing: TIMING });
+  await tick(5);
+  expect(connections).toHaveLength(2);
+  // The cursor carries over: an API that ignores `schema` (before P4.4) resumes the v1 log with
+  // nothing lost; one that serves a v2 log under another epoch answers `kortix.resync`.
+  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?schema=v2&since=41&epoch=ep1&since_control=3&cepoch=capi_a');
+  connections[1]!.push({ channel: 'runtime', epoch: 'lg1', seq: 1, type: 'log.block.delta', payload: { thread_id: 't', message_id: 'm', block_id: 'b', delta: 'x' } });
+  await tick();
+  expect(events.at(-1)).toEqual({ id: 'lg1:1', type: 'log.block.delta', properties: { thread_id: 't', message_id: 'm', block_id: 'b', delta: 'x' } });
+  log.close();
+  await tick(5);
+  expect(connections).toHaveLength(3);
+  expect(connections[2]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?since=1&epoch=lg1&since_control=3&cepoch=capi_a');
+  runtime.close();
+});
+
+test('the dialect switch loses no v1 frame on an API that ignores schema: the stream resumes after the last one', async () => {
+  const events: Array<{ id: string }> = [];
+  const runtime = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, onRuntimeEvent: (e) => events.push(e as never), timing: TIMING });
+  await tick();
+  connections[0]!.push(runtimeFrame(41));
+  await tick();
+  const log = openSessionStream({ projectId: 'p1', sessionId: 's1', schema: 'v2', timing: TIMING });
+  await tick(5);
+  // The API replays from `since=41`: frame 42, emitted during the switch, arrives.
+  expect(new URL(connections[1]!.url).searchParams.get('since')).toBe('41');
+  connections[1]!.push(runtimeFrame(42));
+  await tick();
+  expect(events.map((e) => e.id)).toEqual(['ep1:41', 'ep1:42']);
+  log.close();
+  runtime.close();
+});
+
+test('schema v2 needs the runtime channel: a control-only connection does not send it', async () => {
+  const log = openSessionStream({ projectId: 'p1', sessionId: 's1', schema: 'v2', timing: TIMING });
+  await tick();
+  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control');
+  log.close();
+});

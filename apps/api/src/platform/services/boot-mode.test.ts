@@ -43,7 +43,7 @@ const target = (accountId: string, over: { volumeProvider?: boolean; envVolumeOf
 const fakeContext = { json: (body: unknown, status: number) => ({ body, status }) } as never;
 
 describe('Volumes: one switch per organization', () => {
-  test('off: standard boot, no drives, drive routes refuse; on: volume boot and drives', () => {
+  test('off: standard boot, no drives, drive routes refuse; on: drives, standard boot unless the organization opts into volume boot', () => {
     const stored = { volumes: { enabled: false, orgs: { [ORG_ON]: true, [ORG_OFF]: false } } };
     __setBootModePolicyForTests(stored);
     const policy = parseBootModePolicy(stored, false);
@@ -61,8 +61,11 @@ describe('Volumes: one switch per organization', () => {
     // Without the organization the derived flags fail closed.
     expect(resolveFeatureFlag({}, 'drives')).toBe(false);
 
-    // On: Files over the drive, and sessions boot on a volume with fallback.
-    expect(resolveBootMode(policy, target(ORG_ON))).toEqual({ mode: 'volume', source: 'default', standardFallback: true });
+    // On: Files over the drive, sessions still boot the standard way; a
+    // volume boot is its own per-organization rule (Stateless sessions).
+    expect(resolveBootMode(policy, target(ORG_ON))).toEqual({ mode: 'standard', source: 'default', standardFallback: true });
+    const stateless = parseBootModePolicy({ ...stored, orgs: { [ORG_ON]: { mode: 'volume' } } }, false);
+    expect(resolveBootMode(stateless, target(ORG_ON))).toEqual({ mode: 'volume', source: 'org', standardFallback: true });
     expect(resolveFeatureFlag({}, 'drives', ORG_ON)).toBe(true);
     expect(resolveFeatureFlag({}, 'ephemeral_sandboxes', ORG_ON)).toBe(true);
     expect(requireFeatureFlag(fakeContext, {}, 'drives', ORG_ON)).toBeNull();
@@ -97,7 +100,10 @@ describe('Volumes: one switch per organization', () => {
     expect(resolveVolumes(policy, ORG_OTHER)).toEqual({ enabled: true, source: 'global' });
     expect(resolveBootMode(policy, target(ORG_ON))).toEqual({ mode: 'artifacts', source: 'org', standardFallback: false });
     expect(resolveBootMode({ ...policy, killSwitch: true }, target(ORG_OTHER)).source).toBe('kill_switch');
-    expect(resolveBootMode(policy, target(ORG_OTHER, { envVolumeOff: true })).mode).toBe('artifacts');
+    // A stored `default: volume` never makes an organization stateless.
+    expect(resolveBootMode(policy, target(ORG_OTHER))).toEqual({ mode: 'standard', source: 'default', standardFallback: true });
+    const statelessOrg = { ...policy, orgs: { [ORG_OTHER]: { mode: 'volume' as const, standardFallback: true } } };
+    expect(resolveBootMode(statelessOrg, target(ORG_OTHER, { envVolumeOff: true })).mode).toBe('artifacts');
 
     // Rollout: stable per org, partitions by percent while the global switch is off.
     const bucket = rolloutBucket(ORG_OTHER);
@@ -110,7 +116,7 @@ describe('Volumes: one switch per organization', () => {
   test('fallback steps down volume → artifacts → image, per rule', () => {
     const policy = parseBootModePolicy({ fallback: { volumeAttempts: 2, artifactsAttempts: 1 } }, true);
     expect(policy.volumes.enabled).toBe(false);
-    expect(policy.default.mode).toBe('volume');
+    expect(policy.default.mode).toBe('standard');
     expect(attemptsLeft('volume', { volume: 1 }, policy)).toBe(true);
     expect(modeAfterFailures('volume', { volume: 2 }, policy, true)).toBe('artifacts');
     expect(modeAfterFailures('volume', { volume: 2, artifacts: 1 }, policy, true)).toBe('standard');

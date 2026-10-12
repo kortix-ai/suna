@@ -4,17 +4,27 @@ import { supabase, SUPABASE_AUTH_STORAGE_KEY } from '@/api/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
-import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { shouldUseRevenueCat } from '@/lib/billing/provider';
-import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
+import {
+  clearWebRegistrationHandoff,
+  consumeAuthCallbackState,
+  createAuthCallbackRedirect,
+  grantWebRegistrationHandoff,
+} from '@/lib/auth/callback-state';
+import { readCallbackTokens } from '@/lib/auth/callback-tokens';
 import { mfaChallengeRequired, verifiedTotpFactor } from '@/lib/auth/mfa';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
 import { signOutThisDevice } from '@/lib/auth/sign-out';
 import { keysToClear } from '@/lib/auth/sign-out-keys';
+import {
+  buildMobileRegistrationUrl,
+  isMobileRegistrationHandoffUrl,
+} from '@/lib/auth/web-registration-handoff';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { applyProfileLocale } from '@/lib/utils/i18n';
 import { withDeadline } from '@/lib/utils/with-deadline';
 import { unregisterPushOnSignOut } from '@/lib/notifications/registration';
@@ -150,54 +160,18 @@ function extractAuthCallbackState(url: string): string | null {
 }
 
 /**
- * Extract tokens from OAuth callback URL
- * Handles both hash fragment (#) and query params (?)
- */
-function extractTokensFromUrl(url: string): {
-  access_token: string | null;
-  refresh_token: string | null;
-} {
-  try {
-    // Try hash fragment first (Supabase implicit flow)
-    const hashIndex = url.indexOf('#');
-    if (hashIndex !== -1) {
-      const hashFragment = url.substring(hashIndex + 1);
-      const params = new URLSearchParams(hashFragment);
-      const access_token = params.get('access_token');
-      const refresh_token = params.get('refresh_token');
-      if (access_token && refresh_token) {
-        return { access_token, refresh_token };
-      }
-    }
-
-    // Try query params (PKCE flow or custom redirect)
-    const { params } = QueryParams.getQueryParams(url);
-    return {
-      access_token: params.access_token || null,
-      refresh_token: params.refresh_token || null,
-    };
-  } catch (e) {
-    log.error('Failed to extract tokens from URL:', e);
-    return { access_token: null, refresh_token: null };
-  }
-}
-
-/**
  * Create session from OAuth callback URL
  */
 async function createSessionFromUrl(url: string) {
-  const { access_token, refresh_token } = extractTokensFromUrl(url);
+  const tokens = readCallbackTokens(url);
 
-  if (!access_token || !refresh_token) {
+  if (!tokens) {
     log.log('⚠️ No tokens found in URL');
     return null;
   }
 
   log.log('✅ Tokens extracted, setting session...');
-  const { data, error } = await supabase.auth.setSession({
-    access_token,
-    refresh_token,
-  });
+  const { data, error } = await supabase.auth.setSession(tokens);
 
   if (error) {
     log.error('❌ Failed to set session:', error);
@@ -539,10 +513,10 @@ export function useAuth() {
    * - Android Google: Linking.openURL (external browser) + deep link callback
    * - Android Other: Linking.openURL (external browser) + deep link callback
    * - Apple: Native Apple Authentication on iOS
-   * - 'sso': enterprise SSO for `ssoDomain` (the web auth page's
-   *   signInWithSSO), then the same browser + callback path as Google
+   * - 'sso': enterprise SSO for `ssoEmail`, completed by the web auth page
+   *   (registration handoff), then the same browser + callback path as Google
    */
-  const signInWithOAuth = useCallback(async (provider: OAuthProvider | 'sso', ssoDomain?: string) => {
+  const signInWithOAuth = useCallback(async (provider: OAuthProvider | 'sso', ssoEmail?: string) => {
     try {
       log.log('🎯 OAuth sign in attempt:', provider);
       setError(null);
@@ -616,7 +590,7 @@ export function useAuth() {
       const { data, error: oauthError } =
         provider === 'sso'
           ? await supabase.auth.signInWithSSO({
-              domain: ssoDomain ?? '',
+              domain: ssoEmail?.split('@')[1] ?? '',
               options: { redirectTo, skipBrowserRedirect: true },
             })
           : await supabase.auth.signInWithOAuth({
@@ -642,7 +616,23 @@ export function useAuth() {
         return { success: false, error };
       }
 
-      log.log('🌐 Opening OAuth URL:', data.url);
+      // SSO: the signInWithSSO call above is only a probe, so a domain with no
+      // SSO provider surfaces its error in-app. GoTrue drops a `redirectTo`
+      // missing from its allow-list and falls back to SITE_URL, so the IdP
+      // would land on web and the app would stay signed out (KRTX-2052). The
+      // web origin is always allowed: web auth runs SSO and hands the session
+      // back through `kortix://auth/callback`. Reuse the state already in
+      // `redirectTo`; a second state would overwrite the persisted one.
+      const authUrl =
+        provider === 'sso'
+          ? buildMobileRegistrationUrl(
+              KORTIX_WEB_URL,
+              new URL(redirectTo).searchParams.get('state') ?? '',
+              ssoEmail,
+            )
+          : data.url;
+
+      log.log('🌐 Opening OAuth URL:', authUrl);
 
       // Prevent multiple simultaneous OAuth sessions
       if (oauthSessionActiveRef.current) {
@@ -667,7 +657,7 @@ export function useAuth() {
           log.log('🤖 Android: Opening OAuth in external browser');
 
           // Open OAuth URL in external browser
-          await Linking.openURL(data.url);
+          await Linking.openURL(authUrl);
 
           // Wait for the app to return from browser and check for session
           // The deep link handler in _layout.tsx will process the callback
@@ -770,7 +760,7 @@ export function useAuth() {
         await WebBrowser.maybeCompleteAuthSession();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, {
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectTo, {
           preferEphemeralSession: true,
           showInRecents: true,
         });
@@ -796,41 +786,39 @@ export function useAuth() {
             return { success: false, error: stateError };
           }
 
-          // Check for access_token in URL fragment (implicit flow)
-          if (url.includes('access_token=')) {
+          // Tokens in the hash (implicit flow) or the query (web handoff)
+          const tokens = readCallbackTokens(url);
+          if (tokens) {
             log.log('✅ Access token found in URL, setting session');
 
-            // Extract tokens from URL fragment
-            const hashParams = new URLSearchParams(url.split('#')[1] || '');
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
+            // A verified web handoff may admit a newly created account
+            // (mirrors the deep-link handler in app/_layout.tsx).
+            if (isMobileRegistrationHandoffUrl(url)) {
+              await grantWebRegistrationHandoff();
+            }
 
-            if (accessToken && refreshToken) {
-              // Set the session with the tokens
-              const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
+            const { data: sessionData, error: sessionError } =
+              await supabase.auth.setSession(tokens);
 
-              if (sessionError) {
-                log.error('❌ Session error:', sessionError.message);
-                setError({ message: sessionError.message });
-                setAuthState((prev) => ({ ...prev, isLoading: false }));
-                oauthSessionActiveRef.current = false;
-                mobileOAuthAdmissionPendingRef.current = false;
-                return { success: false, error: sessionError };
-              }
-
-              log.log('✅ OAuth sign in successful');
-
-              // Immediately invalidate React Query cache to fetch fresh account state
-              log.log('🔄 Invalidating cache to fetch fresh account state');
-              queryClient.invalidateQueries({ queryKey: ['account-state'] });
-
+            if (sessionError) {
+              await clearWebRegistrationHandoff();
+              log.error('❌ Session error:', sessionError.message);
+              setError({ message: sessionError.message });
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
-              return { success: true, data: sessionData };
+              mobileOAuthAdmissionPendingRef.current = false;
+              return { success: false, error: sessionError };
             }
+
+            log.log('✅ OAuth sign in successful');
+
+            // Immediately invalidate React Query cache to fetch fresh account state
+            log.log('🔄 Invalidating cache to fetch fresh account state');
+            queryClient.invalidateQueries({ queryKey: ['account-state'] });
+
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            oauthSessionActiveRef.current = false;
+            return { success: true, data: sessionData };
           }
 
           // Check for code in query params (PKCE flow)
@@ -1122,7 +1110,7 @@ export function useAuth() {
 
   /** Enterprise SSO for the email's domain (self-hosted instances; see app/auth/email.tsx). */
   const signInWithSSO = useCallback(
-    (email: string) => signInWithOAuth('sso', email.trim().toLowerCase().split('@')[1] ?? ''),
+    (email: string) => signInWithOAuth('sso', email.trim().toLowerCase()),
     [signInWithOAuth]
   );
 

@@ -1,3 +1,4 @@
+import type { AppDisplay, AppReleaseConfigInput } from '@kortix/shared/app-config';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -250,8 +251,6 @@ export interface AppResourcesV2 {
 
 /** Local deployment defaults. The server remains the App control plane. */
 export interface AppBlockV2 {
-  /** Fixed at create. `web` (default): built from `path`. `convex`: `path` deploys with the Convex CLI. */
-  kind?: 'web' | 'convex';
   /** The Apps, by slug, this App uses: it may bind to them and mint their sign-in tokens. */
   uses?: string[];
   path?: string;
@@ -269,10 +268,25 @@ export interface AppBlockV2 {
   idle_timeout_seconds?: number;
   /** Run 24/7 (cron jobs, workers, websockets) instead of stopping when idle. */
   always_on?: boolean;
-  monthly_budget_usd?: number;
   resources?: AppResourcesV2;
   env?: Record<string, string>;
   secrets?: Record<string, string>;
+  /** Process groups, group → shell command (`""` = the image's command). */
+  processes?: Record<string, string>;
+  /** The primary service, on the App's own host. */
+  http_service?: AppReleaseConfigInput['http_service'];
+  /** More named services, each on `<host>--<name>`. */
+  services?: AppReleaseConfigInput['services'];
+  /** Persistent volumes: `{ source, destination, initial_size_gb, snapshot_retention_days, processes }`. */
+  mounts?: AppReleaseConfigInput['mounts'];
+  /** Machine size per process group (`[[vm]]`). */
+  vm?: AppReleaseConfigInput['vm'];
+  /** `{ strategy: rolling | immediate | bluegreen | canary, release_command }`. */
+  deploy?: AppReleaseConfigInput['deploy'];
+  /** Free-form labels (e.g. `backend`). */
+  labels?: string[];
+  /** Where Kortix shows the App: `{ listed, preview: live | none, parent }`. */
+  display?: AppDisplay;
 }
 
 /**

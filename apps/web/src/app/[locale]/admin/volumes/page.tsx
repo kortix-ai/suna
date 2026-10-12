@@ -85,10 +85,13 @@ function ModeSelect({
   value,
   onChange,
   className,
+  allowVolume = true,
 }: {
   value: AdminBootMode;
   onChange: (mode: AdminBootMode) => void;
   className?: string;
+  /** False for the default: volume boot is only ever an organization's own rule. */
+  allowVolume?: boolean;
 }) {
   const tI18nHardcoded = useI18nTranslations('hardcodedUi');
   return (
@@ -97,7 +100,7 @@ function ModeSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {modes(tI18nHardcoded).map((m) => (
+        {modes(tI18nHardcoded).filter((m) => allowVolume || m.value !== 'volume').map((m) => (
           <SelectItem key={m.value} value={m.value}>
             {m.label}
           </SelectItem>
@@ -434,7 +437,11 @@ export default function AdminVolumesPage() {
           >
             <AdminPanel className="space-y-5">
               <Row title={tI18nHardcoded('appAdminVolumesPage.defaultModeTitle')} detail={MODES.find((m) => m.value === draft.default.mode)?.detail}>
-                <ModeSelect value={draft.default.mode} onChange={(mode) => set({ default: { ...draft.default, mode } })} />
+                <ModeSelect
+                  allowVolume={false}
+                  value={draft.default.mode}
+                  onChange={(mode) => set({ default: { ...draft.default, mode } })}
+                />
                 <FallbackSwitch
                   rule={draft.default}
                   onChange={(on) => set({ default: { ...draft.default, standardFallback: on } })}

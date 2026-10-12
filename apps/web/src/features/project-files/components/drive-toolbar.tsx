@@ -432,9 +432,10 @@ export function DriveViewMenu({
 
 interface DriveNewMenuProps {
   /**
-   * Write affordances, rendered together. Read-only sources
-   * (`capabilities.write === false`) pass none of them and the menu is absent —
-   * a viewer must never see an action they cannot perform.
+   * Write affordances. Each renders only when passed; read-only sources
+   * (`capabilities.write === false`) pass none and the menu is absent — a
+   * viewer must never see an action they cannot perform. Files leaves out
+   * "New file", and offers only "New folder" where files cannot go.
    */
   onUpload?: () => void;
   onNewFile?: () => void;
@@ -443,14 +444,11 @@ interface DriveNewMenuProps {
   compact?: boolean;
 }
 
-/**
- * The "New" menu renders only when the explorer supplied all three write
- * handlers. Partial wiring is a bug, not a half-menu.
- */
+/** The "New" menu renders when the explorer supplied any write handler. */
 export function hasWriteActions(
   props: Pick<DriveNewMenuProps, 'onUpload' | 'onNewFile' | 'onNewFolder'>,
 ): boolean {
-  return Boolean(props.onUpload && props.onNewFile && props.onNewFolder);
+  return Boolean(props.onUpload || props.onNewFile || props.onNewFolder);
 }
 
 type DriveMenuItemComponent = ComponentType<{
@@ -479,19 +477,25 @@ export function DriveNewMenuItems({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
-      <Item onClick={onUpload}>
-        <UploadSimpleIcon className="size-3.5 shrink-0" />
-        {tI18nComplete.raw('text4118deee6e13')}
-      </Item>
-      <MenuSeparator />
-      <Item onClick={onNewFile}>
-        <FilePlusIcon className="size-3.5 shrink-0" />
-        {tI18nComplete.raw('text44dedd0f97fe')}
-      </Item>
-      <Item onClick={onNewFolder}>
-        <FolderPlusIcon className="size-3.5 shrink-0" />
-        {tI18nComplete.raw('textcf28f49ec597')}
-      </Item>
+      {onUpload ? (
+        <Item onClick={onUpload}>
+          <UploadSimpleIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('text4118deee6e13')}
+        </Item>
+      ) : null}
+      {onUpload && (onNewFile || onNewFolder) ? <MenuSeparator /> : null}
+      {onNewFile ? (
+        <Item onClick={onNewFile}>
+          <FilePlusIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('text44dedd0f97fe')}
+        </Item>
+      ) : null}
+      {onNewFolder ? (
+        <Item onClick={onNewFolder}>
+          <FolderPlusIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('textcf28f49ec597')}
+        </Item>
+      ) : null}
     </>
   );
 }

@@ -159,10 +159,11 @@ export function channelsHref(projectId: string): string {
 
 /**
  * The tab a pathname is on, matched against the shape `capabilityTabHref`
- * builds — `/projects/<id>/customize/<segment>` exactly — plus the ONE deeper
- * shape this group owns, `agentHref`'s `/projects/<id>/customize/agents/<name>`,
- * which lights the Agents tab: an agent's page is the Agents tab, opened on
- * one agent.
+ * builds — `/projects/<id>/customize/<segment>` exactly — plus the deeper
+ * shapes this group owns: `agentHref`'s `/projects/<id>/customize/agents/<name>`,
+ * which lights the Agents tab (an agent's page is the Agents tab, opened on
+ * one agent), and the app and connector pages under
+ * `/projects/<id>/customize/connectors`, which light Connectors.
  *
  * The shape check is load-bearing, not defensive tidying. This used to match on
  * the LAST segment alone, which was harmless while every key was unique to this
@@ -177,6 +178,14 @@ export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | nu
   const segments = pathname.split('/').filter(Boolean);
   if (segments[0] !== 'projects' || segments[2] !== 'customize') return null;
   if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.agent) return 'agent';
+  // An app's page (`/connectors/<app>`) and a connector's page
+  // (`/connectors/<app>/<connector>`) are the Connectors tab, opened on one.
+  if (
+    (segments.length === 5 || segments.length === 6) &&
+    segments[3] === CAPABILITY_SEGMENT.connectors
+  ) {
+    return 'connectors';
+  }
   if (segments.length !== 4) return null;
   const hit = CAPABILITY_TABS.find((t) => CAPABILITY_SEGMENT[t.key] === segments[3]);
   return hit ? hit.key : null;

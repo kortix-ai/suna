@@ -75,6 +75,8 @@ export async function seedSessionTranscript(
     },
   ];
   const db = new Client({ connectionString: env.databaseUrl });
+  // A dropped connection must fail the next query, not crash the runner.
+  db.on('error', () => {});
   await db.connect();
   try {
     await db.query(

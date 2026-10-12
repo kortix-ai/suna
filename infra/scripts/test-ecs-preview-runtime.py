@@ -178,12 +178,12 @@ class PreviewBuildIsolation(unittest.TestCase):
     def test_build_jobs_have_no_secret_no_registry_and_no_push(self):
         self.assertEqual(WORKFLOW.count("push: false"), 3)
         self.assertEqual(WORKFLOW.count("type=docker,dest=/tmp/preview-"), 3)
-        self.assertEqual(WORKFLOW.count("actions/download-artifact@v8"), 3)
+        self.assertEqual(WORKFLOW.count("actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"), 3)
         for name in BUILD_JOBS:
             section = job(name)
             self.assertIn("permissions:\n      contents: read", section)
             self.assertIn("submodules: false", section)
-            self.assertEqual(section.count("actions/upload-artifact@v7"), 1)
+            self.assertEqual(section.count("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"), 1)
             self.assertIn("if-no-files-found: error", section)
             self.assertNotIn("${{ secrets.", section)
             self.assertNotIn("DOCKERHUB_", section)
@@ -196,7 +196,7 @@ class PreviewBuildIsolation(unittest.TestCase):
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", deploy)
         # The privileged runner must not check out pull request code at all.
         self.assertNotIn("ref: ${{ needs.authorize.outputs.sha }}", deploy)
-        self.assertIn("docker/login-action@v3", deploy)
+        self.assertIn("docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3", deploy)
         self.assertIn("docker load --input", deploy)
         self.assertIn("docker push", deploy)
         self.assertIn(

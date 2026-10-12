@@ -8,6 +8,7 @@ import { AppState } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 
 import { waitForForegroundReturn } from './browser-return';
+import { IN_APP_BROWSER_OPTIONS } from './link-target';
 
 export async function openBrowserUntilClosed(url: string): Promise<void> {
   // Subscribe before launching: the Custom Tab backgrounds the app right away.
@@ -16,7 +17,7 @@ export async function openBrowserUntilClosed(url: string): Promise<void> {
   );
   let result: WebBrowser.WebBrowserResult;
   try {
-    result = await WebBrowser.openBrowserAsync(url);
+    result = await WebBrowser.openBrowserAsync(url, IN_APP_BROWSER_OPTIONS);
   } catch (error) {
     cancel();
     throw error;

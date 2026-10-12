@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -50,7 +51,7 @@ describe('WriteTool trigger carries the filename and the size', () => {
   test('a settled write shows both, without being expanded', () => {
     const html = renderToStaticMarkup(
       withProviders(
-        <WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a\nb\nc' })} />,
+        <WriteTool call={toolCallBlock(makePart({ filePath: '/workspace/app.py', content: 'a\nb\nc' }))} />,
       ),
     );
 
@@ -65,7 +66,7 @@ describe('WriteTool trigger carries the filename and the size', () => {
       withProviders(
         <ToolRunningContext.Provider value>
           <WriteTool
-            part={makePart({ filePath: '/workspace/app.py', content: 'a\nb' }, 'running')}
+            call={toolCallBlock(makePart({ filePath: '/workspace/app.py', content: 'a\nb' }, 'running'))}
           />
         </ToolRunningContext.Provider>,
       ),
@@ -78,7 +79,7 @@ describe('WriteTool trigger carries the filename and the size', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <WriteTool
-          part={makePart({ filePath: '/workspace/note.txt', content: 'hello world' })}
+          call={toolCallBlock(makePart({ filePath: '/workspace/note.txt', content: 'hello world' }))}
           defaultOpen
         />,
       ),
@@ -98,7 +99,7 @@ describe('WriteTool speaks the tense the row is actually in', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolRunningContext.Provider value>
-          <WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a' }, 'running')} />
+          <WriteTool call={toolCallBlock(makePart({ filePath: '/workspace/app.py', content: 'a' }, 'running'))} />
         </ToolRunningContext.Provider>,
       ),
     );
@@ -110,7 +111,7 @@ describe('WriteTool speaks the tense the row is actually in', () => {
 
   test('a settled call is past tense — a finished transcript is all of these', () => {
     const html = renderToStaticMarkup(
-      withProviders(<WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a' })} />),
+      withProviders(<WriteTool call={toolCallBlock(makePart({ filePath: '/workspace/app.py', content: 'a' }))} />),
     );
 
     expect(html).toContain('Wrote');
@@ -124,11 +125,11 @@ describe('WriteTool speaks the tense the row is actually in', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <WriteTool
-          part={makePart(
+          call={toolCallBlock(makePart(
             { filePath: '/workspace/app.py', content: 'a' },
             'completed',
             'Error: EACCES permission denied',
-          )}
+          ))}
         />,
       ),
     );
@@ -146,14 +147,14 @@ describe('WriteTool, for the part that never got its content', () => {
   const stale = makePart({}, 'running');
 
   test('a stale pending part states the fact instead of shimmering forever', () => {
-    const html = renderToStaticMarkup(withProviders(<WriteTool part={stale} defaultOpen />));
+    const html = renderToStaticMarkup(withProviders(<WriteTool call={toolCallBlock(stale)} defaultOpen />));
 
     expect(html).toContain('No content received');
     expect(html).not.toContain('Waiting for file content');
   });
 
   test('and it carries no stat — there is nothing to count', () => {
-    const html = renderToStaticMarkup(withProviders(<WriteTool part={stale} />));
+    const html = renderToStaticMarkup(withProviders(<WriteTool call={toolCallBlock(stale)} />));
 
     expect(html).not.toContain('diff-stat');
   });

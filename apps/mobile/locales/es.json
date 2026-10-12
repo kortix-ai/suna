@@ -1197,5 +1197,11 @@
     "showMoreSubsessions_other": "Mostrar {{count}} más",
     "showMoreSubsessionsLabel_one": "Mostrar {{count}} subsesión más de {{title}}",
     "showMoreSubsessionsLabel_other": "Mostrar {{count}} subsesiones más de {{title}}"
+  },
+  "updateRequired": {
+    "title": "Actualización necesaria",
+    "body": "Esta versión de Kortix ya no es compatible. Actualiza la app para continuar.",
+    "bodyNoStore": "Esta versión de Kortix ya no es compatible. Actualiza la app desde App Store o Google Play para continuar.",
+    "button": "Actualizar"
   }
 }

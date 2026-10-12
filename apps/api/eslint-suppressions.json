@@ -723,6 +723,11 @@
       "count": 3
     }
   },
+  "src/channels/teams/installs.ts": {
+    "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
   "src/channels/teams/interactivity.ts": {
     "kortix-api/projects-surface": {
       "count": 2
@@ -1589,11 +1594,6 @@
     }
   },
   "src/platform/services/provider-events.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/platform/services/provision-timeline.ts": {
     "no-console": {
       "count": 1
     }

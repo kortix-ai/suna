@@ -26,6 +26,7 @@ import {
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
 import {
+  carrySessionStateAcrossReset,
   EPHEMERAL_RETIRED_KEY,
   EphemeralRetireError,
   retireEphemeralBox,
@@ -232,22 +233,91 @@ export async function retireEphemeralOnStop(input: {
 }
 
 /**
- * Reset a persistent machine: delete its box (Platinum deletes the root volume
- * with it) and leave the row stopped with no external id, marked retired, so
- * the caller claims it and provisions a fresh box from the current image.
- * Throws when the delete fails; the row is then untouched.
+ * The chat could not be carried onto the session volume, so the reset stopped
+ * before deleting anything: the box and its root disk are untouched.
+ */
+export class ResetStateNotPreservedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResetStateNotPreservedError';
+  }
+}
+
+/** Waits between carry attempts: a box mid-start or a volume still releasing settles within these. */
+const RESET_CARRY_RETRY_DELAYS_MS = [2_000, 5_000];
+
+/**
+ * Reset a persistent machine: carry the session's chat onto its session volume
+ * (carrySessionStateAcrossReset), delete its box (Platinum deletes the root
+ * volume with it) and leave the row stopped with no external id, marked
+ * retired, so the caller claims it and provisions a fresh box from the current
+ * image. Throws when the delete fails; the row is then untouched.
+ *
+ * A carry that still fails after its retries stops the reset with
+ * ResetStateNotPreservedError and nothing deleted, unless the caller passed
+ * `discardState`: the explicit recovery for a machine past copying from, which
+ * resets anyway and reports `stateCarried: false`.
  */
 export async function retirePersistentMachineBox(input: {
   sandboxId: string;
   sessionId: string;
   externalId: string;
   provider: string;
+  metadata?: unknown;
+  discardState?: boolean;
   now: Date;
-}): Promise<{ deleteMs: number }> {
+  /** Tests only. */
+  carryRetryDelaysMs?: readonly number[];
+}): Promise<{ deleteMs: number; stateCarried: boolean }> {
   await abortLiveTurnBeforeStop({ sandboxId: input.sandboxId, externalId: input.externalId });
+  const provider = getProvider(input.provider as SandboxProviderName);
+  const delays = input.carryRetryDelaysMs ?? RESET_CARRY_RETRY_DELAYS_MS;
+  let stateCarried = false;
+  let startedForCarry = false;
+  let lastError = '';
+  for (let attempt = 0; attempt <= delays.length && !stateCarried; attempt++) {
+    if (attempt > 0) await Bun.sleep(delays[attempt - 1]!);
+    try {
+      const carried = await carrySessionStateAcrossReset({
+        externalId: input.externalId,
+        sessionId: input.sessionId,
+        boxMetadata: input.metadata,
+        startBox: async () => {
+          await provider.start(input.externalId);
+          startedForCarry = true;
+        },
+      });
+      stateCarried = true;
+      logger.info(
+        `[persistent-machine] reset: carried session ${input.sessionId} chat onto its volume (${carried.bytes} bytes, ${carried.ms}ms, attempt ${attempt + 1}${carried.started ? ', started the box first' : ''})`,
+      );
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      logger.warn(`[persistent-machine] reset: carrying session ${input.sessionId} chat failed (attempt ${attempt + 1})`, {
+        external_id: input.externalId,
+        error: lastError,
+      });
+    }
+  }
+  if (!stateCarried && !input.discardState) {
+    // Leave the machine as the reset found it: a box started only to copy from goes back to stopped.
+    if (startedForCarry) {
+      await provider.stop(input.externalId).catch((err: unknown) =>
+        logger.warn(`[persistent-machine] reset: re-stopping ${input.externalId} after a failed carry failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+    throw new ResetStateNotPreservedError(lastError);
+  }
+  if (!stateCarried) {
+    logger.warn(`[persistent-machine] reset: discarding session ${input.sessionId} chat as requested`, {
+      external_id: input.externalId,
+    });
+  }
   const t0 = Date.now();
   try {
-    await getProvider(input.provider as SandboxProviderName).remove(input.externalId);
+    await provider.remove(input.externalId);
   } catch (err) {
     // Already gone counts as deleted.
     if (!isProviderNotFound(err)) throw err;
@@ -263,11 +333,12 @@ export async function retirePersistentMachineBox(input: {
       [EPHEMERAL_RETIRED_KEY]: input.externalId,
       machineResetAt: new Date().toISOString(),
       machineResetDeleteMs: deleteMs,
+      machineResetStateCarried: stateCarried,
     },
     now: input.now,
   });
   logger.info(`[persistent-machine] reset: deleted ${input.externalId} for session ${input.sessionId} (${deleteMs}ms)`);
-  return { deleteMs };
+  return { deleteMs, stateCarried };
 }
 
 /** The only fields an idle stop needs. */

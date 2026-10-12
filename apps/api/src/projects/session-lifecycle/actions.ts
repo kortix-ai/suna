@@ -15,7 +15,7 @@ import {
 } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
-import { refreshSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
+import { refreshResumedSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   claimRetiredEphemeralRow,
@@ -23,7 +23,7 @@ import {
   recordedSessionStateVolume,
   scheduleSessionStateVolumeDelete,
 } from '../../platform/services/ephemeral-sandbox';
-import { persistentMachineFromSessionMetadata } from '../../platform/services/persistent-machine';
+import { isRootVolumeBox, persistentMachineFromSessionMetadata } from '../../platform/services/persistent-machine';
 import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
@@ -228,6 +228,8 @@ type RestartSessionInput = {
   sessionId: string;
   /** Persistent machines: discard the disk and boot a fresh box from the current image. */
   resetMachine?: boolean;
+  /** With resetMachine: reset even when the chat cannot be carried across (it is then lost). */
+  discardState?: boolean;
 };
 
 export async function restartSession(
@@ -279,17 +281,37 @@ export async function restartSession(
         body: { error: 'The machine is starting; reset it once it is up', code: 'LIFECYCLE_TRANSITION_IN_PROGRESS' },
       };
     }
+    // null: there was no box left to carry from (an earlier reset already retired it).
+    let stateCarried: boolean | null = null;
     if (existingSandbox?.externalId) {
-      const { retirePersistentMachineBox } = await import('../reaping/stop-box');
+      const { retirePersistentMachineBox, ResetStateNotPreservedError } = await import('../reaping/stop-box');
       try {
-        await retirePersistentMachineBox({
+        ({ stateCarried } = await retirePersistentMachineBox({
           sandboxId: existingSandbox.sandboxId,
           sessionId,
           externalId: existingSandbox.externalId,
           provider: existingSandbox.provider,
+          metadata: existingSandbox.metadata,
+          discardState: input.discardState === true,
           now: new Date(),
-        });
+        }));
       } catch (err) {
+        if (err instanceof ResetStateNotPreservedError) {
+          logger.warn('[projects] persistent machine reset: chat not preserved, nothing deleted', {
+            session_id: sessionId,
+            external_id: existingSandbox.externalId,
+            error: err.message,
+          });
+          return {
+            status: 409,
+            body: {
+              error:
+                'The chat could not be saved, so the machine was not reset and nothing was deleted. Try again, or reset with discard_state: true to reset anyway and lose the chat history.',
+              code: 'reset_state_not_preserved',
+              state_carried: false,
+            },
+          };
+        }
         logger.warn('[projects] persistent machine reset: delete failed', {
           session_id: sessionId,
           external_id: existingSandbox.externalId,
@@ -298,16 +320,26 @@ export async function restartSession(
         return { status: 502, body: { error: 'Failed to reset the machine; try again' } };
       }
     }
+    const resetReport = {
+      state_carried: stateCarried,
+      ...(stateCarried === false ? { warning: 'The chat could not be saved; this session\'s chat history was lost.' } : {}),
+    };
     if (!existingSandbox || (await claimRetiredEphemeralRow(existingSandbox.sandboxId))) {
       await provisionReplacementRuntime(input, providerName);
       return {
         status: 202,
-        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'machine_reset' },
+        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'machine_reset', ...resetReport },
       };
     }
     return {
       status: 202,
-      body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'lifecycle_transition_in_progress' },
+      body: {
+        ok: true,
+        session_id: sessionId,
+        status: 'provisioning',
+        reason: 'lifecycle_transition_in_progress',
+        ...resetReport,
+      },
     };
   }
 
@@ -315,7 +347,13 @@ export async function restartSession(
   // current one commits its session volume and is deleted; a box whose runtime
   // wedged (its own disk filled, a daemon stuck on a boot error) does not come
   // back with it, which an in-place restart of the same VM cannot promise.
-  if (existingSandbox?.externalId && recordedSessionStateVolume(existingSandbox.metadata)) {
+  // A persistent machine that mounts its session volume (after a reset) is
+  // still a persistent machine: its restart is the in-place one below.
+  if (
+    existingSandbox?.externalId &&
+    recordedSessionStateVolume(existingSandbox.metadata) &&
+    !isRootVolumeBox(existingSandbox.metadata)
+  ) {
     const { retireEphemeralOnStop } = await import('../reaping/stop-box');
     const retired = await retireEphemeralOnStop({
       sandboxId: existingSandbox.sandboxId,
@@ -782,7 +820,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   // instant, and the runtime-asset refresh's write had not landed yet.
   // Awaiting closes that race — the file is current before anything
   // that reads it from disk gets a chance to spawn.
-  await refreshSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
+  await refreshResumedSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
   scheduleSessionConfigConvergence(sessionId, 'restart');
 }
 

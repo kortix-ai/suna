@@ -1605,17 +1605,27 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
 /**
  * Restart a session's sandbox. `reset_machine` (persistent machines only)
  * discards the machine's disk and boots a fresh one from the current image;
- * the session's branch is restored, anything else on the old disk is gone.
+ * the session's branch and chat are restored, anything else on the old disk is
+ * gone. When the chat cannot be saved first the reset is refused (409
+ * `reset_state_not_preserved`) and nothing is deleted; `discard_state: true`
+ * resets anyway and loses the chat (`state_carried: false` in the response).
  */
 export async function restartProjectSession(
   projectId: string,
   sessionId: string,
-  opts: { reset_machine?: boolean } = {},
+  opts: { reset_machine?: boolean; discard_state?: boolean } = {},
 ) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
+    await backendApi.post<{
+      ok: boolean;
+      session_id: string;
+      status: string;
+      /** Reset only: whether the chat was carried onto the fresh machine (null: no machine to carry from). */
+      state_carried?: boolean | null;
+      warning?: string;
+    }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
-      opts.reset_machine ? { reset_machine: true } : {},
+      opts.reset_machine ? { reset_machine: true, ...(opts.discard_state ? { discard_state: true } : {}) } : {},
     ),
   );
 }

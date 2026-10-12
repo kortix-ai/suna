@@ -26,12 +26,12 @@ import { useCallback, useMemo } from 'react';
  */
 const CATCH_ALL_GLOBS = new Set(['*', '**', '*/*', '**/*', '**/**', '*.*']);
 
-export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function GlobTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const { enabled: navigationEnabled } = useToolNavigation();
   const { openFileWithList, toDisplayPath } = useOcFileOpen();
   // `input.path` IS the directory glob searches — not a file inside it. Running

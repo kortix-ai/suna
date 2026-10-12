@@ -66,6 +66,14 @@ function union(sources: string[]): RegExp | undefined {
 const QUARANTINE_TAG = '@quarantine';
 
 /**
+ * The tag a journey carries when it needs the local stack: it pushes into a
+ * local bare repository or writes rows straight into the database. A deployed
+ * lane (KE2E_TARGET set) leaves it out at collection, so the strict release
+ * lane sees it absent, not skipped. The local stack still runs it.
+ */
+const LOCAL_ONLY_TAG = '@local-only';
+
+/**
  * Tag and title filters for the browser lane, read from the environment.
  *
  * A journey that cannot be made deterministic against a deployed target is
@@ -109,6 +117,7 @@ export function resolveGrepFilters(env: NodeJS.ProcessEnv = process.env): GrepFi
   if (includes.length === 0 && !excludes.includes(QUARANTINE_TAG)) {
     excludes.unshift(QUARANTINE_TAG);
   }
+  if (env.KE2E_TARGET && !excludes.includes(LOCAL_ONLY_TAG)) excludes.push(LOCAL_ONLY_TAG);
   const filters: GrepFilters = {};
   const grep = union(includes);
   const grepInvert = union(excludes);

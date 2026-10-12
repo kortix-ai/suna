@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { memoryRelPath, parseMemoryView } from '@/features/session/tool/shared/memory-helpers';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
@@ -53,7 +54,7 @@ function memoryPart(input: Record<string, unknown>, output = ''): ToolPart {
 }
 
 const render = (part: ToolPart, open = false) =>
-  renderToStaticMarkup(withProviders(<MemoryTool part={part} defaultOpen={open} />));
+  renderToStaticMarkup(withProviders(<MemoryTool call={toolCallBlock(part)} defaultOpen={open} />));
 
 /** A `view`'s raw output, in the runtime's own "content of X with line
  *  numbers" shape — `parseMemoryView` strips the `N\t` prefix off each line. */

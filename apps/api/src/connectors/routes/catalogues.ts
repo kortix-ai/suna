@@ -1,4 +1,5 @@
 /** Catalogue browse routes: Discover (integrations.sh), easy-connect toolkits, Pipedream apps. */
+import { withDirectIds } from '../connect-direct-twins';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
@@ -137,6 +138,25 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
   );
 }
 
+/**
+ * Each managed app with `directId`: the same app's API/MCP catalogue id, so a
+ * card and the app page offer both ways to connect. Only for a project with
+ * the API/MCP catalogue on; a lookup failure leaves the listing as it was.
+ */
+async function withCatalogTwins(
+  deps: ConnectorRouterDeps,
+  projectId: string,
+  result: unknown,
+): Promise<unknown> {
+  if (!deps.catalogDirectIds) return result;
+  try {
+    if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return result;
+    return withDirectIds(result, await deps.catalogDirectIds());
+  } catch {
+    return result;
+  }
+}
+
 export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
   // ── Admin: browse the configured easy-connect toolkit catalogue ─────────
   app.openapi(
@@ -169,7 +189,9 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
         cursor: c.req.query('cursor') || undefined,
         ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
       });
-      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+      return result
+        ? c.json(await withCatalogTwins(deps, projectId, result))
+        : featureNotSupportedResponse(c, 'connect_toolkits');
     },
   );
 
@@ -207,7 +229,9 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
         ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
         ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
       });
-      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+      return result
+        ? c.json(await withCatalogTwins(deps, projectId, result))
+        : featureNotSupportedResponse(c, 'connect_toolkits');
     },
   );
 
@@ -303,7 +327,11 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
       ...auth,
       responses: {
         200: json(
-          z.object({ configured: z.boolean(), provider: z.string().nullable(), providers: z.array(z.string()).optional() }),
+          z.object({
+            configured: z.boolean(),
+            provider: z.string().nullable(),
+            providers: z.array(z.string()).optional(),
+          }),
           'Connect provider status',
         ),
         ...errors(401),
@@ -312,7 +340,10 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
     async (c: any) => {
       const result = deps.connectStatus
         ? await deps.connectStatus()
-        : { configured: !!deps.listPipedreamApps, provider: deps.listPipedreamApps ? 'pipedream' : null };
+        : {
+            configured: !!deps.listPipedreamApps,
+            provider: deps.listPipedreamApps ? 'pipedream' : null,
+          };
       return c.json(result);
     },
   );

@@ -292,6 +292,18 @@ describe('kortixBinding', () => {
     expect(asked).toBe('/_kortix/token?audience=db');
   });
 
+  test('trims trailing slashes off the origin in linear time (CodeQL js/polynomial-redos)', () => {
+    expect(kortixBinding('db', { origin: 'https://crm.apps.example.test///' }).url).toBe(
+      'https://crm.apps.example.test/_kortix/apps/db',
+    );
+    // `/\/+$/` backtracks quadratically on a slash run that does not end the
+    // string: ~3.5 s at 100k slashes under bun 1.3, well under 1 ms linear.
+    const origin = `https://crm.apps.example.test${'/'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(kortixBinding('db', { origin }).url).toBe(`${origin}/_kortix/apps/db`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   test('reads the origin from the page, and refuses without one', () => {
     const location = (globalThis as { location?: unknown }).location;
     try {

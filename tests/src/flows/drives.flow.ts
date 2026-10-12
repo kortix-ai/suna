@@ -9,7 +9,7 @@
  * lifecycle.
  */
 import { flow } from '../core/flow';
-import type { FlowContext } from '../core/types';
+import type { FlowContext, Principal } from '../core/types';
 import { asPlatformAdmin } from '../fixtures/enterprise-demo';
 
 type Policy = { volumes?: { enabled?: boolean; orgs?: Record<string, boolean> } } & Record<string, unknown>;
@@ -27,10 +27,34 @@ async function setOrgVolumes(ctx: FlowContext, accountId: string, enabled: boole
   if (enabled !== null && after !== enabled) throw new Error(`Volumes for ${accountId} reads back ${String(after)}`);
 }
 
+/**
+ * Each API process caches the Volumes switch for up to 30 s, and a PUT refreshes
+ * only the process that took it. Poll until 12 reads in a row agree, so every
+ * process behind the load balancer answers the new state.
+ */
+async function waitForFilesStatus(
+  ctx: FlowContext,
+  list: { query: { projectId: string } },
+  status: 200 | 403,
+  as: Principal = ctx.P.OWNER,
+): Promise<void> {
+  const deadline = Date.now() + 45_000;
+  let streak = 0;
+  let last = 0;
+  while (streak < 12) {
+    if (Date.now() > deadline) throw new Error(`Files did not answer ${status} 12 times in a row within 45 s (last ${last})`);
+    last = (await ctx.client.as(as).get('/v1/drives', list)).statusCode;
+    streak = last === status ? streak + 1 : 0;
+    if (streak < 12) await new Promise((resolve) => setTimeout(resolve, last === status ? 250 : 1_000));
+  }
+}
+
 flow(
   'DRIVE-1',
   {
     domain: 'drives',
+    // Two waits for every API process to see a Volumes change (≤45 s each).
+    timeoutMs: 300_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
       'GET /v1/admin/api/boot-modes',
@@ -92,6 +116,7 @@ flow(
       await ctx.step('a platform admin turns Volumes on for this organization only', async () => {
         await setOrgVolumes(ctx, team.id, true);
         volumesOn = true;
+        await waitForFilesStatus(ctx, listFiles, 200);
       });
 
       await ctx.step('OWNER opens Files → 200: one project drive they manage, and their own folder', async () => {
@@ -109,6 +134,9 @@ flow(
       });
 
       await ctx.step('the member opens the same Files with a folder of their own; they do not manage it', async () => {
+        // The member joined moments ago; each API process caches membership
+        // for up to 15 s, so wait until every process lets them in.
+        await waitForFilesStatus(ctx, listFiles, 200, member);
         const drive = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
         if (drive?.driveId !== driveId || drive.access === 'manage' || !drive.personalFolder || drive.personalFolder === ownerFolder) {
           throw new Error(`member saw ${JSON.stringify(drive)}`);
@@ -173,7 +201,8 @@ flow(
       });
 
       await ctx.step('a `..` path → 400; conflicts start empty; dismissing an unknown one → 404', async () => {
-        (await owner.get('/v1/drives/:driveId/files/content', files('/../etc/passwd'))).status(400);
+        // No `../`: an edge WAF answers that itself (403) before the API sees it.
+        (await owner.get('/v1/drives/:driveId/files/content', files('/Users/..'))).status(400);
         (await asMember.get('/v1/drives/:driveId/conflicts', { params: { driveId } })).status(200).body().has('$.conflicts', []);
         (await owner.post('/v1/drives/:driveId/conflicts/:conflictId/dismiss', {}, { params: { driveId, conflictId: crypto.randomUUID() } })).status(404);
       });
@@ -201,6 +230,7 @@ flow(
       await ctx.step('Volumes off again: Files → 403 feature_disabled', async () => {
         await setOrgVolumes(ctx, team.id, null);
         volumesOn = false;
+        await waitForFilesStatus(ctx, listFiles, 403);
         (await owner.get('/v1/drives', listFiles)).status(403).body().has('$.code', 'feature_disabled');
       });
     } finally {

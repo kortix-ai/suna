@@ -91,6 +91,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
+import { useSessionLogSync } from './use-session-log';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -1159,6 +1160,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const startEnabled = enabled && !!projectId && !!sessionId;
   // Read by `/start`'s refetch interval, which runs outside render.
   const streamConnectedRef = useRef(false);
+  // The session a Stop in THIS tab stopped. Until something else brings the
+  // box back (a restart, a new message), every `/start` this hook sends is a
+  // keep-alive poll: it reports the stop, it never undoes it. Without this, a
+  // session stopped before it was ever `ready` went on polling as an open, and
+  // the first poll after the stop woke it again.
+  const stoppedByUserRef = useRef<string | null>(null);
+  // When this tab opened the session (its first `/start`, or an explicit
+  // retry). Every open-mode poll carries its age, so a Stop made anywhere
+  // after the open wins over the polls, however late they reach the API.
+  const openedAtRef = useRef<{ sessionId: string; at: number } | null>(null);
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
@@ -1166,20 +1177,29 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       const previous = queryClient.getQueryData<SessionStartResult | null>(
         sessionStartKey(projectId, sessionId),
       );
-      const mode = liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      if (openedAtRef.current?.sessionId !== sessionId) openedAtRef.current = { sessionId, at: Date.now() };
+      const heldByStop = stoppedByUserRef.current === sessionId;
+      const mode = heldByStop
+        ? 'keep-stopped'
+        : liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
       // A background tab that shows the session ready does not poll: the poll
       // only keeps a box alive for nobody. The next visible fetch revalidates.
       if (mode === 'skip' && previous) return previous;
-      return holdLiveStart(
-        previous,
-        await startProjectSession(projectId, sessionId, {
-          waitMs,
-          repositoryMode,
-          // The keep-alive poll must report a user Stop or an idle park, never
-          // undo it. An open (no ready answer cached yet) wakes the box as before.
-          keepStopped: mode === 'keep-stopped',
-        }),
-      );
+      const next = await startProjectSession(projectId, sessionId, {
+        waitMs,
+        repositoryMode,
+        // The keep-alive poll must report a user Stop or an idle park, never
+        // undo it. An open (no ready answer cached yet) wakes the box as before.
+        keepStopped: mode === 'keep-stopped',
+        intentAgeMs: Date.now() - openedAtRef.current.at,
+      });
+      // Anything but `stopped` means the box is coming back by an explicit
+      // action elsewhere (a restart, a sent message): this tab follows it.
+      if (heldByStop && next && next.stage !== 'stopped' && stoppedByUserRef.current === sessionId) {
+        stoppedByUserRef.current = null;
+        openedAtRef.current = { sessionId, at: Date.now() };
+      }
+      return holdLiveStart(previous, next);
     },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
@@ -1202,6 +1222,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!startEnabled) return;
     return onSessionStopped((stoppedId) => {
       if (stoppedId !== sessionId) return;
+      stoppedByUserRef.current = sessionId;
       void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
     });
   }, [startEnabled, projectId, sessionId, queryClient]);
@@ -1395,6 +1416,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
+  // 5a. The session log (v2) when negotiated; until then a no-op and the
+  // transcript below stays the only source (`use-session-log.ts`).
+  useSessionLogSync(projectId, sessionId, { enabled: transcriptHistoryEnabled });
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
@@ -2025,6 +2049,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     removePermission,
     /** Force a re-poll of /start (e.g. a Retry button on the boot screen). */
     retry: () => {
+      // An explicit retry is an open, whatever this tab stopped before.
+      stoppedByUserRef.current = null;
+      openedAtRef.current = { sessionId, at: Date.now() };
       void start.refetch();
     },
   };

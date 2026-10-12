@@ -1,3 +1,4 @@
+import { authorizeServiceRequest } from './public-proxy-access';
 import { appRuntimes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { type SandboxProviderName } from '../config';
@@ -6,7 +7,6 @@ import { db } from '../shared/db';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { ingressTargetUrl } from '../platform/providers/ingress-url';
-import { AppBudgetExceededError } from './budget';
 import type { PreviewWsData } from '../sandbox-proxy/ws-proxy';
 import {
   appRuntimeNeedsWake,
@@ -38,13 +38,13 @@ interface ServerWs {
   close: (code?: number, reason?: string) => void;
 }
 
-function websocketUrl(httpUrl: string): string {
+export function websocketUrl(httpUrl: string): string {
   const url = new URL(httpUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
 
-async function stampActivity(runtimeId: string, idleTimeoutSeconds: number): Promise<void> {
+export async function stampActivity(runtimeId: string, idleTimeoutSeconds: number): Promise<void> {
   const now = new Date();
   await Promise.all([
     db.update(appRuntimes).set({
@@ -86,12 +86,16 @@ export async function prepareAppWsUpgrade(
     return { ok: false, status: 403, message: 'Invalid App edge signature' };
   }
   if (url.pathname.startsWith('/_kortix/apps/')) return prepareBindingWsUpgrade(request, url, matched);
-  const loaded = await dependencies.loadPublicApp(matched.routeKey);
+  const loaded = await dependencies.loadPublicApp(matched.routeKey, matched.service);
   if (!loaded) return { ok: false, status: 404, message: 'App not found' };
-  const accessResponse = await dependencies.authorizeAppRequest(request, url, {
-    ...loaded.app,
-    agentPrincipal: loaded.agentPrincipal ?? false,
-  });
+  if (matched.service !== 'http' && !loaded.service) return { ok: false, status: 404, message: 'Service not found' };
+  const gateApp = { ...loaded.app, agentPrincipal: loaded.agentPrincipal ?? false };
+  const access = loaded.service?.access ?? 'app';
+  const accessResponse = access === 'public'
+    ? null
+    : access === 'admins'
+      ? await authorizeServiceRequest(request, url, gateApp, 'admins')
+      : await dependencies.authorizeAppRequest(request, url, gateApp);
   if (accessResponse) {
     return { ok: false, status: accessResponse.status, message: 'App authentication required' };
   }
@@ -109,6 +113,7 @@ export async function prepareAppWsUpgrade(
       runtime.provider as SandboxProviderName,
       runtime.externalId,
       'websocket',
+      matched.service !== 'http' ? loaded.service?.internal_port : undefined,
     );
     const headers = appUpstreamHeaders(request, ingress.headers, matched.publicHost);
     const headerObject = Object.fromEntries(headers.entries());
@@ -122,10 +127,7 @@ export async function prepareAppWsUpgrade(
         idleTimeoutSeconds: loaded.app.idleTimeoutSeconds,
       },
     };
-  } catch (error) {
-    if (error instanceof AppBudgetExceededError) {
-      return { ok: false, status: 402, message: 'App compute budget exceeded' };
-    }
+  } catch {
     return { ok: false, status: 202, message: 'App is starting' };
   }
 }
@@ -138,7 +140,7 @@ async function prepareBindingWsUpgrade(
   request: Request,
   url: URL,
   matched: NonNullable<ReturnType<typeof resolveAppRequest>>,
-): Promise<{ ok: true; data: PreviewWsData } | { ok: false; status: number; message: string }> {
+): Promise<{ ok: true; data: AppWsData | PreviewWsData } | { ok: false; status: number; message: string }> {
   const { loadPublicAppState } = await import('./public-proxy-runtime');
   const state = await loadPublicAppState(matched.routeKey);
   if (!state) return { ok: false, status: 404, message: 'App not found' };

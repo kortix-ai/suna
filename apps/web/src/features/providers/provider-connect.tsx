@@ -94,6 +94,7 @@ import {
 } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import {
   envVarPlaceholder,
+  managedProviderHint,
   orderProviderRows,
   prettyFieldLabel,
   providerDisconnectPlan,
@@ -848,15 +849,13 @@ export function ProviderConnect({
   );
   const tAccess = useTranslations('modelAccess');
   const pickerCatalog = useProjectModelPickerCatalog(enabled ? projectId : null);
-  const managedProvider = useMemo<LlmProviderEntry>(() => ({
-    id: 'kortix',
-    label: 'Kortix',
-    envVars: [],
-    authRequirement: { methods: [] },
-    helpUrl: null,
-    apiHost: null,
-    hint: tAccess('managedDescription'),
-    models: Object.entries(pickerCatalog?.models ?? {})
+  const managedProvider = useMemo<LlmProviderEntry>(() => {
+    // The managed models the served catalog actually carries — the same truth
+    // the model picker renders. Zero (free plan with no servable platform
+    // default) is the state the picker answers with "No models available —
+    // Upgrade": the row's note then takes that upgrade story instead of the
+    // key-free billing copy, so both surfaces tell one story (KRTX-1482).
+    const managedModels = Object.entries(pickerCatalog?.models ?? {})
       .filter(([id]) => !id.includes('/'))
       .map(([id, model]) => ({
         id,
@@ -867,10 +866,23 @@ export function ProviderConnect({
         attachment: model.attachment,
         limit: model.limit,
         cost: model.cost,
-      })),
-    featured: true,
-    managed: true,
-  }), [pickerCatalog, tAccess]);
+      }));
+    return {
+      id: 'kortix',
+      label: 'Kortix',
+      envVars: [],
+      authRequirement: { methods: [] },
+      helpUrl: null,
+      apiHost: null,
+      hint: managedProviderHint(managedModels, {
+        managedDescription: tAccess('managedDescription'),
+        managedUpgradeHint: tAccess('managedUpgradeHint'),
+      }),
+      models: managedModels,
+      featured: true,
+      managed: true,
+    };
+  }, [pickerCatalog, tAccess]);
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tPooled = useTranslations('pooledSecrets');
   useLiveLlmProviderCatalog(projectId, enabled);

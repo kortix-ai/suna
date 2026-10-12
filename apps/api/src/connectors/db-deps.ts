@@ -60,6 +60,7 @@ import type { ConnectorRouterDeps } from './router-contract';
 import {
   connectorCatalogSections,
   getConnectorCatalogDetail,
+  connectorCatalogDirectIds,
   listConnectorCatalog,
 } from './connector-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
@@ -674,6 +675,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  catalogDirectIds: () => connectorCatalogDirectIds(),
   listDiscoverSections: (input) => connectorCatalogSections(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,

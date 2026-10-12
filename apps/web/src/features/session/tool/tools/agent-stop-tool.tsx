@@ -6,9 +6,9 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { StopCircleIcon as StopCircle } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function AgentStopTool({ part, forceOpen }: ToolProps) {
+export function AgentStopTool({ call, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
+  const input = partInput(call);
   const agentId = (input.agent_id as string) || '';
   return (
     <BasicTool
