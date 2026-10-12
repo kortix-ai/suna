@@ -7,16 +7,10 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
-import { ACTIVE_SESSION_STATUSES } from './session-status';
 import { isWarmProjectSession } from './warm-sessions';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
-
-/** `ACTIVE_SESSION_STATUSES.includes(row.status)` does not typecheck against
- *  the wider status union; the Set is the no-cast membership test the fold
- *  needs per row. */
-const ACTIVE_SESSION_STATUSES_SET: ReadonlySet<string> = new Set(ACTIVE_SESSION_STATUSES);
 
 export type ProjectSessionListScope = 'visible' | 'project';
 
@@ -173,29 +167,17 @@ export function selectSessionRowsForViewer(input: {
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
-      // A warm session the user never prompted holds no work of theirs, so
-      // while it is not actively coming up or running it stays hidden — a
-      // project visit must not litter the sidebar with rows the user never
-      // started. The marker is dropped by the first prompt, and from that
-      // moment the row lists like any other session. See lib/warm-sessions.ts.
-      //
-      // A warm row whose session is provisioning or running is different: its
-      // box bills compute from creation (sandbox-deadline-policy.ts
-      // warmPoolGrantMs) until the reaper or the user stops it. A billed
-      // session the list hides is money its owner cannot see, open or stop, so
-      // it lists in the `visible` scope like any other running session. The
-      // session row's own status is the predicate, not the sandbox row: sandbox
-      // provisioning is fire-and-forget (session-create.ts), so the sandbox row
-      // can lag seconds behind a session that is already up and billing.
-      //
-      // `visible` scope only. The `project` scope keeps accessible warm rows for
-      // lifecycle inspection, but it also applies the access filter above.
-      if (
-        isWarmProjectSession(item.row.metadata) &&
-        !ACTIVE_SESSION_STATUSES_SET.has(item.row.status)
-      ) {
-        return false;
-      }
+      // A warm session the user never prompted holds no work of theirs, so it
+      // never lists in the `visible` scope, whatever its status. Every project
+      // visit creates one (lib/warm-sessions.ts). Listing live warm rows
+      // (KRTX-1068) made each one spin in the sidebar until reaped, because the
+      // serializer reports a running warm row as `provisioning` (KRTX-1466).
+      // Opening it adopted it, and the client then warmed another, which listed
+      // again. The first prompt drops the marker, and from that moment the row
+      // lists like any other session. An unused box is bounded by
+      // warmPoolGrantMs (sandbox-deadline-policy.ts) and reaped. Managers still
+      // see live warm rows in the `project` scope (the Sessions page).
+      if (isWarmProjectSession(item.row.metadata)) return false;
       // A stopped session lists whatever its runtime row says: a terminal turn
       // error parks the session (`parkTurnError`) while its box is still up,
       // and a session stopped before its first box was created has no runtime

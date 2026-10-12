@@ -323,18 +323,21 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     ])).toEqual(['own']);
   });
 
-  // A warm box bills compute from creation (sandbox-deadline-policy.ts
-  // warmPoolGrantMs) until the reaper or the user stops it. A billed session
-  // the list hides is money its owner cannot see, open or stop, so a warm row
-  // that is still provisioning or running lists in the `visible` scope like
-  // any other session. The marker keeps hiding the row once nothing bills —
-  // stopped, failed, completed.
-  test('a warm session that is up and billing lists in the visible scope', () => {
-    expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual(['billed-warm']);
+  // Every project visit creates a warm session. The serializer reports a
+  // running warm row as `provisioning`, so a listed one spins in the sidebar
+  // until the reaper stops it, and opening it adopts it and warms another.
+  // An unused warm row is hidden in the `visible` scope whatever its status;
+  // its box is bounded by warmPoolGrantMs and managers see it in `project`.
+  test('a warm session that is up and billing stays hidden in the visible scope', () => {
+    expect(visible([row('billed-warm', { status: 'running', metadata: { warm: true } })])).toEqual([]);
   });
 
-  test('a warm session still provisioning lists too — its box is about to bill', () => {
-    expect(visible([row('warming-up', { status: 'provisioning', metadata: { warm: true } })])).toEqual(['warming-up']);
+  test('a warm session still provisioning stays hidden too', () => {
+    expect(visible([row('warming-up', { status: 'provisioning', metadata: { warm: true } })])).toEqual([]);
+  });
+
+  test('a queued warm session stays hidden too', () => {
+    expect(visible([row('queued-warm', { status: 'queued', metadata: { warm: true } })])).toEqual([]);
   });
 
   test('a warm session that failed before its box came up stays hidden', () => {
