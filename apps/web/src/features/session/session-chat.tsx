@@ -1380,6 +1380,10 @@ export function SessionChat({
     (id: string) => {
       // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
       // landed is still absorbed by the proxy instead of running twice.
+      // This is the ONE client path for the retry route's two labels (the
+      // route's own comment names them one primitive): a failed row's
+      // "Retry" (KRTX-1587 wires the queue list's queued rows here too as
+      // "Send now"), so its failure toast speaks of retrying either way.
       void promptInbox
         .retry(id)
         .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
