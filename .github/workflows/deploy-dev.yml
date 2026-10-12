@@ -76,6 +76,7 @@ jobs:
   detect-changes:
     name: Detect changes
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     outputs:
       api: ${{ steps.outputs.outputs.api }}
       gateway: ${{ steps.outputs.outputs.gateway }}
@@ -335,6 +336,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -483,6 +485,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 30
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -540,6 +543,7 @@ jobs:
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 35
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -681,6 +685,7 @@ jobs:
     needs: [detect-changes, deploy-api-ecs]
     if: ${{ always() && needs.detect-changes.outputs.apps_router == 'true' && (needs.deploy-api-ecs.result == 'success' || needs.deploy-api-ecs.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -742,6 +747,7 @@ jobs:
       && needs.build-api.result == 'success'
       && needs.deploy-api-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -783,6 +789,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -837,6 +844,7 @@ jobs:
     needs: [detect-changes, build-gateway]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       id-token: write
       contents: read
@@ -864,6 +872,7 @@ jobs:
     needs: [detect-changes, deploy-gateway-ecs]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
@@ -906,6 +915,7 @@ jobs:
       && needs.build-gateway.result == 'success'
       && needs.verify-gateway-dev-parity.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -948,6 +958,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1036,6 +1047,7 @@ jobs:
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     permissions:
       id-token: write
       contents: read
@@ -1091,6 +1103,7 @@ jobs:
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.deploy-web-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
@@ -1133,6 +1146,7 @@ jobs:
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.publish-web-ecs-dns.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1215,6 +1229,7 @@ jobs:
       && needs.build-frontend.result == 'success'
       && needs.verify-web-dev.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1266,6 +1281,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1359,6 +1375,7 @@ jobs:
     needs: [detect-changes, build-cli]
     if: needs.detect-changes.outputs.cli == 'true' && needs.build-cli.result == 'success'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:

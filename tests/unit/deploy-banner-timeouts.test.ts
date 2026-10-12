@@ -47,3 +47,23 @@ describe('deploy-prod rollout banner', () => {
     expect(all['maintenance-banner-off']).toMatch(/Lower rollout banner\n\s+if: [^\n]+\n\s+continue-on-error: true/);
   });
 });
+
+describe('deploy workflows bound every job', () => {
+  for (const name of [
+    'deploy-prod.yml',
+    'deploy-staging.yml',
+    'deploy-dev.yml',
+    'build-staging.yml',
+    'rollback-prod.yml',
+    'promote.yml',
+    'deploy-preview.yml',
+  ]) {
+    it(`${name}: every non-reusable job sets timeout-minutes`, () => {
+      const missing = Object.entries(jobs(read(name)))
+        .filter(([, text]) => !/^ {4}uses:/m.test(text))
+        .filter(([, text]) => !/^ {4}timeout-minutes: \d+$/m.test(text))
+        .map(([id]) => id);
+      expect(missing).toEqual([]);
+    });
+  }
+});

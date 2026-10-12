@@ -58,6 +58,7 @@ jobs:
   version:
     name: Resolve version
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     # Runs on every push to `prod` (i.e. a merged, reviewed release PR) and on
     # manual dispatch.
     outputs:
@@ -210,6 +211,7 @@ jobs:
         && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
         && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Best effort, like the banner itself: an unreadable token skips it.
@@ -249,6 +251,7 @@ jobs:
     name: Re-tag staged → v${{ needs.version.outputs.version }}
     needs: version
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -347,6 +350,7 @@ jobs:
     name: Verify deployed image CODE matches the release commit
     needs: [version, retag-images]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -395,6 +399,7 @@ jobs:
     name: Build prod CLI (all targets)
     needs: version
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -506,6 +511,7 @@ jobs:
     # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
     # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -542,6 +548,7 @@ jobs:
     # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
     # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -578,6 +585,7 @@ jobs:
     # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
     # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -612,6 +620,7 @@ jobs:
     name: Build prod desktop ${{ matrix.target_pretty }}
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
     env:
       DESKTOP_URL: https://kortix.com/projects
     strategy:
@@ -797,6 +806,7 @@ jobs:
     name: GitHub Release v${{ needs.version.outputs.version }}
     needs: [version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -912,6 +922,7 @@ jobs:
     needs: [version, github-release, build-desktop]
     if: always() && needs.github-release.result == 'success'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -953,6 +964,7 @@ jobs:
     # `prod` only.
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -1024,6 +1036,7 @@ jobs:
         && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 30
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -1134,6 +1147,7 @@ jobs:
     name: Deploy prod API router Worker
     needs: [deploy-ecs]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     continue-on-error: true
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
@@ -1218,6 +1232,7 @@ jobs:
     name: Verify live version == v${{ needs.version.outputs.version }}
     needs: [version, deploy-ecs]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     env:
       VERSION: ${{ needs.version.outputs.version }}
       SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
@@ -1333,6 +1348,7 @@ jobs:
     name: Announce release to Slack
     needs: [version, github-release, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Read live /v1/health (public router — the serving backend)
         id: health
@@ -1445,6 +1461,7 @@ jobs:
     needs: [version, retag-images, deploy-ecs]
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     permissions:
       id-token: write
       contents: read
@@ -1498,6 +1515,7 @@ jobs:
     needs: [deploy-web-ecs]
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
@@ -1537,6 +1555,7 @@ jobs:
     name: Verify prod FE-ECS
     needs: [version, publish-web-ecs-dns]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     env:
       EXPECTED_COMMIT: ${{ needs.version.outputs.source_sha }}
       EXPECTED_VERSION: ${{ needs.version.outputs.version }}
@@ -1578,6 +1597,7 @@ jobs:
     name: Deploy prod web to Vercel (after API is live)
     needs: [version, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
@@ -1622,6 +1642,7 @@ jobs:
     name: Prod frontend paths active
     needs: [version, publish-web-ecs-dns]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Note
         run: |
@@ -1656,6 +1677,7 @@ jobs:
     name: Sync dev VERSION → next dev target
     needs: [version, github-release]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -1713,6 +1735,7 @@ jobs:
     name: Sync staging VERSION → next dev target
     needs: [version, github-release]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -1761,6 +1784,7 @@ jobs:
     needs: [maintenance-banner-on, deploy-ecs, verify-live-version, frontend-auth-proof]
     if: ${{ always() }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Best effort, like the banner itself: an unreadable token skips it.
@@ -1816,6 +1840,7 @@ jobs:
     name: Move :prod → v${{ needs.version.outputs.version }}
     needs: [version, retag-images, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
