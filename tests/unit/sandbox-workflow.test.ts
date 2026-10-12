@@ -48,7 +48,7 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
     expect(testWorkflow).not.toContain('TEST_MODE');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
-    expect(testWorkflow).toContain('bun-version: 1.3.14');
+    expect(testWorkflow).toContain('bun-version: 1.4.3');
     // A hang detector, ~2x the slowest lane measured on a free runner. A hung
     // lane used to burn 60 min before the trunk verdict could fire.
     expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 40$/m);

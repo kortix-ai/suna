@@ -230,19 +230,18 @@ describe('the response leg streams', () => {
     expect(upstream.rawHeaders).toContainEqual(['content-type', 'application/json']);
   });
 
-  test('MEASURED: bun does NOT preserve duplicate non-known RESPONSE headers', async () => {
+  test('MEASURED: bun keeps duplicate non-known RESPONSE headers in res.rawHeaders', async () => {
     // Pinning what is TRUE rather than what would be nice. Measured on bun
-    // 1.3.14 against a raw-socket upstream emitting two literal `X-Dup:` lines:
-    // `res.rawHeaders` came back holding only the LAST value, while `set-cookie`
-    // (a known header) kept both. So `res.rawHeaders` does NOT give the full
-    // duplicate fidelity node does — the same collapse the REQUEST leg already
-    // suffers, now measured on the response leg too.
+    // 1.4.3 against a raw-socket upstream emitting two literal `X-Dup:` lines:
+    // `res.rawHeaders` holds BOTH values, in order. On bun 1.3.14 it held only
+    // the LAST one (1.4.0 changed it), so the response leg now has the same
+    // duplicate fidelity as node.
     //
-    // It costs the relay nothing today: every name in SAFE_RESPONSE_HEADERS is
-    // single-valued, and `set-cookie` is deliberately excluded from that list,
-    // so no header that can legitimately repeat ever travels back. This test
-    // exists so the day that whitelist grows a repeatable header, it fails here
-    // instead of silently dropping a value in production.
+    // It costs the relay nothing either way: every name in SAFE_RESPONSE_HEADERS
+    // is single-valued, and `set-cookie` is deliberately excluded from that
+    // list, so no header that can legitimately repeat ever travels back. This
+    // test exists so a bun change in either direction fails here instead of
+    // silently changing what a repeatable header would do in production.
     handler = (_req, res) => {
       res.writeHead(200, ['x-dup', 'one', 'x-dup', 'two']);
       res.end('{}');
@@ -250,8 +249,7 @@ describe('the response leg streams', () => {
     const upstream = await openUpstream(head('/dup', 'GET'), null, { seam: seam() });
     await drain(upstream.body);
     const dups = upstream.rawHeaders.filter(([name]) => name === 'x-dup').map(([, v]) => v);
-    expect(dups).toHaveLength(1);
-    expect(dups[0]).toContain('two');
+    expect(dups).toEqual(['one', 'two']);
   });
 });
 

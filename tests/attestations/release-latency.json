@@ -1,23 +1,15 @@
 {
-  "source_hash": "07bf69c984f2915d03086fc076dad587f2fbd6ed02015ff2f273942f0c88981a",
+  "source_hash": "e021f3b663dcda4401f6b46b417df40d6dbacea6d41d2d7d5784fb3a930ea458",
   "diff_files": [
-    ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-10-11T203239Z-a-pr-into-dev-that-renames-a-visible-label-or-accessible-nam.md",
-    ".github/workflows/tests.yml",
-    ".gitleaks.toml",
-    "tests/e2e/specs/27-desktop-parity.spec.ts",
-    "tests/e2e/specs/34-instant-session-loads.spec.ts",
-    "tests/src/core/local-runner.ts",
-    "tests/unit/local-runner.test.ts",
-    "tests/unit/sandbox-workflow.test.ts"
+    "apps/web/src/lib/navigation/nav-contract.test.ts"
   ],
-  "diff_hash": "408b30feded087404acfb2d6d912821efd1242ba3447dfe3a17045a28471608d",
-  "head": "f8db1c81fe3fc0f581b382004371320bdea541b8",
+  "diff_hash": "0ee5dd3a6fe457cc17d9b35b672822f89be6035928fdd239ed9c205f5d1fd2f9",
+  "head": "ba79523eb289eba02a71fc10e5bc6bc4274e41f4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T21:18:28.063Z"
+  "at": "2026-10-12T01:21:02.189Z"
 }
