@@ -36,6 +36,11 @@ export interface ExplorerCapabilities {
   hiddenToggle: boolean;
   /** Per-file git-status chip in the preview modal header. */
   gitStatusChip: boolean;
+  /** "New file" in the New menu (an empty file). Off where people only upload. */
+  newFile?: boolean;
+  /** False for a folder that holds folders only (Files' top level and `/Users`):
+   *  the New menu offers just "New folder" there. Absent means every folder. */
+  filesAllowedAt?: (path: string) => boolean;
 }
 
 export interface ExplorerQueryResult<T> {

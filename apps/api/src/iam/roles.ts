@@ -18,12 +18,6 @@
 export type AccountRole = 'owner' | 'admin' | 'member';
 export type ProjectRole = 'manager' | 'member';
 
-/** Ordering for "the strongest role wins" folds. */
-export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  member: 1,
-  manager: 2,
-};
-
 /**
  * Coerce a STORED role value (a DB column, a legacy token claim, an old
  * invite's bootstrap grant) into a canonical ProjectRole. Every retired tier
@@ -66,13 +60,6 @@ export function parseAssignableProjectRole(raw: unknown): ProjectRole | null {
   const v = raw.trim().toLowerCase();
   if (v === 'viewer' || v === 'user') return 'member';
   return v === 'manager' || v === 'member' ? v : null;
-}
-
-/** The higher-ranked of two project roles. Used when a principal's effective
- *  role comes from several sources (direct membership + group grants) — they get
- *  the strongest of the bunch. */
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
-  return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
 }
 
 /** Owner and admin are the account-manager tier: implicit Manager on every

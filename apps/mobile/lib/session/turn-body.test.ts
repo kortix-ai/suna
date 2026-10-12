@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
+import { getTurnStatus, segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
 
 import {
   WORKSPACE_ROOTS,
   answeredQuestionParts,
+  busyStatusParts,
   commandPromptText,
   compactionTurnView,
   hasCompactionTurn,
@@ -19,11 +20,14 @@ import {
   suppressWorkingTurnBusy,
   toDisplayPath,
   transcriptBusyRowVisible,
+  turnBodyLayout,
   turnErrorIsAbort,
   turnErrorText,
-  turnHasReasoning,
   turnHasSteps,
   turnResponse,
+  turnWorkSplit,
+  workParts,
+  withoutReasoning,
   type TurnBodyTurn,
 } from './turn-body';
 
@@ -97,10 +101,42 @@ describe('turnHasSteps (web SessionTurnImpl hasSteps)', () => {
   });
 });
 
-describe('turnHasReasoning', () => {
-  test('only non-blank reasoning counts', () => {
-    expect(turnHasReasoning(wrap([reasoning('  ')]))).toBe(false);
-    expect(turnHasReasoning(wrap([reasoning('plan')]))).toBe(true);
+describe('withoutReasoning', () => {
+  test('drops every reasoning part and keeps the order of the rest', () => {
+    const parts = wrap([text('a'), reasoning('private'), tool('read'), reasoning('')]);
+    expect(withoutReasoning(parts)).toEqual([parts[0], parts[2]]);
+  });
+
+  test('a reasoning-only turn has no steps and no response', () => {
+    const parts = withoutReasoning(wrap([reasoning('only thinking')]));
+    expect(parts).toEqual([]);
+    expect(turnHasSteps(parts)).toBe(false);
+    expect(segmentTurn(segmentInputParts(parts, new Map(), false), {})).toEqual([]);
+  });
+
+  test('a thought between text and a tool leaves a text segment and a burst', () => {
+    const parts = withoutReasoning(wrap([text('a'), reasoning('b'), tool('read')]));
+    const kinds = segmentTurn(segmentInputParts(parts, new Map(), false), {}).map((s) => s.kind);
+    expect(kinds).toEqual(['text', 'burst']);
+  });
+});
+
+describe('busyStatusParts', () => {
+  test('a thought after a tool reads "Thinking...", not the tool phrase', () => {
+    const parts = wrap([tool('read'), reasoning('**Plan** secret')]);
+    expect(getTurnStatus(withoutReasoning(parts) as never)).toBe('Reading files...');
+    expect(getTurnStatus(busyStatusParts(parts) as never)).toBe('Thinking...');
+  });
+
+  test('a reasoning-only working turn reads "Thinking..." and leaks no text', () => {
+    const parts = wrap([reasoning('**Heading** private')]);
+    expect(getTurnStatus(withoutReasoning(parts) as never)).toContain('Figuring out');
+    expect(getTurnStatus(busyStatusParts(parts) as never)).toBe('Thinking...');
+    expect(JSON.stringify(busyStatusParts(parts))).not.toContain('private');
+  });
+
+  test('parts after the thought still win', () => {
+    expect(getTurnStatus(busyStatusParts(wrap([reasoning('x'), tool('read')])) as never)).toBe('Reading files...');
   });
 });
 
@@ -255,6 +291,52 @@ describe('lastTextPartId', () => {
       ] as never),
     ).toBe(b.id);
     expect(lastTextPartId([{ kind: 'burst', parts: [] }] as never)).toBeUndefined();
+  });
+});
+
+describe('turnWorkSplit (KRTX-2113, web TurnToolBlocks fold)', () => {
+  const shownFile = () => tool('show', { input: { path: '/workspace/report.pdf' } });
+
+  test('working: null, the stream renders as today', () => {
+    expect(turnWorkSplit(segmentTurn([tool('read'), text('Done.')]), true)).toBeNull();
+  });
+
+  test('settled: work folds, the deliverable is hoisted, the final text stays', () => {
+    const interim = text('Let me check.');
+    const read = tool('read');
+    const shown = shownFile();
+    const final = text('Here it is.');
+    const split = turnWorkSplit(segmentTurn([interim, read, shown, final]), false);
+    expect(split?.work.map((s) => s.kind)).toEqual(['text', 'burst']);
+    expect(split?.hoisted.map((s) => (s.kind === 'standalone' ? s.part.id : null))).toEqual([shown.id]);
+    expect(split?.final.map((s) => (s.kind === 'text' ? s.part.id : null))).toEqual([final.id]);
+  });
+
+  test('settled with no work (text, or deliverable + text): null', () => {
+    expect(turnWorkSplit(segmentTurn([text('Hi.')]), false)).toBeNull();
+    expect(turnWorkSplit(segmentTurn([shownFile(), text('Done.')]), false)).toBeNull();
+  });
+
+  test('work made only of interim text is no work: the sheet would open empty and hide that text', () => {
+    // Mobile drops text from the sheet (`workParts`), so text-only work renders as today.
+    expect(turnWorkSplit(segmentTurn([text('Checking.'), text('Done.')]), false)).toBeNull();
+    expect(turnWorkSplit(segmentTurn([text('Here it is.'), shownFile(), text('Done.')]), false)).toBeNull();
+  });
+
+  test('a burst that renders nothing is no work and does not block the final text', () => {
+    // A thought-only burst has no step: `burstView(...).hidden`, so ActivityBurst draws nothing.
+    const invisible = { kind: 'burst' as const, parts: [reasoning('hmm')] };
+    expect(turnWorkSplit([invisible, ...segmentTurn([text('Done.')])], false)).toBeNull();
+    const final = text('Done.');
+    const split = turnWorkSplit([...segmentTurn([tool('read'), final]), invisible], false);
+    expect(split?.work.map((s) => s.kind)).toEqual(['burst']);
+    expect(split?.final.map((s) => (s.kind === 'text' ? s.part.id : null))).toEqual([final.id]);
+  });
+
+  test('a turn that ends on a tool has no final text: everything is work', () => {
+    const split = turnWorkSplit(segmentTurn([text('Trying.'), tool('bash')]), false);
+    expect(split?.work).toHaveLength(2);
+    expect(split?.final).toEqual([]);
   });
 });
 
@@ -541,5 +623,63 @@ describe('transcriptBusyRowVisible (web "busy with no turn to attach it to")', (
   test('shown when busy and no turn draws the row', () => {
     expect(transcriptBusyRowVisible({ isBusy: true, workingTurnId: null, suppressWorkingTurnBusy: false })).toBe(true);
     expect(transcriptBusyRowVisible({ isBusy: true, workingTurnId: 'a', suppressWorkingTurnBusy: true })).toBe(true);
+  });
+});
+
+describe('turnBodyLayout (KRTX-1678: one render tree for the whole stream)', () => {
+  const base = { hasAssistantContent: true, showInlineContent: false, isCommand: false };
+
+  test('reply text stays in the segments list from first token to settled, so the first tool call does not remount it', () => {
+    // The stream's states, in order: text only → first tool call → settled.
+    const states = [
+      { ...base, working: true, hasSteps: false },
+      { ...base, working: true, hasSteps: true },
+      { ...base, working: false, hasSteps: true },
+    ];
+    for (const state of states) expect(turnBodyLayout(state)).toEqual({ segments: true, text: 'segments' });
+  });
+
+  test('a text-only turn keeps the same tree when it settles', () => {
+    expect(turnBodyLayout({ ...base, working: true, hasSteps: false })).toEqual(
+      turnBodyLayout({ ...base, working: false, hasSteps: false }),
+    );
+  });
+
+  test('inline content (text + answered questions) owns its text', () => {
+    expect(turnBodyLayout({ ...base, working: false, hasSteps: false, showInlineContent: true })).toEqual({
+      segments: false,
+      text: 'inline',
+    });
+  });
+
+  test('a slash-command reply streams in its card until the turn has steps', () => {
+    expect(turnBodyLayout({ ...base, isCommand: true, working: true, hasSteps: false })).toEqual({
+      segments: true,
+      text: 'response',
+    });
+    expect(turnBodyLayout({ ...base, isCommand: true, working: false, hasSteps: false })).toEqual({
+      segments: false,
+      text: 'response',
+    });
+    expect(turnBodyLayout({ ...base, isCommand: true, working: true, hasSteps: true }).text).toBe('segments');
+  });
+
+  test('no assistant message yet → no segments list', () => {
+    expect(turnBodyLayout({ ...base, hasAssistantContent: false, working: true, hasSteps: false }).segments).toBe(false);
+  });
+});
+
+describe('workParts (KRTX-2113: the "Worked for" row opens these in the activity sheet)', () => {
+  test('every burst and standalone call of the work, in order; interim text is dropped', () => {
+    const read = tool('read');
+    const task = tool('task');
+    const bash = tool('bash');
+    const work = [
+      { kind: 'burst', parts: [read] },
+      { kind: 'text', part: text('Checking the config') },
+      { kind: 'standalone', part: task },
+      { kind: 'burst', parts: [bash] },
+    ] as never;
+    expect(workParts(work).map((part) => part.id)).toEqual([read.id, task.id, bash.id]);
   });
 });

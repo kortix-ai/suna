@@ -290,18 +290,16 @@ async function forwardAuthorized(
         // race on a cold mirror (measured on dev 2026-08-27: a 200 KB delta's
         // first session fell back to a 6 s proxied fetch; the second, with the
         // cached hint, materialized in 1.7 s via the remote bundle).
-        if (config.KORTIX_FAST_GIT_BOOT_ENABLED) {
-          void resolveFastBootGitHintWithCache(
-            gitProject,
-            gitProject.defaultBranch,
-            auth.project.metadata,
-          ).catch((err) => {
-            console.warn(
-              `[git-proxy] fast-boot hint warm skipped for ${projectId}:`,
-              err instanceof Error ? err.message : err,
-            );
-          });
-        }
+        void resolveFastBootGitHintWithCache(
+          gitProject,
+          gitProject.defaultBranch,
+          auth.project.metadata,
+        ).catch((err) => {
+          console.warn(
+            `[git-proxy] fast-boot hint warm skipped for ${projectId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        });
         // MANIFEST TRIPWIRE. A project always has a manifest
         // (../projects/managed-repo-seed.ts). Provisioning now guarantees one
         // at birth and `kortix ship` refuses to push without one, but a plain

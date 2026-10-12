@@ -146,3 +146,25 @@ describe('openRuntimeEventStream — the caller abort outlives the connect (05#3
     expect(() => caller.abort()).not.toThrow();
   });
 });
+
+describe('openRuntimeEventStream — the session-log dialect (P4.4)', () => {
+  const sse = () => new Response(new ReadableStream<Uint8Array>(), { headers: { 'content-type': 'text/event-stream' } });
+
+  test('schema v2 is passed to the daemon with the cursor', async () => {
+    respond = sse;
+    const caller = new AbortController();
+    await openRuntimeEventStream({ externalId: 'ext-1' }, { since: 7, epoch: 'ep', schema: 'v2', signal: caller.signal });
+    caller.abort();
+    const url = new URL(requests[0]!.url);
+    expect(url.pathname).toBe('/kortix/runtime/events');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ since: '7', epoch: 'ep', schema: 'v2' });
+  });
+
+  test('without schema the daemon URL carries no schema parameter (the v1 stream)', async () => {
+    respond = sse;
+    const caller = new AbortController();
+    await openRuntimeEventStream({ externalId: 'ext-1' }, { since: 7, epoch: 'ep', signal: caller.signal });
+    caller.abort();
+    expect(new URL(requests[0]!.url).searchParams.has('schema')).toBe(false);
+  });
+});

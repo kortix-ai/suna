@@ -41,6 +41,9 @@ const InviteDescribeSchema = z
     inviter_email: z.string().nullable(),
     created_at: z.string().nullable(),
     expires_at: z.string().nullable(),
+    /** Projects the invite grants on accept, for the invited caller only;
+     *  empty for anyone else and for a plain workspace invite (KRTX-1731). */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
   })
   .openapi('InviteDescribe');
 const InviteAcceptSchema = z
@@ -132,6 +135,40 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
     role,
     expires_at: expiresAt,
   };
+}
+
+/**
+ * The projects each invite grants on accept, named. A grant counts only when
+ * its project still exists in the invite's own account: a deleted project
+ * drops out instead of showing a blank row.
+ */
+async function invitedProjects(
+  invites: ReadonlyArray<{ inviteId: string; accountId: string; bootstrapGrants: unknown[] | null }>,
+): Promise<Map<string, Array<{ project_id: string; name: string; role: string }>>> {
+  const grantsByInvite = new Map(
+    invites.map((invite) => [
+      invite.inviteId,
+      (invite.bootstrapGrants ?? []).map(validateBootstrapGrant).filter((g): g is ValidatedGrant => g !== null),
+    ]),
+  );
+  const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
+  const projectNames = new Map<string, string>();
+  if (projectIds.length > 0) {
+    const projectRows = await db
+      .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
+      .from(projects)
+      .where(inArray(projects.projectId, projectIds));
+    for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
+  }
+  return new Map(
+    invites.map((invite) => [
+      invite.inviteId,
+      (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
+        const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
+        return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
+      }),
+    ]),
+  );
 }
 
 // A `{ group_id }` bootstrap entry: a SCIM Group membership pushed for this user
@@ -262,23 +299,7 @@ accountInvitesRouter.openapi(
       )
       .orderBy(accountInvitations.createdAt);
 
-    const grantsByInvite = new Map(
-      rows.map(({ invite }) => [
-        invite.inviteId,
-        (invite.bootstrapGrants ?? [])
-          .map(validateBootstrapGrant)
-          .filter((g): g is ValidatedGrant => g !== null),
-      ]),
-    );
-    const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
-    const projectNames = new Map<string, string>();
-    if (projectIds.length > 0) {
-      const projectRows = await db
-        .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
-        .from(projects)
-        .where(inArray(projects.projectId, projectIds));
-      for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
-    }
+    const projectsByInvite = await invitedProjects(rows.map(({ invite }) => invite));
 
     const inviters = new Map<string, string | null>();
     for (const { invite } of rows) {
@@ -296,12 +317,7 @@ accountInvitesRouter.openapi(
         inviter_email: invite.invitedBy ? (inviters.get(invite.invitedBy) ?? null) : null,
         created_at: invite.createdAt.toISOString(),
         expires_at: invite.expiresAt.toISOString(),
-        // A grant only counts when its project still exists in the invite's
-        // own account; a deleted project drops out instead of showing a blank row.
-        projects: (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
-          const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
-          return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
-        }),
+        projects: projectsByInvite.get(invite.inviteId) ?? [],
       })),
     });
   },
@@ -352,6 +368,7 @@ accountInvitesRouter.openapi(
       inviter_email: null,
       created_at: null,
       expires_at: null,
+      projects: [],
     });
   }
 
@@ -362,6 +379,7 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   const inviterEmail = await lookupAuthEmail(invite.invitedBy);
+  const projectsByInvite = await invitedProjects([invite]);
 
   return c.json({
     invite_id: invite.inviteId,
@@ -375,6 +393,7 @@ accountInvitesRouter.openapi(
     accepted_at: invite.acceptedAt?.toISOString() ?? null,
     email_matches_caller: true,
     expired,
+    projects: projectsByInvite.get(invite.inviteId) ?? [],
   });
   },
 );

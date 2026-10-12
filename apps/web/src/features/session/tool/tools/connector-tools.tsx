@@ -41,10 +41,10 @@ const EMPTY_ROWS = Object.freeze([]) as readonly Record<string, unknown>[];
 const EMPTY_ARGS = Object.freeze({}) as Record<string, unknown>;
 const EMPTY_INPUT_SCHEMA = Object.freeze({ type: 'object', properties: {} });
 
-export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorsTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const connectors = (Array.isArray(parsed?.connectors) ? parsed!.connectors : EMPTY_ROWS) as Array<
@@ -107,14 +107,14 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 }
 ToolRegistry.register('kortix-connectors_connectors', ConnectorsTool);
 
-export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorDiscoverTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
   // over it. Called straight from JSX it did that on every render.
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
-  const status = partStatus(part);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const matches = (Array.isArray(parsed?.matches) ? parsed!.matches : EMPTY_ROWS) as Array<
@@ -187,14 +187,14 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
 }
 ToolRegistry.register('kortix-connectors_discover', ConnectorDiscoverTool);
 
-export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorDescribeTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
   // over it. Called straight from JSX it did that on every render.
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
-  const status = partStatus(part);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const tool = String(parsed?.tool ?? input.tool ?? '').trim();
@@ -252,14 +252,14 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
 }
 ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
 
-export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorCallTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
   // over it. Called straight from JSX it did that on every render.
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
-  const status = partStatus(part);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const connector = String(input.connector ?? '').trim();

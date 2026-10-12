@@ -109,9 +109,8 @@ export interface OpenEventStreamOptions {
   connectTimeoutMs?: number;
   /**
    * Max quiet time on an ESTABLISHED stream before the heartbeat watchdog
-   * declares it dead, aborts it, and reconnects. Defaults to 60s — see the
-   * `HEARTBEAT_MS` comment for why it must stay well above any real idle gap
-   * until the server ships keepalive frames.
+   * declares it dead, aborts it, and reconnects. Defaults to 60s: three of the
+   * sandbox daemon's 20 s keepalive frames. See the `HEARTBEAT_MS` comment.
    */
   heartbeatTimeoutMs?: number;
   /**
@@ -168,14 +167,14 @@ export interface EventStreamHandle {
 const COALESCE_FLUSH_MS = 16;
 const YIELD_INTERVAL_MS = 8;
 /**
- * Idle watchdog budget for an ESTABLISHED stream. The server currently emits
- * NO idle keepalive frames, so a healthy-but-quiet session produces genuinely
- * long silent stretches — a budget below the real idle gap makes the watchdog
- * kill perfectly healthy connections on a timer (the old 15s value guaranteed
- * a kill every 15s of quiet, by design). 60s keeps the watchdog able to catch
- * genuinely dead sockets while tolerating normal idle. When the server ships
- * `: keepalive` comment frames this can come back down toward 2× the
- * keepalive cadence. Configurable per-stream via
+ * Idle watchdog budget for an ESTABLISHED stream. The sandbox daemon injects a
+ * typed `kortix.keepalive` event every 20 s into the proxied runtime event
+ * stream (`SSE_KEEPALIVE_INTERVAL_MS` in
+ * `apps/kortix-sandbox-agent-server/src/routes/proxy/sse-keepalive.ts`), so a
+ * quiet session is never silent. 60 s is three missed keepalives: the watchdog
+ * fires when the path (daemon → edge → API → client) is dead, not on one late
+ * frame. The API session stream sends its own `kortix.stream.heartbeat` every
+ * 15 s (`STREAM_HEARTBEAT_MS`). Configurable per-stream via
  * `OpenEventStreamOptions.heartbeatTimeoutMs`.
  */
 const HEARTBEAT_MS = 60_000;
@@ -423,7 +422,6 @@ function createLiveStream(
     let consecutiveHardFailures = 0;
     let consecutiveShortStable = 0;
     while (!abortController.signal.aborted) {
-      let streamHadEvents = false;
       // Events other than the connection's own `server.connected` greeting.
       let streamHadWork = false;
       let stableConnection = false;
@@ -566,7 +564,6 @@ function createLiveStream(
           if (outcome.kind === 'error') throw outcome.error;
           if (outcome.result.done) break;
 
-          streamHadEvents = true;
           setConnectionState('open');
           resetHeartbeat();
           const raw = outcome.result.value as any;

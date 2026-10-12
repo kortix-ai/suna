@@ -51,7 +51,7 @@ const ICON_BUTTON_SIZE = 40;
 const LABEL_BUTTON_HEIGHT = ICON_BUTTON_SIZE;
 
 /** True when this binary can render the native SwiftUI button. */
-export const hasNativeButtons = swiftUI != null;
+const hasNativeButtons = swiftUI != null;
 
 /** Liquid Glass button styles exist from iOS 26. */
 const IOS_MAJOR = Platform.OS === 'ios' ? parseInt(String(Platform.Version), 10) : 0;
@@ -66,7 +66,7 @@ const hasLiquidGlass = hasNativeButtons && IOS_MAJOR >= 26;
  */
 const GLASS_SHADOW_BLEED = 18;
 
-export interface PlatformButtonProps {
+interface PlatformButtonProps {
   /** Visible text. Omit for an icon-only button (then `accessibilityLabel` names it). */
   label?: string;
   /** SF Symbol for the native iOS button, e.g. "plus", "chevron.left". */
@@ -225,7 +225,7 @@ const FILL_WIDTH = 10_000;
  */
 const FULL_WIDTH_SHADOW_BLEED = 3;
 
-export interface PlatformFullWidthButtonProps {
+interface PlatformFullWidthButtonProps {
   label: string;
   /**
    * Drawn at the pill's left edge: a brand icon or a spinner. On iOS it is a

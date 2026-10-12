@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
+import { tierGrantsAllModels } from '../billing/services/tiers';
 let accountTier = 'per_seat';
 let billingCalls = 0;
 
@@ -37,7 +37,7 @@ mock.module('../billing/services/entitlements', () => ({
   // Mirrors the real resolver's tier-derived default (no operator override in
   // these fixtures). Uses the REAL tiers helper so 'free' vs paid semantics
   // can't drift from production.
-  accountMayUseManagedModels: async () => !realAccountIsFreeTierForModels(accountTier),
+  accountMayUseManagedModels: async () => tierGrantsAllModels(accountTier),
 }));
 
 // Real `../shared/crypto` is used as-is (pure token-shape checks, no DB) — a

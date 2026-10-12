@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { accountMembers, accountSsoProviders, accounts, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { authorize, listAccessible, ssoRequiredFor } from '../iam/authorize';
@@ -15,7 +15,7 @@ import { PROJECT_ACTIONS } from '../iam';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
 import { insertIntoView } from './helpers/compat-views';
 
-const superuser = new pg.Client({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
+const superuser = new PgClient({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const IDP = crypto.randomUUID();

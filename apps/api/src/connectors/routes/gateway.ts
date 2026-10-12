@@ -102,17 +102,23 @@ const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialRea
 ]);
 
 const COMPUTER_REFUSALS = ['computer_access_pending', 'computer_access_denied', 'computer_access_off', 'computer_capability_not_approved'];
-const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
+const COMPUTER_STATES = ['computer_offline', 'computer_unpaired', 'computer_desktop_permission_missing'];
 
 /**
  * HTTP status for a gateway `error`. Computer states the owner controls are
  * expected outcomes, not server faults: a 5xx invites a retry, and each retry
- * re-prompts the owner. 500, not 502, for the rest (Cloudflare eats 502 bodies).
+ * re-prompts the owner. An upstream 429 or 503 is "retry later" and keeps its
+ * status. 500, not 502 or 504, for the rest, `upstream_timeout` included:
+ * Cloudflare replaces origin 502 and 504 bodies with its own page.
  */
-export function connectorErrorHttpStatus(reason: string): 403 | 409 | 500 {
+export function connectorErrorHttpStatus(
+  reason: string,
+  upstreamStatus?: number | null,
+): 403 | 409 | 429 | 500 | 503 {
   const kind = reason.split(':', 1)[0];
   if (COMPUTER_REFUSALS.includes(kind)) return 403;
   if (COMPUTER_STATES.includes(kind)) return 409;
+  if (upstreamStatus === 429 || upstreamStatus === 503) return upstreamStatus;
   return 500;
 }
 
@@ -124,11 +130,16 @@ function isConnectorDenialReason(reason: string): reason is ConnectorDenialReaso
 // from a scoped session token) and the project-EXPLICIT routes
 // (project from the path, any valid principal). One implementation, two faces.
 const catalogResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrincipal) => {
-  const query = c.req.valid('query') as { slug?: string; include_schemas?: 'true' | 'false' };
+  const query = c.req.valid('query') as {
+    slug?: string;
+    include_schemas?: 'true' | 'false';
+    include_output_schemas?: 'true' | 'false';
+  };
   const slug = query.slug?.trim() || undefined;
   const connectors = await deps.listCatalog(p, {
     slug,
     includeSchemas: query.include_schemas !== 'false',
+    includeOutputSchemas: query.include_output_schemas === 'true',
   });
   return c.json({ connectors });
 };
@@ -227,6 +238,12 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
         data: result.data,
         risk: result.risk,
         ...(result.account ? { account: result.account } : {}),
+        binding: result.binding,
+        // `output` is `data` itself for most bindings: send it only when it
+        // differs, so the body holds the payload once. The SDK fills it in.
+        ...(result.output === result.data ? {} : { output: result.output }),
+        upstream_status: result.upstreamStatus,
+        ...(result.upstreamError ? { upstream_error: result.upstreamError } : {}),
       });
     case 'pending_approval':
       return c.json(
@@ -297,8 +314,21 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
           : 403,
       );
     }
-    default:
-      return c.json({ ok: false, status: 'error', reason: result.reason }, connectorErrorHttpStatus(result.reason));
+    default: {
+      const retryAfter = result.retryAfterSeconds;
+      if (retryAfter !== undefined) c.header('Retry-After', String(retryAfter));
+      return c.json(
+        {
+          ok: false,
+          status: 'error',
+          reason: result.reason,
+          binding: result.binding ?? null,
+          upstream_status: result.upstreamStatus ?? null,
+          ...(retryAfter === undefined ? {} : { retry_after_seconds: retryAfter }),
+        },
+        connectorErrorHttpStatus(result.reason, result.upstreamStatus),
+      );
+    }
   }
 };
 
@@ -512,6 +542,8 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
         401: json(CallResponseSchema, 'Unauthorized'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
+        429: json(CallResponseSchema, 'Upstream rate limit (Retry-After when the upstream sent one)'),
+        503: json(CallResponseSchema, 'Upstream unavailable (Retry-After when the upstream sent one)'),
         // 500, NOT 502: Cloudflare replaces origin 502/504 bodies with its own
         // branded error page, which destroys the JSON `reason` before the
         // sandbox SDK can read it — the agent then sees a bare "HTTP 502" and
@@ -590,6 +622,8 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
         400: json(CallResponseSchema, 'Bad request (invalid_json / missing fields)'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
+        429: json(CallResponseSchema, 'Upstream rate limit (Retry-After when the upstream sent one)'),
+        503: json(CallResponseSchema, 'Upstream unavailable (Retry-After when the upstream sent one)'),
         500: json(CallResponseSchema, 'Execution error'),
       },
     }),

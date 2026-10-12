@@ -140,7 +140,6 @@ export async function deleteSandboxImage(
   };
 }
 
-type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
 /** Stateless view of every template available to the project + live state. */
 export interface SandboxTemplateView {

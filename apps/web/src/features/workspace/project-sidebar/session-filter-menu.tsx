@@ -314,6 +314,7 @@ export function SessionFilterMenu({
     email: t('section.email'),
     schedule: t('section.scheduled'),
     webhook: t('section.webhook'),
+    event: t('section.event'),
     manual: t('section.manual'),
     all: t('section.all'),
   };
@@ -332,6 +333,7 @@ export function SessionFilterMenu({
     email: t('section.email'),
     schedule: t('section.scheduled'),
     webhook: t('section.webhook'),
+    event: t('section.event'),
     manual: t('section.manual'),
   };
   const groupLabel = groupLabels[groupMode];

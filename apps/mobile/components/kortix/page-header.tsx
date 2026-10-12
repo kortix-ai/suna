@@ -48,7 +48,7 @@ import { PlatformButton } from '@/components/kortix/platform-button';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME } from '@/lib/utils/theme';
 
-export interface PageHeaderProps {
+interface PageHeaderProps {
   /** The page title, centred between the left and right columns. A string
    *  renders as `Text variant="h3"`, centred, one line; a node replaces it
    *  (an inline-editable input) and keeps its own layout. */

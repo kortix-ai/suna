@@ -42,9 +42,15 @@ export interface MarkdownPolicy {
    * to the same page.
    */
   setupLinks: boolean;
+  /**
+   * Turn a link to a workspace file (`sandbox:/workspace/a.docx`,
+   * `file:///…`, `out/a.docx`) into a file-preview control. Messages only:
+   * in a markdown document a relative link is relative to that file.
+   */
+  fileLinks: boolean;
 }
 
-const WRITER_RULES: Record<MarkdownTrust, Omit<MarkdownPolicy, 'rawHtml'>> = {
+const WRITER_RULES: Record<MarkdownTrust, Omit<MarkdownPolicy, 'rawHtml' | 'fileLinks'>> = {
   trusted: { remoteImages: 'load', setupLinks: false },
   agent: { remoteImages: 'load', setupLinks: true },
   untrusted: { remoteImages: 'click-to-load', setupLinks: false },
@@ -64,7 +70,11 @@ const POLICIES = Object.fromEntries(
     Object.fromEntries(
       VARIANTS.map((variant) => [
         variant,
-        Object.freeze({ ...WRITER_RULES[trust], rawHtml: variant === 'message' }),
+        Object.freeze({
+          ...WRITER_RULES[trust],
+          rawHtml: variant === 'message',
+          fileLinks: trust === 'agent' && variant === 'message',
+        }),
       ]),
     ),
   ]),

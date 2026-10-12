@@ -26,7 +26,7 @@ describe('billing auth skip', () => {
     }
   });
 
-  test('gate exemption covers account-state, account deletion, webhooks and cron only', () => {
+  test('gate exemption covers account-state, webhooks and cron only', () => {
     expect(isBillingGateExemptPath('/v1/billing/account-state')).toBe(true);
     expect(isBillingGateExemptPath('/v1/billing/webhooks/stripe')).toBe(true);
     expect(isBillingGateExemptPath('/v1/billing/cron/x')).toBe(true);
@@ -34,15 +34,9 @@ describe('billing auth skip', () => {
     expect(isBillingGateExemptPath('/v1/billing/accounts')).toBe(false);
   });
 
-  // Self-host runs with billing off and still owes account deletion.
-  test('account deletion is exempt from the billing gate', () => {
-    for (const path of [
-      '/v1/billing/account/deletion-status',
-      '/v1/billing/account/request-deletion',
-      '/v1/billing/account/cancel-deletion',
-      '/v1/billing/account/delete-immediately',
-    ]) {
-      expect(isBillingGateExemptPath(path), path).toBe(true);
-    }
+  // Account deletion lives on /v1/account/*, which has no billing gate. The
+  // /v1/billing/account/* mirror is retired (410) and no longer exempt.
+  test('the retired /v1/billing/account mirror is not exempt', () => {
+    expect(isBillingGateExemptPath('/v1/billing/account/deletion-status')).toBe(false);
   });
 });

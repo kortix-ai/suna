@@ -1,18 +1,17 @@
 /**
  * SearchListHeader — the standard "search input + add button" row that sits
- * under PageHeader on list-style pages (Triggers, Channels, etc.). Single
- * source of truth for sizing, padding, and pill radii so every page using it
- * looks identical.
+ * under PageHeader on list-style pages (Triggers, Channels, etc.). Sizing,
+ * padding and pill radii come from the shared `SearchPill`.
  */
 
 import * as React from 'react';
-import { Pressable, View, type TextInputProps } from 'react-native';
-import { PlusIcon as Plus, MagnifyingGlassIcon as Search, XIcon as X } from '@/lib/icons';
+import { View, type TextInputProps } from 'react-native';
+import { PlusIcon as Plus } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { SearchPill } from '@/components/kortix/search-pill';
 
-export interface SearchListHeaderProps {
+interface SearchListHeaderProps {
   value: string;
   onChangeText: (next: string) => void;
   placeholder?: string;
@@ -39,30 +38,7 @@ export function SearchListHeader({
   // already provide the uniform 16pt gap below the title row.
   return (
     <View className={`flex-row items-center gap-2.5 pb-2 ${gutter === 'page' ? 'px-5' : 'px-4'}`}>
-      {/* Filled, borderless pill; the Input inside inherits the app-wide input
-          text (16pt Roobert Regular) and only drops its own surface. */}
-      <View className="h-10 flex-1 flex-row items-center rounded-full bg-secondary px-4">
-        <Icon as={Search} size={16} className="text-muted-foreground" />
-        <Input
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          autoCorrect={false}
-          autoCapitalize="none"
-          returnKeyType="search"
-          {...inputProps}
-          className="ml-2 h-full flex-1 rounded-none bg-transparent px-0"
-        />
-        {value.length > 0 && (
-          <Pressable
-            onPress={() => onChangeText('')}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Clear search">
-            <Icon as={X} size={16} className="text-muted-foreground" />
-          </Pressable>
-        )}
-      </View>
+      <SearchPill value={value} onChangeText={onChangeText} placeholder={placeholder} inputProps={inputProps} />
       {rightAction ?? (onAdd && (
         <Button
           variant="default"

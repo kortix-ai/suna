@@ -27,3 +27,16 @@ export async function claimAutoTopupCharge(
     .returning({ claimedAt: creditAccounts.autoTopupLastCharged });
   return rows[0]?.claimedAt ?? null;
 }
+
+/**
+ * Turn auto top-up off, the same single-winner way: true only for the call
+ * that turned it off, so exactly one caller tells the owners (KRTX-1718).
+ */
+export async function disableAutoTopupIfEnabled(accountId: string): Promise<boolean> {
+  const rows = await db
+    .update(creditAccounts)
+    .set({ autoTopupEnabled: false, updatedAt: new Date().toISOString() })
+    .where(and(eq(creditAccounts.accountId, accountId), eq(creditAccounts.autoTopupEnabled, true)))
+    .returning({ accountId: creditAccounts.accountId });
+  return rows.length > 0;
+}

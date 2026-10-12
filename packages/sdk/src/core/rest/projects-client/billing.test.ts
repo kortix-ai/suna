@@ -9,11 +9,9 @@ import type {
 import {
   cancelScheduledChange,
   cancelSubscription,
-  confirmCheckoutSession,
   configureAutoTopup,
   claimPerSeatBilling,
   createPerSeatCheckout,
-  createCheckoutSession,
   createPortalSession,
   fetchAccountStateWithToken,
   getAccountState,
@@ -24,8 +22,8 @@ import {
   getProrationPreview,
   purchaseCredits,
   reactivateSubscription,
+  requestTopUp,
   resolvedPlan,
-  scheduleDowngrade,
   syncSubscription,
   getUsageRollup,
 } from './billing';
@@ -131,25 +129,6 @@ test('fetchAccountStateWithToken returns null without throwing when no token is 
 
 // ── checkout / subscription / credits mutations ─────────────────────────────
 
-test('createCheckoutSession posts tier + urls to create-checkout-session', async () => {
-  nextResponse = { status: 200, body: { url: 'https://checkout.stripe.com/x' } };
-  await createCheckoutSession({
-    tierKey: 'pro',
-    successUrl: 'https://app.example.com/success',
-    cancelUrl: 'https://app.example.com/cancel',
-  });
-  expect(last().url).toContain('/billing/create-checkout-session');
-  expect(last().method).toBe('POST');
-  expect(last().body).toMatchObject({ tier_key: 'pro', success_url: 'https://app.example.com/success' });
-});
-
-test('confirmCheckoutSession posts session_id to confirm-checkout-session', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  await confirmCheckoutSession('cs_123', 'acc-1');
-  expect(last().url).toContain('/billing/confirm-checkout-session');
-  expect(last().body).toEqual({ account_id: 'acc-1', session_id: 'cs_123' });
-});
-
 test('createPortalSession posts return_url to create-portal-session', async () => {
   nextResponse = { status: 200, body: { url: 'https://billing.stripe.com/p/x' } };
   await createPortalSession('https://app.example.com/billing');
@@ -157,17 +136,13 @@ test('createPortalSession posts return_url to create-portal-session', async () =
   expect(last().body).toEqual({ account_id: undefined, return_url: 'https://app.example.com/billing' });
 });
 
-test('cancelSubscription / reactivateSubscription / scheduleDowngrade / cancelScheduledChange hit their endpoints', async () => {
+test('cancelSubscription / reactivateSubscription / cancelScheduledChange hit their endpoints', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await cancelSubscription('too expensive');
   expect(last().url).toContain('/billing/cancel-subscription');
 
   await reactivateSubscription();
   expect(last().url).toContain('/billing/reactivate-subscription');
-
-  await scheduleDowngrade('starter', 'monthly');
-  expect(last().url).toContain('/billing/schedule-downgrade');
-  expect(last().body).toMatchObject({ target_tier_key: 'starter', commitment_type: 'monthly' });
 
   await cancelScheduledChange();
   expect(last().url).toContain('/billing/cancel-scheduled-change');
@@ -370,4 +345,18 @@ test('the app-access projection carries the resolved plan key', () => {
 
   expect(trialing.plan?.key).toBe('team');
   expect(olderApi.plan).toBeUndefined();
+});
+
+// KRTX-1718: a member out of credits asks the owners.
+test('requestTopUp POSTs to the account top-up-requests route and returns how many owners were told', async () => {
+  nextResponse = { status: 202, body: { notified: 2 } };
+  const result = await requestTopUp('acc/1');
+  expect(last().url).toBe('http://test.local/accounts/acc%2F1/top-up-requests');
+  expect(last().method).toBe('POST');
+  expect(result).toEqual({ notified: 2 });
+});
+
+test('requestTopUp rejects with the 429 status and code when the member already asked', async () => {
+  nextResponse = { status: 429, body: { error: 'You already asked', code: 'already_requested' } };
+  await expect(requestTopUp('acc_1')).rejects.toMatchObject({ status: 429 });
 });

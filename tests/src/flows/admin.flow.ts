@@ -1169,8 +1169,6 @@ flow(
       "POST /v1/account/cancel-deletion",
       "DELETE /v1/account/delete-immediately",
       "GET /v1/account/deletion-status",
-      "POST /v1/billing/account/request-deletion",
-      "DELETE /v1/billing/account/delete-immediately",
     ],
   },
   async (ctx) => {
@@ -1292,12 +1290,10 @@ flow(
     // the deletion would sweep the operator's own accounts and delete the
     // operator's login.
     await ctx.step("acting-as CANNOT request, cancel or run account deletion", async () => {
-      for (const mount of ["/v1/account", "/v1/billing/account"]) {
-        const request = await admin.post(`${mount}/request-deletion`, { reason: "imp1-should-fail" }, acting());
-        request.status(403).body().has("$.code", "impersonation_invalid");
-        const run = await admin.del(`${mount}/delete-immediately`, acting());
-        run.status(403).body().has("$.code", "impersonation_invalid");
-      }
+      const request = await admin.post("/v1/account/request-deletion", { reason: "imp1-should-fail" }, acting());
+      request.status(403).body().has("$.code", "impersonation_invalid");
+      const run = await admin.del("/v1/account/delete-immediately", acting());
+      run.status(403).body().has("$.code", "impersonation_invalid");
       const cancel = await admin.post("/v1/account/cancel-deletion", {}, acting());
       cancel.status(403).body().has("$.code", "impersonation_invalid");
     });

@@ -95,9 +95,12 @@ export function ProjectOnboardingWizard({
   /**
    * When supplied, renders a "Skip for now" control. Skipping STAMPS the
    * project onboarded, exactly like finishing — see `skip` below for why the
-   * "leave it unstamped and catch them later" design could not work. Absent on
-   * the project shell, where there is nowhere to skip TO: the wizard is already
-   * the thing standing between the user and their workspace.
+   * "leave it unstamped and catch them later" design could not work. The
+   * project shell passes it (an empty callback): a fresh account's first
+   * project reaches the shell unstamped (the create flow stamps only later
+   * projects — KRTX-2092), and in the browser this control is the wizard's
+   * only exit. The wizard's `skip` itself opens the first chat, so the shell
+   * needs no navigation of its own — which is what the empty callback says.
    */
   onSkip?: () => void;
 }) {
@@ -391,9 +394,9 @@ export function ProjectOnboardingWizard({
                   </Button>
                 )}
                 {/* Desktop only, and on every host: the shell has no browser
-                    toolbar, and the project shell passes no `onSkip`. Closing
-                    stamps onboarding through `skip` — an unstamped close would
-                    reopen the wizard on the next project load. */}
+                    toolbar. Closing stamps onboarding through `skip` — an
+                    unstamped close would reopen the wizard on the next project
+                    load. */}
                 <DesktopCloseButton onClose={skip} />
               </div>
             </div>

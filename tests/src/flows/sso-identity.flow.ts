@@ -141,7 +141,7 @@ flow(
       read.status(200).body().has('$.provider.domain_verified', true).exists('$.provider.domain_verified_at');
     });
 
-    await ctx.step('on the verified domain SSO is enforced: check-email says sso, password and email-code sign-in → 403', async () => {
+    await ctx.step('on the verified domain SSO is enforced: check-email says sso, password and email-code sign-in and a new sign-up → 403', async () => {
       const mode = await checkEmailMode(ctx, email);
       if (mode !== 'sso') throw new Error(`expected sso for a verified enforced domain, got ${mode}`);
       (await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', { email, password }))
@@ -149,6 +149,11 @@ flow(
         .body()
         .has('$.error', 'sso_required');
       (await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/magic-link', { email, create_user: false }))
+        .status(403)
+        .body()
+        .has('$.error', 'sso_required');
+      // KRTX-1716: the API sign-up door follows the same rule as the web form.
+      (await ctx.client.as(ctx.P.ANON).post('/v1/auth/signup', { email: `newcomer@${domain}`, password }))
         .status(403)
         .body()
         .has('$.error', 'sso_required');
@@ -292,6 +297,7 @@ flow(
       'PATCH /v1/accounts/:accountId/members/:userId',
       'GET /v1/accounts/:accountId/members',
       'GET /v1/accounts/:accountId',
+      'POST /v1/access/check-email',
     ],
   },
   async (ctx) => {
@@ -349,6 +355,12 @@ flow(
 
     await ctx.step('an operator verifies the domain', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+    });
+
+    await ctx.step('a verified domain without enforce_sso: check-email for an existing address on it → signin, not sso', async () => {
+      const person = await ctx.fixtures.userWithEmail(`${ctx.fixtures.name('no-enforce')}@${domain}`);
+      const mode = await checkEmailMode(ctx, person.email!);
+      if (mode !== 'signin') throw new Error(`a verified domain without enforce_sso must not force SSO, got ${mode}`);
     });
 
     await ctx.step('verified domain: an owner is never merged; the SSO identity joins as a plain member', async () => {
@@ -556,6 +568,20 @@ flow(
       (await client.get('/v1/accounts/:accountId', { params })).statusCode,
       (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } })).statusCode,
     ];
+    // Each API process caches a caller's SSO verdict for up to 15 s, and a
+    // change clears only the process that took it. Poll until 8 reads in a row
+    // agree, so every process behind the load balancer answers the new state.
+    const settledReads = async (client: Client, expected: string, label: string) => {
+      const deadline = Date.now() + 30_000;
+      let streak = 0;
+      let codes: number[] = [];
+      while (streak < 8) {
+        if (Date.now() > deadline) throw new Error(`${label}: expected ${expected} 8 times in a row within 30 s, last ${codes}`);
+        codes = await reads(client);
+        streak = codes.join() === expected ? streak + 1 : 0;
+        if (streak < 8) await new Promise((resolve) => setTimeout(resolve, codes.join() === expected ? 100 : 1_000));
+      }
+    };
 
     await ctx.step('before enforcement every member reads the account and its project', async () => {
       await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
@@ -568,6 +594,7 @@ flow(
     await ctx.step('with the domain verified, the password identity gets 403 sso_required on the account and the project', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
       const asPassword = ctx.client.as(passwordPerson);
+      await settledReads(asPassword, '403,403', 'password identity after verification');
       (await asPassword.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
       (await asPassword.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
         .status(403)
@@ -584,8 +611,7 @@ flow(
 
     await ctx.step('break-glass: an operator marks the domain unverified and the password identity reads again', async () => {
       (await operatorVerifies(ctx, team.id, false)).status(200).body().has('$.domain_verified', false);
-      const codes = await reads(ctx.client.as(passwordPerson));
-      if (codes.join() !== '200,200') throw new Error(`expected 200,200 after break-glass, got ${codes}`);
+      await settledReads(ctx.client.as(passwordPerson), '200,200', 'password identity after break-glass');
     });
 
     await ctx.step('cleanup: remove the provider', async () => {

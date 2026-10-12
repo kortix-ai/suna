@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   PPWARM_PREFIX,
-  QUOTA_GC_ORG_TARGET,
   SCOPED_PPWARM_PREFIX,
 } from './quota-gc-select';
 
@@ -70,7 +69,7 @@ function runQuotaGc(script: string): unknown {
   return JSON.parse(output.slice(marker + RESULT_MARKER.length));
 }
 
-function runOperation(kind: 'assess' | 'reconcile', input: OperationInput): OperationResult {
+function runReconcile(input: OperationInput): OperationResult {
   return runQuotaGc(`
     const quota = await import(${JSON.stringify(MODULE_URL)});
     const input = ${JSON.stringify(input)};
@@ -87,9 +86,7 @@ function runOperation(kind: 'assess' | 'reconcile', input: OperationInput): Oper
       },
       deleteSnapshotById: async (id) => { deleteCalls.push(id); return true; },
     };
-    const result = ${kind === 'assess'
-      ? 'await quota.assessDaytonaProjectImageAdmission({ now: ' + NOW + ' }, io)'
-      : 'await quota.reconcileSnapshotQuota({ now: ' + NOW + ' }, io)'};
+    const result = await quota.reconcileSnapshotQuota({ now: ${NOW} }, io);
     process.stdout.write(${JSON.stringify(RESULT_MARKER)} + JSON.stringify({ deleteCalls, result }));
   `) as OperationResult;
 }
@@ -114,105 +111,6 @@ function brokenManagedSnapshots(total: number) {
   }));
 }
 
-describe('assessDaytonaProjectImageAdmission', () => {
-  test('allows a complete healthy observation below target without deleting', () => {
-    const observed = runOperation('assess', { snapshots: stockSnapshots(83) });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: true,
-      reason: 'allowed',
-      quota: {
-        observationStatus: 'complete',
-        orgTotal: 83,
-        deferred: 0,
-        budgetUnresolved: false,
-      },
-    });
-  });
-
-  test('never invokes deletion during a dry-run assessment', () => {
-    const observed = runOperation('assess', {
-      snapshots: [...brokenManagedSnapshots(1), ...stockSnapshots(82)],
-    });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: true,
-      reason: 'allowed',
-      quota: { observationStatus: 'complete', deleted: 1 },
-    });
-  });
-
-  test('denies when the org is at the target', () => {
-    const observed = runOperation('assess', { snapshots: stockSnapshots(QUOTA_GC_ORG_TARGET) });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: false,
-      reason: 'org_target_reached',
-      quota: { observationStatus: 'complete', orgTotal: QUOTA_GC_ORG_TARGET },
-    });
-  });
-
-  test('denies when the quota budget is unresolved', () => {
-    const observed = runOperation('assess', {
-      snapshots: stockSnapshots(QUOTA_GC_ORG_TARGET + 1),
-    });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: false,
-      reason: 'budget_unresolved',
-      quota: { observationStatus: 'complete', budgetUnresolved: true },
-    });
-  });
-
-  test('denies when safe candidates remain deferred', () => {
-    const observed = runOperation('assess', {
-      snapshots: [...brokenManagedSnapshots(20), ...stockSnapshots(60)],
-    });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: false,
-      reason: 'deferred_candidates',
-      quota: { observationStatus: 'complete', deferred: 5 },
-    });
-  });
-
-  test.each([
-    ['list', 'org_list_failed'],
-    ['referenced', 'referenced_names_failed'],
-  ] as const)('denies a %s observation failure', (failure, reason) => {
-    const observed = runOperation('assess', {
-      failure,
-      snapshots: [...brokenManagedSnapshots(1), ...stockSnapshots(79)],
-    });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: false,
-      reason,
-      quota: { observationStatus: reason },
-    });
-  });
-
-  test('denies when Daytona is not configured', () => {
-    const observed = runOperation('assess', {
-      configured: false,
-      snapshots: stockSnapshots(1),
-    });
-
-    expect(observed.deleteCalls).toEqual([]);
-    expect(observed.result).toMatchObject({
-      allowed: false,
-      reason: 'provider_not_configured',
-      quota: { observationStatus: 'provider_not_configured' },
-    });
-  });
-});
-
 describe('reconcileSnapshotQuota observation boundary', () => {
   test('reclaims retired per-project warm images in both historical namespaces', () => {
     const legacy = {
@@ -230,7 +128,7 @@ describe('reconcileSnapshotQuota observation boundary', () => {
       createdAt: OLD,
       lastUsedAt: new Date(NOW).toISOString(),
     };
-    const observed = runOperation('reconcile', {
+    const observed = runReconcile({
       snapshots: [legacy, scoped, ...stockSnapshots(78)],
     });
 
@@ -242,7 +140,7 @@ describe('reconcileSnapshotQuota observation boundary', () => {
     ['list', 'org_list_failed'],
     ['referenced', 'referenced_names_failed'],
   ] as const)('returns %s failure without deleting', (failure, observationStatus) => {
-    const observed = runOperation('reconcile', {
+    const observed = runReconcile({
       failure,
       snapshots: [...brokenManagedSnapshots(1), ...stockSnapshots(79)],
     });
@@ -252,7 +150,7 @@ describe('reconcileSnapshotQuota observation boundary', () => {
   });
 
   test('preserves deletion for a complete periodic GC observation', () => {
-    const observed = runOperation('reconcile', {
+    const observed = runReconcile({
       snapshots: [...brokenManagedSnapshots(1), ...stockSnapshots(79)],
     });
 

@@ -51,7 +51,7 @@ permissions:
 jobs:
   lint:
     name: Migration files are well-formed
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -62,7 +62,7 @@ jobs:
 
   squawk:
     name: Squawk (zero-downtime lint) on new migrations
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -78,7 +78,7 @@ jobs:
 
   immutability:
     name: Migrations are immutable
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -101,7 +101,7 @@ jobs:
 
   sequence:
     name: Migrations are sequential
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -133,7 +133,7 @@ jobs:
 
   shadow-db:
     name: Applies cleanly to a fresh DB
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -184,7 +184,7 @@ jobs:
 
   schema-sync:
     name: Schema matches migrations
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     env:
       DATABASE_URL: postgres://ci:ci@localhost:1/ci
     steps:

@@ -78,6 +78,15 @@ export function userAccountMemberRow(userId: string, accountId: string) {
     .limit(1);
 }
 
+/** `{ accountRole }` when the user is in the account. */
+export function accountMemberRoleRow(accountId: string, userId: string) {
+  return db
+    .select({ accountRole: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .limit(1);
+}
+
 /** `{ accountId }` when the user is in the account. */
 export function userAccountMembershipRow(userId: string, accountId: string) {
   return db
@@ -256,6 +265,26 @@ export function accountOwnersByJoinDate(accountIds: string[]) {
       ),
     )
     .orderBy(asc(accountMembers.joinedAt));
+}
+
+/**
+ * The accounts among `accountIds` where `userId` is a super admin, read where
+ * `authorize` reads it (the `account_members` view): its step 5, which sits
+ * above the account MFA gate.
+ */
+export async function superAdminAccountIds(userId: string, accountIds: readonly string[]): Promise<Set<string>> {
+  if (accountIds.length === 0) return new Set();
+  const rows = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.userId, userId),
+        inArray(accountMembers.accountId, [...accountIds]),
+        eq(accountMembers.isSuperAdmin, true),
+      ),
+    );
+  return new Set(rows.map((row) => row.accountId));
 }
 
 /** The member's `is_super_admin` flag, from the membership table. */

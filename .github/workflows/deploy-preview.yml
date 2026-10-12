@@ -54,7 +54,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'labeled' && github.event.label.name == 'preview') ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       contents: read
       pull-requests: read
@@ -177,7 +177,7 @@ jobs:
   build-api:
     name: Build preview API image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     permissions:
       contents: read
     steps:
@@ -186,17 +186,10 @@ jobs:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
-        with:
-          cache-key: apps/api/Dockerfile:linux/amd64
-      - uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -219,7 +212,7 @@ jobs:
   build-gateway:
     name: Build preview gateway image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     permissions:
       contents: read
     steps:
@@ -228,17 +221,10 @@ jobs:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
-        with:
-          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
-      - uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -260,7 +246,7 @@ jobs:
   build-web:
     name: Build preview frontend image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     permissions:
       contents: read
     steps:
@@ -288,17 +274,10 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: pr-${{ needs.authorize.outputs.pr_number }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ needs.authorize.outputs.sha }}
           NEXT_OUTPUT: standalone
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
-        with:
-          cache-key: apps/web/Dockerfile:linux/amd64
-      - uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -317,7 +296,7 @@ jobs:
   deploy:
     name: Deploy full self-host preview
     needs: [authorize, build-api, build-gateway, build-web]
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # ~10 min deploy + up to 45 min waiting for pool and GitHub capacity
     # (PREVIEW_SUITE_WAIT_MINUTES) + <= 80 min suite.
     timeout-minutes: 145
@@ -640,7 +619,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'unlabeled' && github.event.label.name == 'preview'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -710,7 +689,7 @@ jobs:
     # One Platinum list plus at most one delete — a small runner is enough, and
     # this fires on EVERY branch deletion in the repository, not just previewed
     # ones.
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -755,7 +734,7 @@ jobs:
   reconcile:
     name: Reconcile stale preview sandboxes
     if: github.event_name == 'schedule'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read

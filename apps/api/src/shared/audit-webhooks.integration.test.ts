@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../__tests__/helpers/pg-client';
 import { replayAuditWebhookDelivery } from './audit-webhooks';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../workers/audit-webhook-worker';
 
@@ -7,10 +7,10 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
 const WEBHOOK = 'c7200000-0000-4000-a000-000000000001';
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 let deliveryId = '';
 
-function databaseClient(): pg.Client {
+function databaseClient(): PgClient {
   if (!client) throw new Error('database client is not initialized');
   return client;
 }
@@ -36,7 +36,7 @@ async function waitForStatus(status: string, timeoutMs = 5_000, id = deliveryId)
 
 describe.skipIf(!databaseUrl)('durable audit webhook worker — migrated PostgreSQL', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new PgClient({ connectionString: databaseUrl });
     await client.connect();
     await client.query(
       `INSERT INTO kortix.accounts(account_id, name) VALUES ($1, 'audit-webhook-worker')`,

@@ -519,6 +519,7 @@ export async function runGitBuffer(
   authHost = 'github.com',
   timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
   authHeaders?: Record<string, string>,
+  maxBufferBytes: number = 10 * 1024 * 1024,
 ): Promise<{ stdout: Buffer; stderr: string }> {
   const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
   try {
@@ -526,7 +527,7 @@ export async function runGitBuffer(
       cwd,
       encoding: 'buffer',
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
-      maxBuffer: 10 * 1024 * 1024,
+      maxBuffer: maxBufferBytes,
       timeout: timeoutMs,
     }));
     const raw = result.stdout;
@@ -996,39 +997,6 @@ export function normalizeTreePath(input?: string | null) {
   if (!input || input === '.' || input === '/') return null;
   if (input.startsWith('/') || input.includes('..')) throw new Error('Invalid path');
   return input.replace(/^\.\/+/, '').replace(/\/+$/, '');
-}
-
-/**
- * Get the tree OID for a subtree at a given commit. This is git's own
- * content-addressed hash of every file under that path — perfect input
- * for snapshot cache invalidation: same files → same tree OID → same
- * snapshot. When `contextPath` is null/`.`/empty, returns the commit's
- * root tree OID.
- */
-export async function resolveTreeOid(
-  project: GitBackedProject,
-  ref: string,
-  contextPath?: string | null,
-): Promise<string> {
-  validateRef(ref);
-  const repoPath = await refreshMirror(project);
-  const normalized = normalizeTreePath(contextPath);
-  if (!normalized) {
-    // Root tree of the commit.
-    const result = await runGit(['rev-parse', `${ref}^{tree}`], repoPath, false);
-    const oid = result.stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(oid)) {
-      throw new Error(`Unexpected tree OID for ${ref}: ${oid}`);
-    }
-    return oid;
-  }
-  // ls-tree of the parent, parse the entry for normalized's basename.
-  const result = await runGit(['ls-tree', ref, '--', normalized], repoPath, false);
-  const line = result.stdout.split('\n').find((l) => l.trim());
-  if (!line) throw new Error(`Path "${normalized}" not found at ${ref}`);
-  const match = line.match(/^\d+\s+(tree|blob)\s+([0-9a-f]{40})\t/);
-  if (!match) throw new Error(`Unparseable ls-tree line: ${line}`);
-  return match[2]!;
 }
 
 /**

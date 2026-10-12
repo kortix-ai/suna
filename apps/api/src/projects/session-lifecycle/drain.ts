@@ -19,6 +19,7 @@ import {
   markCommandSucceeded,
   requeueForAdmission,
 } from './store';
+import { clearTriggerAlert, commandTriggerSlug } from '../lib/trigger-alerts';
 import { INBOX_ORDER_BACKOFF_MS } from './inbox-admission';
 import { withCommandLeaseHeartbeat } from './command-lease';
 import { claimsStopped, forgetClaim, trackClaims } from './claim-handover';
@@ -230,11 +231,18 @@ async function drainSessionLifecycleQueueTick(
         out.queued += 1;
         return;
       }
-      await markCommandSucceeded(
+      const applied = await markCommandSucceeded(
         row,
         { status: 'created', session_id: result.sessionId, source: row.source },
         result.sessionId,
       );
+      // A queued trigger create reached its session: that ends a fire failure
+      // streak, as markTriggerRuntimeDelivered does for a queued prompt
+      // (KRTX-1742). clearTriggerAlert never throws.
+      const triggerSlug = applied ? commandTriggerSlug(row) : null;
+      if (triggerSlug) {
+        await clearTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire' });
+      }
       out.succeeded += 1;
     } else {
       const message = String(

@@ -70,9 +70,13 @@ describe('api-router worker', () => {
     ]) {
       expect(deployWorkflow).toContain(binding);
     }
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(stagingVars).not.toContain('ECS_FARGATE');
+    expect(deployWorkflow).not.toContain('staging-api-ecs-fargate');
+    expect(deployWorkflow).not.toContain('gateway-staging-ecs-fargate');
   });
 
-  test('routes dev to its us-east-2 stack and keeps the us-west-2 origins as the undo', () => {
+  test('routes dev only to its us-east-2 stack', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
       'utf8',
@@ -85,8 +89,8 @@ describe('api-router worker', () => {
     expect(devVars).toContain('GATEWAY_ACTIVE_BACKEND = "us-east-2"');
     expect(devVars).toContain('BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"');
     expect(devVars).toContain('GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"');
-    expect(devVars).toContain('BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"');
-    expect(devVars).toContain('GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"');
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(devVars).not.toContain('ECS_FARGATE');
   });
 
   test('keeps the prepared US East 2 origins inactive in production config', () => {
@@ -272,7 +276,7 @@ describe('api-router worker', () => {
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
     const prodTerraform = readFileSync(
@@ -482,6 +486,64 @@ describe('api-router worker', () => {
     );
 
     expect(proxiedUserAgent).toBeNull();
+  });
+
+  // A GET or HEAD that arrives carrying a body must still reach the origin.
+  // The Workers runtime throws inside `new Request` when a GET/HEAD carries a
+  // body, the origin request is built outside the try/catch, and Cloudflare
+  // answers the client with its bare "error code: 1101" 500 before the origin
+  // ever ran (reproduced on workerd: GET/HEAD with a body returned 500
+  // "TypeError: Request with a GET or HEAD method cannot have a body." at the
+  // origin-request construction). GET and HEAD bodies have no defined
+  // semantics, so the origin request never carries one: the body is dropped
+  // and the content-length that framed it goes with it. Bun's Request
+  // constructor does not enforce the GET/HEAD rule the Workers runtime does,
+  // so the incoming request is modeled by shadowing `body` on a real Request.
+  test.each(['GET', 'HEAD'])('a %s with a body reaches the origin without a body', async (method) => {
+    const incoming = new Request('https://api.kortix.com/v1/projects', { method });
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('unexpected'));
+        controller.close();
+      },
+    });
+    Object.defineProperty(incoming, 'body', { get: () => stream });
+    incoming.headers.set('content-length', '9');
+
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(incoming, env);
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.method).toBe(method);
+    expect(proxiedRequest.body).toBeNull();
+    expect(proxiedRequest.headers.get('content-length')).toBeNull();
+    expect(await proxiedRequest.text()).toBe('');
+  });
+
+  test('a POST body is forwarded to the origin unchanged', async () => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/projects', {
+        method: 'POST',
+        headers: { 'content-length': '7' },
+        body: 'payload',
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.headers.get('content-length')).toBe('7');
+    expect(await proxiedRequest.text()).toBe('payload');
   });
 
   test('routes gateway hostnames to the gateway backend, independent of the API toggle', async () => {

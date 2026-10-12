@@ -10,7 +10,6 @@ export {
   githubBackend,
   managedGithubInstallId,
   managedGithubOwner,
-  managedGithubOwnerType,
   managedGithubToken,
 } from './github';
 export { seedRepoViaGitPush } from './seed';

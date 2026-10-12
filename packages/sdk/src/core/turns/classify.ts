@@ -39,6 +39,8 @@ import type {
 } from '../runtime/client';
 import { type GatewayAttemptFailure, extractGatewayErrorDetails, unwrapError } from './errors';
 import { getChildSessionId } from './parts';
+import { isToolCallBlock, toolPartOf } from '../session-log/tool-call';
+import type { ToolCallBlock } from '../session-log/types';
 import { type ToolKind, inputPath, toolKind } from './tool-kind';
 import { toolInfo } from './tool-registry';
 import type { TokenUsageLike } from './types';
@@ -275,8 +277,9 @@ function classifyToolState(tool: string, state: ToolState): ToolView {
   };
 }
 
-/** The harness-neutral view of one tool part. */
-export function toToolView(part: Pick<ToolPart, 'tool' | 'state'>): ToolView {
+/** The harness-neutral view of one tool part, or of a session-log tool call block. */
+export function toToolView(call: Pick<ToolPart, 'tool' | 'state'> | ToolCallBlock): ToolView {
+  const part = isToolCallBlock(call) ? toolPartOf(call) : call;
   return classifyToolState(part.tool, part.state);
 }
 

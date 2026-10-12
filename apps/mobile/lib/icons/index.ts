@@ -9,6 +9,7 @@
  * To add an icon: add its import + export pair here (alphabetical), then
  * import it from `@/lib/icons` at the call site.
  */
+import { AlarmIcon as AlarmGlyph } from 'phosphor-react-native/src/icons/Alarm';
 import { ArchiveIcon as ArchiveGlyph } from 'phosphor-react-native/src/icons/Archive';
 import { ArrowClockwiseIcon as ArrowClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowClockwise';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowCounterClockwise';
@@ -37,7 +38,6 @@ import { CaretRightIcon as CaretRightGlyph } from 'phosphor-react-native/src/ico
 import { CaretUpDownIcon as CaretUpDownGlyph } from 'phosphor-react-native/src/icons/CaretUpDown';
 import { CaretUpIcon as CaretUpGlyph } from 'phosphor-react-native/src/icons/CaretUp';
 import { CertificateIcon as CertificateGlyph } from 'phosphor-react-native/src/icons/Certificate';
-import { ChartLineIcon as ChartLineGlyph } from 'phosphor-react-native/src/icons/ChartLine';
 import { ChatCircleIcon as ChatCircleGlyph } from 'phosphor-react-native/src/icons/ChatCircle';
 import { ChatIcon as ChatGlyph } from 'phosphor-react-native/src/icons/Chat';
 import { ChatsTeardropIcon as ChatsTeardropGlyph } from 'phosphor-react-native/src/icons/ChatsTeardrop';
@@ -196,6 +196,7 @@ import { XIcon as XGlyph } from 'phosphor-react-native/src/icons/X';
 
 import { withAppWeight, withFixedWeight } from './bind';
 
+export const AlarmIcon = withAppWeight(AlarmGlyph, 'AlarmIcon');
 export const ArchiveIcon = withAppWeight(ArchiveGlyph, 'ArchiveIcon');
 export const ArrowClockwiseIcon = withAppWeight(ArrowClockwiseGlyph, 'ArrowClockwiseIcon');
 export const ArrowCounterClockwiseIcon = withAppWeight(ArrowCounterClockwiseGlyph, 'ArrowCounterClockwiseIcon');
@@ -224,7 +225,6 @@ export const CaretRightIcon = withAppWeight(CaretRightGlyph, 'CaretRightIcon');
 export const CaretUpDownIcon = withAppWeight(CaretUpDownGlyph, 'CaretUpDownIcon');
 export const CaretUpIcon = withAppWeight(CaretUpGlyph, 'CaretUpIcon');
 export const CertificateIcon = withAppWeight(CertificateGlyph, 'CertificateIcon');
-export const ChartLineIcon = withAppWeight(ChartLineGlyph, 'ChartLineIcon');
 export const ChatCircleIcon = withAppWeight(ChatCircleGlyph, 'ChatCircleIcon');
 export const ChatIcon = withAppWeight(ChatGlyph, 'ChatIcon');
 export const ChatsTeardropIcon = withAppWeight(ChatsTeardropGlyph, 'ChatsTeardropIcon');

@@ -120,7 +120,7 @@ async function openWindow(input: {
   startedAt: string;
   lastBilledAt?: string;
   metadata?: Record<string, unknown>;
-  workloadType?: 'session' | 'app' | 'monitor';
+  workloadType?: 'session' | 'app' | 'monitor' | 'backend'; // 'backend': a retired workload, kept to test leftover rows
   appRuntimeId?: string;
 }): Promise<{ id: string; sandboxId: string }> {
   const sandboxId = input.sandboxId ?? crypto.randomUUID();
@@ -741,6 +741,19 @@ withDb('compute metering on PostgreSQL', () => {
             metadata: expect.objectContaining({ unresolvedSince: iso(now) }) }),
         ]);
       }
+    });
+
+    test('a leftover backend window (the retired convex machine) has no runtime row, so the sweep closes it', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const now = Date.now();
+      const leftover = await openWindow({ accountId, startedAt: iso(now - MINUTE), workloadType: 'backend' });
+
+      expect(await countBillingInvariantViolations()).toBe(1);
+      const result = await reconcileOrphanComputeSessions(new Date(now));
+
+      expect(result).toMatchObject({ checked: 1, closed: 1, errors: 0 });
+      expect(result.byReason['sandbox-row-missing']).toBe(1);
+      expect(await windowsOf(leftover.sandboxId)).toEqual([expect.objectContaining({ state: 'stopped' })]);
     });
 
     test('the monitors count open windows of dead boxes and live boxes not observed inside the grace', async () => {

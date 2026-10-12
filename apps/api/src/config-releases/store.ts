@@ -37,8 +37,6 @@ export interface ConfigArchiveStore {
   pruneProject(projectId: string, keep: number): Promise<string[]>;
 }
 
-/** Default bucket name in a Supabase-backed environment (created by migration). */
-export const CONFIG_RELEASES_BUCKET = 'kortix-config-releases';
 export const CONFIG_ARCHIVE_URL_TTL_SECONDS = 900;
 export const CONFIG_ARCHIVE_CONTENT_TYPE = 'application/gzip';
 
@@ -54,16 +52,6 @@ export function configArchiveProjectPrefix(projectId: string): string {
 export function configArchiveKey(projectId: string, configTreeId: string): string {
   if (!TREE_ID.test(configTreeId)) throw new Error(`invalid config tree id: ${configTreeId}`);
   return `${configArchiveProjectPrefix(projectId)}${configTreeId}.tar.gz`;
-}
-
-export class ConfigArchiveStoreError extends Error {
-  constructor(
-    message: string,
-    readonly status: number | null,
-  ) {
-    super(message);
-    this.name = 'ConfigArchiveStoreError';
-  }
 }
 
 /**
@@ -129,11 +117,6 @@ function configArchiveTarget() {
     accessKeyId: config.KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID,
     secretAccessKey: config.KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY,
   };
-}
-
-/** True when this environment names a bucket for config archives. */
-export function configArchiveStorageConfigured(): boolean {
-  return config.KORTIX_CONFIG_ARCHIVE_S3_BUCKET.trim().length > 0;
 }
 
 let store: ConfigArchiveStore | null = null;

@@ -66,7 +66,7 @@ const VPS_FIRST_NOTICE =
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
 Run Kortix on your own VPS — a domain is the production path; a Cloudflare
-tunnel is for evaluation with no public domain. Docs: kortix.com/docs/guides/self-hosting
+tunnel is for evaluation with no public domain. Docs: kortix.com/docs/host
 
 Subcommands:
   init                    Create/refresh this instance's Compose + env config.
@@ -680,6 +680,32 @@ function selfHostDoctor(flags: GlobalFlags): number {
           : `domain mode but KORTIX_PREVIEW_BASE_DOMAIN is empty — browsers get /v1/p/ path previews, which break root-absolute links. `
             + `Point a *.${suggested} DNS record at this instance, then: `
             + `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=${suggested} KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`,
+      });
+    }
+  }
+  if (existsSync(envPath(flags.instance))) {
+    // KRTX-1715. The shipped auth defaults leave sign-up open with email
+    // autoconfirm on. On an instance the internet can reach, anyone can then
+    // create a CONFIRMED account for any address: the admin address in
+    // KORTIX_PLATFORM_ADMIN_EMAILS, or a colleague's address an invite waits
+    // for. Nothing in the running stack says so. Either fix closes it: an email
+    // provider makes GoTrue require confirmation (`env set EMAIL_URL=…` turns
+    // autoconfirm off), or DISABLE_SIGNUP stops self sign-up once the team is in.
+    // Not on a laptop instance, which strangers cannot reach.
+    const env = loadEnv(flags.instance);
+    if (env && reachabilityMode(env) !== 'local') {
+      const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
+      const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
+      checks.push({
+        name: 'open-sign-up',
+        ok: !(signupOpen && autoconfirm),
+        detail: !signupOpen
+          ? 'self sign-up is off (DISABLE_SIGNUP=true)'
+          : !autoconfirm
+            ? 'new accounts must confirm their email'
+            : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
+              + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
+              + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
       });
     }
   }

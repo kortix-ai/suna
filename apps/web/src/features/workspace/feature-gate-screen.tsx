@@ -31,11 +31,14 @@ import { FlagIcon } from '@phosphor-icons/react';
 export function FeatureGateScreen({
   featureName,
   description,
+  internalOnly = false,
 }: {
   /** The feature's name, exactly as the Feature flags section lists it. */
   featureName: string;
   /** One sentence: what turning it on would give this project. */
   description: string;
+  /** The flag is not offered in Settings (`catalogHidden`): no button, ask Kortix instead. */
+  internalOnly?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const params = useParams<{ id: string }>();
@@ -53,9 +56,12 @@ export function FeatureGateScreen({
               {featureName} {tI18nComplete.raw('text26965989cce5')}
             </p>
             <p className="text-muted-foreground max-w-xl text-xs text-pretty">{description}</p>
+            {internalOnly ? (
+              <p className="text-muted-foreground max-w-xl text-xs text-pretty">{tI18nComplete.raw('text1c41abcc2fff')}</p>
+            ) : null}
           </div>
         </div>
-        {projectId ? (
+        {projectId && !internalOnly ? (
           <Button asChild size="sm" variant="secondary" className="shrink-0">
             <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
               {tI18nComplete.raw('text20a2e59ba129')}

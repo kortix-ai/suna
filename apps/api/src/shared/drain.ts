@@ -53,10 +53,6 @@ export function inflightCount(): number {
   return inflight;
 }
 
-export function isDraining(): boolean {
-  return draining;
-}
-
 /** Streams that outlive any request budget: they are ended at drain, not awaited. */
 export function isLongLivedStream(url: string, headers: Headers): boolean {
   return (

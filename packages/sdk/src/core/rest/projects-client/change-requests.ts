@@ -55,6 +55,11 @@ export interface ChangeRequestDiffResponse {
   additions: number;
   deletions: number;
   patch: string;
+  /** True when the server could not produce the patch text (a change whose
+   *  diff outgrows the server's exec buffer, or a git timeout) — `patch` is
+   *  then empty while `files` still lists what changed. Optional so clients
+   *  keep working against an API that predates the flag. */
+  patch_truncated?: boolean;
 }
 
 export interface ChangeRequestMergePreview {

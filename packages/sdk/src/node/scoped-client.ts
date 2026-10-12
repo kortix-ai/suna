@@ -75,6 +75,20 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+/** `gen` with every resumption run inside `runScoped(config, ...)`. */
+function scopedAsyncGenerator(
+  gen: AsyncGenerator<unknown, unknown, unknown>,
+  config: KortixPlatformConfig,
+): AsyncGenerator<unknown, unknown, unknown> {
+  const scoped = {
+    next: (...args: [] | [unknown]) => runScoped(config, () => gen.next(...args)),
+    return: (value: unknown) => runScoped(config, () => gen.return(value)),
+    throw: (error: unknown) => runScoped(config, () => gen.throw(error)),
+    [Symbol.asyncIterator]: () => scoped,
+  };
+  return scoped as AsyncGenerator<unknown, unknown, unknown>;
+}
+
 /**
  * Recursively wrap every function (including function-valued getters)
  * reachable from `value` so calling it runs inside `runScoped(config, ...)`.
@@ -84,8 +98,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * fully scoped too, not just the static shape of `createKortix()`'s top-level
  * return.
  *
+ * An async generator (`connector(slug).paginate(...)`) runs its body on each
+ * `next()`, in the caller's async context, not the context that created it.
+ * {@link scopedAsyncGenerator} runs every `next`/`return`/`throw` inside
+ * `runScoped`, so each page uses this config and never the process-global one.
+ *
  * Recurses into plain objects/arrays only — class instances and built-ins
- * (`Error`/`Date`/`Map`/`Set`/`Blob`/`Response`/async iterables/…) pass
+ * (`Error`/`Date`/`Map`/`Set`/`Blob`/`Response`/streams/…) pass
  * through untouched, so this never mis-clones a vendor object whose
  * correctness depends on its prototype/internal slots (e.g. the escape-hatch
  * `OpencodeClient` from `.runtime`, or a `Response`/Blob returned by a file
@@ -105,6 +124,10 @@ function wrapScoped<T>(value: T, config: KortixPlatformConfig, seen: WeakSet<obj
       return wrapScoped(result, config, new WeakSet(), 0);
     };
     return wrapped as unknown as T;
+  }
+
+  if (Object.prototype.toString.call(value) === '[object AsyncGenerator]') {
+    return scopedAsyncGenerator(value as AsyncGenerator<unknown, unknown, unknown>, config) as T;
   }
 
   if (Array.isArray(value)) {

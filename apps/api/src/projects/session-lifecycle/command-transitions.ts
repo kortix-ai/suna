@@ -6,6 +6,7 @@ import { extendSandboxDeadline } from '../sandbox-deadline';
 import { promptRetryGraceMs } from '../sandbox-deadline-policy';
 import { db } from '../../shared/db';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
+import { commandTriggerSlug, raiseTriggerAlert } from '../lib/trigger-alerts';
 import { inboxOrderBy } from './inbox-order';
 import { transitionSession } from './status-transitions';
 import { type CommandLease, logLeaseLost, ownedByLease } from './command-lease';
@@ -350,7 +351,7 @@ export async function markCommandFailed(
     sessionId?: string | null;
     result?: Record<string, unknown>;
   },
-): Promise<void> {
+): Promise<'queued' | 'dead_lettered' | 'lease_lost'> {
   const retry = opts.retryable && opts.attempts < 5;
   const [row] = await db
     .update(sessionLifecycleCommands)
@@ -369,9 +370,9 @@ export async function markCommandFailed(
     .returning();
   if (!row) {
     logLeaseLost(lease, 'markCommandFailed');
-    return;
+    return 'lease_lost';
   }
-  if (retry) return;
+  if (retry) return 'queued';
 
   // Dead-lettered = this command's work is being ABANDONED. That used to be a
   // console.warn deep in the drain — invisible to alerting while the user's
@@ -441,7 +442,20 @@ export async function markCommandFailed(
       error,
     }).catch(() => {});
   }
+
+  // A trigger's prompt or queued create is abandoned: its watchers hear about
+  // it (KRTX-1742). An INLINE create's caller got the failure in hand and
+  // answers it on its own path (the cron execution retries it; a webhook or
+  // manual fire alerts at once), so only a queued command alerts here.
+  const triggerSlug = commandTriggerSlug(row);
+  if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
+    await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
+  }
+  return 'dead_lettered';
 }
+
+/** `claimCreateSessionCommand` locks an inline create with this owner prefix. */
+const INLINE_CREATE_LOCK_PREFIX = 'session-lifecycle-inline:';
 
 /**
  * How many times a prompt re-attempts delivery into a runtime that was DOWN.

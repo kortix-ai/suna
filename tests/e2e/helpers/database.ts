@@ -32,6 +32,8 @@ export async function queryDatabaseRows<
     process.env.E2E_DATABASE_URL ??
     requireEnvValue("DATABASE_URL", "apps/api/.env.local", "apps/api/.env");
   const client = new Client({ connectionString });
+  // A dropped connection must fail the next query, not crash the runner.
+  client.on('error', () => {});
   await client.connect();
   try {
     const result = await client.query<T>(sql, values);

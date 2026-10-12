@@ -2,13 +2,11 @@
  * Pure rules behind the activity sheet — the timeline a burst's summary row
  * opens on mobile (`components/session/turn/activity-sheet.tsx`).
  *
- * One entry per thing the agent did: a thought (merged fragments), or one tool
- * call. A thought is listed as "Thinking" (Jay, 2026-09-22): the list says that
- * the agent thought, not what. A tap opens the thought's text. Same-family
- * group rows are unfolded, so every call is its own entry with its own detail
- * view. Grouping, plumbing, and the thought-running rule
- * come from `burstView` (and through it `mergeBurstSteps`), so the sheet lists
- * exactly the steps the summary row counts.
+ * One entry per tool call. Thinking never shows, so a thought is not an entry.
+ * Same-family group rows are unfolded, so every call is its own entry with its
+ * own detail view. Grouping and plumbing come from `burstView` (and through it
+ * `mergeBurstSteps`), so the sheet lists exactly the steps the summary row
+ * counts.
  *
  * No React, no React Native.
  */
@@ -25,20 +23,6 @@ import { activityIconKey, type ActivityIconKey, type BurstView } from './activit
 
 export type ActivitySheetEntry =
   | {
-      kind: 'thought';
-      key: string;
-      /**
-       * Always `THOUGHT_TITLE` (Jay, 2026-09-22): the list names the step and
-       * shows none of the thought. The text is `body`, the detail a tap opens.
-       */
-      title: string;
-      /** The thought as markdown: the merged fragments, paragraphs kept. */
-      body: string;
-      running: boolean;
-      /** A thought opens once it has text. */
-      openable: boolean;
-    }
-  | {
       kind: 'tool';
       key: string;
       part: Part;
@@ -50,11 +34,6 @@ export type ActivitySheetEntry =
       /** The call has a body to show (`toolHasDetail`). */
       openable: boolean;
     };
-
-// ─── Thought ─────────────────────────────────────────────────────────────────
-
-/** The label of a thought in the list. */
-export const THOUGHT_TITLE = 'Thinking';
 
 // ─── Tool ────────────────────────────────────────────────────────────────────
 
@@ -107,18 +86,7 @@ function toolEntry(part: Part, burstRunning: boolean): ActivitySheetEntry {
 
 export function activitySheetEntries(view: Pick<BurstView, 'steps' | 'running'>): ActivitySheetEntry[] {
   return view.steps.flatMap<ActivitySheetEntry>((step) => {
-    if (step.kind === 'thought') {
-      return [
-        {
-          kind: 'thought',
-          key: step.key,
-          title: THOUGHT_TITLE,
-          body: step.texts.join('\n\n'),
-          running: view.running && step.running,
-          openable: step.texts.some((text) => text.trim().length > 0),
-        },
-      ];
-    }
+    if (step.kind === 'thought') return [];
     if (step.kind === 'group') return step.step.parts.map((part) => toolEntry(part as Part, view.running));
     return [toolEntry(step.part, view.running)];
   });

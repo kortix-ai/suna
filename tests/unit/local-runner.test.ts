@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, onKortixSandboxImage, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
@@ -36,6 +36,16 @@ describe('local test runner', () => {
       'bun',
       'tests/bin/db-suites.ts',
     ]);
+  });
+
+  it('--no-packages drops package quality from the core run and keeps it out of the flow args', () => {
+    const plan = buildLocalTestPlan(['--no-packages']);
+
+    expect(plan.mode).toBe('core');
+    expect(plan.lanes.map((lane) => lane.name)).not.toContain('package-quality');
+    expect(plan.stages.flat().map((lane) => lane.name)).not.toContain('package-quality');
+    expect(plan.lanes.find((lane) => lane.name === 'api-cli-flows')?.command).not.toContain('--no-packages');
+    expect(() => buildLocalTestPlan(['--packages-only', '--no-packages'])).toThrow('--no-packages');
   });
 
   it('runs only the DB suites and passes path filters through', () => {
@@ -359,10 +369,5 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
-  });
-
-  it('detects a Kortix sandbox image by its baked model catalog', () => {
-    expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
-    expect(onKortixSandboxImage('/nonexistent/kortix-test-llm-catalog.json')).toBe(false);
   });
 });

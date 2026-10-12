@@ -12,7 +12,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { config } from '../config';
 import type { AppHostingProvider, AppMachineSpec, AppdStatus } from './hosting';
-import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp } from './public-proxy';
+import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp, loadPublicAppState } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -82,7 +82,6 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
     routeKey: ROUTE_KEY,
     desiredState,
     idleTimeoutSeconds: 300,
-    monthlyBudgetUsd: '5.00',
   });
   await db.insert(appArtifacts).values({
     artifactId: ARTIFACT_ID,
@@ -145,6 +144,23 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   beforeEach(cleanup);
   afterEach(cleanup);
 
+  test('one load returns the active deployment; a static one skips the runtime', async () => {
+    await seedStoppedRuntime();
+    const server = await loadPublicAppState(ROUTE_KEY);
+    expect(server?.deployment?.deploymentId).toBe(DEPLOYMENT_ID);
+    expect(server?.runtime?.runtimeId).toBe(RUNTIME_ID);
+
+    await testDb().update(appDeployments).set({ hostingType: 'static', sourceKind: 'static' })
+      .where(eq(appDeployments.deploymentId, DEPLOYMENT_ID));
+    const staticState = await loadPublicAppState(ROUTE_KEY);
+    expect(staticState?.deployment?.deploymentId).toBe(DEPLOYMENT_ID);
+    expect(staticState?.deployment?.hostingType).toBe('static');
+    expect(staticState?.runtime).toBeNull();
+
+    await testDb().update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT_ID));
+    expect(await loadPublicAppState(ROUTE_KEY)).toBeNull();
+  });
+
   test('public handler rejects an unsigned edge request before loading the App', async () => {
     const previous = process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;
     const previousLocal = process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE;
@@ -159,6 +175,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       });
       const response = await handleAppPublicRequest(request);
       expect(response?.status).toBe(403);
+      // The gate's own answers are never kept by the Cloudflare cache in front of the API host.
+      expect(response?.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
       expect(await response?.json()).toEqual({ error: 'Invalid App edge signature' });
     } finally {
       if (previous === undefined) delete process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;
@@ -226,7 +244,7 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   });
 
   test('an expired idle deadline wakes a running row before serving it', async () => {
-    const loaded = await seedStoppedRuntime();
+    await seedStoppedRuntime();
     await testDb().update(appRuntimes).set({
       status: 'running',
       idleDeadlineAt: new Date(Date.now() - 1000),
@@ -249,18 +267,18 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(stored?.wakeLeaseOwner).toBeNull();
   });
 
-  test('a deleted runtime rejects wake before calling the provider', async () => {
-    await seedStoppedRuntime();
+  test('a deleted machine is never picked to serve or wake: the App resolves to no machine', async () => {
+    const loaded = await seedStoppedRuntime();
     await testDb().update(appRuntimes).set({ status: 'deleted' })
       .where(eq(appRuntimes.runtimeId, RUNTIME_ID));
-    const deleted = await loadPublicApp(ROUTE_KEY);
-    if (!deleted) throw new Error('deleted runtime did not resolve');
+    expect(await loadPublicApp(ROUTE_KEY)).toBeNull();
+    // A caller still holding the stale row is refused before the provider is called.
     let ensureCalls = 0;
     const hosting = {
       ensureRunning: async () => { ensureCalls += 1; },
     } as unknown as AppHostingProvider;
-
-    await expect(ensureAppRuntimeRunning(deleted, hosting)).rejects.toThrow('App runtime cannot wake from deleted');
+    await expect(ensureAppRuntimeRunning({ ...loaded, runtime: { ...loaded.runtime, status: 'deleted' } }, hosting))
+      .rejects.toThrow('App runtime cannot wake from deleted');
     expect(ensureCalls).toBe(0);
     const [stored] = await testDb().select().from(appRuntimes).where(eq(appRuntimes.runtimeId, RUNTIME_ID));
     expect(stored?.status).toBe('deleted');

@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
@@ -76,7 +77,7 @@ describe('GenericTool on the panel surface', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <GenericTool part={part} />
+          <GenericTool call={toolCallBlock(part)} />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -99,7 +100,7 @@ describe('GenericTool on the panel surface', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <GenericTool part={part} defaultOpen />
+          <GenericTool call={toolCallBlock(part)} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );

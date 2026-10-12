@@ -16,7 +16,6 @@ import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { loadSystemRoles } from '../iam/catalog';
 import { clearAuthorizeCaches } from '../iam/authorize';
 
 const ACCOUNT = crypto.randomUUID();
@@ -475,7 +474,9 @@ describe.if(hasDatabase)('GET /v1/accounts/:accountId/iam/roles', () => {
     };
     const system = roles.filter((r) => r.is_system);
     // All SIX seeded rows, the object-grant marker included — it is a system
-    // role, and the edit guards have to recognise it.
+    // role, and the edit guards have to recognise it. The three Files folder
+    // roles are seeded too but never listed: they are only the level of a
+    // folder grant, set from the Files access dialog.
     expect(system.map((r) => `${r.resource_type}:${r.key}`).sort()).toEqual([
       'account:admin',
       'account:member',

@@ -14,8 +14,8 @@ import { resolve } from 'node:path';
  * `POST /projects/:id/sessions/warm`. So the rule moves rather than vanishes:
  * the SDK's speculative-create call lives in exactly ONE module, and everything
  * else in the app goes through that module's `useWarmProjectSession` /
- * `takeWarmSession`. A second file reaching for the SDK surface directly is the
- * regression this test exists to catch.
+ * `takeWarmSessionEntry`. A second file reaching for the SDK surface directly
+ * is the regression this test exists to catch.
  *
  * `claimWarmProjectSession` is GOVERNED, not banned: the first prompt of a
  * session is a durable server-side inbox row (never a client-side replay), and

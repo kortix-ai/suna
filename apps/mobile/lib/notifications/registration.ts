@@ -7,6 +7,9 @@
  * - `requestPushPermissionOnce()`: after the first successful send. Asks the
  *   OS once per install, then registers on grant.
  * - `syncPushPreferences()`: re-posts preferences after a toggle.
+ * - `carryOverLegacyKinds()`: copies the kinds this phone turned off into the
+ *   user's record, once. Only for a user with a `notification_center`
+ *   project (KRTX-1742); the device row keeps this phone's switches.
  * - `unregisterPushOnSignOut()`: deletes this device's row before the auth
  *   session is cleared. Bounded, never throws.
  *
@@ -18,8 +21,13 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { isRunningInExpoGo } from 'expo';
 import { log } from '@/lib/logger';
-import { registerDeviceToken, unregisterDeviceToken } from '@kortix/sdk';
-import { serverPreferences, SIGN_OUT_UNREGISTER_TIMEOUT_MS, type ServerPreferences } from '@/lib/notifications/push';
+import { registerDeviceToken, unregisterDeviceToken, updateNotificationPreferences } from '@kortix/sdk';
+import {
+  legacyKindPatch,
+  serverPreferences,
+  SIGN_OUT_UNREGISTER_TIMEOUT_MS,
+  type ServerPreferences,
+} from '@/lib/notifications/push';
 import { withDeadline } from '@/lib/utils/with-deadline';
 import { useNotificationStore } from '@/stores/notification-store';
 import { usePushStore } from '@/stores/push-store';
@@ -88,6 +96,46 @@ let lastPosted: string | null = null;
 
 function postedKey(token: string, prefs: ReturnType<typeof serverPreferences>): string {
   return `${token}|${JSON.stringify(prefs)}`;
+}
+
+let carryOverInFlight: Promise<void> | null = null;
+
+/**
+ * Copies the kinds this phone turned off into the user's record, once
+ * (KRTX-1742). A project with `notification_center` on pushes a session kind
+ * only when the record AND this phone's switch allow it, so the record then
+ * holds this phone's choice on every device and Web Push. Called when such a
+ * project opens and from Settings → Notifications in that mode; a user with
+ * no such project sends no write. Waits for the stored switches to load. A
+ * failure leaves the marker off, and the next call tries again.
+ */
+export function carryOverLegacyKinds(): Promise<void> {
+  if (!carryOverInFlight) {
+    carryOverInFlight = runCarryOver().finally(() => {
+      carryOverInFlight = null;
+    });
+  }
+  return carryOverInFlight;
+}
+
+async function runCarryOver(): Promise<void> {
+  const store = useNotificationStore;
+  if (!store.persist.hasHydrated()) {
+    await new Promise<void>((resolve) => {
+      const unsubscribe = store.persist.onFinishHydration(() => {
+        unsubscribe();
+        resolve();
+      });
+    });
+  }
+  if (store.getState().legacyKindsMigrated) return;
+  const patch = legacyKindPatch(store.getState().preferences);
+  try {
+    if (patch) await updateNotificationPreferences(patch);
+    store.getState().markLegacyKindsMigrated();
+  } catch (error) {
+    log.warn('[PUSH] Legacy kind carry-over failed:', error);
+  }
 }
 
 /**

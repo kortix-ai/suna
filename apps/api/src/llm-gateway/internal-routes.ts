@@ -6,7 +6,7 @@ import type {
 } from '@kortix/llm-gateway';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import { logger } from '../lib/logger';
 import { checkBudget } from './budgets';
 import {

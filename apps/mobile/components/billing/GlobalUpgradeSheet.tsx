@@ -16,7 +16,7 @@ import { useAccountState } from '@/lib/billing/hooks';
 import { haptics } from '@/lib/haptics';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
-import { getUpgradeSheetTransition } from '@/lib/billing/upgrade-sheet-lifecycle';
+import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
 import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
@@ -74,7 +74,7 @@ export function GlobalUpgradeSheet() {
   const included = getUpgradeSheetIncludedItems(offer.pricePerSeat, canPurchase);
 
   useEffect(() => {
-    const transition = getUpgradeSheetTransition(isOpen, wasPresentedRef.current);
+    const transition = sheetOpenMove(isOpen, wasPresentedRef.current);
     if (transition === 'present') {
       wasPresentedRef.current = true;
       const frame = requestAnimationFrame(() => sheetRef.current?.present());

@@ -17,7 +17,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, GlobeIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { appStatus, DeployCommand, FIRST_DEPLOY_COMMAND } from './app-shared';
+import { appCan, appStatus, gridApps } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -59,7 +59,7 @@ function AppsHeader({
         </div>
       ) : null}
       <Link
-        href="/docs/feature-flags/apps"
+        href="/docs/apps"
         target="_blank"
         rel="noopener noreferrer"
         prefetch={false}
@@ -87,10 +87,14 @@ export function AppsView({ projectId }: { projectId: string }) {
   // render the controls.
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
   const canDeploy = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_DEPLOY).allowed === true;
+  // Exec, a volume restore or destroy: project.app.admin.
+  const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_ADMIN).allowed === true;
   // Which App the detail modal is showing. Held by id, not by object, so a
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
-  // fresh row instead of a stale copy captured at click time.
-  const [openAppId, setOpenAppId] = useState<string | null>(null);
+  // fresh row instead of a stale copy captured at click time. `?app=<id>`
+  // opens one on arrival: the links the CLI prints and the retired
+  // `/backends/<id>` routes land here.
+  const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
 
@@ -152,6 +156,7 @@ export function AppsView({ projectId }: { projectId: string }) {
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
+              internalOnly
               description={tI18nComplete.raw('text3387c31a18b3')}
             />
           ) : apps.isLoading ? (
@@ -167,14 +172,14 @@ export function AppsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : apps.data?.length ? (
+          ) : apps.data && gridApps(apps.data, canAdmin).length ? (
             /* A gallery grid, sized by the space it has rather than by the
                window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
             <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
-              {apps.data.map((app) => (
+              {gridApps(apps.data, canAdmin).map((app) => (
                 <AppCard
                   key={app.app_id}
                   projectId={projectId}
@@ -196,6 +201,11 @@ export function AppsView({ projectId }: { projectId: string }) {
           app={openApp}
           canWrite={canWrite}
           canDeploy={canDeploy}
+          canAdmin={canAdmin}
+          onOpenLinked={(slug) => {
+            const linked = apps.data?.find((item) => item.slug === slug);
+            if (linked) setOpenAppId(linked.app_id);
+          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);
@@ -243,25 +253,29 @@ function AppGridSkeleton({ columns }: { columns: AppGridColumns }) {
  */
 function AppsEmptyState() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // One muted line and a hint (brand D4g): Apps are what agents build, so the
+  // hint points at an agent, not at a CLI command.
   return (
     <EmptyState
-      icon={GlobeIcon}
-      title={tI18nComplete.raw('text7aaec6fe02f0')}
-      description={tI18nComplete.raw('text4b2e1a2b9cbc')}
-      action={<DeployCommand code={FIRST_DEPLOY_COMMAND} />}
+      title={tI18nComplete.raw('textdb4764b8b3e7')}
+      description={tI18nComplete.raw('texta7a8d2a5fb25')}
     />
   );
 }
 
 function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // The session URL is minted only for an App with capability `preview`, and
+  // only when the card frames it (`display.preview: none` shows an icon).
+  const thumbnail = app.display?.preview !== 'none';
+  const preview = appCan(app, 'preview') && thumbnail;
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
   // any App the viewer may see but not open, which is a state the server now
   // reports up front instead of leaving the card to discover it by failing.
   const canAccess = app.viewer_can_access !== false;
-  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
+  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess && preview });
   const status = appStatus(app, tI18nComplete);
 
   return (
@@ -285,17 +299,23 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
-          <AppPreview
-            key={app.active_deployment_id ?? app.app_id}
-            app={app}
-            url={access.session.data?.url ?? null}
-            accessError={!canAccess || access.session.isError}
-            interactive={false}
-          />
+          {thumbnail ? (
+            <AppPreview
+              key={app.active_deployment_id ?? app.app_id}
+              app={app}
+              url={access.session.data?.url ?? null}
+              accessError={!canAccess || access.session.isError}
+              interactive={false}
+            />
+          ) : (
+            <div className={cn(PREVIEW_TILE_ASPECT, 'bg-muted/20 text-muted-foreground flex items-center justify-center')} data-testid="app-preview-icon">
+              <HardDrivesIcon className="size-8" aria-hidden />
+            </div>
+          )}
         </div>
 
-        {/* The caption: the App's name and whether it is up. One line.
-            No padding of its own — it is page text, not the inside of a panel.
+        {/* The caption: the App's name and whether it is up. One line. No padding of its own — it is page
+            text, not the inside of a panel.
 
             The hostname used to sit under the name in monospace. It is the
             same `<generated-key>.apps.<domain>` shape on every card, so a

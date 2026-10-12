@@ -8,14 +8,14 @@
  * most `batchRows` rows of each bulk ledger and records where it stopped.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../__tests__/helpers/pg-client';
 import { reconcileAuditEvents } from './audit-reconciliation';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const fixtureUrl = process.env.TEST_DATABASE_SUPERUSER_URL ?? databaseUrl;
 const ACCOUNT = 'b8200000-0000-4000-a000-000000000001';
 
-let client: pg.Client;
+let client: PgClient;
 
 /** A usage event `ageDays` old, inserted without the audit trigger. */
 async function usageEvent(ageDays: number, audited = false) {
@@ -76,7 +76,7 @@ const stateOf = async () =>
 
 describe.skipIf(!databaseUrl)('audit reconciliation is bounded by rows per pass', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: fixtureUrl });
+    client = new PgClient({ connectionString: fixtureUrl });
     await client.connect();
     await client.query(`INSERT INTO kortix.accounts(account_id, name) VALUES ($1, 'audit-batches')`, [ACCOUNT]);
   });

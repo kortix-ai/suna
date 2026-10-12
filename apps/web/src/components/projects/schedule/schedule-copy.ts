@@ -20,7 +20,9 @@ import type { UiTranslator } from '@/i18n/translator';
 
 import type { ProjectTrigger } from '@kortix/sdk';
 
-export type TriggerKind = 'cron' | 'webhook';
+import { describeEventTitle } from './event-trigger-copy';
+
+export type TriggerKind = 'cron' | 'webhook' | 'event';
 
 /**
  * `ProjectTrigger['type']` on the wire also carries `'monitor'` — a separate
@@ -30,7 +32,7 @@ export type TriggerKind = 'cron' | 'webhook';
  * is safe to treat as {@link TriggerKind} anywhere downstream of that filter.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
-  return type === 'cron' || type === 'webhook';
+  return type === 'cron' || type === 'webhook' || type === 'event';
 }
 
 /**
@@ -169,11 +171,28 @@ export function describeOneOff(iso: string): string {
  * The one line that answers "when does this run?" — the same sentence in the
  * list, the detail panel, and the delete confirmation.
  */
-export function describeWhen(trigger: ProjectTrigger): string {
+export function describeWhen(
+  trigger: ProjectTrigger,
+  eventNames?: ReadonlyMap<string, string>,
+): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
+  if (trigger.type === 'event') return describeEventTitle(trigger.event, eventNames);
   if (trigger.run_at) return describeOneOff(trigger.run_at);
   if (trigger.cron) return describeCadence(trigger.cron);
   return CUSTOM_TIMING_LABEL;
+}
+
+/**
+ * "Next run Oct 8, 11:12", in the viewer's time zone, for an enabled cron
+ * trigger; null when there is none. The time is the slot the scheduler
+ * claims, jitter included, so it can sit up to 30 minutes past the
+ * expression's own slot (KRTX-1743).
+ */
+export function describeNextRun(trigger: ProjectTrigger): string | null {
+  if (!trigger.enabled || !trigger.next_fire_at) return null;
+  const at = new Date(trigger.next_fire_at);
+  if (Number.isNaN(at.getTime())) return null;
+  return `Next run ${at.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
 }
 
 /* ─── Names ─────────────────────────────────────────────────────────────── */
@@ -183,6 +202,7 @@ export function triggerName(trigger: ProjectTrigger): string {
   const named = trigger.name?.trim();
   if (named) return named;
   if (trigger.type === 'cron') return describeWhen(trigger);
+  if (trigger.type === 'event') return describeWhen(trigger);
   return 'Untitled webhook';
 }
 
@@ -191,25 +211,34 @@ export function triggerName(trigger: ProjectTrigger): string {
 export type TriggerStatus = {
   label: 'Active' | 'Paused';
   active: boolean;
-  /** Tint classes for the leading icon tile. */
-  tileClassName: string;
-  iconClassName: string;
 };
 
 export function triggerStatus(enabled: boolean, tI18nComplete: UiTranslator): TriggerStatus {
   return enabled
-    ? {
-        label: tI18nComplete.raw('text92340695899b'),
-        active: true,
-        tileClassName: 'bg-kortix-green/10',
-        iconClassName: 'text-kortix-green',
-      }
-    : {
-        label: tI18nComplete.raw('texte159b06187d3'),
-        active: false,
-        tileClassName: 'bg-muted',
-        iconClassName: 'text-muted-foreground',
-      };
+    ? { label: tI18nComplete.raw('text92340695899b'), active: true }
+    : { label: tI18nComplete.raw('texte159b06187d3'), active: false };
+}
+
+/* ─── Badge state ───────────────────────────────────────────────────────── */
+
+/**
+ * The one status a trigger shows on every surface: the list, the sheet header
+ * and the connector tab. Paused outranks the rest (a paused trigger holds no
+ * subscription), then the subscription's own state, then a failed last run.
+ */
+export type TriggerBadgeState = 'live' | 'needs_connection' | 'error' | 'pending' | 'paused';
+
+export function triggerBadgeState(trigger: ProjectTrigger): TriggerBadgeState {
+  if (!trigger.enabled) return 'paused';
+  const subscription = trigger.event?.status;
+  if (
+    subscription === 'needs_connection' ||
+    subscription === 'error' ||
+    subscription === 'pending'
+  ) {
+    return subscription;
+  }
+  return trigger.last_status === 'failed' ? 'error' : 'live';
 }
 
 /* ─── Last run ──────────────────────────────────────────────────────────── */
@@ -364,6 +393,16 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     emptyBody: 'Create one to let another app start an agent when something happens over there.',
     column: 'Security',
   },
+  event: {
+    title: 'App events',
+    description: 'Have an agent run when something happens in a connected app.',
+    noun: 'app event',
+    createLabel: 'New app event',
+    searchPlaceholder: 'Search app events',
+    emptyTitle: 'No app events yet',
+    emptyBody: 'Create one to have an agent run when a connected app reports something new.',
+    column: 'Status',
+  },
 };
 
 /**
@@ -374,13 +413,14 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  */
 export const TRIGGERS_COPY = {
   title: 'Triggers',
-  description: 'Run an agent automatically — on a schedule, or when another app sends a signal.',
+  description:
+    'Start an agent on a schedule, when something happens in a connected app, or when a webhook is called.',
   noun: 'trigger',
   createLabel: 'New trigger',
   searchPlaceholder: 'Search triggers',
   emptyTitle: 'No triggers yet',
   emptyBody:
-    'Create one to have an agent run automatically — on a schedule, or when another app sends a signal.',
+    'Create one to start an agent on a schedule, when something happens in an app like Gmail or GitHub, or when a webhook is called.',
 } as const;
 
 export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {

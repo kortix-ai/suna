@@ -73,5 +73,3 @@ export async function runGrantExpirySweepOnce(): Promise<void> {
     ),
   );
 }
-
-export { startGrantExpirySweeper, stopGrantExpirySweeper } from '../workers/grant-expiry-worker';

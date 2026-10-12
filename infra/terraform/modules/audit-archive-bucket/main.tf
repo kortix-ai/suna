@@ -18,7 +18,17 @@ resource "aws_s3_bucket" "audit_archive" {
   bucket              = var.name
   object_lock_enabled = true
   force_destroy       = false
-  tags                = merge(var.tags, { Name = var.name })
+  # Tags are literal-keyed so Drata's IaC scanner (test 8028 "Resource Tagging")
+  # can read them: it evaluates `merge(var.tags, …)` as {}. Caller context flows
+  # through lookup() values, as in the ecs-api execution role.
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = var.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Region      = lookup(var.tags, "Region", null)
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "audit_archive" {
@@ -80,7 +90,14 @@ resource "aws_kms_key" "audit_archive" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.key.json
-  tags                    = merge(var.tags, { Name = "${var.name}-audit-archive" })
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-audit-archive"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Region      = lookup(var.tags, "Region", null)
+  }
 }
 
 resource "aws_kms_alias" "audit_archive" {

@@ -11,22 +11,22 @@ on:
   workflow_dispatch:
     inputs:
       cluster:
-        description: "ECS cluster name, e.g. kortix-staging"
+        description: "ECS cluster name, e.g. kortix-staging-euw2"
         required: true
         type: string
       service:
-        description: "ECS service name, e.g. kortix-staging or kortix-staging-gateway"
+        description: "ECS service name, e.g. kortix-staging-euw2 or kortix-staging-euw2-gateway"
         required: true
         type: string
       desired_count:
         description: "New desired task count"
         required: true
         type: number
+      # No default: dev runs in us-east-2, staging and prod in eu-west-2.
       region:
-        description: "AWS region"
-        required: false
+        description: "AWS region: us-east-2 (dev) or eu-west-2 (staging, prod)"
+        required: true
         type: string
-        default: "us-west-2"
 
 permissions:
   contents: read
@@ -35,7 +35,7 @@ permissions:
 jobs:
   scale:
     name: scale ${{ inputs.service }} to ${{ inputs.desired_count }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # Inputs reach the shell only through env, never through `${{ }}` in `run:`.
     env:
       CLUSTER: ${{ inputs.cluster }}

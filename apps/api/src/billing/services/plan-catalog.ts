@@ -82,9 +82,6 @@ export interface PlanRecord {
   displayName: string;
 }
 
-/** Public ladder, low to high. */
-export const PLAN_FAMILIES: readonly PlanFamily[] = ['free', 'team', 'enterprise'] as const;
-
 /** Customer-facing name of each family. */
 export const PLAN_FAMILY_LABELS: Record<PlanFamily, string> = {
   free: 'Free',
@@ -458,9 +455,4 @@ export function getPlanRecord(key: string | null | undefined): PlanRecord | null
  */
 export function resolvePlanRecord(key: string | null | undefined): PlanRecord {
   return getPlanRecord(key) ?? NO_PLAN;
-}
-
-/** Every key in the catalog, in rank order. */
-export function listPlanRecords(): PlanRecord[] {
-  return Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank);
 }

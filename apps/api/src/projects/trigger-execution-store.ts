@@ -8,6 +8,7 @@ import { exponentialBackoffMs } from '../shared/backoff';
 import { logger } from '../lib/logger';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { cronSlotFields } from './lib/trigger-payload';
+import { clearTriggerAlert, raiseTriggerAlert } from './lib/trigger-alerts';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -179,13 +180,14 @@ export async function claimTriggerExecutions(input: {
   const leaseMs = input.leaseMs ?? 2 * 60_000;
   // A worker may die during its final attempt. Once that lease expires, make
   // the abandonment explicit instead of leaving a permanent `running` row.
-  await db
+  const abandonedError = 'execution lease expired after the maximum number of attempts';
+  const abandoned = await db
     .update(projectTriggerExecutions)
     .set({
       status: 'dead_lettered',
       lockedBy: null,
       lockedUntil: null,
-      lastError: 'execution lease expired after the maximum number of attempts',
+      lastError: abandonedError,
       completedAt: input.now,
       updatedAt: input.now,
     })
@@ -206,7 +208,10 @@ export async function claimTriggerExecutions(input: {
           ),
         ),
       ),
-    );
+    )
+    .returning({ projectId: projectTriggerExecutions.projectId, slug: projectTriggerExecutions.slug });
+  // A dead letter is a terminal failure: its watchers hear about it (KRTX-1742).
+  await Promise.all(abandoned.map((row) => raiseTriggerAlert({ ...row, source: 'fire', error: abandonedError })));
 
   const candidates = await db
     .select()
@@ -393,6 +398,8 @@ export async function markTriggerRuntimeDelivered(input: {
         updatedAt: input.when,
       },
     });
+  // The prompt reached its session: a fire failure streak is over (KRTX-1742).
+  await clearTriggerAlert({ projectId: input.projectId, slug: input.slug, source: 'fire' });
 }
 
 /**

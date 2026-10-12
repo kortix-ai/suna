@@ -24,9 +24,7 @@ mock.module('../../shared/db', () => ({
 }));
 
 const {
-  AUDIT_RATE_LIMIT_METADATA_KEY,
   flagSessionAuditRateLimited,
-  readAuditRateLimitFlag,
 } = await import('./session-audit-rate-flag');
 
 const INPUT = {
@@ -62,35 +60,5 @@ describe('flagSessionAuditRateLimited', () => {
     // No try/catch here on purpose: the assertion IS that this resolves.
     await expect(flagSessionAuditRateLimited(INPUT)).resolves.toBeUndefined();
     expect(updateCalls).toHaveLength(0);
-  });
-});
-
-describe('readAuditRateLimitFlag', () => {
-  test('reads back a well-formed marker', () => {
-    const flag = readAuditRateLimitFlag({
-      [AUDIT_RATE_LIMIT_METADATA_KEY]: {
-        consecutiveHotWindows: 4,
-        at: '2026-08-19T04:00:00.000Z',
-      },
-      somethingElse: true,
-    });
-
-    expect(flag).toEqual({ consecutiveHotWindows: 4, at: '2026-08-19T04:00:00.000Z' });
-  });
-
-  test('returns null when the marker is absent or malformed', () => {
-    expect(readAuditRateLimitFlag(null)).toBeNull();
-    expect(readAuditRateLimitFlag(undefined)).toBeNull();
-    expect(readAuditRateLimitFlag({})).toBeNull();
-    expect(readAuditRateLimitFlag({ [AUDIT_RATE_LIMIT_METADATA_KEY]: 'hot' })).toBeNull();
-    expect(readAuditRateLimitFlag({ [AUDIT_RATE_LIMIT_METADATA_KEY]: [] })).toBeNull();
-    expect(
-      readAuditRateLimitFlag({ [AUDIT_RATE_LIMIT_METADATA_KEY]: { consecutiveHotWindows: 2 } }),
-    ).toBeNull();
-    expect(
-      readAuditRateLimitFlag({
-        [AUDIT_RATE_LIMIT_METADATA_KEY]: { consecutiveHotWindows: 'many', at: 'now' },
-      }),
-    ).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -20,7 +21,7 @@ const render = (p: ToolPart, open = false, running = false) =>
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <ToolRunningContext.Provider value={running}>
-          <ApplyPatchTool part={p} defaultOpen={open} />
+          <ApplyPatchTool call={toolCallBlock(p)} defaultOpen={open} />
         </ToolRunningContext.Provider>
       </NextIntlClientProvider>
     </QueryClientProvider>,

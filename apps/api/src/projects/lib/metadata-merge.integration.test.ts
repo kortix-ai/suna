@@ -2,13 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createDb, accounts, projects, type Database } from '@kortix/db';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './metadata-merge';
+import { activateWithCas } from '../provider-transition/provider-transition-activate';
 import {
-  ACTIVE_EXTERNAL_ID_META_KEY,
-  ACTIVE_SNAPSHOT_NAME_META_KEY,
-  PIN_META_KEY,
+  ACTIVE_EXTERNAL_ID_META_KEY, ACTIVE_SNAPSHOT_NAME_META_KEY, PIN_META_KEY, readActiveRouting,
+} from '../provider-transition/provider-transition-routing';
+import {
   acquireLease,
-  activateWithCas,
-  readActiveRouting,
   reserveSwitchTransition,
 } from '../provider-transition/provider-transition-store';
 

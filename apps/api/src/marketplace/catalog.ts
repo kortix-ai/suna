@@ -32,7 +32,6 @@ import {
   loadRegistry,
   parseRegistryAddress,
   rawGithubUrl,
-  resolveOpencodeDir,
   type BuildSource,
   type RegistryItem,
   type RegistryJson,
@@ -2230,5 +2229,3 @@ export function _resetExternalCache(): void {
 export function warmMarketplaceCatalog(): void {
   void startExternalBuild().catch(() => undefined);
 }
-
-export { resolveOpencodeDir };

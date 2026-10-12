@@ -30,28 +30,13 @@ const slowUpstream = async (): Promise<Response> => {
 const reserveDelays: number[] = [];
 
 mock.module('../../../config', () => ({
-  config: {
-    KORTIX_BILLING_INTERNAL_ENABLED: true,
-    OPENROUTER_API_URL: 'https://openrouter.example',
-  },
-  KORTIX_MARKUP: 1.2,
-}));
-
-// handlers.ts imports the llm-reservation module, whose import chain reaches
-// the billing service. Tavily is not an LLM service, so stub it the same way
-// handlers-byok.test.ts does.
-mock.module('../../services/llm-reservation', () => ({
-  reserveEstimatedLlmCredits: async () => null,
-  settleLlmReservation: async () => undefined,
-  refundLlmReservation: async () => undefined,
-  settleHeldLlmReservation: async () => undefined,
+  config: { KORTIX_BILLING_INTERNAL_ENABLED: true },
 }));
 
 mock.module('./helpers', () => ({
   tryAuthenticate: async () => ({ isKortixUser: true, accountId: 'acct-synthetic' }),
   buildForwardHeaders: () => new Headers(),
   getRequestBody: async () => JSON.stringify({ query: 'synthetic search' }),
-  maybeNormalizeOpenAIResponsesInput: (_s: unknown, _m: string, _p: string, body: unknown) => body,
   matchAllowedRoute: () => ({
     path: '/search',
     methods: ['POST'],

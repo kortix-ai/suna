@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "Klicken Sie auf den Link in der E-Mail, um Ihr Konto zu bestätigen, und melden Sie sich dann an.",
     "browseAsGuest": "Als Gast durchsuchen",
     "signOutFailed": "Abmelden fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
-    "signingOut": "Wird abgemeldet…"
+    "signingOut": "Wird abgemeldet…",
+    "mfa": {
+      "title": "Bestätige, dass du es bist",
+      "enterCode": "Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
+      "codeLabel": "6-stelliger Code",
+      "verify": "Bestätigen",
+      "verifying": "Wird bestätigt…",
+      "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
+      "verifyFailed": "Der Code konnte nicht geprüft werden. Prüfe deine Verbindung und versuche es erneut."
+    }
   },
   "onboarding": {
     "welcome": "Sehen Sie, was Kortix kann",
@@ -1188,5 +1197,11 @@
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+  },
+  "updateRequired": {
+    "title": "Update erforderlich",
+    "body": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App, um fortzufahren.",
+    "bodyNoStore": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App im App Store oder bei Google Play, um fortzufahren.",
+    "button": "Aktualisieren"
   }
 }
