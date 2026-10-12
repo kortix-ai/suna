@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { redirectSystemPath } from '@/app/+native-intent';
 import { inviteIdFromUrl, inviteLanding, rememberInviteLink, takeInviteLink } from './invite-landing';
 
 const ID = '3f2b8c1e-9a4d-4e6f-8b2a-1c5d7e9f0a3b';
@@ -89,5 +90,17 @@ describe('the remembered invite link', () => {
     rememberInviteLink('a');
     rememberInviteLink(ID);
     expect(takeInviteLink()).toBe(ID);
+  });
+
+  test('an opened invite link routes unchanged and is kept for after sign-in', () => {
+    takeInviteLink();
+    expect(redirectSystemPath({ path: `kortix://invites/${ID}`, initial: true })).toBe(`kortix://invites/${ID}`);
+    expect(takeInviteLink()).toBe(ID);
+  });
+
+  test('any other link is not kept', () => {
+    redirectSystemPath({ path: 'kortix://share/abc', initial: false });
+    redirectSystemPath({ path: '/projects/p1', initial: false });
+    expect(takeInviteLink()).toBeNull();
   });
 });
