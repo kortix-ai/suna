@@ -85,3 +85,23 @@ describe('web Terraform root does not gate the API roll', () => {
     expect(needsOf(all['deploy-web-ecs']).split(', ')).toContain('terraform-dev');
   });
 });
+
+/**
+ * 2026-10-12: staging rolled web only after the API and gateway (7.4 + 3.5 min
+ * serial). Staging now rolls them in parallel; prod keeps web after API.
+ */
+describe('web rollout order', () => {
+  const needs = (job: string) => /^ {4}needs: \[(.*)\]$/m.exec(job)?.[1].split(', ') ?? [];
+
+  it('staging rolls web in parallel with the API, and verify still waits for the API', () => {
+    const staging = jobs(read('deploy-staging.yml'));
+    expect(needs(staging['deploy-web-ecs'])).not.toContain('deploy-ecs');
+    expect(needs(staging['deploy-web-vercel'])).not.toContain('deploy-ecs');
+    expect(needs(staging.verify)).toContain('deploy-ecs');
+    expect(needs(staging['promote-staging-channel'])).toContain('verify');
+  });
+
+  it('prod keeps web after the API roll', () => {
+    expect(needs(jobs(read('deploy-prod.yml'))['deploy-web-ecs'])).toContain('deploy-ecs');
+  });
+});

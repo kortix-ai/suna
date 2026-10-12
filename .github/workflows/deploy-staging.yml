@@ -524,11 +524,16 @@ jobs:
 
   deploy-web-ecs:
     name: Deploy staging web to ECS Fargate
-    needs: [preflight, deploy-ecs, terraform-staging-web]
+    # Rolls in parallel with the API and gateway (deploy-ecs), not after it:
+    # 3.5 min off every staging deploy (2026-10-12). Nothing here reads
+    # deploy-ecs outputs, the release gate starts only after `verify`, and
+    # `verify` waits for deploy-ecs, so a failed API roll still fails the run.
+    # Prod keeps web after API (deploy-prod.yml): prod serves users mid-roll.
+    needs: [preflight, sync-secret, terraform-staging-web]
     if: >-
       ${{ always()
         && needs.preflight.result == 'success'
-        && needs.deploy-ecs.result == 'success'
+        && needs.sync-secret.result == 'success'
         && (needs.terraform-staging-web.result == 'success' || needs.terraform-staging-web.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -610,8 +615,9 @@ jobs:
 
   deploy-web-vercel:
     name: Deploy staging web to Vercel
-    # deploy-ecs gates the staging rollout: a failed ECS roll can't pass silently.
-    needs: [preflight, wire-cloudflare, deploy-ecs]
+    # Parallel with deploy-ecs, like deploy-web-ecs. `verify` needs deploy-ecs,
+    # so a failed ECS roll still cannot pass silently.
+    needs: [preflight, wire-cloudflare, sync-secret]
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
@@ -701,7 +707,7 @@ jobs:
 
   verify:
     name: Verify live staging on ECS and Vercel
-    needs: [preflight, wire-cloudflare, deploy-web-vercel, publish-web-ecs-dns]
+    needs: [preflight, wire-cloudflare, deploy-ecs, deploy-web-vercel, publish-web-ecs-dns]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
