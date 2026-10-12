@@ -23,10 +23,13 @@ const globals = globalThis as Record<string, unknown>;
  */
 const lib = {
   element: (node: { innerHTML: string; outerHTML: string }) => node as unknown as HTMLElement,
-  click: (el: Element) =>
-    el.dispatchEvent(
-      new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
-    ),
+  // Returns the dispatched event so a test can assert `defaultPrevented`
+  // without re-deriving the cast outside this adapter.
+  click: (el: Element) => {
+    const event = new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event;
+    el.dispatchEvent(event);
+    return event;
+  },
 };
 globals.window = win;
 globals.document = win.document;
@@ -269,9 +272,9 @@ test('the drawer docs row stays a plain anchor: the tap marks it pending and lea
   // to hand to the router.
   expect(row!.getAttribute('data-next-link')).toBeNull();
   expect(row!.getAttribute('target')).toBeNull();
-  const click = new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event;
+  let click: Event | undefined;
   await act(async () => {
-    row!.dispatchEvent(click);
+    click = lib.click(row!);
   });
   // The handler must not hijack the tap: the anchor's default document load is
   // what serves the docs site. A `preventDefault` here would either strand the
