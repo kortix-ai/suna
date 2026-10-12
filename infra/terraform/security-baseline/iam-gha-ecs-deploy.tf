@@ -29,7 +29,6 @@
 #   - PassRole for the task+exec roles of all production release services:
 #     kortix-{dev-use2,staging-euw2,prod} (api), kortix-{…}-gateway,
 #     and kortix-{…}-web
-#     plus the pre-cutover US East 2 API and gateway shadow services
 #     (the ecs-api TF module names roles "<service>-exec"/"<service>-task")
 #   - Secrets Manager read of every kortix-<env>-env blob (the task-def renderer
 #     wires each blob key as a container secret)
@@ -125,8 +124,9 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Resource = "*"
       },
       {
-        # The US shadow workflow resolves each ALB DNS name before updating its
-        # Cloudflare CNAME. DescribeLoadBalancers supports no resource ARN.
+        # Deploy Dev and Deploy Staging resolve the web ALB DNS name before
+        # updating its Cloudflare CNAME. DescribeLoadBalancers supports no
+        # resource ARN.
         Sid      = "DescribeLoadBalancers"
         Effect   = "Allow"
         Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
@@ -159,10 +159,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]
@@ -259,7 +255,7 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_prod" {
         Sid    = "ManageProdServices"
         Effect = "Allow"
         Action = ["ecs:UpdateService", "ecs:DescribeServices"]
-        # prod = eu-west-2; kortix-prod-use2* are the us-east-2 shadow services.
+        # prod runs in eu-west-2.
         Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-prod*/kortix-prod*"]
       },
       {
@@ -299,10 +295,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_prod" {
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]

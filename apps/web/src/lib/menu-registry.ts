@@ -1337,7 +1337,8 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'customizeSidebar',
     requiresProject: true,
-    keywords: 'sidebar customize reorder hide show navigation rows',
+    // No 'navigation': a group word, not one on screen (command-palette-search.test.ts).
+    keywords: 'sidebar customize reorder hide show rows',
   },
   {
     id: 'toggle-panel-mode',

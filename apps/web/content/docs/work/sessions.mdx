@@ -204,6 +204,7 @@ Kortix stops a sandbox when nothing keeps it awake. Each event below keeps the s
 
 - The stop check runs about every 5 minutes. An idle session stops about 15 to 20 minutes after its last turn.
 - An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake.
+- Above the composer, a line shows how much longer the open page can keep the sandbox awake. Within 15 minutes of the 2-hour page limit, the line shows when the sandbox stops instead. The line is hidden while a turn runs. It is also hidden while another event in the table, such as preview port use, keeps the sandbox awake past the page limit.
 - A new message starts a turn and resets the 2-hour page limit.
 - Other requests a sandbox makes itself, with its own token or its own `kortix` CLI, never keep it awake. Only its LLM calls through the gateway count.
 

@@ -1,8 +1,8 @@
 # Terraform roots — what CI applies, and what it does not
 
 Every directory with a `backend.tf` is a Terraform root. Until 2026-08-10 CI
-applied exactly one of them (`environments/prod-us-east-2-shadow`, from
-`deploy-prod-us-east-2-shadow.yml`); the rest were applied by hand. Merged
+applied exactly one of them (the us-east-2 prod shadow, removed 2026-10-12);
+the rest were applied by hand. Merged
 infrastructure could therefore sit unapplied indefinitely, and on 2026-08-10 two
 merged compliance PRs (#6295, #6344) did exactly that for several hours. Since
 2026-08-11 every root that a deploy touches is applied by CI.
@@ -20,19 +20,23 @@ table is the source of truth for which root it drives.
 | `environments/prod-web` | `deploy-prod.yml` -> `terraform-prod` | every production release, after `environments/prod` | `eu-west-2` | `kortix-gha-tf-apply-prod` |
 | `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
 | `security-baseline` | `terraform-apply-global.yml` | push to `dev` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
-| `environments/prod-us-east-2-shadow` | `deploy-prod-us-east-2-shadow.yml` | release | `us-east-2` | `kortix-gha-prod-use2-terraform` |
 
 Every root above, applied or not, is planned nightly by the `drift detection`
 matrix in `terraform-ci.yml`, so an unapplied change still shows up as drift.
 
-The "Region" column is where the resources live. Every state file except
-`prod-us-east-2-shadow` is still in the `kortix-terraform-state` bucket and the
-`kortix-terraform-locks` table in us-west-2 (each root's `backend.tf`).
+The "Region" column is where the resources live. Every state file is still in
+the `kortix-terraform-state` bucket and the `kortix-terraform-locks` table in
+us-west-2 (each root's `backend.tf`). The us-east-2 state bucket
+`kortix-terraform-state-us-east-2-935064898258` and lock table
+`kortix-terraform-locks-us-east-2` (`security-baseline/terraform-state-use2.tf`)
+hold no live root.
 
 The us-west-2 roots `dev`, `dev-web`, `staging` and `staging-web`
 were destroyed on 2026-10-12 (dev 58, dev-web 2, staging 74, staging-web 19
 resources) and removed from the repository. Their stacks moved to the
-`-us-east-2` and `-eu-west-2` roots above.
+`-us-east-2` and `-eu-west-2` roots above. The us-east-2 prod shadow root
+`prod-us-east-2-shadow` was removed the same day; it had not run since
+2026-08.
 
 ## `api_image` is the only input CI supplies
 
