@@ -144,6 +144,41 @@ Plain `pnpm dev` (unpackaged `electron .`) is great for fast iteration, and your
 session persists across relaunches — but a *fresh* login won't round-trip back
 until you run the bundled build above.
 
+## Quick Entry (global shortcut)
+
+**Command+Shift+Space** (Ctrl+Shift+Space on Windows and Linux) opens a prompt
+bar over any app. Enter starts a new session with that prompt. The same bar
+opens from **File ▸ Open Quick Entry**.
+
+- **Where the session starts.** The project the app window shows, else the
+  project this profile opened last (the `kortix_last_project` cookie). The bar
+  names it: "New session in \<project\>". With no project known, the prompt
+  opens `/projects/start?q=…`: it fills the composer there and does not send.
+- **How it sends.** The bar never calls Kortix. Enter stores the prompt in the
+  main process, brings the app window forward, and pokes it
+  (`kortix:quick-entry`, no text). The web app pulls the prompt once with the
+  sender-gated `quick_entry_take` command and submits it from the project home
+  composer: the same agent, model, billing gate and warm session as a typed
+  message (`apps/web/src/components/desktop/desktop-quick-entry.tsx`). A
+  window that is still loading, or signed out, takes it when the app mounts.
+  An untaken prompt expires after 10 minutes.
+- **Keys.** Enter sends. Shift+Enter adds a line. Esc, the shortcut again, or a
+  click in another app closes the bar and keeps the typed text for the next
+  open. The prompt replaces an unsent draft in the project home composer.
+- **Choose the shortcut.** **File ▸ Quick Entry Shortcut**: Command+Shift+Space
+  (default), Option+Space, Option+Shift+Space, or Off. The choice is saved in
+  `userData/quick_entry.json`. A shortcut another app holds shows "(in use)".
+  Option+Space is not the default because Claude and ChatGPT use it.
+- **macOS.** The bar is a non-activating panel: it takes keys over a
+  full-screen app and on every Space, and the app you typed over stays active
+  until you press Enter. A Kortix hidden with Command+H stays hidden after Esc.
+- **Linux.** Electron has no global shortcuts under Wayland. Use the menu item.
+
+Files: `src/quick-entry.js` (window, shortcut, IPC), `src/quick-entry-rules.js`
+(choices, placement, expiry; tested), `src/quick-entry-preload.js`,
+`assets/quick-entry.html`. The native journey in
+`tests/e2e/specs/27-desktop-parity.spec.ts` drives it end to end.
+
 ## This computer (local agent + tray)
 
 The app bundles the computer agent, `@kortix/agent-tunnel`

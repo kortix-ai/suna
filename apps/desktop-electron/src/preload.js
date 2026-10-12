@@ -73,6 +73,12 @@ ipcRenderer.on('kortix:command', (_event, command) => {
   window.dispatchEvent(new CustomEvent('kortix-desktop-command', { detail: command }));
 });
 
+// A prompt is waiting in the Quick Entry bar. The event carries no text: the
+// web app takes it with the trusted `quick_entry_take` command.
+ipcRenderer.on('kortix:quick-entry', () => {
+  window.dispatchEvent(new CustomEvent('kortix-desktop-quick-entry'));
+});
+
 const setFullscreenState = (fullscreen) => {
   const html = document.documentElement;
   if (!html) return;
