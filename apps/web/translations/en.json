@@ -1632,7 +1632,19 @@
       "tooMany": "A session has at most 20 labels."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Customize sidebar",
+    "customizeSidebarDescription": "Drag rows between the two groups.",
+    "resetSidebar": "Reset to default",
+    "reorderItem": "Reorder {name}",
+    "reorderHint": "Drag to reorder. Or press the up and down arrow keys; moving past More hides the row from the sidebar.",
+    "reorderAnnouncement": "{name}: {group}, position {position} of {total}",
+    "more": "More",
+    "inSidebar": "Sidebar",
+    "underMore": "More",
+    "sidebarEmpty": "Drag a row here to show it in the sidebar.",
+    "moreEmpty": "Drag a row here to move it under More.",
+    "moreCaption": "Rows under More open from the More menu, below the nav."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19558,7 +19570,9 @@
       "text8d54763edcd8": "Not attached",
       "textffeb0c99532f": "Snapshots kept {value0} days",
       "text6f52b07880a0": "Snapshot now",
-      "text91dc861375bc": "Viewed mobile release policy"
+      "text91dc861375bc": "Viewed mobile release policy",
+      "texta37dd5ef6ef2": "Customize Sidebar",
+      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -1632,7 +1632,19 @@
       "tooMany": "Sesija ima najviše 20 oznaka."
     },
     "drive": "Диск",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Prilagodi bočnu traku",
+    "customizeSidebarDescription": "Prevuci stavke između dve grupe.",
+    "resetSidebar": "Vrati podrazumevano",
+    "reorderItem": "Promeni redosled: {name}",
+    "reorderHint": "Prevuci za promenu redosleda. Ili pritisni strelice gore i dole; prelazak preko „Više“ sakriva stavku iz bočne trake.",
+    "reorderAnnouncement": "{name}: {group}, pozicija {position} od {total}",
+    "more": "Više",
+    "inSidebar": "Bočna traka",
+    "underMore": "Više",
+    "sidebarEmpty": "Prevuci stavku ovde da bi se prikazala u bočnoj traci.",
+    "moreEmpty": "Prevuci stavku ovde da bi je premestio u Više.",
+    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije."
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -19547,7 +19559,9 @@
       "text8d54763edcd8": "Nije povezan",
       "textffeb0c99532f": "Snimci se čuvaju {value0} dana",
       "text6f52b07880a0": "Napravi snimak sada",
-      "text91dc861375bc": "Политика издања за мобилне уређаје прегледана"
+      "text91dc861375bc": "Политика издања за мобилне уређаје прегледана",
+      "texta37dd5ef6ef2": "Prilagodi bočnu traku",
+      "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

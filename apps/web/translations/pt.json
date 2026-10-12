@@ -1632,7 +1632,19 @@
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizar barra lateral",
+    "customizeSidebarDescription": "Arraste os itens entre os dois grupos.",
+    "resetSidebar": "Restaurar padrão",
+    "reorderItem": "Reordenar {name}",
+    "reorderHint": "Arraste para reordenar. Ou use as setas para cima e para baixo; passar de «Mais» oculta o item da barra lateral.",
+    "reorderAnnouncement": "{name}: {group}, posição {position} de {total}",
+    "more": "Mais",
+    "inSidebar": "Barra lateral",
+    "underMore": "Mais",
+    "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
+    "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
+    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação."
   },
   "dashboard": {
     "title": "Painel",
@@ -19547,7 +19559,9 @@
       "text8d54763edcd8": "Não montado",
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
       "text6f52b07880a0": "Criar snapshot agora",
-      "text91dc861375bc": "Política de versão móvel visualizada"
+      "text91dc861375bc": "Política de versão móvel visualizada",
+      "texta37dd5ef6ef2": "Personalizar barra lateral",
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegação sidebar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
