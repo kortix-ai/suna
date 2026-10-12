@@ -199,6 +199,15 @@ SessionLogMessageSchema = {
   ext: ExtSchema | absent
 } + refine
 
+SessionLogPageSchema = {
+  session: SessionLogSessionPatchSchema
+  generation: number(int)(min0)
+  threads: array(SessionLogThreadUpsertSchema)
+  thread_id: string | null
+  messages: array(SessionLogMessageSchema)
+  has_more: boolean
+}
+
 SessionLogPutSchema = {
   rev: number(int)(min0)
   message: SessionLogMessageSchema
@@ -393,6 +402,8 @@ ToolResultContentSchema = union(
   | {
     type: literal("text")
     text: string
+    ref: string | absent
+    bytes: number(int)(min0) | absent
   }
   | {
     type: literal("attachment")

@@ -2,8 +2,8 @@
 
 The `kortix-api` container running as an **ECS Fargate** service behind an
 **Application Load Balancer**, horizontally **autoscaled** (target-tracking on
-CPU **and** memory). One module, used by both `environments/dev` and
-`environments/prod` — only the variables differ, so promoting to prod is "the
+CPU **and** memory). One module, used by `environments/dev-us-east-2`,
+`environments/staging-eu-west-2` and `environments/prod` — only the variables differ, so promoting to prod is "the
 same thing with bigger numbers and `min_capacity >= 2`".
 
 ## What it creates

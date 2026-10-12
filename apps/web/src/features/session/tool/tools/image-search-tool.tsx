@@ -16,11 +16,11 @@ import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ImageSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const query = (input.query as string) || '';
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it — the
   // same payload the memo below already parsed once. Once per output, not once

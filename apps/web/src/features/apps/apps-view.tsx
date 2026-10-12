@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { appCan, appStatus, gridApps } from './app-shared';
+import { appCan, appStatus, cardPreviewApp, gridApps } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -52,7 +52,7 @@ function AppsHeader({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')} href={`/projects/${projectId}/apps`}>
+    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
@@ -172,18 +172,19 @@ export function AppsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : apps.data && gridApps(apps.data).length ? (
+          ) : apps.data && gridApps(apps.data, canAdmin).length ? (
             /* A gallery grid, sized by the space it has rather than by the
                window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
             <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
-              {gridApps(apps.data).map((app) => (
+              {gridApps(apps.data, canAdmin).map((app) => (
                 <AppCard
                   key={app.app_id}
                   projectId={projectId}
                   app={app}
+                  shown={cardPreviewApp(apps.data!, app, canAdmin)}
                   onOpen={() => setOpenAppId(app.app_id)}
                 />
               ))}
@@ -263,19 +264,21 @@ function AppsEmptyState() {
   );
 }
 
-function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
+function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // The session URL is minted only for an App with capability `preview`, and
-  // only when the card frames it (`display.preview: none` shows an icon).
-  const thumbnail = app.display?.preview !== 'none';
-  const preview = appCan(app, 'preview') && thumbnail;
-  // SESSION only, and only when the viewer may actually open this App. The
-  // access POLICY is an administrative read that 403s for an ordinary member,
-  // and the card never renders it — the detail modal asks. The SESSION 403s for
-  // any App the viewer may see but not open, which is a state the server now
-  // reports up front instead of leaving the card to discover it by failing.
-  const canAccess = app.viewer_can_access !== false;
-  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess && preview });
+  // `shown` is the App whose live preview the card frames: the App itself, or
+  // the first tab of one that hides its own (a backend shows its dashboard).
+  // Null: an icon. The session URL is minted only for an App with capability
+  // `preview`.
+  const preview = !!shown && appCan(shown, 'preview');
+  // SESSION only, and only when the viewer may actually open the framed App.
+  // The access POLICY is an administrative read that 403s for an ordinary
+  // member, and the card never renders it — the detail modal asks. The SESSION
+  // 403s for any App the viewer may see but not open, which is a state the
+  // server now reports up front instead of leaving the card to discover it by
+  // failing.
+  const canAccess = shown?.viewer_can_access !== false;
+  const access = useAppAccess(projectId, shown?.app_id ?? app.app_id, { policy: false, session: canAccess && preview });
   const status = appStatus(app, tI18nComplete);
 
   return (
@@ -299,10 +302,10 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
-          {thumbnail ? (
+          {shown ? (
             <AppPreview
-              key={app.active_deployment_id ?? app.app_id}
-              app={app}
+              key={shown.active_deployment_id ?? shown.app_id}
+              app={shown}
               url={access.session.data?.url ?? null}
               accessError={!canAccess || access.session.isError}
               interactive={false}

@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Substituído para este projeto",
         "defaultOn": "Ativado por padrão",
-        "defaultOff": "Desativado por padrão"
+        "defaultOff": "Desativado por padrão",
+        "organization": "Toda a organização, gerenciado pela Kortix"
       },
       "search": "Pesquisar recursos",
       "loadFailed": "Não foi possível carregar o projeto",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "Gatilhos de eventos do app",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário."
+        },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Arquivos compartilhados e sessões em volumes para toda a organização."
+        },
+        "stateless_sessions": {
+          "name": "Sessões sem estado",
+          "description": "Um computador novo a cada retomada; só arquivos e chat são mantidos. Requer Volumes ativado."
         },
         "drives": {
           "name": "Drive",
@@ -1623,7 +1632,19 @@
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizar barra lateral",
+    "customizeSidebarDescription": "Arraste os itens entre os dois grupos.",
+    "resetSidebar": "Restaurar padrão",
+    "reorderItem": "Reordenar {name}",
+    "reorderHint": "Arraste para reordenar. Ou use as setas para cima e para baixo; passar de «Mais» oculta o item da barra lateral.",
+    "reorderAnnouncement": "{name}: {group}, posição {position} de {total}",
+    "more": "Mais",
+    "inSidebar": "Barra lateral",
+    "underMore": "Mais",
+    "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
+    "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
+    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação."
   },
   "dashboard": {
     "title": "Painel",
@@ -7894,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Histórico de versões",
       "line285JsxTextCopyPath": "Copiar caminho",
       "line396JsxTextThisFolderIsEmpty": "Esta pasta está vazia",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui.",
+      "loadMoreItems": "Carregar mais itens",
+      "loadMoreFailed": "Não foi possível carregar mais itens. Tente novamente.",
+      "partialSortNote": "Mostrando {value0} itens. A ordenação se aplica quando todos os itens forem carregados.",
+      "showingFirstItems": "Mostrando os primeiros {value0} itens"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Clique duas vezes para editar o caminho",
@@ -7986,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Pesquisar arquivos...",
       "line124JsxTextTypeToSearchFiles": "Digite para pesquisar arquivos...",
-      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado"
+      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado",
+      "searchContents": "Pesquisar no conteúdo",
+      "firstMatches": "Mostrando as primeiras {value0} correspondências",
+      "searchContentsPlaceholder": "Pesquisar no conteúdo dos arquivos...",
+      "typeToSearchContents": "Digite para pesquisar no conteúdo dos arquivos...",
+      "noMatchingLines": "Nenhuma linha correspondente"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Já existe um arquivo ou uma pasta com esse nome",
@@ -19199,6 +19229,12 @@
       "servedModelInPlaceOf": "No lugar de",
       "servedModelBadge": "Executando em {model}",
       "servedModelBarDescription": "{requested} não respondeu à última solicitação",
+      "computerAwakeStays": "O sandbox fica ligado enquanto você estiver aqui · até {duration}",
+      "computerAwakeStops": "O sandbox para em {duration}. Envie uma mensagem para mantê-lo ligado.",
+      "computerAwakeStopsSoon": "O sandbox para em breve. Envie uma mensagem para mantê-lo ligado.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Prompt da sessão na fila editado",
       "text52867b778586": "Um kortix.yaml.",
       "textd0dfd435b2f4": "Sua força de trabalho de IA, como código.",
@@ -19533,6 +19569,8 @@
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
       "text6f52b07880a0": "Criar snapshot agora",
       "text91dc861375bc": "Política de versão móvel visualizada",
+      "texta37dd5ef6ef2": "Personalizar barra lateral",
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegação sidebar",
       "texta6d6b4ec7eac": "Iniciou o login de um dispositivo do Capture",
       "text0eab78d793bb": "Consultou o login de um dispositivo do Capture",
       "texte52ffa7bb9da": "Emitiu credenciais de armazenamento do Capture",
@@ -19805,6 +19843,7 @@
     "providerError": "Não foi possível atualizar o acesso ao provedor.",
     "managedTitle": "Modelos gerenciados pela Kortix",
     "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
+    "managedUpgradeHint": "Faça upgrade para usar os modelos gerenciados da Kortix ou conecte seu próprio provedor.",
     "pricingEstimate": "Preço estimado para o cliente. A rota utilizada determina o custo.",
     "pricingRoute": "{route}: {input} entrada / {cacheRead} cache / {output} saída por 1 milhão de tokens",
     "pricingPreferred": "Preferida",
@@ -20186,9 +20225,8 @@
     "calendarNextWeek": "Próxima semana",
     "calendarPreviousMonth": "Mês anterior",
     "calendarNextMonth": "Próximo mês",
-    "calendarAllWeek": "Semana toda",
-    "calendarAllDay": "Dia todo",
-    "calendarEvery": "a cada {period}",
+    "calendarMore": "+{count} mais",
+    "calendarMoreOn": "{count, plural, one {Mais # lembrete} other {Mais # lembretes}} em {date}",
     "calendarSession": "Sessão",
     "calendarEmptyWeek": "Nada é disparado nesta semana",
     "calendarEmptyDay": "Nada é disparado neste dia",

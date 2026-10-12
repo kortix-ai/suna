@@ -61,6 +61,7 @@ const WORKERS: Record<string, string> = {
   'volume-deletions': 'workers/drive-worker.ts',
   'drive-mount-revocations': 'workers/drive-worker.ts',
   'notification-digest': 'workers/notification-worker.ts',
+  'session-log-purge': 'workers/session-log-purge-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -107,6 +108,7 @@ const STARTS: Record<string, string> = {
   startCaptureWorkers: 'capture-index-reader',
   startJobWorker: 'job-queue',
   startNotificationWorker: 'notification-digest',
+  startSessionLogPurgeWorker: 'session-log-purge',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',

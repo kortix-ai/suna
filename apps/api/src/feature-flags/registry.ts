@@ -67,6 +67,15 @@
  *     (which would force the flag OFF for every project — the opposite of
  *     what a hidden default means).
  *
+ * ## Organization flags (`scope: 'organization'`)
+ *
+ * `volumes` is one value for the whole organization: it IS the organization's
+ * Volumes switch (the `session_boot_modes` policy row, Admin → Volumes), not a
+ * project override. Every project's Settings lists it, `operator_only`:
+ * `PATCH .../features` from a platform operator writes the organization
+ * entry; anyone else gets 403 `feature_operator_only`. Flags with
+ * `derivedFrom: 'volumes'` (drives, ephemeral_sandboxes) follow it.
+ *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
@@ -77,7 +86,12 @@
  * cannot see (gate.ts).
  */
 import { config } from '../config';
-import { volumesEnabledFor } from '../platform/services/boot-mode-setting';
+import {
+  bootModeOrgEntry,
+  statelessEnabledFor,
+  volumesEnabledFor,
+  volumesOrgEntry,
+} from '../platform/services/boot-mode-setting';
 import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -121,11 +135,18 @@ export interface FeatureFlagDef {
    */
   catalogHidden?: true;
   /**
-   * The flag is not a project choice: it follows the organization's Volumes
-   * switch (Admin → Volumes, platform/services/boot-mode.ts). A project
-   * override is ignored, and the flag is never offered as a toggle.
+   * The flag is not a project choice: it follows the `volumes` flag (the
+   * organization's Volumes switch). A project override is ignored, and the
+   * flag is never offered as a toggle.
    */
   derivedFrom?: 'volumes';
+  /**
+   * `organization`: one value for every project of the organization, stored
+   * outside the project (see {@link resolveFeatureFlag}). Listed in every
+   * project's Settings → Feature flags as `operator_only`: only a platform
+   * operator may change it. Absent ⇒ a per-project flag.
+   */
+  scope?: 'organization';
 }
 
 /**
@@ -372,6 +393,43 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
   {
+    key: 'volumes',
+    name: 'Volumes',
+    description:
+      'Shared Files and volume-backed sessions for the whole organization.',
+    stability: 'experimental',
+    // Every volume is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // The value IS the organization's Volumes switch: the per-organization
+    // entry of the `session_boot_modes` policy row (platform/services/boot-mode.ts
+    // resolveVolumes), then its global switch and rollout. Off by default.
+    platformDefault: () => false,
+    scope: 'organization',
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only, through the flags derived from it: drives (Files routes and ' +
+      'session drive mounts) and ephemeral_sandboxes (session volumes), and the session ' +
+      'boot mode (platform/services/boot-mode.ts resolveBootMode). Writes go to the same ' +
+      'policy row Admin → Volumes edits (feature-flags/write.ts writeOrganizationFeatureFlag).',
+  },
+  {
+    key: 'stateless_sessions',
+    name: 'Stateless sessions',
+    description:
+      'Fresh computer on every wake; only files and chat are kept. Needs Volumes on.',
+    stability: 'experimental',
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // The value IS the organization's boot mode being `volume` (the
+    // `session_boot_modes` policy row, Admin → Volumes), with Volumes on.
+    platformDefault: () => false,
+    scope: 'organization',
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only: on sets the organization boot mode to `volume`, off to `standard` ' +
+      '(platform/services/boot-mode.ts resolveBootMode). Writes go to the same policy row ' +
+      'Admin → Volumes edits (feature-flags/write.ts writeOrganizationFeatureFlag).',
+  },
+  {
     key: 'drives',
     name: 'Files',
     description:
@@ -380,7 +438,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // Every drive is a Platinum volume; without Platinum there is nothing to
     // store files in.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Follows the organization's Volumes switch; not a project toggle.
+    // Follows the `volumes` flag; not a project toggle.
     platformDefault: () => false,
     derivedFrom: 'volumes',
     catalogHidden: true,
@@ -427,9 +485,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only. Nothing reads the flag yet: the v2 session-log read ' +
-      'path (P4.2) and the SDK v2 negotiation (P4.5, v2 only when health lists ' +
-      '`session.log.v2` and the flag is on) will resolve it per project.',
+      'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
+      '(transcript shape=sync and the compact fallback, the open bundle, the ' +
+      'public share, MCP read_session) from the session log, and the open ' +
+      'bundle carries a `log` leg (P4.2). The SDK v2 negotiation (P4.5, v2 only ' +
+      'when health lists `session.log.v2` and the flag is on) will read it too.',
   },
 ];
 
@@ -477,8 +537,16 @@ export function resolveFeatureFlag(
 ): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
-  if (def.derivedFrom === 'volumes') return volumesEnabledFor(accountId);
+  if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom, accountId);
+  if (def.scope === 'organization') {
+    return key === 'stateless_sessions' ? statelessEnabledFor(accountId) : volumesEnabledFor(accountId);
+  }
   return explicitOverride(metadata, key) ?? def.platformDefault();
+}
+
+/** Is this flag one value for the whole organization (not a project choice)? */
+export function isOrganizationFeatureFlag(key: FeatureFlagKey): boolean {
+  return FLAG_BY_KEY[key]?.scope === 'organization';
 }
 
 /** Is this flag derived from an organization switch (and so not a project choice)? */
@@ -503,10 +571,13 @@ export interface FeatureFlagView {
   available: boolean;
   /** Effective per-project state (the switch position). */
   enabled: boolean;
-  /** True when this project set an explicit choice (vs inheriting the default). */
+  /** True when this project set an explicit choice (vs inheriting the default).
+   *  For an organization flag: the organization has its own entry. */
   overridden: boolean;
   /** A `catalogHidden` flag: listed only while on, writable only by a platform operator. */
   operator_only: boolean;
+  /** `organization`: one value for every project of the organization. */
+  scope: 'project' | 'organization';
 }
 
 /**
@@ -530,13 +601,19 @@ export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | 
       stability: f.stability,
       available: f.available(),
       enabled,
-      overridden: explicitOverride(metadata, f.key) !== undefined,
-      operator_only: f.catalogHidden === true,
+      overridden:
+        f.scope === 'organization'
+          ? (f.key === 'stateless_sessions' ? bootModeOrgEntry(accountId) : volumesOrgEntry(accountId)) !== undefined
+          : explicitOverride(metadata, f.key) !== undefined,
+      operator_only: isOperatorOnlyFeatureFlag(f.key),
+      scope: f.scope ?? 'project',
     }];
   });
 }
 
 /** True when only a platform operator may write this flag. */
 export function isOperatorOnlyFeatureFlag(key: FeatureFlagKey): boolean {
-  return FLAG_BY_KEY[key]?.catalogHidden === true;
+  // An organization flag (`volumes`) is experimental and changes every project
+  // of the organization: Kortix decides it, like an internal-only flag.
+  return FLAG_BY_KEY[key]?.catalogHidden === true || FLAG_BY_KEY[key]?.scope === 'organization';
 }

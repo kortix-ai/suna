@@ -327,8 +327,8 @@ no `vX.Y.Z` Release.
    API host.
    1. Generate a random 32-byte key. Never print it.
    2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
-      `kortix-<env>-env` in its primary region (the **dotenvx-secrets** skill,
-      "Which region to edit"; needs an MFA session) and to
+      `kortix-<env>-env` in its `blob_region` region (the **dotenvx-secrets**
+      skill, "Which region to edit"; needs an MFA session) and to
       `apps/api/.env.<env>` with `dotenvx set`.
    3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
       gateway `GET /v1/models` with a PAT still returns 200.

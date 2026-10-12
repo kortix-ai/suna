@@ -12,10 +12,10 @@ import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function TaskDeleteTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const output = partOutput(call);
+  const status = partStatus(call);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
   // it; this sits in the body, so it ran on every render of the row.
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);

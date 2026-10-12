@@ -17,6 +17,8 @@
  */
 import { expect, test } from 'bun:test';
 import type * as C from '../../api-contract/src/index';
+import type * as SL from '../../api-contract/src/session-log';
+import type { SessionLogPage } from './core/session-log/source';
 import type { KortixAccount } from './core/rest/projects-client/accounts';
 import type { ChangeRequest } from './core/rest/projects-client/change-requests';
 import type { KortixProject } from './core/rest/projects-client/projects';
@@ -106,7 +108,22 @@ export function contractDrift(): void {
   fits<CaptureSearchResult>(wire<C.CaptureSearchResult>());
   noPhantom<NoPhantom<CaptureSearchResult, C.CaptureSearchResult>>();
   noPhantom<NoPhantom<CaptureSearchHit, C.CaptureSearchHit>>();
+
+  // GET .../log (P4.2). `SessionLogPage` is written out in the SDK (no zod). Its envelope is
+  // checked both ways here; the records inside (`SessionLogMessage`, the thread and session
+  // records) are the vendored `types.ts`, held byte-equal by `core/session-log/types.test.ts`.
+  // They are not compared with `z.infer`: the schema infers `payload` optional and widens
+  // `ModelRef.api`, a difference between api-contract's own types and schema.
+  fits<PageEnvelope<SessionLogPage>>(wire<PageEnvelope<SL.SessionLogPage>>());
+  fits<PageEnvelope<SL.SessionLogPage>>(wire<PageEnvelope<SessionLogPage>>());
+  noPhantom<NoPhantom<SessionLogPage, SL.SessionLogPage>>();
+  noPhantom<NoPhantom<SL.SessionLogPage, SessionLogPage>>();
+  noPhantom<NoPhantom<SessionLogPage['session'], SL.SessionLogPage['session']>>();
+  noPhantom<NoPhantom<SL.SessionLogPage['session'], SessionLogPage['session']>>();
 }
+
+/** A page with its records reduced to their presence: the envelope fields keep their types. */
+type PageEnvelope<P> = { [K in keyof P]: K extends 'session' | 'threads' | 'messages' ? unknown : P[K] };
 
 test('the contract drift checks are a typecheck target', () => {
   expect(typeof contractDrift).toBe('function');

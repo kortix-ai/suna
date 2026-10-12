@@ -81,3 +81,10 @@ export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 
 // The transcript mirror's rewind marker (consumed by ../sandbox-proxy).
 export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';
+
+// The stored transcript (the session log behind the `session_log` flag, else
+// the mirror), consumed by the public share route.
+export { readStoredTranscriptWindow } from './session-log-read';
+
+// The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
+export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';

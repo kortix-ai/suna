@@ -9,16 +9,13 @@
 #   staging-api-euw2.kortix.com     → Cloudflare (proxied) → ALB → API
 #   gateway-staging-euw2.kortix.com → Cloudflare (proxied) → ALB → gateway
 #
-# These are this stack's origin hostnames. The staging-api Worker picks the
-# live origin: ../staging while its ACTIVE_BACKEND is "ecs-fargate", this root
-# once it is "eu-west-2". Until the switch, this API runs with
-# KORTIX_WORKERS_ENABLED=false in its copy of kortix-staging-env. README.md in
-# this directory has the apply and switch-over steps.
+# These are this stack's origin hostnames. The staging-api Worker routes
+# staging-api.kortix.com to them (ACTIVE_BACKEND "eu-west-2"). README.md in
+# this directory has the apply steps and the record of the move.
 #
-# Naming: local.name is "kortix-staging-euw2", not "kortix-staging" — IAM
-# roles/policies are account-global and the project-snapshots S3 bucket name
-# is globally unique, so this root cannot reuse ../staging's names while both
-# are live. Same reasoning as ../dev-us-east-2.
+# Naming: local.name is "kortix-staging-euw2", not "kortix-staging": the old
+# us-west-2 stack owned the account-global "kortix-staging" names while both
+# ran during the move. Same reasoning as ../dev-us-east-2.
 #
 # Unlike ../dev-us-east-2, eu-west-2 has NO existing *.kortix.com wildcard
 # cert to piggyback on (prod's own main.tf says so verbatim: "eu-west-2 has
@@ -73,7 +70,7 @@ module "network" {
   name               = local.name
   cidr               = "10.24.0.0/16" # distinct from staging (10.20), dev-use2 (10.14), prod (10.20 eu-west-2 — different region, no collision)
   az_count           = 2
-  single_nat_gateway = true # staging: one NAT to save cost, matches ../staging
+  single_nat_gateway = true # staging: one NAT to save cost
   tags               = local.tags
 }
 
@@ -82,9 +79,8 @@ data "aws_secretsmanager_secret" "env" {
 }
 
 # ── Project snapshot object store (S3 config provider) ────────────────────────
-# New bucket, new region — "kortix-staging-project-snapshots" (us-west-2)
-# already exists and S3 bucket names are globally unique. Snapshots are
-# derived data, so a fresh empty bucket is safe.
+# Snapshots are derived data, so this bucket started empty. The old us-west-2
+# cache "kortix-staging-project-snapshots" was deleted on 2026-10-12.
 module "project_snapshots" {
   source = "../../modules/project-snapshots-bucket"
   name   = "${local.name}-project-snapshots"
@@ -179,9 +175,8 @@ module "api" {
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # Same sizing as ../staging today (see that file's comment history —
-  # the release gate's own concurrent load drove these numbers). Identical
-  # instance class, different region.
+  # The us-west-2 staging stack's sizing (the release gate's own concurrent
+  # load drove these numbers). Identical instance class, different region.
   task_cpu                   = 2048
   task_memory                = 4096
   desired_count              = var.api_task_count

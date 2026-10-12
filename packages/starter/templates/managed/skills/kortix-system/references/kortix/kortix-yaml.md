@@ -97,16 +97,20 @@ harnesses:
 # explicit deployment action; merging this file does not auto-deploy.
 # Each block is the App's release config: a deploy creates an immutable release of
 # its artifact and this config (processes, http_service, services, mounts, vm,
-# deploy). `kortix apps launch --template convex --name db` writes a block like
-# `db` below (a self-hosted Convex backend) plus `db-dashboard` (admins only,
-# shown as the Dashboard tab of `db`, signed in by the DB_ADMIN_KEY secret).
+# deploy). `kortix apps launch --template convex` writes the `backend` block
+# below (a self-hosted Convex backend: data, functions, realtime, files) plus
+# `backend-dashboard` (admins only, the Dashboard tab of `backend`, signed in by
+# the BACKEND_ADMIN_KEY secret).
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
+# Code lives in one folder per App, apps/<name>/ by default (`path` is free-form:
+# group by team or topic when that fits better). The backend's functions live in
+# apps/backend/convex (`npx convex deploy`); its image needs no `path`.
 # A static App (files, no machine) ignores run mode, resources, env
 # and secrets. A server App runs always on (default, billed 24/7) or on demand
 # (billed while awake). Apps have no budget:
 # `monthly_budget_usd` is retired and `kind` is retired (the validator warns).
 apps:
-  db:
+  backend:
     type: oci_image
     image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
     command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
@@ -122,23 +126,23 @@ apps:
       checks: [{ type: http, path: /version }]
     services:                  # more ports, each on <App host>--<name>
       - { name: site, internal_port: 3211, access: public }
-  db-dashboard:
-    type: oci_image
-    image: ghcr.io/get-convex/convex-dashboard@sha256:<digest>
-    command: ["sh", "-c", "cd /app/dashboard-self-hosted && NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/db PORT=6791 HOSTNAME=0.0.0.0 exec node ./server.js"]
-    display: { parent: db }    # the Dashboard tab of db, not a card of its own
-    uses: [db]
-    always_on: false
+  backend-dashboard:           # Convex's dashboard is a second image, so a second App
+    path: apps/backend/dashboard # Dockerfile + start.js, written by `launch`
+    type: dockerfile
+    command: [node, /kortix/start.js]
+    display: { parent: backend } # the Dashboard tab of backend, not a card of its own
+    uses: [backend]
+    always_on: false           # sleeps when idle
     http_service: { internal_port: 6791, access: admins }
     secrets:                   # env name → project secret identifier
-      NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY   # stored by `launch`; the dashboard opens signed in
+      NEXT_PUBLIC_ADMIN_KEY: BACKEND_ADMIN_KEY # written by `launch`; the dashboard opens signed in
   storefront:
-    path: web/dist             # build first; deploy the output directory
+    path: apps/storefront/dist # build first (in apps/storefront); deploy the output directory
     type: static
     spa: true
-    uses: [db]                 # may bind to db and mint its sign-in tokens
+    uses: [backend]            # may bind to backend and mint its sign-in tokens
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     port: 3000
@@ -613,7 +617,7 @@ harnesses:
       - source: npm:pi-mcp-adapter@2.36.0
         extensions: ["extensions/*.ts"]     # load only these files of the package
         skills: []                          # load none of its skills
-      - ./harnesses/pi/audit.ts             # an extension file in this repository
+      - ./extensions/audit.ts               # one extension file, anywhere in this repository
 agents:
   researcher:
     harnesses:
@@ -637,6 +641,13 @@ in this repository, or `{ source, extensions, skills, prompts, themes }` with
 pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
 version range, a missing version or a Git source fails validation. Kortix
 builds each distinct package list once, when the change request merges.
+
+A `./` path to a `.ts` or `.js` file is one pi extension. It can live anywhere
+in the repository, so a project needs no `harnesses/pi/` folder. It loads from
+the session's config release, as a project tool does, and a release that
+changes a file in its folder restarts the pi runtime. The package list itself
+is read when the session starts: a running session keeps the list it started
+with.
 
 ## `tools:` in version 2
 

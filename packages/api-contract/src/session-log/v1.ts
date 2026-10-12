@@ -29,7 +29,8 @@
  *   `time.completed` and no error is `interrupted`, and every pending or running call is closed
  *   by the closure rule with the text the harness shows. An errored assistant row is out of
  *   context (`failed_attempt`), except an aborted one with a model-visible block (`aborted`,
- *   in context, as OpenCode sends it).
+ *   in context, as OpenCode sends it). `live: true` reads a live view instead (a client's v1
+ *   store): those rows are `streaming` and their open calls stay open.
  * - Errors. `error.code` is the daemon's `TurnErrorCode` (`info.error.code`) when the row has
  *   one, else the v1 error class name. `finish` takes the v2 values only; another v1 finish
  *   ('content-filter', 'other') maps to null and stays in ext.
@@ -52,9 +53,13 @@
  * - `toV1` returns rows in the mirror's order reversed to ascending (the read is
  *   `message_created_at DESC NULLS LAST, message_id DESC`, so a missing time comes first), then
  *   message id. Compare rows keyed by message id: Postgres orders ids by its collation.
- * - `toV1` on a native v2 record (any producer other than `kortix-v1-import`) skips `system`
- *   and `context` messages (an old client would draw them as user bubbles) and never passes a
- *   harness block's `data` through as a v1 part.
+ * - `toV1` applies the stored residuals whatever the producer: a daemon adapter that runs
+ *   `fromV1` (OpenCode, P2.6) journals records under producer `opencode`, and they are exact
+ *   too. A thread `fromV1` built always carries a `kortix.transcript.v1` ext, so that ext (or
+ *   producer `kortix-v1-import`) marks a v1-derived message. On one, an `opencode` or `pi`
+ *   harness block's `data` is the v1 part and passes through. On a native v2 record (no such
+ *   ext, as the pi adapter writes), `toV1` skips `system` and `context` messages (an old
+ *   client would draw them as user bubbles) and never passes a harness block's `data` through.
  * - Output never aliases input: `fromV1` and `toV1` clone their input.
  */
 import type { KortixFilePart, KortixMessageInfo, KortixPart } from '../transcript';
@@ -93,6 +98,14 @@ export type FromV1Options = {
    * `ref` and no `bytes` (F13), keeps the url, and counts in `grade_counts.attachment`.
    */
   resolveAttachment?: (part: KortixFilePart) => V1Attachment | null;
+  /**
+   * The rows are a live view (a client's v1 store), not the mirror at rest: no closure rule. An
+   * open call keeps `pending`/`running` with no result (a pending call that streams its input
+   * has the text so far, `raw`, as its `input`), an open reply or compaction is `streaming`,
+   * and the residual is taken against those blocks, so `toV1` stays exact and a running call
+   * keeps its metadata. Default false.
+   */
+  live?: boolean;
 };
 /** What turns a value `toV1` builds into the stored one: replace it, delete it, or change some keys. */
 export type V1Change = { set: unknown } | { del: true } | { sub: Record<string, V1Change> };
@@ -100,8 +113,8 @@ export type V1Change = { set: unknown } | { del: true } | { sub: Record<string, 
 type Harness = NonNullable<FromV1Options['harness']>;
 type J = Record<string, any>;
 type MessageData = { info?: V1Change; summary?: V1Change; parts?: unknown; runtime_session_id?: string | null };
-/** `imported`: the message came from `fromV1`, so its harness blocks hold v1 parts and its ext holds residuals. */
-type Ctx = { sessionID: string | null; messageID: string; created: number | undefined; imported: boolean };
+/** `fromV1`: the message came from `fromV1`, so its `opencode`/`pi` harness blocks hold v1 parts. */
+type Ctx = { sessionID: string | null; messageID: string; created: number | undefined; fromV1: boolean };
 
 const IMPORT = 'kortix-v1-import';
 const PRODUCER = { harness: IMPORT, harness_version: KORTIX_TRANSCRIPT_SCHEMA, adapter_version: '1' };
@@ -175,8 +188,13 @@ const extOf = (h: Harness, entry: { native_id?: string; data?: unknown }): Ext =
 
 // ─── v2 -> v1 builders (shared by toV1 and by fromV1's residual) ─────────────
 
-/** The v1 url of an attachment: the one it came with, else its object ref. */
-const urlOf = (a: { url?: string; ref?: string }) => (a.url !== undefined ? { url: a.url } : a.ref !== undefined ? { url: a.ref } : {});
+/**
+ * The v1 url of an attachment: the one it came with, else (native records only) its object ref.
+ * A v1-derived block keeps exactly the url its part had: an adapter sets `ref` after `fromV1`
+ * (P2.6), and the stored part has no url for it.
+ */
+const urlOf = (a: { url?: string; ref?: string }, c: Ctx) =>
+  a.url !== undefined ? { url: a.url } : a.ref !== undefined && !c.fromV1 ? { url: a.ref } : {};
 const textOf = (content: ToolResultContent[] | undefined) => (content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
 const head = (b: { id: string }, c: Ctx) => ({ id: b.id, ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: c.messageID });
 
@@ -190,7 +208,7 @@ function toolState(b: ToolCallBlock, c: Ctx, base: J): J {
   if (b.status === 'running') return { status: 'running', input: b.input ?? {}, ...(b.title && { title: b.title }), time: { start } };
   if (b.status === 'error') return { status: 'error', ...input, error: textOf(r?.content), ...(r?.exit_code !== undefined && { metadata: meta }), time: { start, end } };
   const atts = (r?.content ?? []).flatMap((x, i) =>
-    x.type === 'attachment' ? [{ ...base, id: `${b.id}-a${i}`, type: 'file', mime: x.mime, ...urlOf(x) }] : [],
+    x.type === 'attachment' ? [{ ...base, id: `${b.id}-a${i}`, type: 'file', mime: x.mime, ...urlOf(x, c) }] : [],
   );
   const compacted = msOf(r?.cleared_at);
   return {
@@ -206,7 +224,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
   switch (b.type) {
     case 'text': return { ...base, type: 'text', text: b.text, ...(b.synthetic !== undefined && { synthetic: b.synthetic }) };
     case 'reasoning': return { ...base, type: 'reasoning', text: b.text, time: { start: c.created } };
-    case 'attachment': return { ...base, type: 'file', mime: b.mime, ...(b.name !== undefined && { filename: b.name }), ...urlOf(b) };
+    case 'attachment': return { ...base, type: 'file', mime: b.mime, ...(b.name !== undefined && { filename: b.name }), ...urlOf(b, c) };
     case 'tool_call': return { ...base, type: 'tool', callID: b.call_id, tool: b.name, state: toolState(b, c, { ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: c.messageID }) };
     case 'step': return b.phase === 'start'
       ? { ...base, type: 'step-start' }
@@ -216,7 +234,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
       ...(b.trigger === 'overflow' && { overflow: true }), ...(b.first_kept_message_id !== null && { tail_start_id: b.first_kept_message_id }),
     };
     case 'harness':
-      if (c.imported && (b.harness === 'opencode' || b.harness === 'pi')) return b.data;
+      if (c.fromV1 && (b.harness === 'opencode' || b.harness === 'pi')) return b.data;
       return b.model_visible && b.fallback_text !== undefined ? { ...base, type: 'text', text: b.fallback_text, synthetic: true } : undefined;
     case 'subtask': return undefined;
   }
@@ -258,17 +276,18 @@ function summaryOf(m: SessionLogMessage, cb: CompactionBlock, c: Ctx): { info: J
   return { info, parts: [{ id: `${id}-p0`, ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: id, type: 'text', text: cb.summary }] };
 }
 
-function rowsOf(m: SessionLogMessage, threadNative: string | null): V1Row[] {
-  const imported = m.producer.harness === IMPORT;
-  if (!imported && (m.role === 'system' || m.kind === 'context')) return [];
-  const d = imported ? (v1Ext(m.ext)?.data as MessageData | undefined) : undefined;
+/** `v1Thread`: the thread carries the `kortix.transcript.v1` ext every `fromV1` thread gets. */
+function rowsOf(m: SessionLogMessage, threadNative: string | null, v1Thread: boolean): V1Row[] {
+  const v1 = v1Thread || m.producer.harness === IMPORT;
+  if (!v1 && (m.role === 'system' || m.kind === 'context')) return [];
+  const d = v1Ext(m.ext)?.data as MessageData | undefined;
   const sessionID = d && 'runtime_session_id' in d ? d.runtime_session_id ?? null : threadNative;
-  const c: Ctx = { sessionID, messageID: m.message_id, created: msOf(m.created_at), imported };
+  const c: Ctx = { sessionID, messageID: m.message_id, created: msOf(m.created_at), fromV1: v1 };
   const parts = d && 'parts' in d
     ? d.parts
     : m.blocks.flatMap((b) => {
       const p = partOf(b, c);
-      return p === undefined ? [] : [apply(p, imported ? (v1Ext((b as { ext?: Ext }).ext)?.data as V1Change | undefined) : undefined)];
+      return p === undefined ? [] : [apply(p, v1Ext((b as { ext?: Ext }).ext)?.data as V1Change | undefined)];
     });
   const rows = [{ runtime_session_id: sessionID, info: apply(infoOf(m, c), d?.info), parts } as V1Row];
   const cb = m.blocks.find((b): b is CompactionBlock => b.type === 'compaction');
@@ -293,7 +312,7 @@ const threadNativeOf = (t: SessionLogThread) => {
 export function toV1(input: SessionLog): V1Transcript {
   const log = structuredClone(input);
   const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0];
-  const rows = log.threads.flatMap((t) => t.messages.flatMap((m) => rowsOf(m, threadNativeOf(t))));
+  const rows = log.threads.flatMap((t) => t.messages.flatMap((m) => rowsOf(m, threadNativeOf(t), v1Ext(t.ext) !== undefined)));
   const stated = v1Ext(log.ext)?.data as { root_id?: string | null } | undefined;
   const rootId = stated && 'root_id' in stated ? stated.root_id ?? null : root ? threadNativeOf(root) : null;
   return { session_id: log.session_id, root_id: rootId, rows: rows.sort(rowOrder) };
@@ -301,7 +320,7 @@ export function toV1(input: SessionLog): V1Transcript {
 
 // ─── v1 -> v2 ────────────────────────────────────────────────────────────────
 
-type Convert = { h: Harness; resolve: NonNullable<FromV1Options['resolveAttachment']>; counts: GradeCounts };
+type Convert = { h: Harness; resolve: NonNullable<FromV1Options['resolveAttachment']>; counts: GradeCounts; live: boolean };
 
 function modelOf(info: J): ModelRef | null {
   const src = info.role === 'assistant' ? { p: info.providerID, m: info.modelID, v: info.variant } : isObj(info.model) ? { p: info.model.providerID, m: info.model.modelID, v: info.model.variant } : {};
@@ -339,7 +358,8 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
   if (!isObj(st.input)) lost.tool_input++;
   const exit = isObj(st.metadata) && num(st.metadata.exit) !== undefined ? { exit_code: st.metadata.exit as number } : {};
   let status: ToolCallBlock['status'];
-  let result: NonNullable<ToolCallBlock['result']>;
+  let result: ToolCallBlock['result'];
+  let input: unknown = st.input ?? null;
   if (st.status === 'completed') {
     const atts: ToolResultContent[] = (Array.isArray(st.attachments) ? st.attachments : []).filter(isObj).map((a) => {
       const { bytes: _bytes, ...content } = attachment(a, c, lost);
@@ -355,6 +375,10 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
     const error = str(st.error);
     status = 'error';
     result = { content: error !== undefined ? [{ type: 'text', text: error }] : [], is_error: true, ...(error !== undefined && { error: { message: error } }), ...exit };
+  } else if (c.live) {
+    status = st.status === 'pending' ? 'pending' : 'running';
+    // A call that streams its input: the text so far is its input (OpenCode keeps it in `raw`).
+    if (status === 'pending' && str(st.raw) && !(isObj(st.input) && Object.keys(st.input).length)) input = st.raw;
   } else {
     // C2 closure rule: a call that never ended, at rest.
     const text = INTERRUPTED[c.h];
@@ -364,7 +388,7 @@ function toolBlock(p: J, id: string, c: Convert, lost: GradeCounts): ToolCallBlo
   const started = iso(time.start);
   const ended = iso(time.end);
   return {
-    type: 'tool_call', id, call_id: p.callID, name: p.tool, kind: kindOf(p.tool), input: st.input ?? null, status, result,
+    type: 'tool_call', id, call_id: p.callID, name: p.tool, kind: kindOf(p.tool), input, status, ...(result && { result }),
     ...(str(st.title) && { title: st.title }), ...(started && { started_at: started }), ...(ended && { ended_at: ended }),
   };
 }
@@ -427,7 +451,8 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
   const err = src && isObj(src.error) ? src.error : undefined;
   const aborted = err?.name === 'MessageAbortedError';
   const completedAt = src && isObj(src.time) ? iso(src.time.completed) : null;
-  const status: SessionLogMessage['status'] = !src ? (marker ? 'interrupted' : 'complete') : err ? (aborted ? 'aborted' : 'error') : completedAt ? 'complete' : 'interrupted';
+  const open = c.live ? 'streaming' : 'interrupted';
+  const status: SessionLogMessage['status'] = !src ? (marker ? open : 'complete') : err ? (aborted ? 'aborted' : 'error') : completedAt ? 'complete' : open;
   const createdAt = iso(isObj(info.time) ? info.time.created : undefined) ?? '';
   const summary = sum ? (Array.isArray(sum.parts) ? sum.parts : []).flatMap((p) => (isObj(p) && p.type === 'text' && typeof p.text === 'string' ? [p.text] : [])).join('') : null;
   const lost: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
@@ -458,7 +483,7 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
 function keepResidual(m: SessionLogMessage, row: V1Row, sum: V1Row | undefined, threadNative: string | null, h: Harness) {
   const data: MessageData = {};
   if (row.runtime_session_id !== threadNative) data.runtime_session_id = row.runtime_session_id;
-  const c: Ctx = { sessionID: row.runtime_session_id, messageID: m.message_id, created: msOf(m.created_at), imported: true };
+  const c: Ctx = { sessionID: row.runtime_session_id, messageID: m.message_id, created: msOf(m.created_at), fromV1: true };
   if (Array.isArray(row.parts)) {
     m.blocks.forEach((b, i) => {
       if (b.type === 'harness' || b.type === 'subtask') return;
@@ -498,7 +523,7 @@ function spawnerOf(rows: V1Row[], id: string | null, text: (state: J) => string)
 
 /** v1 mirror -> session log. See the module header for every mapping decision. */
 export function fromV1(v1: V1Transcript, options: FromV1Options = {}): SessionLog {
-  const c: Convert = { h: options.harness ?? 'opencode', resolve: options.resolveAttachment ?? (() => null), counts: { tool_input: 0, cut_point: 0, attachment: 0 } };
+  const c: Convert = { h: options.harness ?? 'opencode', resolve: options.resolveAttachment ?? (() => null), counts: { tool_input: 0, cut_point: 0, attachment: 0 }, live: options.live === true };
   const rows = structuredClone(v1.rows).sort(rowOrder);
   const groups = new Map<string | null, V1Row[]>();
   for (const r of rows) {

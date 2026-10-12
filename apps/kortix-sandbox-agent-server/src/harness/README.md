@@ -66,14 +66,16 @@ route, the body, the credential, the retries and the dead-token breaker.
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4, P2.5, P2.6, P4.3)
+## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
 patch since one `ExportCursor` per thread; `restore(log)` writes a session log
 into the native store before the harness starts and returns the cursors of what
 it wrote; `fingerprint()` digests the native store for the boot reconcile;
-`capabilities` is the adapter's `AdapterCapabilities`. pi implements it
+`live(threadId, messageId)` names the seq (and pi's `created_at`) of a message
+of the live turn (see "The live turn" below); `capabilities` is the adapter's
+`AdapterCapabilities`. pi implements it
 (`pi/session-log.ts`, P2.5), and OpenCode (`open-code/session-log.ts`, P2.6).
 Both rebuild the whole log on each read and diff it against the cursors with
 `logChanges` (`shared/session-log-journal.ts`).
@@ -125,18 +127,37 @@ Known limits of the OpenCode export:
 
 `GET /kortix/runtime/events?schema=v2` streams the session log as `log.*`
 frames (capability `session.log.v2`; payload schemas in
-`@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`). The
-frames ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so
-the v1 stream keeps dense seqs. Without `schema`, or with `schema=v1`, the
-stream is the v1 stream, byte for byte (an empty `schema=` too); another
-value is a 400.
+`@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`) in place
+of the v1 transcript frames, and every other v1 frame unchanged. The frames
+ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so the
+v1 stream keeps dense seqs and the v2 stream resumes with its own `since` and
+`epoch`. Without `schema`, or with `schema=v1`, the stream is the v1 stream,
+byte for byte (an empty `schema=` too); another value is a 400.
+
+Frame classification (`V1_TRANSCRIPT_EVENTS` in
+`services/event-bus/kortix-event-bus.ts`, the set P4.4 adds to
+`@kortix/api-contract/session-log`; `kortix-event-bus.test.ts` fails when a
+`KortixSessionEvent` type is unclassified):
+- replaced by `log.*` (never on v2): `message.updated`, `message.removed`,
+  `message.part.updated`, `message.part.removed`, `message.part.delta`;
+- kept (copied onto v2): `session.status`, `session.idle`, `session.error`,
+  `permission.asked`, `permission.replied`, `question.asked`,
+  `question.replied`, `question.rejected`, `todo.updated`, and every frame
+  beyond `KortixSessionEvent` (`session.created`, `session.updated`,
+  `session.diff`, `session.compacted`, pty, lsp, `kortix.*` daemon frames).
+
+The copy is a `tap` on the v1 bus (`kortixEventBus()` installs it): a
+daemon-internal listener that runs before the subscribers and is not counted
+in `subscriberCount`. The journal's v1 listener is a tap too. The
+`sse-subscriber` swap blocker counts the subscribers of both buses.
 
 | Frame | Payload | Emitted |
 | --- | --- | --- |
 | `log.state` | `{ generation, session }`: the session patch the batch carries | when a collection finds the session fields changed |
 | `log.thread` | the thread upsert (no messages) | for each thread a collection finds new or changed |
-| `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set |
+| `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set; and a live put while a turn runs (below) |
 | `log.block.delta` | `{ thread_id, message_id, block_id, delta }` | for each v1 `message.part.delta` text frame while the journal runs |
+| any kept v1 type | the v1 payload, unchanged | for each such frame on the v1 bus |
 
 The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
@@ -145,12 +166,78 @@ first turn streams), at each turn end and at the daemon stop. The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
+#### The live turn (P4.3b)
+
+A put with `status: 'streaming'` precedes the first delta of a message; a
+later put with a higher `rev` replaces it. The client keeps the highest `rev`
+of each message, appends each delta to the block it names, and lets the next
+put replace the whole record.
+
+The journal folds the v1 frames of each message it has not collected. It
+publishes a live put of a message on the v2 bus only, never into the dirty
+set: apps/api receives the turn end's record alone (its `log_durable_at`
+reacts to a non-streaming assistant message). A live put is published:
+- on the first `message.updated` of a message: the prompt (complete) and each
+  assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
+- on each `message.part.updated` of a part the message did not have: a new
+  text, reasoning, tool or step block. The put is built in the bus listener,
+  before the next v1 frame, so a block is on the stream before its first delta
+  and its text holds exactly the deltas published before it;
+- on each `message.part.updated` of a tool part that changes its
+  `state.status` or the key set of its `state.metadata` (the keys with a
+  defined value: what the wire carries) (P4.7): a call that
+  starts running, a task that names its child (`sessionId`), a bash call that
+  names its `command`. A value change alone (bash rewrites `metadata.output`
+  per stdout chunk, a pending call's `raw` grows) publishes nothing: a put
+  rebuilds the whole message.
+
+The record is `liveMessageFromV1` of the frames so far (`@kortix/api-contract`
+`live.ts`, the same function the API relay runs for an older daemon):
+`fromV1` with `live: true`. An open reply is `streaming`, and so is a reply
+with an open call (pi completes a reply before its calls run). An open call
+keeps its v1 status (`pending` or `running`) without a result; a pending call
+whose input streams carries the text so far (`raw`) as its `input`. The v1
+residual of each block stays in its `ext`, so a running call keeps its display
+metadata (task `sessionId`, bash `command`; the SDK's `toolCallMetadata` reads
+it) and `toV1` gives back the frames. The adapter's `live` names
+the fields the frames do not carry, so a live put carries the `message_id`,
+`thread_id`, `seq` and `created_at` of the turn end's record:
+- OpenCode stores a message before it publishes it, in the order it creates
+  them, so `live` issues the message's seq from the persisted seq map at its
+  first frame; the turn end's collection reads the same seq.
+- pi appends a message's entry at its `message_end`, after the reply has
+  streamed. pi's own listener appends every earlier entry before the runtime
+  sees the next event, so the reply pi streams gets the next entry:
+  `getEntries().length + 1` (a sub-agent child: its `nextSeq`), with pi's own
+  timestamp as `created_at`. An extension that appends a non-message entry
+  while the reply streams moves the reply one entry later; its turn-end put
+  then carries the higher seq and replaces the live ones. A prompt has no seq
+  until pi appends its entry when its turn starts: its put goes out with the
+  first assistant `message.updated` of that turn, not at accept.
+
+The collection's put of a message has a higher rev than its live puts, and a
+message the journal has collected gets no live put again.
+
+A live message the harness removes before the journal collects it (pi
+retracts a queued prompt, OpenCode reverts) leaves no ghost: on
+`message.removed` the journal drops its row and, if a put of it went out,
+publishes the journal-form tombstone `{ message_id, rev }` on the v2 bus; on
+`message.part.removed` it publishes a fresh put without the part.
+
 Limits:
-- A tool call and its result reach the v2 stream at the turn end, not while
-  the turn runs: the OpenCode export reads its store at rest only.
-- A journal the API turned off (404, 409) publishes nothing more, deltas
-  included: a 404 API has no relay for the stream, and a 409 box is a zombie.
-  A box with no control plane starts no journal, so its v2 stream stays empty.
+- A block's changes after it first appears (a reasoning block's end, a
+  running call's growing output, a pending call's growing `raw`) reach the v2
+  stream with the next live put of that message or at the turn end, not on
+  their own. A call's status change (its result included) and a new metadata
+  key get their own put. Unlike the v1 stream, a pending call's input preview
+  does not grow on v2 until the call runs (a P5 follow-up).
+- A daemon that crashes mid-turn never sends the turn end's put: a client
+  keeps a `streaming` put until the next epoch's `kortix.resync` or its reread
+  of the saved session log (P4.5).
+- A journal the API turned off (404, 409) publishes no `log.*` frame more,
+  deltas included: a 404 API has no relay for the stream, and a 409 box is a
+  zombie. A box with no control plane starts no journal: its v2 stream
+  carries the kept v1 frames only.
 - A `kortix.resync` on the v2 stream carries an empty `recover`: the client
   reads the saved session log again (P4.5).
 
@@ -385,7 +472,7 @@ Three sources, in pi's own scopes:
 |---|---|---|
 | system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
 | project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained, minified ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files minus the code that file inlined, type declarations, source maps and the root README/CHANGELOG — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
-| repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
+| repo-local | `<workspace>/.pi/extensions/*.ts`, or a `./` path in `harnesses.pi.packages` (a file is one extension, anywhere in the repo) | the repo itself: a `./` path resolves against the config release root while a release runs, else the working tree (`packageRoot`); a release that changes a file in its folder restarts the runtime (`pi/config-release.ts` `startOnlyFiles`) |
 
 A project entry for the same package overrides the system one. Nothing installs
 at boot. pi installs a missing package on load (13.2 s for two packages,

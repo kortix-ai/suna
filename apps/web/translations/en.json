@@ -958,7 +958,8 @@
       "origin": {
         "overridden": "Overridden for this project",
         "defaultOn": "Default on",
-        "defaultOff": "Default off"
+        "defaultOff": "Default off",
+        "organization": "Whole organization, managed by Kortix"
       },
       "search": "Search features",
       "loadFailed": "Failed to load project",
@@ -1028,6 +1029,14 @@
         "event_triggers": {
           "name": "App event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event."
+        },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Shared Files and volume-backed sessions for the whole organization."
+        },
+        "stateless_sessions": {
+          "name": "Stateless sessions",
+          "description": "Fresh computer on every wake; only files and chat are kept. Needs Volumes on."
         },
         "drives": {
           "name": "Drive",
@@ -1623,7 +1632,19 @@
       "tooMany": "A session has at most 20 labels."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Customize sidebar",
+    "customizeSidebarDescription": "Drag rows between the two groups.",
+    "resetSidebar": "Reset to default",
+    "reorderItem": "Reorder {name}",
+    "reorderHint": "Drag to reorder. Or press the up and down arrow keys; moving past More hides the row from the sidebar.",
+    "reorderAnnouncement": "{name}: {group}, position {position} of {total}",
+    "more": "More",
+    "inSidebar": "Sidebar",
+    "underMore": "More",
+    "sidebarEmpty": "Drag a row here to show it in the sidebar.",
+    "moreEmpty": "Drag a row here to move it under More.",
+    "moreCaption": "Rows under More open from the More menu, below the nav."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -7905,7 +7926,11 @@
       "line267JsxTextCheckpointHistory": "Version history",
       "line285JsxTextCopyPath": "Copy path",
       "line396JsxTextThisFolderIsEmpty": "This folder is empty",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here.",
+      "loadMoreItems": "Load more items",
+      "loadMoreFailed": "Could not load more items. Try again.",
+      "partialSortNote": "Showing {value0} items. Sorting applies once every item is loaded.",
+      "showingFirstItems": "Showing the first {value0} items"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-click to edit path",
@@ -7997,7 +8022,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Search files...",
       "line124JsxTextTypeToSearchFiles": "Type to search files...",
-      "line136JsxTextNoFilesFound": "No files found"
+      "line136JsxTextNoFilesFound": "No files found",
+      "searchContents": "Search contents",
+      "firstMatches": "Showing the first {value0} matches",
+      "searchContentsPlaceholder": "Search file contents...",
+      "typeToSearchContents": "Type to search file contents...",
+      "noMatchingLines": "No matching lines"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "A file or folder with that name already exists",
@@ -19210,6 +19240,12 @@
       "servedModelInPlaceOf": "In place of",
       "servedModelBadge": "Running on {model}",
       "servedModelBarDescription": "{requested} did not answer the last request",
+      "computerAwakeStays": "Sandbox stays on while you're here · up to {duration}",
+      "computerAwakeStops": "Sandbox stops in {duration}. Send a message to keep it on.",
+      "computerAwakeStopsSoon": "Sandbox stops soon. Send a message to keep it on.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Edited a queued session prompt",
       "text52867b778586": "One kortix.yaml.",
       "textd0dfd435b2f4": "Your AI workforce, as code.",
@@ -19544,6 +19580,8 @@
       "textffeb0c99532f": "Snapshots kept {value0} days",
       "text6f52b07880a0": "Snapshot now",
       "text91dc861375bc": "Viewed mobile release policy",
+      "texta37dd5ef6ef2": "Customize Sidebar",
+      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
       "texta6d6b4ec7eac": "Started a capture device sign-in",
       "text0eab78d793bb": "Polled a capture device sign-in",
       "texte52ffa7bb9da": "Issued capture storage credentials",
@@ -19816,6 +19854,7 @@
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
     "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
+    "managedUpgradeHint": "Upgrade to use Kortix's managed models, or connect your own provider.",
     "pricingEstimate": "Estimated customer price. The serving route determines the charge.",
     "pricingRoute": "{route}: {input} input / {cacheRead} cached / {output} output per 1M tokens",
     "pricingPreferred": "Preferred",
@@ -20186,9 +20225,8 @@
     "calendarNextWeek": "Next week",
     "calendarPreviousMonth": "Previous month",
     "calendarNextMonth": "Next month",
-    "calendarAllWeek": "All week",
-    "calendarAllDay": "All day",
-    "calendarEvery": "every {period}",
+    "calendarMore": "+{count} more",
+    "calendarMoreOn": "{count, plural, one {# more reminder} other {# more reminders}} on {date}",
     "calendarSession": "Session",
     "calendarEmptyWeek": "Nothing fires this week",
     "calendarEmptyDay": "Nothing fires this day",

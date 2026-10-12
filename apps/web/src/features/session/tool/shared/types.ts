@@ -1,8 +1,9 @@
-import type { ToolPart } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import type { ComponentType } from 'react';
 
 export interface ToolProps {
-  part: ToolPart;
+  /** The call to draw: a session-log tool call block (`ToolPartRenderer` converts a v1 part with `toolCallBlock`). */
+  call: ToolCallBlock;
   sessionId?: string;
   defaultOpen?: boolean;
   forceOpen?: boolean;

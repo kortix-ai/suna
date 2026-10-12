@@ -80,6 +80,7 @@ import {
 } from './connector-filter';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
 import { useInstall } from './install/use-install';
+import { useSlashFocus } from '@/hooks/utils';
 
 /**
  * The click-gated Add form, split out of this route's initial chunk.
@@ -450,26 +451,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const openComputer = useCallback(() => setComputerOpen(true), []);
 
   // The search field is the page's main control: focused on arrival, and "/"
-  // jumps back to it from anywhere on the page except another text field.
+  // jumps back to it (`useSlashFocus`).
   const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (channelsActive || rulesOpen || typeof window === 'undefined') return;
-    // No autofocus on touch: it would open the on-screen keyboard on arrival.
-    if (window.matchMedia?.('(pointer: fine)').matches) {
-      searchRef.current?.focus({ preventScroll: true });
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
-      // A dialog or menu owns the keyboard while it is open.
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
-      event.preventDefault();
-      searchRef.current?.focus();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [channelsActive, rulesOpen]);
+  useSlashFocus(searchRef, !channelsActive && !rulesOpen);
 
   return (
     // Global rules open in a SplitSheet: the page narrows to make room instead

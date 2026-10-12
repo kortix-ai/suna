@@ -16,10 +16,10 @@ import { useMemo } from 'react';
 
 const NO_ARGS: string[] = [];
 
-export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionLineageTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const sessionId = (input.session_id as string) || '';
   const sid = sessionId.length > 16 ? `…${sessionId.slice(-12)}` : sessionId;
 

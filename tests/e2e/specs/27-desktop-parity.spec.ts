@@ -603,8 +603,11 @@ for (const runtime of runtimes) {
           await page.mouse.move(1300, 850);
         }
         await resize(720, 480);
+        // The sidebar is hidden at this width on both shells, so the toggle
+        // reads "Open sidebar" (#9566: the mobile Sheet's own state names it,
+        // not the desktop dock cookie).
         const opener = page.getByRole("button", {
-          name: desktop ? "Open sidebar" : "Collapse sidebar",
+          name: "Open sidebar",
           exact: true,
         });
         await expect(opener).toBeVisible();
@@ -2489,21 +2492,17 @@ nativeBrowserTest?.(
       await nativeWindow.evaluate((window) => window.setContentSize(720, 480));
       for (let index = 0; index < 3; index++) await main.keyboard.press("Meta+=");
       await expect.poll(currentZoom).toBeGreaterThan(1.2);
+      // Narrow Settings opens on its section list; its header shares the band.
       const mobileSettingsRow = settings.locator(".kx-settings-mobile-titlebar");
-      const mobileSettingsTabsWrapper = mobileSettingsRow
-        .locator(".kx-settings-mobile-tabs")
-        .first();
-      const mobileSettingsTabs = mobileSettingsRow.locator("[data-slot='tabs-list']");
+      const mobileSettingsClose = mobileSettingsRow.locator(".kx-settings-mobile-close");
       await expect(mobileSettingsRow).toBeVisible();
-      await expect(mobileSettingsTabsWrapper).toBeVisible();
-      await expect(mobileSettingsTabs).toBeVisible();
+      await expect(settings.getByRole("tab").first()).toBeVisible();
       await centeredInBand(mobileSettingsRow);
-      await centeredInBand(mobileSettingsTabsWrapper);
-      await centeredInBand(mobileSettingsTabs);
+      await centeredInBand(mobileSettingsClose);
       const mobileRowBox = (await mobileSettingsRow.boundingBox())!;
-      const mobileTabsBox = (await mobileSettingsTabs.boundingBox())!;
-      expect(mobileTabsBox.y).toBeGreaterThanOrEqual(mobileRowBox.y - 1);
-      expect(mobileTabsBox.y + mobileTabsBox.height).toBeLessThanOrEqual(
+      const mobileCloseBox = (await mobileSettingsClose.boundingBox())!;
+      expect(mobileCloseBox.y).toBeGreaterThanOrEqual(mobileRowBox.y - 1);
+      expect(mobileCloseBox.y + mobileCloseBox.height).toBeLessThanOrEqual(
         mobileRowBox.y + mobileRowBox.height + 1,
       );
       await main.keyboard.press("Meta+0");

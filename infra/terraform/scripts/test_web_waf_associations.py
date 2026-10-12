@@ -6,9 +6,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WEB_ENVIRONMENTS = (
-    "dev-web",
     "dev-web-us-east-2",
-    "staging-web",
     "staging-web-eu-west-2",
     "prod-web",
 )
@@ -39,11 +37,9 @@ class WebWafAssociationTests(unittest.TestCase):
 
     def test_compliance_stack_does_not_compete_for_web_albs(self):
         config = (ROOT / "terraform/compliance-monitoring/monitoring.tf").read_text()
-        self.assertIn("for_each     = local.usw2_compliance_waf_albs", config)
+        # us-west-2 runs no ALB since 2026-10-12 and has no association.
+        self.assertNotIn("usw2_albs", config)
         self.assertIn("for_each     = local.euw2_compliance_waf_albs", config)
-        self.assertIn(
-            '["kortix-dev-web-alb", "kortix-staging-web-alb"]', config
-        )
         self.assertIn(
             '["kortix-prod-web-alb", "kortix-staging-euw2-web-alb"]', config
         )

@@ -186,6 +186,8 @@ interface ChildSession {
   nextSeq: number
   /** Set while a prompt runs in the child. */
   agent: Agent | null
+  /** The child's turn adapter since its last prompt: names the reply it streams (`sessionLogSnapshot`). */
+  turnEvents?: PiTurnEvents
 }
 
 interface ChildDump {
@@ -243,6 +245,12 @@ interface Dump {
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
   children?: ChildDump[]
+}
+
+/** The reply `agent` streams now, as the session-log snapshot names it. */
+function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): { id: string; timestamp: number } | null {
+  const message = agent?.state.streamingMessage
+  return message && turn?.messageId ? { id: turn.messageId, timestamp: message.timestamp } : null
 }
 
 function decodeDataUrl(url: string): { mime: string; data: string } | null {
@@ -507,6 +515,7 @@ export class PiRuntime {
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
         projectPackages: project.entries,
+        packageRoot: this.projectRoot() ?? this.workspace,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
@@ -1263,6 +1272,7 @@ export class PiRuntime {
       for (const frame of adapter.translate(event)) this.publish(frame, frame.transcriptOnly ? { transcriptOnly: true } : undefined)
     })
     child.agent = agent
+    child.turnEvents = adapter
     input.onSession?.({ sessionId: child.id, model })
     const abort = () => {
       retry.abort()
@@ -1754,11 +1764,14 @@ export class PiRuntime {
           agentMessages,
           messageIds: agentMessages.map((m) => this.nativeIds.get(m) ?? null),
           seqs: this.childSeqs(child),
+          nextSeq: child.nextSeq,
+          reply: replying(child.agent, child.turnEvents),
           transcript: child.transcript.all(),
           busy: child.agent !== null,
         }
       }),
       busy: this.status === 'busy' || this.active !== null,
+      reply: replying(this.agent, this.adapter),
       agent: this.sessionAgentName,
       model: this.selected ? { provider: this.selected.providerID, model: this.selected.modelID } : null,
     }

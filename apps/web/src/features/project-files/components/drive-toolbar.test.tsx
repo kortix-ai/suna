@@ -40,13 +40,12 @@ describe('DriveNewMenu write actions', () => {
     expect(render(<DriveNewMenu />)).toBe('');
   });
 
-  test('the gate needs all three handlers — a half-wired menu never renders', () => {
+  test('the menu renders with any write handler and none without', () => {
     const noop = () => {};
     expect(hasWriteActions({ onUpload: noop, onNewFile: noop, onNewFolder: noop })).toBe(true);
-    expect(hasWriteActions({ onUpload: noop, onNewFile: noop })).toBe(false);
-    expect(hasWriteActions({ onUpload: noop })).toBe(false);
+    // Files' top level offers only "New folder".
+    expect(hasWriteActions({ onNewFolder: noop })).toBe(true);
     expect(hasWriteActions({})).toBe(false);
-    expect(render(<DriveNewMenu onUpload={() => {}} />)).toBe('');
   });
 
   test('the compact trigger keeps an accessible name once the label is gone', () => {
@@ -94,11 +93,19 @@ describe('DriveNewMenuItems', () => {
   }
 
   test('offers upload, new file, and new folder', () => {
-    const { html, entries } = renderMenu({});
+    const noop = () => {};
+    const { html, entries } = renderMenu({ onUpload: noop, onNewFile: noop, onNewFolder: noop });
     expect(html).toContain('Upload files');
     expect(html).toContain('New file');
     expect(html).toContain('New folder');
     expect(entries).toHaveLength(3);
+  });
+
+  test('Files top level: only "New folder"', () => {
+    const { html, entries } = renderMenu({ onNewFolder: () => {} });
+    expect(html).not.toContain('Upload files');
+    expect(html).not.toContain('New file');
+    expect(entries).toHaveLength(1);
   });
 
   test('each entry fires its OWN handler', () => {

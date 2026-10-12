@@ -39,3 +39,6 @@ export {
 // `Todo` and `ToolKind` are already public names of this package (the transcript
 // todo and the turn tool kind), so the session-log ones carry the record prefix.
 export type { Todo as SessionLogTodo, ToolKind as SessionLogToolKind } from './types';
+
+// Transitional bridge for hosts that render blocks while their rows are v1 (`./tool-call.ts`).
+export { toolCallBlock, toolCallMetadata } from './tool-call';

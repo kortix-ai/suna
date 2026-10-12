@@ -16,10 +16,10 @@ import { useCallback, useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectCreateTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ProjectCreateTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const name = (input.name as string) || '';
   const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);

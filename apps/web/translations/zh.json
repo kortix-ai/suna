@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "已为此项目覆盖",
         "defaultOn": "默认开启",
-        "defaultOff": "默认关闭"
+        "defaultOff": "默认关闭",
+        "organization": "整个组织，由 Kortix 管理"
       },
       "search": "搜索功能",
       "loadFailed": "无法加载项目",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "应用事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。"
+        },
+        "volumes": {
+          "name": "卷",
+          "description": "为整个组织提供共享文件和基于卷的会话。"
+        },
+        "stateless_sessions": {
+          "name": "无状态会话",
+          "description": "每次唤醒都是全新的计算机，只保留文件和聊天。需要先开启卷。"
         },
         "drives": {
           "name": "云盘",
@@ -1623,7 +1632,19 @@
       "tooMany": "每个会话最多 20 个标签。"
     },
     "drive": "云盘",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "自定义侧边栏",
+    "customizeSidebarDescription": "在两个分组之间拖动项目。",
+    "resetSidebar": "恢复默认",
+    "reorderItem": "重新排序 {name}",
+    "reorderHint": "拖动以重新排序。也可按上下方向键；越过“更多”分隔线会将项目从侧边栏隐藏。",
+    "reorderAnnouncement": "{name}：{group}，第 {position} 位，共 {total} 位",
+    "more": "更多",
+    "inSidebar": "侧边栏",
+    "underMore": "更多",
+    "sidebarEmpty": "将项目拖到这里以在侧边栏中显示。",
+    "moreEmpty": "将项目拖到这里以移入“更多”。",
+    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。"
   },
   "dashboard": {
     "title": "仪表板",
@@ -7894,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "版本历史",
       "line285JsxTextCopyPath": "复制路径",
       "line396JsxTextThisFolderIsEmpty": "此文件夹为空",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。",
+      "loadMoreItems": "加载更多项目",
+      "loadMoreFailed": "无法加载更多项目。请重试。",
+      "partialSortNote": "显示 {value0} 个项目。全部加载后才会应用排序。",
+      "showingFirstItems": "显示前 {value0} 个项目"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "双击以编辑路径",
@@ -7986,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "搜索文件...",
       "line124JsxTextTypeToSearchFiles": "输入以搜索文件...",
-      "line136JsxTextNoFilesFound": "未找到文件"
+      "line136JsxTextNoFilesFound": "未找到文件",
+      "searchContents": "搜索内容",
+      "firstMatches": "显示前 {value0} 个匹配项",
+      "searchContentsPlaceholder": "搜索文件内容...",
+      "typeToSearchContents": "输入以搜索文件内容...",
+      "noMatchingLines": "没有匹配的行"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "已存在同名文件或文件夹",
@@ -19199,6 +19229,12 @@
       "servedModelInPlaceOf": "替代",
       "servedModelBadge": "正在使用 {model}",
       "servedModelBarDescription": "{requested} 未响应上一个请求",
+      "computerAwakeStays": "你在此页面时，沙盒保持开启 · 最多 {duration}",
+      "computerAwakeStops": "沙盒将在 {duration}后停止。发送一条消息以保持开启。",
+      "computerAwakeStopsSoon": "沙盒即将停止。发送一条消息以保持开启。",
+      "computerAwakeHoursMinutes": "{hours} 小时 {minutes} 分钟",
+      "computerAwakeHours": "{hours} 小时",
+      "computerAwakeMinutes": "{minutes} 分钟",
       "text414cc580557b": "已编辑排队中的会话提示",
       "text52867b778586": "一个 kortix.yaml。",
       "textd0dfd435b2f4": "你的 AI 团队，以代码定义。",
@@ -19533,6 +19569,8 @@
       "textffeb0c99532f": "快照保留 {value0} 天",
       "text6f52b07880a0": "立即创建快照",
       "text91dc861375bc": "已查看移动端发布策略",
+      "texta37dd5ef6ef2": "自定义侧边栏",
+      "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar",
       "texta6d6b4ec7eac": "开始了 Capture 设备登录",
       "text0eab78d793bb": "轮询了 Capture 设备登录",
       "texte52ffa7bb9da": "签发了 Capture 存储凭据",
@@ -19805,6 +19843,7 @@
     "providerError": "无法更新提供商访问权限。",
     "managedTitle": "Kortix 托管模型",
     "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "managedUpgradeHint": "升级以使用 Kortix 托管模型，或连接你自己的提供商。",
     "pricingEstimate": "客户预估价格。实际费用取决于使用的路由。",
     "pricingRoute": "{route}：每百万 token 输入 {input} / 缓存 {cacheRead} / 输出 {output}",
     "pricingPreferred": "首选",
@@ -20186,9 +20225,8 @@
     "calendarNextWeek": "下一周",
     "calendarPreviousMonth": "上个月",
     "calendarNextMonth": "下个月",
-    "calendarAllWeek": "整周",
-    "calendarAllDay": "全天",
-    "calendarEvery": "每 {period}",
+    "calendarMore": "还有 {count} 个",
+    "calendarMoreOn": "{date} 还有 {count, plural, other {# 个提醒}}",
     "calendarSession": "会话",
     "calendarEmptyWeek": "本周没有触发",
     "calendarEmptyDay": "这一天没有触发",

@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "このプロジェクトで上書き",
         "defaultOn": "デフォルトでオン",
-        "defaultOff": "デフォルトでオフ"
+        "defaultOff": "デフォルトでオフ",
+        "organization": "組織全体（Kortix が管理）"
       },
       "search": "機能を検索",
       "loadFailed": "プロジェクトを読み込めませんでした",
@@ -1202,6 +1203,14 @@
         "event_triggers": {
           "name": "アプリイベントのトリガー",
           "description": "連携したアプリで何かが起きたときにエージェントを起動します。新しいメール、プルリクエスト、カレンダーの予定など。"
+        },
+        "volumes": {
+          "name": "ボリューム",
+          "description": "組織全体で共有ファイルとボリューム上のセッションを使えます。"
+        },
+        "stateless_sessions": {
+          "name": "ステートレスセッション",
+          "description": "起動のたびに新しいコンピューター。ファイルとチャットだけが残ります。ボリュームの有効化が必要です。"
         },
         "drives": {
           "name": "ドライブ",
@@ -1623,7 +1632,19 @@
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
     },
     "drive": "ドライブ",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "サイドバーをカスタマイズ",
+    "customizeSidebarDescription": "2つのグループ間で項目をドラッグします。",
+    "resetSidebar": "デフォルトに戻す",
+    "reorderItem": "{name} を並べ替え",
+    "reorderHint": "ドラッグして並べ替えます。上下の矢印キーでも移動でき、「その他」の区切りを越えるとサイドバーから非表示になります。",
+    "reorderAnnouncement": "{name}：{group}、{total} 件中 {position} 番目",
+    "more": "その他",
+    "inSidebar": "サイドバー",
+    "underMore": "その他",
+    "sidebarEmpty": "ここに項目をドラッグするとサイドバーに表示されます。",
+    "moreEmpty": "ここに項目をドラッグすると「その他」に移動します。",
+    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -7894,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "バージョン履歴",
       "line285JsxTextCopyPath": "パスをコピー",
       "line396JsxTextThisFolderIsEmpty": "このフォルダーは空です",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。",
+      "loadMoreItems": "さらに読み込む",
+      "loadMoreFailed": "さらに読み込めませんでした。もう一度お試しください。",
+      "partialSortNote": "{value0} 件を表示しています。すべて読み込むと並べ替えが適用されます。",
+      "showingFirstItems": "最初の {value0} 件を表示しています"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "ダブルクリックしてパスを編集",
@@ -7986,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "ファイルを検索...",
       "line124JsxTextTypeToSearchFiles": "入力してファイルを検索...",
-      "line136JsxTextNoFilesFound": "ファイルが見つかりません"
+      "line136JsxTextNoFilesFound": "ファイルが見つかりません",
+      "searchContents": "内容を検索",
+      "firstMatches": "最初の {value0} 件の一致を表示しています",
+      "searchContentsPlaceholder": "ファイルの内容を検索...",
+      "typeToSearchContents": "入力してファイルの内容を検索...",
+      "noMatchingLines": "一致する行がありません"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "その名前のファイルまたはフォルダーはすでに存在します",
@@ -19199,6 +19229,12 @@
       "servedModelInPlaceOf": "代替元",
       "servedModelBadge": "{model} で実行中",
       "servedModelBarDescription": "{requested} は直前のリクエストに応答しませんでした",
+      "computerAwakeStays": "このページにいる間、サンドボックスは起動したままです · 最大 {duration}",
+      "computerAwakeStops": "サンドボックスは {duration}後に停止します。起動したままにするにはメッセージを送信してください。",
+      "computerAwakeStopsSoon": "サンドボックスはまもなく停止します。起動したままにするにはメッセージを送信してください。",
+      "computerAwakeHoursMinutes": "{hours}時間{minutes}分",
+      "computerAwakeHours": "{hours}時間",
+      "computerAwakeMinutes": "{minutes}分",
       "text414cc580557b": "キューに入ったセッションプロンプトを編集しました",
       "text52867b778586": "kortix.yaml ひとつ。",
       "textd0dfd435b2f4": "AI の労働力を、コードとして。",
@@ -19533,6 +19569,8 @@
       "textffeb0c99532f": "スナップショットを {value0} 日保持",
       "text6f52b07880a0": "今すぐスナップショット",
       "text91dc861375bc": "モバイルのリリースポリシーを表示しました",
+      "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
+      "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar",
       "texta6d6b4ec7eac": "Capture デバイスのサインインを開始",
       "text0eab78d793bb": "Capture デバイスのサインイン状態を確認",
       "texte52ffa7bb9da": "Capture ストレージの認証情報を発行",
@@ -19805,6 +19843,7 @@
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
     "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
+    "managedUpgradeHint": "アップグレードしてKortixの管理モデルを利用するか、独自のプロバイダーに接続してください。",
     "pricingEstimate": "お客様向けの概算料金です。実際の料金は使用された経路によって決まります。",
     "pricingRoute": "{route}：100万トークンあたり入力 {input} / キャッシュ {cacheRead} / 出力 {output}",
     "pricingPreferred": "優先",
@@ -20186,9 +20225,8 @@
     "calendarNextWeek": "次の週",
     "calendarPreviousMonth": "前の月",
     "calendarNextMonth": "次の月",
-    "calendarAllWeek": "週全体",
-    "calendarAllDay": "終日",
-    "calendarEvery": "{period}ごと",
+    "calendarMore": "他 {count} 件",
+    "calendarMoreOn": "{date} の他 {count, plural, other {# 件のリマインダー}}",
     "calendarSession": "セッション",
     "calendarEmptyWeek": "今週の実行予定はありません",
     "calendarEmptyDay": "この日の実行予定はありません",
