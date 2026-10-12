@@ -38,6 +38,7 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
  * entry here (see ARCHITECTURE.md).
  */
 export const SERVICES = [
+  'browser',
   'config-provider',
   'drive-sync',
   'egress-shim',

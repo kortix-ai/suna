@@ -1,5 +1,5 @@
 {
-  "source_hash": "aa8a239094186eebccba9870eb7961d67ecb91bf273c9575b86cc56b6b47449c",
+  "source_hash": "29d6f2eed76e350856cc3244b56f8b6f2519d55bc96195a161c879ccabf76f52",
   "diff_files": [
     ".agents/skills/kortix-browser/SKILL.md",
     ".agents/skills/kortix-browser/references/protocol.md",
@@ -59,6 +59,7 @@
     "apps/browser-extension/src/pages/welcome.html",
     "apps/browser-extension/src/pages/welcome.ts",
     "apps/browser-extension/tsconfig.json",
+    "apps/cli/src/api/sdk.ts",
     "apps/cli/src/command-table.ts",
     "apps/cli/src/commands/browser.test.ts",
     "apps/cli/src/commands/browser.ts",
@@ -115,13 +116,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/browser.flow.ts"
   ],
-  "diff_hash": "76a6bbd324fe1643fc8fb22b3060079e584e471949cc9f10a2b2d1614370b18e",
-  "head": "910118a129f595f07cf19b819b95c4b6b2360af4",
+  "diff_hash": "2f25d2382270809fbeacdfb3296112934f467aca29224b60a247f67b8303c322",
+  "head": "ab61a77c2d480becb2c3c26c790d2c1cb973a173",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
-    "db-suites": "pass"
+    "db-suites": "fail"
   },
-  "at": "2026-10-12T17:53:47.798Z"
+  "at": "2026-10-12T18:13:26.473Z"
 }
