@@ -350,6 +350,15 @@ test.describe("20 — Workspace switching", () => {
           name: `South Two ${runId}`,
         });
         projectIds.push(southTwo.id);
+        // The door decides from the project lists the app holds (zero network
+        // on the first frame), so the person has seen South's second project:
+        // the selector lists it, then they go back to North Home.
+        await page.goto("/projects", { waitUntil: "domcontentloaded" });
+        await expect(page.getByText(`South Two ${runId}`).first()).toBeVisible({ timeout: 60_000 });
+        await page.goto(`/projects/${northHome.id}`, { waitUntil: "domcontentloaded" });
+        await expect
+          .poll(() => page.evaluate(() => document.cookie), { timeout: 60_000 })
+          .toContain(northHome.id);
         await switchAccountInPalette(page, `Palette South ${runId}`);
         // The door drops its own `account=` input on the way out.
         await expect(page).toHaveURL(/\/projects(\?|$)/, { timeout: 60_000 });
