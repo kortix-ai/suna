@@ -1,5 +1,5 @@
 {
-  "source_hash": "3cf7ea6ff5a882df7f5b30950b519629c25a826100a10e5c483ff9fdbab47984",
+  "source_hash": "13298f1888d35e5b296b4d5c6eea4b4717f39e3b69d2bf8bed77bc1aa7ca1bb4",
   "diff_files": [
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/assets/quick-entry.html",
@@ -25,21 +25,33 @@
     "apps/web/src/features/session/session-chat.tsx",
     "apps/web/src/features/workspace/project-layout/project-home.test.tsx",
     "apps/web/src/features/workspace/project-layout/project-home.tsx",
+    "apps/web/src/features/workspace/settings/tabs/preferences-tab.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/preferences-tab.tsx",
     "apps/web/src/lib/desktop.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/stores/composer-prefill-store.test.ts",
     "apps/web/src/stores/composer-prefill-store.ts",
     "apps/web/src/stores/session-composer-prefill-store.test.ts",
     "apps/web/src/stores/session-composer-prefill-store.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
     "tests/e2e/specs/27-desktop-parity.spec.ts"
   ],
-  "diff_hash": "13df14db7101050b845f44897b828cd599ce34a7fb611859332a1208c4c3bcb8",
-  "head": "57b8edc633bc3375c9695b0467cd4c2051dc5b92",
+  "diff_hash": "ea92598aaee43c1cc3449ab9a35c9753b1fb94cbc9a2dec19db6dc6703bb7cd8",
+  "head": "b0e70f764aa9c116dbfd4f982e7ff224e27d86f5",
   "passed": true,
   "lanes": {
+    "browser": "pass",
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T14:47:55.870Z"
+  "at": "2026-10-12T16:20:35.750Z"
 }
