@@ -78,7 +78,7 @@ const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
 const { retryPendingRevocations } = await import('../workers/drive-worker');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
-const { __setBootModePolicyForTests } = await import('../platform/services/boot-mode-setting');
+const { setVolumesForOrg } = await import('../platform/services/boot-mode-setting');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -161,7 +161,10 @@ beforeAll(async () => {
     repoUrl: 'https://example.test/drive-enforcement.git',
     metadata: { experimental: { drives: true } },
   });
-  __setBootModePolicyForTests({ volumes: { orgs: { [ACCOUNT]: true } } });
+  // The Files routes read the Volumes policy row straight from the database
+  // (volumesEnabledForFresh), so the organization's entry must actually be
+  // stored — the in-memory test hook never reaches them.
+  await setVolumesForOrg(ACCOUNT, true);
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({
     serviceAccountId: RESEARCHER,
@@ -190,6 +193,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await setVolumesForOrg(ACCOUNT, null);
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
