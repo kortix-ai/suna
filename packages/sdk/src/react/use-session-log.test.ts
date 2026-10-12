@@ -117,6 +117,27 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(seen.at(-1)).toBe(seen[0]);
   });
 
+  test('an optimistic send shows as the thread\'s last message on v1 and on v2, until the log holds it', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session));
+      return null;
+    });
+    const sent = { id: 'msg_zzzoptimistic', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    const part = { id: 'prt_zzzoptimistic', sessionID: RS, messageID: sent.id, type: 'text', text: 'just sent' };
+    act(() => useSyncStore.getState().optimisticAdd(RS, sent as never, [part as never]));
+    expect(seen.at(-1)!.messages.at(-1)).toMatchObject({ message_id: sent.id, role: 'user', status: 'complete', blocks: [{ type: 'text', text: 'just sent' }] });
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const v2 = seen.at(-1)!;
+    expect(v2.messages.at(-1)).toMatchObject({ message_id: sent.id, role: 'user', status: 'complete', blocks: [{ type: 'text', text: 'just sent' }] });
+    expect(v2.messages.slice(0, -1)).toEqual(log.threads[0]!.messages);
+    // The log's put of the same id replaces it: the v1 row stays out.
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: sent.id, seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    expect(seen.at(-1)!.messages.at(-1)).toEqual(put);
+  });
+
   test('null without a runtime session id; source v2 once a page is in the store', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<{ none: unknown; log: ReturnType<typeof useSessionLog> }> = [];

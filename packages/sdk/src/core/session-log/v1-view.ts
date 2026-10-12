@@ -16,7 +16,7 @@
  */
 import type { Message, Part } from '../runtime/runtime-types';
 import type { SessionLogState, SessionLogThreadHead } from './store';
-import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogMessage } from './types';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogMessage, type SessionLogThread } from './types';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '../runtime/transcript-types';
 import { fromV1, toV1 } from './v1';
 
@@ -54,7 +54,8 @@ const nativeOf = (head: SessionLogThreadHead) => {
 /** Rows per message, valid for one runtime session id: a `log.thread` upsert keeps them. */
 const messageRows = new WeakMap<SessionLogMessage, { native: string | null; rows: V1MessageRow[] }>();
 
-function rowsOf(head: SessionLogThreadHead, message: SessionLogMessage): V1MessageRow[] {
+/** The v1 rows `toV1` gives `message` in the thread `head` (a compaction gives two: the marker, then its summary). Internal. */
+export function rowsOf(head: SessionLogThreadHead, message: SessionLogMessage): V1MessageRow[] {
   const native = nativeOf(head);
   const cached = messageRows.get(message);
   if (cached && cached.native === native) return cached.rows;
@@ -142,6 +143,31 @@ export function sessionLogRowsFor<R extends V1MessageRow>(
   }
   merged.set(list, { v1Rows, native, revs: state.revs, result });
   return result as R[];
+}
+
+const extended = new WeakMap<SessionLogThread, { v1Rows: readonly V1MessageRow[]; revs: SessionLogState['revs']; result: SessionLogThread }>();
+
+/**
+ * `thread` (a thread of `state`) with the v1 store rows the log does not hold appended as
+ * `fromV1` live messages, after the thread's own: an optimistic send shows until the log's put
+ * of the same id replaces it. A row the log holds, or tombstoned, stays out. The thread itself
+ * when no row is added; the same thread for the same inputs; a message keeps its identity
+ * while its row is unchanged.
+ */
+export function sessionLogThreadWithV1Rows(state: SessionLogState, thread: SessionLogThread, v1Rows: readonly V1MessageRow[]): SessionLogThread {
+  const cached = extended.get(thread);
+  if (cached && cached.v1Rows === v1Rows && cached.revs === state.revs) return cached.result;
+  // The ids the log's rows carry: a compaction message also gives its summary row.
+  const held = new Set(thread.messages.flatMap((m) => rowsOf(thread, m).map((r) => r.info.id)));
+  const extra = v1Rows.filter((r) => !held.has(r.info.id) && state.revs[r.info.id] === undefined);
+  let result = thread;
+  if (extra.length) {
+    let seq = thread.messages[thread.messages.length - 1]?.seq ?? 0;
+    const added = extra.map((r) => convert(state.session.session_id ?? '', thread.thread_id, r, undefined, ++seq).message);
+    result = { ...thread, messages: [...thread.messages, ...added] };
+  }
+  extended.set(thread, { v1Rows, revs: state.revs, result });
+  return result;
 }
 
 // ─── v1 rows -> session log (v2 not negotiated) ──────────────────────────────
