@@ -1,0 +1,28 @@
+{
+  "source_hash": "334c7e729ac76730f63f5b5ceddb6d80bd2a0b748913ba944886e0380ed3e9a8",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-log-purge.test.ts",
+    "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
+    "apps/api/src/billing/services/billing-state.ts",
+    "apps/api/src/bootstrap.ts",
+    "apps/api/src/config.ts",
+    "apps/api/src/projects/session-log-blobs.ts",
+    "apps/api/src/projects/session-log-purge.ts",
+    "apps/api/src/projects/surface.ts",
+    "apps/api/src/workers/session-log-purge-worker.ts",
+    "packages/db/drizzle/meta/20261012152936_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261012152936444_session_content_purges.sql",
+    "packages/db/src/index.ts",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "cb694a6ae9fbb01fb93351b975da98be92f1e48de36058a28ff8bb85d02f8122",
+  "head": "be38a643f5d9dbed4e7226d0b705e828edaacf85",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T16:19:21.416Z"
+}
