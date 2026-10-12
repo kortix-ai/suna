@@ -1,5 +1,5 @@
 {
-  "source_hash": "179504b72f8da5f3f18af7d29e4069d68cd9cfc26128b2d193d6ebb7d5a19019",
+  "source_hash": "9b4033b685e26619870bcda6da849513592c7c417ab54ec6d984440ed4242e0a",
   "diff_files": [
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/assets/quick-entry.html",
@@ -31,14 +31,13 @@
     "apps/web/src/stores/session-composer-prefill-store.ts",
     "tests/e2e/specs/27-desktop-parity.spec.ts"
   ],
-  "diff_hash": "6e1934177a71d1286f9caf8986e34e398557406596f5f1f70690367a44a48290",
-  "head": "cd4a9964c36f1dcc838025b562254a13cea42c51",
+  "diff_hash": "93542030b93abdf3542daf84878fda172c48d749700de065208550b078b4e6af",
+  "head": "8576ec927fbc1da8b090fbf16ce4a51946db6ca4",
   "passed": true,
   "lanes": {
-    "browser": "pass",
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T14:05:57.561Z"
+  "at": "2026-10-12T14:18:55.996Z"
 }
