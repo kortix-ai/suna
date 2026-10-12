@@ -70,7 +70,12 @@ mock.module('../projects/lib/access', () => ({
   },
 }));
 const realBootMode = await import('../platform/services/boot-mode-setting');
-mock.module('../platform/services/boot-mode-setting', () => ({ ...realBootMode, volumesEnabledFor: () => true }));
+mock.module('../platform/services/boot-mode-setting', () => ({
+  ...realBootMode,
+  volumesEnabledFor: () => true,
+  volumesEnabledForFresh: async () => true,
+  ensureBootModePolicyFresh: async () => undefined,
+}));
 const realGate = await import('../feature-flags/gate');
 mock.module('../feature-flags/gate', () => ({ ...realGate, requireFeatureFlag: () => null }));
 const realService = await import('./service');

@@ -152,8 +152,8 @@ const patchFeatureFlagHandler = async (c: any) => {
       return c.json({ error: `${featureFlagDef(feature).name} is not available on this deployment` }, 400);
     }
     if (feature === 'stateless_sessions' && enabled === true) {
-      const { volumesEnabledFor } = await import('../../platform/services/boot-mode-setting');
-      if (!volumesEnabledFor(loaded.row.accountId)) {
+      const { volumesEnabledForFresh } = await import('../../platform/services/boot-mode-setting');
+      if (!(await volumesEnabledForFresh(loaded.row.accountId))) {
         return c.json({ error: 'Turn on Volumes first' }, 400);
       }
     }

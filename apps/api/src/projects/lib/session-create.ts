@@ -825,7 +825,7 @@ async function resolveSessionSandboxPlacement(params: {
   // Only for an organization with Volumes on; otherwise the option does not exist.
   const persistentMachine =
     body.persistent_machine === true &&
-    (await import('../../platform/services/boot-mode-setting')).volumesEnabledFor(accountId);
+    (await (await import('../../platform/services/boot-mode-setting')).volumesEnabledForFresh(accountId));
   if (persistentMachine && platformMetaAgent) {
     return {
       error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },
