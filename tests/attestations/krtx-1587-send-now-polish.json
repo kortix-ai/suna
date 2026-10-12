@@ -1,0 +1,20 @@
+{
+  "source_hash": "c424106b8f38662104a0ef8f8b0a9088cd254bce390fc2cd0f06129c94cf12cd",
+  "diff_files": [
+    "apps/web/src/features/session/composer/queued-prompt-list.click.test.tsx",
+    "apps/web/src/features/session/composer/queued-prompt-list.test.tsx",
+    "apps/web/src/features/session/composer/queued-prompt-list.tsx",
+    "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/workspace/command-palette-search.test.ts",
+    "apps/web/src/lib/menu-registry.ts"
+  ],
+  "diff_hash": "8989bfd9ed2cda1eb13d15b2e7737e4451a3a44615f77da7b1ca639b27ddeb10",
+  "head": "805deaa3ce3f1aa97e463017e08488682783dce2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T18:41:10.546Z"
+}
