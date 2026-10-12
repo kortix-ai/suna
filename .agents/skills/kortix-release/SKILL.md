@@ -61,7 +61,7 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 `main` takes PRs with no required CI: the developer's own box is the pre-merge
 check (the **testing** skill, "your machine is the pre-merge gate"). A person
 may add the `test` label for one explicit six-lane run (the **contributing**
-skill). A daily `schedule` runs the six `Tests` lanes on `main` as a **non-blocking trunk
+skill). A daily `schedule` runs the `Tests` lanes on `main` as a **non-blocking trunk
 signal** (a push does not), and an automated "repair main" pass opens fix-forward PRs
 (`fix(...): repair main after <sha> (...)`) when that scheduled run is red. **Neither
 the scheduled run nor the repair pass blocks a promotion** — do not wait for either
@@ -89,8 +89,8 @@ against whatever `origin/main` HEAD is right now.
 
 ### Step 3 — the staging PR is the gate
 
-The PR into `staging` runs the full six-lane `Tests` suite (`core`,
-`browser-1`…`browser-4`, `packages`) plus CodeQL (`Analyze
+The PR into `staging` runs the full ten-lane `Tests` suite (`core`,
+`browser-1`…`browser-8`, `packages`) plus CodeQL (`Analyze
 javascript-typescript`), Trivy filesystem scan, gitleaks, the `packages/db`
 migration gates (`Migrations are sequential`, `Migration files are well-formed`,
 `Applies cleanly to a fresh DB`, `Schema matches migrations`, `Squawk

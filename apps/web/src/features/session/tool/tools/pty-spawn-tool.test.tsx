@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -44,9 +45,9 @@ describe('PtySpawnTool trigger drops the command once the card is showing it', (
   test('closed, the command is the row — open, it is the card', () => {
     const p = part(spawned({ Command: COMMAND, Status: 'running', PID: '4210' }));
 
-    expect(triggerRegion(renderToStaticMarkup(<PtySpawnTool part={p} />))).toContain(COMMAND);
+    expect(triggerRegion(renderToStaticMarkup(<PtySpawnTool call={toolCallBlock(p)} />))).toContain(COMMAND);
 
-    const open = renderToStaticMarkup(<PtySpawnTool part={p} defaultOpen />);
+    const open = renderToStaticMarkup(<PtySpawnTool call={toolCallBlock(p)} defaultOpen />);
     expect(triggerRegion(open)).not.toContain(COMMAND);
     // Still on screen, one line down, under the `$`.
     expect(open).toContain(COMMAND);
@@ -56,7 +57,7 @@ describe('PtySpawnTool trigger drops the command once the card is showing it', (
 
   test('a model-supplied Title survives — the card never repeats it', () => {
     const p = part(spawned({ Title: 'Dev server', Command: COMMAND, Status: 'running' }));
-    const open = renderToStaticMarkup(<PtySpawnTool part={p} defaultOpen />);
+    const open = renderToStaticMarkup(<PtySpawnTool call={toolCallBlock(p)} defaultOpen />);
 
     expect(triggerRegion(open)).toContain('Dev server');
     // The command still belongs to the card alone.
@@ -67,7 +68,7 @@ describe('PtySpawnTool trigger drops the command once the card is showing it', (
     // Nothing here is repeated by the trigger, so nothing here is hidden.
     const open = renderToStaticMarkup(
       <PtySpawnTool
-        part={part(spawned({ Command: COMMAND, Status: 'running', PID: '4210', ID: 'pty_a1b2' }))}
+        call={toolCallBlock(part(spawned({ Command: COMMAND, Status: 'running', PID: '4210', ID: 'pty_a1b2' })))}
         defaultOpen
       />,
     );

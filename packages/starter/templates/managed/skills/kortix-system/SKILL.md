@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps (web and `convex` kinds) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -229,7 +229,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
-| "call Gmail / a CRM / any connector from an App (a `convex` App included) or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
+| "call Gmail / a CRM / any connector from an App (a backend included) or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
 | "show me every app event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **App events** |
@@ -353,58 +353,69 @@ and the alternative. `read_skill` with
 </mcp-client>
 
 <apps>
-## Kortix Apps — websites, containers and `convex` backends
+## Kortix Apps — sites, servers and backends
 
-An **App** is a project-scoped thing with one stable Kortix URL. A deployment
-is immutable. A failed deployment never replaces the active version. Every App
-has one `kind`, fixed at create, and lists its `capabilities`; clients branch
-on capabilities, never on kind.
+An **App** is a project-scoped thing with one stable Kortix URL. Kortix runs it
+as releases, machines and volumes:
+
+- A **release** (`vN`) is immutable: an artifact plus its resolved config. A
+  failed release never replaces the live one. A rollback is a new release from
+  an older one.
+- A **machine** runs a release for one process group. It keeps its id across
+  releases; each release replaces its box, so its root disk resets.
+- A **volume** is a persistent disk. It outlives every release and machine,
+  with daily snapshots, restore and fork.
+
+Every App is the same primitive. Clients branch on `capabilities`, never on a
+type. `labels` (for example `backend`) only group and filter Apps.
 
 - A **static App** (`--type static`) is files that Kortix serves itself: no
   machine, no cold start, no compute bill, instant rollback. Build a Vite,
   React, or exported Next.js App here and deploy its output directory.
-- A **server App** (`--type dockerfile`, or `--image`) runs in its own machine.
-  It runs **always on** (the default for a new App, 24/7) or **on demand**
-  (`--on-demand`: stops when idle, wakes on the next request). It stops at its
-  monthly compute budget (default 5 USD). 24/7 on the default machine costs
-  about 73 USD a month, so an always-on App needs `--budget`.
-- A **`convex` App** (`kortix apps create <slug> --kind convex`) is a full
-  backend: database, server functions, realtime queries, file storage,
-  schedules and search, powered by self-hosted Convex with built-in Kortix
-  sign-in. One always-on machine each, up to 3 per project and 10 per
-  account. Its code usually lives in `apps/<slug>/convex/` and ships with
-  `kortix apps deploy apps/<slug> --app <slug>`.
+- A **server App** (`--type dockerfile`, or `--image`) runs machines. It runs
+  **always on** (the default, 24/7) or **on demand** (`--on-demand`: stops
+  when idle, wakes on the next request). An always-on App bills its machines
+  24/7; an on-demand App bills only while awake. Apps have no monthly budget:
+  account credits pay. `--budget` is retired.
+- A **backend** (database, server functions, realtime, file storage) is a
+  server App with a volume. `kortix apps launch --template convex`
+  writes and deploys a self-hosted Convex backend (`backend`, data on a volume) and
+  an admins-only dashboard (`backend-dashboard`). Its code lives in
+  `apps/backend/convex/` and ships with `npx convex deploy`.
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
-Project Settings → Feature flags; the user contacts Kortix). The
-CLI labels Apps as experimental. App operations remain gated by the selected
-project feature.
+Project Settings → Feature flags; the user contacts Kortix). The CLI labels
+Apps as experimental.
 
 New Apps are private. Use `kortix apps access <app>` to select creator-only,
 whole-project, restricted member/group, public, or password access. Never store
 an App password in `kortix.yaml`.
 
-Use the CLI from the source directory:
+Each App's code lives in its own folder, `apps/<slug>/` by default (`path` is
+free-form; group by team or topic when that fits better). Deploy that folder:
 
 ```sh
-kortix apps deploy ./dist --type static --spa
-kortix apps deploy . --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
-kortix apps deploy . --type dockerfile --always-on --budget 80 --command '["bun","run","start"]' --port 3000
+kortix apps deploy apps/storefront/dist --type static --spa
+kortix apps deploy apps/api --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
+kortix apps launch --template convex
+kortix apps releases api          # vN, status, strategy; the live one marked
+kortix apps machines api          # machines per process group, their volumes
+kortix apps scale count api 2 --process worker
+kortix apps volumes snapshot backend data
 kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
-kortix apps ls --json
 ```
 
-For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`, then
-run `kortix apps deploy --manifest-app <name>`. A single declared App becomes
-the default for bare `kortix apps deploy`. The manifest stores non-secret
+For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`
+(the App's release config: `processes`, `http_service`, `services`, `mounts`, `vm`,
+`deploy`, `labels`), then run `kortix apps deploy --manifest-app <name>`, or a
+bare `kortix apps deploy` for every block. The manifest stores non-secret
 environment values and maps runtime environment keys to **project secret
 identifiers**. It never stores secret values.
 
-An App keeps its active deployment and the 5 newest other ready ones for
-rollback. A server App supports one public HTTP port, HTTP streaming, SSE, and
-WebSockets. Apps do not support replicas, persistent volumes, UDP, private
-registries, or custom domains.
+A server App supports HTTP services (each on its own host), HTTP streaming,
+SSE and WebSockets. Apps do not support TCP or UDP services, private
+networking between Apps, private registries, or custom domains yet.
 
 **Build a product: what to create.** Check the flag first:
 `kortix projects info --json` → `experimental.apps`.
@@ -412,20 +423,19 @@ registries, or custom domains.
 | The user wants | Build |
 | --- | --- |
 | A website or UI with no stored data | A static App |
-| An app with data, login or realtime | A `convex` App + a static App that uses it (`kortix apps link <ui> --uses <db>`) |
-| A database or API only | A `convex` App |
+| An app with data, login or realtime | `kortix apps launch --template convex` + a static App that uses it (`kortix apps link <ui> --uses backend`) |
+| A backend (data, functions, realtime) or an API only | The `convex` template, or a server App with a volume |
 | A call to an external system from an App | The connector gateway (`kortix-connectors`) |
 | Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
 
-When `apps` is off, or a `convex` create answers `409 app_kind_unavailable`,
-build with the project's own storage and code (the project's web-app skills,
-`webapp`, `web-publishing-and-deployments`), and tell the user once that
-Kortix can enable it.
+When `apps` is off, build with the project's own storage and code (the
+project's web-app skills, `webapp`, `web-publishing-and-deployments`), and tell
+the user once that Kortix can enable it.
 
 Load the `kortix-apps` system skill before you deploy or operate an App, and
 before you write Convex code.
 **Full reference:** `references/kortix/apps.md` — workload selection, manifest
-fields, every lifecycle command, run modes and budget, ignore rules, secrets,
+fields, every lifecycle command, run modes and cost, ignore rules, secrets,
 cold starts, rollback, retention, limits, and failure handling.
 </apps>
 
@@ -817,7 +827,7 @@ project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
-project.app.read  project.app.write  project.app.deploy  project.app.admin   # admin: credentials, rotate, restore, delete a convex App
+project.app.read  project.app.write  project.app.deploy  project.app.admin   # admin: exec, volume restore/destroy, admins-only services
 project.review.read  project.review.submit  project.review.act
 ```
 
@@ -863,7 +873,7 @@ to see the full enum.
 <reference path="references/kortix/apps.md">
   Kortix Apps deployment and operations reference. Covers static hosting and
   server Apps (bundle, Dockerfile, and OCI workloads); always-on and on-demand
-  run modes and the monthly budget; the v2 manifest `apps:` map; archive
+  run modes and cost; the v2 manifest `apps:` map; archive
   ignore rules; environment and secret mappings; stable URLs; cold wake and
   idle stop; lifecycle commands; rollback and retention; resource limits; and
   current boundaries. Load before deploying or operating an App.

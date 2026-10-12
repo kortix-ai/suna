@@ -7,9 +7,8 @@ const app = {
   project_id: '11111111-2222-4333-8444-555555555555',
   slug: 'crm',
   url: 'https://crm.apps.example.test',
-  capabilities: ['deployments', 'snapshots', 'admin_credentials', 'dashboard', 'member_tokens'],
+  capabilities: ['deployments', 'member_tokens'],
   auth: { issuer, audience: '99999999-8888-4777-8666-555555555555', jwks_uri: `${issuer}/jwks.json` },
-  instance: { site_url: 'https://crm-site.apps.example.test' },
 };
 
 const code = (id: string, snippets = appConnectSnippets(app)) =>
@@ -22,29 +21,24 @@ describe('appConnectSnippets', () => {
     expect(new Set(snippets.map((s) => s.id)).size).toBe(snippets.length);
   });
 
-  test('another App links this one first, then binds to it on its own origin', () => {
+  test('another App links this one first, then calls it through its binding', () => {
     const ids = appConnectSnippets(app).filter((s) => s.tab === 'app').map((s) => s.id);
-    expect(ids.slice(0, 2)).toEqual(['app-install', 'app-uses']);
+    expect(ids.slice(0, 2)).toEqual(['app-uses', 'app-client']);
     expect(code('app-uses')).toBe('kortix apps link <app> --uses crm\n# or in kortix.yaml: apps.<app>.uses: [crm]');
     expect(code('app-client')).toContain('const crm = kortixBinding("crm");');
-    expect(code('app-client')).toContain('new ConvexReactClient(crm.url)');
-    expect(code('app-client')).toContain('convex.setAuth(crm.token);');
+    expect(code('app-client')).toContain('await crm.token()');
   });
 
-  test('the server accepts tokens from the project issuer for this App', () => {
-    expect(code('server-auth-config')).toContain('issuer: process.env.KORTIX_AUTH_ISSUER!');
-    expect(code('server-function')).toContain('requireKortixMember(await ctx.auth.getUserIdentity())');
+  test('this App verifies the bearer token with verifyKortixToken', () => {
+    expect(code('server-verify')).toContain('await verifyKortixToken(bearer)');
   });
 
-  test('outside callers send a bearer to /api/query, /api/mutation and the HTTP actions origin', () => {
+  test('outside callers send a bearer to the App URL', () => {
     expect(code('outside-token-cli')).toBe('TOKEN=$(kortix apps token crm)');
     expect(code('outside-token-sdk')).toContain(
       'kortix.project("11111111-2222-4333-8444-555555555555").apps.token("99999999-8888-4777-8666-555555555555")',
     );
-    expect(code('outside-query')).toContain('curl -s https://crm.apps.example.test/api/query');
-    expect(code('outside-query')).toContain('"path":"members:me"');
-    expect(code('outside-mutation')).toContain('https://crm.apps.example.test/api/mutation');
-    expect(code('outside-http-action')).toBe('curl -s https://crm-site.apps.example.test/hello -H "Authorization: Bearer $TOKEN"');
+    expect(code('outside-request')).toBe('curl -s https://crm.apps.example.test/ -H "Authorization: Bearer $TOKEN"');
     expect(code('outside-verify')).toContain('await verifyKortixToken(bearer)');
   });
 
@@ -54,23 +48,18 @@ describe('appConnectSnippets', () => {
     );
   });
 
-  test('admin is the CLI: deploy, credentials, client CLI commands, dashboard; never a key', () => {
-    const admin = code('admin-cli');
-    expect(admin).toContain('kortix apps deploy <dir> --app crm');
-    expect(admin).toContain('eval "$(kortix apps credentials crm)"');
-    expect(admin).toContain('kortix apps dashboard crm --open');
-    expect(JSON.stringify(appConnectSnippets(app))).not.toMatch(/ADMIN_KEY|admin_key/);
+  test('no member_tokens capability, no outside tab', () => {
+    const plain = appConnectSnippets({ ...app, capabilities: ['deployments'] });
+    expect(plain.some((s) => s.tab === 'outside')).toBe(false);
   });
 
-  test('capabilities decide the tabs: no admin credentials, no admin tab; no member tokens, no outside tab', () => {
-    const plain = appConnectSnippets({ ...app, capabilities: ['deployments', 'snapshots'] });
-    expect(plain.some((s) => s.tab === 'admin' || s.tab === 'outside')).toBe(false);
-  });
-
-  test('an App that does not run yet, or an older server: placeholders, no environment snippet', () => {
-    const snippets = appConnectSnippets({ ...app, url: null, auth: undefined, instance: null });
+  test('an App with no URL yet, or an older server: placeholders, no environment snippet', () => {
+    const snippets = appConnectSnippets({ ...app, url: null, auth: undefined });
     expect(snippets.some((s) => s.id === 'outside-verify-env')).toBe(false);
-    expect(code('outside-query', snippets)).toContain('curl -s <url>/api/query');
-    expect(code('outside-http-action', snippets)).toContain('<site_url>/hello');
+    expect(code('outside-request', snippets)).toContain('curl -s <url>/ ');
+  });
+
+  test('no snippet names a retired kind or an admin key', () => {
+    expect(JSON.stringify(appConnectSnippets(app))).not.toMatch(/convex|admin_key|ADMIN_KEY/i);
   });
 });

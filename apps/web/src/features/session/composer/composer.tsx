@@ -7,6 +7,7 @@ import { isImageFile } from '@/lib/utils/file-utils';
 import type {
   Agent,
   Command,
+  FlatModel,
   MessageWithParts,
   ProviderListResponse,
   UsePromptAttachmentsResult,
@@ -41,7 +42,6 @@ import {
   modelRejectingAttachedImages,
 } from '../model-availability';
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
-import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import type { ServedModelNotice } from '../turn/served-model';
 import { useModelConnectionGate } from '../use-model-connection-gate';
@@ -375,6 +375,9 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
+  /** A question is docked above the card: the strip goes full width and
+   *  the card squares its top corners, so both read as one surface. */
+  questionActive?: boolean;
   /**
    * A labeled submit button replaces the icon send/stop control, busy or
    * not. Set while the composer edits a queued message: its send saves the

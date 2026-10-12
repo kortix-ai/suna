@@ -24,7 +24,6 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { flattenModels } from '@/features/session/session-chat-input';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -37,7 +36,7 @@ import {
   type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk';
-import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, flattenModels, modelProviderMode, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -67,7 +66,10 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(detailQuery.data?.project);
   const { data: providers } = useRuntimeProviders();
-  const models = useMemo(() => flattenModels(providers), [providers]);
+  const models = useMemo(
+    () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
+    [providers],
+  );
   const defaults = useModelDefaults(projectId);
   if (!llmGatewayEnabled) return null;
   const explicit = defaults.agentDefaults[agentName] ?? null;

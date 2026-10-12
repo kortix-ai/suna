@@ -47,6 +47,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
 `SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap); `emailed:false` when no provider is configured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
+`SYS-10` `GET /v1/clients/mobile` → public (no auth) mobile release policy `{minimum_version, store_url_ios, store_url_android}`: each field is a string or `null`; `null` means the operator did not set `MOBILE_MIN_VERSION` / `MOBILE_STORE_URL_IOS` / `MOBILE_STORE_URL_ANDROID`, and a null `minimum_version` means no gate.
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ### Kortix system skills (`/v1/skills`, `combinedAuth`)
@@ -213,11 +214,11 @@ The section is behind the per-project `notification_center` feature flag, which 
 `NOTIF-2` Member B's prompt in member A's project-visible session (a `continue_session` row that bound the turn to B) ends: `POST /projects/:pid/turn-stream {kind:'end', status:'idle', turn_message_id}` from the session's sandbox credential → 200 `turn_completion.outcome:'closed'`, `queue_promoted:false`. B, the prompter, gets one unread `turn_done` row titled with the session name; A, the creator and so a watcher, gets one too; both name B as `actor_user_id`. A mutes the session (`PUT .../watch {watching:false}` → 200 `watching:false`); B's next turn ends → B has two rows, A still one.
 `NOTIF-3` The OWNER shares a private session (`PUT .../sharing {mode:'members', memberIds:[C, <a user outside the account>]}`) → 200. Account member C gets one `shared` row whose `actor_user_id` is the OWNER and whose body ends "shared a session with you". The user outside the account and the sharer get no row. Unsharing (`mode:'private'`) and sharing with C again the same UTC day → 200 both, and C still has exactly one `shared` row.
 `NOTIF-4` `GET /notifications/web-push/key` → 200 `{public_key}`, a 65-byte uncompressed P-256 point in base64url, the same on every read. A browser sign-in `POST /notifications/web-push/subscriptions {endpoint, keys:{p256dh, auth}}` with an endpoint on a known push service → 200 `{ok:true}`. A personal access token → 403 (Web Push needs a browser sign-in). An IP host, an internal host, or a look-alike of a push host → 400 `code:'unsupported_push_service'`; plain http, a port, userinfo → 400 `invalid_endpoint`; a p256dh that is not 65 bytes → 400 `invalid_keys`. `DELETE /notifications/web-push/subscriptions?endpoint=` by another user → 200 `deleted:false`; by the subscriber → `deleted:true`; a repeat → `deleted:false`. `ANON` → 401. The subscriber is never notified, so nothing reaches the push service.
-`NOTIF-5` A project manager creates a cron trigger (`POST /projects/:pid/triggers`) → 201 and an unmuted `trigger_watchers` row for them. The account is set to a paid tier with no credit, and a manual fire (`POST .../triggers/:slug/fire`) fails → 500: a deployed target refuses the session at billing admission; the local profile refuses it earlier, at the sandbox callback check. The creator gets exactly one `automation_failed` row titled with the trigger name, `session_id:null`, `url` `/projects/<pid>/customize/triggers?notification=<id>`; the account OWNER gets none. The row's `emailed_at` is set; on a target with Mailpit (`env.mailpitUrl`) the creator has exactly one "Automation failing: <name>" email and the OWNER none. A second failed fire → 500 and still exactly one row: one alert per failure streak. Runs on every target.
+`NOTIF-5` A project manager creates a cron trigger (`POST /projects/:pid/triggers`) → 201 and an unmuted `trigger_watchers` row for them. The account is set to a paid tier with no credit, and a manual fire (`POST .../triggers/:slug/fire`) fails → 402: a deployed target serves a default model, so billing admission refuses it with `code:'insufficient_credits'`; the local profile serves no managed model, so the model gate refuses it with `code:'no_usable_model'`. The creator gets exactly one `automation_failed` row titled with the trigger name, `session_id:null`, `url` `/projects/<pid>/customize/triggers?notification=<id>`; the account OWNER gets none. The row's `emailed_at` is set; on a target with Mailpit (`env.mailpitUrl`) the creator has exactly one "Automation failing: <name>" email and the OWNER none. A second failed fire → 402 and still exactly one row: one alert per failure streak. Runs on every target.
 `NOTIF-6` A turn B prompted in a session A created ends. In a Slack-origin and in an email-origin session (`metadata.source` `slack` / `email`) B gets the `turn_done` row and A gets no row. Positive control: the same turn in a web session (`source:'ui'`) gives A a row.
 `NOTIF-7` `GET /projects/:pid/sessions/:sid/watch` → 200 `{watching}`: true for the creator, false for a project member who never wrote in it. `PUT .../watch {watching}` → 200 `{watching}` and reads back. `ANON` → 401; a user outside the account → 403; the session's own sandbox token → 403 on both watch routes and on `GET /notifications`; a body without a boolean `watching` → 400. A member who follows the session (`watching:true`) gets the `turn_done` row of a turn no person prompted, and of a turn the muted creator prompted; the muted creator gets neither, though they prompted the second. The creator's `watching:true` unmutes it.
 `NOTIF-8` B prompted A's session's running turn; A muted the session; W, a project member, follows it (`PUT .../watch {watching:true}` → 200 `watching:true`). The sandbox's `POST /projects/:pid/turn-question {session_id, request_id, questions}` → 200 `persisted:true`; B and W each get one `question` row whose body is the question; A gets none; a retry of the same `request_id` adds no row. The same relay with a person's token → 200 `persisted:true` and notifies nobody: B and W still have one `question` row each. `POST /projects/:pid/turn-permission {session_id, request_id, permission, patterns}` twice from the sandbox → 200 `notified:true`, then `notified:false`; B and W each have exactly one `permission` row; A has none. A person's token → 403.
-`NOTIF-9` The `notification_center` flag off, then on, then cleared, on a fresh team project where A created a project-visible session. `GET /projects/:pid` → 200 `experimental.notification_center:false`, and its `experimental_features` row reads `enabled:false`, `overridden:false`. With the flag off: a member's `GET` and `PUT .../watch` → 403 `{code:'feature_disabled', feature:'notification_center'}` and no `notification_watchers` row is stored; `ANON` → 401. Member B's prompt in A's project-visible session (`POST .../sessions/:sid/prompts`) → 200/202 and writes no `notification_watchers` row. B's turn in A's session ends from the sandbox credential → 200 `turn_completion.outcome:'closed'`; neither A nor B gets a row. During B's next turn the sandbox's `turn-question` → 200 `persisted:true` and `turn-permission` → 200 `notified:true`; neither A nor B gets a row. The OWNER shares a private session with B → 200; B gets no `shared` row. A row stored in the database for B in this project is neither listed by `GET /notifications` nor counted in `unread_count`. In a second flag-off project of the account, a project manager creates a cron trigger → 201 and no `trigger_watchers` row; on the account with no credit a manual fire → 500, the trigger's `last_status` reads `failed`, `alert_failing_since` stays null, neither the manager nor the OWNER gets a row, and Mailpit (when `env.mailpitUrl` is set) holds no "Automation failing: <name>" email. `PATCH .../features {enabled:true}` → 200 `experimental.notification_center:true`: the creator's `GET .../watch` → 200 `watching:true`, B's bell lists the stored row with `unread_count` 1, and a new sandbox question reaches B as one `question` row. `{enabled:null}` → 200 `experimental.notification_center:false`: the creator's `GET .../watch` → 403 again, and B's bell lists no row of the project and counts 0.
+`NOTIF-9` The `notification_center` flag off, then on, then cleared, on a fresh team project where A created a project-visible session. `GET /projects/:pid` → 200 `experimental.notification_center:false`, and its `experimental_features` row reads `enabled:false`, `overridden:false`. With the flag off: a member's `GET` and `PUT .../watch` → 403 `{code:'feature_disabled', feature:'notification_center'}` and no `notification_watchers` row is stored; `ANON` → 401. Member B's prompt in A's project-visible session (`POST .../sessions/:sid/prompts`) → 200/202 and writes no `notification_watchers` row. B's turn in A's session ends from the sandbox credential → 200 `turn_completion.outcome:'closed'`; neither A nor B gets a row. During B's next turn the sandbox's `turn-question` → 200 `persisted:true` and `turn-permission` → 200 `notified:true`; neither A nor B gets a row. The OWNER shares a private session with B → 200; B gets no `shared` row. A row stored in the database for B in this project is neither listed by `GET /notifications` nor counted in `unread_count`. In a second flag-off project of the account, a project manager creates a cron trigger → 201 and no `trigger_watchers` row; on the account with no credit (funded first, so a deployed target can provision the second project, then emptied) a manual fire → 402, the trigger's `last_status` reads `failed`, `alert_failing_since` stays null, neither the manager nor the OWNER gets a row, and Mailpit (when `env.mailpitUrl` is set) holds no "Automation failing: <name>" email. `PATCH .../features {enabled:true}` → 200 `experimental.notification_center:true`: the creator's `GET .../watch` → 200 `watching:true`, B's bell lists the stored row with `unread_count` 1, and a new sandbox question reaches B as one `question` row. `{enabled:null}` → 200 `experimental.notification_center:false`: the creator's `GET .../watch` → 403 again, and B's bell lists no row of the project and counts 0.
 
 ---
 
@@ -370,10 +371,12 @@ The session payload reports both verdicts, and a client must not read one for th
 `SESS-40` Browser tab presence lease (KRTX-588). `PUT /projects/:id/sessions/:sid/presence {tab_id: uuid, active: boolean}` needs a human login that may read the session. `active=true` upserts one lease for (user, session, tab) that expires 90 s later and extends the sandbox deadline; repeating it keeps one row. `active=false` deletes the lease. Anonymous → 401; non-UUID `tab_id` → 400 and no row; unknown session → 404; API-key or session credential → 403. The extension is the idle grace (15 min), not 30 min, and only for a caller with `project.session.start`; a viewer without it keeps only the lease (KRTX-1729). The SDK holds the lease only while the person used the page in the last 10 min.
 `SESS-42` Message authors. `GET /projects/:id/sessions/:sid/message-authors` → 200 `{authors: {<wire message id>: {kind:"member",user_id,name,email,avatar_url}|{kind:"session",session_id,name,agent?}}, initial_author}`. A spawned session with an `initial_prompt` reports its parent session as `initial_author`; a top-level session reports `null`. A prompt a member sends through `POST …/prompts` is attributed to that member under its wire message id. A session the viewer may not open → 404; a non-UUID id → 400; anonymous → 401.
 `SESS-47` A queued prompt runs as its author, so only its author writes it. `GET /projects/:id/sessions/:sid/prompts` lists `author_user_id` on every row (the member it runs as; `null` for a row with no recorded sender). A member who did not send a prompt gets **403 `{code:"not_prompt_author"}`** from `PATCH .../prompts/:promptId` (`text` or `delivery:"interrupt"`), `POST .../prompts/:promptId/retry` and `DELETE .../prompts/:promptId`, and the row is unchanged. The author's `PATCH` → 200 with the new text. A session manager (`can_manage_lifecycle`: the session's owner or a project manager) may `DELETE` another member's prompt → 200 and the audit row names `prompt_author_user_id`; that manager's edit, retry and Stop and send are still 403. A refused send now does not release the session's held queue.
-`SESS-48` `POST /projects/:id/sessions/:sid/start` answers from stored rows before any provider call: a malformed id → 400 `Invalid session id`; an unknown id → 404; a fresh provisioning row with no `external_id` → 200 `stage:"provisioning"`, row kept; a pending row older than 10 min or a started row older than 5 min → 200 `stage:"provisioning"`, `sandbox:null`, `reason:"stale_provisioning_pending"|"stale_provisioning_lost"`, row retired; a failed session with an `error` row → 200 `stage:"failed"`, `retriable:false`, the same `failure` on every call, row unchanged; a stored `500: Failed to place sandbox` reads as `provider-capacity`; `unsupported-secret-delivery` is `retryable:false`.
+`SESS-48` `POST /projects/:id/sessions/:sid/start` answers from stored rows before any provider call: a malformed id → 400 `Invalid session id`; an unknown id → 404; a fresh provisioning row with no `external_id` → 200 `stage:"provisioning"`, row kept; a pending row older than 10 min or a started row older than 5 min → 200 `stage:"provisioning"`, `sandbox:null`, `reason:"stale_provisioning_pending"|"stale_provisioning_lost"`, row retired (a deployed target whose sandboxes reach the API starts a fresh replacement row at once); a failed session with an `error` row → 200 `stage:"failed"`, `retriable:false`, the same `failure` on every call, row unchanged; a stored `500: Failed to place sandbox` reads as `provider-capacity`; `unsupported-secret-delivery` is `retryable:false`.
 `SESS-49` A Stop batch released together gets one answer, on every harness (R7.1). A turn runs a long shell command; two prompts queued behind it wait. Stop (`POST …/prompts/hold {held:true}` and the runtime abort) holds both and ends the turn. Resume (`POST …/prompts/hold {held:false}`) releases both as one batch: the first is delivered with `no_reply` and runs no turn, and the second starts the one turn that answers both. In `GET …/transcript` no assistant message is parented on the first prompt, and the reply parented on the second carries the requested word. On pi the Kortix prompt route used to drop `no_reply`, so each batch row ran its own turn.
 `SESS-46` Session model usage. `GET /projects/:id/sessions/:sid/model-usage` → 200 `{latest, billed_cost, turns}`, read from the gateway request ledger. `latest` is `{served_model, fallback_from, at}` for the newest answered model request, or null before the first answer; `served_model` is the route id of the model that answered and `fallback_from` is the routed model when a fallback model answered in its place. `billed_cost` is the USD Kortix debited for the session's model calls. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`. A session with no model request → `{latest:null, billed_cost:0, turns:{}}`. A session the viewer cannot see → 404; a non-UUID session id → 400; anonymous → 401. The aggregation over real request rows (fallback, turn attribution, rows logged before the serving model was recorded) is proven in `apps/api/src/__tests__/integration-session-model-usage.test.ts`.
 `SESS-44` Session participants. `GET /projects/:id/sessions/:sid/participants` → 200 `{participants, total, multi_user}` for anyone who may open the session. `participants` lists who can open it now, owner first, at most 20, each `{user_id, name, email, avatar_url, is_viewer}` with `name` and `avatar_url` read from the person's auth profile (`null` when unset); `total` is the full count. A private session lists its owner only. A session shared with specific people lists the owner, the named members and the members of the named groups who still have project access. A session shared with the whole project lists the project roster. `multi_user` is true when two or more distinct people can open the session. Who wrote each message is `SESS-42`. A viewer without `project.members.read` gets only the owner and themselves in `participants`; `total` and `multi_user` are unchanged. A session the caller may not open or that does not exist → 404; NONMEMBER → 403; ANON → 401.
+`SLOG-1` Session-log journal and manifest (P2.2), daemon-only. `POST /projects/:id/sessions/:sid/log/journal` takes the session sandbox credential (a PAT bound to this project and session; any other token → 403) and a `SessionLogJournalRequest` as JSON with `Content-Encoding: gzip` (over 2 MB gzipped or 16 MB raw → 413, invalid → 400). A two-message batch → 200 `{acked:[{message_id,rev},…]}` naming both pairs after commit; a replay of the same batch → 200 with the same pairs and no new rows. A batch whose `generation` is newer than the session's becomes the session's; an older one → 409 `{generation:<current>}` and writes nothing. A put that reuses a `seq` its thread holds → 422 `{error:"seq_conflict",message_id,rev,thread_id,seq}` and the batch writes nothing. `GET /projects/:id/sessions/:sid/log/manifest` → 200 `{generation, messages:[{message_id,content_hash,rev,deleted}]}` in thread and seq order, `rev` a JSON number. `SESSION_LOG_INGEST_ENABLED=false` → 503 on both routes (the API env: pinned in `apps/api/src/__tests__/integration-session-log-ingest.test.ts`, with the revision, tombstone, atomicity and `session_turns.log_durable_at` rules).
+`SLOG-2` Session reads over the log (P4.2). One stopped session is stored twice: its v1 mirror rows (as the capture writes them) and, through the journal, `fromV1` of the same rows under producer `opencode`. With the project flag `session_log` off, `GET /projects/:id/sessions/:sid/transcript?shape=sync` paged with `before` to the end, `?shape=sync&child=<sub-agent>`, `?detail=full` (compact) and the open bundle's `transcript` leg answer from the mirror, and the bundle has no `log` leg. After an operator enables the flag (`PUT /admin/api/projects/:id/features`), the same reads answer the same JSON bodies from the log; the one field that differs is `captured_at` (the log's last write). The bundle then carries `log: {known:true, page}` with the root thread's first page. `GET /projects/:id/sessions/:sid/log?thread=&before_seq=&limit=` → 200 `SessionLogPage` `{session, generation, threads, thread_id, messages, has_more}`: the root thread by default, messages ascending by `seq`, `before_seq` reads strictly older ones, `thread=<id>` reads a child thread; it is served with the flag off too. The session sandbox credential → 403; a non-integer `before_seq` → 400; a `thread` the session does not have → 404; a session with no log → 404. Tombstone exclusion, the public share, the pi fallback to the mirror and the unknown-cursor 400 are pinned in `apps/api/src/__tests__/integration-session-log-read.test.ts`.
 
 `SCOPE-2` Public-share management reads the caller's session binding from the credential, never the browser login session. A signed-in owner lists, mints, and revokes public shares on its own `origin='backend'` session (200/201/200). A session-bound credential does not carry its user's manage standing: it cannot mint a public link to, or list the links of, a sibling machine-owned (trigger) session (403, no share row written), and it mints one for its own session (201). The signed-in account owner still mints on the machine-owned session (201).
 `SCOPE-3` Session metadata that server code trusts is server-managed on create and update. `PATCH /projects/:id/sessions/:sid` with `metadata.legacy_migration`, `slack`, `email`, `telegram`, `teams`, `warm`, `trigger_session_key`, `repository_generation`, `deletedAt`, `deletedBy`, `name`, `title_source`, `source`, `trigger_kind`, `trigger_slug`, `workspace_mode`, `repository_access`, or `sandbox_slug` → 400 `metadata key is server-managed: <key>`; top-level `status`, `sandbox_url`, `sandboxUrl`, or `error` → 400 `field is server-managed: <field>`; an unknown top-level field → 400 `field is not user-editable: <field>`. `POST /projects/:id/sessions` with `metadata.legacy_migration`, `source`, `trigger_kind`, or `trigger_slug` → 400 before any session is created. A client key (`kind`) → 200 and reads back, and no refused key is stored. Session open and restart rehydrate a legacy archive only when its key equals the project id or the project's own `legacy_migration.source_sandbox_id` (unit: `unit-legacy-rehydrate.test.ts`). `warmSandboxLocation` is server-managed too. Unknown create fields and an unknown `provider` → 400 at the HTTP boundary, and no refused create writes a session.
@@ -487,7 +490,7 @@ The preview proxy is `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sa
 `RUN-14` A project slash command runs its template on every harness. The project commits one command file where its harness reads it: `harnesses/opencode/commands/<name>.md` on OpenCode, `harnesses/pi/prompts/<name>.md` on pi (a pi prompt template). The daemon health lists `session.commands` and `GET /p/<sbx>/8000/command` names the command. `POST /p/<sbx>/8000/session/<root>/command` `{ command, arguments }` → 200; `GET …/transcript` carries a reply with the argument, and the runtime message list carries a user message whose text is the template with `$ARGUMENTS` replaced. A command the project does not have is refused: pi answers 400, OpenCode answers 500.
 `RUN-16` An OpenCode PTY path on a pi box is refused, not dialed (R7.5). One harness: pi reports no OpenCode port. A WebSocket upgrade of `GET /v1/p/<sbx>/4096/pty/<id>/connect?token=` answers `409` with an `error` that names `pty_unsupported_runtime` and the daemon's own PTY, `/kortix/pty/:id/connect`; it used to dial port 4096, where nothing listens on pi, and close with 4502. The daemon's own PTY serves the pi box: `POST /p/<sbx>/8000/kortix/pty` → 200 with an `id`, and `DELETE /p/<sbx>/8000/kortix/pty/<id>` → 200.
 `RUN-17` A prompt's agent pick runs its turn on that agent, on every harness (R7.2). The project commits a second primary agent, `marker`; the session boots on the default agent, `kortix`. The flow waits until `GET /p/<sbx>/8000/kortix/runtime/agents` lists `marker` (a box that booted on the previous config converges first). A prompt through `POST …/prompts` with no `overrides.agent` is answered by assistant messages whose runtime `info.agent` (OpenCode: `mode`) is `kortix`; a prompt with `overrides.agent: "marker"` is answered only by messages on `marker`, read from `GET /p/<sbx>/8000/kortix/runtime/messages/<root>`. The runtime's own record is the assertion, not the model's wording. On pi the pick used to be accepted and ignored, so every turn ran, and was labelled with, the agent the box booted with.
-`RUN-18` The project's root `AGENTS.md` reaches the agent on every harness. The project commits a root `AGENTS.md` that holds one directive, `<NAME>: <value>`. The NAME is unique to the run and never appears in the conversation before the question (the `CFG-12` marker technique). A session boots, and is asked for the value of NAME from its instructions. `GET …/transcript` carries an assistant reply with the value. OpenCode reads `/workspace/AGENTS.md` by itself (OpenCode 1.18.23 `session/instruction.ts`). pi renders the same file as one `<project_instructions path="AGENTS.md">` section of its system prompt, for the root session and every `task` subagent. On pi the daemon health then reports `harness.details.agentsMd` with `source: "workspace"` and `sha` = the first 12 hex characters of the committed file's sha256.
+`RUN-18` The project's root `AGENTS.md` reaches the agent on every harness. The project commits a root `AGENTS.md` that holds one directive, `<NAME>: <value>`. The NAME is unique to the run and never appears in the conversation before the question (the `CFG-12` marker technique). A session boots, and is asked for the value of NAME from its instructions. `GET …/transcript` carries an assistant reply with the value. OpenCode reads `/workspace/AGENTS.md` by itself (OpenCode 1.18.23 `session/instruction.ts`). pi renders the same file as one `<project_instructions path="AGENTS.md">` section of its system prompt, for the root session and every `task` subagent. On pi the daemon health then reports `harness.details.agentsMd` with `source: "release"` (a path under `/opt/kortix/config/`; config releases run for every project) or, with no release, `source: "workspace"`, and `sha` = the first 12 hex characters of the committed file's sha256.
 `RUN-19` The Kortix tools a project lists in `kortix.yaml` are the ones its sessions get, and an ejected copy runs as the project's tool, on every harness. A real `kortix tools eject web_search` runs on a manifest whose `tools:` lists `web_search`, `image_search`, `scrape_webpage` and `memory` as `kortix:<name>`, and no `show`: it writes `tools/web_search.ts` (the Kortix source) and sets `web_search: tools/web_search.ts  # ejected from kortix:web_search`. The flow changes the copy so a `ke2e-` query writes `EJECTED <query>` to `<query>.txt` in the workspace and returns it, and commits both files. A session is asked to call `web_search` with that query and then `show`. `GET …/transcript` carries a `completed` `web_search` call and no `completed` `show` call, and `GET /p/<sbx>/8000/file/content?path=<query>.txt` returns `EJECTED <query>`. The daemon has no `show`: `POST /p/<sbx>/8000/kortix/tools/show` → 404 `no tool named show is loaded`, while `POST /p/<sbx>/8000/kortix/tools/memory` (`command: view`) → 200.
 
 ---
@@ -508,6 +511,14 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-11` Read-after-push at a branch ref. After a push creates a new branch, `GET /projects/:id/files/content?path=&ref=<branch>` and `GET /projects/:id/files?ref=<branch>` answer at once with the pushed file, although the server mirror fetched inside the last refresh interval. A pushed update of an existing file (default branch reads) keeps the interval; an unknown branch → 404 `ref not found`. Local target only (the push goes straight to the bare repository). A `path` lists and archives only that subtree at the ref.
 `FILE-12` `GET /projects/:id/files/raw?path=&ref=` → the file's exact bytes (`git cat-file blob`), the byte-accurate read behind binary previews and downloads. **Absent `path` param → 400**; missing path → 404; a text file's bytes decode to exactly what `files/content` returns as text; ANON → 401.
 `FILE-13` **Files lists every folder** — `GET /projects/:id/files?depth=1[&path=<dir>]` returns `{ entries: [{path, type: file|directory}], truncated }` for one folder level, complete past 1,000 entries (a 1,200-file `a/` lists whole, and `z/` after it is reachable); the recursive list (no `depth`) stays capped at 1,000 and sends `X-Kortix-Truncated: 1` when cut (KRTX-1723).
+
+
+## 10b. Files (`/v1/drives`, `combinedAuth` + `rejectSandboxTokens`; session-bound PATs → 403)
+
+A project's Files is one drive (kind `project`) backed by one storage volume. Folder access is the project's object grants (`role_assignments`, object type `folder`): `read`, `write` or `manage` on a folder and everything below it, for a person, a team, an agent or everyone in the project. Everyone has a private folder under `/Users` (project admins included get **404** on another person's folder until it is shared); project admins manage every other folder. A path the caller cannot see is **404**; one they see but may not change is **403**.
+
+`DRIVE-1` Files follows the organization's Volumes switch (the derived `drives` flag; `PATCH /projects/:id/features` refuses it with 400; a platform admin sets it with `PUT /admin/api/boot-modes`, the account owner gets 403). `GET /drives?projectId=` → 200 `{drives:[the project drive with the caller's access, personalFolder and sharedWithMe]}` (created once), 403 `feature_disabled` while the flag is off; ANON → 401; NONMEMBER → 403/404. Files (`GET /drives/:id/files?path=`, `GET|PUT …/files/content?path=` (≤ 64 MiB raw body; `If-Match` refuses a stale save with 409 `file_changed`), `POST …/files/mkdir {path}`, `POST …/files/move {from,to}`, `DELETE …/files?path=&recursive=`), `GET /drives/:id/versions`, `POST /drives/:id/restore {versionId}`: a `..` path → 400, unknown version → 404; a target without drive storage answers 503 `drive_storage_unavailable` on every write. Sharing: `GET /drives/:id/access?path=` (grants on the folder and inherited ones), `PUT /drives/:id/access {path, principalType: user|group|agent|project, principalId?, level}` → 200 `{grantId, pendingSessions?}`, `DELETE /drives/:id/access/:grantId` → 204, or 202 `{pendingSessions}` while a running session's detach has not landed (retried by the drive worker; the sync routes refuse the folder to that session meanwhile), `GET /drives/:id/principals`. A folder on the way to a shared one opens for traversal and lists only the way. Conflicts: `GET /drives/:id/conflicts` → open "(conflict …)" copies; `POST /drives/:id/conflicts/:cid/dismiss` → 204, unknown → 404.
+`DRIVE-2` `GET /projects/:id/sessions/:sid/drives` → 200 `{drives:[{driveId,name,kind,mountPath,readOnly,subdir}], personal, skipped, skippedMessage}`: the folders the session's current sandbox mounted, each at a distinct `/drives/` path, the person's own folder at `/drives/me` only in a private session they started; non-uuid session → 400, unknown → 404, NONMEMBER → 403, ANON → 401. What a session mounts follows grants only: there is no route to attach a folder to a session or change its access.
 
 ---
 
@@ -550,8 +561,8 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-2` `POST /projects/:id/triggers {name(required),slug?,type,agent?,enabled?,prompt_template,cron?,timezone?,secret_env?}` → `manage` → 201, manifest committed; `name` is required (slug derived from it when omitted); duplicate slug → 409. `webhook` requires `secret_env` (names a `project_secrets` key, regex `^[A-Z_][A-Z0-9_]*$`). `cron` requires 6-field croner expr + IANA `timezone` (default UTC). The create is one `kortix.yaml` commit `chore: add trigger <slug>` carrying the entry.
 `TRG-3` `PATCH /projects/:id/triggers/:slug` (e.g. `{enabled:false}`) → `manage`. A partial body keeps every other field of the entry.
 `TRG-4` `DELETE /projects/:id/triggers/:slug` → `manage` (also drops runtime row). The other triggers stay listed.
-`TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`.
-`TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; fire failure → 500.
+`TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`; a fire the account cannot run → 402 `{error,code}` with no session minted: `no_usable_model` (LLM-gateway projects, KRTX-1505), `insufficient_credits`, `subscription_required` or `no_account` (billing admission).
+`TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; a fire the account cannot run → 402 `{error,code}` with no session minted: `no_usable_model` (LLM-gateway projects, KRTX-1505), `insufficient_credits`, `subscription_required` or `no_account` (billing admission); other fire failure → 500.
 `TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 `TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
 `TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook/monitor/event) → `400`; a cron that fires more than once a minute (`*/30 * * * * *`: the first of 6 fields is seconds) → `400` naming the 60-second minimum (KRTX-1721); invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
@@ -674,6 +685,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `SEC-1` `GET /projects/:id/secrets` → `manage` → names only + manifest required/optional keys + virtual git-auth row.
 `SEC-2` `POST /projects/:id/secrets {name,value}` → `manage` → upsert (encrypt); name upper-cased; invalid name format → 400; `KORTIX_*` reserved → 400. M_EDITOR/M_VIEWER → 403.
 `SEC-3` `DELETE /projects/:id/secrets/:name` → `manage`; invalid name → 400; system secret (git-auth) → 403. No plaintext appears in the upsert response, the list, or the stored row; a human reads `agent_scope:null`; delete answers `{ok:true}`.
+`SEC-3A` Unset revokes the secret's outstanding intake links (KRTX-2056) → a setup-link token minted before the delete is dead: `GET /setup-links/secret/:token` (the page shows it instead of the form) and `POST {values}` both answer `409 This link is no longer valid: <NAME> was removed from the project after the link was issued. Ask the agent for a fresh link.`, and the submit re-creates nothing. The same holds when the secret was never filled (the agent unsets a request it minted but nobody has submitted): the unset tombstones the NAME even though no row existed. A link minted AFTER the unset still works — "request a secret that does not exist yet" is the feature. Deletion records a tombstone keyed by secret NAME in the delete's transaction (pruned once older than the longest link TTL); a token that predates `iat` and names a deleted secret is refused (unknown mint time reads as the oldest possible).
 `SEC-4` injection — `buildSessionSandboxEnvVars` decrypts only `runtime` + `sandbox` secrets authorized by the immutable agent grant and current session allowlist. Denied and reserved platform credentials do not enter the project-secret environment; an egress-enforced secret enters it as a HANDLE, never as its value.
 `SEC-6` `POST /projects/:id/secrets {identifier,name,value}` → two identifiers may share one env-var `name` (e.g. `GMAPS-primary`/`GMAPS-backup` both `GOOGLE_MAPS_API_KEY`); re-submitting an existing `identifier` with a different `name` → 409.
 `SEC-POOL-1` Account secret resource create/list/rotate/delete → two Anthropic keys have separate stable IDs; read responses omit values; a nonmember cannot list; deleting one key preserves the other.
@@ -774,7 +786,7 @@ project`, needs `project.connector.connections.manage`). Runtime selection is
 the generic connection resolver (`--account`, session bindings, reachability):
 an unattended run reaches only project-shared computers.
 
-`TUN-1` pairing + machines: `POST /tunnel/device-auth` with `project_id`, `GET …/:code/status`, `POST …/:code/approve` → the approver's private computer account in the project (`GET /projects/:id/connections` lists it with `tunnel_id` and `machine`). `GET /tunnel/connections` lists the caller's machines; `POST /tunnel/connections` → 404 (pairing is device auth only). `GET/PATCH /:tid` (rename; empty name → 400), `POST /:tid/rotate-token`, unknown → 404, ANON → 401. `DELETE /:tid` unpairs: the account becomes `revoked` with `tunnel_id: null`.
+`TUN-1` pairing + machines: `POST /tunnel/device-auth` with `project_id`, `GET …/:code/status`, `POST …/:code/approve` → the approver's private computer account in the project (`GET /projects/:id/connections` lists it with `tunnel_id` and `machine`). `GET /tunnel/connections` lists the caller's machines; `POST /tunnel/connections` → 404 (pairing is device auth only). `GET/PATCH /:tid` (rename; empty name → 400), `POST /:tid/rotate-token`, unknown → 404, ANON → 401. `POST /:tid/access` relays the owner's access change to the machine: a bad change → 400, an offline machine → 409 `computer_offline` naming `npx @kortix/agent-tunnel@latest access`; `access` is `null` until the agent reports. `DELETE /:tid` unpairs: the account becomes `revoked` with `tunnel_id: null`.
 `TUN-2` `POST /projects/:id/computers {tunnel_id, share}` adds an already-paired machine: idempotent for the owner (200, same account), another member → 404, malformed id → 400, a member sharing a pairing with the project → 403, the owner sharing with the project → 201 and every member lists that account. A machine of another account → 409.
 `TUN-3` per-machine permission, permission-request, and audit routes are removed (404).
 `TUN-4` rpc `POST /tunnel/rpc/:tid`: missing method → 400; a capability not approved at pairing → 403 `computer_capability_not_approved`; an approved capability with no live agent → 503 with `x-kortix-upstream-status: 502` and code `-32004` (not connected); unknown → 404.
@@ -1190,16 +1202,19 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
-1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
-patch with a budget below that estimate succeeds with
-`warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
-otherwise; a create without `monthly_budget_usd` gets a derived budget: the
-24/7 estimate rounded up to a whole dollar (`74` for 1 vCPU / 2 GiB) when the
-App is always on, `5` on demand; a derived budget follows later machine and
-run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
+1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
+`monthly_budget_usd`, and a create or patch that still sends one (an older
+client) succeeds and ignores it; a patch switches `always_on` both ways;
+a new App reads `display: {}`, a patch of `display` (`listed`, `preview`
+`live | none`, `parent` slug) replaces it whole and reads back, `{}` restores
+the defaults, and an unknown key, a preview other than `live`/`none` or a
+malformed parent is `400`;
+`warnings: []` on every create and patch. A new App has `labels: []`,
+`services: []` and the capabilities `deployments`, `rollback`, `preview`,
+`member_tokens`, and no `kind` or `instance`. Patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
-A new App lists no backends (`backends: []`); patch sets the list by name,
-deduplicated, and get reads it back; an invalid backend name → 400.
+A new App uses no App (`uses: []`); patch sets the list by slug, an unknown
+slug → `400 app_not_found`, a malformed one → 400.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
@@ -1235,7 +1250,11 @@ not disclose that a teammate's private App exists); their `PATCH …/:appId` is
 **403** because a member holds no `project.app.write` at all, which discloses
 nothing either. Switching the
 policy to `project` puts the App in that teammate's list and makes it readable;
-`restricted` with their `member_ids` keeps them in; returning to `private` puts
+`restricted` with their `member_ids` keeps them in. A second App `restricted`
+to the owner alone is absent from the teammate's list and 404 on their get,
+while the owner lists both; every App in a list answers
+`viewer_can_access: true` (the list holds only Apps the caller may open, a
+project manager every App). Returning to `private` puts
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
 A `NONMEMBER` remains 403 on the whole surface.
 
@@ -1308,15 +1327,16 @@ hostname behind the access gate. `GET /` → **200** HTML with
 immutable`; a page navigation to an unknown path → the SPA shell; a missing
 asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
 changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
-`POST /projects/:projectId/apps/:appId/rollback` to v1 → **200** and v1 is
-served (no runtime starts). `GET /projects/:projectId/apps` lists the App
+`POST /projects/:projectId/apps/:appId/rollback` to v1 → **202** with a NEW
+release v3 from v1's artifact; it is `ready` within 60 s with
+`hosting_type: "static"` and v1's page is served (no runtime starts). `GET /projects/:projectId/apps` lists the App
 with `hosting_type: "static"`, `estimated_monthly_usd: 0` and
 `retained_deployments: 5`. `POST …/start` and `POST …/stop` → **409**
 `static_app_no_runtime`; `kortix apps stop` exits 1 with that explanation,
 `kortix apps ls` prints `static` in the STATE column, and the App keeps
-serving. After 8 deploys the deployment list holds exactly
-v3–v8 `ready` (the active one and the 5 newest others,
-`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1 and v2 are retired. The local profile
+serving. After 6 more deploys (v4–v9) the deployment list holds exactly
+v4–v9 `ready` (the active one and the 5 newest others,
+`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1–v3 are retired. The local profile
 runs the worker with `KORTIX_APPS_WORKER_ENABLED=static`, so static
 deployments complete while sandbox deployments stay `queued` for APP-7.
 `apps/api/src/apps/static-site.integration.test.ts` proves deduplication,
@@ -1559,26 +1579,28 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-12` Denial bodies. Each denial carries `code` and `action`: `project_role_insufficient` (member JWT, files), `agent_scope_insufficient` (secrets outside the list), `agent_ceiling_insufficient` (files under a `member` ceiling), `agent_not_accessible` (spawning an agent the human may not run). The real CLI chooses its hint from the code: `kortix secrets ls` names `agents.scoped.kortix_permissions` and `project.secret.read`; `kortix files ls` under the ceiling asks an admin, names `capped`, and does not name `kortix_permissions`.
 `AGP-14` Trigger fire with no agent. The manifest names `default_agent: nightly`, and the metadata mirror is stale (`decoy`). The trigger names no agent and is pinned to a minted `nightly` run. A member with `run(nightly)` fires it → 202 and one prompt is queued for that run. A member with only `run(decoy)` → 403 `agent_not_accessible` and nothing more is queued. The fire route authorizes the agent session creation will run.
 
-## 33. Retired routes
+## 33. Feedback
+
+Product feedback filed by agents and people through one route and one CLI command. One append-only row per submission; the triage surface reads it newest first.
+
+`FB-1` `POST /v1/feedback {source?: cli|agent|web = cli, kind: bug|idea|friction, message: 1..4000 chars, context?: {≤8 keys of ≤128 chars → ≤256 chars}}` → `201 {id, source, kind, created_at}`; the row stores the caller's user id and the account the credential resolves. ANON → 401. Unknown `kind`, unknown `source`, empty or > 4000-char `message`, oversized context values, more than 8 context keys → 400. The route is rate limited per user; a flood inside the window answers `429` with `Retry-After`, and another identity still files successfully. `kortix feedback "<message>" [--kind …] [--source …] [--context <json>] [--json]` runs the real CLI process: inside a session (`KORTIX_SESSION_ID`) it files `source: agent` with the session and project ids merged into the context, outside it files `source: cli`; it prints the stored receipt and exits 0, and maps an API refusal to a nonzero exit.
+
+## 34. Retired routes
 
 `RET-1` Every route the API retired answers `410` with `{ error, code: "ENDPOINT_RETIRED" }` for any caller, anonymous included, and runs no handler: the legacy router LLM and search routes, the `/billing/account/*` deletion mirror (use `/account/*`), `POST /billing/deduct` · `deduct-usage` · `sync-seat-quantity` · `create-checkout-session` · `confirm-checkout-session` · `schedule-downgrade`, `GET /generation`, `POST /prewarm`, and `/projects/suna-migration/*`. The table is `RETIRED_ROUTES` in `apps/api/src/routes/retired.ts`.
 
 ---
 
-## 34. Apps of kind `convex` and capability routes
+## 34. App capabilities, links and sign-in tokens
 
-An App has one `kind`, fixed at create: `web` (default) or `convex`, a
-self-hosted Convex backend in its own always-on Platinum machine (1 vCPU, 1 GB,
-10 GB by default). A project owns up to 3 `convex` Apps, an account up to 10.
-The `apps` flag gates every kind; a `convex` create needs a deployment with
-Platinum. Every App response carries `kind`, `capabilities`, `uses`/`used_by`
-(App links by slug), `auth` (`issuer`, `audience` = the App id, `jwks_uri`) and
-`instance` (the machine state of a `convex` App, null for `web`). Capability routes under `/projects/:projectId/apps/:appId`:
-`GET/POST snapshots`, `DELETE snapshots/:snapshotId` (`snapshots`),
-`POST restore` (`restore`), `GET credentials` and `POST rotate-credentials`
-(`admin_credentials`), `POST token` (`member_tokens`, every kind), `GET logs`
-(`logs`). An App without the capability answers `409
-{code:'app_capability_unsupported', capability, kind}`.
+Every App response carries `capabilities`, `uses`/`used_by` (App links by
+slug) and `auth` (`issuer`, `audience` = the App id, `jwks_uri`). Clients
+branch on `capabilities`. A web App lists `deployments`, `rollback`,
+`preview`, `member_tokens`, plus `sleep` (a server) or `static`. The route
+`POST /projects/:projectId/apps/:appId/token` needs `member_tokens`; an App
+without it answers `409 {code:'app_capability_unsupported', capability}`. The
+capability routes of the retired `convex` kind (`snapshots`, `restore`,
+`credentials`, `rotate-credentials`, `logs`) do not exist and answer 404.
 
 Sign-in tokens have one issuer per project: `<API origin>/v1/projects/:projectId`,
 with the public routes `GET /projects/:projectId/.well-known/openid-configuration`
@@ -1588,62 +1610,21 @@ the first token; an empty key set before it). A token lives 15 minutes and its
 mints one naming the viewer for the App itself (the default) or an App it
 `uses`; any other App answers `403 app_not_linked`. The bindings mount
 `/_kortix/apps/<slug>/*` on an App host proxies HTTP and WebSocket to a used
-App's endpoint (a `convex` App: its client API) with the prefix stripped; an App
-it does not use answers `403 app_not_linked`, a used App of a kind with no
-endpoint `409 app_binding_unsupported`.
+App's public http service with the prefix stripped; an App it does not use
+answers `403 app_not_linked`, a used static App `409 app_binding_unsupported`,
+a used App with no running release `503 app_binding_unavailable`.
 
-`APP-9` Kind and capability surface. Flag off: a `convex` create and every
-capability route answer `403 {code:'feature_disabled', feature:'apps'}`. Flag
-on: an unknown `kind` or an invalid slug answers 400 before any machine is
-requested; `always_on: false` for a `convex` App answers 400 (or 409 where
-Platinum is not configured). A `convex` create answers `201` with
-`instance.status: "provisioning"` and the seven `convex` capabilities where
-Platinum is configured, else `409 app_kind_unavailable`. A `web` App lists
-`deployments`, `rollback`, `preview`, `member_tokens` and answers 409
-`app_capability_unsupported` on the 7 `convex`-only capability routes. The real
-CLI process: `kortix apps link <web> --uses <other>` sets `uses` (the other App
-reads it in `used_by`), `kortix apps show --json` prints `kind` and
-`capabilities`, `kortix apps snapshots <web>` exits 1 with `(kind web) does not
-support snapshots` before any capability route, `kortix apps token <web>` prints
-a three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
-answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
-`apps/api/src/apps/kinds/convex/*.integration.test.ts` assert the rest against a
-fake Platinum and a fake Convex: the caps under concurrency (`409
-app_kind_limit`), `Cache-Control: no-store` on credentials and token,
-`instance.client_version`, the project issuer discovery and key set (verified
-against a minted token, for a `convex` and a `web` App), the maintenance issuer
-move (all three `KORTIX_AUTH_*` written, a failed write retried, a moved App
-left alone), `uses` links both ways and
-`400 app_not_found` for an unknown slug, a `convex` deployment recorded `ready`
-with no artifact (`source_kind: "convex"`, `201`), and `409
-app_capability_unsupported` for start, stop and rollback of a `convex` App. The
-maintenance sweep: an interrupted provision resumes on its Idempotency-Key and
-reaches `running`, one interrupted 3 times turns `error`, an interrupted resize
-is recovered with `last_operation_error`, the health probe records
-`instance.health` and starts a stopped machine, restores a tombstoned one from
-backup, and turns a missing one `error` after 3 probes; admin-key rotation
-seals the key Convex accepts and answers `409 app_busy` during another
-operation; a backup or snapshot restore of a rotated App rotates again; an agent
-session's token names the agent's service account (`kind: "agent"`), never its
-launcher; the App gate's `/_kortix/token` mints for the App itself or an App it
-`uses` (by slug or id), `403 app_not_linked` otherwise (also across projects),
-and re-checks a `public` App's cookie viewer (`401` once access is gone); the
-bindings mount forwards a request to the used `convex` App's client API with the
-prefix stripped and the Kortix cookies removed; the logs route strips color codes and
-rejects `lines` outside 1–1000. Snapshots: `manual` carries no expiry and the
-11th answers `409 snapshot_limit`; snapshot, restore, snapshot delete and App
-delete answer `409 app_busy` during a resize (delete stays allowed in
-`recovering`); a restore answers only after Platinum reports `running` again;
-a resize takes a `resize` snapshot kept 24 h, and an older snapshot answers
-`409 snapshot_predates_resize`; the daily `automatic` snapshot is kept 7 days.
-Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
-`final` snapshot is taken, the machine is stopped and kept 7 days
-(`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
-the machine alone, and the purge after retention deletes machine, snapshots and
-row. Budget: 80 % and 100 % of the monthly budget each alert once per month
-(`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
-running. Not asserted locally: a provisioned machine and the
-`app.credentials.read` audit row; they are verified on a deployed environment.
+`APP-9` Capability surface and links. Flag off: the token route answers `403
+{code:'feature_disabled', feature:'apps'}`. Flag on: an invalid slug answers
+400. A create answers `201` with `capabilities` `deployments`, `rollback`,
+`preview`, `member_tokens` and no `kind`, `instance` or `monthly_budget_usd`
+(a `kind` in the body is ignored). The six retired capability routes answer
+404. The real CLI process: `kortix apps link <app> --uses <other>` sets `uses`
+(the other App reads it in `used_by`), `kortix apps show --json` prints
+`capabilities` and no `kind`, `kortix apps snapshots <app>` exits nonzero with
+`unknown Apps subcommand "snapshots"`, `kortix apps token <app>` prints a
+three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
+answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401.
 
 `APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.
 An `ANON` caller reads the project issuer: `openid-configuration` names
@@ -1654,7 +1635,29 @@ set); a `NONMEMBER` gets 403/404. Signed in to App A through its access link,
 `/_kortix/token` answers 200 for A itself and for App C that A uses, and `403
 app_not_linked` for App B of the same project that A does not use and for an
 App of another project. The bindings mount answers `403 app_not_linked` for B
-and `409 app_binding_unsupported` for C, a `web` App.
+and `503 app_binding_unavailable` for C, which A uses but which has no
+running release.
+
+`APP-11` Machines, scale, exec and volumes on an App with no
+server release. `GET …/machines` and `GET …/volumes` → **200** with empty
+lists. `PUT …/scale` and `POST …/exec` → **409** `app_no_machines`;
+`kortix apps scale count <app> 2` exits 1 with "deploy a server release first".
+`start`, `stop`, `restart` and `DELETE` of an unknown machine → **404**
+`machine_not_found`. `POST …/volumes` refuses a bad name (**400**
+`volume_name_invalid`) and a size of 0 or 101 GB (**400**
+`volume_size_invalid`). Every volume route on an unknown volume → **404**
+`volume_not_found`. A volume row seeded in PostgreSQL (the local profile has
+no Platinum) lists with `size_gb: 10`, `attached: false`, `process_group: app`
+and `snapshot_retention_days: 5`, adds `volumes` and `snapshots` to the App's
+`capabilities`, and `kortix apps volumes <app>` prints it. `PATCH` refuses a
+shrink (**400** `volume_shrink_refused`), 101 GB and a retention of 61 days,
+and accepts 20 GB with 7 days (read back). `DELETE` without the matching
+`?confirm=<name>` → **400** `confirmation_required`; `restore` and `fork` with
+an unknown snapshot → **400** `snapshot_invalid`. A project member without
+deploy or admin gets **403** on every write; a `NONMEMBER` gets 403/404 and
+an `ANON` caller 401. `apps/api/src/apps/machines.integration.test.ts` proves
+rollouts, strategies, the release command, scale and the single-writer volume
+handover on PostgreSQL with a fake provider.
 
 ---
 

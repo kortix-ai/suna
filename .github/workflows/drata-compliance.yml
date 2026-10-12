@@ -40,7 +40,7 @@ jobs:
   drata-iac-results:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
     name: sanitized-finding-details
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -93,7 +93,7 @@ jobs:
 
   drata-iac-scan:
     name: compliance-as-code-action
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)

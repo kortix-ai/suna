@@ -6,7 +6,8 @@
  * `features/session/session-chat.tsx`:
  *
  *   user message (+ queued / interrupted status) → segments (ActivityBurst,
- *   standalone ToolPartRenderer, prose) → response → busy slot (retry + busy
+ *   standalone ToolPartRenderer, prose; folded behind TurnWorkAccordion once
+ *   settled) → response → busy slot (retry + busy
  *   indicator) → TurnErrorDisplay → action bar (copy + SessionTurnMeta).
  *   A compaction turn is the CompactionMarker / CompactionFailedRow alone.
  *
@@ -28,7 +29,8 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { SessionTurnMeta } from '@/features/session/session-turn-meta';
 import { sessionTurnDurationMs, sessionTurnEndedAt } from '@/features/session/session-turn-meta-rows';
 import { ToolPartRenderer, TurnLiveContext } from '@/features/session/tool/tool-renderers';
-import { ActivityBurst } from '@/features/session/turn/activity-burst';
+import { ActivityBurst, burstSteps } from '@/features/session/turn/activity-burst';
+import { TurnWorkAccordion } from '@/features/session/turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '@/features/session/turn/compaction-card';
 import { compactionTurnInfo } from '@/features/session/turn/compaction-state';
 import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
@@ -64,7 +66,7 @@ import {
   shouldShowToolPart,
   unwrapError,
 } from '@/ui';
-import { groupShowSegments, isAbortError, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, toolKind } from '@kortix/sdk';
+import { groupShowSegments, isAbortError, splitTurnWork, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, toolKind } from '@kortix/sdk';
 
 const NOOP_PERMISSION_REPLY = async () => {};
 
@@ -215,6 +217,60 @@ export function FixtureTurn({
 
   const hasAssistantContent = turn.assistantMessages.length > 0;
   const statusText = hasAssistantContent ? getTurnStatus(allParts) : '';
+  const renderSegment = (segment: (typeof segments)[number]) => {
+    if (segment.kind === 'burst') {
+      return (
+        <ActivityBurst
+          key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
+          parts={segment.parts}
+          sessionId={sessionId}
+          working={working}
+          isTrailing={segment === segments[segments.length - 1]}
+          density="normal"
+        />
+      );
+    }
+    if (segment.kind === 'show-group') {
+      const visible = segment.parts.filter(shouldShowToolPart);
+      if (visible.length === 0) return null;
+      return visible.length === 1 ? (
+        <ToolPartRenderer key={visible[0].id} part={visible[0]} sessionId={sessionId} />
+      ) : (
+        <ShowGroupRenderer key={visible[0].id} parts={visible} sessionId={sessionId} />
+      );
+    }
+    if (segment.kind === 'standalone') {
+      if (!shouldShowToolPart(segment.part)) return null;
+      return (
+        <ToolPartRenderer
+          key={segment.part.id}
+          part={segment.part}
+          sessionId={sessionId}
+          permission={getPermissionForTool(permissions, segment.part.callID)}
+          onPermissionReply={NOOP_PERMISSION_REPLY}
+        />
+      );
+    }
+    if (!hasSteps) return null;
+    const text = (segment.part as TextPart).text?.trim();
+    if (!text) return null;
+    return (
+      <div key={segment.part.id} className="min-w-0 text-sm">
+        <ThrottledMarkdown content={text} isStreaming={working} />
+      </div>
+    );
+  };
+  // A segment that renders nothing (a hidden tool, a plumbing-only burst) is
+  // neither work nor the final text.
+  // Settled only: the filter re-runs `burstSteps` on every frame of a live turn.
+  const split = working
+    ? null
+    : splitTurnWork(
+        segments.filter((segment) =>
+          segment.kind === 'burst' ? burstSteps(segment.parts).length > 0 : renderSegment(segment) !== null,
+        ),
+        { working },
+      );
 
   if (compactionInfo.isCompaction) {
     const running = working || compactionInfo.inFlight;
@@ -262,49 +318,18 @@ export function FixtureTurn({
       {(working || hasSteps || hasReasoning) && hasAssistantContent && (
         <TurnLiveContext.Provider value={working}>
           <div className="space-y-3">
-            {segments.map((segment, index) => {
-              if (segment.kind === 'burst') {
-                return (
-                  <ActivityBurst
-                    key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-                    parts={segment.parts}
-                    sessionId={sessionId}
-                    working={working}
-                    isTrailing={index === segments.length - 1}
-                    density="normal"
-                  />
-                );
-              }
-              if (segment.kind === 'show-group') {
-                const visible = segment.parts.filter(shouldShowToolPart);
-                if (visible.length === 0) return null;
-                return visible.length === 1 ? (
-                  <ToolPartRenderer key={visible[0].id} part={visible[0]} sessionId={sessionId} />
-                ) : (
-                  <ShowGroupRenderer key={visible[0].id} parts={visible} sessionId={sessionId} />
-                );
-              }
-              if (segment.kind === 'standalone') {
-                if (!shouldShowToolPart(segment.part)) return null;
-                return (
-                  <ToolPartRenderer
-                    key={segment.part.id}
-                    part={segment.part}
-                    sessionId={sessionId}
-                    permission={getPermissionForTool(permissions, segment.part.callID)}
-                    onPermissionReply={NOOP_PERMISSION_REPLY}
-                  />
-                );
-              }
-              if (!hasSteps) return null;
-              const text = (segment.part as TextPart).text?.trim();
-              if (!text) return null;
-              return (
-                <div key={segment.part.id} className="min-w-0 text-sm">
-                  <ThrottledMarkdown content={text} isStreaming={working} />
-                </div>
-              );
-            })}
+            {/* Mirrors `TurnToolBlocks` (KRTX-2113): a settled turn folds its
+                work behind one "Worked for" row; deliverables and the final
+                text stay below it. */}
+            {split
+              ? [
+                  <TurnWorkAccordion key="turn-work" durationMs={sessionTurnDurationMs(turn)}>
+                    {split.work.map(renderSegment)}
+                  </TurnWorkAccordion>,
+                  ...split.hoisted.map(renderSegment),
+                  ...split.final.map(renderSegment),
+                ]
+              : segments.map(renderSegment)}
           </div>
         </TurnLiveContext.Provider>
       )}

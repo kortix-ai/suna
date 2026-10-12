@@ -15,15 +15,29 @@
  */
 import { createECDH, randomBytes, randomUUID } from 'node:crypto';
 import type { Client as PgClient } from 'pg';
-import type { Client } from '../core/client';
+import type { Client, Res } from '../core/client';
 import { flow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
-import { createDatabaseSession } from '../fixtures/database-project';
+import { createDatabaseSession, fundDatabaseAccount } from '../fixtures/database-project';
 import { mailpitMessagesTo, waitForMailpit } from '../fixtures/mailpit';
 import { PASSWORD } from '../fixtures/principals';
 import { mintWireMessageId } from '../fixtures/session-run';
 import { openFlowDb, seedTurnSession, type TurnSession } from '../fixtures/turn-end';
+
+/**
+ * A fire on an account with no credit is refused as account state: 402. The
+ * local profile serves no managed model, so the model gate answers
+ * `no_usable_model`; a deployed target serves a default model to every
+ * account, so billing admission answers `insufficient_credits`.
+ */
+function expectAccountStateRefusal(res: Res): void {
+  res.status(402);
+  const code = res.json<{ code?: string }>().code;
+  if (code !== 'no_usable_model' && code !== 'insufficient_credits') {
+    throw new Error(`402 code ${JSON.stringify(code)}, expected no_usable_model or insufficient_credits`);
+  }
+}
 
 flow(
   'PUSH-1',
@@ -720,9 +734,12 @@ flow(
         if (watcher.rows[0]?.muted !== false) throw new Error(`creator watcher row: ${JSON.stringify(watcher.rows)}`);
       });
 
-      await ctx.step('a manual fire on the account with no credit fails → 500', async () => {
+      // KRTX-1505: with no credit and no BYOK key the fire is refused as account
+      // state (402) before a session exists — the clear failure the alert flow
+      // below pins on.
+      await ctx.step('a manual fire on the account with no credit fails → 402', async () => {
         await exhaustCredit(db, team.id);
-        (await fire()).status(500);
+        expectAccountStateRefusal(await fire());
       });
 
       await ctx.step('the creator gets exactly one automation_failed row titled with the trigger; OWNER gets none', async () => {
@@ -753,8 +770,8 @@ flow(
         expectCount((await mailpitMessagesTo(mailpit, ctx.P.OWNER.email!)).filter(subject).length, 0, "OWNER's alert emails");
       });
 
-      await ctx.step('a second failed fire → 500, and still exactly one row: one alert per failure streak', async () => {
-        (await fire()).status(500);
+      await ctx.step('a second failed fire → 402, and still exactly one row: one alert per failure streak', async () => {
+        expectAccountStateRefusal(await fire());
         await settle();
         expectCount(await storedCount(db, creator.userId!, { projectId: project.id, kind: 'automation_failed' }), 1, "the creator's alert rows");
       });
@@ -1122,28 +1139,41 @@ flow(
         expectCount(page.unread_count, 0, "B's unread_count");
       });
 
-      // A second flag-off project: the trigger needs a git repository.
+      // A second flag-off project: the trigger needs a git repository. A deployed
+      // target provisions it through the API, where a free account's cap is 1.
+      await fundDatabaseAccount(ctx.env, team.id);
       const triggers = await team.project({ managedGit: true });
       await team.grantProjectRole(triggers.id, a.userId!, 'manager');
       const slug = 'notif-off-digest';
       const name = `Nightly digest ${randomUUID().slice(0, 8)}`;
 
       await ctx.step('a project manager creates a cron trigger in a second flag-off project → 201; no trigger_watchers row', async () => {
-        (await ctx.client
-          .as(a)
-          .post(
-            '/v1/projects/:projectId/triggers',
-            { name, slug, type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
-            { params: { projectId: triggers.id } },
-          ))
-          .status(201);
+        // Each API process caches a caller's role for up to 15 s, so a process
+        // that has not seen the new manager grant answers 403. A refused create
+        // writes nothing: retry until a process that sees the grant takes it.
+        const create = () =>
+          ctx.client
+            .as(a)
+            .post(
+              '/v1/projects/:projectId/triggers',
+              { name, slug, type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
+              { params: { projectId: triggers.id } },
+            );
+        let created = await create();
+        for (const deadline = Date.now() + 30_000; created.statusCode === 403 && Date.now() < deadline; ) {
+          await sleep(1_000);
+          created = await create();
+        }
+        created.status(201);
         const r = await db.query('SELECT count(*)::int AS n FROM kortix.trigger_watchers WHERE project_id = $1', [triggers.id]);
         expectCount(r.rows[0].n as number, 0, 'trigger_watchers rows');
       });
 
-      await ctx.step('a manual fire on the account with no credit fails → 500: the failure is recorded, and no alert edge, alert row or alert email follows', async () => {
+      await ctx.step('a manual fire on the account with no credit fails → 402: the failure is recorded, and no alert edge, alert row or alert email follows', async () => {
         await exhaustCredit(db, team.id);
-        (await ctx.client.as(a).post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { projectId: triggers.id, slug } })).status(500);
+        expectAccountStateRefusal(
+          await ctx.client.as(a).post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { projectId: triggers.id, slug } }),
+        );
         await settle();
         const runtime = await db.query(
           'SELECT last_status, alert_failing_since FROM kortix.project_trigger_runtime WHERE project_id = $1 AND slug = $2',

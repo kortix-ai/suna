@@ -67,6 +67,15 @@
  *     (which would force the flag OFF for every project — the opposite of
  *     what a hidden default means).
  *
+ * ## Organization flags (`scope: 'organization'`)
+ *
+ * `volumes` is one value for the whole organization: it IS the organization's
+ * Volumes switch (the `session_boot_modes` policy row, Admin → Volumes), not a
+ * project override. Every project's Settings lists it, `operator_only`:
+ * `PATCH .../features` from a platform operator writes the organization
+ * entry; anyone else gets 403 `feature_operator_only`. Flags with
+ * `derivedFrom: 'volumes'` (drives, ephemeral_sandboxes) follow it.
+ *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
@@ -77,6 +86,12 @@
  * cannot see (gate.ts).
  */
 import { config } from '../config';
+import {
+  bootModeOrgEntry,
+  statelessEnabledFor,
+  volumesEnabledFor,
+  volumesOrgEntry,
+} from '../platform/services/boot-mode-setting';
 import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -119,6 +134,19 @@ export interface FeatureFlagDef {
    * this file's header.
    */
   catalogHidden?: true;
+  /**
+   * The flag is not a project choice: it follows the `volumes` flag (the
+   * organization's Volumes switch). A project override is ignored, and the
+   * flag is never offered as a toggle.
+   */
+  derivedFrom?: 'volumes';
+  /**
+   * `organization`: one value for every project of the organization, stored
+   * outside the project (see {@link resolveFeatureFlag}). Listed in every
+   * project's Settings → Feature flags as `operator_only`: only a platform
+   * operator may change it. Absent ⇒ a per-project flag.
+   */
+  scope?: 'organization';
 }
 
 /**
@@ -203,7 +231,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'apps',
     name: 'Apps',
     description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends (kind `convex`: a database, server functions, realtime queries, file storage, scheduling and search in an always-on machine, where Platinum is configured). Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
     stability: 'stable',
     available: () => true,
     platformDefault: () => false,
@@ -364,6 +392,105 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
       'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
+  {
+    key: 'volumes',
+    name: 'Volumes',
+    description:
+      'Shared Files and volume-backed sessions for the whole organization.',
+    stability: 'experimental',
+    // Every volume is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // The value IS the organization's Volumes switch: the per-organization
+    // entry of the `session_boot_modes` policy row (platform/services/boot-mode.ts
+    // resolveVolumes), then its global switch and rollout. Off by default.
+    platformDefault: () => false,
+    scope: 'organization',
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only, through the flags derived from it: drives (Files routes and ' +
+      'session drive mounts) and ephemeral_sandboxes (session volumes), and the session ' +
+      'boot mode (platform/services/boot-mode.ts resolveBootMode). Writes go to the same ' +
+      'policy row Admin → Volumes edits (feature-flags/write.ts writeOrganizationFeatureFlag).',
+  },
+  {
+    key: 'stateless_sessions',
+    name: 'Stateless sessions',
+    description:
+      'Fresh computer on every wake; only files and chat are kept. Needs Volumes on.',
+    stability: 'experimental',
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // The value IS the organization's boot mode being `volume` (the
+    // `session_boot_modes` policy row, Admin → Volumes), with Volumes on.
+    platformDefault: () => false,
+    scope: 'organization',
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only: on sets the organization boot mode to `volume`, off to `standard` ' +
+      '(platform/services/boot-mode.ts resolveBootMode). Writes go to the same policy row ' +
+      'Admin → Volumes edits (feature-flags/write.ts writeOrganizationFeatureFlag).',
+  },
+  {
+    key: 'drives',
+    name: 'Files',
+    description:
+      'The project\'s shared folders, in sync with sessions: everyone has their own private folder (their session desktop), and any folder can be shared with people, teams and agents. New sessions see the folders they may use under /drives.',
+    stability: 'experimental',
+    // Every drive is a Platinum volume; without Platinum there is nothing to
+    // store files in.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Follows the `volumes` flag; not a project toggle.
+    platformDefault: () => false,
+    derivedFrom: 'volumes',
+    catalogHidden: true,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
+      '403 `feature_disabled` when off, and so does every route addressed by drive id ' +
+      '(drives/routes.ts). BEHAVIORAL: session provisioning mounts no folder when off ' +
+      '(drives/service.ts sessionVolumeMounts). The files stay on the volume, so turning ' +
+      'Volumes back on shows them again.',
+  },
+  {
+    key: 'ephemeral_sandboxes',
+    name: 'Ephemeral sandboxes',
+    description:
+      'A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop.',
+    stability: 'experimental',
+    // The session state lives on a Platinum volume. Follows the organization's
+    // Volumes switch (the boot mode decides which sessions are ephemeral).
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    derivedFrom: 'volumes',
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Session provisioning mounts the session volume and sets ' +
+      'KORTIX_PERSIST_ROOT (platform/services/session-sandbox.ts); the idle reaper and ' +
+      'the Stop route commit the volume and delete the box instead of stopping it ' +
+      '(projects/reaping/stop-box.ts, projects/session-lifecycle/stop.ts); /start ' +
+      'provisions a fresh box for a retired row (projects/routes/shared.ts). A box ' +
+      'booted with the flag stays ephemeral if the flag is turned off, because its ' +
+      'state already lives on the volume.',
+  },
+  {
+    key: 'session_log',
+    name: 'Session log v2',
+    description:
+      'Read a session through the v2 session log instead of the v1 transcript. Off by default and not offered in Settings: Kortix enables it per project. Prod rollout: internal projects first, then 10% of projects, then every project. It becomes the default in the release that ships v2 to everyone and is deleted in the next release.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    // Internal-only (2026-10-11): not offered in Settings.
+    // A Kortix operator enables it per project.
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
+      '(transcript shape=sync and the compact fallback, the open bundle, the ' +
+      'public share, MCP read_session) from the session log, and the open ' +
+      'bundle carries a `log` leg (P4.2). The SDK v2 negotiation (P4.5, v2 only ' +
+      'when health lists `session.log.v2` and the flag is on) will read it too.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
@@ -402,16 +529,35 @@ function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | und
  * operator default, AND-gated by platform availability. An unavailable flag
  * is never enabled regardless of what a project chose.
  */
-export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): boolean {
+export function resolveFeatureFlag(
+  metadata: unknown,
+  key: FeatureFlagKey,
+  /** The project's organization: required for flags derived from Volumes (absent ⇒ off). */
+  accountId?: string | null,
+): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
+  if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom, accountId);
+  if (def.scope === 'organization') {
+    return key === 'stateless_sessions' ? statelessEnabledFor(accountId) : volumesEnabledFor(accountId);
+  }
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 
+/** Is this flag one value for the whole organization (not a project choice)? */
+export function isOrganizationFeatureFlag(key: FeatureFlagKey): boolean {
+  return FLAG_BY_KEY[key]?.scope === 'organization';
+}
+
+/** Is this flag derived from an organization switch (and so not a project choice)? */
+export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
+  return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
+}
+
 /** Effective enablement for every flag, keyed by flag id. */
-export function resolveFeatureFlags(metadata: unknown): Record<FeatureFlagKey, boolean> {
+export function resolveFeatureFlags(metadata: unknown, accountId?: string | null): Record<FeatureFlagKey, boolean> {
   return Object.fromEntries(
-    FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key)]),
+    FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key, accountId)]),
   ) as Record<FeatureFlagKey, boolean>;
 }
 
@@ -425,10 +571,13 @@ export interface FeatureFlagView {
   available: boolean;
   /** Effective per-project state (the switch position). */
   enabled: boolean;
-  /** True when this project set an explicit choice (vs inheriting the default). */
+  /** True when this project set an explicit choice (vs inheriting the default).
+   *  For an organization flag: the organization has its own entry. */
   overridden: boolean;
   /** A `catalogHidden` flag: listed only while on, writable only by a platform operator. */
   operator_only: boolean;
+  /** `organization`: one value for every project of the organization. */
+  scope: 'project' | 'organization';
 }
 
 /**
@@ -439,9 +588,11 @@ export interface FeatureFlagView {
  * `operator_only: true`, so the clients show it read-only (see "Hidden
  * flags" in this file's header).
  */
-export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
+export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | null): FeatureFlagView[] {
   return FLAGS.flatMap((f) => {
-    const enabled = resolveFeatureFlag(metadata, f.key);
+    // A flag that follows the organization's Volumes switch has no project row.
+    if (f.derivedFrom) return [];
+    const enabled = resolveFeatureFlag(metadata, f.key, accountId);
     if (f.catalogHidden && !enabled) return [];
     return [{
       key: f.key,
@@ -450,13 +601,19 @@ export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
       stability: f.stability,
       available: f.available(),
       enabled,
-      overridden: explicitOverride(metadata, f.key) !== undefined,
-      operator_only: f.catalogHidden === true,
+      overridden:
+        f.scope === 'organization'
+          ? (f.key === 'stateless_sessions' ? bootModeOrgEntry(accountId) : volumesOrgEntry(accountId)) !== undefined
+          : explicitOverride(metadata, f.key) !== undefined,
+      operator_only: isOperatorOnlyFeatureFlag(f.key),
+      scope: f.scope ?? 'project',
     }];
   });
 }
 
 /** True when only a platform operator may write this flag. */
 export function isOperatorOnlyFeatureFlag(key: FeatureFlagKey): boolean {
-  return FLAG_BY_KEY[key]?.catalogHidden === true;
+  // An organization flag (`volumes`) is experimental and changes every project
+  // of the organization: Kortix decides it, like an internal-only flag.
+  return FLAG_BY_KEY[key]?.catalogHidden === true || FLAG_BY_KEY[key]?.scope === 'organization';
 }

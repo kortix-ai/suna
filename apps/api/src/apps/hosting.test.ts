@@ -91,6 +91,25 @@ describe('AppHostingProvider', () => {
     });
   });
 
+  test('a Platinum App template has minimal defaults; the machine size goes to create', async () => {
+    const { hosting, builds, creates } = dependencies();
+    await hosting.buildImage({
+      provider: 'platinum', snapshotName: 'kortix-appimg-1', slug: 'hello', dockerfile: 'FROM nginx:alpine',
+      runtimeSpec: {}, machine: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+    });
+    expect(builds[0]![0].spec).toEqual({ cpu: 1, memoryGb: 1, diskGb: 1 });
+    await hosting.createRuntime({
+      provider: 'platinum', runtimeId: 'runtime-1', accountId: 'account-1', userId: 'user-1', name: 'app-hello-v1',
+      snapshotName: 'kortix-appimg-1', machine: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+      volumes: { '/data': { volume: 'kapp-dev-1' } },
+    });
+    expect(creates[0]).toMatchObject({
+      resourceSpec: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+      volumes: { '/data': { volume: 'kapp-dev-1' } },
+      volumesRequired: true,
+    });
+  });
+
   test('creates an App workload with only the derived appd token', async () => {
     const { hosting, creates, appRuntimeStarts } = dependencies();
     const result = await hosting.createRuntime({
@@ -206,16 +225,72 @@ describe('AppHostingProvider', () => {
     expect(events).toEqual(['stop', 'status']);
   });
 
-  test('preserves a stop error while the provider still reports running', async () => {
+  test('resolves a stop that conflicts with a provider state change once the sandbox settles stopped', async () => {
+    // Daytona rejects a stop with 409 "Sandbox state change in progress" while
+    // a concurrent lifecycle transition moves the sandbox. The reported state
+    // still reads running at that instant, so stop must wait for the
+    // transition to settle instead of failing the request.
+    const events: string[] = [];
+    const statuses = ['running', 'stopped'];
     const runtime = {
       stop: async () => {
+        events.push('stop');
+        throw new Error('Sandbox state change in progress');
+      },
+      getStatus: async () => {
+        events.push('status');
+        return (statuses.shift() ?? 'stopped') as 'running' | 'stopped';
+      },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await hosting.stop('daytona', 'box-1');
+
+    expect(events).toEqual(['stop', 'status', 'stop', 'status']);
+  });
+
+  test('retries a stop whose sandbox settles back to running after a state-change conflict', async () => {
+    const events: string[] = [];
+    const statuses = ['running', 'running'];
+    const runtime = {
+      stop: async () => {
+        events.push('stop');
+        if (events.filter((event) => event === 'stop').length < 2) {
+          throw new Error('Sandbox state change in progress');
+        }
+      },
+      getStatus: async () => {
+        events.push('status');
+        return (statuses.shift() ?? 'running') as 'running';
+      },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await hosting.stop('daytona', 'box-1');
+
+    expect(events).toEqual(['stop', 'status', 'stop']);
+  });
+
+  test('preserves a stop error while the provider still reports running', async () => {
+    const events: string[] = [];
+    const runtime = {
+      stop: async () => {
+        events.push('stop');
         throw new Error('provider stop failed');
       },
-      getStatus: async () => 'running' as const,
+      getStatus: async () => {
+        events.push('status');
+        return 'running' as const;
+      },
     } as unknown as SandboxProvider;
-    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => runtime,
+      sleep: async () => {},
+      stopSettleTimeoutMs: 0,
+    });
 
-    expect(hosting.stop('platinum', 'box-1')).rejects.toThrow('provider stop failed');
+    expect(hosting.stop('platinum', 'box-1')).rejects.toThrow('provider stop failed (provider status: running)');
+    expect(events).toEqual(['stop', 'status']);
   });
 
   test('stop is a no-op when the runtime provider can no longer be constructed', async () => {

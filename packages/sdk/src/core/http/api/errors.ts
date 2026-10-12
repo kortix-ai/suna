@@ -5,7 +5,7 @@
  * `BillingError` (HTTP 402) and `RequestTooLargeError` (HTTP 431) are
  * subclasses, so `err instanceof ApiError` covers them all and `.status` /
  * `.code` read the same way on each. A 402 body carries a machine `code`
- * (e.g. `app_budget_exceeded`) and fields such as `billing_state` and
+ * (e.g. `app_account_unfunded`) and fields such as `billing_state` and
  * `balance`; `BillingError.code` is that code and `BillingError.detail` the
  * body.
  */

@@ -61,7 +61,7 @@ jobs:
   # release: the shards still run, and the next run sweeps again.
   sweep-before:
     name: sweep stale test accounts
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -136,7 +136,7 @@ jobs:
     # failed, or was cancelled by its own cap — its result must never gate the
     # release (see the note on sweep-before).
     if: ${{ !cancelled() }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -330,7 +330,7 @@ jobs:
     name: deployed browser shard
     needs: sweep-before
     if: ${{ !cancelled() }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -466,7 +466,7 @@ jobs:
     name: sweep this run's test accounts
     needs: [api, browser]
     if: always()
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -530,7 +530,7 @@ jobs:
     name: full suite + quality gates
     needs: [api, browser]
     if: always()
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require every deployed shard to pass

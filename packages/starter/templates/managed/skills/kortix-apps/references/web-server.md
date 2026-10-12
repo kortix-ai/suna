@@ -1,9 +1,9 @@
 # Server web Apps
 
 A server App (a Dockerfile or an OCI image) runs in its own machine. It has a
-run mode (always on or on demand) and a monthly compute budget. Use one only
+run mode (always on or on demand). Use one only
 when the App needs its own server process, native packages, or custom
-runtime behavior. Data and server logic for a UI belong in a `convex` App
+runtime behavior. Data and server logic for a UI belong in a Convex backend App
 (convex.md), not here.
 
 | Source | Deploy |
@@ -14,10 +14,10 @@ runtime behavior. Data and server logic for a UI belong in a `convex` App
 
 ## Deploy
 
-Choose the run mode and budget on the first deploy (Lifecycle, below):
+Choose the run mode on the first deploy (Lifecycle, below):
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 
 kortix apps deploy --image nginx:1.27-alpine --slug nginx \
@@ -43,31 +43,27 @@ A server App runs in one of two modes. Choose the mode on the first deploy:
 - **Always on** (the default for a new App): runs 24/7, and keep-alive
   restarts it within 5 minutes if it stops. Use it only for an App that holds
   websockets open or runs its own background loop. Scheduled jobs and queues
-  of an App that uses a `convex` App belong in the `convex` App.
+  of an App that uses a Convex backend App belong in the backend App.
 
-Both modes stop at the App's monthly compute budget, and when the account can
-no longer pay. The URL then shows the budget or paused page until the next
-month or until the user raises the budget. A new always-on App with no
-`--budget` gets its 24/7 estimate (`estimated_monthly_usd`) rounded up to a
-whole dollar: 74 USD for the default machine of about 73 USD a month. An
-on-demand App gets 5 USD. The CLI prints a line such as `Runs 24/7 on 1 vCPU
-/ 2 GB: about $73/month (budget $74)`; tell the user that cost. A budget you
-pass always wins and never changes by itself. To spend less, use
-`--on-demand` or a smaller machine (`--memory-gb 1` is about 59 USD a month).
+Apps have no monthly budget. Both modes stop when the account can no longer
+pay (event `app_stopped_unfunded`). The run mode decides what bills:
+
+- **On demand:** billed only while the App is awake.
+- **Always on:** the machine bills 24/7, with or without traffic.
+
+The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB`; tell the user the
+run mode, never a price. To use less compute, use `--on-demand` or a smaller
+machine (`--memory-gb 1`).
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --always-on --budget 80 \
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000
 ```
 
-Change either later without a redeploy:
-`kortix apps set <slug> --on-demand|--always-on` or
-`kortix apps set <slug> --budget <usd>`. Keep-alive applies the change within
-5 minutes. `always_on` and `monthly_budget_usd` in `kortix.yaml` do the same on
-the next `kortix apps deploy --manifest-app <name>`. `deploy`, `create`, and
-`set` print an `app_budget_below_always_on` warning on stderr when an
-always-on App's budget is below its estimate. Tell the user. Never leave the
-warning unreported.
+Change the mode later without a redeploy:
+`kortix apps set <slug> --on-demand|--always-on`. Keep-alive applies the change within 5 minutes. `always_on` in `kortix.yaml`
+does the same on the next
+`kortix apps deploy --manifest-app <name>`.
 
 On Daytona and E2B (self-host), an always-on App can be unreachable for up to
 5 minutes when the provider stops its VM. On Kortix Cloud the VM is
@@ -83,12 +79,28 @@ cold start (on demand), or in a keep-alive pass (always on). Traffic stays on
 the active deployment until the replacement passes readiness. A release that
 changes only the API rebuilds nothing.
 
+## Process groups, services, volumes
+
+A server App is a release + machines (apps-model.md). Beyond one process:
+
+- **Process groups:** `processes: { app: "", worker: "node worker.js" }`, one
+  machine per group by default; `kortix apps scale count <slug> 3 --process
+  worker`. A group with no service is a worker.
+- **More services:** `services: [{ name: admin, internal_port: 9000, access:
+  admins }]` answers on `<host>--admin`.
+- **State:** never on the root disk (each release replaces it). Mount a volume:
+  `mounts: [{ source: data, destination: /data }]`. The release then deploys
+  `rolling` and keeps the data (apps-model.md, Volumes).
+- **Migrations:** `deploy: { release_command: "node migrate.js" }` runs once
+  before machines change; a failure leaves the live release serving.
+- **Debug:** `kortix apps machines <slug>`, then `kortix apps exec <slug> --
+  <command>` (project admins).
+
 ## Verify
 
 Run web-static.md, Verify, steps 2 and 5 first (`hosting_type` is `sandbox`
-here, and `capabilities` lists `sleep`). Confirm `always_on` and
-`monthly_budget_usd` are the values you chose. When `always_on` is `true`,
-`monthly_budget_usd` should be at least `estimated_monthly_usd`. Then:
+here, and `capabilities` lists `sleep`). Confirm `always_on` is the value you
+chose. Then:
 
 1. Fetch its readiness endpoint and one real application route.
 2. Run `kortix apps stop <slug> --json`. Confirm `desired_state` is
@@ -104,6 +116,7 @@ here, and `capabilities` lists `sleep`). Confirm `always_on` and
    deployment to be `ready`, `actor_type: system`, `source_session_id: null`,
    and to reuse the prior `artifact_id`, `source_kind`, and
    `hosting_provider`. Those fields identify a background runtime refresh.
+4. `kortix apps machines <slug>`: every machine `started` on the live release.
 
 ## Diagnose
 
@@ -113,7 +126,7 @@ kortix apps logs <slug> <deployment-id> --limit 200
 
 A server App's logs come from its runtime (`app`, `appd`, `caddy`). The
 stable App URL displays branded queued, validating, building, provisioning,
-checking, starting, failed, cancelled, and budget pages while no active
+checking, starting, failed, and cancelled pages while no active
 version can serve traffic. Machine clients receive typed JSON and
 `Retry-After` for transient states.
 

@@ -48,6 +48,7 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  projectSecretTombstones,
   accountSecretResources,
   accountSecretGrants,
   sessionProviderSecretPools,
@@ -93,6 +94,10 @@ export {
   sessionTurns,
   sessionTranscriptMirrors,
   sessionTranscriptMessages,
+  sessionLogs,
+  sessionLogThreads,
+  sessionLogMessages,
+  sessionLogBlobs,
   sessionRuntimeProjections,
   providerEvents,
   sandboxes,
@@ -122,12 +127,20 @@ export {
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,
+  // Drives (shared folders backed by Platinum volumes)
+  drives,
+  driveGrants,
+  platinumVolumeDeletions,
+  driveMountRevocations,
+  driveConflicts,
   // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
   notifications,
   notificationPreferences,
   notificationWatchers,
   triggerWatchers,
   webPushSubscriptions,
+  // Product feedback (POST /v1/feedback)
+  feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,
@@ -139,6 +152,7 @@ export {
   appDeployments,
   appImages,
   appRuntimes,
+  appVolumes,
   appSiteFiles,
   appSiteBlobs,
   appDeploymentEvents,

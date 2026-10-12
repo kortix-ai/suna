@@ -29,7 +29,7 @@ export class SnapshotStillBuildingError extends Error {
  * verbatim as `sandbox_compute_sessions.workload_type`, so the union and that
  * column's CHECK constraint must stay in lockstep.
  */
-export type SandboxWorkloadType = 'session' | 'app' | 'monitor' | 'backend';
+export type SandboxWorkloadType = 'session' | 'app' | 'monitor';
 
 export interface CreateSandboxOpts {
   accountId: string;
@@ -73,6 +73,22 @@ export interface CreateSandboxOpts {
   };
   /** Ports that the provider must make reachable through resolveIngress(). */
   publishedPorts?: number[];
+  /**
+   * Volumes mounted at create, keyed by guest mount path: the session's
+   * drives. Platinum only; every other provider ignores it.
+   */
+  volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string; ref?: string }>;
+  /**
+   * An ephemeral session box: its state lives on a session volume and a stop
+   * deletes the box. (A create refused over any `volumes` always fails: a
+   * session never boots without its drives or its state.)
+   */
+  volumesRequired?: boolean;
+  /**
+   * A persistent machine: the box boots from a new Platinum root volume made
+   * from the template, owned by the box (deleted with it). Platinum only.
+   */
+  rootVolume?: boolean;
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {

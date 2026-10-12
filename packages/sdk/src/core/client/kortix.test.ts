@@ -53,25 +53,13 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
 
 test('project(id).apps binds the project id on every capability call', async () => {
   const apps = kortix.project('PID123').apps;
-  await apps.snapshots.list('A1').catch(() => undefined);
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/PID123/apps/A1/snapshots' });
-  await apps.snapshots.create('A1').catch(() => undefined);
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/snapshots' });
-  await apps.snapshots.delete('A1', 'S1').catch(() => undefined);
-  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1/snapshots/S1' });
-  await apps.snapshots.restore('A1', 'S1').catch(() => undefined);
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/restore', body: { snapshot_id: 'S1' } });
-  await apps.credentials('A1').catch(() => undefined);
-  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/credentials');
-  await apps.rotateCredentials('A1').catch(() => undefined);
-  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/rotate-credentials');
   await apps.token('A1').catch(() => undefined);
   expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/token' });
-  await apps.log('A1', { lines: 50 }).catch(() => undefined);
-  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/logs?lines=50');
-  await apps.remove('A1', { confirm: 'db' }).catch(() => undefined);
-  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1?confirm=db' });
-  expect(typeof apps.waitUntilReady).toBe('function');
+  await apps.remove('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1' });
+  for (const retired of ['snapshots', 'credentials', 'rotateCredentials', 'log', 'waitUntilReady']) {
+    expect(retired in apps).toBe(false);
+  }
   expect('backends' in kortix.project('PID123')).toBe(false);
 });
 
@@ -639,6 +627,12 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
   await kortix.connectStatus();
   expect(last().url).toContain('/connectors/connect-status');
+});
+
+test('kortix.mobileClientPolicy hits the public clients endpoint', async () => {
+  await kortix.mobileClientPolicy();
+  expect(last().url).toContain('/v1/clients/mobile');
+  expect(last().method).toBe('GET');
 });
 
 test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {

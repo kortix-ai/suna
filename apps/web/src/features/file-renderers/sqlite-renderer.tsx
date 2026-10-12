@@ -104,6 +104,29 @@ interface SqliteRendererProps {
   fileName: string;
   className?: string;
   readOnly?: boolean;
+  /** The database bytes, from a source that is not a session's sandbox (the
+   *  project's Files). Without it the renderer reads `filePath` in the sandbox. */
+  bytes?: Blob | null;
+  /** Save through that source instead of writing into the sandbox. */
+  onSave?: (file: File) => Promise<unknown>;
+}
+
+async function readDatabaseBytes(filePath: string, bytes: Blob | null | undefined, signal?: AbortSignal): Promise<Blob> {
+  if (bytes) {
+    if (!bytes.size) throw new Error('Empty database file');
+    return bytes;
+  }
+  const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
+  return readRuntimeFileWithRetry(
+    filePath,
+    async () => {
+      const blob = await readFileAsBlob(filePath);
+      if (!blob.size) throw new Error('Empty database file');
+      return blob;
+    },
+    undefined,
+    signal,
+  );
 }
 
 interface TableInfo {
@@ -228,6 +251,8 @@ export function SqliteRenderer({
   fileName,
   className,
   readOnly = false,
+  bytes,
+  onSave,
 }: SqliteRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // State
@@ -288,17 +313,7 @@ export function SqliteRenderer({
       setError(null);
 
       try {
-        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readRuntimeFileWithRetry(
-          filePath,
-          async () => {
-            const blob = await readFileAsBlob(filePath);
-            if (!blob.size) throw new Error('Empty database file');
-            return blob;
-          },
-          undefined,
-          abortController.signal,
-        );
+        const blob = await readDatabaseBytes(filePath, bytes, abortController.signal);
         const arrayBuffer = await blob.arrayBuffer();
 
         if (cancelled) return;
@@ -352,7 +367,7 @@ export function SqliteRenderer({
         dbRef.current = null;
       }
     };
-  }, [filePath, reloadKey]);
+  }, [filePath, bytes, reloadKey]);
 
   // ── Get table data ────────────────────────────────────────────────────
   const tableData = useMemo((): { columns: string[]; rows: Record<string, unknown>[] } => {
@@ -627,9 +642,13 @@ export function SqliteRenderer({
       const data = db.export();
       const blob = new Blob([data as unknown as BlobPart], { type: 'application/x-sqlite3' });
       const file = new File([blob], fileName, { type: 'application/x-sqlite3' });
-      const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
-      const { uploadFile } = await import('@/features/files/api/runtime-files');
-      await uploadFile(file, parentPath || undefined);
+      if (onSave) {
+        await onSave(file);
+      } else {
+        const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        const { uploadFile } = await import('@/features/files/api/runtime-files');
+        await uploadFile(file, parentPath || undefined);
+      }
       setHasUnsavedChanges(false);
       successToast(tHardcodedUi.raw('i18nComplete.text68b444f414fa'));
     } catch (e: unknown) {
@@ -641,7 +660,7 @@ export function SqliteRenderer({
     } finally {
       setIsSaving(false);
     }
-  }, [filePath, fileName, readOnly, tHardcodedUi]);
+  }, [filePath, fileName, readOnly, tHardcodedUi, onSave]);
 
   // ── Discard changes (reload from disk) ────────────────────────────────
   const handleDiscard = useCallback(() => {
@@ -665,12 +684,7 @@ export function SqliteRenderer({
     //  we just re-run init inline)
     (async () => {
       try {
-        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readRuntimeFileWithRetry(filePath, async () => {
-          const blob = await readFileAsBlob(filePath);
-          if (!blob.size) throw new Error('Empty database file');
-          return blob;
-        });
+        const blob = await readDatabaseBytes(filePath, bytes);
         const arrayBuffer = await blob.arrayBuffer();
         if (!arrayBuffer.byteLength) throw new Error('Empty file');
 
@@ -690,7 +704,7 @@ export function SqliteRenderer({
         setIsLoading(false);
       }
     })();
-  }, [filePath, refreshTableMeta, tables, tHardcodedUi]);
+  }, [filePath, bytes, refreshTableMeta, tables, tHardcodedUi]);
 
   // ── Filtered tables ───────────────────────────────────────────────────
   const filteredTables = useMemo(() => {

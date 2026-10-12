@@ -124,6 +124,11 @@ describe('startSessionRuntime', () => {
     expect(runtime.slice(subscribeAt, attemptAt)).not.toContain('await harness.events.subscribe')
   })
 
+  test('starts the session-log journal before the event loop and the first prompt', () => {
+    // P2.6: the first turn's end flushes the journal only if it already runs.
+    expectOrder(runtime, ['startOpenCodeSessionLog()', 'harness.events.subscribe(cfg, eventHandlers)', 'await attemptInitialSession()'])
+  })
+
   test('both runtime-ready exits run the one ready tail: boot projection push and config convergence', () => {
     expect(runtime.split('runtimeReadyTail(opencode, cfg, bootState, bootMark)').length - 1).toBe(2)
     const tail = fn('function runtimeReadyTail(')

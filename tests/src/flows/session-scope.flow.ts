@@ -281,6 +281,11 @@ flow(
       'repository_access',
       'sandbox_slug',
       'warmSandboxLocation',
+      // The session's state volume and boot record: the session delete
+      // removes that volume, so a client value would choose what it deletes.
+      'ephemeral_state_volume',
+      'ephemeral_generation',
+      'bootMode',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -328,6 +333,7 @@ flow(
       ['trigger_kind', 'git'],
       ['trigger_slug', 'forged-trigger'],
       ['warmSandboxLocation', 'us-east'],
+      ['ephemeral_state_volume', 'kd-00000000-0000-4000-8000-000000000000'],
     ] as const) {
       await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
         (

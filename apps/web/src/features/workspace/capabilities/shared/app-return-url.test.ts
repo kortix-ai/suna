@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseAppReturnUrl } from './app-return-url';
+import { parseAppReturnUrl, resolveAppReturn } from './app-return-url';
 
 describe('parseAppReturnUrl', () => {
   test('accepts a kortix: URL unchanged', () => {
@@ -17,5 +17,32 @@ describe('parseAppReturnUrl', () => {
     expect(parseAppReturnUrl('//evil.example')).toBeNull();
     expect(parseAppReturnUrl('providers/connected')).toBeNull();
     expect(parseAppReturnUrl(`kortix://${'a'.repeat(300)}`)).toBeNull();
+  });
+});
+
+describe('resolveAppReturn', () => {
+  const fromUrl = 'kortix://connectors/done';
+  const remembered = 'kortix://connectors/remembered';
+
+  test('the URL value wins over the remembered one', () => {
+    expect(resolveAppReturn(fromUrl, remembered)).toBe(fromUrl);
+  });
+
+  test('falls back to the remembered value when the URL carries none', () => {
+    expect(resolveAppReturn(null, remembered)).toBe(remembered);
+  });
+
+  test('rejects an invalid remembered value', () => {
+    // Storage is as user-writable as the query string.
+    expect(resolveAppReturn(null, 'https://evil.example/phish')).toBeNull();
+    expect(resolveAppReturn(null, 'javascript:alert(1)')).toBeNull();
+  });
+
+  test('is null when both are absent', () => {
+    expect(resolveAppReturn(null, null)).toBeNull();
+  });
+
+  test('an invalid URL value does not block a valid remembered one', () => {
+    expect(resolveAppReturn('https://evil.example/phish', remembered)).toBe(remembered);
   });
 });

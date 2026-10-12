@@ -19,6 +19,7 @@
  */
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { mintWireMessageIdAbove as mintWireMessageId } from '@kortix/sdk/wire-message-id';
 import { db } from '../shared/db';
 
 /** The one account a connect created, when the human named it in the dialog. */
@@ -61,8 +62,18 @@ export function connectorConnectedPrompt(
 }
 
 /**
- * Hand the requesting agent a durable follow-up prompt through the
- * session-lifecycle queue — the same path approval-resume uses.
+ * Hand the requesting agent a durable follow-up prompt through the session's
+ * prompt queue — the same row the composer writes for a message typed while
+ * the agent works (`composerSendDelivery` in the web app).
+ *
+ * It is an INBOX row (`clientMessageId`), so the queue above the composer
+ * lists it, and it is a `steer`, so a running turn reads it at its next step.
+ * It used to be an automation row: the queue strip never listed it
+ * (`inboxScope`), and admission held it until the whole turn ended. Two
+ * accounts connected during one long turn then arrived after it, one extra
+ * turn each, both already handled (2026-10-10). A runtime without
+ * `session.steer`, or a turn another member started, falls back to the Queue
+ * List: the row waits for the turn to end, in the user's own queue order.
  *
  * NOT gated on `running`, and that gate is why this never fired in practice.
  * The ordinary sequence is: the agent mints a link, posts it, and its turn
@@ -109,9 +120,10 @@ export async function notifyConnectorSession(
     // `enqueueContinueSessionCommand` de-dupes on this key with
     // onConflictDoNothing, so the race is settled in the database rather than by
     // hoping only one caller wins.
-    const idempotencyKey = account
-      ? `connector-connected:${sessionId}:${slug}:${account.connectionId}`
-      : `connector-connected:${sessionId}:${slug}`;
+    // Per account when one is named: a second account on the same connector
+    // is a new event, not a duplicate of the first.
+    const event = account ? `${slug}:${account.connectionId}` : slug;
+    const idempotencyKey = `connector-connected:${sessionId}:${event}`;
     await enqueueContinueSessionCommand({
       source: 'system:connector-connected',
       projectId,
@@ -119,9 +131,14 @@ export async function notifyConnectorSession(
       sessionId,
       actorUserId,
       text: connectorConnectedPrompt(slug, app, account),
-      // Per account when one is named: a second account on the same connector
-      // is a new event, not a duplicate of the first.
       idempotencyKey,
+      clientMessageId: `connector-connected:${event}`,
+      // Minted here, as `POST .../prompts` mints one for a caller that sends
+      // none; a queued delivery re-places it above the transcript.
+      wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
+      remintOnDelivery: true,
+      placement: 'composer',
+      delivery: 'steer',
     });
     // Targeted: an untargeted kick delivers whichever row is oldest-due.
     drainSessionLifecycleQueue({ idempotencyKey, burst: false }).catch(() => {});

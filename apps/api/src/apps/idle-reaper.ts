@@ -1,11 +1,18 @@
 import { appDeploymentEvents, appDeployments, appRuntimes, apps } from '@kortix/db';
-import { and, asc, desc, eq, gt, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from 'drizzle-orm';
 import { markComputeSessionAlive, pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { AppHostingProvider } from './hosting';
+import { groupAlwaysOn, groupMinRunning, releaseConfigOf } from './release-config';
+
+/** Does keep-alive look after this release: an always-on group, or a group with `min_machines_running`? */
+function releaseKeptUp(app: typeof apps.$inferSelect, deployment: typeof appDeployments.$inferSelect): boolean {
+  const config = releaseConfigOf(deployment, app);
+  return Object.keys(config.processes).some((group) => groupAlwaysOn(app, config, group) || groupMinRunning(config, group) > 0);
+}
 
 let running = false;
 
@@ -30,7 +37,7 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
         lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
       ));
     const rows = await db
-      .select({ runtime: appRuntimes, app: apps })
+      .select({ runtime: appRuntimes, app: apps, deployment: appDeployments })
       .from(appRuntimes)
       .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
       .innerJoin(apps, eq(appDeployments.appId, apps.appId))
@@ -47,8 +54,20 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
     let stopped = 0;
     let errors = 0;
     const hosting = new AppHostingProvider();
-    for (const { runtime } of rows) {
+    for (const { runtime, app, deployment } of rows) {
       try {
+        // A worker group, an autostop-off service, or `min_machines_running` keeps the machine up.
+        const config = releaseConfigOf(deployment, app);
+        if (groupAlwaysOn(app, config, runtime.processGroup)) continue;
+        const min = groupMinRunning(config, runtime.processGroup);
+        if (min > 0) {
+          const [{ running: runningCount } = { running: 0 }] = await db.select({ running: count() }).from(appRuntimes).where(and(
+            eq(appRuntimes.deploymentId, runtime.deploymentId),
+            eq(appRuntimes.processGroup, runtime.processGroup),
+            eq(appRuntimes.status, 'running'),
+          ));
+          if (runningCount <= min) continue;
+        }
         const [claimed] = await db
           .update(appRuntimes)
           .set({ status: 'stopping', updatedAt: now })
@@ -105,7 +124,6 @@ type RuntimeRow = typeof appRuntimes.$inferSelect;
 type AppRow = typeof apps.$inferSelect;
 
 export interface AppKeepAliveResult {
-  budgetStopped: number;
   unfundedStopped: number;
   started: number;
   refreshed: number;
@@ -119,9 +137,7 @@ export interface AppKeepAliveResult {
  * The always-on lifecycle, every 5 minutes. It runs beside the idle reaper,
  * not inside it, so a slow start never holds up idle stops.
  *   1. Cost: a running App (either mode) is stopped when its account can no
- *      longer pay (the same check session create runs) or when its
- *      month-to-date compute reached `monthly_budget_usd`. An App that never
- *      sleeps never passes the wake gate again, so the check runs here.
+ *      longer pay (the same check session create runs).
  *   2. Refresh: an always-on App never cold-starts, so its stale supervisor
  *      (or its static App still on a sandbox) is queued for the rebuild a cold
  *      start would queue, at most `KEEP_ALIVE_REFRESHES_PER_PASS` per pass.
@@ -129,8 +145,8 @@ export interface AppKeepAliveResult {
  *      database records as running. Running: compute liveness is stamped, so
  *      billing continues without inbound traffic, and on Daytona and E2B the
  *      provider's idle timer is renewed. Not running: the row is corrected and
- *      the App is started through the wake gate (entitlement, concurrency,
- *      budget), like an App whose row already said stopped.
+ *      the App is started through the wake gate (entitlement, concurrency),
+ *      like an App whose row already said stopped.
  */
 export async function runAppKeepAlive(now = new Date(), force = false): Promise<AppKeepAliveResult | null> {
   if (keepAliveRunning) return null;
@@ -139,7 +155,7 @@ export async function runAppKeepAlive(now = new Date(), force = false): Promise<
   keepAliveRunning = true;
   try {
     const hosting = new AppHostingProvider();
-    const cost = await stopUnaffordableRuntimes(hosting, now);
+    const cost = await stopUnaffordableRuntimes(hosting);
     const alwaysOn = await keepAlwaysOnAppsRunning(hosting, now);
     return { ...cost, ...alwaysOn };
   } finally {
@@ -162,8 +178,7 @@ async function forEachPage<T>(
   }
 }
 
-async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) {
-  const { assertAppBudgetAvailable, AppBudgetExceededError } = await import('./budget');
+async function stopUnaffordableRuntimes(hosting: AppHostingProvider) {
   const { assertAppAccountFunded, AppAccountUnfundedError } = await import('./limits');
   // One entitlement check per account per pass, however many Apps it runs.
   const funding = new Map<string, Promise<string | null>>();
@@ -178,7 +193,6 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) 
     }
     return verdict;
   };
-  let budgetStopped = 0;
   let unfundedStopped = 0;
   await forEachPage(
     (after) => db
@@ -197,29 +211,16 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) 
     (rows) => mapWithConcurrency(rows, KEEP_ALIVE_CONCURRENCY, async ({ runtime, app }) => {
       try {
         const unfundedReason = await unfunded(app.accountId);
-        if (unfundedReason) {
-          await stopForCost(hosting, runtime, 'app_stopped_unfunded', `Stopped: ${unfundedReason}`);
-          unfundedStopped += 1;
-          logger.warn('[apps] App stopped: its account cannot pay for compute', { appId: app.appId });
-          return;
-        }
-        await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd), now);
+        if (!unfundedReason) return;
+        await stopForCost(hosting, runtime, 'app_stopped_unfunded', `Stopped: ${unfundedReason}`);
+        unfundedStopped += 1;
+        logger.warn('[apps] App stopped: its account cannot pay for compute', { appId: app.appId });
       } catch (error) {
-        if (!(error instanceof AppBudgetExceededError)) {
-          logger.error('[apps] cost check failed', { appId: app.appId, error: String(error) });
-          return;
-        }
-        try {
-          await stopForCost(hosting, runtime, 'app_stopped_budget', `Stopped: ${error.message}`);
-          budgetStopped += 1;
-          logger.warn('[apps] App stopped at its monthly budget', { appId: app.appId, budgetUsd: app.monthlyBudgetUsd });
-        } catch (stopError) {
-          logger.error('[apps] budget stop failed', { appId: app.appId, error: String(stopError) });
-        }
+        logger.error('[apps] cost check failed', { appId: app.appId, error: String(error) });
       }
     }).then(() => undefined),
   );
-  return { budgetStopped, unfundedStopped };
+  return { unfundedStopped };
 }
 
 async function stopForCost(hosting: AppHostingProvider, runtime: RuntimeRow, type: string, message: string) {
@@ -243,12 +244,8 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
   let confirmed = 0;
   let lost = 0;
 
-  const keepRunning = async (app: AppRow, deployment: typeof appDeployments.$inferSelect) => {
-    let [runtime] = await db.select().from(appRuntimes)
-      .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
-      .orderBy(desc(appRuntimes.createdAt))
-      .limit(1);
-    if (!runtime) return;
+  const keepInstanceRunning = async (app: AppRow, deployment: typeof appDeployments.$inferSelect, instance: RuntimeRow) => {
+    let runtime = instance;
     const provider = runtime.provider as SandboxProviderName;
     if (runtime.status === 'running') {
       const status = await hosting.providerStatus(provider, runtime.externalId);
@@ -280,13 +277,30 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
     started += 1;
   };
 
+  /**
+   * Every machine of an always-on group stays up; a group with
+   * `min_machines_running` keeps that many up (running ones first).
+   */
+  const keepRunning = async (app: AppRow, deployment: typeof appDeployments.$inferSelect) => {
+    const config = releaseConfigOf(deployment, app);
+    const instances = await db.select().from(appRuntimes)
+      .where(and(eq(appRuntimes.deploymentId, deployment.deploymentId), inArray(appRuntimes.status, ['running', 'stopped'])))
+      .orderBy(desc(appRuntimes.status), asc(appRuntimes.createdAt));
+    for (const group of Object.keys(config.processes)) {
+      const own = instances.filter((instance) => instance.processGroup === group);
+      const keep = groupAlwaysOn(app, config, group) ? own : own.slice(0, groupMinRunning(config, group));
+      for (const instance of keep) await keepInstanceRunning(app, deployment, instance);
+    }
+  };
+
   await forEachPage(
     (after) => db
       .select({ app: apps, deployment: appDeployments })
       .from(apps)
       .innerJoin(appDeployments, eq(appDeployments.deploymentId, apps.activeDeploymentId))
       .where(and(
-        eq(apps.alwaysOn, true),
+        // A release with a config may have a worker group or `min_machines_running`.
+        or(eq(apps.alwaysOn, true), isNotNull(appDeployments.config)),
         eq(apps.desiredState, 'running'),
         isNull(apps.deletedAt),
         eq(appDeployments.status, 'ready'),
@@ -296,7 +310,8 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
       .orderBy(asc(apps.appId))
       .limit(KEEP_ALIVE_PAGE),
     (row) => row.app.appId,
-    async (rows) => {
+    async (page) => {
+      const rows = page.filter(({ app, deployment }) => releaseKeptUp(app, deployment));
       for (const { app, deployment } of rows) {
         if (refreshed >= KEEP_ALIVE_REFRESHES_PER_PASS) {
           refreshDeferred += 1;
@@ -308,7 +323,7 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
         try {
           await keepRunning(app, deployment);
         } catch (error) {
-          // Over budget, unfunded, at the account's App cap, or a provider
+          // Unfunded, at the account's App cap, or a provider
           // failure: it stays stopped and the next pass tries again.
           logger.warn('[apps] always-on App could not be kept running', {
             appId: app.appId,

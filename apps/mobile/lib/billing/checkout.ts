@@ -9,9 +9,8 @@ import { getWebBillingUrl } from './web-links';
 
 /**
  * Open an external URL (web billing management, the Stripe portal, …) through
- * the app's one link rule (`openLink`, COR-151): a kortix.com link opens in the
- * in-app browser, a third-party one in the system browser. Rejects when the
- * link cannot open.
+ * the app's one link rule (`openLink`): the in-app browser (KRTX-2104).
+ * Rejects when the link cannot open.
  */
 export async function openExternalUrl(url: string): Promise<void> {
   log.log('🌐 Opening external URL:', url);
@@ -21,7 +20,7 @@ export async function openExternalUrl(url: string): Promise<void> {
 /**
  * Open web billing portal for advanced management
  * 
- * Opens the web app's billing page in the system browser
+ * Opens the web app's billing page in the in-app browser
  * Used for features not available in mobile (cancel, reactivate, invoices, etc.)
  */
 export async function openBillingPortal(returnUrl?: string): Promise<void> {

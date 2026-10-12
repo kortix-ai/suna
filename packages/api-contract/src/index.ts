@@ -16,6 +16,7 @@
  *      apps/api/src/__tests__/unit-api-contract-serializers.test.ts).
  */
 import { z } from 'zod';
+import { SessionLogPageSchema } from './session-log/wire';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -64,6 +65,11 @@ export const FeatureFlagMapSchema = z.object({
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
+  volumes: z.boolean(),
+  stateless_sessions: z.boolean(),
+  drives: z.boolean(),
+  ephemeral_sandboxes: z.boolean(),
+  session_log: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -87,6 +93,8 @@ export const FeatureFlagViewSchema = z.object({
   overridden: z.boolean(),
   /** Internal-only flag, listed only while on. Only a platform operator can change it. */
   operator_only: z.boolean().optional(),
+  /** `organization`: one value for every project of the organization; changing it needs `account.write`. */
+  scope: z.enum(['project', 'organization']).optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 
@@ -101,6 +109,22 @@ export const FeatureDisabledErrorSchema = z.object({
   feature: FeatureFlagKeySchema,
 });
 export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
+
+/**
+ * `GET /v1/clients/mobile` — public (no auth, it is read before login). The
+ * operator's mobile release policy: a build older than `minimum_version`
+ * shows a blocking "update required" screen. Every field is null when the
+ * operator has not set it; a null minimum means no gate.
+ */
+export const MobileClientPolicySchema = z.object({
+  /** Minimum supported app version, `major.minor.patch`. Null: no gate. */
+  minimum_version: z.string().nullable(),
+  /** App Store page the update button opens on iOS. Null: no button. */
+  store_url_ios: z.string().nullable(),
+  /** Play Store page the update button opens on Android. Null: no button. */
+  store_url_android: z.string().nullable(),
+});
+export type MobileClientPolicy = z.infer<typeof MobileClientPolicySchema>;
 
 /** The two assignable project roles. `user`/`viewer` are deprecated aliases of
  *  `member`; `editor` was REMOVED on 2026-08-18 (folded into `manager`). None
@@ -529,6 +553,9 @@ export const ConnectionSchema = z.object({
    * a session. Absent on older servers: treat as `true`.
    */
   usable: z.boolean().optional(),
+  /** Signed in: the account holds a credential or a connected provider
+   *  account. `false` offers Connect. Absent on older servers. */
+  authorized: z.boolean().optional(),
   /**
    * Computer accounts only: the paired machine this account reaches. `null`
    * when the machine was unpaired. Absent on every other connector.
@@ -972,6 +999,13 @@ export const SessionCreateInputSchema = z
       )
       .optional(),
     provider: SandboxProviderSchema.optional(),
+    /**
+     * Run the session on a persistent machine: its whole root disk persists
+     * across stops (installed packages, config, files). Platinum only. A stop
+     * keeps the disk and ends running processes; the machine stays on the
+     * image it was created from until it is reset.
+     */
+    persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
     metadata: SessionMetadataInputSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
@@ -1219,6 +1253,9 @@ export const SessionStartFailureSchema = z
       // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
       // so never retryable.
       'snapshot-too-large',
+      // Kortix Drive: the session's drives did not mount (storage down, or a
+      // project with drives and no Platinum), so the session did not start.
+      'drives-unavailable',
       'sandbox-provider',
     ]),
     message: z.string(),
@@ -1807,6 +1844,16 @@ export const SessionSnapshotSchema = z.object({
     }),
     SessionSnapshotUnknownSchema,
   ]),
+  /**
+   * = `GET .../log` (P4.2): the first page of the root thread. Present only when the project
+   * flag `session_log` is on. `page: null`: the session has no stored log.
+   */
+  log: z
+    .union([
+      z.object({ known: z.literal(true), page: SessionLogPageSchema.nullable() }),
+      SessionSnapshotUnknownSchema,
+    ])
+    .optional(),
 });
 export type SessionSnapshot = z.infer<typeof SessionSnapshotSchema>;
 

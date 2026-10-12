@@ -562,13 +562,16 @@ harnessFlow(
     const content = `ke2e-run7-${crypto.randomUUID()}`;
     const done = `RUN7_DONE_${Date.now()}`;
     await ctx.step('the agent writes the requested file in the workspace', async () => {
+      const before = (await readTurn(ctx, projectId, sessionId)).last_ended?.turn_token;
       await sendPrompt(
         ctx,
         projectId,
         sessionId,
         `Create the file ${path} containing exactly this single line: ${content}. Use the file-writing tool; do not describe the change. Do not commit. Then reply with exactly: ${done}`,
       );
-      await waitForAssistantText(ctx, projectId, sessionId, done);
+      // The file is the proof, not the closing marker: a model sometimes ends
+      // the turn without echoing it (staging, 2026-10-11).
+      await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the write turn to end');
       const file = await ctx.client
         .as(ctx.P.OWNER)
         .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
@@ -1259,7 +1262,11 @@ harnessFlow(
           `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
       });
       await ctx.step('no file or pty tool ran; on pi the write was attempted and refused', async () => {
-        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        // The tool calls are the proof, not the closing marker: a model that was
+        // offered no file tool sometimes declines to send it (staging, 2026-10-11).
+        await waitForTurn(ctx, session.projectId, session.sessionId, endedAfter(undefined), 'the boot turn to end');
+        const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
+        if (!messages.some((m) => m.role === 'assistant')) throw new Error('the boot turn ended with no assistant message');
         // `bash: deny` and `edit: deny` also cover the shell and file-writing
         // tools that do the same job: pty_* and memory.
         const fileTools = messages
@@ -1924,13 +1931,17 @@ harnessFlow(
       });
 
       if (harness === 'pi') {
-        await ctx.step('the daemon health names the AGENTS.md pi loaded: the working tree, at the committed sha', async () => {
+        // Config releases run for every project (#9432), so pi normally reads the
+        // released copy (/opt/kortix/config/<hash>/AGENTS.md); with no release it
+        // reads the working tree. Either way it is the committed file.
+        await ctx.step('the daemon health names the AGENTS.md pi loaded: the config release or the working tree, at the committed sha', async () => {
           const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
           r.status(200);
           const loaded = r.json<any>().harness?.details?.agentsMd;
           const sha = createHash('sha256').update(agentsMd).digest('hex').slice(0, 12);
-          if (loaded?.source !== 'workspace' || loaded?.sha !== sha) {
-            throw new Error(`pi reports ${JSON.stringify(loaded)}; expected source "workspace" and sha ${sha}`);
+          const fromRelease = loaded?.source === 'release' && String(loaded?.path ?? '').startsWith('/opt/kortix/config/');
+          if (!(fromRelease || loaded?.source === 'workspace') || loaded?.sha !== sha) {
+            throw new Error(`pi reports ${JSON.stringify(loaded)}; expected the config release or the working tree at sha ${sha}`);
           }
         });
       }

@@ -737,6 +737,20 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
+    // The project's shared folders: the Files tab under Customize. Only for
+    // projects with the `drives` flag on, like the tab itself.
+    id: 'proj-shared-files',
+    label: 'Shared files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/files',
+    requiresProject: true,
+    requiresFlag: 'drives',
+    keywords: 'files folders drive shared company my folder access share',
+  },
+  {
     id: 'proj-apps',
     label: 'Apps',
     icon: Globe,

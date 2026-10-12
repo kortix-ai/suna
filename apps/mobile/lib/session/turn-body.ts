@@ -22,6 +22,7 @@ import {
   isTextPart,
   isToolPart,
   shouldShowToolPart,
+  splitTurnWork,
   toToolView,
   unwrapError,
   type CompactionTurnInfo,
@@ -29,9 +30,11 @@ import {
   type Segment,
   type TextPart,
   type ToolPart,
+  type TurnWorkSplit,
   type WorkingTurnResolution,
 } from '@kortix/sdk';
 
+import { burstView } from './activity';
 import { connectorHandoffCallIds } from './connector-handoff';
 
 /** The turn fields these rules read. Structural, so mobile and SDK turns both fit. */
@@ -249,6 +252,39 @@ export function lastTextPartId(segments: ReadonlyArray<Segment>): string | undef
     if (segment.kind === 'text') return segment.part.id;
   }
   return undefined;
+}
+
+// ─── Settled-turn fold (KRTX-2113) ───────────────────────────────────────────
+
+/** False when `SessionTurn` draws nothing for the segment (a plumbing-only burst, a hidden tool, blank text). */
+function segmentRendersSomething(segment: Segment): boolean {
+  if (segment.kind === 'burst') return !burstView(segment.parts, false).hidden;
+  if (segment.kind === 'standalone') return shouldShowToolPart(segment.part);
+  return !!segment.part.text?.trim();
+}
+
+/**
+ * The SDK's `splitTurnWork` over the segments that draw something, so the
+ * "Worked for" row never opens onto nothing and an invisible segment never
+ * stands between the final text and the end of the turn. `null` = render as
+ * today (working, or no call to fold).
+ */
+export function turnWorkSplit(segments: ReadonlyArray<Segment>, working: boolean): TurnWorkSplit<Segment> | null {
+  if (working) return null;
+  const split = splitTurnWork(segments.filter(segmentRendersSomething), { working });
+  // The row opens the activity sheet, which lists calls only. Work made of
+  // interim text alone would open an empty sheet and hide that text.
+  if (split && workParts(split.work).length === 0) return null;
+  return split;
+}
+
+/** The calls the "Worked for" row opens in the activity sheet: every burst and standalone part of the work, in order. */
+export function workParts(work: ReadonlyArray<Segment>): Part[] {
+  return work.flatMap((segment) => {
+    if (segment.kind === 'burst') return segment.parts;
+    if (segment.kind === 'standalone') return [segment.part];
+    return [];
+  });
 }
 
 // ─── Layout ──────────────────────────────────────────────────────────────────

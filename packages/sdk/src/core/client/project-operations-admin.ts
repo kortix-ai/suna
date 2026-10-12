@@ -13,6 +13,12 @@ export function bindProjectOperationsAdmin(projectId: string) {
     /** Reminders on every session the caller can open — see `listProjectReminders`. */
     reminders: {
       list: () => P.listProjectReminders(projectId),
+      /** Pause or resume a selection — see `updateSessionReminders`. */
+      updateMany: (...a: DropFirst<Parameters<typeof P.updateSessionReminders>>) =>
+        P.updateSessionReminders(projectId, ...a),
+      /** Remove a selection — see `deleteSessionReminders`. */
+      removeMany: (...a: DropFirst<Parameters<typeof P.deleteSessionReminders>>) =>
+        P.deleteSessionReminders(projectId, ...a),
     },
     triggers: {
       list: () => P.listProjectTriggers(projectId),

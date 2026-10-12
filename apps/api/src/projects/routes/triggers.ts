@@ -32,7 +32,7 @@ import {
 } from '../lib/triggers';
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
 // its exports would otherwise lose this name.
-import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
@@ -780,7 +780,9 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         202: json(TriggerFireResultSchema, 'Queued or fired'),
-        ...errors(403, 404, 500),
+        // 402: the account has no usable model — the fire gates instead of
+        // minting a session that would fail on its first turn.
+        ...errors(402, 403, 404, 500),
       },
     }),
     async (c) => {
@@ -890,6 +892,11 @@ export function registerTriggersRoutes(): void {
         // drain only if it dead-letters.
         if (!result.requeued) {
           await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+        }
+        // Model and billing gates are account state, not a server fault: answer
+        // the billing gate's convention (402 + a machine-readable code).
+        if (result.errorCode && ACCOUNT_STATE_FIRE_CODES.has(result.errorCode)) {
+          return c.json({ error, code: result.errorCode }, 402);
         }
         return c.json({ error }, 500);
       }

@@ -14,9 +14,9 @@ A new App uses none.
 ## Set the links
 
 ```sh
-kortix apps link crm --uses db          # crm may reach db
-kortix apps show crm --json             # app.uses: ["db"]; db shows app.used_by: ["crm"]
-kortix apps unlink crm --uses db        # remove the link
+kortix apps link crm --uses backend     # crm may reach backend
+kortix apps show crm --json             # app.uses: ["backend"]; backend shows app.used_by: ["crm"]
+kortix apps unlink crm --uses backend   # remove the link
 ```
 
 `--uses <slugs>` on `kortix apps create` sets the list at create, and on
@@ -27,14 +27,16 @@ In `kortix.yaml`, `uses` in the App's block replaces its list on every
 
 ```yaml
 apps:
-  db:
-    path: apps/db
-    kind: convex
+  backend:               # the Convex template (convex.md), abridged: launch writes the full block
+    type: oci_image
+    image: ghcr.io/get-convex/convex-backend@sha256:…
+    command: ["sh", "-c", "cd /convex && exec ./run_backend.sh"]
+    http_service: { internal_port: 3210, access: public }
   crm:
     path: apps/crm/dist
     type: static
     spa: true
-    uses: [db]
+    uses: [backend]
 ```
 
 `kortix apps deploy` with no arguments deploys every block, used Apps first.
@@ -46,12 +48,16 @@ A slug that names no App of the project answers `400 app_not_found`.
 import { ConvexReactClient } from "convex/react";
 import { kortixBinding } from "@kortix/sdk";
 
-const db = kortixBinding("db");
-// db.url   = location.origin + "/_kortix/apps/db"
-// db.token = a fetcher for a 15-minute token whose audience is db
-export const convex = new ConvexReactClient(db.url);
-convex.setAuth(db.token);
+const backend = kortixBinding("backend");
+// backend.url   = location.origin + "/_kortix/apps/backend"
+// backend.token = a fetcher for a 15-minute token whose audience is backend
+export const convex = new ConvexReactClient(backend.url);
+convex.setAuth(backend.token);
 ```
+
+To read the signed-in member in React, use a `members:me` query
+(`useQuery(api.members.me)`), not `useConvexAuth()`. See sign-in.md, "The
+browser: send the token".
 
 The request passes the using App's own access gate first, so only people the
 App admits reach the bound App through it. The bound App still checks every
@@ -60,17 +66,33 @@ call itself (`requireMember`, sign-in.md): its own URL is public.
 | Answer on `/_kortix/apps/<slug>/…` | Cause | Fix |
 | --- | --- | --- |
 | `403 app_not_linked` | The App does not use `<slug>` | `kortix apps link <app> --uses <slug>` |
-| `409 app_binding_unsupported` | The used App has no endpoint to bind | Only a `convex` App has one (its Convex client API). Call a web App on its own URL. |
+| `409 app_binding_unsupported` | The used App is static: it runs no server | Fetch a static App's files on its own URL. |
+| `403 app_binding_forbidden` | The service is `access: admins` | An admins-only service is never bound. |
+| `404 app_service_not_found` | `<slug>--<service>` names no service | Check `kortix apps show <slug> --json` → `services`. |
+| `503 app_binding_unavailable` | The used App has no running release | Deploy it, or start it. |
 | `401 app_auth_required` | The viewer did not pass the App's access gate | Open the App through Kortix or an access link. |
 
 ## What stays on the used App's own host
 
-The binding is for App code in the browser. These keep the `convex` App's own
-`instance.url` and `instance.site_url`:
+The binding is for App code in the browser. `/_kortix/apps/<slug>/*` reaches
+the used App's `http` service and `/_kortix/apps/<slug>--<service>/*` another of
+its services; a service with `access: admins` is never bound
+(`403 app_binding_forbidden`). These keep the used App's own URLs
+(`app.services[].url`):
 
-- The Convex CLI (`npx convex …`, after `eval "$(kortix apps credentials <slug>)"`).
+- The Convex CLI (`npx convex …` with `CONVEX_SELF_HOSTED_URL` = the App URL).
 - File storage URLs that Convex makes (`ctx.storage.getUrl`): they name the
   App's own host.
-- HTTP actions (`convex/http.ts`): they answer on `instance.site_url`.
+- HTTP actions (`convex/http.ts`): they answer on the `site` service's URL.
 - Scripts, servers and other clients outside an App (sign-in.md, "Who gets a
   token").
+
+**A server App that calls an App it uses** (an API in front of a backend): the
+binding is browser-only (it needs the viewer's App cookie, which the gate keeps).
+Call the used App on its own URL instead. Every machine gets
+`KORTIX_USES_URL_<SLUG>` (`-` → `_`) for each App its App uses: a `crm-data`
+backend is at `process.env.KORTIX_USES_URL_CRM_DATA`. The browser mints a token
+for the used App (`kortixToken('crm-data')`) and sends it to your server; the
+server forwards it as `Authorization: Bearer`. The backend verifies it as usual
+(sign-in.md). Never hard-code a host: a relaunch can change it. A new `uses`
+link reaches the machines with the next deploy.

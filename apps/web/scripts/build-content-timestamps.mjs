@@ -22,6 +22,13 @@
 // publishable on this site." Author date can predate the merge by months when a
 // commit is rebased or cherry-picked, which would mislead recency-aware
 // retrievers.
+//
+// A squash merge stamps a new committer date on the commit that carries the
+// content and the manifest the PR regenerated, and the manifest cannot know the
+// date of the commit it ships in. `staleContentTimestamps` therefore excuses an
+// entry whose content's last commit also touched the manifest: the commit that
+// carried the content also carried a regenerated manifest. Content changed
+// without the manifest still fails.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -95,17 +102,20 @@ function gitAvailable() {
   }
 }
 
-function lastCommitIso(pathRelativeToRepo) {
+function lastCommit(format, pathRelativeToRepo, rev = 'HEAD') {
   try {
-    const out = execFileSync('git', ['log', '-1', '--format=%cI', '--', pathRelativeToRepo], {
+    return execFileSync('git', ['log', '-1', `--format=${format}`, rev, '--', pathRelativeToRepo], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
-    });
-    const trimmed = out.trim();
-    if (trimmed) return new Date(trimmed).toISOString();
+    }).trim();
   } catch {
-    // fall through to the mtime fallback
+    return '';
   }
+}
+
+function lastCommitIso(pathRelativeToRepo) {
+  const committed = lastCommit('%cI', pathRelativeToRepo);
+  if (committed) return new Date(committed).toISOString();
   // A source file that exists on disk but has no commit touching it yet — a
   // page written on a branch and not yet committed. `git log` is silent for it,
   // which would leave its record without a `lastModified` and fail
@@ -145,25 +155,43 @@ function slugifyDocs(relativePath) {
   return normalized.replace(/\/index$/, '');
 }
 
-function collectContentTimestampManifest() {
-  const manifest = {};
-
-  // Marketing pages
+// Manifest key -> source path relative to the repo root.
+function contentSources() {
+  const sources = {};
   for (const [slug, sourceRel] of Object.entries(MARKETING_SOURCES)) {
-    const iso = lastCommitIso(sourceRel);
-    if (iso) manifest[`marketing:${slug}`] = iso;
+    sources[`marketing:${slug}`] = sourceRel;
   }
-
-  // Docs MDX files
   for (const absPath of listDocsMdx()) {
     const rel = relative(REPO_ROOT, absPath).replaceAll('\\', '/');
     const docsRel = rel.replace(/^apps\/web\/content\/docs\//, '');
-    const slug = slugifyDocs(docsRel);
-    const iso = lastCommitIso(rel);
-    if (iso) manifest[`docs:${slug}`] = iso;
+    sources[`docs:${slugifyDocs(docsRel)}`] = rel;
   }
+  return sources;
+}
 
+function collectContentTimestampManifest() {
+  const manifest = {};
+  for (const [key, rel] of Object.entries(contentSources())) {
+    const iso = lastCommitIso(rel);
+    if (iso) manifest[key] = iso;
+  }
   return manifest;
+}
+
+// Keys of `committed` that differ from a fresh generation, minus the entries
+// whose content's last commit also touched the manifest (see the header). Empty without usable git history.
+function staleContentTimestamps(committed) {
+  if (!gitAvailable()) return [];
+  const manifestRel = relative(REPO_ROOT, MANIFEST_PATH).replaceAll('\\', '/');
+  const sources = contentSources();
+  const stale = [];
+  for (const key of new Set([...Object.keys(sources), ...Object.keys(committed)])) {
+    const iso = sources[key] ? (lastCommitIso(sources[key]) ?? undefined) : undefined;
+    if (iso === committed[key]) continue;
+    const contentCommit = iso && key in committed ? lastCommit('%H', sources[key]) : '';
+    if (!contentCommit || lastCommit('%H', manifestRel, contentCommit) !== contentCommit) stale.push(key);
+  }
+  return stale.sort();
 }
 
 function createContentTimestampManifest() {
@@ -206,4 +234,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
 }
 
-export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps };
+export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps, staleContentTimestamps };
