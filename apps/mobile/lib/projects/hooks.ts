@@ -111,7 +111,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { shouldScanPastEmptySessionPages, useRuntimeProviders } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -598,17 +598,18 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
 }
 
 /**
- * `query` plus `sessions`. A spread (`{ ...query, sessions }`) reads every
- * field of TanStack's tracked result, which turns off its tracked-field
- * renders: the consumer then re-rendered on every fetch start and end
- * (`isFetching`), also when it never reads it (`useReviewItems` documents
- * the same bug). The proxy passes each read through, so only the fields a
- * consumer reads subscribe it.
+ * `query` plus `extra` (`sessions`, `isScanning`). A spread
+ * (`{ ...query, sessions }`) reads every field of TanStack's tracked result,
+ * which turns off its tracked-field renders: the consumer then re-rendered on
+ * every fetch start and end (`isFetching`), also when it never reads it
+ * (`useReviewItems` documents the same bug). The proxy passes each read
+ * through, so only the fields a consumer reads subscribe it.
  */
-function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T & { sessions: ProjectSession[] } {
+function withSessions<T extends object, E extends { sessions: ProjectSession[] }>(query: T, extra: E): T & E {
   return new Proxy(query, {
-    get: (target, key) => (key === 'sessions' ? sessions : Reflect.get(target, key)),
-  }) as T & { sessions: ProjectSession[] };
+    get: (target, key) =>
+      Object.prototype.hasOwnProperty.call(extra, key) ? extra[key as keyof E] : Reflect.get(target, key),
+  }) as T & E;
 }
 
 /**
@@ -619,6 +620,12 @@ function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T
  * `sessions` is every loaded page, flattened and de-duplicated. A refetch
  * (poll, pull to refresh, invalidation) refetches every loaded page, so the
  * cost is bounded by what the user scrolled to.
+ *
+ * KRTX-1727: the server drops rows the viewer may not see, and deleted ones,
+ * after a bounded scan, so a page can be empty and still carry a cursor.
+ * While every page so far is empty, the hook reads the next one on its own,
+ * up to the SDK's `EMPTY_SESSION_PAGE_SCAN_LIMIT` pages (`isScanning`). A
+ * failed page ends the scan; the list's Show more is the retry.
  */
 export function useProjectSessionsPaged(
   projectId: string | null,
@@ -646,7 +653,15 @@ export function useProjectSessionsPaged(
     },
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return withSessions(query, sessions);
+  const isScanning =
+    shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isFetchNextPageError;
+  const { data, fetchNextPage } = query;
+  useEffect(() => {
+    // `cancelRefetch: false` joins a fetch already running (a poll) instead of
+    // cancelling it. Its answer is new `data`, which runs this again.
+    if (isScanning) void fetchNextPage({ cancelRefetch: false });
+  }, [isScanning, data, fetchNextPage]);
+  return withSessions(query, { sessions, isScanning });
 }
 
 /** Rows a parent shows per "Show more". */
@@ -676,7 +691,7 @@ export function useSessionChildren(
     staleTime: 10_000,
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return withSessions(query, sessions);
+  return withSessions(query, { sessions });
 }
 
 export function useCreateProjectSession(projectId: string | null) {

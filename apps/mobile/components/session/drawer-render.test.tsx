@@ -48,6 +48,8 @@ const fakes: Record<string, Record<string, unknown>> = {
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   '@/components/ui/text': { Text: host('Text') },
+  '@/components/ui/button': { Button: host('Button') },
+  '@/components/kortix/kortix-loader': { KortixLoader: host('Loader') },
   './DrawerNavRows': { NavPill: (props: any) => { navPills.push(props); return null; } },
   '@/components/session/SessionStatusMark': { SessionStatusMark: () => { renders.mark++; return null; } },
   '@/components/session/SessionTreeParts': {
@@ -253,5 +255,66 @@ describe('ProjectLeftDrawer renders', () => {
     const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
     expect(pill.accessibilityLabel).toBe('Notifications');
     expect(pill.trailing.props.count).toBe(0);
+  });
+});
+
+// KRTX-1727: the server drops rows the viewer may not see after a bounded
+// scan, so a page can come back empty with a cursor. That is not an empty list.
+describe('ProjectLeftDrawer past page one', () => {
+  const textOf = (node: any): string =>
+    (node.children ?? []).map((child: any) => (typeof child === 'string' ? child : textOf(child))).join('');
+  const emptyFlower = () =>
+    tree.root.findAll((node: any) => typeof node.type === 'string' && node.props.accessibilityLabel === 'No sessions yet');
+  const header = (title: string) =>
+    tree.root.findAll((node: any) => node.type === 'Pressable' && String(node.props.accessibilityLabel).startsWith(`${title}, `));
+  const buttons = (label: string) => tree.root.findAll((node: any) => node.type === 'Button' && textOf(node) === label);
+  const mount = async () => {
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+  };
+
+  test('Shared stays while it has a next page, even with no row yet', async () => {
+    paged.others = { ...page([]), hasNextPage: true };
+    await mount();
+    expect(header('Shared')).toHaveLength(1);
+  });
+
+  test('Shared with no row and no next page has no header', async () => {
+    paged.others = page([]);
+    await mount();
+    expect(header('Shared')).toHaveLength(0);
+  });
+
+  test('no row anywhere but a next page: Show more, never "No sessions yet"', async () => {
+    let fetched = 0;
+    paged = {
+      me: { ...page([]), hasNextPage: true, fetchNextPage: async () => void fetched++ },
+      others: page([]),
+      automated: page([]),
+    };
+    await mount();
+    expect(emptyFlower()).toHaveLength(0);
+    expect(buttons('Show more')).toHaveLength(1);
+    await act(async () => buttons('Show more')[0].props.onPress());
+    expect(fetched).toBe(1);
+  });
+
+  test('while the list reads past empty pages on its own: a loader, no button', async () => {
+    paged = {
+      me: { ...page([]), hasNextPage: true, isScanning: true, isFetchingNextPage: true },
+      others: page([]),
+      automated: page([]),
+    };
+    await mount();
+    expect(emptyFlower()).toHaveLength(0);
+    expect(buttons('Show more')).toHaveLength(0);
+    expect(tree.root.findAll((node: any) => node.type === 'Loader').length).toBeGreaterThan(0);
+  });
+
+  test('no row and no next page anywhere: the empty flower as before', async () => {
+    paged = { me: page([]), others: page([]), automated: page([]) };
+    await mount();
+    expect(emptyFlower()).toHaveLength(1);
   });
 });
