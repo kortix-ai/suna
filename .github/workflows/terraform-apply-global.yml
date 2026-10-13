@@ -52,7 +52,7 @@ jobs:
       id-token: write
     with:
       tf_root: infra/terraform/compliance-monitoring
-      aws_region: us-west-2
+      aws_region: eu-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
       trusted_branch: dev
@@ -68,7 +68,7 @@ jobs:
       id-token: write
     with:
       tf_root: infra/terraform/security-baseline
-      aws_region: us-west-2
+      aws_region: eu-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
       trusted_branch: dev

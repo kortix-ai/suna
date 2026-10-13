@@ -42,3 +42,5 @@ export type { Todo as SessionLogTodo, ToolKind as SessionLogToolKind } from './t
 
 // Transitional bridge for hosts that render blocks while their rows are v1 (`./tool-call.ts`).
 export { toolCallBlock, toolCallMetadata } from './tool-call';
+// The block turn layer (`./turns`): the turn model a transcript renders blocks from.
+export * from './turns';
