@@ -97,7 +97,7 @@ export async function seedSessionTranscript(
       [input.sessionId, root],
     );
     if (input.log) {
-      await journalSessionLog(env, db, { ...input, log: input.log, root, messages });
+      await journalSessionLog(env, { ...input, bearer: input.log.bearer, root, messages });
     } else {
       await db.query(
         'INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)',
@@ -130,36 +130,51 @@ export async function seedSessionTranscript(
   return { root, messages };
 }
 
-/** The `log` half of {@link seedSessionTranscript}. */
-async function journalSessionLog(
+/**
+ * Journals `messages` (the whole conversation, in order) into the session log of a session
+ * {@link seedSessionTranscript} seeded with `log`, as the box's daemon does after a turn: every
+ * message again at a newer rev, so a message that is new gets its seq and one that is stored
+ * is replaced. Turns the project's `session_log` flag on.
+ */
+export async function journalSessionLog(
   env: Env,
-  db: Client,
   input: {
     projectId: string;
     accountId: string;
     sessionId: string;
-    log: { bearer: string };
+    bearer: string;
     root: string;
-    messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>;
+    messages: SavedMessage[];
   },
 ) {
   const minted = await fetch(`${env.apiUrl}/accounts/tokens`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${input.log.bearer}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${input.bearer}`, 'content-type': 'application/json' },
     body: JSON.stringify({ name: 'Session log journal (test fixture)', account_id: input.accountId }),
   });
   if (minted.status !== 201) throw new Error(`POST /accounts/tokens answered ${minted.status}: ${await minted.text()}`);
   const credential = (await minted.json()) as { token_id: string; secret_key: string };
+  const db = new Client({ connectionString: env.databaseUrl! });
+  db.on('error', () => {});
+  await db.connect();
   // The credential a box holds: bound to the project and the session, live while its sandbox row is active.
   await db.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3 WHERE token_id = $1', [
     credential.token_id,
     input.projectId,
     input.sessionId,
   ]);
-  const lease = await db.query(
-    "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES (gen_random_uuid(), $1, $2, $3, 'active') RETURNING sandbox_id",
-    [input.sessionId, input.accountId, input.projectId],
+  // The session's sandbox row is active for the call: a stopped one is turned active and back,
+  // and a session without one gets a temporary row.
+  const held = await db.query<{ status: string }>(
+    "UPDATE kortix.session_sandboxes s SET status = 'active' FROM kortix.session_sandboxes o WHERE s.session_id = $1 AND o.sandbox_id = s.sandbox_id RETURNING o.status",
+    [input.sessionId],
   );
+  if (!held.rows.length) {
+    await db.query(
+      "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES (gen_random_uuid(), $1, $2, $3, 'active')",
+      [input.sessionId, input.accountId, input.projectId],
+    );
+  }
   try {
     const rows = input.messages.map((m) => ({
       runtime_session_id: typeof m.info.sessionID === 'string' ? m.info.sessionID : input.root,
@@ -178,13 +193,17 @@ async function journalSessionLog(
     });
     const acked = journal.ok ? ((await journal.json()) as { acked: unknown[] }).acked.length : -1;
     if (acked !== puts.length) throw new Error(`POST …/log/journal answered ${journal.status}, acked ${acked} of ${puts.length}`);
+    await db.query(
+      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb)
+         || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_log":true}'::jsonb)
+       WHERE project_id = $1`,
+      [input.projectId],
+    );
   } finally {
-    await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1', [lease.rows[0].sandbox_id]);
+    await (held.rows.length
+      ? db.query('UPDATE kortix.session_sandboxes SET status = $2 WHERE session_id = $1', [input.sessionId, held.rows[0]!.status])
+      : db.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1 AND external_id IS NULL', [input.sessionId])
+    ).catch(() => {});
+    await db.end();
   }
-  await db.query(
-    `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb)
-       || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_log":true}'::jsonb)
-     WHERE project_id = $1`,
-    [input.projectId],
-  );
 }
