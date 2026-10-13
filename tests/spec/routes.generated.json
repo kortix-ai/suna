@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 822,
+  "count": 823,
   "routes": [
     {
       "method": "GET",
@@ -289,6 +289,10 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/devices/:deviceId/assets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/link"
     },
     {
       "method": "POST",

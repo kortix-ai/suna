@@ -164,6 +164,7 @@ export {
   useCreateCaptureEnrollmentToken,
   useDenyCaptureDevice,
   useDenyCaptureEnrollment,
+  useLinkCaptureDevice,
   useRevokeCaptureDevice,
   useRevokeCaptureEnrollmentToken,
   useSetCaptureEnabled,

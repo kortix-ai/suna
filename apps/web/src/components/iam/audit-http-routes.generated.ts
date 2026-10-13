@@ -74,6 +74,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|accounts|:accountId|capture|devices",
   "DELETE|v1|accounts|:accountId|capture|devices|:deviceId",
   "GET|v1|accounts|:accountId|capture|devices|:deviceId|assets|:name",
+  "PUT|v1|accounts|:accountId|capture|devices|:deviceId|link",
   "POST|v1|accounts|:accountId|capture|devices|:deviceId|sync",
   "GET|v1|accounts|:accountId|capture|enrollment-tokens",
   "POST|v1|accounts|:accountId|capture|enrollment-tokens",

@@ -5,12 +5,13 @@
  * IT installs Kortix Capture with one enrollment token. At each Windows
  * sign-in the machine service calls `POST /v1/capture/device/enroll` with the
  * token, the machine key and the Windows person (UPN, else the login name).
- * Kortix matches the person to an account member by trusted email, else by an
- * earlier admin decision for the same person, and mints a device token. A
- * computer whose person is not matched, or every computer of a token that
- * requires approval, waits in `capture_enrollments` as `pending` until an
- * admin approves it to a member or denies it. The device polls by calling
- * enroll again. A token is stored only as `hashSecretKey(token)`.
+ * Device-first: Kortix mints a device token for every valid token. The device
+ * is linked to the member whose trusted email the Windows person has, else to
+ * the member an admin linked this person to before, else to no one until an
+ * admin links it. Only a token that requires approval, or a device an admin
+ * revoked, waits in `capture_enrollments` as `pending` until an admin approves
+ * or denies it; the device polls by calling enroll again. A token is stored
+ * only as `hashSecretKey(token)`.
  */
 import { accounts, captureDevices, captureEnrollments, captureEnrollmentTokens } from '@kortix/db';
 import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
@@ -23,6 +24,7 @@ import { DEVICE_TOKEN_PREFIX } from './devices';
 import { accountPrefix, deviceFields } from './format';
 import { ensurePolicyObject } from './policy';
 import { captureEnabled, isAccountMember } from './workspace';
+import { enqueueLink } from './workers';
 
 export const ENROLLMENT_TOKEN_PREFIX = 'kortix_enr_';
 /** How long a pending computer waits between two enroll calls. */
@@ -152,7 +154,7 @@ export type EnrollOutcome =
   | { kind: 'invalid_token' | 'capture_disabled' | 'bad_principal' }
   | { kind: 'domain_not_allowed' | 'limit_reached'; tokenId: string; accountId: string }
   | { kind: 'denied'; tokenId: string; accountId: string; enrollmentId: string }
-  | { kind: 'pending'; reason: 'no_member' | 'approval_required'; tokenId: string; accountId: string; enrollmentId: string }
+  | { kind: 'pending'; reason: 'approval_required'; tokenId: string; accountId: string; enrollmentId: string }
   | {
       kind: 'enrolled';
       tokenId: string;
@@ -161,7 +163,8 @@ export type EnrollOutcome =
       token: string;
       prefix: string;
       deviceId: string;
-      userId: string;
+      /** The member the device records for; null: linked to no one yet. */
+      userId: string | null;
       accountName: string;
       memberEmail: string | null;
     };
@@ -234,27 +237,39 @@ async function machineIsNewToToken(token: EnrollmentToken, machineKey: string): 
   return !row;
 }
 
-async function setPending(row: Enrollment, reason: 'no_member' | 'approval_required', userId: string | null) {
+async function setPending(row: Enrollment, userId: string | null) {
   await db
     .update(captureEnrollments)
-    .set({ status: 'pending', reason, userId })
+    .set({ status: 'pending', reason: 'approval_required', userId })
     .where(eq(captureEnrollments.enrollmentId, row.enrollmentId));
 }
 
-/** The device row of (account, machine, member), revoked or not. */
-async function deviceOf(accountId: string, machineKey: string, userId: string) {
-  const [row] = await db
+/**
+ * The device an enrollment row stands for: the one it enrolled before, else
+ * the member's own device for this computer (they signed it in themselves).
+ */
+async function existingDevice(row: Enrollment, userId: string | null) {
+  if (row.deviceId) {
+    const [device] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, row.deviceId)).limit(1);
+    if (device) return device;
+  }
+  if (!userId) return null;
+  const [device] = await db
     .select()
     .from(captureDevices)
-    .where(and(eq(captureDevices.accountId, accountId), eq(captureDevices.machineKeySha256, machineKey), eq(captureDevices.userId, userId)))
+    .where(and(eq(captureDevices.accountId, row.accountId), eq(captureDevices.machineKeySha256, row.machineKeySha256), eq(captureDevices.userId, userId)))
     .limit(1);
-  return row ?? null;
+  return device ?? null;
 }
 
 /**
- * One enroll call, which is also the poll. Idempotent for the same token,
- * machine and person; an `enrolled` answer always mints a new device token
- * (the previous one stops working), same device id.
+ * One enroll call, which is also the poll. Device-first: every valid token
+ * enrolls the computer. The Windows person links it to a member when a member
+ * has that (trusted) email, or when an admin linked this person before; else
+ * it records linked to no one until an admin links it. It waits (202) only
+ * when the token approves each computer, or when an admin revoked it.
+ * Idempotent; an `enrolled` answer mints a new device token (the previous one
+ * stops working), same device id.
  */
 export async function enroll(input: EnrollInput): Promise<EnrollOutcome> {
   const token = await tokenRow(input.token);
@@ -294,58 +309,62 @@ export async function enroll(input: EnrollInput): Promise<EnrollOutcome> {
   let userId = decided && row.userId && (await isAccountMember(token.accountId, row.userId)) ? row.userId : null;
   const emailShaped = emailDomain(principal) ? principal : null;
   userId ??= (emailShaped && (await memberByEmail(token.accountId, emailShaped))) || (await memberByDecision(token.accountId, principal));
-  if (!userId) {
-    await setPending(row, 'no_member', null);
-    return { kind: 'pending', reason: 'no_member', ...ids, enrollmentId: row.enrollmentId };
-  }
-  const device = await deviceOf(token.accountId, input.machineKey, userId);
+  const device = await existingDevice(row, userId);
   // An admin approves a computer of an approval-only token once; a revoked device only by a new approval.
-  const needsApproval = (token.requireApproval && !decided) || Boolean(device?.revokedAt);
-  if (needsApproval) {
-    await setPending(row, 'approval_required', userId);
+  if ((token.requireApproval && !decided) || device?.revokedAt) {
+    await setPending(row, userId);
     return { kind: 'pending', reason: 'approval_required', ...ids, enrollmentId: row.enrollmentId };
   }
-  return mintDeviceToken(token, row, userId);
+  return mintDeviceToken(token, row, device, userId);
 }
 
-async function mintDeviceToken(token: EnrollmentToken, row: Enrollment, userId: string): Promise<EnrollOutcome> {
+/**
+ * Mint the device token. A new computer gets a device (linked to `userId`, or
+ * to no one). An unlinked device whose person now matches a member is linked,
+ * and its earlier recordings move to them. A device an admin linked stays
+ * linked as the admin chose.
+ */
+async function mintDeviceToken(
+  token: EnrollmentToken,
+  row: Enrollment,
+  device: typeof captureDevices.$inferSelect | null,
+  userId: string | null,
+): Promise<EnrollOutcome> {
   const fields = deviceFields(row.deviceInfo);
   const deviceToken = `${DEVICE_TOKEN_PREFIX}${randomAlphanumeric(40)}`;
+  const linkNow = Boolean(device && device.userId === null && userId);
+  const owner = device ? (device.userId ?? userId) : userId;
   const deviceId = await db.transaction(async (tx) => {
-    const [device] = await tx
-      .insert(captureDevices)
-      .values({
-        accountId: token.accountId,
-        userId,
-        machineKeySha256: row.machineKeySha256,
-        ...fields,
-        deviceInfo: row.deviceInfo,
-        enrollmentTokenId: token.tokenId,
-        tokenHash: hashSecretKey(deviceToken),
-        tokenIssuedAt: sql`now()`,
-      })
-      .onConflictDoUpdate({
-        target: [captureDevices.accountId, captureDevices.machineKeySha256, captureDevices.userId],
-        set: {
-          ...fields,
-          enrollmentTokenId: token.tokenId,
-          tokenHash: hashSecretKey(deviceToken),
-          tokenIssuedAt: sql`now()`,
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({ deviceId: captureDevices.deviceId });
+    const set = {
+      ...fields,
+      deviceInfo: row.deviceInfo,
+      enrollmentTokenId: token.tokenId,
+      tokenHash: hashSecretKey(deviceToken),
+      tokenIssuedAt: sql`now()`,
+      updatedAt: sql`now()`,
+    };
+    const [saved] = device
+      ? await tx
+          .update(captureDevices)
+          .set({ ...set, ...(linkNow ? { userId } : {}) })
+          .where(eq(captureDevices.deviceId, device.deviceId))
+          .returning({ deviceId: captureDevices.deviceId })
+      : await tx
+          .insert(captureDevices)
+          .values({ accountId: token.accountId, userId: owner, machineKeySha256: row.machineKeySha256, ...set })
+          .returning({ deviceId: captureDevices.deviceId });
     await tx
       .update(captureEnrollments)
-      .set({ status: 'enrolled', reason: null, userId, deviceId: device!.deviceId })
+      .set({ status: 'enrolled', reason: null, userId: owner, deviceId: saved!.deviceId })
       .where(eq(captureEnrollments.enrollmentId, row.enrollmentId));
     await tx.update(captureEnrollmentTokens).set({ lastUsedAt: sql`now()` }).where(eq(captureEnrollmentTokens.tokenId, token.tokenId));
-    return device!.deviceId;
+    return saved!.deviceId;
   });
+  if (linkNow && userId) await enqueueLink(token.accountId, deviceId, userId);
   await ensurePolicyObject(token.accountId);
   const [[account], emails] = await Promise.all([
     db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, token.accountId)).limit(1),
-    lookupEmailsByUserIds([userId]),
+    owner ? lookupEmailsByUserIds([owner]) : Promise.resolve(new Map<string, string | null>()),
   ]);
   return {
     kind: 'enrolled',
@@ -355,9 +374,9 @@ async function mintDeviceToken(token: EnrollmentToken, row: Enrollment, userId: 
     token: deviceToken,
     prefix: accountPrefix(token.accountId),
     deviceId,
-    userId,
+    userId: owner,
     accountName: account?.name ?? '',
-    memberEmail: emails.get(userId) ?? null,
+    memberEmail: owner ? (emails.get(owner) ?? null) : null,
   };
 }
 
@@ -370,7 +389,7 @@ export function enrollmentView(row: Enrollment, tokenName: string | null) {
     token_id: row.tokenId,
     token_name: tokenName,
     status: row.status as 'pending' | 'approved' | 'denied' | 'enrolled',
-    reason: (row.reason ?? null) as 'no_member' | 'approval_required' | null,
+    reason: (row.reason ?? null) as 'approval_required' | null,
     principal_name: row.principalName,
     account_name: row.accountName,
     device: { name: fields.name, os: fields.os, os_version: fields.osVersion, arch: fields.arch, app_version: fields.appVersion },
@@ -405,28 +424,27 @@ export async function enrollmentInAccount(accountId: string, enrollmentId: strin
 }
 
 /**
- * Approve a computer to a member. Its next enroll call gets a device token.
- * A device of that member on that computer an admin revoked is revived.
+ * Approve a waiting computer, optionally linked to a member. Its next enroll
+ * call gets a device token. A device of it an admin revoked is revived.
  */
-export async function approveEnrollment(row: Enrollment, userId: string, by: string): Promise<Enrollment> {
-  return db.transaction(async (tx) => {
-    await tx
-      .update(captureDevices)
-      .set({ revokedAt: null, revokedBy: null, updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(captureDevices.accountId, row.accountId),
-          eq(captureDevices.machineKeySha256, row.machineKeySha256),
-          eq(captureDevices.userId, userId),
-        ),
-      );
-    const [updated] = await tx
+export async function approveEnrollment(row: Enrollment, userId: string | null, by: string): Promise<Enrollment> {
+  const device = await existingDevice(row, userId);
+  const updated = await db.transaction(async (tx) => {
+    if (device) {
+      await tx
+        .update(captureDevices)
+        .set({ revokedAt: null, revokedBy: null, ...(userId ? { userId } : {}), updatedAt: sql`now()` })
+        .where(eq(captureDevices.deviceId, device.deviceId));
+    }
+    const [saved] = await tx
       .update(captureEnrollments)
-      .set({ status: 'approved', reason: null, userId, decidedBy: by, decidedAt: sql`now()` })
+      .set({ status: 'approved', reason: null, userId: userId ?? row.userId, decidedBy: by, decidedAt: sql`now()` })
       .where(eq(captureEnrollments.enrollmentId, row.enrollmentId))
       .returning();
-    return updated!;
+    return saved!;
   });
+  if (device && userId && device.userId !== userId) await enqueueLink(row.accountId, device.deviceId, userId);
+  return updated;
 }
 
 /**

@@ -1,10 +1,11 @@
 /**
  * Kortix Capture timeline reads and writes behind account-routes.ts: devices,
- * the timeline, items, search, media. Every query
- * is bound to (account, person); the route decides who may ask.
+ * the timeline, items, search, media. Every query is bound to (account, who):
+ * a person, or one device that is linked to no person yet (an IT rollout
+ * records a computer before anyone links it). The route decides who may ask.
  */
 import { captureDevices, projectSessions, timelineChunks } from '@kortix/db';
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
 import { accountPrefix, isEncrypted, liveState, objectKey, parseDisplay, type CaptureDisplay, type Manifest } from './format';
@@ -16,6 +17,26 @@ export interface Span {
   from: Date;
   to: Date;
 }
+
+/**
+ * Whose rows a read returns: a person's (their user id), or one device's that
+ * is linked to no person. Linking the device moves its rows to the person
+ * (`reattributeDevice`), so a row has exactly one owner at a time.
+ */
+export type Who = string | { unlinkedDevice: string };
+
+/** `who` as a raw SQL condition over a timeline table. The unlinked form uses the (account, user, ts) index with `user_id IS NULL`. */
+const whoSql = (who: Who) =>
+  typeof who === 'string' ? sql`user_id = ${who}::uuid` : sql`user_id IS NULL AND device_id = ${who.unlinkedDevice}::uuid`;
+
+/** `who` over `timeline_chunks`, for Drizzle queries. */
+const whoChunk = (who: Who): SQL =>
+  typeof who === 'string'
+    ? eq(timelineChunks.userId, who)
+    : and(isNull(timelineChunks.userId), eq(timelineChunks.deviceId, who.unlinkedDevice))!;
+
+/** The person a `Who` names, or null for an unlinked device. */
+export const whoUserId = (who: Who | null): string | null => (typeof who === 'string' ? who : null);
 
 /** A timestamptz parameter. A bare Date in raw SQL is sent as its local `toString()`. */
 const at = (d: Date) => sql`${d.toISOString()}::timestamptz`;
@@ -107,13 +128,78 @@ export async function revokeDevice(deviceId: string, by: string): Promise<Device
   return revoked!;
 }
 
+// ─── Linking a device to a person ────────────────────────────────────────────
+
+export type LinkOutcome = { kind: 'linked'; device: Device } | { kind: 'conflict'; deviceId: string };
+
+/**
+ * Link a device to a member (`userId`), or unlink it (null). From then on its
+ * recordings belong to that person. Recordings it made while unlinked move to
+ * the person in the background (`reattributeDevice`); recordings it made for
+ * an earlier person stay theirs. A conflict: the person already has another
+ * device row for the same computer (they signed it in themselves).
+ */
+export async function linkDevice(device: Device, userId: string | null): Promise<LinkOutcome> {
+  if (userId) {
+    const [other] = await db
+      .select({ deviceId: captureDevices.deviceId })
+      .from(captureDevices)
+      .where(
+        and(
+          eq(captureDevices.accountId, device.accountId),
+          eq(captureDevices.machineKeySha256, device.machineKeySha256),
+          eq(captureDevices.userId, userId),
+          sql`${captureDevices.deviceId} <> ${device.deviceId}::uuid`,
+        ),
+      )
+      .limit(1);
+    if (other) return { kind: 'conflict', deviceId: other.deviceId };
+  }
+  const [linked] = await db
+    .update(captureDevices)
+    .set({ userId, updatedAt: sql`now()` })
+    .where(eq(captureDevices.deviceId, device.deviceId))
+    .returning();
+  return { kind: 'linked', device: linked! };
+}
+
+/** The timeline tables and their primary keys (a partitioned table's key includes `ts`). */
+const OWNED_TABLES = [
+  { table: 'timeline_chunks', key: 'chunk_id' },
+  { table: 'timeline_frames', key: 'frame_id, ts' },
+  { table: 'timeline_actions', key: 'action_id, ts' },
+  { table: 'timeline_audio', key: 'line_id, ts' },
+] as const;
+
+/**
+ * Move up to `batches` × `batchSize` rows per table that a device recorded
+ * while unlinked to `userId`. Returns true when none is left. Idempotent: it
+ * only touches rows with no person.
+ */
+export async function reattributeDevice(accountId: string, deviceId: string, userId: string, batches = 20, batchSize = 5000): Promise<boolean> {
+  for (const { table, key } of OWNED_TABLES) {
+    const t = sql.raw(`kortix.${table}`);
+    const k = sql.raw(key);
+    for (let i = 0; ; i++) {
+      if (i === batches) return false;
+      const moved = await db.execute(sql`
+        UPDATE ${t} SET user_id = ${userId}::uuid
+         WHERE (${k}) IN (SELECT ${k} FROM ${t}
+                           WHERE account_id = ${accountId}::uuid AND user_id IS NULL AND device_id = ${deviceId}::uuid
+                           LIMIT ${batchSize})`);
+      if (((moved as { count?: number }).count ?? 0) < batchSize) break;
+    }
+  }
+  return true;
+}
+
 // ─── Timeline ────────────────────────────────────────────────────────────────
 
 /**
  * Consecutive frames of one device with the same app and window title, no gap
  * over 2 minutes: of one display, or of the focused display at each moment.
  */
-export async function timelineRuns(accountId: string, userId: string, span: Span, deviceId?: string, displayId?: number) {
+export async function timelineRuns(accountId: string, who: Who, span: Span, deviceId?: string, displayId?: number) {
   return isoRows(
     await db.execute<Record<string, unknown>>(sql`
       SELECT device_id, app, title, (array_agg(url ORDER BY ts))[1] AS url,
@@ -125,7 +211,7 @@ export async function timelineRuns(accountId: string, userId: string, span: Span
                                    AND ts - lag(ts) OVER w < interval '2 minutes'
                                   THEN 0 ELSE 1 END AS brk
                         FROM kortix.timeline_frames
-                       WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid
+                       WHERE account_id = ${accountId}::uuid AND ${whoSql(who)}
                          AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive ${onDevice(deviceId)} ${onDisplay(displayId)}
                       WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
        GROUP BY device_id, grp, app, title
@@ -139,7 +225,7 @@ export async function timelineRuns(accountId: string, userId: string, span: Span
  * of one device on the same display, no gap over 2 minutes. The client resolves
  * the active display at any moment from these spans. Empty for one-display devices.
  */
-export async function timelineFocus(accountId: string, userId: string, span: Span, deviceId?: string) {
+export async function timelineFocus(accountId: string, who: Who, span: Span, deviceId?: string) {
   return isoRows(
     await db.execute<Record<string, unknown>>(sql`
       SELECT device_id, display_id, min(ts) AS start_at, max(ts) AS end_at
@@ -149,7 +235,7 @@ export async function timelineFocus(accountId: string, userId: string, span: Spa
                                    AND ts - lag(ts) OVER w < interval '2 minutes'
                                   THEN 0 ELSE 1 END AS brk
                         FROM kortix.timeline_frames
-                       WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND focused AND display_id IS NOT NULL
+                       WHERE account_id = ${accountId}::uuid AND ${whoSql(who)} AND focused AND display_id IS NOT NULL
                          AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}
                       WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
        GROUP BY device_id, grp, display_id
@@ -158,7 +244,7 @@ export async function timelineFocus(accountId: string, userId: string, span: Spa
   );
 }
 
-export async function timelineChunksIn(accountId: string, userId: string, span: Span, deviceId?: string, displayId?: number) {
+export async function timelineChunksIn(accountId: string, who: Who, span: Span, deviceId?: string, displayId?: number) {
   return db
     .select({
       chunk_id: timelineChunks.chunkId,
@@ -175,7 +261,7 @@ export async function timelineChunksIn(accountId: string, userId: string, span: 
     .where(
       and(
         eq(timelineChunks.accountId, accountId),
-        eq(timelineChunks.userId, userId),
+        whoChunk(who),
         gte(timelineChunks.endAt, span.from),
         lte(timelineChunks.startAt, span.to),
         ...(deviceId ? [eq(timelineChunks.deviceId, deviceId)] : []),
@@ -194,13 +280,13 @@ export async function timelineChunksIn(accountId: string, userId: string, span: 
  * `tz` with its first and last recorded moment and its seconds of screen chunks.
  * Grouped over items (5-minute chunks), not frames, so a year costs ~100k rows at most.
  */
-export async function recordedDays(accountId: string, userId: string, opts: { tz: string; deviceId?: string }) {
+export async function recordedDays(accountId: string, who: Who, opts: { tz: string; deviceId?: string }) {
   const rows = await db.execute<{ day: string; start_at: string; end_at: string; screen_seconds: number }>(sql`
     SELECT to_char((start_at AT TIME ZONE ${opts.tz})::date, 'YYYY-MM-DD') AS day,
            min(start_at) AS start_at, max(end_at) AS end_at,
            coalesce(round(sum(EXTRACT(EPOCH FROM (end_at - start_at))) FILTER (WHERE kind = 'chunk')), 0)::int AS screen_seconds
       FROM kortix.timeline_chunks
-     WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid ${onDevice(opts.deviceId)}
+     WHERE account_id = ${accountId}::uuid AND ${whoSql(who)} ${onDevice(opts.deviceId)}
      GROUP BY 1
      ORDER BY 1 DESC
      LIMIT 366`);
@@ -223,12 +309,12 @@ export function displaysOf(chunks: Array<{ kind: string; display_id: number | nu
  */
 export async function timelineItems(
   accountId: string,
-  userId: string,
+  who: Who,
   span: Span,
   deviceId?: string,
   opts: { displayId?: number; allDisplays?: boolean } = {},
 ) {
-  const where = sql`account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}`;
+  const where = sql`account_id = ${accountId}::uuid AND ${whoSql(who)} AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}`;
   const frameWhere = opts.allDisplays && opts.displayId === undefined ? where : sql`${where} ${onDisplay(opts.displayId)}`;
   const [frames, actions, audio] = await Promise.all([
     db.execute<Record<string, unknown>>(sql`SELECT frame_id, ts, device_id, chunk_id, frame_index, app, bundle_id, title, url, domain, ocr_text, inactive, display_id, focused FROM kortix.timeline_frames WHERE ${frameWhere} ORDER BY ts LIMIT ${opts.allDisplays && opts.displayId === undefined ? 2000 : 500}`),
@@ -261,11 +347,11 @@ export function snippet(text: string | null, q: string): string {
 /** Newest first; one screen hit per (chunk, window title), so a still screen is one hit, not 15. */
 export async function searchTimeline(
   accountId: string,
-  /** null = every member of the account (people with capture.read_all). */
-  userId: string | null,
+  /** null = the whole account (people with capture.read_all). */
+  who: Who | null,
   opts: { q: string; from: Date; to: Date; kinds: Set<SearchKind>; app?: string; deviceId?: string; limit: number },
 ) {
-  const scope = sql`account_id = ${accountId}::uuid ${userId ? sql`AND user_id = ${userId}::uuid` : sql``} AND ts >= ${at(opts.from)} AND ts < ${at(opts.to)} ${onDevice(opts.deviceId)} ${opts.app ? sql` AND lower(app) = lower(${opts.app})` : sql``}`;
+  const scope = sql`account_id = ${accountId}::uuid ${who ? sql`AND ${whoSql(who)}` : sql``} AND ts >= ${at(opts.from)} AND ts < ${at(opts.to)} ${onDevice(opts.deviceId)} ${opts.app ? sql` AND lower(app) = lower(${opts.app})` : sql``}`;
   const query = sql`websearch_to_tsquery('simple', ${opts.q})`;
   const parts = [
     opts.kinds.has('screen') &&
@@ -306,10 +392,10 @@ async function displayNames(chunkIds: string[]): Promise<Map<string, string>> {
 
 const MEDIA_TTL_SECONDS = 300;
 
-export async function frameOf(accountId: string, userId: string, frameId: string) {
+export async function frameOf(accountId: string, who: Who, frameId: string) {
   const [frame] = isoRows(
     await db.execute<Record<string, unknown>>(
-      sql`SELECT * FROM kortix.timeline_frames WHERE frame_id = ${frameId}::uuid AND account_id = ${accountId}::uuid AND user_id = ${userId}::uuid LIMIT 1`,
+      sql`SELECT * FROM kortix.timeline_frames WHERE frame_id = ${frameId}::uuid AND account_id = ${accountId}::uuid AND ${whoSql(who)} LIMIT 1`,
     ),
   );
   if (!frame) return null;
@@ -333,11 +419,11 @@ export async function frameVideoOffsetMs(frame: Record<string, unknown>): Promis
   return (row?.n ?? 0) * 1000;
 }
 
-export async function chunkOf(accountId: string, userId: string, chunkId: string): Promise<Chunk | null> {
+export async function chunkOf(accountId: string, who: Who, chunkId: string): Promise<Chunk | null> {
   const [chunk] = await db
     .select()
     .from(timelineChunks)
-    .where(and(eq(timelineChunks.chunkId, chunkId), eq(timelineChunks.accountId, accountId), eq(timelineChunks.userId, userId)))
+    .where(and(eq(timelineChunks.chunkId, chunkId), eq(timelineChunks.accountId, accountId), whoChunk(who)))
     .limit(1);
   return chunk ?? null;
 }
@@ -353,11 +439,11 @@ export async function mediaUrl(chunk: Chunk, role: string) {
 }
 
 /** The action screenshot nearest a moment on one device (within `withinMs`), as a still of what was on screen. */
-export async function nearestScreenshot(accountId: string, userId: string, deviceId: string, ts: Date, withinMs = 30_000): Promise<{ name: string; ts: string } | null> {
+export async function nearestScreenshot(accountId: string, who: Who, deviceId: string, ts: Date, withinMs = 30_000): Promise<{ name: string; ts: string } | null> {
   const [row] = isoRows(
     await db.execute<Record<string, unknown>>(sql`
       SELECT screenshot AS name, ts FROM kortix.timeline_actions
-       WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND device_id = ${deviceId}::uuid AND screenshot IS NOT NULL
+       WHERE account_id = ${accountId}::uuid AND ${whoSql(who)} AND device_id = ${deviceId}::uuid AND screenshot IS NOT NULL
          AND ts BETWEEN ${new Date(ts.getTime() - withinMs).toISOString()}::timestamptz AND ${new Date(ts.getTime() + withinMs).toISOString()}::timestamptz
        ORDER BY abs(extract(epoch FROM ts - ${ts.toISOString()}::timestamptz)) LIMIT 1`),
   );

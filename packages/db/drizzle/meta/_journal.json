@@ -1065,6 +1065,13 @@
       "when": 1791894096360,
       "tag": "20261013122136_capture_enrollment",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1791912708845,
+      "tag": "20261013173148_capture_device_first",
+      "breakpoints": true
     }
   ]
 }

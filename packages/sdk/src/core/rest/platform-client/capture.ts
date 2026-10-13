@@ -102,8 +102,8 @@ export interface CaptureFocusSpan {
 
 export interface CaptureDevice {
   device_id: string;
-  /** The member the device records. */
-  user_id: string;
+  /** The member the device records; null: an IT-enrolled computer linked to no one yet (`linkCaptureDevice`). */
+  user_id: string | null;
   name: string | null;
   os: string | null;
   os_version: string | null;
@@ -172,14 +172,14 @@ export interface CaptureEnrollment {
   token_id: string;
   token_name: string | null;
   status: CaptureEnrollmentStatus;
-  /** Why a pending computer waits: no member has its person's email, or the token requires approval. */
-  reason: 'no_member' | 'approval_required' | null;
+  /** Why a pending computer waits: the token approves each computer, or an admin revoked it. */
+  reason: 'approval_required' | null;
   /** The Windows UPN. */
   principal_name: string | null;
   /** The Windows login name (`DOMAIN\\user`). */
   account_name: string | null;
   device: { name: string | null; os: string | null; os_version: string | null; arch: string | null; app_version: string | null };
-  /** The member the computer records (matched or approved). */
+  /** The member the computer records for (matched, approved or linked); null: linked to no one. */
   user_id: string | null;
   device_id: string | null;
   decided_by: string | null;
@@ -469,6 +469,15 @@ export async function revokeCaptureDevice(accountId: string, deviceId: string) {
   return unwrap(await backendApi.delete<CaptureDevice>(`${base(accountId)}/devices/${deviceId}`));
 }
 
+/**
+ * Link a device to a member, or unlink it (`null`) (`capture.manage`). What it
+ * recorded linked to no one moves to the member within minutes; what it
+ * recorded for an earlier member stays theirs.
+ */
+export async function linkCaptureDevice(accountId: string, deviceId: string, userId: string | null) {
+  return unwrap(await backendApi.put<CaptureDevice>(`${base(accountId)}/devices/${deviceId}/link`, { user_id: userId }));
+}
+
 // ── Enrollment (IT rollout, `capture.manage`) ────────────────────────────────
 
 export async function listCaptureEnrollmentTokens(accountId: string) {
@@ -492,10 +501,13 @@ export async function listCaptureEnrollments(accountId: string, opts: { status?:
   );
 }
 
-/** Approve a waiting computer to a member; it enrolls at its next call, within a minute. */
-export async function approveCaptureEnrollment(accountId: string, enrollmentId: string, userId: string) {
+/** Approve a waiting computer, linked to a member or (no `userId`) to no one; it enrolls at its next call, within a minute. */
+export async function approveCaptureEnrollment(accountId: string, enrollmentId: string, userId?: string | null) {
   return unwrap(
-    await backendApi.post<CaptureEnrollment>(`${base(accountId)}/enrollments/${enrollmentId}/approve`, { user_id: userId }),
+    await backendApi.post<CaptureEnrollment>(
+      `${base(accountId)}/enrollments/${enrollmentId}/approve`,
+      userId ? { user_id: userId } : {},
+    ),
   );
 }
 

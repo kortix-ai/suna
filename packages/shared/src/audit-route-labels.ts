@@ -685,6 +685,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PATCH /v1/accounts/:accountId/capture': { action: 'capture.workspace.update', title: 'Turned Capture on or off', events: ['capture.enable', 'capture.disable'] },
   'GET /v1/accounts/:accountId/capture/devices': { action: 'capture.device.list', title: 'Listed capture devices', events: ['capture.member_view', 'capture.account_view'] },
   'DELETE /v1/accounts/:accountId/capture/devices/:deviceId': { action: 'capture.device.revoke', title: 'Revoked a capture device' },
+  'PUT /v1/accounts/:accountId/capture/devices/:deviceId/link': { action: 'capture.device.link', title: 'Linked a capture device to a person' },
   'POST /v1/accounts/:accountId/capture/devices/:deviceId/sync': { action: 'capture.device.sync', title: 'Synced a capture device' },
   'GET /v1/accounts/:accountId/capture/devices/:deviceId/assets/:name': { action: 'capture.asset.read', title: 'Opened a capture screenshot', events: ['capture.member_view'] },
   'GET /v1/accounts/:accountId/capture/policy': { action: 'capture.policy.read', title: 'Viewed the capture policy' },

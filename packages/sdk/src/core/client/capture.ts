@@ -15,6 +15,8 @@ export function bindAccountCapture(accountId: string) {
     devices: {
       list: (opts?: Parameters<typeof C.listCaptureDevices>[1]) => C.listCaptureDevices(accountId, opts),
       revoke: (deviceId: string) => C.revokeCaptureDevice(accountId, deviceId),
+      /** IAM `capture.manage`: link to a member, or unlink with `null`. */
+      link: (deviceId: string, userId: string | null) => C.linkCaptureDevice(accountId, deviceId, userId),
       assetUrl: (deviceId: string, name: string) => C.getCaptureAssetUrl(accountId, deviceId, name),
     },
     /** IT rollout (IAM `capture.manage`): enrollment tokens and the computers waiting on them. */
@@ -25,7 +27,7 @@ export function bindAccountCapture(accountId: string) {
         revoke: (tokenId: string) => C.revokeCaptureEnrollmentToken(accountId, tokenId),
       },
       list: (opts?: { status?: C.CaptureEnrollmentStatus }) => C.listCaptureEnrollments(accountId, opts),
-      approve: (enrollmentId: string, userId: string) => C.approveCaptureEnrollment(accountId, enrollmentId, userId),
+      approve: (enrollmentId: string, userId?: string | null) => C.approveCaptureEnrollment(accountId, enrollmentId, userId),
       deny: (enrollmentId: string) => C.denyCaptureEnrollment(accountId, enrollmentId),
     },
     policy: {

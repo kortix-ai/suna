@@ -2,13 +2,13 @@
  * Kortix Capture IT rollout routes. The data side is enrollment.ts.
  *
  * Device (public, the enrollment token in the body), on `/v1/capture`:
- *   POST /device/enroll   → 200 enrolled (device token) · 202 pending · 401/403 refused
+ *   POST /device/enroll   → 200 enrolled (device token; `member` null while linked to no one) · 202 pending · 401/403 refused
  *
  * Admin (`capture.manage`), on `/v1/accounts/:accountId/capture`:
  *   GET    /enrollment-tokens              · POST /enrollment-tokens (the token is shown once)
  *   DELETE /enrollment-tokens/:tokenId     (revoke; enrolled computers keep recording)
  *   GET    /enrollments?status=pending     (computers that wait for a decision)
- *   POST   /enrollments/:id/approve {user_id} · POST /enrollments/:id/deny
+ *   POST   /enrollments/:id/approve {user_id?} · POST /enrollments/:id/deny
  */
 import { createRoute, type OpenAPIHono, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -60,11 +60,12 @@ const EnrolledSchema = z.object({
   prefix: z.string(),
   device_id: z.string(),
   account: z.object({ name: z.string() }),
-  member: z.object({ email: z.string().nullable() }),
+  /** The member the device records for; null: linked to no one until an admin links it. */
+  member: z.object({ email: z.string().nullable() }).nullable(),
 });
 const PendingSchema = z.object({
   status: z.literal('pending'),
-  reason: z.enum(['no_member', 'approval_required']),
+  reason: z.enum(['approval_required']),
   enrollment_id: z.string(),
   retry_after_s: z.number(),
 });
@@ -106,7 +107,7 @@ export function registerDeviceEnrollRoute(app: OpenAPIHono<AppEnv>) {
       },
       responses: {
         200: json(EnrolledSchema, 'Enrolled: the device token and the folder the device writes to'),
-        202: json(PendingSchema, 'Waiting for a member match or an admin decision'),
+        202: json(PendingSchema, 'Waiting for an admin: the token approves each computer, or an admin revoked this one'),
         400: json(RefusalSchema, 'invalid_request'),
         401: json(RefusalSchema, 'enrollment_token_invalid: unknown, revoked or expired'),
         403: json(RefusalSchema, 'enrollment_denied, enrollment_domain_not_allowed, enrollment_limit_reached or capture_disabled'),
@@ -167,7 +168,7 @@ export function registerDeviceEnrollRoute(app: OpenAPIHono<AppEnv>) {
               prefix: outcome.prefix,
               device_id: outcome.deviceId,
               account: { name: outcome.accountName },
-              member: { email: outcome.memberEmail },
+              member: outcome.userId ? { email: outcome.memberEmail } : null,
             },
             200,
           );
@@ -219,7 +220,7 @@ const EnrollmentSchema = z.object({
   token_id: z.string(),
   token_name: z.string().nullable(),
   status: z.enum(['pending', 'approved', 'denied', 'enrolled']),
-  reason: z.enum(['no_member', 'approval_required']).nullable(),
+  reason: z.enum(['approval_required']).nullable(),
   principal_name: z.string().nullable(),
   account_name: z.string().nullable(),
   device: z.object({
@@ -355,11 +356,17 @@ export function registerCaptureEnrollmentRoutes() {
       method: 'post',
       path: '/{accountId}/capture/enrollments/{enrollmentId}/approve',
       tags,
-      summary: 'Approve a waiting computer to a member (capture.manage); it enrolls at its next call, within a minute',
+      summary: 'Approve a waiting computer, optionally linked to a member (capture.manage); it enrolls at its next call, within a minute',
       ...auth,
       request: {
         params: params.extend({ enrollmentId: z.string().uuid() }),
-        body: { content: { 'application/json': { schema: z.object({ user_id: z.string().uuid() }) } } },
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({ user_id: z.string().uuid().nullable().optional().describe('Link the computer to this member; absent or null: record linked to no one') }),
+            },
+          },
+        },
       },
       responses: { 200: json(EnrollmentSchema, 'The approved computer'), ...errors(400, 403, 404, 409) },
     }),
@@ -367,10 +374,10 @@ export function registerCaptureEnrollmentRoutes() {
       const access = await manager(c);
       if (isResponse(access)) return access as never;
       const { enrollmentId } = c.req.valid('param');
-      const { user_id: userId } = c.req.valid('json');
+      const userId = c.req.valid('json').user_id ?? null;
       const found = await enrollmentInAccount(access.accountId, enrollmentId);
       if (!found) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
-      if (!(await isAccountMember(access.accountId, userId))) {
+      if (userId && !(await isAccountMember(access.accountId, userId))) {
         return refuse(c, 400, 'capture_enrollment_invalid', 'user_id must be a member of the account');
       }
       annotateAuditEvent({ resourceType: 'capture_enrollment', resourceId: enrollmentId, metadata: { member_user_id: userId } });

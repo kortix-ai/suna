@@ -96,6 +96,8 @@ export async function pollDeviceGrant(deviceCode: string): Promise<PollOutcome> 
     return row ?? null;
   });
   if (!device) return { kind: 'invalid_grant' };
+  // A person approved this sign-in, so the device row is theirs (approveDeviceGrant keys it by their user id).
+  if (!device.userId) return { kind: 'invalid_grant' };
   return { kind: 'token', token, prefix: accountPrefix(device.accountId), deviceId: device.deviceId, userId: device.userId };
 }
 

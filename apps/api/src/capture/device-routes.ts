@@ -44,6 +44,7 @@ import { accountPrefix } from './format';
 import { CAPTURE_DISABLED, registerCaptureAgentRoutes } from './account-routes';
 import { captureAccountsFor, captureEnabled, isAccountMember } from './workspace';
 import { ensurePolicyObject } from './policy';
+import { linkDevice } from './reads';
 import { registerDeviceEnrollRoute } from './enrollment-routes';
 
 /** RFC 8628 / RFC 6749 §5.2 error body. */
@@ -279,8 +280,12 @@ function registerDeviceIssuerRoutes(app: OpenAPIHono<AppEnv>) {
       }
       const blocked = limited(c, 'captureCredentials', device.deviceId);
       if (blocked) return blocked as never;
-      if (!(await isAccountMember(device.accountId, device.userId))) {
-        return c.json({ error: 'The person left the account; sign in again', code: 'capture_device_unauthorized' }, 401);
+      if (device.userId && !(await isAccountMember(device.accountId, device.userId))) {
+        // A computer IT enrolled belongs to the organization: it keeps recording, linked to no one.
+        if (!device.enrollmentTokenId) {
+          return c.json({ error: 'The person left the account; sign in again', code: 'capture_device_unauthorized' }, 401);
+        }
+        await linkDevice(device, null);
       }
       if (!(await captureEnabled(device.accountId))) return c.json(CAPTURE_DISABLED, 403);
       const issuer = captureCredentialIssuer();

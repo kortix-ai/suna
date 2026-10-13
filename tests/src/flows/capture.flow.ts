@@ -65,6 +65,7 @@ const R = {
   enrollments: `GET ${A}/enrollments`,
   enrollApprove: `POST ${A}/enrollments/:enrollmentId/approve`,
   enrollDeny: `POST ${A}/enrollments/:enrollmentId/deny`,
+  link: `PUT ${A}/devices/:deviceId/link`,
 };
 const path = (route: string) => route.split(' ')[1]!;
 
@@ -620,8 +621,8 @@ flow(
   {
     domain: 'capture',
     requires: ['database'],
-    timeoutMs: 180_000,
-    routes: [R.enroll, R.enrollTokens, R.enrollTokenCreate, R.enrollTokenRevoke, R.enrollments, R.enrollApprove, R.enrollDeny, R.devices, R.revoke, R.credentials, R.setEnabled],
+    timeoutMs: 300_000,
+    routes: [R.enroll, R.enrollTokens, R.enrollTokenCreate, R.enrollTokenRevoke, R.enrollments, R.enrollApprove, R.enrollDeny, R.link, R.devices, R.revoke, R.credentials, R.setEnabled, R.sync, R.timeline, R.search, R.policyPut],
   },
   async (ctx) => {
     const { team, member } = await captureAccount(ctx);
@@ -636,7 +637,9 @@ flow(
     const enroll = (token: string, machineKey: string, principal: string | null) => anon.post(path(R.enroll), engineEnroll(token, machineKey, principal));
     let token = { token_id: '', token: '', created_by: '' };
     let deviceA = { device_token: '', device_id: '' };
-    let pendingB = '';
+    let deviceB = { device_token: '', device_id: '' };
+    let enrollmentB = '';
+    let dayB: ReturnType<typeof vendoredDevice> = null as never;
     let strictToken = '';
 
     await enableCapture(ctx, team.id);
@@ -678,15 +681,44 @@ flow(
       (await anon.withBearer(deviceA.device_token).post(path(R.credentials))).status(503).body().has('$.code', 'capture_credentials_unavailable');
     });
 
-    await ctx.step('a person of the domain who is no member, on computer B → 202 pending no_member with retry_after_s 60; calling again → the same enrollment; the owner sees it waiting with its Windows names', async () => {
+    await ctx.step('device-first: a person of the domain who is no member, on computer B → 200 enrolled with member null; the device lists linked to no one with the token id; the enrollment lists as enrolled with its Windows names', async () => {
       const r = await enroll(token.token, pcB, stranger);
-      r.status(202).body().has('$.status', 'pending').has('$.reason', 'no_member').has('$.retry_after_s', 60);
-      pendingB = r.json<{ enrollment_id: string }>().enrollment_id;
-      (await enroll(token.token, pcB, stranger)).status(202).body().has('$.enrollment_id', pendingB);
-      const waiting = (await owner.get(path(R.enrollments), { params, query: { status: 'pending' } })).status(200).json<{ enrollments: Array<Record<string, any>> }>();
-      const row = waiting.enrollments.find((e) => e.enrollment_id === pendingB);
-      if (row?.principal_name !== stranger || row?.account_name !== 'CORP\\fixture' || row?.device?.name !== 'Fixture PC' || row?.token_name !== 'Pilot laptops') {
-        throw new Error(`waiting row ${JSON.stringify(row)}`);
+      r.status(200).body().has('$.status', 'enrolled').has('$.member', null).has('$.prefix', `orgs/${team.id}`);
+      deviceB = r.json();
+      const devices = (await owner.get(path(R.devices), { params, query: { scope: 'account' } })).status(200).json<{ devices: Array<Record<string, unknown>> }>();
+      const row = devices.devices.find((d) => d.device_id === deviceB.device_id);
+      if (!row || row.user_id !== null || row.enrollment_token_id !== token.token_id) throw new Error(`device ${JSON.stringify(row)}`);
+      const listed = (await owner.get(path(R.enrollments), { params })).status(200).json<{ enrollments: Array<Record<string, any>> }>();
+      const enrollment = listed.enrollments.find((e) => e.device_id === deviceB.device_id);
+      if (enrollment?.status !== 'enrolled' || enrollment.principal_name !== stranger || enrollment.account_name !== 'CORP\\fixture' || enrollment.token_name !== 'Pilot laptops' || enrollment.user_id !== null) {
+        throw new Error(`enrollment ${JSON.stringify(enrollment)}`);
+      }
+      enrollmentB = enrollment.enrollment_id;
+    });
+
+    await ctx.step('computer B records linked to no one: its day indexes; the member reads none of it and does not find it; the owner (capture.read_all) reads it by device_id → user_id null, and a capture.device_view audit row', async () => {
+      const store = await localCaptureStore();
+      // Audio is off by default: turn it on first, so the fixture's audio item indexes too (as ingestedWorld does).
+      (await owner.put(path(R.policyPut), { policy: { layers: { screen: true, actions: true, audio: true } } }, { params })).status(200);
+      dayB = vendoredDevice({ prefix: `orgs/${team.id}`, deviceId: deviceB.device_id, machineKeySha256: pcB });
+      await uploadCaptureObjects(store, dayB.objects);
+      (await owner.post(path(R.sync), {}, { params: { ...params, deviceId: deviceB.device_id } })).status(200);
+      const timeline = await waitFor(
+        async () => (await owner.get(path(R.timeline), { params, query: { day: dayB.day, device_id: deviceB.device_id } })).json<{ user_id: string | null; chunks?: unknown[] }>(),
+        { until: (t) => (t.chunks?.length ?? 0) >= dayB.expected.chunks, timeoutMs: 90_000, intervalMs: 1_000, description: 'the unlinked device to index' },
+      );
+      if (timeline.user_id !== null) throw new Error(`user_id ${timeline.user_id}`);
+      // The member reads only their own rows of it: none.
+      (await asMember.get(path(R.timeline), { params, query: { day: dayB.day, device_id: deviceB.device_id } })).status(200).body().has('$.chunks', []);
+      (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap' } })).status(200).body().has('$.hits', []);
+      const db = await openDb(ctx);
+      try {
+        await waitFor(
+          async () => (await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.device_view' AND resource_id = $2`, [team.id, deviceB.device_id])).rows[0]!.n,
+          { until: (n) => Number(n) >= 1, timeoutMs: 15_000, intervalMs: 500, description: 'the device_view audit row' },
+        );
+      } finally {
+        await db.end();
       }
     });
 
@@ -696,21 +728,26 @@ flow(
       (await enroll(token.token, pcC, member.email!)).status(403).body().has('$.code', 'enrollment_limit_reached');
     });
 
-    await ctx.step('the owner approves computer B to the member (a non-member user id → 400) → approved; B’s next call → 200 enrolled as the member; the same person on computer A now enrolls as the member too (the admin’s decision names the person)', async () => {
-      (await owner.post(path(R.enrollApprove), { user_id: ctx.P.NONMEMBER.userId }, { params: { ...params, enrollmentId: pendingB } })).status(400);
-      (await owner.post(path(R.enrollApprove), { user_id: member.userId }, { params: { ...params, enrollmentId: pendingB } }))
-        .status(200)
-        .body()
-        .has('$.status', 'approved')
-        .has('$.user_id', member.userId!)
-        .has('$.decided_by', ctx.P.OWNER.userId!);
-      (await enroll(token.token, pcB, stranger)).status(200).body().has('$.status', 'enrolled').has('$.member.email', member.email!);
-      (await enroll(token.token, pcA, stranger)).status(200).body().has('$.status', 'enrolled').has('$.member.email', member.email!);
+    await ctx.step('link a device to a Kortix user: the member cannot (403); a non-member → 400; the owner links computer B to the member → 200; what B recorded unlinked moves to the member (their search finds it); B’s next enroll names the member', async () => {
+      (await asMember.put(path(R.link), { user_id: member.userId }, { params: { ...params, deviceId: deviceB.device_id } })).status(403);
+      (await owner.put(path(R.link), { user_id: ctx.P.NONMEMBER.userId }, { params: { ...params, deviceId: deviceB.device_id } })).status(400).body().has('$.code', 'capture_link_invalid');
+      (await owner.put(path(R.link), { user_id: member.userId }, { params: { ...params, deviceId: deviceB.device_id } })).status(200).body().has('$.user_id', member.userId!);
+      await waitFor(
+        async () => (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', device_id: deviceB.device_id } })).json<{ hits: unknown[] }>().hits.length,
+        { until: (n) => n > 0, timeoutMs: 60_000, intervalMs: 1_000, description: 'the unlinked recordings to move to the member' },
+      );
+      (await enroll(token.token, pcB, stranger)).status(200).body().has('$.member.email', member.email!);
+    });
+
+    await ctx.step('unlink: the owner sets user_id null → B lists linked to no one again; what moved to the member stays theirs', async () => {
+      (await owner.put(path(R.link), { user_id: null }, { params: { ...params, deviceId: deviceB.device_id } })).status(200).body().has('$.user_id', null);
+      const hits = (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', device_id: deviceB.device_id } })).status(200).json<{ hits: unknown[] }>();
+      if (hits.hits.length === 0) throw new Error('the member lost the recordings an unlink should keep');
     });
 
     await ctx.step('the owner denies computer B → its device token stops working (401) and its calls → 403 enrollment_denied', async () => {
       const b = (await enroll(token.token, pcB, stranger)).status(200).json<{ device_token: string }>();
-      (await owner.post(path(R.enrollDeny), {}, { params: { ...params, enrollmentId: pendingB } })).status(200).body().has('$.status', 'denied');
+      (await owner.post(path(R.enrollDeny), {}, { params: { ...params, enrollmentId: enrollmentB } })).status(200).body().has('$.status', 'denied');
       (await anon.withBearer(b.device_token).post(path(R.credentials))).status(401).body().has('$.code', 'capture_device_unauthorized');
       (await enroll(token.token, pcB, stranger)).status(403).body().has('$.code', 'enrollment_denied');
     });

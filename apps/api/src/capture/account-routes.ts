@@ -31,7 +31,7 @@ import { callerKortixSessionId } from '../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../middleware/on-behalf-of';
 import { supabaseAuth } from '../middleware/auth';
 import { recordAuditEvent } from '../shared/audit';
-import { bindAuditPrincipal } from '../shared/audit-scope';
+import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import type { AppEnv } from '../types';
 import { parseDisplay, PolicySchema } from './format';
 import { readAccountPolicy, writeAccountPolicy } from './policy';
@@ -54,10 +54,13 @@ import {
   displaysOf,
   timelineFocus,
   timelineRuns,
+  linkDevice,
+  whoUserId,
   type SearchKind,
+  type Who,
 } from './reads';
 import { captureStoreConfigured } from './store';
-import { pollDevice } from './workers';
+import { enqueueLink, pollDevice } from './workers';
 import { isAccountMember, readWorkspace, setCaptureEnabled } from './workspace';
 
 export type Ctx = Context<AppEnv>;
@@ -66,8 +69,8 @@ export interface Access {
   accountId: string;
   /** The human the caller is (or acts for). */
   viewer: string;
-  /** Whose data this request reads; null = the whole account (`capture.read_all`). */
-  subject: string | null;
+  /** Whose data this request reads: a person, an unlinked device, or null = the whole account (`capture.read_all`). */
+  subject: Who | null;
   /** `capture.read_all`: reads other members. Never true for an agent. */
   readsAll: boolean;
   /** `capture.manage`: the switch, the policy, revoking any device. Never true for an agent. */
@@ -79,7 +82,13 @@ export const CAPTURE_DISABLED = { error: 'Capture is off for this account', code
 
 export const refuse = <S extends 400 | 403 | 404 | 503>(c: Ctx, status: S, code: string, error: string) => c.json({ error, code }, status);
 
-export function auditRead(c: Ctx, access: Pick<Access, 'accountId' | 'viewer' | 'sessionId'>, action: string, resourceId: string | null) {
+export function auditRead(
+  c: Ctx,
+  access: Pick<Access, 'accountId' | 'viewer' | 'sessionId'>,
+  action: string,
+  resourceId: string | null,
+  resourceType = 'capture_member',
+) {
   return recordAuditEvent({
     accountId: access.accountId,
     sessionId: access.sessionId,
@@ -87,7 +96,7 @@ export function auditRead(c: Ctx, access: Pick<Access, 'accountId' | 'viewer' | 
     actorType: access.sessionId ? 'agent' : 'human',
     onBehalfOfUserId: access.sessionId ? access.viewer : null,
     action,
-    resourceType: 'capture_member',
+    resourceType,
     resourceId,
     outcome: 'success',
     metadata: { path: c.req.path },
@@ -125,7 +134,7 @@ async function capturePowers(c: Ctx, accountId: string, sessionId: string | null
 export async function captureAccessFor(
   c: Ctx,
   accountId: string,
-  opts: { userId?: string | null; accountWide?: boolean } = {},
+  opts: { userId?: string | null; accountWide?: boolean; deviceId?: string | null } = {},
 ): Promise<Access | Response> {
   const who = await viewerOf(c, accountId);
   if (who === 'wrong_account') return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
@@ -136,12 +145,29 @@ export async function captureAccessFor(
   // browser session's row lands in the caller's own account (its token's).
   bindAuditPrincipal({ accountId });
   if (!(await readWorkspace(accountId)).enabled) return c.json(CAPTURE_DISABLED, 403);
-  const subject = opts.accountWide ? null : (opts.userId ?? viewer);
-  const powers = subject === viewer ? { readsAll: false, manages: false } : await capturePowers(c, accountId, sessionId);
+  let subject: Who | null = opts.accountWide ? null : (opts.userId ?? viewer);
+  let powers = subject === viewer ? { readsAll: false, manages: false } : await capturePowers(c, accountId, sessionId);
+  // A device linked to no person (an IT rollout) is read as itself by capture.read_all;
+  // anyone else asking for it reads their own rows of it.
+  if (!opts.accountWide && !opts.userId && opts.deviceId) {
+    const device = await deviceInAccount(accountId, opts.deviceId);
+    if (device && device.userId === null) {
+      powers = await capturePowers(c, accountId, sessionId);
+      if (powers.readsAll) subject = { unlinkedDevice: device.deviceId };
+    }
+  }
   const access: Access = { accountId, viewer, subject, ...powers, sessionId };
   if (subject !== viewer) {
-    if (!access.readsAll) return refuse(c, 403, 'capture_forbidden', 'Reading another member’s capture needs the capture.read_all permission');
-    await auditRead(c, access, subject ? 'capture.member_view' : 'capture.account_view', subject);
+    if (!access.readsAll) {
+      return refuse(
+        c,
+        403,
+        'capture_forbidden',
+        'Reading another member’s capture needs the capture.read_all permission',
+      );
+    }
+    if (typeof subject === 'object' && subject) await auditRead(c, access, 'capture.device_view', subject.unlinkedDevice, 'capture_device');
+    else await auditRead(c, access, subject ? 'capture.member_view' : 'capture.account_view', subject);
   } else if (sessionId) {
     await auditRead(c, access, 'capture.agent_read', viewer);
   }
@@ -156,7 +182,7 @@ export async function captureAccessWithPowers(c: Ctx): Promise<Access | Response
 }
 
 /** Access for an account route: the account is the `:accountId` path segment. */
-export function captureAccess(c: Ctx, opts: { userId?: string | null; accountWide?: boolean } = {}) {
+export function captureAccess(c: Ctx, opts: { userId?: string | null; accountWide?: boolean; deviceId?: string | null } = {}) {
   return captureAccessFor(c, c.req.param('accountId') ?? '', opts);
 }
 
@@ -232,7 +258,7 @@ async function timelineResponse(c: Ctx, access: Access, query: { device_id?: str
       timelineFocus(access.accountId, subject, span, query.device_id),
     ]);
     return c.json(
-      { user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), displays: displaysOf(allChunks ?? chunks), focus, runs, chunks },
+      { user_id: whoUserId(subject), from: span.from.toISOString(), to: span.to.toISOString(), displays: displaysOf(allChunks ?? chunks), focus, runs, chunks },
       200,
     );
 }
@@ -259,7 +285,7 @@ async function searchResponse(c: Ctx, access: Access, query: SearchQuery) {
     }
     const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), 100);
     const hits = await searchTimeline(access.accountId, access.subject!, { q, from, to, kinds, app: query.app, deviceId: query.device_id, limit });
-    return c.json({ user_id: access.subject, q, hits }, 200);
+    return c.json({ user_id: whoUserId(access.subject), q, hits }, 200);
 }
 
 async function frameResponse(c: Ctx, access: Access, frameId: string) {
@@ -361,7 +387,7 @@ accountsRouter.openapi(
     const query = c.req.valid('query');
     const access = await captureAccess(c, { userId: query.user_id, accountWide: query.scope === 'account' });
     if (isResponse(access)) return access as never;
-    return c.json({ devices: (await listDevices(access.accountId, access.subject)).map((d) => deviceView(d)) }, 200);
+    return c.json({ devices: (await listDevices(access.accountId, whoUserId(access.subject))).map((d) => deviceView(d)) }, 200);
   },
 );
 
@@ -382,6 +408,46 @@ accountsRouter.openapi(
     const device = await loadDevice(access, c.req.valid('param').deviceId, { write: true });
     if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
+  },
+);
+
+accountsRouter.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{accountId}/capture/devices/{deviceId}/link',
+    tags,
+    summary: 'Link a device to a member, or unlink it (`user_id: null`) (capture.manage)',
+    description:
+      'From then on the device records for that member. What it recorded while linked to no person moves to the member within minutes; what it recorded for an earlier member stays theirs.',
+    ...auth,
+    request: {
+      params: params.extend({ deviceId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: z.object({ user_id: z.string().uuid().nullable() }) } } },
+    },
+    responses: { ...ok('The device'), ...errors(409) },
+  }),
+  async (c) => {
+    const access = await captureAccessWithPowers(c);
+    if (isResponse(access)) return access as never;
+    if (access.sessionId || !access.manages) {
+      return refuse(c, 403, 'capture_forbidden', 'Linking a device to a person needs the capture.manage permission');
+    }
+    const device = await deviceInAccount(access.accountId, c.req.valid('param').deviceId);
+    if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
+    const userId = c.req.valid('json').user_id;
+    if (userId && !(await isAccountMember(access.accountId, userId))) {
+      return refuse(c, 400, 'capture_link_invalid', 'user_id must be a member of the account');
+    }
+    const outcome = await linkDevice(device, userId);
+    if (outcome.kind === 'conflict') {
+      return c.json(
+        { error: 'This member already has another device for this computer; revoke one first', code: 'capture_link_conflict', device_id: outcome.deviceId },
+        409,
+      );
+    }
+    if (userId) await enqueueLink(access.accountId, device.deviceId, userId);
+    annotateAuditEvent({ resourceType: 'capture_device', resourceId: device.deviceId, metadata: { member_user_id: userId, previous_user_id: device.userId } });
+    return c.json(deviceView(outcome.device), 200);
   },
 );
 
@@ -423,7 +489,8 @@ accountsRouter.openapi(
     if (isResponse(access)) return access as never;
     const device = await loadDevice(access, deviceId);
     if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
-    if (device.userId !== access.viewer) await auditRead(c, access, 'capture.member_view', device.userId);
+    if (device.userId === null) await auditRead(c, access, 'capture.device_view', device.deviceId, 'capture_device');
+    else if (device.userId !== access.viewer) await auditRead(c, access, 'capture.member_view', device.userId);
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     return c.json(await assetUrl(access.accountId, device.deviceId, name), 200);
   },
@@ -485,7 +552,7 @@ accountsRouter.openapi(
   }),
   async (c) => {
     const query = c.req.valid('query');
-    const access = await captureAccess(c, { userId: query.user_id });
+    const access = await captureAccess(c, { userId: query.user_id, deviceId: query.device_id });
     if (isResponse(access)) return access as never;
     return timelineResponse(c, access, query);
   },
@@ -510,7 +577,7 @@ accountsRouter.openapi(
   }),
   async (c) => {
     const query = c.req.valid('query');
-    const access = await captureAccess(c, { userId: query.user_id });
+    const access = await captureAccess(c, { userId: query.user_id, deviceId: query.device_id });
     if (isResponse(access)) return access as never;
     const tz = query.tz || 'UTC';
     try {
@@ -519,7 +586,7 @@ accountsRouter.openapi(
       return refuse(c, 400, 'capture_bad_query', 'tz must be an IANA time zone, for example Europe/Berlin');
     }
     const days = await recordedDays(access.accountId, access.subject!, { tz, deviceId: query.device_id });
-    return c.json({ user_id: access.subject, tz, days }, 200);
+    return c.json({ user_id: whoUserId(access.subject), tz, days }, 200);
   },
 );
 
@@ -535,7 +602,7 @@ accountsRouter.openapi(
   }),
   async (c) => {
     const query = c.req.valid('query');
-    const access = await captureAccess(c, { userId: query.user_id });
+    const access = await captureAccess(c, { userId: query.user_id, deviceId: query.device_id });
     if (isResponse(access)) return access as never;
     const span = window(c);
     if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
@@ -543,7 +610,7 @@ accountsRouter.openapi(
       displayId: displayParam(query.display_id),
       allDisplays: query.display_id === 'all',
     });
-    return c.json({ user_id: access.subject, from: span.from.toISOString(), to: span.to.toISOString(), ...items }, 200);
+    return c.json({ user_id: whoUserId(access.subject), from: span.from.toISOString(), to: span.to.toISOString(), ...items }, 200);
   },
 );
 
@@ -562,7 +629,7 @@ accountsRouter.openapi(
   }),
   async (c) => {
     const query = c.req.valid('query');
-    const access = await captureAccess(c, query.scope === 'account' && !query.user_id ? { accountWide: true } : { userId: query.user_id });
+    const access = await captureAccess(c, query.scope === 'account' && !query.user_id ? { accountWide: true } : { userId: query.user_id, deviceId: query.device_id });
     if (isResponse(access)) return access as never;
     return searchResponse(c, access, query);
   },
@@ -578,11 +645,11 @@ accountsRouter.openapi(
     tags,
     summary: 'One frame with its full on-screen text and a signed, short-lived URL of its video chunk',
     ...auth,
-    request: { params: params.extend({ frameId: z.string().uuid() }), query: z.object({ user_id: z.string().uuid().optional() }) },
+    request: { params: params.extend({ frameId: z.string().uuid() }), query: z.object({ user_id: z.string().uuid().optional(), device_id: z.string().uuid().optional().describe('A device linked to no person: read it as itself (capture.read_all)') }) },
     responses: ok('The frame'),
   }),
   async (c) => {
-    const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
+    const access = await captureAccess(c, { userId: c.req.valid('query').user_id, deviceId: c.req.valid('query').device_id });
     if (isResponse(access)) return access as never;
     return frameResponse(c, access, c.req.valid('param').frameId);
   },
@@ -595,11 +662,11 @@ accountsRouter.openapi(
     tags,
     summary: 'Signed, short-lived URLs of an indexed item’s media (video or audio)',
     ...auth,
-    request: { params: params.extend({ chunkId: z.string().uuid() }), query: z.object({ user_id: z.string().uuid().optional() }) },
+    request: { params: params.extend({ chunkId: z.string().uuid() }), query: z.object({ user_id: z.string().uuid().optional(), device_id: z.string().uuid().optional().describe('A device linked to no person: read it as itself (capture.read_all)') }) },
     responses: ok('The URLs'),
   }),
   async (c) => {
-    const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
+    const access = await captureAccess(c, { userId: c.req.valid('query').user_id, deviceId: c.req.valid('query').device_id });
     if (isResponse(access)) return access as never;
     const chunk = await chunkOf(access.accountId, access.subject!, c.req.valid('param').chunkId);
     if (!chunk) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);

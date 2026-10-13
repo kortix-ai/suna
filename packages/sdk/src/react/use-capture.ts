@@ -8,6 +8,7 @@ import {
   denyCaptureEnrollment,
   listCaptureEnrollments,
   listCaptureEnrollmentTokens,
+  linkCaptureDevice,
   revokeCaptureEnrollmentToken,
   type CaptureEnrollmentStatus,
   type CaptureEnrollmentTokenInput,
@@ -199,11 +200,11 @@ function invalidateRollout(queryClient: ReturnType<typeof useQueryClient>, accou
   }
 }
 
-/** Approve a waiting computer to a member; it enrolls at its next call, within a minute. */
+/** Approve a waiting computer, linked to a member or to no one; it enrolls at its next call, within a minute. */
 export function useApproveCaptureEnrollment(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (args: { enrollmentId: string; userId: string }) =>
+    mutationFn: (args: { enrollmentId: string; userId?: string | null }) =>
       approveCaptureEnrollment(accountId as string, args.enrollmentId, args.userId),
     onSuccess: () => invalidateRollout(queryClient, accountId ?? ''),
   });
@@ -214,6 +215,15 @@ export function useDenyCaptureEnrollment(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (enrollmentId: string) => denyCaptureEnrollment(accountId as string, enrollmentId),
+    onSuccess: () => invalidateRollout(queryClient, accountId ?? ''),
+  });
+}
+
+/** Link a device to a member, or unlink it (`userId: null`). Every device list of the account refreshes. */
+export function useLinkCaptureDevice(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { deviceId: string; userId: string | null }) => linkCaptureDevice(accountId as string, args.deviceId, args.userId),
     onSuccess: () => invalidateRollout(queryClient, accountId ?? ''),
   });
 }

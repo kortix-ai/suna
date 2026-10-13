@@ -24,6 +24,7 @@ import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
 import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
 import { ingestManifest } from './ingest';
+import { reattributeDevice } from './reads';
 import { readWorkspace } from './workspace';
 import { captureRegion, captureStore, captureStoreConfigured } from './store';
 
@@ -33,6 +34,22 @@ registerJobHandler(INGEST_QUEUE, async (job) => {
   const outcome = await ingestManifest(String(job.payload.key ?? job.jobKey));
   if (outcome.status === 'ignored') logger.warn('[capture] manifest ignored', { key: job.jobKey, reason: outcome.reason });
 });
+
+/** Moves the recordings a device made while unlinked to the person it was linked to (reads.ts `linkDevice`). */
+export const LINK_QUEUE = 'capture.link';
+
+registerJobHandler(LINK_QUEUE, async (job) => {
+  const { accountId, deviceId, userId } = job.payload as { accountId: string; deviceId: string; userId: string };
+  const [device] = await db.select({ userId: captureDevices.userId }).from(captureDevices).where(eq(captureDevices.deviceId, deviceId)).limit(1);
+  // Relinked or unlinked since: the newer link owns the unlinked rows.
+  if (device?.userId !== userId) return;
+  if (!(await reattributeDevice(accountId, deviceId, userId))) await enqueueLink(accountId, deviceId, userId);
+});
+
+/** A new key each time: a finished job with the same key would swallow a later link. */
+export function enqueueLink(accountId: string, deviceId: string, userId: string): Promise<boolean> {
+  return enqueueJob(LINK_QUEUE, `${deviceId}:${userId}:${Date.now()}`, { accountId, deviceId, userId });
+}
 
 export function enqueueManifest(key: string): Promise<boolean> {
   return enqueueJob(INGEST_QUEUE, key, { key });

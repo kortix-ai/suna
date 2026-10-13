@@ -310,3 +310,33 @@ test('the Devices page: tokens and waiting computers refresh after create, revok
   expect(calls).toContain('POST /enrollments/e1/deny');
   expect(waiting!.data?.enrollments.map((row) => row.status)).toEqual(['denied']);
 });
+
+test('linking a device refreshes the device lists', async () => {
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let linkedTo: string | null = null;
+  const calls: string[] = [];
+  globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
+    const method = options.method ?? 'GET';
+    const path = String(url).replace('http://test.local/accounts/a1/capture', '');
+    calls.push(`${method} ${path}`);
+    if (method === 'PUT') linkedTo = JSON.parse(String(options.body)).user_id;
+    if (path.startsWith('/devices')) return Response.json({ devices: [{ device_id: 'd1', user_id: linkedTo }] });
+    return Response.json({ device_id: 'd1', user_id: linkedTo });
+  }) as unknown as typeof fetch;
+  let devices: ReturnType<typeof hooks.useCaptureDevices>;
+  let link: ReturnType<typeof hooks.useLinkCaptureDevice>;
+  function Probe() {
+    devices = hooks.useCaptureDevices('a1', { scope: 'account' });
+    link = hooks.useLinkCaptureDevice('a1');
+    return null;
+  }
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  await act(async () => { create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  expect(devices!.data?.devices[0]?.user_id).toBeNull();
+  await act(async () => { await link!.mutateAsync({ deviceId: 'd1', userId: 'u1' }); });
+  await settle();
+  expect(calls).toContain('PUT /devices/d1/link');
+  expect(devices!.data?.devices[0]?.user_id).toBe('u1');
+});

@@ -7244,7 +7244,8 @@ export const captureDevices = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
+    /** The member the device records for; null: an IT-enrolled computer linked to no one yet. */
+    userId: uuid('user_id'),
     machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
     /** Hash of the current device token (`hashSecretKey`). Null after a revoke. */
     tokenHash: varchar('token_hash', { length: 128 }),
@@ -7373,7 +7374,7 @@ export const timelineChunks = kortixSchema.table(
     deviceId: uuid('device_id')
       .notNull()
       .references(() => captureDevices.deviceId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
+    userId: uuid('user_id'),
     kind: text('kind').notNull(),
     manifestKey: text('manifest_key').notNull(),
     startAt: timestamp('start_at', { withTimezone: true }).notNull(),
@@ -7414,7 +7415,7 @@ export const timelineFrames = kortixSchema.table(
     chunkId: uuid('chunk_id').notNull(),
     accountId: uuid('account_id').notNull(),
     deviceId: uuid('device_id').notNull(),
-    userId: uuid('user_id').notNull(),
+    userId: uuid('user_id'),
     frameIndex: integer('frame_index'),
     app: text('app'),
     bundleId: text('bundle_id'),
@@ -7449,7 +7450,7 @@ export const timelineActions = kortixSchema.table(
     chunkId: uuid('chunk_id').notNull(),
     accountId: uuid('account_id').notNull(),
     deviceId: uuid('device_id').notNull(),
-    userId: uuid('user_id').notNull(),
+    userId: uuid('user_id'),
     kind: text('kind').notNull(),
     app: text('app'),
     windowTitle: text('window_title'),
@@ -7480,7 +7481,7 @@ export const timelineAudio = kortixSchema.table(
     chunkId: uuid('chunk_id').notNull(),
     accountId: uuid('account_id').notNull(),
     deviceId: uuid('device_id').notNull(),
-    userId: uuid('user_id').notNull(),
+    userId: uuid('user_id'),
     text: text('text').notNull(),
   },
   (table) => [

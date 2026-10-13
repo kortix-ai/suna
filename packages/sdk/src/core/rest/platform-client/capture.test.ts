@@ -212,7 +212,7 @@ test('the facade binds Capture to an account; sign-in approval and the agent rea
   expect(last()).toMatchObject({ method: 'PATCH', url: P });
   // Raw capture only: the account handle has nothing else.
   expect(Object.keys(capture).sort()).toEqual(['devices', 'enrollment', 'frame', 'media', 'policy', 'search', 'timeline', 'workspace']);
-  expect(Object.keys(capture.devices).sort()).toEqual(['assetUrl', 'list', 'revoke']);
+  expect(Object.keys(capture.devices).sort()).toEqual(['assetUrl', 'link', 'list', 'revoke']);
   await kortix.capture.approveDevice('ABCD-1234', 'a1');
   expect(last().url).toBe('http://test.local/capture/device/grants/ABCD-1234/approve');
   await kortix.capture.me.search({ q: 'x' });
@@ -262,4 +262,17 @@ test('enrollment: tokens for an IT rollout, and the computers that wait for an a
   expect(last().url).toBe(`${P}/enrollment-tokens`);
   await capture.enrollment.approve('e2', 'u1');
   expect(last()).toMatchObject({ method: 'POST', url: `${P}/enrollments/e2/approve`, body: { user_id: 'u1' } });
+});
+
+test('link a device to a Kortix user, or unlink it; approve a waiting computer with or without a member', async () => {
+  nextBody = { device_id: 'd1', user_id: 'u1' };
+  await Capture.linkCaptureDevice('a1', 'd1', 'u1');
+  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d1/link`, body: { user_id: 'u1' } });
+  await Capture.linkCaptureDevice('a1', 'd1', null);
+  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d1/link`, body: { user_id: null } });
+  await Capture.approveCaptureEnrollment('a1', 'e1');
+  expect(last()).toMatchObject({ method: 'POST', url: `${P}/enrollments/e1/approve`, body: {} });
+  const capture = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).capture.account('a1');
+  await capture.devices.link('d2', 'u2');
+  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d2/link`, body: { user_id: 'u2' } });
 });
