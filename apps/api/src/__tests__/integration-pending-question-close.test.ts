@@ -11,11 +11,14 @@
  *
  * It closes on:
  * - a turn end that closed the turn: idle, a stop, or a failure;
- * - a `continue_session` prompt delivered after the question was asked;
+ * - a `continue_session` prompt delivered after the question was asked, when
+ *   it starts a new turn;
  * - an answer the runtime took for that request id (the session proxy and the
  *   Slack/Teams release call `clearOpenQuestions` with it).
  * It stays open on:
  * - a retrying error (the turn has not ended);
+ * - a direct follow-up (change-request feedback, an email, Slack or Teams
+ *   reply) that joins the live turn: the runtime still blocks on the question;
  * - the reaper's `TurnAwaitingInput` end, and the daemon's late end frame for
  *   that turn: the box parks and the question waits for its answer.
  *
@@ -187,39 +190,64 @@ describe('the question stays open while it can still be answered', () => {
   });
 });
 
+/** Deliver a `continue_session` row created 1 min ago, after `requestId` was asked (2 min ago). */
+async function deliverPromptAfter(requestId: string, options: { directFollowUp?: boolean } = {}): Promise<void> {
+  await db.execute(sql`
+    UPDATE kortix.session_pending_questions SET asked_at = now() - interval '2 minutes'
+     WHERE session_id = ${sessionId} AND request_id = ${requestId}`);
+  const idempotencyKey = `prompt:${sessionId}:after-${requestId}`;
+  await db.insert(sessionLifecycleCommands).values({
+    ...buildContinueSessionCommandValues({
+      source: 'ui',
+      projectId: project.project_id,
+      accountId: project.account_id,
+      sessionId,
+      actorUserId: null,
+      text: 'Use eu-west-1.',
+      idempotencyKey,
+      ...(options.directFollowUp ? { directFollowUp: true } : {}),
+    }),
+    createdAt: new Date(Date.now() - 60_000),
+  });
+  const [row] = await claimDueLifecycleCommands({ workerId: 'question-close-it', limit: 1, idempotencyKey });
+  expect(row).toBeDefined();
+  const outcome = await deliverQueuedContinue(
+    row!,
+    row!.payload as never,
+    'Use eu-west-1.',
+    undefined,
+    false,
+    false,
+    new ProvisionTimeline(row!.commandId, 'deliver'),
+  );
+  expect(outcome).toBe('succeeded');
+}
+
 describe('a delivered prompt supersedes the questions asked before it', () => {
   test('closes a question asked before the prompt was sent, not one asked after', async () => {
     await ask('que_before');
-    await db.execute(sql`
-      UPDATE kortix.session_pending_questions SET asked_at = now() - interval '2 minutes'
-       WHERE session_id = ${sessionId} AND request_id = 'que_before'`);
-    const idempotencyKey = `prompt:${sessionId}:after-question`;
-    await db.insert(sessionLifecycleCommands).values({
-      ...buildContinueSessionCommandValues({
-        source: 'ui',
-        projectId: project.project_id,
-        accountId: project.account_id,
-        sessionId,
-        actorUserId: null,
-        text: 'Use eu-west-1.',
-        idempotencyKey,
-      }),
-      createdAt: new Date(Date.now() - 60_000),
-    });
+    // Asked now: after the prompt row was created (1 min ago).
     await ask('que_after');
-    const [row] = await claimDueLifecycleCommands({ workerId: 'question-close-it', limit: 1, idempotencyKey });
-    expect(row).toBeDefined();
-    const outcome = await deliverQueuedContinue(
-      row!,
-      row!.payload as never,
-      'Use eu-west-1.',
-      undefined,
-      false,
-      false,
-      new ProvisionTimeline(row!.commandId, 'deliver'),
-    );
-    expect(outcome).toBe('succeeded');
+    await deliverPromptAfter('que_before');
     expect(await openQuestions()).toEqual(['que_after']);
+  });
+
+  test('a direct follow-up to a session with no live turn starts a turn: the question closes', async () => {
+    await ask('que_parked');
+    await deliverPromptAfter('que_parked', { directFollowUp: true });
+    expect(await openQuestions()).toEqual([]);
+  });
+
+  // Change-request feedback, an email, Slack or Teams reply skips admission
+  // and joins the running turn. That turn still blocks on its question: the
+  // runtime queues the prompt behind it. The turn end closes the question.
+  test('a direct follow-up that joins the live turn keeps the question that turn blocks on', async () => {
+    await startTurn('msg_blocked');
+    await ask('que_blocked');
+    await deliverPromptAfter('que_blocked', { directFollowUp: true });
+    expect(await openQuestions()).toEqual(['que_blocked']);
+    expect(await endTurn('msg_blocked')).toBe('closed');
+    expect(await openQuestions()).toEqual([]);
   });
 });
 
