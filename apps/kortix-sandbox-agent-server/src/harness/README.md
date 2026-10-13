@@ -203,8 +203,9 @@ root. No turn runs at either point.
   project flag `session_log_restore` is on (every provisioning path:
   `buildSessionSandboxEnvVars`). Off: no manifest read, no restore; the box
   keeps its native state and journals at its persisted generation (0 when it
-  never restored). A change of the flag reaches a box at its next provisioning
-  (a session restart), not at a daemon restart.
+  never restored). The env is built when a box is provisioned, so a change of
+  the flag reaches the next new box of a session; a box that is already running
+  (or resumed in place) keeps the value it booted with.
 - **Behind.** `GET …/log/manifest` lists every stored message id (`deleted` for
   a tombstone) and the session generation. The store is behind when the log
   holds a live message and: `held()` is null (no store; OpenCode: no pinned
@@ -213,6 +214,10 @@ root. No turn runs at either point.
   generation is above the one this box persisted (another box claimed the
   session), or a live id is neither held nor one the last restore left
   unwritten (a `context` record both harnesses rebuild).
+- **Flag off after state loss (as before P6.4).** A box whose native store is
+  gone starts empty: the agent does not know the history, and its first turn's
+  journal batch reuses seqs the log holds (422 `seq_conflict`, the batch is
+  dropped). The stored transcript still shows the whole history.
 - **Unsent work never reads as behind.** Only ids are compared, one way: a
   message the store holds that the log lacks (a turn not yet journaled), a
   newer version of a stored message, and a message OpenCode deleted after the
