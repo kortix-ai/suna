@@ -6,12 +6,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { accountStateKeys } from '@/hooks/billing';
 import { TurnErrorDisplay } from './session-error-banner';
 
-/** The out-of-credits card for a viewer whose account state says `can_manage_billing`. */
-function render(canManageBilling: boolean): string {
+/** The out-of-credits card for a viewer whose account state says
+ *  `can_manage_billing`, or whose account state has not loaded (`undefined`). */
+function render(canManageBilling: boolean | undefined): string {
   const client = new QueryClient();
   // A server render reads the account store's initial state: no selected
   // account, so the card asks for the account state under a null id.
-  client.setQueryData(accountStateKeys.state(null), { can_manage_billing: canManageBilling });
+  if (canManageBilling !== undefined) {
+    client.setQueryData(accountStateKeys.state(null), { can_manage_billing: canManageBilling });
+  }
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
@@ -29,6 +32,14 @@ describe('the out-of-credits card', () => {
     expect(markup).toContain('Only an account owner can add credits');
     expect(markup).not.toContain('Buy credits');
     expect(markup).not.toContain('Enable auto top-up');
+  });
+
+  test('while the account state loads, the card offers no purchase link and asks no owner', () => {
+    const markup = render(undefined);
+    expect(markup).toContain('You ran out of credits');
+    expect(markup).not.toContain('Buy credits');
+    expect(markup).not.toContain('Enable auto top-up');
+    expect(markup).not.toContain('Only an account owner can add credits');
   });
 
   test('a billing manager keeps both links', () => {

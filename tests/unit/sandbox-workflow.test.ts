@@ -343,6 +343,21 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toMatch(/^name: Tests$/m);
   });
 
+  test('a gate that promote.yml dispatched asks for its own rerun', () => {
+    // GITHUB_TOKEN started that run, so GitHub sends no workflow_run for it
+    // (v0.13.57: the rerun never fired). The gate dispatches the rerun instead.
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    const job = release.slice(release.indexOf('\n  request-rerun:'));
+    expect(job).toContain("if: failure() && github.run_attempt == 1 && github.actor == 'github-actions[bot]'");
+    expect(job).toContain('actions: write');
+    expect(job).toContain('gh workflow run rerun-failed-once.yml --repo "$GITHUB_REPOSITORY" --ref dev -f run_id="$GITHUB_RUN_ID"');
+    const rerun = readFileSync(resolve(root, '.github/workflows/rerun-failed-once.yml'), 'utf8');
+    expect(rerun).toMatch(/workflow_dispatch:\n {4}inputs:\n {6}run_id:/);
+    expect(rerun).toContain('RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}');
+    // The dispatched job reruns only a finished, failed attempt 1.
+    expect(rerun).toContain('[ "$(gh api "$run" --jq .run_attempt)" != 1 ]');
+  });
+
   test('one release gate runs against staging at a time, across every ref', () => {
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
     expect(release).toMatch(/^concurrency:\n {2}group: tests-release-staging\n {2}cancel-in-progress: false$/m);

@@ -13,7 +13,7 @@
  * make sessions unbootable nor read as up to date.
  */
 
-import { resolveCommitSha } from '../projects/git/commits';
+import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
 import { invalidateProjectMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import {
@@ -56,6 +56,14 @@ export interface DesiredReleaseInput {
    */
   refreshProjectMirror?: boolean;
   /**
+   * The base tip the session was created on (`KORTIX_BASE_SHA`), as a booting
+   * box reports it. Session create resolved it from the remote seconds ago, so
+   * when the mirror already holds it as the base tip the forced fetch would
+   * only prove it again: it is skipped. It never chooses the release: any
+   * other value, or none, refreshes as before.
+   */
+  bootTip?: string | null;
+  /**
    * May the session's OWNER run `agent`? Asked only when the manifest dropped
    * the session's agent and a declared default exists to move it to. Omitted ⇒
    * the answer is no, so a caller that cannot ask never widens anything.
@@ -96,6 +104,8 @@ export interface DesiredReleaseDeps {
   ledger: ConfigReleaseLedger;
   build: typeof buildConfigRelease;
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
+  /** The base tip the mirror holds now, with no refresh; null when unknown. */
+  readBase: (project: GitBackedProject, ref: string) => Promise<string | null>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
   /** Drop the mirror's freshness stamp. Injectable so tests count the call. */
@@ -106,6 +116,7 @@ const defaultDeps: DesiredReleaseDeps = {
   ledger: dbConfigReleaseLedger,
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
+  readBase: readMirrorCommitSha,
   loadRoster: loadAgentRosterAtCommit,
   invalidate: invalidateProjectMirror,
 };
@@ -130,14 +141,19 @@ export async function resolveDesiredRelease(
   input: DesiredReleaseInput,
   deps: DesiredReleaseDeps = defaultDeps,
 ): Promise<DesiredRelease> {
-  // A push the warm mirror has not fetched must not be missed — unless the
-  // caller refreshed the mirror itself moments ago (`refreshProjectMirror`).
-  if (input.refreshProjectMirror !== false) {
-    deps.invalidate(input.project.projectId);
-  }
   let baseSha: string;
   try {
-    baseSha = await deps.resolveBase(input.project, input.baseRef);
+    // A boot whose tip the mirror already holds: the fetch would prove only
+    // what session create proved (p50 ~1 s on prod, 2026-10-13, on every boot).
+    const known = input.bootTip ? await deps.readBase(input.project, input.baseRef).catch(() => null) : null;
+    if (known && known === input.bootTip) {
+      baseSha = known;
+    } else {
+      // A push the warm mirror has not fetched must not be missed — unless the
+      // caller refreshed the mirror itself moments ago (`refreshProjectMirror`).
+      if (input.refreshProjectMirror !== false) deps.invalidate(input.project.projectId);
+      baseSha = await deps.resolveBase(input.project, input.baseRef);
+    }
   } catch (error) {
     throw new BaseRefUnresolvedError(input.baseRef, error as Error);
   }

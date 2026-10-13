@@ -242,10 +242,11 @@ Branch on `code`, never on `error`. The SDK exports `isFeatureDisabledError(erro
 | --- | --- |
 | A normal flag | `<Name> is not enabled for this project. Enable it in Settings → Feature flags.` |
 | A flag managed by Kortix (`apps`) | `<Name> is not enabled for this project. Contact Kortix to enable it.` |
-| A flag that follows the account's Volumes setting (`drives`, `ephemeral_sandboxes`) | `<Name> is not enabled for this organization.` |
+| A flag that follows the project's Volumes flag (`drives`, `ephemeral_sandboxes`) | `<Name> is not enabled for this project. Turn on Volumes in Settings → Feature flags.` |
 
 - **`apps`** is managed by Kortix. Kortix turns it on for a project on request. Settings and the CLI list it only while it is on, with a locked switch and origin `kortix`. A write from anyone else answers `403` `feature_operator_only`.
-- **`drives`** and **`ephemeral_sandboxes`** follow the account's Volumes setting, which a platform admin sets in the [admin console](/docs/host#the-platform-admin-console). They are never listed. A write answers `400`.
+- **`volumes`** and **`stateless_sessions`** are ordinary project flags. They are listed only on a deployment with Platinum. Turning `stateless_sessions` on while `volumes` is off answers `400` `Turn on Volumes first`.
+- **`drives`** and **`ephemeral_sandboxes`** follow the project's `volumes` flag. They are never listed. A write answers `400`. With Volumes off, every Files write answers `403` `feature_disabled`, and a file a session already wrote under `/drives` still opens.
 
 ## Delete a project
 

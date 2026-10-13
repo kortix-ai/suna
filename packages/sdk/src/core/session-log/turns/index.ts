@@ -15,6 +15,8 @@
  * - `sessionLogShowGroupCall`: the host's `mergeShowParts`. `sessionLogAnsweredQuestionCall`: the
  *   host's synthetic answered question part.
  * - `sessionLogActivityText`: `getTurnStatus` (the activity line).
+ * - `classifySessionLogMessage`: `classifyTurn` (one message's `ClassifiedPart`s and error), for a
+ *   host that renders `ClassifiedPart`s from blocks until P8.4.
  * - `sessionLogCallStatus`: the per-call status rule (new: a closure-rule block is open on a live turn).
  * - `sessionLogPromptMessage`: the host's synthetic row for a queued inbox prompt.
  * - `sessionLogRetrying`: `hasRetryingAssistantTurn` over a thread (the busy state's input).
@@ -23,6 +25,7 @@
  * call id, so they serve a `ToolCallBlock` as they are.
  */
 export {
+  classifySessionLogMessage,
   sessionLogActivityText,
   sessionLogAnsweredQuestionCall,
   sessionLogBurstRunning,

@@ -844,7 +844,6 @@ async function resolveBootModeFor(
   if (!bootStore || forProvider !== 'platinum') return;
   try {
     let decision = await bootStore.resolveProjectBootMode({
-      accountId: opts.accountId,
       projectId: opts.projectId,
       provider: forProvider,
       projectMetadata: opts.projectMetadata,

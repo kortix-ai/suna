@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "Modificado para este proyecto",
         "defaultOn": "Activado de forma predeterminada",
-        "defaultOff": "Desactivado de forma predeterminada",
-        "organization": "Toda la organización, gestionado por Kortix"
+        "defaultOff": "Desactivado de forma predeterminada"
       },
       "search": "Buscar funciones",
       "loadFailed": "No se pudo cargar el proyecto",
@@ -1172,7 +1171,7 @@
         },
         "apps": {
           "name": "Aplicaciones",
-          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL serverless estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
+          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
         },
         "monitors": {
           "name": "Monitores",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volúmenes",
-          "description": "Archivos compartidos y sesiones en volúmenes para toda la organización."
+          "description": "Archivos compartidos y sesiones en volúmenes para este proyecto."
         },
         "stateless_sessions": {
           "name": "Sesiones sin estado",
@@ -14337,6 +14336,7 @@
       "text8b624587552a": "No se pudo generar el token",
       "text8b64afef1a24": "Aún no hay nada preparado",
       "text8b728638c006": "perderá esta excepción. Todas las acciones volverán a pasar por las comprobaciones de permisos normales.",
+      "text8b7811603173": "Buscar sesiones o pegar un ID de sesión",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Subiendo",
       "text8b9965f7aaa5": "Añade una política de acceso",
@@ -19587,7 +19587,8 @@
       "text6f52b07880a0": "Tomar instantánea ahora",
       "text91dc861375bc": "Política de versiones móviles consultada",
       "texta37dd5ef6ef2": "Personalizar barra lateral",
-      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar"
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar",
+      "text2313fe21ea84": "Editar {name}"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -19668,40 +19669,15 @@
       "reasonOther": "Otro",
       "fallBackToTheImage": "Recurrir a la imagen",
       "fallBackToImage": "Recurrir a la imagen",
-      "saved": "Volúmenes guardados",
-      "saveFailed": "No se pudieron guardar los volúmenes",
-      "title": "Volúmenes",
-      "description": "Un único interruptor para Archivos, montajes de drive, volúmenes de sesión y artefactos de arranque, por organización. Desactivado, una organización ve el producto sin volúmenes. Los cambios llegan a todos los procesos de la API en 30 segundos.",
+      "saved": "Modos de arranque guardados",
+      "saveFailed": "No se pudieron guardar los modos de arranque",
+      "title": "Modos de arranque",
+      "description": "Cómo arrancan las nuevas sesiones de un proyecto con los volúmenes activados y qué pasos de respaldo toman. Los volúmenes y las sesiones sin estado son feature flags del proyecto y no se configuran aquí. Los cambios llegan a todos los procesos de la API en 30 segundos.",
       "discard": "Descartar",
       "save": "Guardar",
-      "volumesTitle": "Volúmenes",
-      "volumesDescription": "Activado: Archivos es el drive del proyecto y el explorador del repositorio se llama Repo, las sesiones montan sus carpetas y arrancan en un volumen. Desactivado: Archivos es el explorador del repositorio y las sesiones arrancan desde la imagen. Una sesión cuyos archivos ya están en un volumen conserva su volumen cuando se desactiva su organización.",
-      "everyOrganizationTitle": "Activado para todas las organizaciones",
-      "everyOrganizationDetail": "Las organizaciones desactivadas abajo siguen desactivadas.",
-      "everyOrganizationLabel": "Volúmenes para todas las organizaciones",
-      "rolloutTitle": "Despliegue gradual",
-      "rolloutUnused": "No se usa mientras los volúmenes estén activados para todas las organizaciones.",
-      "rolloutPercentDetail": "{percent} % de las organizaciones sin ajuste propio, elegidas mediante un hash estable del id de la organización.",
-      "rolloutOffDetail": "Activa los volúmenes para una parte de las organizaciones sin ajuste propio.",
-      "rolloutPercentLabel": "Porcentaje de despliegue",
-      "organizationsTitle": "Organizaciones",
-      "organizationsDescription": "El ajuste propio de una organización prevalece sobre el interruptor y el despliegue gradual. Su modo de arranque se aplica mientras tenga los volúmenes activados.",
-      "findOrganization": "Buscar una organización",
-      "noOtherOrganization": "Ninguna otra organización coincide con «{search}». Las organizaciones ya listadas abajo no se repiten.",
-      "add": "Añadir",
-      "columnOrganization": "Organización",
-      "columnVolumes": "Volúmenes",
-      "columnBootMode": "Modo de arranque",
-      "columnLastStep": "Último paso",
-      "organizationFallbackName": "Organización",
-      "organizationVolumesLabel": "Volúmenes para {name}",
-      "on": "Activado",
       "off": "Desactivado",
-      "defaultModeOption": "Predeterminado ({mode})",
-      "removeOrganization": "Quitar organización",
-      "noOrganizations": "Ninguna organización tiene un ajuste propio.",
       "bootModeTitle": "Modo de arranque",
-      "bootModeDescription": "Cómo arrancan las nuevas sesiones de una organización con los volúmenes activados, salvo que la organización tenga un modo propio.",
+      "bootModeDescription": "Cómo arrancan las nuevas sesiones de un proyecto con los volúmenes activados. Un proyecto con las sesiones sin estado activadas arranca en un volumen.",
       "defaultModeTitle": "Modo predeterminado",
       "killSwitchTitle": "Interruptor de emergencia: arrancar cada nueva sesión desde la imagen",
       "killSwitchDetail": "Anula todos los modos a la vez; Archivos y los drives no cambian. Una sesión cuyos archivos ya están en un volumen conserva su volumen.",
@@ -19721,7 +19697,7 @@
       "failedBoots": "arranques fallidos",
       "volumeAttemptsLabel": "Intentos con volumen",
       "artifactsAttemptsLabel": "Intentos con artefactos",
-      "lastStepNote": "(activado salvo que una regla desactive el último paso)",
+      "lastStepNote": "(activado salvo que el modo predeterminado desactive el último paso)",
       "whereModesApplyTitle": "Dónde se aplican los modos",
       "whereModesApplyDescription": "Los proveedores y los interruptores de despliegue vienen del entorno del servidor. El volumen de artefactos se puede definir aquí; si está vacío, se usa el del entorno.",
       "volumeProviderTitle": "Proveedor de volúmenes: {provider}",
@@ -19737,8 +19713,8 @@
       "artifactsVolumeFromEnvironment": "Las sesiones en Imagen + artefactos o Volumen montan {source} (del entorno).",
       "artifactsVolumeNone": "Sin definir: los modos con artefactos arrancan como si solo existiera la imagen.",
       "artifactsVolumeLabel": "Volumen de artefactos y etiqueta",
-      "ephemeralSandboxesOff": "{variable} está desactivado en este despliegue: las reglas que piden Volumen arrancan con Imagen + artefactos.",
-      "nothingSaved": "Aún no hay nada guardado: los volúmenes están desactivados para todas las organizaciones."
+      "ephemeralSandboxesOff": "{variable} está desactivado en este despliegue: las sesiones sin estado arrancan con Imagen + artefactos.",
+      "nothingSaved": "Aún no hay nada guardado: los proyectos con los volúmenes activados arrancan desde la imagen."
     }
   },
   "projectOnboarding": {

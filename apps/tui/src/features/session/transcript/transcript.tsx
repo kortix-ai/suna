@@ -1,5 +1,7 @@
 /**
- * The session transcript.
+ * The session transcript, rendered from the session log: the root thread of
+ * `useSessionLogThread` (the API's `kortix.session/2` records, or the `fromV1`
+ * view of the v1 rows while the session reads v1), grouped by `sessionLogTurns`.
  *
  * It takes the `useSession` return value as a prop and reads it — it never
  * calls the hook. The integrator's `session-view.tsx` calls `useSession` once
@@ -13,8 +15,8 @@
  * gesture, not a scroll.
  */
 
-import { type MessageWithParts, classifyTurn, groupMessagesIntoTurns } from '@kortix/sdk';
-import type { useSession } from '@kortix/sdk/react';
+import { classifySessionLogMessage, sessionLogTurns } from '@kortix/sdk';
+import { type useSession, useSessionLogThread } from '@kortix/sdk/react';
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -69,15 +71,17 @@ export function Transcript({
   const [cursorIndex, setCursorIndex] = useState(-1);
   const [now, setNow] = useState(() => Date.now());
 
-  const messages = session.messages as unknown as MessageWithParts[];
-  const ordered = useMemo(() => orderedMessages(groupMessagesIntoTurns(messages)), [messages]);
+  const thread = useSessionLogThread(session);
+  const ordered = useMemo(() => (thread ? orderedMessages(sessionLogTurns(thread)) : []), [thread]);
 
   // Every collapsible row in the whole transcript, in document order. The
   // cursor is an index into THIS list, so `J`/`K` never land on a row that
   // cannot be opened.
   const rowKeys = useMemo(
     () =>
-      ordered.flatMap((message) => toggleableKeys(collapseToolRuns(classifyTurn(message).parts))),
+      ordered.flatMap((message) =>
+        toggleableKeys(collapseToolRuns(classifySessionLogMessage(message).parts)),
+      ),
     [ordered],
   );
 
@@ -163,7 +167,7 @@ export function Transcript({
     }
   });
 
-  const lastMessageId = ordered.at(-1)?.info.id;
+  const lastMessageId = ordered.at(-1)?.message_id;
   const startFailed = session.phase === 'error';
 
   // Re-pin to the bottom after EVERY commit while sticky is on.
@@ -203,12 +207,12 @@ export function Transcript({
         ) : null}
         {ordered.map((message) => (
           <Turn
-            key={message.info.id}
+            key={message.message_id}
             message={message}
             width={Math.max(width - 2, 12)}
             expanded={expanded}
             cursorKey={cursorKey}
-            streaming={busy && message.info.id === lastMessageId}
+            streaming={busy && message.message_id === lastMessageId}
             now={now}
           />
         ))}
@@ -258,7 +262,7 @@ export interface SessionPromptsProps {
  * keystroke approve a request the reader never looked at.
  */
 export function SessionPrompts({ session, focused, width, onToast }: SessionPromptsProps) {
-  const messages = session.messages as unknown as MessageWithParts[];
+  const thread = useSessionLogThread(session);
   const permission = session.permissions[0];
   const question = session.questions[0];
 
@@ -276,7 +280,7 @@ export function SessionPrompts({ session, focused, width, onToast }: SessionProm
         permission={permission}
         focused={focused}
         width={width}
-        toolCall={findToolCall(messages, permission.tool)}
+        toolCall={findToolCall(thread?.messages ?? [], permission.tool)}
         onReply={(id, reply) => {
           void session.answerPermission(id, reply).catch(fail);
         }}

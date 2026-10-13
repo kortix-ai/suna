@@ -55,10 +55,10 @@ function ShellBreadcrumb() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountId = useAccountPanelId();
   const hubParams = useHubSearchParams();
-  const { activeSection, canReadMembers } = useAccountHubSection(accountId);
+  const { activeSection } = useAccountHubSection(accountId);
   const accountQuery = useAccountDetail(accountId);
   // Same key as the Members pane: the member crumb costs no request.
-  const membersQuery = useAccountMembers(accountId, canReadMembers);
+  const membersQuery = useAccountMembers(accountId);
   const memberId = hubParams.get('member');
   const member = memberId
     ? membersQuery.data?.find((entry) => entry.user_id === memberId)

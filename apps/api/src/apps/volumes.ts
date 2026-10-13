@@ -44,6 +44,33 @@ export function appVolumesSupported(provider: string): boolean {
   return provider === 'platinum';
 }
 
+export type ReleaseProviderChoice =
+  | { ok: true; provider: string | null }
+  | { ok: false; provider: string };
+
+/**
+ * The provider a release deploys to. A named provider wins. Otherwise a
+ * release with mounts needs Platinum, so it takes Platinum when configured;
+ * else an App keeps the provider of its latest release; else `null` leaves
+ * the platform default to the deployment worker.
+ */
+export function chooseReleaseProvider(input: {
+  requested?: string | null;
+  hasMounts: boolean;
+  previous?: string | null;
+  platinumEnabled: boolean;
+  platformDefault: string;
+}): ReleaseProviderChoice {
+  const { requested, hasMounts, previous, platinumEnabled, platformDefault } = input;
+  let provider: string | null = requested ?? null;
+  if (!provider && hasMounts && platinumEnabled) provider = 'platinum';
+  if (!provider) provider = previous ?? null;
+  if (hasMounts && !appVolumesSupported(provider ?? platformDefault)) {
+    return { ok: false, provider: provider ?? platformDefault };
+  }
+  return { ok: true, provider };
+}
+
 /** The Platinum volume name: environments share a provider org, not a database. */
 export function appVolumeExternalId(volumeId: string): string {
   const env = config.INTERNAL_KORTIX_ENV.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'env';

@@ -25,7 +25,7 @@
  * A tombstone of a message the API never stored is acknowledged and stores nothing.
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
- * the caller's session read permission (the transcript route's), never the sandbox credential.
+ * the caller's session read permission, the transcript route's gate (a session-bound token included).
  * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
  * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
  * `thread` is not one of its threads.
