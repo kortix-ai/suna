@@ -20,8 +20,8 @@
  *
  *   1. the desired release per `(project, base ref, session agent, repository
  *      access)`, for `DESIRED_TTL_MS`. Without it every call would pay
- *      `resolveDesiredRelease`: a mirror read (a `git fetch` once the refresh
- *      interval has passed), a `git rev-parse` and a manifest read.
+ *      `resolveDesiredRelease`, which calls `invalidateProjectMirror`
+ *      unconditionally and then a `git rev-parse` + a manifest read.
  *   2. the release the API last SAW the box running, learned from the daemon's
  *      own reports through `recordDaemonConfigReport` — the one place the API
  *      is told what a box serves.

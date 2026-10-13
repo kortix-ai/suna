@@ -175,6 +175,10 @@ export function registerSessionConfigRoutes(): void {
               sessionAgent: visible.row.agentName ?? null,
               repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
               ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+              // The etag stage above already refreshed this mirror in THIS
+              // request (ref-scoped tip proof or fetch); a second invalidate
+              // paid a second `git fetch` per read (KRTX-629).
+              refreshProjectMirror: false,
             }),
             'desired_release',
             budgetLeft(configReadStart),

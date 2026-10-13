@@ -11,18 +11,10 @@
  * it failed in enough sessions. Then the last release a session proved is
  * assigned, with `fallbackReason` saying why — a bad base config must neither
  * make sessions unbootable nor read as up to date.
- *
- * The base tip is read from the project mirror and never forces a fetch. Every
- * base move Kortix makes or proxies drops the mirror's stamp in every API
- * process (`notifyBaseBranchMoved` → `invalidateProjectMirror`), and the mirror
- * fetches on its own once `KORTIX_GIT_REFRESH_INTERVAL_MS` (60 s) has passed.
- * So only a push made directly on the upstream is seen late, by at most one
- * interval. Forcing a fetch on every request put a `git fetch` (p50 1.07 s on
- * prod, 2026-10-13) on every boot's critical path and on every box's 60 s
- * convergence tick.
  */
 
 import { resolveCommitSha } from '../projects/git/commits';
+import { invalidateProjectMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import {
   buildConfigRelease,
@@ -53,6 +45,24 @@ export interface DesiredReleaseInput {
   repositoryAccess: boolean;
   /** Record the assignment. Only the daemon's own request records it. */
   recordAssignment?: boolean;
+  /**
+   * Default true: drop the mirror's TTL so the base tip is fetched before it
+   * is resolved. Set false only from a caller that has JUST refreshed this
+   * project's mirror within the same request (`GET /config` compiles the
+   * latest etag first — its own invalidate already fetched the tip, and a
+   * second invalidation made every one of those reads pay a second sequential
+   * `git fetch`). The next request on that route invalidates again, so a push
+   * that landed after this one's fetch is caught one read later.
+   */
+  refreshProjectMirror?: boolean;
+  /**
+   * The base tip the session was created on (`KORTIX_BASE_SHA`), as a booting
+   * box reports it. Session create resolved it from the remote seconds ago, so
+   * when the mirror already holds it as the base tip the forced fetch would
+   * only prove it again: it is skipped. It never chooses the release: any
+   * other value, or none, refreshes as before.
+   */
+  bootTip?: string | null;
   /**
    * May the session's OWNER run `agent`? Asked only when the manifest dropped
    * the session's agent and a declared default exists to move it to. Omitted ⇒
@@ -96,6 +106,8 @@ export interface DesiredReleaseDeps {
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
+  /** Drop the mirror's freshness stamp. Injectable so tests count the call. */
+  invalidate: (projectId: string) => void;
 }
 
 const defaultDeps: DesiredReleaseDeps = {
@@ -103,6 +115,7 @@ const defaultDeps: DesiredReleaseDeps = {
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
   loadRoster: loadAgentRosterAtCommit,
+  invalidate: invalidateProjectMirror,
 };
 
 /**
@@ -127,7 +140,17 @@ export async function resolveDesiredRelease(
 ): Promise<DesiredRelease> {
   let baseSha: string;
   try {
-    baseSha = await deps.resolveBase(input.project, input.baseRef);
+    // A boot whose tip the mirror already holds: the fetch would prove only
+    // what session create proved (p50 ~1 s on prod, 2026-10-13, on every boot).
+    const known = input.bootTip ? await deps.resolveBase(input.project, input.baseRef).catch(() => null) : null;
+    if (known && known === input.bootTip) {
+      baseSha = known;
+    } else {
+      // A push the warm mirror has not fetched must not be missed — unless the
+      // caller refreshed the mirror itself moments ago (`refreshProjectMirror`).
+      if (input.refreshProjectMirror !== false) deps.invalidate(input.project.projectId);
+      baseSha = await deps.resolveBase(input.project, input.baseRef);
+    }
   } catch (error) {
     throw new BaseRefUnresolvedError(input.baseRef, error as Error);
   }

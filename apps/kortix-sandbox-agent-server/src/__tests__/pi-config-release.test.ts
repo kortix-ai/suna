@@ -154,6 +154,11 @@ describe('pi config releases: boot', () => {
     expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
     expect(api.archiveRequests).toHaveLength(1)
     expect(marks).toEqual(['config-release-fetched', 'config-release-archive', 'config-release-proven'])
+    // The boot names the tip it was created on, so the API can skip a redundant mirror fetch.
+    expect((api.descriptorRequests[0]!.body as { base_sha?: string }).base_sha).toBe(one.descriptor.source_commit!)
+    // A convergence never does: it is how a box learns of a push the API has not fetched.
+    await releases.converge(fakeRuntime())
+    expect((api.descriptorRequests.at(-1)!.body as { base_sha?: string }).base_sha).toBeUndefined()
   })
 
   test('a release with no archive and no snapshot yet is fetched from the project remote, into its own directory', async () => {

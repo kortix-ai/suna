@@ -41,11 +41,12 @@ describe('GET /config authorizes before it reads session state', () => {
     expect(CONFIG).toContain('if (running.configReleases && running.release)');
   });
 
-  test('the release resolve never forces a mirror fetch (KRTX-629)', () => {
+  test('the release resolve never refreshes the mirror a second time (KRTX-629)', () => {
     // The etag stage above it already refreshed the mirror in THIS request
-    // (ref-scoped tip proof or fetch). `resolveDesiredRelease` reads the
-    // mirror and never invalidates it (config-releases/desired.ts).
-    expect(CONFIG).not.toContain('refreshProjectMirror');
+    // (ref-scoped tip proof or fetch). `resolveDesiredRelease` must not drop
+    // the stamp again: that made every read of this polled route pay a second
+    // `git fetch`.
+    expect(CONFIG).toContain('refreshProjectMirror: false');
   });
 
   test('every mirror-reading stage races one shared budget (KRTX-818)', () => {

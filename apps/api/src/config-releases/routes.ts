@@ -65,14 +65,22 @@ interface SessionRow {
  * `{"accept":[..."config-release-v3"...]}`. Any other body, or none, is v2, so
  * a daemon built before v3 keeps the exact answer it always had.
  */
-async function requestedFormat(c: Context): Promise<ConfigReleaseFormat> {
+/**
+ * The descriptor format, and the base tip a booting box was created on
+ * (`base_sha`). The tip only lets the route skip a redundant mirror fetch
+ * (`DesiredReleaseInput.bootTip`); it never chooses the release.
+ */
+async function readDescriptorRequest(c: Context): Promise<{ format: ConfigReleaseFormat; bootTip: string | null }> {
   try {
-    const body = (await c.req.json()) as { accept?: unknown } | null;
-    if (Array.isArray(body?.accept) && body.accept.includes(CONFIG_RELEASE_FORMAT_V3)) return CONFIG_RELEASE_FORMAT_V3;
+    const body = (await c.req.json()) as { accept?: unknown; base_sha?: unknown } | null;
+    const format =
+      Array.isArray(body?.accept) && body.accept.includes(CONFIG_RELEASE_FORMAT_V3) ? CONFIG_RELEASE_FORMAT_V3 : CONFIG_RELEASE_FORMAT_V2;
+    const bootTip = typeof body?.base_sha === 'string' && HEX40.test(body.base_sha) ? body.base_sha : null;
+    return { format, bootTip };
   } catch {
     // Not JSON: v2.
+    return { format: CONFIG_RELEASE_FORMAT_V2, bootTip: null };
   }
-  return CONFIG_RELEASE_FORMAT_V2;
 }
 
 type Resolved<T> = { ok: true; value: T } | { ok: false; status: 400 | 403 | 404; error: string };
@@ -217,10 +225,11 @@ export function registerConfigReleaseRoutes(): void {
 
       // The request has no inputs. The desired release is the base branch's
       // current tip for this session's variant, full stop: nothing the caller
-      // sends can change which config it is assigned. The body only picks the
-      // descriptor format; any other body is ignored, so a daemon built
+      // sends can change which config it is assigned. The body picks the
+      // descriptor format, and a booting box's `base_sha` can only spare a
+      // redundant mirror fetch; any other body is ignored, so a daemon built
       // against an older shape of this route still converges.
-      const format = await requestedFormat(c);
+      const { format, bootTip } = await readDescriptorRequest(c);
       //
       // EVERY session of this project is served, including one created before
       // the project replaced its repository. A release is the project's CURRENT
@@ -251,6 +260,7 @@ export function registerConfigReleaseRoutes(): void {
           repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
           // Only the daemon's own request is an assignment. A human read is not.
           recordAssignment: isDaemon,
+          bootTip: isDaemon ? bootTip : null,
           ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
           ...(isDaemon
             ? { persistRepoint: (from: string, to: string) => repointSessionAgentToDeclaredDefault(subject, from, to) }

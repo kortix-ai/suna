@@ -322,7 +322,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     const reasons: string[] = []
     if (api) {
       try {
-        descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs })
+        descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs, baseSha: cfg.baseSha })
         mark?.('config-release-fetched')
       } catch (err) {
         if (isFeatureDisabledError(err)) disabled = 'config releases are disabled for this project'

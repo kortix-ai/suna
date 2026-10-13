@@ -159,6 +159,7 @@ function boundedReason(reasons: readonly string[]): string | null {
 async function askForTheDesiredRelease(
   api: ConfigReleaseApi | null,
   timeoutMs: number | undefined,
+  baseSha: string | undefined,
 ): Promise<DescriptorAnswer> {
   if (!api) {
     return {
@@ -168,7 +169,7 @@ async function askForTheDesiredRelease(
     }
   }
   try {
-    return { releasesEnabled: true, descriptor: await fetchConfigReleaseDescriptor(api, { timeoutMs }), reason: null }
+    return { releasesEnabled: true, descriptor: await fetchConfigReleaseDescriptor(api, { timeoutMs, baseSha }), reason: null }
   } catch (err) {
     if (isFeatureDisabledError(err)) {
       return { releasesEnabled: false, descriptor: null, reason: 'config releases are disabled for this project' }
@@ -354,7 +355,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   const started = input.start()
 
   // ── Step 1 ─────────────────────────────────────────────────────────────────
-  const answer = await askForTheDesiredRelease(api, input.descriptorTimeoutMs)
+  const answer = await askForTheDesiredRelease(api, input.descriptorTimeoutMs, cfg.baseSha)
   if (answer.descriptor) input.mark?.('config-release-fetched')
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────

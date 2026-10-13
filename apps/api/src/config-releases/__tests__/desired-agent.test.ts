@@ -54,6 +54,7 @@ function deps(roster: DeclaredAgentRoster = ROSTER): DesiredReleaseDeps {
     },
     resolveBase: async () => TIP,
     loadRoster: async () => roster,
+    invalidate: () => {},
   };
 }
 
