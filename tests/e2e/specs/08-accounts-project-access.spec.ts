@@ -856,15 +856,27 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     if (page.url().includes(`/invites/${accountInviteId}`)) {
       await expect(page.getByText(accountName, { exact: true })).toBeVisible();
       await expect(page.getByText(/Team account/i)).toBeVisible();
-      const acceptAccountInviteResponse = page.waitForResponse(
-        (response) =>
-          response
-            .url()
-            .includes(`/v1/account-invites/${accountInviteId}/accept`) &&
-          response.request().method() === "POST",
-      );
-      await page.getByRole("button", { name: "Accept" }).click();
-      expect((await acceptAccountInviteResponse).status()).toBe(200);
+      // The invited address signed up a moment ago, so the server may claim the
+      // invite on first sign-in and the page replaces itself while this renders
+      // (invites/[inviteId]/page.tsx, "Auto-claimed invites"). Accept the invite
+      // by hand when the button is still there; both paths end as a member,
+      // which the landing and the Members heading below prove.
+      const acceptAccountInviteResponse = page
+        .waitForResponse(
+          (response) =>
+            response
+              .url()
+              .includes(`/v1/account-invites/${accountInviteId}/accept`) &&
+            response.request().method() === "POST",
+          { timeout: 15_000 },
+        )
+        .catch(() => null);
+      await page
+        .getByRole("button", { name: "Accept" })
+        .click({ timeout: 10_000 })
+        .catch(() => undefined);
+      const acceptResponse = await acceptAccountInviteResponse;
+      if (acceptResponse) expect(acceptResponse.status()).toBe(200);
     }
     await settleIamPropagation();
     // An account invite (no project) lands on the door for the joined account,

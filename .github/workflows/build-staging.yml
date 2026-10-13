@@ -63,6 +63,7 @@ jobs:
   version:
     name: Compute staging version
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     outputs:
       sha: ${{ steps.v.outputs.sha }}
       sha8: ${{ steps.v.outputs.sha8 }}
@@ -101,6 +102,7 @@ jobs:
     name: Build API image (staging, ${{ matrix.arch }})
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -169,6 +171,7 @@ jobs:
     name: Publish API manifest (staging)
     needs: [version, build-api]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -218,6 +221,7 @@ jobs:
     name: Build gateway image (staging, ${{ matrix.arch }})
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -284,6 +288,7 @@ jobs:
     name: Publish gateway manifest (staging)
     needs: [version, build-gateway]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -336,6 +341,7 @@ jobs:
     name: Build frontend image (staging, ${{ matrix.arch }})
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -419,6 +425,7 @@ jobs:
     name: Publish frontend manifest (staging)
     needs: [version, build-frontend]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -468,6 +475,7 @@ jobs:
     needs: [version, merge-api, merge-gateway, merge-frontend]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Start Deploy Staging for completed manual build
         env:

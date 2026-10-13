@@ -58,7 +58,7 @@ describe('Daytona CI worker plan', () => {
     expect(dockerfile).toContain('docker compose version');
     expect(dockerfile).toContain('kmod');
     expect(dockerfile).toContain('postgresql-client');
-    expect(dockerfile).toContain('bun@1.3.14');
+    expect(dockerfile).toContain('bun@1.4.3');
     expect(dockerfile).toContain('pnpm@8.11.0');
     expect(dockerfile).toContain(`fetch --depth=1 origin ${sha}`);
     expect(dockerfile).toContain('playwright install --with-deps chromium');
