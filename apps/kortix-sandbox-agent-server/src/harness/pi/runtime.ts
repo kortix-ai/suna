@@ -201,6 +201,8 @@ export interface PiChildDump {
   messageIds?: Array<string | null>
   /** The session-log seq of each agent message. Absent in dumps written before P2.5. */
   seqs?: number[]
+  /** The seq the child's next message gets: above every seq the thread ever held (a restore sets it from the API's `seq_max`). Absent before P6.2. */
+  nextSeq?: number
   transcript: KortixMessage[]
 }
 
@@ -251,6 +253,16 @@ export interface PiDump {
 }
 
 export const piDumpPath = (stateDir: string, sessionId: string) => join(stateDir, `${sessionId}.json`)
+
+/** The root id a dump names, or null when there is none. ponytail: parses the whole dump once more at start; read a side file if boot time shows it. */
+function dumpRootId(path: string): string | null {
+  try {
+    const rootId = (JSON.parse(readFileSync(path, 'utf8')) as { rootId?: unknown }).rootId
+    return typeof rootId === 'string' && rootId ? rootId : null
+  } catch {
+    return null
+  }
+}
 
 /** The reply `agent` streams now, as the session-log snapshot names it. */
 function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): { id: string; timestamp: number } | null {
@@ -361,7 +373,8 @@ export class PiRuntime {
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
-    this.rootId = mintRootId(opts.sessionId)
+    // A restored store (session-log-restore.ts) names the log's root, so a session keeps one root across harnesses.
+    this.rootId = dumpRootId(piDumpPath(opts.cfg.piStateDir, opts.sessionId)) ?? mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
     this.title = 'New session'
@@ -1815,6 +1828,7 @@ export class PiRuntime {
           agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
           messageIds: (child.agent ? child.agent.state.messages : child.agentMessages).map((m) => this.nativeIds.get(m) ?? null),
           seqs: this.childSeqs(child),
+          nextSeq: child.nextSeq,
           transcript: child.transcript.all(),
         })),
       }
@@ -1862,7 +1876,7 @@ export class PiRuntime {
           // A dump written before P2.5 has no seqs: its messages number from 1, in order.
           this.nativeSeqs.set(m, seqs?.[i] ?? i + 1)
         })
-        const nextSeq = Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1
+        const nextSeq = Math.max(saved.nextSeq ?? 0, Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1)
         this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null, nextSeq })
       }
       this.title = dump.title

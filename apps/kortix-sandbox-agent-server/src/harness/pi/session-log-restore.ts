@@ -7,10 +7,13 @@
  * What it writes:
  * - The root thread as pi `SessionManager` entries after a session header, one
  *   linear branch in seq order, with the Kortix message id (`messageIds`) and
- *   the seq (`seqs`, the seq rule in `session-log.ts`) of each entry. pi's root
- *   is always `mintRootId(session_id)`: a log whose root thread has another id
- *   (another harness's session) is restored under pi's id, and its children
- *   follow it.
+ *   the seq (`seqs`, the seq rule in `session-log.ts`) of each entry. pi runs
+ *   under the log's root thread id (`PiDump.rootId`, which the runtime adopts),
+ *   so a session that started on another harness keeps one root.
+ * - The seq floor: every seq the API holds for a thread (`seq_max`, tombstones
+ *   included) and every seq of the log, written or not. A trailing `custom`
+ *   entry (`kortix.seq-floor`) maps the root's floor, and a child's `nextSeq`
+ *   starts above it, so a new message never takes a held seq.
  * - Each sub-agent thread as a child's `AgentMessage[]`: the same entries, then
  *   pi's own projection (`buildSessionProjection`), because a child has no
  *   entries. Its seqs and message ids by index.
@@ -71,7 +74,6 @@ import {
 import type { KortixMessage } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
-import { mintRootId } from './message-id'
 import { piDumpPath, type PiChildDump, type PiDump } from './runtime'
 import { PI_NO_RESULT, piSessionLog, type PiSessionSnapshot } from './session-log'
 
@@ -109,6 +111,8 @@ function piUsage(u: SessionLogMessage['usage']) {
 
 /** One thread's entries as pi appends them: a linear branch, each entry's message id and seq. */
 class Chain {
+  /** The highest seq the thread holds or this restore used. */
+  floor = 0
   readonly entries: J[] = []
   readonly ids: Record<string, string> = {}
   readonly seqs: Record<string, number> = {}
@@ -237,15 +241,15 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
   }
 }
 
-/** One thread as pi entries. `nextSeq` numbers the entries a layout compaction renders. */
-function writeThread(thread: SessionLogThread, images: Ctx['images'], drop: Ctx['drop']): Chain {
+/** One thread as pi entries. `nextSeq` numbers the entries a layout compaction renders, above `floor`. */
+function writeThread(thread: SessionLogThread, images: Ctx['images'], drop: Ctx['drop'], floor: number): Chain {
   const chain = new Chain()
   const visible = visibleIds(thread)
   let current = ''
   const ctx: Ctx = { images, drop: (kind) => void (visible.has(current) && drop(kind)) }
   const msgs = [...thread.messages].sort((a, b) => a.seq - b.seq)
   const byId = new Map(msgs.map((m) => [m.message_id, m]))
-  let nextSeq = Math.max(0, ...msgs.map((m) => m.seq))
+  let nextSeq = Math.max(floor, ...msgs.map((m) => m.seq))
   /** Message id → its entry id, for a cut point. */
   const entryOf = new Map<string, string>()
   // A pi compaction names its first kept entry; keep that id so the record's ext round-trips.
@@ -312,6 +316,7 @@ function writeThread(thread: SessionLogThread, images: Ctx['images'], drop: Ctx[
       entryOf.set(m.message_id, id)
     }
   })
+  chain.floor = nextSeq
   return chain
 }
 
@@ -359,27 +364,29 @@ async function readImages(log: SessionLog, read: PiRestoreTarget['readAttachment
   return out
 }
 
-export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTarget): Promise<SessionLogRestoreResult> {
+/** `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`). */
+export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTarget, seqMax: Readonly<Record<string, number>> = {}): Promise<SessionLogRestoreResult> {
   const log = structuredClone(input)
-  const rootId = mintRootId(target.sessionId)
   const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]
   if (!root) throw new Error('session log has no thread')
-  if (root.thread_id !== rootId) {
-    logger.info('[session-log] restore puts the root thread under the pi root id', { from: root.thread_id, to: rootId })
-    for (const t of log.threads) if (t.parent_thread_id === root.thread_id || (t !== root && t.parent_thread_id === null)) t.parent_thread_id = rootId
-    root.thread_id = rootId
-    for (const t of log.threads) for (const m of t.messages) m.thread_id = t.thread_id
-  }
+  const rootId = root.thread_id
+  // Another parentless thread (an old root another harness kept) hangs under the root; none is the root itself.
+  for (const t of log.threads) if (t !== root && t.parent_thread_id === null) t.parent_thread_id = rootId
+  log.threads = log.threads.filter((t) => t === root || t.thread_id !== rootId)
   const dropped: Record<string, number> = {}
   const images = await readImages(log, target.readAttachment)
   const drop = (kind: string) => void (dropped[kind] = (dropped[kind] ?? 0) + 1)
   const v1 = transcripts(log)
 
-  const main = writeThread(root, images, drop)
+  const main = writeThread(root, images, drop, seqMax[rootId] ?? 0)
+  if (main.floor > Math.max(0, ...Object.values(main.seqs))) {
+    main.push({ type: 'custom', id: 'kortix-seq-floor', customType: 'kortix.seq-floor', timestamp: log.created_at, data: { seq: main.floor } })
+    main.seqs['kortix-seq-floor'] = main.floor
+  }
   const rootData = piData(root)
   const header = { type: 'session', version: rootData.header_version ?? 3, id: (root.ext?.[PI]?.native_id as string | undefined) ?? rootId, timestamp: log.created_at, cwd: rootData.cwd ?? target.cwd }
   const children = log.threads.filter((t) => t !== root).map((t): PiChildDump => {
-    const chain = writeThread(t, images, drop)
+    const chain = writeThread(t, images, drop, seqMax[t.thread_id] ?? 0)
     const agentMessages: J[] = []
     const messageIds: Array<string | null> = []
     const seqs: number[] = []
@@ -396,7 +403,7 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     const createdAt = ms(t.created_at)
     return {
       id: t.thread_id, title: t.title ?? '', agentName: t.agent ?? 'general', createdAt, updatedAt: Math.max(createdAt, ...t.messages.map((m) => ms(m.completed_at ?? m.created_at))),
-      agentMessages: agentMessages as never, messageIds, seqs, transcript: v1.get(t.thread_id) ?? [],
+      agentMessages: agentMessages as never, messageIds, seqs, nextSeq: chain.floor + 1, transcript: v1.get(t.thread_id) ?? [],
     }
   })
   const dump: PiDump = {
@@ -438,7 +445,7 @@ export function readPiSnapshot(stateDir: string, sessionId: string, selection?: 
       const seqs = c.seqs ?? c.agentMessages.map((_, i) => i + 1)
       return {
         id: c.id, title: c.title, agentName: c.agentName, createdAt: c.createdAt, agentMessages: c.agentMessages,
-        messageIds: c.messageIds ?? c.agentMessages.map(() => null), seqs, nextSeq: Math.max(0, ...seqs) + 1, reply: null, transcript: c.transcript, busy: false,
+        messageIds: c.messageIds ?? c.agentMessages.map(() => null), seqs, nextSeq: Math.max(c.nextSeq ?? 0, Math.max(0, ...seqs) + 1), reply: null, transcript: c.transcript, busy: false,
       }
     }),
     busy: false, reply: null,

@@ -64,9 +64,11 @@ export interface SessionLogPort {
   /**
    * Write `log` into the native store before the harness starts. Returns one
    * cursor per thread, holding the native hash of every message written, and
-   * what it could not write.
+   * what it could not write. `seqMax` is the highest seq the API holds per
+   * thread, tombstones included (the restore answer's `seq_max`): the harness
+   * numbers every new message above it.
    */
-  restore(log: SessionLog): Promise<SessionLogRestoreResult>
+  restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult>
   /** A digest of the whole native store, for the boot reconcile. */
   fingerprint(): Promise<string>
   /**

@@ -24,6 +24,7 @@ import {
   type SessionLog,
   type ViewTarget,
 } from '@kortix/api-contract/session-log'
+import type { SessionLogChanges } from '@/harness/contract/session-log'
 import { loadConfig } from '@/harness/harness'
 import { requirePiConfig } from '@/harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
@@ -362,5 +363,68 @@ describe('a pi session recorded here, restored into a fresh box', () => {
     }
     // The view held the compaction summary, the kept turns and the stopped call.
     expect(rootCheck.expected.map((x) => x.role[0]).join('')).toBe('sauatuau')
+  }, 60_000)
+})
+
+/** What the API holds after the journal posts `changes` on top of `log` (puts replace by id, tombstones remove, new threads join). */
+function applyJournal(log: SessionLog, changes: SessionLogChanges): SessionLog {
+  const out = structuredClone(log)
+  for (const t of changes.threads) if (!out.threads.some((x) => x.thread_id === t.thread_id)) out.threads.push({ ...t, messages: [] })
+  for (const { message } of changes.messages) {
+    const thread = out.threads.find((t) => t.thread_id === message.thread_id)!
+    thread.messages = [...thread.messages.filter((m) => m.message_id !== message.message_id), message].sort((a, b) => a.seq - b.seq)
+  }
+  for (const id of changes.tombstones) for (const t of out.threads) t.messages = t.messages.filter((m) => m.message_id !== id)
+  return out
+}
+
+describe('a second restore (P6.2 review)', () => {
+  test('an OpenCode-origin log: restore, a turn journaled under the restored root, restore again: one root, the oracle passes', async () => {
+    const log = load('opencode')
+    const rootId = log.threads.find((t) => t.parent_thread_id === null)!.thread_id
+    const first = freshBox(log.session_id)
+    const r1 = await restorePiSessionLog(log, { stateDir: first.stateDir, sessionId: log.session_id, cwd: first.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null })
+    const rt1 = await first.start()
+    // pi runs under the log's root: one root, forever.
+    expect(rt1.rootId).toBe(rootId)
+    await turn(rt1, 'One more question.', [{ text: 'One more answer.' }])
+    const api = applyJournal(log, await createPiSessionLogPort(() => rt1.sessionLogSnapshot()).changes(r1.cursors))
+    expect(api.threads.filter((t) => t.parent_thread_id === null).map((t) => t.thread_id)).toEqual([rootId])
+    for (const service of services.splice(0)) await service.lifecycle.stop()
+
+    const second = freshBox(log.session_id)
+    const r2 = await restorePiSessionLog(api, { stateDir: second.stateDir, sessionId: log.session_id, cwd: second.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null })
+    expect(r2.dropped).toEqual({})
+    expect(r2.cursors.map((c) => c.thread_id).sort()).toEqual(api.threads.map((t) => t.thread_id).sort())
+    const rt2 = await second.start()
+    expect(rt2.rootId).toBe(rootId)
+    const [body] = await turn(rt2, 'Anything else?', [{ text: 'OK' }])
+    const check = oracle(api, rootId, rt2, 'Anything else?', body!)
+    expect(check.diffs).toEqual([])
+    // The turn after the switch is in the model's context.
+    expect(JSON.stringify(body)).toContain('One more answer.')
+  }, 60_000)
+})
+
+describe('the seq floor (P6.2 review)', () => {
+  test('new messages number above every seq the API holds: an unwritten context record, a tombstone (seq_max)', async () => {
+    const log = load('golden')
+    const [root, child] = log.threads
+    // A trailing context record: in the log, never written to pi.
+    const context = structuredClone(root!.messages[0]!)
+    Object.assign(context, { message_id: 'msg_ctx_tail', seq: 60, role: 'system', kind: 'context' })
+    root!.messages.push(context)
+    // seq_max: the child's thread holds a tombstone at 40 (not in the log).
+    const box = freshBox(log.session_id)
+    const result = await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null }, { [root!.thread_id]: 50, [child!.thread_id]: 40 })
+    const rt = await box.start()
+    await turn(rt, 'root turn', [{ text: 'root answer' }])
+    await turn(rt, 'resume', [{ tool: 'task', args: { description: 'resume', prompt: 'child turn', subagent_type: 'general', task_id: child!.thread_id } }, { text: 'child answer' }, { text: 'parent answer' }])
+    const changes = await createPiSessionLogPort(() => rt.sessionLogSnapshot()).changes(result.cursors)
+    const fresh = (thread: string) => changes.messages.filter((m) => m.message.thread_id === thread && !(m.message.message_id in result.cursors.find((c) => c.thread_id === thread)!.native_hashes)).map((m) => m.message.seq)
+    expect(fresh(root!.thread_id).length).toBeGreaterThan(0)
+    expect(Math.min(...fresh(root!.thread_id))).toBeGreaterThan(60)
+    expect(fresh(child!.thread_id).length).toBeGreaterThan(0)
+    expect(Math.min(...fresh(child!.thread_id))).toBeGreaterThan(40)
   }, 60_000)
 })

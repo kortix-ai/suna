@@ -122,25 +122,29 @@ restart (`this.stop()` inside the native lifecycle) leaves it running.
 Nothing calls a restore yet: P6.4 decides when it runs, behind a flag. The steps
 the boot will run:
 
-1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, blobs }`.
+1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`.
+   The claim raises the generation, and the ingest applies a put whose
+   `(generation, rev)` is above the stored pair, so the box needs no rev seed.
 2. `sessionLogFromRestore(answer, apiTextReader(sandboxRelayContext()))`
    (`shared/session-log-restore.ts`) reads each text listed in `blobs` through
-   the attachments route with the sandbox credential (3 attempts; only refs in
-   this session's own folder), checks its `sha256`, and puts it back in place of
+   the attachments route with the sandbox credential (3 attempts of at most 15 s,
+   60 s for all reads; only refs in this session's own folder), checks its `sha256`, and puts it back in place of
    the 16 kB preview. A text with `ref` + `bytes` and no `blobs` entry, an
    unreadable one and a wrong digest keep the preview and are listed in
    `truncated` (`not_listed`, `unreadable`, `sha256_mismatch`).
-3. `seedSessionLogRevs(revs)` (`shared/session-log-journal.ts`): every rev the
-   process issues afterwards is above every stored rev.
-4. `port.restore(log)` before the runtime starts. pi:
+3. `port.restore(log, seq_max)` before the runtime starts. pi:
    `restorePiSessionLog` (`pi/session-log-restore.ts`, the mapping is in its
    header) writes the dump the runtime loads: the root's entries with a header,
    the entry → message id map and the entry → seq map (`PiDump.seqs`), each
    child's projected agent messages with their ids and seqs, and the v1
-   transcript of each thread (`toV1`). It returns one cursor per thread with the
+   transcript of each thread (`toV1`). The dump names the log's root thread
+   (`PiDump.rootId`) and the runtime adopts it, so a session that started on
+   another harness keeps one root through any number of restores. New messages
+   number above the floor: `seq_max` and every seq of the log (a trailing
+   `kortix.seq-floor` entry for the root, `nextSeq` for a child). It returns one cursor per thread with the
    hash the export computes for each message of the written store, and
    `dropped` (counts by kind, only for messages modelView shows next).
-5. `startSessionLogJournal(port, { generation, cursors })`: the export skips
+4. `startSessionLogJournal(port, { generation, cursors })`: the export skips
    every restored message by hash (C13).
 
 Proved in `pi-session-log-restore.test.ts` (real runtime, fake model, isolated
@@ -151,8 +155,7 @@ recorded session round-trips: export → restore → export is equal except pi's
 system prompt messages (`kind: 'context'`), which pi rebuilds at the next prompt.
 
 Known limits of the pi restore:
-- pi's root is `mintRootId(session_id)`. A log whose root thread has another id (a session that started on OpenCode) is restored under pi's id; the API then holds the old root thread and the new one.
-- pi stores image bytes only in its native store (`ref: blob:<sha256>`): a fresh box has no source for them, so `readAttachment` must find them elsewhere or the image counts in `dropped.attachment`.
+- Images of a pi session cannot be restored in a fresh box: the export keeps their bytes only in the native store (`ref: blob:<sha256>`), and there is no bytes reader for a `kortix-attachment://` image yet. They count in `dropped.attachment`. Restore must not be on by default before the journal uploads image bytes.
 - A call input that is not an object or a string (a converted row that lost it) goes out as `{}` and counts in `dropped.tool_input`.
 - A `layout` compaction is rendered as entries after hiding the history; a native pi compaction before it cannot be hidden and keeps its summary first.
 
@@ -414,8 +417,9 @@ wire (`message.updated`, `message.part.updated`, `message.part.delta`,
 same `/kortix/runtime/*` namespace and the same raw routes
 (`/session`, `/session/:id/prompt_async`, `/session/:id/message`, `/config`,
 `/agent`, `/provider`, `/permission/:id/reply`, …). One pi session is one Kortix
-session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic, so a
-restart resolves the same root and restores the transcript from
+session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
+root thread id a session-log restore wrote into the dump), so a restart
+resolves the same root and restores the transcript from
 `$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`.
 
 Config it reads (all set by apps/api for every session, harness-neutral values):

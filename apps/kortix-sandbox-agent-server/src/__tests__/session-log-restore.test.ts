@@ -113,7 +113,7 @@ describe('sessionLogFromRestore (P6.2)', () => {
     answer.blobs[0]!.ref = `kortix-attachment://${PROJECT}/44444444-4444-4444-8444-444444444444/${id(0)}`
     ;(answer.log.threads[0]!.messages[0]!.blocks[0] as { ref: string }).ref = answer.blobs[0]!.ref
     const reader = apiTextReader({ ...api.ctx, apiRoot: 'http://127.0.0.1:9/v1' }) // nothing listens
-    const out = await sessionLogFromRestore(answer, async (r) => (r === answer.blobs[1]!.ref ? reader(r) : apiTextReader(api.ctx)(r)))
+    const out = await sessionLogFromRestore(answer, async (r, signal) => (r === answer.blobs[1]!.ref ? reader(r, signal) : apiTextReader(api.ctx)(r, signal)))
     expect(out.truncated.map((t) => [t.message_id, t.reason])).toEqual([
       ['msg_text', 'unreadable'],
       ['msg_tool', 'unreadable'],
@@ -121,5 +121,43 @@ describe('sessionLogFromRestore (P6.2)', () => {
       ['msg_corrupt', 'sha256_mismatch'],
     ])
     expect(api.requests.map((r) => r.path)).toEqual([`/v1/projects/${PROJECT}/sessions/${SESSION}/attachments/${id(3)}`])
+  })
+})
+
+describe('deadlines (P6.2 review)', () => {
+  /** An attachments route that never answers until the client gives up. */
+  function hungApi() {
+    let requests = 0
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch(request) {
+        requests += 1
+        return new Promise<Response>((resolve) => request.signal.addEventListener('abort', () => resolve(new Response('gone', { status: 499 })), { once: true }))
+      },
+    })
+    servers.push(server)
+    return { requests: () => requests, ctx: { projectId: PROJECT, sessionId: SESSION, token: 'sandbox-token', apiRoot: `http://127.0.0.1:${server.port}/v1` } }
+  }
+
+  test('a hung read times out per attempt and is tried 3 times, then it is unreadable', async () => {
+    const api = hungApi()
+    const started = Date.now()
+    expect(await apiTextReader(api.ctx, { attemptMs: 50, retryMs: 1 })(ref(0))).toBeNull()
+    expect(api.requests()).toBe(3)
+    expect(Date.now() - started).toBeLessThan(2_000)
+  })
+
+  test('the budget for all reads: past it, every text left keeps its preview as unreadable', async () => {
+    const api = hungApi()
+    const started = Date.now()
+    const out = await sessionLogFromRestore(restoreAnswer(), apiTextReader(api.ctx, { attemptMs: 10_000, retryMs: 1 }), { budgetMs: 150 })
+    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(out.truncated.map((t) => [t.message_id, t.reason])).toEqual([
+      ['msg_text', 'unreadable'],
+      ['msg_tool', 'unreadable'],
+      ['msg_unlisted', 'not_listed'],
+      ['msg_corrupt', 'unreadable'],
+    ])
   })
 })

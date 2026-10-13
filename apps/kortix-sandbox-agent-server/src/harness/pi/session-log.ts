@@ -499,9 +499,9 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null, tar
       return out.changes
     },
     /** Writes `log` into the dump the runtime loads at its next start (`session-log-restore.ts`); needs `target`. */
-    async restore(log: SessionLog): Promise<SessionLogRestoreResult> {
+    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult> {
       if (!target) throw new Error('pi session-log restore needs a target (state dir, session id, workspace)')
-      return restorePiSessionLog(log, target)
+      return restorePiSessionLog(log, target, seqMax)
     },
     async fingerprint(): Promise<string> {
       const s = read()
