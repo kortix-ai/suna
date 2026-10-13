@@ -75,7 +75,7 @@ export function useAddAccount({
       // tools. Read the list fresh: someone may have signed the slot in since.
       const { data } = await connectionsQuery.refetch();
       const rows = connectorConnectionRows(data?.connections, connector.slug);
-      const slot = emptyProjectSlot(rows);
+      const slot = emptyProjectSlot(connector, rows);
       // The proposed name numbers past the slot itself ("<name> 2"): the slot
       // keeps its name unless the user typed one of their own.
       const proposal = proposeAccountLabel(
@@ -162,9 +162,12 @@ export function useAddAccount({
 /**
  * The connector's empty shared account: the row the server made with the
  * connector (`metadata.default_slot` `'project'`), never signed in, and the
- * only shared account. Older servers send no `authorized`: no slot then.
+ * only shared account. Older servers send no `authorized`: no slot then. A
+ * connector that needs no credential (`requestAuthType` `'none'`) has none:
+ * its first account already works.
  */
-function emptyProjectSlot(rows: readonly Connection[]): Connection | null {
+function emptyProjectSlot(connector: AdminConnector, rows: readonly Connection[]): Connection | null {
+  if (connector.requestAuthType === 'none') return null;
   const shared = rows.filter((row) => row.owner_type === 'project');
   const slot = shared.length === 1 ? shared[0]! : null;
   return slot?.authorized === false && slot.metadata?.default_slot === 'project' ? slot : null;

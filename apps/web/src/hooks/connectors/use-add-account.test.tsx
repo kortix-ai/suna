@@ -83,7 +83,7 @@ const connector = {
 } as AdminConnector;
 
 /** Submit one Add account draft; return the account credential entry opened for. */
-async function addAccount(draft: Partial<NewAccountDraft>) {
+async function addAccount(draft: Partial<NewAccountDraft>, target: AdminConnector = connector) {
   let submit: ((draft: NewAccountDraft) => void) | null = null;
   let opened: { connectionId: string; owner: 'project' | 'me' } | null = null;
   let settle = () => undefined as void;
@@ -91,9 +91,10 @@ async function addAccount(draft: Partial<NewAccountDraft>) {
   function Probe() {
     submit = useAddAccount({
       projectId: 'synthetic-project',
-      connector,
+      connector: target,
       displayName: 'Vendor',
-      onAdded: () => undefined,
+      // A connector that needs no credential opens no entry: it is done here.
+      onAdded: () => settle(),
       onCredential: (target) => {
         opened = target;
         settle();
@@ -150,6 +151,13 @@ describe('a new shared account reuses the empty one made with the connector', ()
   test('a shared account someone added by hand is not the empty one', async () => {
     rows = [{ ...SLOT, metadata: {} }];
     expect(await addAccount({})).toEqual({ connectionId: 'new-1', owner: 'project' });
+    expect(calls[0]).toBe('reconcile:project:Vendor 2');
+  });
+
+  // `auth: none`: the account made with the connector already works, so it is
+  // not an empty one. Everyone adds a second shared account (journey 23).
+  test('a connector that needs no credential gets a second shared account', async () => {
+    await addAccount({}, { ...connector, provider: 'http', requestAuthType: 'none' } as AdminConnector);
     expect(calls[0]).toBe('reconcile:project:Vendor 2');
   });
 
