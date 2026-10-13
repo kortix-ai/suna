@@ -83,6 +83,8 @@ interface GroupsTabProps {
   currentUserId: string;
   /** `member.update` — group member rows offer "Edit access" (account role). */
   canUpdateRole: boolean;
+  /** `member.read` — "View access" on another member's row. */
+  canReadMembers: boolean;
   /** Group member rows: "View access" opens that member's panel. */
   onSelectMember: (userId: string) => void;
   /** null = show the group list. A group id = show that group's access panel.
@@ -101,6 +103,7 @@ export function GroupsTab({
   accountName,
   currentUserId,
   canUpdateRole,
+  canReadMembers,
   onSelectMember,
   selectedGroupId,
   onSelectGroup,
@@ -117,6 +120,7 @@ export function GroupsTab({
         accountName={accountName}
         currentUserId={currentUserId}
         canUpdateRole={canUpdateRole}
+        canReadMembers={canReadMembers}
         onSelectMember={onSelectMember}
         onBack={() => onSelectGroup(null)}
       />

@@ -34,6 +34,9 @@ let projectMetadata: Record<string, unknown> = FLAG_ON;
 let inserted = true;
 let relayOk = false;
 let relayThrows = false;
+let releaseOutcome = 'released';
+/** `clearOpenQuestions` calls: the stored question a release closed. */
+const cleared: Array<Record<string, unknown>> = [];
 const notified: Array<Record<string, unknown>> = [];
 const contexts: Array<Record<string, unknown>> = [];
 const legacyPushed: Array<Record<string, unknown>> = [];
@@ -68,6 +71,10 @@ mock.module('../lib/pending-questions', () => ({
   recordPendingQuestion: async () => ({ inserted }),
   getOpenQuestion: async () => null,
   resolvePendingQuestion: async () => false,
+  clearOpenQuestions: async (sessionId: string, scope: Record<string, unknown> = {}) => {
+    cleared.push({ sessionId, ...scope });
+    return 1;
+  },
   renderAnswerPrompt: () => '',
 }));
 
@@ -82,7 +89,7 @@ mock.module('../../channels/turn-relay', () => ({
 mock.module('../../channels/question-release', () => ({
   channelOfSessionMetadata: (metadata: Record<string, unknown>) =>
     metadata?.source === 'slack' ? 'slack' : null,
-  releaseChannelQuestion: async () => 'released',
+  releaseChannelQuestion: async () => releaseOutcome,
 }));
 
 mock.module('../lib/notification-recipients', () => ({
@@ -144,6 +151,8 @@ beforeEach(() => {
   inserted = true;
   relayOk = false;
   relayThrows = false;
+  releaseOutcome = 'released';
+  cleared.length = 0;
   notified.length = 0;
   contexts.length = 0;
   legacyPushed.length = 0;
@@ -255,5 +264,33 @@ describe('POST /turn-question — notification_center flag off (the pre-KRTX-174
     expect(response.status).toBe(500);
     expect(legacyPushed).toEqual([pushed]);
     expect(notified).toEqual([]);
+  });
+});
+
+// KRTX-1739: a released question waits on nobody in the runtime. The thread
+// reply arrives as a new turn, so the stored row must not count as waiting.
+describe('POST /turn-question — a released channel question closes its stored row', () => {
+  test('released or already answered in the runtime: the stored question closes', async () => {
+    sessionMetadata = { source: 'slack' };
+    relayOk = true;
+    await ask(sandboxCtx);
+    releaseOutcome = 'already_answered';
+    await ask(sandboxCtx, 'que_2');
+    expect(cleared).toEqual([
+      { sessionId: SESSION_ID, requestId: 'que_1' },
+      { sessionId: SESSION_ID, requestId: 'que_2' },
+    ]);
+  });
+
+  test('a release that did not reach the runtime keeps it open: the turn end closes it', async () => {
+    sessionMetadata = { source: 'slack' };
+    releaseOutcome = 'unreachable';
+    await ask(sandboxCtx);
+    expect(cleared).toEqual([]);
+  });
+
+  test('a dashboard session releases nothing and keeps its question open', async () => {
+    await ask(sandboxCtx);
+    expect(cleared).toEqual([]);
   });
 });

@@ -76,7 +76,7 @@ Each person holds exactly one account role: `owner`, `admin` or `member`.
 | --- | --- |
 | `owner` | Everything an admin can do, plus: change the plan and payment method (`billing.write`), delete the account (`account.delete`), grant or revoke super-admin, and grant or change the `owner` role. |
 | `admin` | Rename the account and change its security settings, except **Admins can open every session**. Invite, remove and change the role of members. Manage groups, roles, assignments and service-account keys. Create projects. Read the audit log and the plan. |
-| `member` | See the account, its members, its groups and its plan. Create and revoke their own personal access keys. Work only in the projects a grant gives them. |
+| `member` | See the account and its plan, and the members and groups they share access with (see [Who sees the member list](#who-sees-the-member-list)). Create and revoke their own personal access keys. Work only in the projects a grant gives them. |
 
 - **Members cannot create projects** and cannot change billing. Only an owner holds `billing.write` and `account.delete`.
 - **Owners and admins are manager on every project** in the account. This is a rule of the account role, not a grant, and a project grant cannot lower it. To limit an owner or admin on one project, change their account role to `member` first.
@@ -86,6 +86,19 @@ Each person holds exactly one account role: `owner`, `admin` or `member`.
 - **An account role belongs to a person.** Binding `owner`, `admin` or `member` to a group returns `400`. Give a group a project role or a custom role instead.
 
 Opening another person's private session is a separate, owner-controlled setting. See [Who can open a session](/docs/work/sessions#who-can-open-a-session).
+
+### Who sees the member list
+
+Owners and admins see every member and every group. A `member` sees only the people and groups they share access with:
+
+- themselves, and the account's owners and admins;
+- every person and group with a role or a grant on a project they can open;
+- the groups they belong to;
+- the members of every group above.
+
+The same rule applies to **Members**, **Groups**, a project's access list, the Files share dialog, `kortix members` and `kortix groups`. A group outside that set answers `404`. On a visible group, a `member` sees only the projects they can open. Another member's access details (**View access**, `GET .../iam/members/:userId/...`) and the MFA enforcement preview stay with owners and admins.
+
+To show the whole directory to more people, create a custom account role with `member.read` (every member) and `group.read` (every group), and assign it to those people or to a group. See [Custom roles](#custom-roles).
 
 ## Members and invites
 
@@ -281,7 +294,7 @@ The API route is `POST /v1/accounts/:accountId/iam/assignments`. The permission 
 
 ### Check why someone has access
 
-- **In the web app:** open the member's menu on **Members** and select **View access**.
+- **In the web app:** open the member's menu on **Members** and select **View access**. Without `member.read`, it opens only on your own row.
 - **Over the API:** `GET /v1/accounts/:accountId/iam/members/:userId/effective?action=project.secret.write&resourceType=project&resourceId=<project_id>` returns `allowed` and a `reason`, such as `project_role_insufficient` or `resource_scope_insufficient`. `POST .../effective:batch` checks up to 64 actions in one call. Asking about yourself answers with your real credential; asking about someone else answers from their roles.
 
 ### Per-feature access settings

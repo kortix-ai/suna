@@ -18,6 +18,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { createDatabaseSession, fundDatabaseAccount } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
+import { openFlowDb, seedTurnSession } from '../fixtures/turn-end';
 
 flow(
   'SESS-1',
@@ -2680,6 +2681,115 @@ flow(
       }
     } finally {
       await db.query('DELETE FROM kortix.session_sandboxes WHERE project_id = $1::uuid', [project.id]).catch(() => {});
+      await db.end();
+    }
+  },
+);
+
+// SESS-50 — a stored agent question counts as waiting on a person only while
+// the agent waits on it (KRTX-1739). The session's sandbox credential relays
+// the question and the turn ends; GET needs-input and GET .../question read
+// the stored row.
+flow(
+  'SESS-50',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/accounts/tokens',
+      'POST /v1/projects/:projectId/turn-question',
+      'POST /v1/projects/:projectId/turn-stream',
+      'GET /v1/projects/:projectId/approvals/needs-input',
+      'GET /v1/projects/:projectId/sessions/:sessionId/question',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ name: ctx.fixtures.name('sess-50') });
+    const project = await team.project();
+    // A plain member: needs-input lists the sessions a non-manager created.
+    const creator = await team.addMember('member');
+    await team.grantProjectRole(project.id, creator.userId!, 'member');
+    const db = await openFlowDb(ctx.env);
+    const turn = await seedTurnSession(ctx, db, { projectId: project.id, accountId: team.id, creator }).catch(async (error) => {
+      await db.end();
+      throw error;
+    });
+    const params = { projectId: project.id };
+    const sessionId = turn.sessionId;
+    const ask = (requestId: string) =>
+      turn.sandbox.post(
+        '/v1/projects/:projectId/turn-question',
+        {
+          session_id: sessionId,
+          request_id: requestId,
+          runtime_session_id: 'ses_root',
+          questions: [{ question: 'Which region should the service deploy to?', options: [{ label: 'eu-west-1' }] }],
+        },
+        { params },
+      );
+    const end = (messageId: string, frame: Record<string, unknown>) =>
+      turn.sandbox.post(
+        '/v1/projects/:projectId/turn-stream',
+        { session_id: sessionId, kind: 'end', runtime_session_id: 'ses_root', turn_message_id: messageId, ...frame },
+        { params },
+      );
+    /** needs-input for the creator, and the open question of GET .../question. */
+    const expectWaiting = async (count: number, requestId: string | null) => {
+      const listed = await ctx.client.as(creator).get('/v1/projects/:projectId/approvals/needs-input', { params });
+      listed.status(200);
+      const n = listed.json<{ sessions: Record<string, number> }>().sessions[sessionId] ?? 0;
+      if (n !== count) throw new Error(`needs-input lists the session with ${n}, expected ${count}`);
+      const read = await ctx.client
+        .as(creator)
+        .get('/v1/projects/:projectId/sessions/:sessionId/question', { params: { ...params, sessionId } });
+      read.status(200);
+      const open = read.json<{ question: { request_id: string } | null }>().question;
+      if ((open?.request_id ?? null) !== requestId) throw new Error(`open question ${JSON.stringify(open)}, expected ${requestId}`);
+    };
+    try {
+      await turn.startTurn('msg_sess50_a', creator.userId!);
+      await ctx.step('the sandbox relays a question → 200 persisted; needs-input lists the session with 1 and GET question returns it', async () => {
+        (await ask('que_sess50_a')).status(200).body().has('$.persisted', true);
+        await expectWaiting(1, 'que_sess50_a');
+      });
+
+      await ctx.step('a retrying error frame → outcome non_terminal; the question stays open', async () => {
+        (await end('msg_sess50_a', { status: 'error', error_name: 'APIError', error_retryable: true }))
+          .status(200)
+          .body()
+          .has('$.turn_completion.outcome', 'non_terminal');
+        await expectWaiting(1, 'que_sess50_a');
+      });
+
+      await ctx.step('the daemon reports the turn idle → closed; needs-input drops the session and GET question returns null', async () => {
+        await turn.endTurn('msg_sess50_a');
+        await expectWaiting(0, null);
+      });
+
+      await turn.startTurn('msg_sess50_b', creator.userId!);
+      await ctx.step('the next turn asks again → 1; the person stops it (MessageAbortedError) → closed and 0', async () => {
+        (await ask('que_sess50_b')).status(200);
+        await expectWaiting(1, 'que_sess50_b');
+        (await end('msg_sess50_b', { status: 'error', error_name: 'MessageAbortedError' }))
+          .status(200)
+          .body()
+          .has('$.turn_completion.outcome', 'closed');
+        await expectWaiting(0, null);
+      });
+
+      await turn.startTurn('msg_sess50_c', creator.userId!);
+      await ctx.step('a replayed end frame of the stopped turn closes no turn → already_closed; the new question stays open', async () => {
+        (await ask('que_sess50_c')).status(200);
+        (await end('msg_sess50_b', { status: 'error', error_name: 'MessageAbortedError' }))
+          .status(200)
+          .body()
+          .has('$.turn_completion.outcome', 'already_closed');
+        await expectWaiting(1, 'que_sess50_c');
+        await turn.endTurn('msg_sess50_c');
+        await expectWaiting(0, null);
+      });
+    } finally {
+      await turn.cleanup();
       await db.end();
     }
   },

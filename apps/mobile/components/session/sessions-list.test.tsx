@@ -35,7 +35,8 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/components/kortix/settings-list': {
     SettingsGroup: host('Group'),
     SettingsGroupItem: host('GroupItem'),
-    SettingsRow: (props: any) => React.createElement('Row', { label: props.label, value: props.value }),
+    SettingsRow: (props: any) =>
+      React.createElement('Row', { label: props.label, value: props.value, accessibilityLabel: props.accessibilityLabel }),
   },
   '@/components/kortix/page-content': { PageContent: host('Content') },
   '@/components/kortix/pinned-bar': { PinnedBar: Empty, usePinnedBarInset: () => 0 },
@@ -45,6 +46,12 @@ const fakes: Record<string, Record<string, unknown>> = {
   },
   '@/lib/projects/hooks': { useProjectSessionsPaged: () => paged },
   '@/lib/review/use-review': { useReviewItems: () => review },
+  '@kortix/sdk/react': {
+    useSessionsNeedingInput: (_projectId: string, options: unknown) => {
+      needsInputOptions = options;
+      return needsInput;
+    },
+  },
   '@/contexts': { useAuthContext: () => ({ user: { id: 'me' } }) },
   'expo-router/react-navigation': { useIsFocused: () => true },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
@@ -66,6 +73,8 @@ const fakes: Record<string, Record<string, unknown>> = {
 const route = { projectId: 'p-1', openDrawer() {}, newSession() {}, openSessionActions() {}, isDrawerOpen: false };
 const openSession = () => {};
 const review = { data: [] };
+const needsInput: { data?: { total: number; sessions: Record<string, number> } } = {};
+let needsInputOptions: unknown;
 // Real: the list logic under test. Everything else is a stub.
 const real = new Set([
   'react',
@@ -189,6 +198,21 @@ describe('Sessions page list', () => {
     await render(React.createElement(Page.ProjectSessionsPage));
     expect(list.data.map((item: any) => item.key)).toEqual(['a', 'b']);
     expect(list.data.some((item: any) => item.first)).toBe(false);
+  });
+
+  // KRTX-1739: GET needs-input lists a session whose agent waits on a question.
+  test('a session whose agent waits on a question reads Needs you; the poll is ProjectScreen\'s', async () => {
+    paged = pagedOf([session('asked', Date.now()), session('quiet', Date.now() - 1000)]);
+    needsInput.data = { total: 1, sessions: { asked: 1 } };
+    try {
+      await render(React.createElement(Page.ProjectSessionsPage));
+      const labels = tree.root.findAll((node: any) => node.type === 'Row').map((node: any) => node.props.accessibilityLabel);
+      expect(labels[0]).toStartWith('asked, Needs you,');
+      expect(labels[1]).not.toContain('Needs you');
+      expect(needsInputOptions).toEqual({ enabled: false });
+    } finally {
+      needsInput.data = undefined;
+    }
   });
 
   test('sessionListItems keeps titles out when showHeaders is false', () => {

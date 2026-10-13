@@ -9,7 +9,8 @@ import {
   listReviewItems,
   resolveApproval,
 } from '@kortix/sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { qk } from '@kortix/sdk/react';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const reviewKeys = {
   all: ['review-center'] as const,
@@ -30,9 +31,20 @@ export function useReviewItems(options?: { enabled?: boolean; refetchInterval?: 
   });
 }
 
+/**
+ * Refetch the inbox after a verdict, and GET needs-input with it: the session
+ * lists count a pending connector call from both (KRTX-1739).
+ */
+export async function invalidateReviewInbox(qc: QueryClient, projectId: string): Promise<void> {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: ['review-center', projectId] }),
+    qc.invalidateQueries({ queryKey: qk.project.needsInput(projectId) }),
+  ]);
+}
+
 function useInvalidate(projectId: string) {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
+  return () => invalidateReviewInbox(qc, projectId);
 }
 
 export function useActReviewItem() {

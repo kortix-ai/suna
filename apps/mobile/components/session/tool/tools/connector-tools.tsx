@@ -24,7 +24,7 @@ import {
   ShieldWarningIcon,
   TerminalWindowIcon,
 } from '@/lib/icons';
-import { reviewKeys, useReviewItems } from '@/lib/review/use-review';
+import { invalidateReviewItems, useReviewItems } from '@/lib/review/use-review';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   connectorApprovalNeed,
@@ -292,7 +292,7 @@ ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
  *
  * The decision reuses `resolveApproval` — the same `@kortix/sdk` call
  * `ReviewPage`'s `useReviewVerdict` makes for its `resolve_approval` plan —
- * and invalidates the same `reviewKeys.list`.
+ * and refetches the same queries (`invalidateReviewItems`).
  */
 function ConnectorApprovalPrompt({
   need,
@@ -330,12 +330,12 @@ function ConnectorApprovalPrompt({
     try {
       await resolveApproval(projectId, need.executionId, decision);
       setLocalDecision(decision);
-      queryClient.invalidateQueries({ queryKey: reviewKeys.list(projectId) });
+      invalidateReviewItems(queryClient, projectId);
       toast.success(decision === 'approve' ? 'Approved' : 'Denied');
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Could not record the decision.');
       // The call may have been decided elsewhere in the meantime.
-      queryClient.invalidateQueries({ queryKey: reviewKeys.list(projectId) });
+      invalidateReviewItems(queryClient, projectId);
     } finally {
       setBusy(null);
     }

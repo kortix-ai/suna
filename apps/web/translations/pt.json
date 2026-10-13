@@ -1171,7 +1171,7 @@
         },
         "apps": {
           "name": "Aplicativos",
-          "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs serverless estáveis e execute backends: um banco de dados, funções de servidor, consultas em tempo real, armazenamento de arquivos, agendamento e busca em uma máquina sempre ativa."
+          "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs estáveis e execute backends: um banco de dados, funções de servidor, consultas em tempo real, armazenamento de arquivos, agendamento e busca em uma máquina sempre ativa."
         },
         "monitors": {
           "name": "Monitores",
