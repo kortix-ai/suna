@@ -202,10 +202,11 @@ flow(
     let jwks: { keys: Array<Record<string, unknown>> } = { keys: [] };
 
     // The gate, at App A's own hostname. Local Apps answer under
-    // `<route-key>.apps.localhost`; the API honours `x-kortix-app-host` there.
+    // `<route-key>.apps.localhost`: the Host names the App (an unsigned
+    // `x-kortix-app-host` claim is never trusted).
     const gate = async (pathAndQuery: string) => {
       const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
-        headers: { accept: "application/json", "x-kortix-app-host": appHost, ...(cookie ? { cookie } : {}) },
+        headers: { accept: "application/json", host: `${appHost}:${new URL(apiOrigin).port}`, ...(cookie ? { cookie } : {}) },
         redirect: "manual",
       });
       const text = await response.text();
