@@ -1,5 +1,5 @@
 {
-  "source_hash": "15c6d55406f7e5d6ef60b01fae0b35da8d71643b6de4cd0dbb9903e5e4b7a265",
+  "source_hash": "662530f2b199b2dbb2b38f603ce4cafeca24bd5bf8a22465a78e659ed3abb242",
   "diff_files": [
     "apps/cli/src/__tests__/sessions-chat-sdk.e2e.test.ts",
     "apps/cli/src/commands/sessions-chat.test.ts",
@@ -107,13 +107,13 @@
     "tests/src/flows/session-log.flow.ts",
     "tests/src/flows/session-transcript-history.flow.ts"
   ],
-  "diff_hash": "ae2a89bd4d346044ef5c4aebd8347d94c484669958b5d55f385b726faac9e700",
-  "head": "8ec98563ea884797b3a99b60c06035088dc70b56",
+  "diff_hash": "1e9b36ce92be2c6742ccfa19d7aed8b209d787f9d2be7f236d628a63324f5c41",
+  "head": "837efc8b50d31be8b17d05de816094f081183e99",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T17:24:41.581Z"
+  "at": "2026-10-13T17:53:33.308Z"
 }
