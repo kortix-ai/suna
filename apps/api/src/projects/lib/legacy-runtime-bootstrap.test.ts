@@ -630,6 +630,22 @@ describe('bootstrapLegacyRuntime', () => {
     expect(forced.outcome).toBe('skipped-blocked');
     expect(calls.execs).toHaveLength(0);
   });
+
+  test('an operator --unpin repairs a pinned box once: the script runs and the daemon converges', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const pinned = {
+      daemon: 'ok',
+      opencode: 'ok',
+      uptime_s: 300,
+      runtime: { build: 1790538288, components: { agent: 'skipped' }, pinned: true },
+    };
+    const r = await bootstrapLegacyRuntime(
+      { ...input(), force: true, unpin: true },
+      makeDeps({ health: [pinned, CURRENT_HEALTH] }, calls),
+    );
+    expect(calls.execs).toHaveLength(1);
+    expect(r.outcome).toBe('converged');
+  });
 });
 
 describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {

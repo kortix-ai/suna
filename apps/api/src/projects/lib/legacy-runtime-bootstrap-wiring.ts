@@ -367,7 +367,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
 export async function runLegacyRuntimeBootstrap(
   row: LegacyBootstrapRow,
   reason: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; unpin?: boolean } = {},
 ): Promise<LegacyBootstrapResult> {
   return bootstrapLegacyRuntime(
     {
@@ -376,7 +376,8 @@ export async function runLegacyRuntimeBootstrap(
       provider: row.provider,
       metadata: row.metadata,
       reason,
-      force: opts.force,
+      force: opts.force || opts.unpin,
+      unpin: opts.unpin,
     },
     buildLegacyBootstrapDeps(row),
   );

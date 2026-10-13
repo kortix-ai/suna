@@ -548,6 +548,13 @@ export interface LegacyBootstrapInput {
   reason: string;
   /** Skip the recent-check TTL (an operator sweep wants the truth now). */
   force?: boolean;
+  /**
+   * Operator only: repair a `blocked` (pinned) box. The script deletes the pin
+   * before it relaunches, and a build that is really bad gets rolled back and
+   * pinned again by the supervisor, so one run cannot loop. For pins a race
+   * caused, not a bad build (prod 2026-10-13: four concurrent repairs).
+   */
+  unpin?: boolean;
   /** Internal: this call is the relaunch pass after an OpenCode install. */
   postInstallPass?: boolean;
 }
@@ -904,7 +911,7 @@ async function probeRuntimeForBootstrap(
       if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
     }
   }
-  if (classification.klass === 'blocked') {
+  if (classification.klass === 'blocked' && !input.unpin) {
     // The daemon's own supervisor already tried, rolled back, and latched
     // updates off. Repairing again would relaunch into the same rollback —
     // never loop on it. Record the check so it stays visible, and stop.
