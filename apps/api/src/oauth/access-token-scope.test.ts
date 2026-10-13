@@ -4,14 +4,11 @@ import { oauthScopeAllowsPath } from './access-token';
 const KORTIX = ['profile', 'email', 'kortix'];
 
 // Pentest M-2: an App's code holds its viewer's `kortix` token, and any DCR
-// client can get one. Neither may mint a credential that outlives the grant.
+// client can get one. Neither may change sign-in state, delete the account or
+// mint a credential that outlives the grant.
 describe('oauthScopeAllowsPath', () => {
   test.each([
-    ['POST', '/v1/accounts/tokens'],
-    ['DELETE', '/v1/accounts/tokens/tok-1'],
-    ['POST', '/v1/projects/p1/cli-token'],
     ['POST', '/v1/projects/p1/apps/a1/token'],
-    ['POST', '/v1/accounts/acc/iam/scim/tokens'],
     ['PATCH', '/v1/accounts/acc/iam/pat-policy'],
     ['PATCH', '/v1/auth/user'],
     ['POST', '/v1/auth/password/update'],
@@ -19,7 +16,8 @@ describe('oauthScopeAllowsPath', () => {
     ['POST', '/v1/billing/account/request-deletion'],
     ['POST', '/v1/tunnel/connections/t1/rotate-token'],
     ['POST', '/v1/platform/github-app/pat'],
-    ['POST', '/v1/accounts/tokens/'],
+    ['POST', '/v1/auth/mfa/factors'],
+    ['PATCH', '/v1/auth/user/'],
   ])('a kortix token may not %s %s', (method, path) => {
     expect(oauthScopeAllowsPath(KORTIX, path, method)).toBe(false);
   });

@@ -44,17 +44,16 @@ export function isOAuthRefreshToken(token: string): boolean {
 const IDENTITY_PROBE_PATHS = new Set(['/v1/accounts/me', '/v1/oauth/userinfo', '/v1/oauth/revoke']);
 
 /**
- * Writes no OAuth token may make, even with `kortix`: minting a credential that
- * outlives the grant (PATs, CLI/App/SCIM tokens), sign-in and password state,
- * and account deletion. An OAuth token is delegated: to a third-party client
- * (open DCR) or to an App's own code acting as its viewer (pentest M-2). A
- * grant the user revokes must not leave a PAT behind.
+ * Writes no OAuth token may make, even with `kortix`: sign-in, password, MFA
+ * and profile state, account deletion, and credentials that outlive the grant.
+ * An OAuth token is delegated: to a third-party client (open DCR) or to an
+ * App's own code acting as its viewer (pentest M-2). The PAT, CLI-token, SCIM,
+ * service-account, OAuth-client and gateway-key routes refuse `authType: oauth`
+ * themselves.
  */
 const DELEGATED_WRITE_DENIED: readonly RegExp[] = [
   /^\/v1\/auth(\/|$)/,
-  /^\/v1\/accounts\/tokens(\/|$)/,
-  /^\/v1\/accounts\/[^/]+\/iam\/(scim\/tokens|pat-policy)(\/|$)/,
-  /^\/v1\/projects\/[^/]+\/cli-token(\/|$)/,
+  /^\/v1\/accounts\/[^/]+\/iam\/pat-policy$/,
   /^\/v1\/projects\/[^/]+\/apps\/[^/]+\/token$/,
   /^\/v1\/(billing\/)?account\/(request|cancel)-deletion$/,
   /^\/v1\/tunnel\/connections\/[^/]+\/rotate-token$/,
