@@ -38,12 +38,7 @@ import { FileHeader } from './file-header';
 import { useFileContentState } from './use-file-content-state';
 import { Download } from '@/features/icon/icons/download';
 
-/** The two icon tiles the notices sit on — the failed look and the missing look. */
-const notFoundMedia = (
-  <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
-    <FileX className="text-muted-foreground/40 h-6 w-6" />
-  </div>
-);
+/** The failed look — the tile the boundary fallback and the error skeleton sit on. */
 const errorMedia = (
   <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
     <FileWarning className="text-destructive/50 h-6 w-6" />
@@ -170,7 +165,11 @@ export function FileContentRenderer({
   // from one that didn't. One element, two mounts.
   const notFoundNotice = (
     <ViewerNotice
-      media={notFoundMedia}
+      media={
+        <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
+          <FileX className="text-muted-foreground/40 h-6 w-6" />
+        </div>
+      }
       title={tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line195JsxTextFileNotFound')}
       path={filePath}
       detail={tHardcodedUi.raw(
