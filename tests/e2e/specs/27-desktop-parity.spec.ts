@@ -302,15 +302,17 @@ for (const runtime of runtimes) {
         await expect(hub).toBeVisible();
         const hubRow = hub.locator(".kx-overlay-sidebar-titlebar");
         const back = hubRow.getByRole("button", { name: /Back to app/i });
-        const search = hubRow.getByRole("button", { name: /Search/i });
+        // Since #9750 the hub titlebar is Back to app + account switcher on the
+        // left and the sidebar collapse trigger on the right (no search button).
+        const collapse = hubRow.getByRole("button", { name: /Toggle Sidebar/i });
         await expect(back).toBeVisible();
-        await expect(search).toBeVisible();
+        await expect(collapse).toBeVisible();
         expect(
           await hubRow.evaluate((row) => getComputedStyle(row).justifyContent),
         ).toBe(desktop ? "flex-end" : "space-between");
         const backBox = (await back.boundingBox())!;
-        const searchBox = (await search.boundingBox())!;
-        expect(backBox.x + backBox.width).toBeLessThan(searchBox.x);
+        const collapseBox = (await collapse.boundingBox())!;
+        expect(backBox.x + backBox.width).toBeLessThan(collapseBox.x);
         if (!desktop) {
           const rowBox = (await hubRow.boundingBox())!;
           expect(backBox.x - rowBox.x).toBeLessThan(24);
@@ -2782,17 +2784,14 @@ nativeBrowserTest?.(
       await centeredInBand(sidebarRow);
       await centeredInBand(breadcrumbRow);
       await centeredInBand(breadcrumbRow.getByRole("navigation", { name: "breadcrumb" }));
+      // Since #9750 the hub titlebar carries no search button.
       const back = sidebarRow.getByRole("button", { name: /Back to app/i });
-      const search = sidebarRow.getByRole("button", { name: /Search/i });
       const collapse = sidebarRow.getByRole("button", { name: "Toggle Sidebar" });
-      for (const control of [back, search, collapse]) {
+      for (const control of [back, collapse]) {
         await expect(control).toBeVisible();
         await centeredInBand(control);
         await clearsLights(control);
       }
-      await search.click();
-      await expect(main.locator('[data-slot="command-input"]')).toBeVisible();
-      await main.keyboard.press("Escape");
       await collapse.click();
       await expect(breadcrumbRow).toHaveAttribute("data-sidebar-collapsed", "");
       const reopen = breadcrumbRow.getByRole("button", { name: "Toggle Sidebar" });
