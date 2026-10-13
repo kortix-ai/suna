@@ -700,8 +700,8 @@ session-log types, and a test fails when the two differ. See the
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
 reads only when the runtime lists `session.log.v2`, the project flag
-`session_log` is on, and the API holds a log for an OpenCode session. Every
-other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+`session_log` is on, and the API holds a log for the session (OpenCode or pi).
+Every other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
@@ -718,8 +718,9 @@ still v1:
   the SDK major that removes the v1 rows.
 - `toolCallMetadata(call)`: the harness's display metadata of a tool call, the
   whole `state.metadata` of the v1 part it came from (bash `command`, read
-  `loaded`, task `sessionId`, edit `filediff`). It stays until the session-log
-  schema carries display metadata of its own.
+  `loaded`, task `sessionId`, edit `filediff`); for a record a harness wrote
+  natively (pi), its `details`. It stays until the session-log schema carries
+  display metadata of its own.
 - `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)`: the `fromV1` live view
   of one runtime session's v1 rows, the log `useSessionLogThread` returns on v1,
   for rows a host reads without a `useSession` (a sub-agent's chat). One message

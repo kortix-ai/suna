@@ -57,7 +57,7 @@ export const SERVICES = [
 // absolute path, one inside it (pnpm layout) as a root-relative path.
 const apiContract = resolve(import.meta.dirname, '../../packages/api-contract/src').split(sep).join('/')
 const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/**')]
-// The SDK's import-free message-id codec, reached the same way (pi mints ids with it).
+// The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
 /** @type {Record<string, string[]>} */
@@ -141,8 +141,9 @@ const independentModules = createIndependentModules({
       'harness-core',
       harnessCore,
       [...harnessCore, ...services, SHARED],
-      // The daemon-to-API wire (`@kortix/api-contract/runtime-relay`) the shared relays post.
-      [...RUNTIME, ...API_CONTRACT],
+      // The daemon-to-API wire (`@kortix/api-contract/runtime-relay`) the shared relays post, and the
+      // message-id codec the session-log boot mints its restore note with.
+      [...RUNTIME, ...API_CONTRACT, ...SDK_WIRE_MESSAGE_ID],
       'Harness contract and shared code never import an adapter; only harness.ts does.',
     ),
     ...SERVICES.map((name) =>
