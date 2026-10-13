@@ -1037,6 +1037,8 @@ flow("SEC-10", {
     "POST /v1/projects/:projectId/secrets",
     "GET /v1/projects/:projectId/secrets",
     "DELETE /v1/projects/:projectId/secrets/:name",
+    "PUT /v1/projects/:projectId/secrets/:name/personal",
+    "DELETE /v1/projects/:projectId/secrets/:name/personal",
     "POST /v1/accounts/:accountId/secret-resources",
     "GET /v1/accounts/:accountId/secret-resources",
     "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
@@ -1114,7 +1116,26 @@ flow("SEC-10", {
       .has("$.status", "ok");
     const item = await listedProjectSecret();
     if (item.status !== "ok") throw new Error(`expected status ok after re-entry, got ${JSON.stringify(item)}`);
-    (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...projectParams, name: NAME } })).status(200);
+  });
+
+  await ctx.step("a damaged personal override lists on mine.status while the shared value stays ok; deleting it restores the shared value", async () => {
+    const personalParams = { params: { ...projectParams, name: NAME } };
+    (await owner.put("/v1/projects/:projectId/secrets/:name/personal", { value: `${plaintext}-mine` }, personalParams))
+      .status(200)
+      .body()
+      .has("$.mine.status", "ok");
+    await damage("project_secrets", "project_id = $1::uuid AND identifier = $2 AND owner_user_id IS NOT NULL", [project.id, NAME]);
+    const item = await listedProjectSecret();
+    const mine = item.mine as { active?: boolean; status?: string } | null;
+    if (item.status !== "ok" || item.effective_source !== "mine" || mine?.status !== "undecryptable") {
+      throw new Error(`expected shared ok + mine undecryptable, got ${JSON.stringify(item)}`);
+    }
+    (await owner.del("/v1/projects/:projectId/secrets/:name/personal", personalParams)).status(200);
+    const after = await listedProjectSecret();
+    if (after.mine !== null || after.effective_source !== "shared" || after.status !== "ok") {
+      throw new Error(`expected the shared value back, got ${JSON.stringify(after)}`);
+    }
+    (await owner.del("/v1/projects/:projectId/secrets/:name", personalParams)).status(200);
   });
 
   await ctx.step("an account secret: ok when created, undecryptable once damaged, ok after a new value", async () => {
