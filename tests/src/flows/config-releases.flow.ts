@@ -1715,12 +1715,16 @@ const MARKER_PROMPT =
  */
 const RACE_MARKER_KEY = (round: number): string => `RELOAD_VERIFY_MARKER_R${round}`;
 const RACE_MARKER_AGENT = (round: number, marker: string): string =>
-  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${RACE_MARKER_KEY(round)}: ${marker}\n${RACE_MARKER_KEY(round)}_NEXT: ${marker}\n`;
+  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${RACE_MARKER_KEY(round)}: ${marker}\n`;
 const RACE_MARKER_PROMPT = (round: number): string =>
   `Answer with the ${RACE_MARKER_KEY(round)} value from your instructions and nothing else.`;
-/** Asked once the box serves the round's release: a key the race prompt never named. */
-const RACE_NEXT_PROMPT = (round: number): string =>
-  `Answer with the ${RACE_MARKER_KEY(round)}_NEXT value from your instructions and nothing else.`;
+/**
+ * The prompt raced against the base move. It may run on either release, so it
+ * names no marker: an earlier "there is no such key" answer in the same
+ * conversation is the confound above, and the model repeats it on the next
+ * question (measured 2026-10-13, both harnesses).
+ */
+const RACE_PROMPT = (round: number): string => `Reply with the single word ok. Round ${round}.`;
 
 /**
  * DEF-DEV-2's decider — a key the conversation CANNOT supply.
@@ -2100,7 +2104,7 @@ harnessFlow(
         // round lets a model answer from its own PRIOR turn in this same
         // conversation instead of the current system prompt, which is a
         // confound this flow does not exist to measure.
-        const prompt = RACE_MARKER_PROMPT(round);
+        const prompt = RACE_PROMPT(round);
         await ctx.step(`round ${round}/${RACE_ROUNDS}: a base move and a prompt 200 ms apart`, async () => {
           const roundStart = String((await box.releaseOf())?.running_release_id ?? '');
           await fixture.commit({ '.kortix/opencode/agents/kortix.md': RACE_MARKER_AGENT(round, marker) }, marker);
@@ -2132,9 +2136,9 @@ harnessFlow(
             intervalMs: 3_000,
             description: `round ${round}: the box serves this round's release`,
           });
-          const next = RACE_NEXT_PROMPT(round);
-          (await box.send(next)).status(200);
-          const answer = await answerTo(next);
+          const ask = RACE_MARKER_PROMPT(round);
+          (await box.send(ask)).status(200);
+          const answer = await answerTo(ask);
           if (!answer.includes(marker)) {
             throw new Error(`round ${round}: the next turn does not carry this round's marker: ${answer.slice(0, 200)}`);
           }
