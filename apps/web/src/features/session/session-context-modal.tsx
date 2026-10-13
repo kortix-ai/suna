@@ -14,11 +14,21 @@ import {
 import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-import type { MessageWithParts } from '@/ui/types';
 import { formatCost, type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
-import { useSessionLogThread, type ProviderListResponse, type SessionMessagesSource } from '@kortix/sdk/react';
+import {
+  useSessionLog,
+  useSessionLogThread,
+  useSessionMessages,
+  type ProviderListResponse,
+  type SessionMessagesSource,
+} from '@kortix/sdk/react';
 import { useMemo } from 'react';
-import { CopyAllButton, SessionContextMessageExplorer } from './session-context-message-explorer';
+import {
+  CopyAllButton,
+  rawExplorerData,
+  SessionContextMessageExplorer,
+  type RawV1Row,
+} from './session-context-message-explorer';
 import { getSessionContextMetrics } from './session-context-metrics';
 import type { ServedModelNotice } from './turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
@@ -214,7 +224,7 @@ function OverviewStat({
 const NO_MESSAGES: SessionLogMessage[] = [];
 
 function SessionContextModalBody({
-  messages,
+  detachedRows,
   source,
   session,
   providers,
@@ -226,10 +236,16 @@ function SessionContextModalBody({
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
   // The numbers read the session log's root thread: the `fromV1` view of the
-  // v1 rows while v2 is off, the API's record on v2. The raw explorer below
-  // keeps the v1 rows.
+  // v1 rows while v2 is off, the API's record on v2. The raw explorer and Copy
+  // JSON read the active source: the records on v2, else the v1 rows.
   const thread = useSessionLogThread(source);
   const log = thread?.messages ?? NO_MESSAGES;
+  const logSource = useSessionLog(source)?.source;
+  const v1Rows = useSessionMessages(source);
+  const raw = useMemo(
+    () => rawExplorerData(logSource, thread?.messages, detachedRows ?? v1Rows),
+    [logSource, thread, detachedRows, v1Rows],
+  );
   const metrics = useMemo(
     () => getSessionContextMetrics(thread, providers, pricingLookup),
     [thread, providers, pricingLookup],
@@ -280,7 +296,7 @@ function SessionContextModalBody({
           <ModalTitle>{t.raw('title')}</ModalTitle>
           <div className="flex shrink-0 items-center gap-2">
             <CopyAllButton
-              messages={messages}
+              value={raw.copy}
               copyLabel={t.raw('copyJson')}
               copiedLabel={t.raw('copied')}
             />
@@ -417,7 +433,7 @@ function SessionContextModalBody({
         />
 
         <SessionContextMessageExplorer
-          messages={messages}
+          rows={raw.rows}
           formatTime={fmt.time}
           count={counts.all}
         />
@@ -433,8 +449,12 @@ function SessionContextModalBody({
 interface SessionContextModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The v1 rows the raw explorer lists and Copy JSON copies. */
-  messages: MessageWithParts[] | undefined;
+  /**
+   * The v1 rows of a chat with no `useSession` source (`useSessionSync`). The
+   * raw explorer and Copy JSON read them instead of `useSessionMessages(source)`
+   * while the session log is not v2.
+   */
+  detachedRows?: readonly RawV1Row[];
   /** The session whose log the metrics read (`useSessionLogThread`). */
   source: SessionMessagesSource;
   session: Session | undefined;
@@ -449,7 +469,7 @@ interface SessionContextModalProps {
 export function SessionContextModal({
   open,
   onOpenChange,
-  messages,
+  detachedRows,
   source,
   session,
   providers,
@@ -461,7 +481,7 @@ export function SessionContextModal({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="max-h-[85vh] lg:max-w-3xl" showCloseButton={false}>
         <SessionContextModalBody
-          messages={messages}
+          detachedRows={detachedRows}
           source={source}
           session={session}
           providers={providers}

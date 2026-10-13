@@ -768,8 +768,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   turns as well as v1 turns, and `stepLabel` any session-log block.
 - `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
   prompt the thread has not placed; append it and name it in `held`.
-- `sessionLogThreadMetrics(thread, { pricing? })` is one thread's `cost` (the turns'
-  cost summed), `messages` (`all`, `user`, `assistant`: a compaction counts as its marker
+- `sessionLogThreadMetrics(thread, { pricing? })` is one thread's `cost` (every reply's
+  usage priced: its reported cost, else the lookup), `messages` (`all`, `user`, `assistant`: a compaction counts as its marker
   and, once landed, its summary reply), `tokens` (every priced reply's usage summed) and
   `context` (the last reply with tokens: its `usage` is the context size): what a context
   modal's overview and its sub-agent rows show.

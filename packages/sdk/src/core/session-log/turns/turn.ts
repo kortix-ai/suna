@@ -249,6 +249,15 @@ function costOf(replies: SessionLogMessage[], exact: (m: SessionLogMessage) => b
   if (replies.length && replies.every(exact)) {
     return getTurnCost(replies.flatMap((m) => v1RowsOf(m).flatMap((row) => row.parts.map((part) => ({ part, message: row })))), lookup) ?? null;
   }
+  return usageCostOf(replies, lookup);
+}
+
+/**
+ * `getTurnCost` over one synthetic step-finish per message that reports usage: every reply's
+ * own `usage`, its `cost` as reported, else priced through the lookup. Internal: the thread
+ * metrics (a context modal's totals) price every reply this way.
+ */
+export function usageCostOf(replies: SessionLogMessage[], lookup?: ModelPricingLookup): TurnCostInfo | null {
   const parts = replies.flatMap((m) => {
     const u = m.usage;
     if (!u) return [];
