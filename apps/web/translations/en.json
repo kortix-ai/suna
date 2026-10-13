@@ -9564,6 +9564,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Could not send the email. Try again in about an hour.",
       "authRequestRateLimit": "Too many requests. Try again in a few minutes.",
+      "text0b6a47661327": "Unknown owner",
       "text1a9030082a20": "Create skill",
       "text25ab55af92b1": "Started attachment upload",
       "text38e64d6a8162": "Commits a SKILL.md to the project's default branch. No model or chat needed.",
@@ -9572,6 +9573,7 @@
       "text426699d5a8c0": "{count, plural, one {# character} other {# characters}}",
       "text40078a553439": "Uploaded attachment chunk",
       "text4c7f8000aabd": "Completed attachment upload",
+      "text8782b778c202": "Delete {value0}",
       "text91420d2587c2": "Removed attachment upload",
       "text3aab5b3be2b9": "Resolved runtime attachment descriptor",
       "text0005b85debac": "Sound pack played for session events.",

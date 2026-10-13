@@ -1,23 +1,17 @@
 {
-  "source_hash": "276c0a30b86f74d148f110738a15be6f134b4acb06384ce93493e94945f0ccf5",
+  "source_hash": "cedb579efba0011f31c563b2543fc5025fa04bc92fdffb5937548a7e2127a4a2",
   "diff_files": [
     ".agents/skills/kortix-release/SKILL.md",
-    ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-13T023524Z-merge-every-staging-hotfix-back-into-dev-the-same-day-a-prom.md",
-    "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/agent-tunnel/src/agent/cli.ts",
-    "tests/e2e/specs/27-desktop-parity.spec.ts",
-    "tests/e2e/specs/30-session-transcript-history.spec.ts",
-    "tests/e2e/specs/free-tier-pricing-onboarding.spec.ts",
-    "tests/src/flows/llm-gateway.flow.ts"
+    "infra/terraform/scripts/statemove/deny-old-keys.mjs"
   ],
-  "diff_hash": "94c05fcc4ce3b2b247b1fca14f3bd748b6d12dd52438c7423bdb1647dd9c9274",
-  "head": "4ca559ab1b730dd2d07054bc2803cd094fd87882",
+  "diff_hash": "b1ad47c17c36cb71a76592d313d1c519b1183c71be4d38c1b19a76cfe4d1c30b",
+  "head": "a836ca91163251a4295c5bdbb47aac37cfcc5862",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T03:01:58.174Z"
+  "at": "2026-10-13T04:57:32.656Z"
 }
