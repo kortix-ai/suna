@@ -1,5 +1,5 @@
 {
-  "source_hash": "f2ad3bc918b25bb3e2ea9fac04ae352580af4e62b1b9c2b8ddeff9f1b484865c",
+  "source_hash": "d4acfa92f553a0abaed5e23554b93a93c61c62e7ca24d1c464cc510092c17926",
   "diff_files": [
     "apps/api/src/apps/public-proxy-status.ts",
     "apps/api/src/apps/public-proxy.test.ts",
@@ -8,6 +8,7 @@
     "apps/api/src/apps/volumes.ts",
     "apps/api/src/feature-flags/registry.ts",
     "apps/cli/src/__tests__/host-account-context.test.ts",
+    "apps/cli/src/__tests__/support/arg-grammar-golden.json",
     "apps/cli/src/command-helpers.ts",
     "apps/cli/src/commands/access.ts",
     "apps/cli/src/commands/audit.ts",
@@ -27,13 +28,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/apps.flow.ts"
   ],
-  "diff_hash": "dea0f5880716831452167cd28e8bf43814ab759e7735a7cc7e6c8f34119ad524",
-  "head": "b6a81593cc03bec26cf3cc837b140a50864dcaef",
-  "passed": false,
+  "diff_hash": "60c5695ba82d1092b2d0ee48e9a5220e2dafefbb73f7cc41c2ebb3202b16a2a8",
+  "head": "ec48f4da852ae3b4c1c9f49a1b140b200af8984a",
+  "passed": true,
   "lanes": {
-    "core": "fail",
-    "packages": "fail",
+    "core": "pass",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T18:48:26.238Z"
+  "at": "2026-10-13T19:02:39.019Z"
 }
