@@ -48,7 +48,7 @@ resource isolation.
 ## Run tests
 
 ```bash
-pnpm test                       # Local REST/CLI flows + SDK + runner units + coverage
+pnpm test                       # Diff-scoped: what the branch's diff can affect
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
@@ -61,6 +61,15 @@ pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
+
+Plain `pnpm test` is diff-scoped (`tests/src/core/test-scope.ts`, rules in
+`tests/README.md` "Diff-scoped default run"). It runs the changed packages,
+their dependents and relative importers, the flows and DB suites only when the
+scope reaches the API, CLI, gateway or DB package, and the SDK lane only when
+it reaches `packages/sdk`. A root config, `scripts/` or runner change runs
+everything. It reuses lane groups that already passed on the same diff, so a
+rerun after a flake runs only the red groups. `CI=1 pnpm test` runs everything
+and reuses nothing.
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
@@ -81,7 +90,7 @@ One file per branch keeps PRs from conflicting on it; deleting a merged PR's
 file is conflict-free because no branch edits it again. Format:
 `{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
 `diff_files` is the files the PR itself changed (`git diff origin/dev...HEAD`,
-minus every attestation file) and `diff_hash` their sha256; both are recomputed from
+working tree included when written, minus every attestation file) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
 stays green after a merge of `origin/dev` that touches other files, and goes
 stale only when a file the PR changed is edited after the run. `source_hash`
@@ -99,10 +108,11 @@ reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
 several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
 rev (`--branch`, else the checked-out branch), else the legacy file. It
 recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`. One skip exists, not a pass: `db-suites`
-`skipped-no-db` (no Docker). The `packages` lane has no skip — it runs on a
+every other lane must be `pass`. Two skips exist, neither a pass, both
+for `db-suites`: `skipped-no-db` (no Docker) and `skipped-unaffected` (the
+diff-scoped run found nothing the flows or DB suites read). The `packages` lane has no skip — it runs on a
 laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
-the skip. No in-sandbox
+either skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except

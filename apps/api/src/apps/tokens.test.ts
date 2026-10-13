@@ -90,6 +90,14 @@ describe('the token carries the whole member, and the SDK reads it', () => {
     expect(payload.role).toBeUndefined();
   });
 
+  test('a token for a used App names the App the viewer came through (via_app_id); a direct token does not', () => {
+    const signer = generateSigner();
+    const via = parts(signToken(signer, { ...target(), viaAppId: OTHER_APP }, { userId: 'u', email: null }).token).payload;
+    expect(via).toMatchObject({ aud: APP, via_app_id: OTHER_APP });
+    expect(parts(signToken(signer, target(), { userId: 'u', email: null }).token).payload.via_app_id).toBeUndefined();
+    expect(openIdConfiguration(ISSUER).claims_supported).toContain('via_app_id');
+  });
+
   test('verifyKortixToken accepts it with exactly the env Kortix writes', async () => {
     const signer = generateSigner();
     const env = authEnv(ISSUER, APP, signer);
