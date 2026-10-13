@@ -444,18 +444,11 @@ export function registerChangeRequestsRoutes(): void {
         branch?: string | null;
         headSha?: string | null;
         message?: string;
-        error?: string;
       } | null;
 
       if (!daemonRes.ok || !result?.ok) {
-        // Name what answered: the daemon's own error, or a non-JSON body from
-        // the sandbox edge (a 2026-10-13 gate failure said only "Failed to
-        // save changes", which hid the upstream status).
         return c.json(
-          {
-            error: result?.message || result?.error || 'Failed to save changes',
-            upstream_status: daemonRes.status,
-          },
+          { error: result?.message || 'Failed to save changes' },
           daemonRes.status === 409 ? 409 : 502,
         );
       }
