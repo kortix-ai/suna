@@ -328,7 +328,7 @@ function ProfileTile({
       className="active:bg-accent">
       <View className="flex-row items-center px-4 py-3">
         <View className="mr-3">
-          <ProfilePicture imageUrl={avatarUrl} size={12} fallbackText={name} />
+          <ProfilePicture imageUrl={avatarUrl} size={12} fallbackText={name} email={email} />
         </View>
         <View className="min-w-0 flex-1">
           <Text className="font-roobert-semibold" numberOfLines={1}>
