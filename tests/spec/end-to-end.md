@@ -1659,6 +1659,16 @@ an `ANON` caller 401. `apps/api/src/apps/machines.integration.test.ts` proves
 rollouts, strategies, the release command, scale and the single-writer volume
 handover on PostgreSQL with a fake provider.
 
+`APP-12` A reader of an App gets tokens for the Apps it uses without access
+to them. A project member is the only person App A (restricted) admits; App C
+is private to the owner, and A uses C. The member lists A and not C, and C
+refuses them a member token and an access link (403/404). Signed in to A
+through their own access link, `/_kortix/token?audience=<C slug or id>`
+answers 200: `aud` = C, `sub` = the member, `via_app_id` = A, verified against
+the project key set. A's own token carries no `via_app_id`. C's own host does
+not answer 200 to the member's A cookie, and A answers 401 to a request
+without a sign-in.
+
 ---
 
 ## Browser-agent pilot (opt-in)
