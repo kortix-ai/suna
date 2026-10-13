@@ -72,6 +72,7 @@ import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catal
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { useSlashFocus } from '@/hooks/utils';
 import {
   connectorDisplayName,
   connectorSummary,
@@ -80,7 +81,6 @@ import {
 } from './connector-filter';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
 import { useInstall } from './install/use-install';
-import { useSlashFocus } from '@/hooks/utils';
 
 /**
  * The click-gated Add form, split out of this route's initial chunk.

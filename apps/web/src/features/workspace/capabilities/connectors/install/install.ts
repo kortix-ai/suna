@@ -1,8 +1,4 @@
-import type {
-  AdminConnector,
-  ConnectorDraftInput,
-  ConnectorSyncResult,
-} from '@kortix/sdk';
+import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult } from '@kortix/sdk';
 
 import {
   buildEasyConnectConnectorDraft,

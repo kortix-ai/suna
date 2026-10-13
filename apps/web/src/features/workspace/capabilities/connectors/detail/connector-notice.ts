@@ -83,9 +83,9 @@ export function connectorNotice(input: {
  * sign-in never lands on the project's shared account. A shared account is
  * still signed in from its own row.
  */
-export function noticeTarget<T extends { owner_type: string; status: string; authorized?: boolean }>(
-  accounts: readonly T[],
-): T | 'add' | null {
+export function noticeTarget<
+  T extends { owner_type: string; status: string; authorized?: boolean },
+>(accounts: readonly T[]): T | 'add' | null {
   const own = accounts.filter((account) => account.owner_type !== 'project');
   if (own.length === 0) return 'add';
   return (

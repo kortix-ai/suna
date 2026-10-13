@@ -24,8 +24,7 @@ mock.module('@/components/ui/toast', () => ({
   errorToast: (message: string) => toasts.push(['error', message]),
 }));
 mock.module('@/i18n/use-translations', () => ({
-  useTranslations: () =>
-    Object.assign((key: string) => key, { raw: (key: string) => key }),
+  useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
 
 const { discoverInstallTarget } = await import('./install');
