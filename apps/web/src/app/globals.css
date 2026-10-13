@@ -1580,30 +1580,8 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
   .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
-/* The narrow Settings rail is a horizontal tab strip. Its default 36px list,
-   32px tabs, and 8px vertical padding exceed the 40px physical band at zoom. */
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-scroll {
-  padding-top: 0;
-  padding-bottom: 0;
-}
-/* TabsList wraps its Radix list in the sliding-indicator container. Size both
-   boxes; sizing only the inner list leaves the 36px wrapper clipped at zoom. */
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-tabs {
-  height: var(--kx-titlebar-control-size);
-}
-/* The wrapper is the segmented track (with its own padding); the inner list and
-   the triggers fill it, so only the outer box takes the control size. */
-html[data-desktop-platform='macos']
-  .kx-settings-mobile-titlebar
-  [data-slot='tabs-list'].kx-settings-mobile-tabs {
-  height: 100%;
-}
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar [data-slot='tabs-trigger'] {
-  height: 100%;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-org-link,
+/* The mobile Settings headers (list and pane) share the native titlebar band:
+   the close control takes the band's control size. */
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
   height: var(--kx-titlebar-control-size);
 }

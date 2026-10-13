@@ -29,11 +29,11 @@ import {
 } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 
-export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function GetMemTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const source = (input.source as string) || '';
   const memoryId = input.id != null ? String(input.id) : '';

@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ToolPart } from '@/ui';
@@ -76,7 +77,7 @@ const PART = makePart({
 
 describe('ShowTool drives its inline surface with a plain card; panel stays visually identical', () => {
   test('inline surface renders a plain card with the title and payload visible', () => {
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(PART)} />));
 
     // Still tagged `tool-trigger` so activity-step.tsx's descendant size
     // overrides keep applying.
@@ -101,7 +102,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     const html = renderToStaticMarkup(
       withProviders(
         <BoundActivateContext.Provider value={() => {}}>
-          <ShowTool part={PART} />
+          <ShowTool call={toolCallBlock(PART)} />
         </BoundActivateContext.Provider>,
       ),
     );
@@ -115,7 +116,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
       withProviders(
         <ToolNavigationContext.Provider value={false}>
           <BoundActivateContext.Provider value={() => {}}>
-            <ShowTool part={PART} />
+            <ShowTool call={toolCallBlock(PART)} />
           </BoundActivateContext.Provider>
         </ToolNavigationContext.Provider>,
       ),
@@ -129,7 +130,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
           <BoundActivateContext.Provider value={() => {}}>
-            <ShowTool part={PART} />
+            <ShowTool call={toolCallBlock(PART)} />
           </BoundActivateContext.Provider>
         </ToolSurfaceContext.Provider>,
       ),
@@ -142,7 +143,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <ShowTool part={PART} />
+          <ShowTool call={toolCallBlock(PART)} />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -173,7 +174,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
           <ToolRunningContext.Provider value={true}>
-            <ShowTool part={runningPart} />
+            <ShowTool call={toolCallBlock(runningPart)} />
           </ToolRunningContext.Provider>
         </ToolSurfaceContext.Provider>,
       ),
@@ -201,7 +202,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     const html = renderToStaticMarkup(
       withProviders(
         <ToolRunningContext.Provider value={true}>
-          <ShowTool part={runningPart} />
+          <ShowTool call={toolCallBlock(runningPart)} />
         </ToolRunningContext.Provider>,
       ),
     );
@@ -220,7 +221,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
       url: '/internal/session/abc?token=secret123',
     });
 
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
     // showDomain() echoes unparseable input verbatim; the safeHttpUrl gate
     // must degrade a relative/non-http(s) url to the literal 'Link' instead
@@ -237,7 +238,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     forceShowContentUnavailable = true;
     try {
       const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
-      const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+      const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
       expect(html).toContain('Preview unavailable');
       // Pre-Task-6 behavior returned null here (empty markup) — this is the
@@ -258,7 +259,7 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
       path: '/workspace/report.pdf',
       title: 'Report',
     });
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
     // Header: title + file actions (Refresh / Full screen / Open).
     expect(html).toContain('Report');
@@ -281,7 +282,7 @@ function iconPathData(icon: ReactNode): string {
 describe('ShowTool header shows format-specific icons', () => {
   test('a single PDF shows the PDF glyph, not the generic redirect icon', () => {
     const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
     expect(html).toContain(iconPathData(<FilePdfIcon />));
     expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
@@ -291,7 +292,7 @@ describe('ShowTool header shows format-specific icons', () => {
 
   test('a CSV path resolves the CSV glyph (used to fall through to ExternalLink)', () => {
     const part = makePart({ type: 'file', path: '/workspace/data.csv', title: 'Data' });
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
     expect(html).toContain(iconPathData(<FileCsvIcon />));
     expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
@@ -312,7 +313,7 @@ describe('ShowTool header shows format-specific icons', () => {
         { type: 'file', path: '/workspace/deck.pptx' },
       ],
     });
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
     expect(html).not.toContain('data-slot="avatar-group"');
     expect(html).not.toContain('data-slot="avatar"');
@@ -332,7 +333,7 @@ describe('ShowTool header shows format-specific icons', () => {
         { type: 'url', url: 'http://localhost:3002' },
       ],
     });
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
     const tabs = html.split('role="tab"').slice(1);
 
     expect(tabs).toHaveLength(3);
@@ -346,7 +347,7 @@ describe('ShowTool header shows format-specific icons', () => {
         { type: 'file', path: '/workspace/data.csv' },
       ],
     });
-    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
 
     expect(html).not.toContain('data-slot="avatar-group"');
     expect(html).not.toContain('data-slot="avatar"');

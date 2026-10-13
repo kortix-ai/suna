@@ -1632,7 +1632,19 @@
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizar barra lateral",
+    "customizeSidebarDescription": "Arraste os itens entre os dois grupos.",
+    "resetSidebar": "Restaurar padrão",
+    "reorderItem": "Reordenar {name}",
+    "reorderHint": "Arraste para reordenar. Ou use as setas para cima e para baixo; passar de «Mais» oculta o item da barra lateral.",
+    "reorderAnnouncement": "{name}: {group}, posição {position} de {total}",
+    "more": "Mais",
+    "inSidebar": "Barra lateral",
+    "underMore": "Mais",
+    "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
+    "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
+    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação."
   },
   "dashboard": {
     "title": "Painel",
@@ -7903,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Histórico de versões",
       "line285JsxTextCopyPath": "Copiar caminho",
       "line396JsxTextThisFolderIsEmpty": "Esta pasta está vazia",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui.",
+      "loadMoreItems": "Carregar mais itens",
+      "loadMoreFailed": "Não foi possível carregar mais itens. Tente novamente.",
+      "partialSortNote": "Mostrando {value0} itens. A ordenação se aplica quando todos os itens forem carregados.",
+      "showingFirstItems": "Mostrando os primeiros {value0} itens"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Clique duas vezes para editar o caminho",
@@ -7995,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Pesquisar arquivos...",
       "line124JsxTextTypeToSearchFiles": "Digite para pesquisar arquivos...",
-      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado"
+      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado",
+      "searchContents": "Pesquisar no conteúdo",
+      "firstMatches": "Mostrando as primeiras {value0} correspondências",
+      "searchContentsPlaceholder": "Pesquisar no conteúdo dos arquivos...",
+      "typeToSearchContents": "Digite para pesquisar no conteúdo dos arquivos...",
+      "noMatchingLines": "Nenhuma linha correspondente"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Já existe um arquivo ou uma pasta com esse nome",
@@ -19208,6 +19229,12 @@
       "servedModelInPlaceOf": "No lugar de",
       "servedModelBadge": "Executando em {model}",
       "servedModelBarDescription": "{requested} não respondeu à última solicitação",
+      "computerAwakeStays": "O sandbox fica ligado enquanto você estiver aqui · até {duration}",
+      "computerAwakeStops": "O sandbox para em {duration}. Envie uma mensagem para mantê-lo ligado.",
+      "computerAwakeStopsSoon": "O sandbox para em breve. Envie uma mensagem para mantê-lo ligado.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Prompt da sessão na fila editado",
       "text52867b778586": "Um kortix.yaml.",
       "textd0dfd435b2f4": "Sua força de trabalho de IA, como código.",
@@ -19541,7 +19568,9 @@
       "text8d54763edcd8": "Não montado",
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
       "text6f52b07880a0": "Criar snapshot agora",
-      "text91dc861375bc": "Política de versão móvel visualizada"
+      "text91dc861375bc": "Política de versão móvel visualizada",
+      "texta37dd5ef6ef2": "Personalizar barra lateral",
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegação sidebar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20168,9 +20197,8 @@
     "calendarNextWeek": "Próxima semana",
     "calendarPreviousMonth": "Mês anterior",
     "calendarNextMonth": "Próximo mês",
-    "calendarAllWeek": "Semana toda",
-    "calendarAllDay": "Dia todo",
-    "calendarEvery": "a cada {period}",
+    "calendarMore": "+{count} mais",
+    "calendarMoreOn": "{count, plural, one {Mais # lembrete} other {Mais # lembretes}} em {date}",
     "calendarSession": "Sessão",
     "calendarEmptyWeek": "Nada é disparado nesta semana",
     "calendarEmptyDay": "Nada é disparado neste dia",

@@ -6,9 +6,9 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function TaskDoneTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
+  const input = partInput(call);
   const result = (input.result as string) || '';
   return (
     <BasicTool

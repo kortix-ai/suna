@@ -29,15 +29,15 @@ import { diffLines } from 'diff';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
-export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function EditTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const running = useContext(ToolRunningContext);
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const status = partStatus(call);
   // The harness-neutral file: OpenCode's before/after (or the replaced block),
   // or pi's unified patch.
-  const file = useMemo(() => toToolView(part).files?.[0], [part]);
+  const file = useMemo(() => toToolView(call).files?.[0], [call]);
   const filePath =
     file?.path ||
     inputPath(streamingInput) ||
@@ -50,7 +50,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
   // full-string `includes`, and — when the output carries `<file_diagnostics>` —
   // a global regex, a full split and a per-line regex on top.
-  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
+  const diagnostics = useMemo(() => getToolDiagnostics(call, filePath), [call, filePath]);
   const indent = useToolIndent();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
@@ -64,7 +64,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const morphInstructions =
     (input.instructions as string) || (streamingInput.instructions as string) || '';
   const hasDiff = before !== '' || after !== '';
-  const output = partOutput(part);
+  const output = partOutput(call);
   const isError = status === 'completed' && isErrorOutput(output);
 
   /**

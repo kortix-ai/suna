@@ -25,6 +25,17 @@ export function bootModePolicy(): { stored: boolean; policy: BootModePolicy } {
   return setting.read();
 }
 
+/**
+ * Re-read the policy from the database into this instance's cache. The API
+ * runs several instances, each with its own 30 s cache, so a project read
+ * right after a flag flip can land on one that still holds the old policy
+ * and show Volumes and Stateless sessions in the wrong positions. One
+ * single-row read by primary key.
+ */
+export async function ensureBootModePolicyFresh(): Promise<void> {
+  await setting.readFresh();
+}
+
 export async function refreshBootModePolicy(): Promise<{ stored: boolean; policy: BootModePolicy }> {
   await setting.refresh();
   return setting.read();
@@ -79,6 +90,12 @@ export async function setVolumesForOrg(accountId: string, enabled: boolean | nul
   await setting.refresh();
 }
 
+/** {@link volumesEnabledFor} on the policy as the database holds it now, not a cached copy. */
+export async function volumesEnabledForFresh(accountId: string | null | undefined): Promise<boolean> {
+  await setting.readFresh();
+  return volumesEnabledFor(accountId);
+}
+
 /**
  * Stateless sessions for this organization: Volumes is on and the
  * organization's boot mode (its own rule, else the default) is `volume`, so a
@@ -89,7 +106,8 @@ export function statelessEnabledFor(accountId: string | null | undefined): boole
   if (!id || !volumesEnabledFor(id)) return false;
   const { policy } = bootModePolicy();
   if (policy.killSwitch) return false;
-  return (policy.orgs[id] ?? policy.default).mode === 'volume';
+  // Only the organization's own rule: the default never boots on a volume.
+  return policy.orgs[id]?.mode === 'volume';
 }
 
 /** This organization's own boot-mode rule, if it has one. */

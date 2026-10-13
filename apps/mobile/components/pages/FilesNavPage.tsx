@@ -64,7 +64,7 @@ import { FileGlyph } from '@/components/files/file-icons';
 import { downloadFailureMessage } from '@/lib/files/download-status';
 import { saveFileToDevice, type SaveToDeviceResult } from '@/lib/files/save-to-device';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
-import { directoryChildren, searchFileTree, searchResultLocation, type TreeSearchEntry } from '@/lib/files/tree-search';
+import { directoryChildren, isCutDirectory, searchFileTree, searchResultLocation, type TreeSearchEntry } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
 import { haptics } from '@/lib/haptics';
 import {
@@ -498,9 +498,14 @@ export function FilesNavPage({
 
   const dirQuery = useProjectDirectory(projectId, ref_, path);
   const children = useMemo(
-    () => (dirQuery.data ? directoryChildren(dirQuery.data.entries) : NO_CHILDREN),
+    () => (dirQuery.data ? directoryChildren(dirQuery.data.pages) : NO_CHILDREN),
     [dirQuery.data],
   );
+  // An API older than paging cut the folder and sent no cursor.
+  const dirCut = isCutDirectory(dirQuery.data?.pages ?? []);
+  // A partial folder keeps the server's name order and the sort button is
+  // off: a sorted subset would put the next page's rows above the ones shown.
+  const dirPartial = dirQuery.hasNextPage || dirCut;
 
   const rows = useMemo<SandboxFile[]>(() => {
     const { dirs, files } = children;
@@ -513,8 +518,12 @@ export function FilesNavPage({
       return sortOrder === 'asc' ? n : -n;
     };
     const elevated = dirs.filter((d) => ELEVATED.has(d)).sort();
-    const otherDirs = dirs.filter((d) => !ELEVATED.has(d)).sort(cmp);
-    const fileNodes = [...files].sort((a, b) => cmp(basename(a.path), basename(b.path)));
+    const otherDirs = dirs.filter((d) => !ELEVATED.has(d));
+    const fileNodes = [...files];
+    if (!dirPartial) {
+      otherDirs.sort(cmp);
+      fileNodes.sort((a, b) => cmp(basename(a.path), basename(b.path)));
+    }
     const mk = (name: string, full: string, type: 'directory' | 'file', size?: number | null): SandboxFile => ({
       name,
       path: full,
@@ -526,7 +535,7 @@ export function FilesNavPage({
       ...otherDirs.map((d) => mk(d, path ? `${path}/${d}` : d, 'directory')),
       ...fileNodes.map((f) => mk(basename(f.path), f.path, 'file', f.size)),
     ];
-  }, [children, path, sortBy, sortOrder]);
+  }, [children, path, sortBy, sortOrder, dirPartial]);
 
   // Search covers the whole repository, not only this folder (COR-155): the
   // server matches filenames. A result shows its folder.
@@ -560,6 +569,10 @@ export function FilesNavPage({
   // The list on screen: a folder level, or the search results.
   const listQuery = searching ? searchQuery : dirQuery;
   const listLoading = listQuery.isLoading || (!ref_ && branchesQuery.isLoading);
+  // A folder over one page (500 entries) loads the rest on "Load more items".
+  const moreEntries = !searching && dirQuery.hasNextPage;
+  // A failed "Load more" keeps the rows on screen; the footer reports it.
+  const nextPageFailed = !searching && dirQuery.isFetchNextPageError;
 
   // Back inside a folder goes up one folder, not to project home (Jay,
   // 2026-09-22). Registered after ProjectScreen's handler, so it runs first.
@@ -677,9 +690,9 @@ export function FilesNavPage({
 
   const emptyLabel = listLoading
     ? null
-    : listQuery.isError
+    : listQuery.isError && !nextPageFailed
       ? ((listQuery.error as Error)?.message ?? 'Unable to load the files')
-      : visible.length === 0
+      : visible.length === 0 && !moreEntries
         ? query
           ? 'No matching files'
           : path
@@ -773,11 +786,42 @@ export function FilesNavPage({
                   <Text variant="muted" className="text-center">
                     {emptyLabel}
                   </Text>
-                  {listQuery.isError ? (
+                  {listQuery.isError && !nextPageFailed ? (
                     <Button variant="secondary" size="lg" className="rounded-full" onPress={refresh}>
                       <Text>Try again</Text>
                     </Button>
                   ) : null}
+                </View>
+              ) : null
+            }
+            ListFooterComponent={
+              moreEntries && !listLoading && !emptyLabel ? (
+                <View className="items-center gap-2 pt-4">
+                  {nextPageFailed && !dirQuery.isFetchingNextPage ? (
+                    <Text variant="small" className="text-center leading-5" accessibilityRole="alert">
+                      Could not load more items. Try again.
+                    </Text>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={dirQuery.isFetchingNextPage}
+                    onPress={() => {
+                      haptics.tap();
+                      void dirQuery.fetchNextPage();
+                    }}>
+                    <Text>{dirQuery.isFetchingNextPage ? 'Loading…' : 'Load more items'}</Text>
+                  </Button>
+                  <Text variant="muted" className="text-center">
+                    {`Showing ${visible.length} items. Sorting applies once every item is loaded.`}
+                  </Text>
+                </View>
+              ) : !searching && dirCut && !listLoading && !emptyLabel ? (
+                <View className="items-center pt-4">
+                  <Text variant="muted" className="text-center">
+                    {`Showing the first ${visible.length} items`}
+                  </Text>
                 </View>
               ) : null
             }
@@ -799,7 +843,13 @@ export function FilesNavPage({
               <Text numberOfLines={1}>{ref_ ? shortRef(ref_) : '…'}</Text>
             </Button>
             <View className="flex-1" />
-            <Button variant="secondary" size="icon" className="rounded-full" onPress={cycleSort} accessibilityLabel={sortLabel}>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="rounded-full"
+              disabled={dirPartial && !searching}
+              onPress={cycleSort}
+              accessibilityLabel={sortLabel}>
               <Icon as={ArrowsDownUpIcon} size={18} className="text-foreground" />
             </Button>
             {/* The list / grid toggle: the app's Tabs, as a 40pt pill. */}

@@ -49,18 +49,16 @@ describe('ECS task environment overrides', () => {
     ]);
   });
 
-  it('keeps Composio in dev and prod secret maps while retaining Pipedream for rollback', () => {
-    for (const environment of ['dev', 'prod']) {
-      const variables = readFileSync(
-        resolve(root, `infra/terraform/environments/${environment}/variables.tf`),
-        'utf8',
-      );
+  it('keeps Composio in the prod secret map while retaining Pipedream for rollback', () => {
+    const variables = readFileSync(
+      resolve(root, 'infra/terraform/environments/prod/variables.tf'),
+      'utf8',
+    );
 
-      expect(variables).toContain('COMPOSIO_API_KEY');
-      expect(variables).toContain('PIPEDREAM_CLIENT_ID');
-      expect(variables).toContain('PIPEDREAM_CLIENT_SECRET');
-      expect(variables).toContain('PIPEDREAM_PROJECT_ID');
-    }
+    expect(variables).toContain('COMPOSIO_API_KEY');
+    expect(variables).toContain('PIPEDREAM_CLIENT_ID');
+    expect(variables).toContain('PIPEDREAM_CLIENT_SECRET');
+    expect(variables).toContain('PIPEDREAM_PROJECT_ID');
 
     const module = readFileSync(resolve(root, 'infra/terraform/modules/ecs-api/main.tf'), 'utf8');
     expect(module).toContain('{ name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }');
@@ -74,10 +72,7 @@ describe('ECS task environment overrides', () => {
 
   it('maps every permanent API environment to its standalone gateway origin', () => {
     const targets = {
-      dev: 'https://gateway-dev-ecs-fargate.kortix.com',
-      staging: 'https://gateway-staging-ecs-fargate.kortix.com',
       prod: 'https://gateway-ecs-fargate.kortix.com',
-      'prod-use2-shadow': 'https://gateway-use2-shadow.kortix.com',
       'dev-use2': 'https://gateway-dev-use2.kortix.com',
       'staging-euw2': 'https://gateway-staging-euw2.kortix.com',
     };
@@ -93,6 +88,11 @@ describe('ECS task environment overrides', () => {
       expect(result.stdout).toBe(target);
     }
     expect(gatewayTarget('unknown').status).toBe(2);
+    // The us-west-2 targets were destroyed on 2026-10-12.
+    expect(gatewayTarget('dev').status).toBe(2);
+    expect(gatewayTarget('staging').status).toBe(2);
+    // The us-east-2 prod shadow was removed on 2026-10-12.
+    expect(gatewayTarget('prod-use2-shadow').status).toBe(2);
   });
 
   it('places each environment in its region, its stack, and its secret', () => {
@@ -108,11 +108,8 @@ describe('ECS task environment overrides', () => {
         { cwd: root, encoding: 'utf8', env: { ...process.env, KORTIX_ECS_DEPLOY_LIB: '1' } },
       );
     const expected = {
-      dev: 'us-west-2 kortix-dev kortix-dev-env',
-      staging: 'us-west-2 kortix-staging kortix-staging-env',
       prod: 'eu-west-2 kortix-prod kortix-prod-env',
-      'prod-use2-shadow': 'us-east-2 kortix-prod-use2 kortix-prod-us-east-2-env',
-      // The region-consolidation stacks keep the secret NAME and differ by region.
+      // The dev and staging stacks keep the environment's secret NAME.
       'dev-use2': 'us-east-2 kortix-dev-use2 kortix-dev-env',
       'staging-euw2': 'eu-west-2 kortix-staging-euw2 kortix-staging-env',
     };
@@ -122,6 +119,8 @@ describe('ECS task environment overrides', () => {
       expect(result.stdout).toBe(line);
     }
     expect(coordinates('unknown').status).toBe(2);
+    expect(coordinates('dev').status).toBe(2);
+    expect(coordinates('staging').status).toBe(2);
   });
 
   it('carries no fast cold boot activation path', () => {

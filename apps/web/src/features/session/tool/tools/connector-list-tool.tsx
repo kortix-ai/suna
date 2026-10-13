@@ -18,10 +18,10 @@ import { useMemo } from 'react';
 
 import { type ConnectorEntry, parseConnectorListOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ConnectorListTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const filter = (input.filter as string) || '';
   const connectors = useMemo(() => parseConnectorListOutput(output || ''), [output]);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over

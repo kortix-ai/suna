@@ -4,7 +4,7 @@
  *
  * Every variant is one sentence with the PROJECT name in the middle —
  * `before` <name> `after` — so the name stays the sentence's only highlighted
- * word and the confetti button stays where it is. The name is a project
+ * word. The name is a project
  * ("Agent Centric Demo", "Website relaunch"), not a person or an agent, so
  * every line has to read with a project in that slot: you give a project
  * work, move it forward, ask what it needs — you do not ask it to take

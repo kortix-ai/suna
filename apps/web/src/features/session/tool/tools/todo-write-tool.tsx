@@ -17,11 +17,11 @@ import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function TodoWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
 
   const todos = useMemo(() => {
     const fromInput = parseTodos(input.todos);

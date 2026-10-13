@@ -230,19 +230,18 @@ describe('the response leg streams', () => {
     expect(upstream.rawHeaders).toContainEqual(['content-type', 'application/json']);
   });
 
-  test('MEASURED: bun does NOT preserve duplicate non-known RESPONSE headers', async () => {
+  test('MEASURED: bun keeps duplicate non-known RESPONSE headers in res.rawHeaders', async () => {
     // Pinning what is TRUE rather than what would be nice. Measured on bun
-    // 1.3.14 against a raw-socket upstream emitting two literal `X-Dup:` lines:
-    // `res.rawHeaders` came back holding only the LAST value, while `set-cookie`
-    // (a known header) kept both. So `res.rawHeaders` does NOT give the full
-    // duplicate fidelity node does — the same collapse the REQUEST leg already
-    // suffers, now measured on the response leg too.
+    // 1.4.3 against a raw-socket upstream emitting two literal `X-Dup:` lines:
+    // `res.rawHeaders` holds BOTH values, in order. On bun 1.3.14 it held only
+    // the LAST one (1.4.0 changed it), so the response leg now has the same
+    // duplicate fidelity as node.
     //
-    // It costs the relay nothing today: every name in SAFE_RESPONSE_HEADERS is
-    // single-valued, and `set-cookie` is deliberately excluded from that list,
-    // so no header that can legitimately repeat ever travels back. This test
-    // exists so the day that whitelist grows a repeatable header, it fails here
-    // instead of silently dropping a value in production.
+    // It costs the relay nothing either way: every name in SAFE_RESPONSE_HEADERS
+    // is single-valued, and `set-cookie` is deliberately excluded from that
+    // list, so no header that can legitimately repeat ever travels back. This
+    // test exists so a bun change in either direction fails here instead of
+    // silently changing what a repeatable header would do in production.
     handler = (_req, res) => {
       res.writeHead(200, ['x-dup', 'one', 'x-dup', 'two']);
       res.end('{}');
@@ -250,8 +249,7 @@ describe('the response leg streams', () => {
     const upstream = await openUpstream(head('/dup', 'GET'), null, { seam: seam() });
     await drain(upstream.body);
     const dups = upstream.rawHeaders.filter(([name]) => name === 'x-dup').map(([, v]) => v);
-    expect(dups).toHaveLength(1);
-    expect(dups[0]).toContain('two');
+    expect(dups).toEqual(['one', 'two']);
   });
 });
 
@@ -517,5 +515,36 @@ describe('EXACTLY ONE framing header reaches the upstream', () => {
     );
     expect(error).toBeInstanceOf(SecretBrokerError);
     expect((error as SecretBrokerError).code).toBe('relay_request_too_large');
+  });
+
+  // Characterization for the framing DECISION across all three body shapes at
+  // once, pinned against real sockets before the framing code was extracted
+  // into its own helper: a Buffer proves its length → `content-length`; a
+  // stream with a caller-declared length keeps it and never gains
+  // `transfer-encoding`; a stream without one goes chunked. Every shape
+  // carries EXACTLY ONE framing header.
+  test('the three body shapes each get exactly one framing header', async () => {
+    received = [];
+    const buffered = await openUpstream(head(), Buffer.from('exactly-13-by'), { seam: seam() });
+    await drain(buffered.body);
+    const declared = await openUpstream(
+      { ...head(), headers: { ...head().headers, 'content-length': '5' } },
+      Readable.from([Buffer.from('abcde')]),
+      { seam: seam() },
+    );
+    await drain(declared.body);
+    const undeclared = await openUpstream(head(), Readable.from([Buffer.from('abc')]), { seam: seam() });
+    await drain(undeclared.body);
+
+    expect(received).toHaveLength(3);
+    expect(received[0]?.headers['content-length']).toBe('13');
+    expect(received[0]?.headers['transfer-encoding']).toBeUndefined();
+    expect(Buffer.concat(received[0]!.chunks).toString()).toBe('exactly-13-by');
+    expect(received[1]?.headers['content-length']).toBe('5');
+    expect(received[1]?.headers['transfer-encoding']).toBeUndefined();
+    expect(Buffer.concat(received[1]!.chunks).toString()).toBe('abcde');
+    expect(received[2]?.headers['transfer-encoding']).toBe('chunked');
+    expect(received[2]?.headers['content-length']).toBeUndefined();
+    expect(Buffer.concat(received[2]!.chunks).toString()).toBe('abc');
   });
 });

@@ -566,8 +566,10 @@ resource "aws_backup_selection" "daily" {
 }
 
 # ════════════════════════════════════════════════════════════════════════════
-# VPC Flow Logs delivery role — Drata DCF-406. Flow logs themselves are created
-# per-VPC (CLI / network module) against this role + the /vpc/flowlogs group.
+# VPC Flow Logs delivery role — Drata DCF-406. Flow logs and their /vpc/flowlogs
+# groups are created per region (compliance-monitoring, network module). The
+# us-west-2 group and its CMK were removed with the last us-west-2 VPC
+# (2026-10-12).
 # ════════════════════════════════════════════════════════════════════════════
 resource "aws_iam_role" "flow_logs" {
   name               = "vpc-flow-logs-role"
@@ -584,42 +586,4 @@ resource "aws_iam_role_policy" "flow_logs" {
   name   = "flow-logs-delivery"
   role   = aws_iam_role.flow_logs.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogGroups", "logs:DescribeLogStreams"], Resource = ["arn:aws:logs:*:${local.account_id}:log-group:/vpc/flowlogs", "arn:aws:logs:*:${local.account_id}:log-group:/vpc/flowlogs:*", "arn:aws:logs:*:${local.account_id}:log-group:/vpc/flowlogs:*:log-stream:*"] }] })
-}
-resource "aws_cloudwatch_log_group" "flow_logs" {
-  name              = "/vpc/flowlogs"
-  retention_in_days = 365
-  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
-  tags              = local.tags
-}
-
-# CMK for CloudWatch Logs in the default (us-west-2) region — CloudWatch log
-# groups are encrypted at rest by AWS either way, but a dedicated CMK gives us
-# key-rotation + access control (Trivy AWS-0017 / avd.aquasec.com/misconfig/aws-0017).
-resource "aws_kms_key" "cloudwatch_logs" {
-  description             = "CloudWatch Logs encryption, us-west-2 (SOC2 DCF-54)"
-  enable_key_rotation     = true
-  deletion_window_in_days = 30
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Id      = "cloudwatch-logs-cmk-policy"
-    Statement = [
-      { Sid    = "EnableRoot", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" },
-        Action = ["kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*", "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion", "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"],
-      Resource = "*" },
-      { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-west-2.amazonaws.com" },
-        Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
-      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-west-2:${local.account_id}:log-group:*" } } }
-    ]
-  })
-  tags = {
-    ManagedBy  = "terraform"
-    Name       = "cloudwatch-logs"
-    Stack      = "security-baseline"
-    Compliance = "soc2"
-  }
-}
-
-resource "aws_kms_alias" "cloudwatch_logs" {
-  name          = "alias/cloudwatch-logs"
-  target_key_id = aws_kms_key.cloudwatch_logs.key_id
 }

@@ -17,6 +17,7 @@
  *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from "../core/flow";
+import { withTransientGitRetry } from "../fixtures/git-transient";
 import { serveFixtureRepoLocally } from "../fixtures/local-git";
 import { withDb } from "../fixtures/chat";
 
@@ -519,9 +520,9 @@ flow(
       let code = 0;
       let output = '';
       try {
-        const result = await exec('git', args, { cwd: root, timeout: 60_000,
+        const result = await withTransientGitRetry(args, () => exec('git', args, { cwd: root, timeout: 60_000,
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
+            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } }));
         output = result.stdout + result.stderr;
       } catch (error: any) {
         code = typeof error.code === 'number' ? error.code : -1;
