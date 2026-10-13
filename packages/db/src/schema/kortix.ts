@@ -7187,7 +7187,7 @@ export const jobQueue = kortixSchema.table(
 // below), issues scoped S3 credentials, and indexes every finished item (one
 // manifest) into the timeline tables. The timeline tables that grow with
 // recorded time (frames, actions, audio) are RANGE-partitioned by month on
-// their event time (migration 20261012220000000_capture); drizzle-kit has no syntax
+// their event time (migration 20261013210000000_capture); drizzle-kit has no syntax
 // for that, so they are declared here as their parents.
 
 /**
