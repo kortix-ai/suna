@@ -266,7 +266,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | Method | What it does |
 | --- | --- |
 | `review.list(params?)` · `.get(id)` · `.submit(input)` · `.act(id, …)` · `.bulkAct(input)` | The Review page inbox: change requests, approvals and agent outputs. |
-| `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one or on an open agent question, with a count per session. `useSessionsNeedingInput(projectId)` (`@kortix/sdk/react`) reads the same list every 30 seconds. |
+| `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one or on an open agent question, with a count per session. `useSessionsNeedingInput(projectId)` (`@kortix/sdk/react`) reads the same list every 30 seconds, and again on each question event of an open session. |
 | `approvals.resolve(executionId, 'approve' \| 'deny', { note? })` | Decide one call. `note` goes to the agent as an instruction. A decision covers that call only. |
 
 Policies and approvals are explained in [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
