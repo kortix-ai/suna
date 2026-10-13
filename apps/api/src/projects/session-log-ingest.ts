@@ -48,12 +48,16 @@
  *   "acknowledged by the daemon's journal".
  * - The upgrade (P3.3). A converted log (capture or backfill rows, grade `converted` or
  *   `partial`) becomes native at the journal's first write: `restore_grade` goes to
- *   `native`, `grade_counts` goes from the column and the record, and at generation 0
- *   every live capture row is tombstoned at rev `SESSION_LOG_CAPTURE_REV_LIMIT - 1`
- *   before the batch applies. The first journal of a box exports its whole native store
- *   (no restore gave it cursors), so the export puts back each message it holds; a later
- *   batch of that export revives its rows (a journal rev is higher). A tombstoned capture
- *   row keeps its seq and stays provisional: a journal put on that seq deletes it.
+ *   `native`, and `grade_counts` goes from the column and the record. A capture row gives
+ *   way only where the journal claims it: the same message id (the put replaces it), the
+ *   same `(thread_id, seq)` (a tombstone at seq `-rev`), or a thread where a pi reply has a
+ *   `pi:` id (a dump from before P2.5: every capture row of that thread is tombstoned). Both
+ *   apply in every batch. At generation 0, the first journal write also takes every other
+ *   live capture row out of context (`in_context: false`, column and record): it stays
+ *   visible, and the model view is the native store's. Capture rows are never deleted.
+ * - Re-puts. A put whose content hash equals the stored row's (a restarted daemon re-sends
+ *   every message) is acknowledged and changes nothing, unless the row is a tombstone, a
+ *   capture row, or of another generation.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -197,6 +201,7 @@ async function applyBatch(
             ),
           );
       }
+      if (!capture) await hideConvertedPiThreads(tx, scope.sessionId, batch.puts);
       await dropProvisionalRows(tx, scope.sessionId, batch.puts);
       for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
       if (!capture) await markDurableTurns(tx, scope.sessionId, batch.puts);
@@ -269,16 +274,13 @@ async function upsertSession(
       updatedAt: sql`now()`,
     })
     .where(eq(sessionLogs.sessionId, scope.sessionId));
-  // P3.3: a box that wakes on a journal daemon exports its whole native store at generation 0
-  // (no restore claimed the session). Every capture or backfill row goes: the export puts its
-  // own back under the same ids (OpenCode, pi since P2.5), and a row it does not hold (pi's
-  // `pi:<entry>` ids for a dump from before P2.5, a message the box lost) would stay next to
-  // the native ones. A restored box (generation > 0) holds this log: its rows stay.
+  // P3.3: a capture row the journal does not claim stays visible, out of context: the native
+  // store is what the model sees. A restored box (generation > 0) holds this log: rows stay as they are.
   if (firstJournal && batch.generation === 0) {
     await tx
       .update(sessionLogMessages)
-      .set({ deletedAt: sql`now()`, rev: SESSION_LOG_CAPTURE_REV_LIMIT - 1, updatedAt: sql`now()` })
-      .where(and(eq(sessionLogMessages.sessionId, scope.sessionId), lt(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT - 1), isNull(sessionLogMessages.deletedAt)));
+      .set({ inContext: false, record: sql`jsonb_set(${sessionLogMessages.record}, '{in_context}', 'false')`, updatedAt: sql`now()` })
+      .where(and(eq(sessionLogMessages.sessionId, scope.sessionId), lt(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT), isNull(sessionLogMessages.deletedAt)));
   }
   return null;
 }
@@ -311,22 +313,48 @@ async function upsertThreads(tx: Tx, sessionId: string, batch: SessionLogJournal
 
 /**
  * A capture row (rev below the limit) that holds the `(thread_id, seq)` a put
- * of this batch claims for another message is provisional: it goes. For a
- * journal put that is the journal taking over a capture's seq. For a capture
- * put it is a shifted message, whose own put in this batch writes it again.
+ * of this batch claims for another message is provisional: it gives way as a
+ * tombstone at seq `-rev`, the capture tombstone's place (capture revs are
+ * unique per session, so that seq is free). Never deleted. For a journal put
+ * that is the journal taking over a capture's seq. For a capture put it is a
+ * shifted message, whose own put in this batch revives it at its new seq.
  */
 async function dropProvisionalRows(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
   if (puts.length === 0) return;
   const claims = JSON.stringify(puts.map(({ message: m }) => ({ message_id: m.message_id, thread_id: m.thread_id, seq: m.seq })));
   const dropped = await tx.execute<{ message_id: string; thread_id: string; seq: number }>(sql`
-    DELETE FROM kortix.session_log_messages m
-     USING jsonb_to_recordset(${claims}::jsonb) AS p(message_id text, thread_id text, seq int)
+    UPDATE kortix.session_log_messages m
+       SET deleted_at = coalesce(m.deleted_at, now()), seq = -m.rev, updated_at = now()
+      FROM jsonb_to_recordset(${claims}::jsonb) AS p(message_id text, thread_id text, seq int)
      WHERE m.session_id = ${sessionId} AND m.thread_id = p.thread_id AND m.seq = p.seq
        AND m.message_id <> p.message_id AND m.rev < ${SESSION_LOG_CAPTURE_REV_LIMIT}
-    RETURNING m.message_id, m.thread_id, m.seq`);
+    RETURNING m.message_id, m.thread_id, p.seq`);
   if (dropped.length > 0) {
     logger.info('[session-log] provisional capture rows gave up their seq', { sessionId, rows: dropped.slice(0, 20) });
   }
+}
+
+/**
+ * A pi dump written before P2.5 has no Kortix ids: pi exports its replies as `pi:<entry id>`
+ * (`harness/pi/session-log.ts` in kortixd). Its capture rows carry the v1 ids, so they would
+ * stay next to the native ones. A journal reply with a `pi:` id tombstones every live capture
+ * row of its thread at seq `-rev`. A P2.5+ dump gives every reply a Kortix id; only its
+ * system and custom messages have `pi:` ids, so they do not count.
+ */
+async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
+  const threads = [...new Set(puts.flatMap(({ message: m }) => (m.role === 'assistant' && m.message_id.startsWith('pi:') ? [m.thread_id] : [])))];
+  if (threads.length === 0) return;
+  await tx
+    .update(sessionLogMessages)
+    .set({ deletedAt: sql`now()`, seq: sql`-${sessionLogMessages.rev}`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(sessionLogMessages.sessionId, sessionId),
+        inArray(sessionLogMessages.threadId, threads),
+        lt(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT),
+        isNull(sessionLogMessages.deletedAt),
+      ),
+    );
 }
 
 // ponytail: one INSERT per put, so a seq collision names its own pair without
@@ -375,7 +403,11 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
           record: sql`excluded.record`,
           updatedAt: sql`now()`,
         },
-        setWhere: sql`(excluded.generation, excluded.rev) > (${sessionLogMessages.generation}, ${sessionLogMessages.rev})`,
+        // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
+        // A capture row and a row of another generation are always replaced.
+        setWhere: sql`(excluded.generation, excluded.rev) > (${sessionLogMessages.generation}, ${sessionLogMessages.rev})
+          AND (${sessionLogMessages.contentHash} IS DISTINCT FROM excluded.content_hash OR ${sessionLogMessages.deletedAt} IS NOT NULL
+               OR ${sessionLogMessages.rev} < ${SESSION_LOG_CAPTURE_REV_LIMIT} OR ${sessionLogMessages.generation} <> excluded.generation)`,
       });
   } catch (err) {
     if (uniqueViolationConstraint(err) !== SEQ_KEY) throw err;

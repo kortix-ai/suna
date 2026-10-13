@@ -33,8 +33,7 @@
  * then `log.message` for each put (`{ rev, message }`) and each tombstone
  * (`{ message_id, rev }`, as the journal posts it), with the revs the API receives. The
  * journal collects when it starts (the native store is at rest), at each turn
- * end and at the daemon stop. It posts what it collected at each of the three: the
- * start's post is the boot export, the whole native store on a box that restored nothing. A journal the API turned off (404, 409)
+ * end and at the daemon stop. A journal the API turned off (404, 409)
  * collects and publishes nothing more, deltas included. While it runs, every `message.part.delta` text
  * frame on the v1 bus is published as `log.block.delta`: both harnesses use the
  * v1 session id, message id and part id as the thread, message and block id.
@@ -548,10 +547,8 @@ export function startSessionLogJournal(port: SessionLogPort, options: SessionLog
   // One journal per boot: a second start replaces the first, which sends nothing more.
   void active?.stop(0)
   active = new SessionLogJournal(port, options)
-  // The store is at rest now: the v2 stream gets the session and its threads before the first turn
-  // streams, and the API gets the boot export without waiting for a turn end. A box that wakes on
-  // this daemon and is never prompted still makes its converted log native (P3.3).
-  void active.flush()
+  // The store is at rest now: the v2 stream gets the session and its threads before the first turn streams.
+  void active.collect()
   return active
 }
 
