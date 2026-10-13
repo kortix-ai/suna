@@ -97,6 +97,10 @@ const aggregate = (rowExpression: SQL<string>) =>
 /** Windowed total LLM spend for gateway observability. */
 export const totalSpendSql = aggregate(rowTotalSpendSql);
 
+/** `totalSpendSql` over only the rows `filter` matches, so one scan can sum several windows. */
+export const totalSpendWhereSql = (filter: SQL): SQL<number> =>
+  sql<number>`coalesce(sum(${rowTotalSpendSql}) filter (where ${filter}), 0)::float8`;
+
 /** Windowed spend debited from the Kortix wallet. */
 export const kortixBilledSpendSql = aggregate(rowKortixBilledSpendSql);
 

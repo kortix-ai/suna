@@ -2154,7 +2154,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/routes/git-backend.ts": {
