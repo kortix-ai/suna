@@ -1795,6 +1795,12 @@
       "ownerOnly": "Само власник сесије или менаџер пројекта може поново да покрене ову сесију."
     }
   },
+  "sessionDelete": {
+    "description": "Брише <name>{label}</name> и уклања њен сандбок. Сесију можете да вратите у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
+    "undo": "Опозови",
+    "restored": "Сесија је враћена",
+    "restoreFailed": "Враћање сесије није успело"
+  },
   "modelSelector": {
     "search": "Претражи моделе",
     "free": "Бесплатно",
@@ -6893,8 +6899,6 @@
       "line120JsxTextFailedToLoadSessions": "Учитавање сесија није успело",
       "line132JsxTextNoSessionsYet": "Још нема сесија.",
       "line189JsxTextDeleteSession": "Избрисати сесију?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Ово ће трајно уништити грану и сандбок за",
-      "line193JsxTextThisActionCannotBeUndone": ". Ова радња се не може опозвати.",
       "line312JsxAttrAriaLabelSessionActions": "Акције сесије"
     },
     "componentsProjectsProjectSidebar": {

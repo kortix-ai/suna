@@ -1795,6 +1795,12 @@
       "ownerOnly": "Nur der Sitzungsinhaber oder ein Projektmanager kann diese Sitzung neu starten."
     }
   },
+  "sessionDelete": {
+    "description": "Löscht <name>{label}</name> und entfernt ihre Sandbox. Du kannst die Sitzung {days} Tage lang wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
+    "undo": "Rückgängig",
+    "restored": "Sitzung wiederhergestellt",
+    "restoreFailed": "Sitzung konnte nicht wiederhergestellt werden"
+  },
   "modelSelector": {
     "search": "Modelle suchen",
     "free": "Kostenlos",
@@ -6893,8 +6899,6 @@
       "line120JsxTextFailedToLoadSessions": "Sitzungen konnten nicht geladen werden",
       "line132JsxTextNoSessionsYet": "Noch keine Sessions.",
       "line189JsxTextDeleteSession": "Session löschen?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Dadurch werden der Branch und die Sandbox dauerhaft zerstört für",
-      "line193JsxTextThisActionCannotBeUndone": ". Diese Aktion kann nicht rückgängig gemacht werden.",
       "line312JsxAttrAriaLabelSessionActions": "Session-Aktionen"
     },
     "componentsProjectsProjectSidebar": {

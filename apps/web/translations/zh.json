@@ -1795,6 +1795,12 @@
       "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
     }
   },
+  "sessionDelete": {
+    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内恢复该会话。之后，其消息和文件将被删除。分支会保留。",
+    "undo": "撤销",
+    "restored": "会话已恢复",
+    "restoreFailed": "无法恢复会话"
+  },
   "modelSelector": {
     "search": "搜索模型",
     "free": "免费",
@@ -6893,8 +6899,6 @@
       "line120JsxTextFailedToLoadSessions": "无法加载会话",
       "line132JsxTextNoSessionsYet": "还没有会话。",
       "line189JsxTextDeleteSession": "删除会话？",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "这将永久销毁以下对象的分支和沙盒：",
-      "line193JsxTextThisActionCannotBeUndone": "。此操作无法撤销。",
       "line312JsxAttrAriaLabelSessionActions": "会话操作"
     },
     "componentsProjectsProjectSidebar": {

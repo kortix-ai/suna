@@ -1795,6 +1795,12 @@
       "ownerOnly": "Only the session owner or a project manager can restart this session."
     }
   },
+  "sessionDelete": {
+    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore the session for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "undo": "Undo",
+    "restored": "Session restored",
+    "restoreFailed": "Could not restore the session"
+  },
   "modelSelector": {
     "search": "Search models",
     "free": "Free",
@@ -6904,8 +6910,6 @@
       "line120JsxTextFailedToLoadSessions": "Failed to load sessions",
       "line132JsxTextNoSessionsYet": "No sessions yet.",
       "line189JsxTextDeleteSession": "Delete session?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "This will permanently destroy the branch and sandbox for",
-      "line193JsxTextThisActionCannotBeUndone": ". This action cannot be undone.",
       "line312JsxAttrAriaLabelSessionActions": "Session actions"
     },
     "componentsProjectsProjectSidebar": {

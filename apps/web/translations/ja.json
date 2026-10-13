@@ -1795,6 +1795,12 @@
       "ownerOnly": "このセッションを再起動できるのは、セッションの所有者またはプロジェクト管理者のみです。"
     }
   },
+  "sessionDelete": {
+    "description": "<name>{label}</name> を削除し、そのサンドボックスを破棄します。セッションは {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
+    "undo": "元に戻す",
+    "restored": "セッションを復元しました",
+    "restoreFailed": "セッションを復元できませんでした"
+  },
   "modelSelector": {
     "search": "モデルを検索",
     "free": "無料",
@@ -6893,8 +6899,6 @@
       "line120JsxTextFailedToLoadSessions": "セッションを読み込めませんでした",
       "line132JsxTextNoSessionsYet": "まだセッションはありません。",
       "line189JsxTextDeleteSession": "セッションを削除しますか？",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "これにより、次のブランチとサンドボックスが完全に破棄されます:",
-      "line193JsxTextThisActionCannotBeUndone": "。この操作は元に戻せません。",
       "line312JsxAttrAriaLabelSessionActions": "セッション操作"
     },
     "componentsProjectsProjectSidebar": {
