@@ -43,6 +43,7 @@ import {
   type SandboxSpec,
   claimComputeWindow,
   findStaleActiveSessions,
+  firstSessionTurnStartedAt,
   getLatestComputeSession,
   getOpenComputeSession,
   insertComputeSession,
@@ -230,12 +231,43 @@ async function settleComputeWindow(
   // that historical debit, close at the cursor, and never move time backwards.
   const claimedEnd =
     terminalState && billableEnd.getTime() < lastBilled.getTime() ? lastBilled : billableEnd;
-  const durationSeconds = Math.max(0, (claimedEnd.getTime() - lastBilled.getTime()) / 1000);
-  if (durationSeconds <= 0 && !terminalState) {
-    // Nothing more is billable, but advance nothing either: `last_billed_at`
-    // stays put so a box that comes back alive resumes from where it stopped.
+  // THE FIRST TURN — a session's compute bills only from its first accepted
+  // turn. A session box starts the moment the user opens the session page, but
+  // an empty session (no accepted turn — the warm session waiting for a send
+  // that never came) must not debit idle compute against the customer's
+  // credits (KRTX-1546). `session_turns` is the ledger of accepted turns, so
+  // its oldest row is the first billable instant. Rows without a sessionId
+  // (monitor boxes, App machines) are unattributed infrastructure and keep
+  // billing from the cursor as before.
+  //
+  // The cursor still moves to `claimedEnd` when nothing is billable: the idle
+  // is forgiven as it elapses instead of accumulating, so a first turn that
+  // lands later can never retro-bill the pre-turn seconds. A terminal settle
+  // always proceeds, so an empty session that stops still closes its row.
+  // A box whose liveness clamp pulled `claimedEnd` behind the cursor has
+  // nothing new to bill: stop here and leave `last_billed_at` where it is,
+  // so a box that comes back alive resumes from where it stopped. Checked
+  // before the first-turn lookup because the answer does not depend on it —
+  // the billable floor below is never earlier than the cursor.
+  if (!terminalState && claimedEnd.getTime() <= lastBilled.getTime()) {
     return 'no_window';
   }
+  const firstTurnAt = row.sessionId ? await firstSessionTurnStartedAt(row.sessionId) : null;
+  let billableFromMs: number | null;
+  if (!row.sessionId) {
+    // Unattributed infrastructure (monitor boxes, App machines): bill from
+    // the cursor, as before.
+    billableFromMs = lastBilled.getTime();
+  } else if (firstTurnAt) {
+    // A session that has accepted at least one turn bills from the later of
+    // the cursor and its first turn.
+    billableFromMs = Math.max(lastBilled.getTime(), firstTurnAt.getTime());
+  } else {
+    // Empty session (no accepted turn): nothing is billable yet.
+    billableFromMs = null;
+  }
+  const durationSeconds =
+    billableFromMs === null ? 0 : Math.max(0, (claimedEnd.getTime() - billableFromMs) / 1000);
 
   const spec: SandboxSpec = {
     cpuCores: row.cpuCores,

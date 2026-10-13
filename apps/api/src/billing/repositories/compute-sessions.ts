@@ -1,4 +1,4 @@
-import { sandboxComputeSessions } from '@kortix/db';
+import { sandboxComputeSessions, sessionTurns } from '@kortix/db';
 import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
@@ -42,6 +42,28 @@ export async function getLatestComputeSession(sandboxId: string) {
     .orderBy(desc(sandboxComputeSessions.createdAt))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The instant of a session's FIRST accepted turn, or null when no turn has
+ * ever been accepted.
+ *
+ * `session_turns` is the append-only per-turn ledger the delivery lifecycle
+ * writes (see schema/kortix.ts); its oldest row is the first proof that a
+ * session was actually used. The `(session_id, started_at DESC)` index turns
+ * the oldest row into the first entry of a backward index scan, so this is
+ * one index probe per settle — the read the Session costs tab already runs
+ * per session.
+ */
+export async function firstSessionTurnStartedAt(sessionId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ startedAt: sessionTurns.startedAt })
+    .from(sessionTurns)
+    .where(eq(sessionTurns.sessionId, sessionId))
+    .orderBy(asc(sessionTurns.startedAt))
+    .limit(1);
+  // `started_at` is NOT NULL, so the only falsy case is "no turn rows".
+  return row ? new Date(row.startedAt) : null;
 }
 
 /**

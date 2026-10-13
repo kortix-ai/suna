@@ -36,6 +36,12 @@ let insertError: unknown = null;
 let staleRows: Array<typeof sandboxComputeSessions.$inferSelect> = [];
 /** What claimComputeWindow answers; false keeps every other test untouched. */
 let claimResult = false;
+/** The claim arguments, so a test can assert the cursor and the claimed cost. */
+let claimCalls: Array<Record<string, unknown>> = [];
+/** The session's first turn instant the repository read answers. Defaults to a
+ *  long-past instant so every session row reads as already-in-use; a null
+ *  answer is the empty-session state the first-turn guard forgives. */
+let firstTurnAnswer: Date | null = new Date(0);
 /** Wallet settlements the metering path attempted (the real wallet is never reached). */
 let settleCalls: Array<{ description: string } & Record<string, unknown>> = [];
 
@@ -73,9 +79,14 @@ mock.module('../repositories/compute-sessions', () => ({
     storageCalls.push('getLatestComputeSession');
     return null;
   },
-  claimComputeWindow: async () => {
+  claimComputeWindow: async (input: Record<string, unknown>) => {
     storageCalls.push('claimComputeWindow');
+    claimCalls.push(input);
     return claimResult;
+  },
+  firstSessionTurnStartedAt: async (sessionId: string) => {
+    storageCalls.push(`firstSessionTurnStartedAt:${sessionId}`);
+    return firstTurnAnswer;
   },
   releaseComputeWindow: async () => {
     storageCalls.push('releaseComputeWindow');
@@ -120,6 +131,8 @@ beforeEach(() => {
   insertError = null;
   staleRows = [];
   claimResult = false;
+  claimCalls = [];
+  firstTurnAnswer = new Date(0);
   settleCalls = [];
   ledgerHasKey = false;
   settleError = null;
@@ -164,6 +177,53 @@ describe('the partial-billing tick', () => {
     expect(result.settled).toBe(1);
     expect(settleCalls).toHaveLength(1);
     expect(settleCalls[0]!.description).toBe('Sandbox compute · sess-123 · 2vCPU/4GB/20GB · 600s');
+  });
+
+  test('a zero-message session bills nothing and still advances the cursor', async () => {
+    // KRTX-1546: a session that never accepted a turn (a warm session waiting
+    // for a send that never came) must not debit the wallet for the idle its
+    // box ran. The cursor still moves, so the elapsed idle is forgiven as it
+    // elapses instead of retro-billing when the first turn lands.
+    staleRows = [staleRow('sess-empty')];
+    claimResult = true;
+    firstTurnAnswer = null;
+
+    const result = await tickRunningComputeCharges();
+
+    expect(result.settled).toBe(1);
+    expect(settleCalls).toEqual([]);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]!['addCostUsd']).toBe(0);
+    expect(claimCalls[0]!['expectedLastBilledAt']).toBe(staleRows[0]!.lastBilledAt);
+    expect(claimCalls[0]!['nextLastBilledAt']).not.toBe(staleRows[0]!.lastBilledAt);
+  });
+
+  test('a session whose first turn falls inside the window bills only from the turn', async () => {
+    // The cursor sits ten minutes back; the first turn landed five minutes
+    // into that window. The pre-turn idle is forgiven, the post-turn work bills.
+    staleRows = [staleRow('sess-midwindow')];
+    claimResult = true;
+    firstTurnAnswer = new Date(Date.parse(staleRows[0]!.lastBilledAt) + 5 * 60_000);
+
+    const result = await tickRunningComputeCharges();
+
+    expect(result.settled).toBe(1);
+    expect(settleCalls).toHaveLength(1);
+    expect(settleCalls[0]!.description).toBe('Sandbox compute · sess-midwindow · 2vCPU/4GB/20GB · 300s');
+    // Half the window's cost: the pre-turn half is forgiven, not deferred.
+    expect(settleCalls[0]!['amount']).toBeGreaterThan(0);
+    expect(settleCalls[0]!['amount']).toBeLessThan(0.201312 / 6);
+  });
+
+  test('a session whose first turn predates the cursor bills its whole window', async () => {
+    staleRows = [staleRow('sess-used')];
+    claimResult = true;
+    firstTurnAnswer = new Date(0);
+
+    await tickRunningComputeCharges();
+
+    expect(settleCalls).toHaveLength(1);
+    expect(settleCalls[0]!.description).toBe('Sandbox compute · sess-used · 2vCPU/4GB/20GB · 600s');
   });
 
   test('a box opened outside a session keeps the plain ledger description', async () => {

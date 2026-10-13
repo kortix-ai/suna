@@ -17,8 +17,10 @@
  * `POST /projects/:id/sessions/warm` writes it (projects/routes/warm-sessions.ts). The
  * `visible` list scope hides marked rows whose session is not actively
  * provisioning or running (projects/lib/session-inventory.ts): a live box
- * bills compute from creation (warmPoolGrantMs), and a billed session must
- * stay listed so its owner can see and stop it. The manager `project` scope
+ * is a running session the owner must be able to see and stop, and its
+ * compute becomes billable the moment its first turn is accepted
+ * (compute-metering.ts settles a session's compute only from its first turn
+ * on). The manager `project` scope
  * keeps a live warm row for lifecycle inspection too, and drops a soft-deleted
  * warm draft in every scope: never prompted, nothing to audit, and listing the
  * tombstone left the Sessions page's empty state unreachable. `recordSessionActivity`

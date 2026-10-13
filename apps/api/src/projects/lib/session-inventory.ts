@@ -180,13 +180,15 @@ export function selectSessionRowsForViewer(input: {
       // moment the row lists like any other session. See lib/warm-sessions.ts.
       //
       // A warm row whose session is provisioning or running is different: its
-      // box bills compute from creation (sandbox-deadline-policy.ts
-      // warmPoolGrantMs) until the reaper or the user stops it. A billed
-      // session the list hides is money its owner cannot see, open or stop, so
-      // it lists in the `visible` scope like any other running session. The
+      // box runs real compute (sandbox-deadline-policy.ts warmPoolGrantMs)
+      // until the reaper or the user stops it, and it becomes billable the
+      // moment its first turn is accepted (compute-metering.ts settles a
+      // session's compute only from its first turn on). A live box the list
+      // hides is a running session its owner cannot see or stop, so it lists
+      // in the `visible` scope like any other running session. The
       // session row's own status is the predicate, not the sandbox row: sandbox
       // provisioning is fire-and-forget (session-create.ts), so the sandbox row
-      // can lag seconds behind a session that is already up and billing.
+      // can lag seconds behind a session that is already up.
       //
       // `visible` scope only. The `project` scope keeps accessible warm rows for
       // lifecycle inspection, but it also applies the access filter above.

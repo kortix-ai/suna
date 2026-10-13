@@ -77,6 +77,9 @@ mock.module('../billing/repositories/compute-sessions', () => ({
   insertComputeSession: async () => null,
   getLatestComputeSession: async () => null,
   findStaleActiveSessions: async () => [],
+  // The import graph needs the export; the rows below carry no sessionId, so
+  // the first-turn guard never calls it.
+  firstSessionTurnStartedAt: async () => null,
 }));
 
 const { calculateComputeCost, pauseComputeSession } = await import(
