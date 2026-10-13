@@ -66,7 +66,9 @@ export function registerIamMfaRoutes(): void {
     }),
     async (c: any) => {
     const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
+    // The same leaf as the toggle it previews: the list names every member
+    // without MFA, which a plain member may not see.
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     // Pull all members and the count of their verified MFA factors in one
     // round-trip. LEFT JOIN so members with zero factors still appear.

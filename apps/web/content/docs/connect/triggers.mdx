@@ -57,7 +57,9 @@ From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updat
 
 `--model`, `--session-mode`, `--session-key`, `--session-id`, `--session-access`, `--member`, `--group` and `--filter` apply only with `--apply` on `add`, and on `set`.
 
-Reading triggers needs `project.trigger.read`. Creating, editing and deleting need `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`. Firing needs `project.trigger.fire`, which the built-in member role holds.
+Reading triggers needs `project.trigger.read`. Creating, editing and deleting need write access to the project (`project.write`) and `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`. Firing needs `project.trigger.fire`, which the built-in member role holds.
+
+The Triggers page, an agent's Triggers section and the mobile Schedules page show each control only to a role that holds its permissions: **New trigger** with create, **Run now** with fire, **Pause**, **Resume** and the editors with update, **Delete** with delete. A built-in member sees **Run now** and nothing else.
 
 ## Schedules
 

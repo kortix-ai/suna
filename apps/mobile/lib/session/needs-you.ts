@@ -1,18 +1,19 @@
 /**
  * needs-you — which sessions wait on the user, and why, from the project's
  * review inbox (`useReviewItems`: connector approvals, change requests,
- * agent-submitted reviews and decisions). Each inbox item carries its
- * originating session (`sessionId`); web's sidebar folds the same list the
- * same way (`summarizeReviewSessions`).
+ * agent-submitted reviews and decisions) and from GET needs-input
+ * (`useSessionsNeedingInput`: open `question`-tool questions and pending
+ * connector approvals, per session; KRTX-1739). Each inbox item carries its
+ * originating session (`sessionId`); web's lists fold the same two reads the
+ * same way (`useSessionNeedsYouCounts`).
  *
- * Pending runtime permissions and `question`-tool questions are not in the
- * inbox: the API keeps no project-wide list of them, so a session waiting on
- * one only shows it inside its open thread.
+ * Pending runtime permission requests are in neither read: a session waiting
+ * on one only shows it inside its open thread.
  *
  * Pure data and pure functions only — unit-tested under `bun test`.
  */
 
-import type { ReviewItem } from '@kortix/sdk';
+import type { ReviewItem, SessionsNeedingInputResponse } from '@kortix/sdk';
 
 /** The fields of a review item this module reads. */
 export type NeedsYouItem = Pick<ReviewItem, 'status' | 'kind' | 'title' | 'createdAt'> & {
@@ -20,7 +21,7 @@ export type NeedsYouItem = Pick<ReviewItem, 'status' | 'kind' | 'title' | 'creat
 };
 
 export interface SessionNeedsYou {
-  /** `needs_you` items from this session. Always ≥ 1. */
+  /** What waits on the user in this session: inbox items, open agent questions, approvals. Always ≥ 1. */
   count: number;
   /** One line: the newest item's wait, then how many more ("Asked: … · 2 more"). */
   reason: string;
@@ -58,8 +59,18 @@ function createdAtMs(value: string): number {
 /**
  * Session id → what it waits on. Only `needs_you` items with a session count;
  * an item with no session belongs to the Review page alone.
+ *
+ * `needsInput` adds what GET needs-input lists. A session in both takes the
+ * larger count, because a pending connector approval is in both reads. A
+ * session it alone lists waits on an agent question: "Waiting for your answer",
+ * ordered after the inbox items (`newestAt` 0: the read carries no time). The
+ * read also keys each session by its runtime id; lookups go by `session_id`,
+ * so those entries are inert.
  */
-export function needsYouBySession(items: readonly NeedsYouItem[]): Map<string, SessionNeedsYou> {
+export function needsYouBySession(
+  items: readonly NeedsYouItem[],
+  needsInput?: SessionsNeedingInputResponse,
+): Map<string, SessionNeedsYou> {
   const newest = new Map<string, { item: NeedsYouItem; at: number; count: number }>();
   for (const item of items) {
     if (item.status !== 'needs_you' || !item.sessionId) continue;
@@ -76,13 +87,19 @@ export function needsYouBySession(items: readonly NeedsYouItem[]): Map<string, S
     }
   }
   const result = new Map<string, SessionNeedsYou>();
-  for (const [sessionId, { item, at, count }] of newest) {
+  for (const [sessionId, { item, at, count: itemCount }] of newest) {
+    const count = Math.max(itemCount, needsInput?.sessions[sessionId] ?? 0);
     const reason = needsYouReason(item);
     result.set(sessionId, {
       count,
       reason: count > 1 ? `${reason} · ${count - 1} more` : reason,
       newestAt: at,
     });
+  }
+  for (const [sessionId, count] of Object.entries(needsInput?.sessions ?? {})) {
+    if (count > 0 && !result.has(sessionId)) {
+      result.set(sessionId, { count, reason: REASON_WITHOUT_TITLE.decision, newestAt: 0 });
+    }
   }
   return result;
 }

@@ -668,6 +668,16 @@ flow(
         if (r.body.release_id !== descriptor.release_id) throw new Error('release ID moved without a base change');
       });
 
+      await ctx.step("a booting box's base_sha never chooses the release: the tip and any other SHA both answer the base tip", async () => {
+        for (const baseSha of [descriptor.source_commit, 'f'.repeat(40)]) {
+          const r = await fixture.descriptor(own.secret, own.sessionId, { base_sha: baseSha });
+          if (r.status !== 200) throw new Error(`base_sha ${baseSha}: expected 200, got ${r.status}`);
+          if (r.body.source_commit !== descriptor.source_commit || r.body.release_id !== descriptor.release_id) {
+            throw new Error(`base_sha ${baseSha}: answered ${r.body.source_commit} / ${r.body.release_id}`);
+          }
+        }
+      });
+
       await ctx.step('the session token downloads the archive; every file matches its blob ID and nothing extra ships', async () => {
         const r = await fixture.download(own.secret, descriptor.config_tree_id!);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${r.bytes.toString().slice(0, 200)}`);

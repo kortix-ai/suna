@@ -1,7 +1,8 @@
 /**
  * Pure transcript layout rules. No React, no renderer, no SDK client — only
- * the `ClassifiedPart` shapes `classifyTurn` returns, so every rule here is a
- * unit test instead of a screenshot.
+ * the session-log records and the `ClassifiedPart` shapes
+ * `classifySessionLogMessage` returns for them, so every rule here is a unit
+ * test instead of a screenshot.
  *
  * Three jobs:
  *  1. Decide which classified parts render at all, and collapse a run of
@@ -15,7 +16,7 @@
  * `formatElapsed` is NOT redeclared here — `lib/transcript-view.ts` owns it.
  */
 
-import type { ClassifiedPart, ClassifiedToolPart, DiffLine, MessageWithParts } from '@kortix/sdk';
+import type { ClassifiedPart, ClassifiedToolPart, DiffLine, SessionLogMessage, SessionLogTurn } from '@kortix/sdk';
 
 // ============================================================================
 // Rows
@@ -243,19 +244,14 @@ export interface GatedToolCall {
  * transcript resolves the call out of the messages it already has.
  */
 export function findToolCall(
-  messages: readonly MessageWithParts[],
+  messages: readonly SessionLogMessage[],
   tool: { messageID: string; callID: string } | undefined,
 ): GatedToolCall | null {
   if (!tool) return null;
-  for (const message of messages) {
-    if (message.info.id !== tool.messageID) continue;
-    for (const part of message.parts) {
-      if (part.type !== 'tool' || part.callID !== tool.callID) continue;
-      const state = part.state as { input?: Record<string, unknown> } | undefined;
-      return { name: part.tool, input: state?.input };
-    }
-  }
-  return null;
+  const message = messages.find((m) => m.message_id === tool.messageID);
+  const call = message?.blocks.find((b) => b.type === 'tool_call' && b.call_id === tool.callID);
+  if (call?.type !== 'tool_call') return null;
+  return { name: call.name, input: call.input as Record<string, unknown> | undefined };
 }
 
 /** Stable, readable JSON for an approval gate. Never truncated: the whole
@@ -274,18 +270,12 @@ export function formatArguments(input: Record<string, unknown> | undefined): str
 // ============================================================================
 
 /**
- * `session.messages` in display order, deduped, with the empty assistant
- * shells dropped — i.e. `groupMessagesIntoTurns` flattened back to a list.
- * Grouping is the SDK's ordering rule; re-sorting here would be a second,
- * divergent copy of it.
+ * The thread's messages in display order: each turn's prompt, then its replies
+ * — `sessionLogTurns` flattened back to a list, with the empty assistant shells
+ * already dropped. Grouping is the SDK's ordering rule; re-sorting here would be
+ * a second, divergent copy of it. A turn whose prompt is not loaded shows its
+ * replies only: its stand-in prompt has no blocks.
  */
-export function orderedMessages(
-  turns: readonly { userMessage: MessageWithParts; assistantMessages: MessageWithParts[] }[],
-): MessageWithParts[] {
-  const flat: MessageWithParts[] = [];
-  for (const turn of turns) {
-    flat.push(turn.userMessage);
-    for (const assistant of turn.assistantMessages) flat.push(assistant);
-  }
-  return flat;
+export function orderedMessages(turns: readonly SessionLogTurn[]): SessionLogMessage[] {
+  return turns.flatMap((turn) => (turn.partial ? turn.assistant : [turn.user, ...turn.assistant]));
 }

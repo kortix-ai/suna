@@ -46,6 +46,7 @@ mock.module('@kortix/sdk', () => ({
 
 const { resolveApprovalMutationOptions, sessionAuditPollMs } =
   await import('./session-audit-shared');
+const { qk } = await import('@kortix/sdk/react');
 
 describe('session audit polling', () => {
   test('uses one slow idle cadence and one fast pending cadence', () => {
@@ -169,5 +170,24 @@ describe('resolveApprovalMutationOptions', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['session-audit', 'proj-1', 'session-1'],
     });
+  });
+
+  // KRTX-1739: the session lists read Needs you from GET needs-input, which
+  // lists a pending connector call. Without the refetch the row keeps Needs
+  // you until the 30 s poll.
+  test('refetches the project needs-input summary on settle', async () => {
+    const queryClient = queryClientWithGlobalDefault(() => {});
+    const invalidateSpy = mock(() => Promise.resolve());
+    queryClient.invalidateQueries = invalidateSpy as typeof queryClient.invalidateQueries;
+
+    const options = resolveApprovalMutationOptions('proj-1', 'session-1', queryClient);
+    const observer = new MutationObserver(queryClient, options);
+    const unsubscribe = observer.subscribe(() => {});
+
+    await observer.mutate({ executionId: 'exec-1', decision: 'approve' }).catch(() => {});
+
+    unsubscribe();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: qk.project.needsInput('proj-1') });
   });
 });

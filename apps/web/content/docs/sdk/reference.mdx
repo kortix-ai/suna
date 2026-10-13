@@ -156,7 +156,9 @@ Kortix has one grant record, the assignment: one principal (`user`, `group`, `se
 | `oauthClients.list` · `.get` · `.create` · `.update` · `.rotateSecret` · `.remove` | Sign in with Kortix clients. The secret is returned once, on create and on rotate. |
 | `can(accountId, userId, { action, resourceType?, resourceId? })` · `canBatch(accountId, userId, probes)` | Ask whether a principal may do one action · many, in one round trip, answers in input order. |
 
-Gate a control in your UI with `can` or `canBatch` on the action the route checks, not on a role name.
+Gate a control in your UI with `can` or `canBatch` on the action the route checks, not on a role name. `PROJECT_ACTIONS` (root export) names every project action the API answers about, for example `PROJECT_ACTIONS.PROJECT_GITOPS_MERGE` is `project.gitops.merge`. The API answers an unknown action with `400`. For triggers, probe `TRIGGER_CONTROL_ACTIONS` and pass the result to `triggerControlsFrom(cans)`: it returns `{ canCreate, canFire, canUpdate, canDelete }`, one flag per trigger route, each `false` until the probe allows it. Create, update and delete also need `project.write`, because their routes load the project for write first.
+
+For change requests and the review inbox, probe `REVIEW_CONTROL_ACTIONS`. `changeRequestControlsFrom(cans)` returns `{ canOpen, canMerge, canClose }`: open needs `project.write` + `project.gitops.push`, merge needs `project.write` + `project.gitops.merge`, close and reopen need `project.write`. `reviewVerdictAllowed(item, verdict, cans)` says whether to offer one verdict on one review item. Approving a change request merges it, so it follows `canMerge`. Every other verdict on a change request or a native item needs `project.write` + `project.review.act`. A connector call offers approve and reject to the viewer the API lets decide it: a project manager, or the person who launched the session.
 
 ### `kortix.accountInvites`
 
@@ -175,6 +177,8 @@ Gate a control in your UI with `can` or `canBatch` on the action the route check
 | `tierConfigurations()` | The available plans. |
 | `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` · `.cancelScheduledChange(accountId?)` · `.prorationPreview(newPriceId, accountId?)` | Manage the subscription. |
 | `credits.purchase(input)` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · read and set auto top-up. |
+
+Before you render a purchase control, ask `canOfferTopup(state)` (root export) about the account state: `true` only when the plan may buy credits and the caller may change billing. `canManageBilling(state)` answers the second half alone. Both return `false` while `state` is `undefined` or `null`, so a member never sees a control the API answers with `403`.
 
 Plans and credits are explained in [Plans & credits](/docs/credits).
 
@@ -266,7 +270,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | Method | What it does |
 | --- | --- |
 | `review.list(params?)` · `.get(id)` · `.submit(input)` · `.act(id, …)` · `.bulkAct(input)` | The Review page inbox: change requests, approvals and agent outputs. |
-| `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one. |
+| `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one or on an open agent question, with a count per session. `useSessionsNeedingInput(projectId)` (`@kortix/sdk/react`) reads the same list every 30 seconds, and again on each question event of an open session. |
 | `approvals.resolve(executionId, 'approve' \| 'deny', { note? })` | Decide one call. `note` goes to the agent as an instruction. A decision covers that call only. |
 
 Policies and approvals are explained in [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
@@ -400,7 +404,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 | Prompts | `send(text, { model?, agent? })`, `abort()`, `prompts.create` · `.list` · `.remove` · `.retry` · `.edit` · `.interrupt` · `.hold` |
 | Live events | `stream({ onEvent, onGapRehydrate?, signal? })` returns a handle with `close()` |
 | Conversation | `messages({ conversationId?, limit?, before? })`, `pending()`, `answerPermission(requestId, 'once' \| 'always' \| 'reject', message?)`, `answerQuestion(requestId, answers \| null)`, `compact(model?)`, `rewind(messageId)`, `restoreRewind()` |
-| Server-side reads | `turn()`, `transcript(options?)`, `transcriptSync(options?)` (answers while the sandbox is stopped), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
+| Server-side reads | `turn()`, `transcript(options?)`, `transcriptSync(options?)` (answers while the sandbox is stopped), `log(query?)` (one page of the stored session log, `null` when the session has none), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
 | Files and previews | `files.list` · `.read` · `.readBlob` · `.status` · `.findFiles` · `.findText` · `.upload` · `.write` · `.create` · `.copy` · `.remove` · `.mkdir` · `.rename`, `previews()`, `previewUrl(port, path?)`, `proxyUrl(url)`, `sandboxPortUrl(port)`, `attachments.upload` · `.read` |
 | Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
 | Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |
@@ -588,6 +592,7 @@ The turn model over session-log blocks: what a transcript renders a thread from.
 | `sessionLogRetrying(thread)` | The thread's last reply is open with a retryable provider error: its turn's `retrying`, read without grouping turns, so the busy state a host passes as `busy` can include it. False on a native record (no retry flag). | `hasRetryingAssistantTurn` |
 | `sessionLogActivityText(turn, childMessages?)` | The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's messages. | `getTurnStatus` |
 | `sessionLogThreadMetrics(thread, options?)` | One thread's `cost` (every reply's usage priced: its reported cost, else the lookup, with the platform markup), `messages` (`all`, `user`, `assistant`; a compaction counts as its user marker and, once it is no longer streaming, its summary reply) `tokens` (`input`, `output`, `reasoning`, `cacheRead`, `cacheWrite`: every priced reply's usage summed) and `context` (the last reply, an assistant message or a compaction, with tokens: its `usage` is the context size). Options: `pricing`. What a context modal's overview and its sub-agent rows show. | `getSessionCost` over v1 rows, a host's own token and message counts and last-reply lookup |
+| `classifySessionLogMessage(message)` | `classifyTurn` of one session-log message: its blocks as `ClassifiedPart`s and its error as `TurnError` (the gateway's own sentence, which `message.error.message` does not carry for a converted record). A compaction is one message: the marker's parts, then the summary's. For a host whose renderers take `ClassifiedPart`s (the TUI, the white-label demo). | `classifyTurn` over v1 rows |
 | `sessionLogPromptMessage(prompt, threadId)` | The user message of a queued inbox prompt (`SessionPrompt`) the thread has not placed: id `message_id`, else `queued-<prompt_id>`. Append it after the thread's messages and name it in `held`. | the host's synthetic row |
 
 A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept a `SessionLogTurn[]` as well as v1 turns, and `stepLabel` any session-log block (a non-call block reads by its `type`).

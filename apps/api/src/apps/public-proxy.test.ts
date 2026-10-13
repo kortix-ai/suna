@@ -617,6 +617,18 @@ describe('Apps public edge', () => {
     expect(html).toContain('http-equiv="refresh" content="3"');
   });
 
+  test('describes a sleeping App as a machine that wakes, never as serverless', async () => {
+    for (const status of ['provisioning', 'starting'] as const) {
+      const html = await appPublicStatusResponse(
+        new Request('https://x.apps.kortix.com/', { headers: { accept: 'text/html' } }),
+        { name: 'Storefront' },
+        { status },
+      ).text();
+      expect(html.toLowerCase()).not.toContain('serverless');
+      expect(html).toContain(status === 'starting' ? 'The machine was asleep and wakes on the first visit.' : 'creating the machine for this App');
+    }
+  });
+
   test('renders every lifecycle state without stale unavailable copy', async () => {
     const cases = [
       ['waiting', 'Waiting for first deployment', 202, true],

@@ -30,12 +30,20 @@
  *   • Details — Name (was "Project name"), Repository (open on GitHub, edit
  *     the default branch + manifest path), and (managed repos) invite a
  *     GitHub collaborator.
- *   • Delete project (managers only, alone, untitled) — a two-step confirm:
+ *   • Delete project (alone, untitled) — a two-step confirm:
  *     type the exact project name to enable Continue, then a native "are you
  *     sure" (Jay, 2026-09-22, GitHub's repo-delete shape). The SDK call is
  *     `archiveProject` (there is no hard delete); "Delete project" is the
  *     live label web itself shows over that same call (verified 2026-09-21,
  *     `suna-project-delete-redirect` memory).
+ *
+ * Who may do what (KRTX-1720): one `useCans` probe asks for the leaves the
+ * routes assert, never for the 'manager' label. Name, Default branch and
+ * Manifest path edit through `PATCH /projects/:id` (project.write +
+ * project.settings.write); Add collaborator needs project.write +
+ * project.members.manage; Delete project (`DELETE /projects/:id`) needs
+ * project.write + project.delete. While the probe is unresolved every row is
+ * read-only and the destructive rows are hidden.
  *
  * Every sheet here renders through `KortixBottomSheetModal` directly (Jay,
  * 2026-09-22: not the `<Sheet>` convenience wrapper) — the same shape as the
@@ -51,6 +59,8 @@ import { BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useCans } from '@kortix/sdk/react';
 
 import {
   GitBranchIcon as GitBranch,
@@ -349,6 +359,10 @@ function DeleteProjectSheet({
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
+const { PROJECT_WRITE, PROJECT_SETTINGS_WRITE, PROJECT_MEMBERS_MANAGE, PROJECT_DELETE } = PROJECT_ACTIONS;
+/** The leaves this page's routes assert, in one probe. */
+const SETTINGS_ACTIONS = [PROJECT_WRITE, PROJECT_SETTINGS_WRITE, PROJECT_MEMBERS_MANAGE, PROJECT_DELETE] as const;
+
 export function SettingsNavPage({
   page,
   projectId,
@@ -365,7 +379,11 @@ export function SettingsNavPage({
   const toast = useToast();
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
-  const canManage = project?.effective_project_role === 'manager';
+  const cans = useCans({ projectId, accountId: project?.account_id }, SETTINGS_ACTIONS);
+  const allowed = (...actions: string[]) => actions.every((action) => cans[action]?.allowed === true);
+  const canEdit = allowed(PROJECT_WRITE, PROJECT_SETTINGS_WRITE);
+  const canAddCollaborator = allowed(PROJECT_WRITE, PROJECT_MEMBERS_MANAGE);
+  const canDelete = allowed(PROJECT_WRITE, PROJECT_DELETE);
   const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   const update = useUpdateProject(projectId);
@@ -493,7 +511,7 @@ export function SettingsNavPage({
                 <SettingsRow
                   label="Name"
                   value={project.name}
-                  onPress={canManage ? () => openNameEditor(project) : undefined}
+                  onPress={canEdit ? () => openNameEditor(project) : undefined}
                 />
                 <SettingsRow
                   icon={githubUrl ? Github : GitBranch}
@@ -505,14 +523,14 @@ export function SettingsNavPage({
                 <SettingsRow
                   label="Default branch"
                   value={project.default_branch}
-                  onPress={canManage ? () => openBranchEditor(project) : undefined}
+                  onPress={canEdit ? () => openBranchEditor(project) : undefined}
                 />
                 <SettingsRow
                   label="Manifest path"
                   value={project.manifest_path || '—'}
-                  onPress={canManage ? () => openManifestEditor(project) : undefined}
+                  onPress={canEdit ? () => openManifestEditor(project) : undefined}
                 />
-                {managed && canManage ? (
+                {managed && canAddCollaborator ? (
                   <SettingsRow
                     icon={UserPlus}
                     label="Add collaborator"
@@ -521,7 +539,7 @@ export function SettingsNavPage({
                 ) : null}
               </SettingsGroup>
 
-              {canManage ? (
+              {canDelete ? (
                 <SettingsGroup>
                   <SettingsRow
                     icon={Trash2}
