@@ -384,6 +384,34 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
 
+  test('the session_log_restore project flag reaches the box env as KORTIX_SESSION_LOG_RESTORE=1, and no key while it is off', async () => {
+    const boot = () =>
+      buildSessionSandboxEnvVars({
+        accountId: ctx.accountId,
+        projectId: ctx.projectId,
+        sessionId: PRINCIPAL_SESSION,
+        userId: OWNER,
+        repoUrl: 'https://example.test/principal.git',
+        baseRef: 'main',
+        agentName: 'default',
+        llmGatewayEnabled: false,
+      });
+    const setFlag = (on: boolean | null) =>
+      db
+        .update(projects)
+        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(on === null ? {} : { session_log_restore: on })}::jsonb)` })
+        .where(eq(projects.projectId, ctx.projectId));
+    try {
+      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot())).toBe(false);
+      await setFlag(true);
+      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
+      await setFlag(false);
+      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot())).toBe(false);
+    } finally {
+      await setFlag(null);
+    }
+  });
+
   test('sandbox boot snapshots the latest committed backend-wrapper capability secrets without caching', async () => {
     await writeSharedProjectSecret({
       projectId: ctx.projectId,

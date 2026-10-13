@@ -189,9 +189,29 @@ The transcript, `log`, `info`, `attachments`, and the events stream never wake a
 | Stop | `kortix sessions stop <id>` | The sandbox disk, the branch, the conversation | Running processes and memory. It ends the running turn. |
 | Start | `kortix sessions start <id> [--wait]` | Everything a stop keeps | Nothing. It resumes a stopped sandbox, or boots a missing one. |
 | Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
-| Delete | `kortix sessions rm <id>...` | The pushed branch | The sandbox, the session's stored attachments, and its public links. The session leaves the list. |
+| Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
+| Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
 
-The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete.
+The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
+
+### Restore a deleted session
+
+A deleted session stays restorable for 30 days. The delete answers `restore_until`, the last moment a restore works. To restore it:
+
+- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**. A delete of several sessions from the Sessions page has no Undo: restore each session from the CLI or from code.
+- From the CLI, run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
+- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`.
+
+A restore needs the same permission as the delete: the session owner or a person who manages the project. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch. Public links the delete revoked stay revoked: create new ones.
+
+| Restore answer | Meaning |
+| --- | --- |
+| `200` | The session is back. |
+| `409` `session_not_deleted` | The session is not deleted. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the old sandbox is gone, or the session was deleted while its first sandbox was starting and that sandbox can still arrive (up to 10 minutes). Try again in a minute. |
+| `410` `session_purged` | More than 30 days passed. Its conversation and files are deleted; only the branch remains. |
+
+Kortix deletes a deleted session's conversation 30 days after the delete, and its stored files 7 days after that.
 
 A stopped session wakes when it gets:
 

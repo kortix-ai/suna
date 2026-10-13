@@ -99,9 +99,17 @@ function filePathOf(call: ToolCallBlock): string | undefined {
   return typeof p === 'string' && p ? p : undefined;
 }
 
+/** `s` without trailing `/`. A loop, not `/\/+$/`: that regex backtracks
+ *  quadratically on a long run of slashes (CodeQL js/polynomial-redos). */
+export function trimTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end -= 1;
+  return s.slice(0, end);
+}
+
 /** Last path segment, tolerant of both `/` and `\` separators. */
 function basename(p: string): string {
-  const cleaned = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const cleaned = trimTrailingSlashes(p.replace(/\\/g, '/'));
   const idx = cleaned.lastIndexOf('/');
   return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
 }
@@ -433,12 +441,11 @@ function appOutput(
  * the user — `web[].label` is always a title or a domain (see `webSourceOf`).
  */
 function normalizeUrl(raw: string): string {
-  return raw
+  return trimTrailingSlashes(raw
     .trim()
     .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
     .replace(/^www\./i, '')
-    .replace(/\/+$/, '')
-    .toLowerCase();
+    .toLowerCase());
 }
 
 /** A page title extracted from a `web_fetch`/`webfetch` call's own HTML
