@@ -1,38 +1,27 @@
 import { describe, expect, test } from 'bun:test';
-import type { ModelPricingLookup, SessionLogMessage } from '@kortix/sdk';
+import type { ModelPricingLookup, SessionLogMessage, SessionLogThread } from '@kortix/sdk';
 import { NO_METRICS, sumMetrics, threadMetrics } from './session-context-sub-sessions';
 
 const lookup: ModelPricingLookup = () => null;
+const producer = { harness: 'pi', harness_version: '1', adapter_version: '1' };
 const reply = (id: string, usage: NonNullable<SessionLogMessage['usage']>): SessionLogMessage =>
-  ({ message_id: id, role: 'assistant', kind: 'turn', status: 'complete', in_context: true, usage, model: { provider: 'synthetic', model: 'synthetic' }, blocks: [] }) as unknown as SessionLogMessage;
-const user = { message_id: 'user', role: 'user', kind: 'turn', status: 'complete', in_context: true, usage: null, blocks: [] } as unknown as SessionLogMessage;
+  ({ message_id: id, role: 'assistant', kind: 'turn', status: 'complete', in_context: true, usage, model: { provider: 'synthetic', model: 'synthetic' }, producer, blocks: [] }) as unknown as SessionLogMessage;
+const user = { message_id: 'user', role: 'user', kind: 'turn', status: 'complete', in_context: true, usage: null, producer, blocks: [] } as unknown as SessionLogMessage;
+const thread = (messages: SessionLogMessage[]): SessionLogThread =>
+  ({ schema: 'kortix.session/2', v: 1, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages });
 
-describe('thread metrics', () => {
-  test('counts every reply\'s tokens (cumulative, not just the last) and every message', () => {
-    const metrics = threadMetrics(
-      [
-        reply('one', { input: 2, output: 3, reasoning: 4, cache_read: 5, cache_write: 6 }),
-        reply('two', { input: 7, output: 8, reasoning: 9, cache_read: 10, cache_write: 11 }),
-        user,
-      ],
-      lookup,
-    );
-    expect(metrics).toEqual({
-      cost: 0, messages: 3,
-      inputTokens: 9, outputTokens: 11, reasoningTokens: 13, cacheReadTokens: 15, cacheWriteTokens: 17,
-    });
-  });
-
-  test('a reported cost is billed at the markup; an empty thread is zero', () => {
-    const metrics = threadMetrics([reply('one', { input: 1, output: 1, cache_read: 0, cache_write: 0, cost: 0.5 })], lookup);
-    expect(metrics.cost).toBeCloseTo(0.6, 9);
-    expect(threadMetrics([], lookup)).toEqual(NO_METRICS);
+describe('thread metrics (the SDK\'s, for a thread the store may not hold)', () => {
+  test('a thread reads through sessionLogThreadMetrics; no thread is zero', () => {
+    const m = threadMetrics(thread([user, reply('one', { input: 2, output: 3, reasoning: 4, cache_read: 5, cache_write: 6 }), reply('two', { input: 7, output: 8, reasoning: 9, cache_read: 10, cache_write: 11 })]), lookup);
+    expect(m).toEqual({ cost: 0, messages: { all: 3, user: 1, assistant: 2 }, tokens: { input: 9, output: 11, reasoning: 13, cacheRead: 15, cacheWrite: 17 }, context: m.context });
+    expect(m.context?.message_id).toBe('two');
+    expect(threadMetrics(null, lookup)).toBe(NO_METRICS);
   });
 
   test('sumMetrics adds every field', () => {
-    const a = { ...NO_METRICS, cost: 1, messages: 2, inputTokens: 3 };
-    const b = { ...NO_METRICS, cost: 0.5, messages: 1, outputTokens: 4 };
-    expect(sumMetrics([a, b])).toEqual({ ...NO_METRICS, cost: 1.5, messages: 3, inputTokens: 3, outputTokens: 4 });
+    const a = { ...NO_METRICS, cost: 1, messages: { all: 2, user: 1, assistant: 1 }, tokens: { ...NO_METRICS.tokens, input: 3 } };
+    const b = { ...NO_METRICS, cost: 0.5, messages: { all: 1, user: 1, assistant: 0 }, tokens: { ...NO_METRICS.tokens, output: 4 } };
+    expect(sumMetrics([a, b])).toEqual({ cost: 1.5, messages: { all: 3, user: 2, assistant: 1 }, tokens: { ...NO_METRICS.tokens, input: 3, output: 4 }, context: null });
     expect(sumMetrics([])).toEqual(NO_METRICS);
   });
 });

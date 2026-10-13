@@ -19,7 +19,7 @@ import { formatCost, type Session, type SessionLogBlock, type SessionLogMessage,
 import { useSessionLogThread, type ProviderListResponse, type SessionMessagesSource } from '@kortix/sdk/react';
 import { useMemo } from 'react';
 import { CopyAllButton, SessionContextMessageExplorer } from './session-context-message-explorer';
-import { getSessionContextMetrics, messageCounts } from './session-context-metrics';
+import { getSessionContextMetrics } from './session-context-metrics';
 import type { ServedModelNotice } from './turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
 
@@ -228,16 +228,17 @@ function SessionContextModalBody({
   // The numbers read the session log's root thread: the `fromV1` view of the
   // v1 rows while v2 is off, the API's record on v2. The raw explorer below
   // keeps the v1 rows.
-  const log = useSessionLogThread(source)?.messages ?? NO_MESSAGES;
+  const thread = useSessionLogThread(source);
+  const log = thread?.messages ?? NO_MESSAGES;
   const metrics = useMemo(
-    () => getSessionContextMetrics(log, providers, pricingLookup),
-    [log, providers, pricingLookup],
+    () => getSessionContextMetrics(thread, providers, pricingLookup),
+    [thread, providers, pricingLookup],
   );
 
   const ctx = metrics.context;
   const fmt = useMemo(() => createFormatter(), []);
 
-  const counts = useMemo(() => messageCounts(log), [log]);
+  const counts = metrics.messages;
 
   const breakdown = useMemo(() => (ctx?.input ? estimateBreakdown(log, ctx.input) : []), [ctx, log]);
 

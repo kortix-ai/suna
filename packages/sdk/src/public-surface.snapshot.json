@@ -1002,6 +1002,7 @@
     "sessionLogBurstSteps",
     "sessionLogCallStatus",
     "sessionLogPromptMessage",
+    "sessionLogThreadMetrics",
     "sessionLogTurnSegments",
     "sessionLogTurns",
     "sessionModelPin",

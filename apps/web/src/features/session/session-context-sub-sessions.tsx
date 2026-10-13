@@ -6,51 +6,31 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useSessionLogThread, type SessionMessagesSource } from '@kortix/sdk/react';
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react';
-import { allDescendantIds, childMapByParent, formatCost, type ModelPricingLookup, type Session, type SessionLogMessage } from '@kortix/sdk';
-import { isReply, messageCounts, sessionLogCost } from './session-context-metrics';
+import { allDescendantIds, childMapByParent, formatCost, sessionLogThreadMetrics, type ModelPricingLookup, type Session, type SessionLogThread, type SessionLogThreadMetrics } from '@kortix/sdk';
 
 // ============================================================================
 // Thread metrics
 // ============================================================================
 
-export interface ThreadMetrics {
-  cost: number;
-  messages: number;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
-
-export const NO_METRICS: ThreadMetrics = {
+export const NO_METRICS: SessionLogThreadMetrics = {
   cost: 0,
-  messages: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  reasoningTokens: 0,
-  cacheReadTokens: 0,
-  cacheWriteTokens: 0,
+  messages: { all: 0, user: 0, assistant: 0 },
+  tokens: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+  context: null,
 };
 
-/** The cost, message count and token totals (every reply, not just the last) of one thread. */
-export function threadMetrics(messages: SessionLogMessage[], pricingLookup: ModelPricingLookup): ThreadMetrics {
-  const m: ThreadMetrics = { ...NO_METRICS, cost: sessionLogCost(messages, pricingLookup), messages: messageCounts(messages).all };
-  for (const msg of messages) {
-    const u = msg.usage;
-    if (!isReply(msg) || !u) continue;
-    m.inputTokens += u.input;
-    m.outputTokens += u.output;
-    m.reasoningTokens += u.reasoning ?? 0;
-    m.cacheReadTokens += u.cache_read;
-    m.cacheWriteTokens += u.cache_write;
-  }
-  return m;
+/** The SDK's metrics of a thread the store may not hold yet. */
+export function threadMetrics(thread: SessionLogThread | null, pricingLookup: ModelPricingLookup): SessionLogThreadMetrics {
+  return thread ? sessionLogThreadMetrics(thread, { pricing: pricingLookup }) : NO_METRICS;
 }
 
-export function sumMetrics(all: ThreadMetrics[]): ThreadMetrics {
-  const sum = { ...NO_METRICS };
-  for (const m of all) for (const k of Object.keys(sum) as Array<keyof ThreadMetrics>) sum[k] += m[k];
+export function sumMetrics(all: SessionLogThreadMetrics[]): SessionLogThreadMetrics {
+  const sum: SessionLogThreadMetrics = { ...NO_METRICS, messages: { ...NO_METRICS.messages }, tokens: { ...NO_METRICS.tokens } };
+  for (const m of all) {
+    sum.cost += m.cost;
+    for (const k of ['all', 'user', 'assistant'] as const) sum.messages[k] += m.messages[k];
+    for (const k of Object.keys(sum.tokens) as Array<keyof SessionLogThreadMetrics['tokens']>) sum.tokens[k] += m.tokens[k];
+  }
   return sum;
 }
 
@@ -59,7 +39,7 @@ export function sumMetrics(all: ThreadMetrics[]): ThreadMetrics {
 // ============================================================================
 
 /** The metrics of every descendant thread, by runtime session id. */
-type MetricsById = Readonly<Record<string, ThreadMetrics>>;
+type MetricsById = Readonly<Record<string, SessionLogThreadMetrics>>;
 
 /**
  * Reads the thread of every id in `ids` through `useSessionLogThread`, one
@@ -104,7 +84,7 @@ function WithOneThread({
   children: (metrics: MetricsById) => ReactNode;
 }) {
   const thread = useSessionLogThread(source, id);
-  const metrics = useMemo(() => threadMetrics(thread?.messages ?? [], pricingLookup), [thread, pricingLookup]);
+  const metrics = useMemo(() => threadMetrics(thread, pricingLookup), [thread, pricingLookup]);
   const next = useMemo(() => ({ ...acc, [id]: metrics }), [acc, id, metrics]);
   return (
     <WithThreadMetrics source={source} ids={rest} pricingLookup={pricingLookup} acc={next}>
@@ -156,7 +136,7 @@ function SubSessionTreeNode({
         )}
         <span className="text-foreground min-w-0 truncate font-medium">{title}</span>
         <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
-          {own.messages} {messagesSuffix}
+          {own.messages.all} {messagesSuffix}
         </span>
         <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(own.cost)}</span>
       </button>
@@ -201,7 +181,7 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
   // The root's own metrics, plus every descendant's (the whole tree, whatever
   // is expanded): the combined totals read the same records the rows do.
   const root = useSessionLogThread(source);
-  const rootMetrics = useMemo(() => threadMetrics(root?.messages ?? [], pricingLookup), [root, pricingLookup]);
+  const rootMetrics = useMemo(() => threadMetrics(root, pricingLookup), [root, pricingLookup]);
 
   if (!session || !allSessions || descendantIds.length === 0) return null;
 
@@ -218,9 +198,9 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
             <div className="bg-popover rounded-md border">
               <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
                 <Stat label={t.raw('combinedCost')} value={formatCost(totals.cost)} />
-                <Stat label={t.raw('combinedMessages')} value={totals.messages.toLocaleString()} />
-                <Stat label={t.raw('tokensIn')} value={fmt.number(totals.inputTokens)} />
-                <Stat label={t.raw('tokensOut')} value={fmt.number(totals.outputTokens)} />
+                <Stat label={t.raw('combinedMessages')} value={totals.messages.all.toLocaleString()} />
+                <Stat label={t.raw('tokensIn')} value={fmt.number(totals.tokens.input)} />
+                <Stat label={t.raw('tokensOut')} value={fmt.number(totals.tokens.output)} />
               </div>
               <div className="border-t px-2 py-2">
                 {(childMap.get(session.id) ?? []).map((childId) => (

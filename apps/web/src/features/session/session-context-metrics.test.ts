@@ -1,16 +1,16 @@
 /**
  * Characterization tests for the context-modal metric math (KRTX-406 phase 1).
  *
- * These pin the behavior of `getSessionContextMetrics`, `messageCounts` and
+ * These pin the behavior of `getSessionContextMetrics` and
  * `estimateBreakdown` on session-log messages (P5.2: the modal reads the
  * `fromV1` view of the v1 rows while v2 is off). Every expected value here is
  * computed by hand from the implementation, not from another abstraction.
  */
 import { describe, expect, test } from 'bun:test';
-import type { ModelPricingLookup, SessionLogBlock, SessionLogMessage } from '@kortix/sdk';
+import type { ModelPricingLookup, SessionLogBlock, SessionLogMessage, SessionLogThread } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { estimateBreakdown } from './session-context-modal';
-import { getSessionContextMetrics, messageCounts } from './session-context-metrics';
+import { getSessionContextMetrics } from './session-context-metrics';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,10 @@ function user(blocks: SessionLogBlock[] = []): SessionLogMessage {
   seq += 1;
   return assistant({ message_id: `user-${seq}`, role: 'user', model: { provider: 'kortix', model: 'claude-x' }, usage: null, finish: null }, blocks);
 }
+
+/** The thread the modal reads: `null` while the store holds no row. */
+const thread = (messages: SessionLogMessage[]): SessionLogThread =>
+  ({ schema: 'kortix.session/2', v: 1, thread_id: 'sess-test', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages });
 
 /** A compaction: the v1 marker and its summary reply folded into one record. */
 function compaction(status: SessionLogMessage['status'], summary: string | null): SessionLogMessage {
@@ -101,21 +105,22 @@ const lookup: ModelPricingLookup = () => ({
 // ─── getSessionContextMetrics ────────────────────────────────────────────────
 
 describe('getSessionContextMetrics', () => {
-  test('empty messages → no context, no cost', () => {
-    const metrics = getSessionContextMetrics([], undefined, freeLookup);
+  test('no thread, or an empty one → no context, no cost', () => {
+    expect(getSessionContextMetrics(null, undefined, freeLookup)).toEqual({ totalCost: 0, messages: { all: 0, user: 0, assistant: 0 }, context: undefined });
+    const metrics = getSessionContextMetrics(thread([]), undefined, freeLookup);
     expect(metrics.totalCost).toBe(0);
     expect(metrics.context).toBeUndefined();
   });
 
   test('no reply → no context', () => {
-    const metrics = getSessionContextMetrics([user()], undefined, freeLookup);
+    const metrics = getSessionContextMetrics(thread([user()]), undefined, freeLookup);
     expect(metrics.context).toBeUndefined();
     expect(metrics.totalCost).toBe(0);
   });
 
   test('a reply with zero tokens is skipped → no context', () => {
     const metrics = getSessionContextMetrics(
-      [user(), assistant()],
+      thread([user(), assistant()]),
       providersOf('kortix', { 'claude-x': { name: 'Claude X' } }),
       freeLookup,
     );
@@ -125,7 +130,7 @@ describe('getSessionContextMetrics', () => {
   test('picks the LAST reply with positive tokens', () => {
     const earlier = assistant({ usage: positiveTokens() });
     const later = assistant(); // all-zero usage
-    const metrics = getSessionContextMetrics([user(), earlier, user(), later], undefined, freeLookup);
+    const metrics = getSessionContextMetrics(thread([user(), earlier, user(), later]), undefined, freeLookup);
     expect(metrics.context?.message.message_id).toBe(earlier.message_id);
     expect(metrics.context?.input).toBe(10);
   });
@@ -133,15 +138,17 @@ describe('getSessionContextMetrics', () => {
   test('a compaction is a reply: its summary\'s usage is the context', () => {
     const cmp = compaction('complete', 'summary');
     cmp.usage = { input: 5, output: 1, cache_read: 0, cache_write: 0 };
-    const metrics = getSessionContextMetrics([user(), assistant({ usage: positiveTokens() }), cmp], undefined, freeLookup);
+    const metrics = getSessionContextMetrics(thread([user(), assistant({ usage: positiveTokens() }), cmp]), undefined, freeLookup);
     expect(metrics.context?.message.message_id).toBe(cmp.message_id);
     expect(metrics.context?.total).toBe(6);
+    // The counts are the SDK's: the compaction is its marker plus its summary reply.
+    expect(metrics.messages).toEqual({ all: 4, user: 2, assistant: 2 });
     expect(metrics.context?.reasoning).toBe(0);
   });
 
   test('maps every token field and total = input+output+reasoning+cache', () => {
     const msg = assistant({ usage: { input: 100, output: 200, reasoning: 30, cache_read: 120, cache_write: 50 } });
-    const ctx = getSessionContextMetrics([msg], undefined, freeLookup).context;
+    const ctx = getSessionContextMetrics(thread([msg]), undefined, freeLookup).context;
     expect(ctx?.input).toBe(100);
     expect(ctx?.output).toBe(200);
     expect(ctx?.reasoning).toBe(30);
@@ -153,7 +160,7 @@ describe('getSessionContextMetrics', () => {
   test('usage = round(total / limit * 100); limit passes through', () => {
     const msg = assistant({ model: kortix, usage: { input: 100, output: 200, reasoning: 30, cache_read: 120, cache_write: 50 } });
     const metrics = getSessionContextMetrics(
-      [msg],
+      thread([msg]),
       providersOf('kortix', { 'claude-x': { name: 'Claude X', limitContext: 2000 } }),
       freeLookup,
     );
@@ -163,7 +170,7 @@ describe('getSessionContextMetrics', () => {
 
   test('no model → limit undefined, usage null', () => {
     const msg = assistant({ model: kortix, usage: positiveTokens() });
-    const metrics = getSessionContextMetrics([msg], providersOf('kortix', {}), freeLookup);
+    const metrics = getSessionContextMetrics(thread([msg]), providersOf('kortix', {}), freeLookup);
     expect(metrics.context?.limit).toBeUndefined();
     expect(metrics.context?.usage).toBeNull();
     expect(metrics.context?.modelLabel).toBe('claude-x');
@@ -171,7 +178,7 @@ describe('getSessionContextMetrics', () => {
 
   test('missing provider entry keeps raw model id and leaves limits undefined', () => {
     const msg = assistant({ model: { provider: 'missing-provider', model: 'claude-x' }, usage: positiveTokens() });
-    const context = getSessionContextMetrics([msg], providersOf('kortix', {}), freeLookup).context;
+    const context = getSessionContextMetrics(thread([msg]), providersOf('kortix', {}), freeLookup).context;
     expect(context?.providerLabel).toBe('missing-provider');
     expect(context?.modelLabel).toBe('claude-x');
     expect(context?.limit).toBeUndefined();
@@ -181,7 +188,7 @@ describe('getSessionContextMetrics', () => {
   test('gateway provider resolves the upstream label from model.provider', () => {
     const msg = assistant({ model: kortix, usage: positiveTokens() });
     const metrics = getSessionContextMetrics(
-      [msg],
+      thread([msg]),
       providersOf('kortix', { 'claude-x': { name: 'Claude X', provider: 'anthropic' } }),
       freeLookup,
     );
@@ -191,44 +198,30 @@ describe('getSessionContextMetrics', () => {
 
   test('gateway model without a provider field keeps the synthetic kortix label', () => {
     const msg = assistant({ model: kortix, usage: positiveTokens() });
-    const metrics = getSessionContextMetrics([msg], providersOf('kortix', { 'claude-x': { name: 'Claude X' } }), freeLookup);
+    const metrics = getSessionContextMetrics(thread([msg]), providersOf('kortix', { 'claude-x': { name: 'Claude X' } }), freeLookup);
     expect(metrics.context?.providerLabel).toBe('Kortix');
   });
 
   test('known provider id maps through PROVIDER_LABELS without a providers list', () => {
     const msg = assistant({ usage: positiveTokens() });
-    const metrics = getSessionContextMetrics([msg], undefined, freeLookup);
+    const metrics = getSessionContextMetrics(thread([msg]), undefined, freeLookup);
     expect(metrics.context?.providerLabel).toBe('Anthropic');
   });
 
   test('unknown provider falls back to the provider entry name, then the raw id', () => {
     const msg = assistant({ model: { provider: 'acme', model: 'claude-x' }, usage: positiveTokens() });
-    expect(getSessionContextMetrics([msg], providersOf('acme', {}), freeLookup).context?.providerLabel).toBe('Acme Corp');
-    expect(getSessionContextMetrics([msg], undefined, freeLookup).context?.providerLabel).toBe('acme');
+    expect(getSessionContextMetrics(thread([msg]), providersOf('acme', {}), freeLookup).context?.providerLabel).toBe('Acme Corp');
+    expect(getSessionContextMetrics(thread([msg]), undefined, freeLookup).context?.providerLabel).toBe('acme');
   });
 
   test('totalCost prices tokens through the lookup (raw provider cost × 1.2); a reported cost wins', () => {
     const msg = assistant({ usage: { input: 1_000_000, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 } });
-    expect(getSessionContextMetrics([msg], undefined, freeLookup).totalCost).toBe(0);
-    expect(getSessionContextMetrics([msg], undefined, lookup).totalCost).toBeCloseTo(1.2, 9);
+    expect(getSessionContextMetrics(thread([msg]), undefined, freeLookup).totalCost).toBe(0);
+    expect(getSessionContextMetrics(thread([msg]), undefined, lookup).totalCost).toBeCloseTo(1.2, 9);
     const reported = assistant({ usage: { ...positiveTokens(), cost: 0.5 } });
-    expect(getSessionContextMetrics([reported], undefined, lookup).totalCost).toBeCloseTo(0.6, 9);
+    expect(getSessionContextMetrics(thread([reported]), undefined, lookup).totalCost).toBeCloseTo(0.6, 9);
     // A message without a model has no price; a user message never costs.
-    expect(getSessionContextMetrics([assistant({ model: null, usage: positiveTokens() }), user()], undefined, lookup).totalCost).toBe(0);
-  });
-});
-
-// ─── messageCounts ───────────────────────────────────────────────────────────
-
-describe('messageCounts', () => {
-  test('counts user and assistant messages', () => {
-    expect(messageCounts([user(), assistant(), user(), assistant()])).toEqual({ all: 4, user: 2, assistant: 2 });
-    expect(messageCounts([])).toEqual({ all: 0, user: 0, assistant: 0 });
-  });
-
-  test('a compaction is its user marker, plus the summary reply once one exists', () => {
-    expect(messageCounts([user(), assistant(), compaction('complete', 's')])).toEqual({ all: 4, user: 2, assistant: 2 });
-    expect(messageCounts([user(), assistant(), compaction('streaming', null)])).toEqual({ all: 3, user: 2, assistant: 1 });
+    expect(getSessionContextMetrics(thread([assistant({ model: null, usage: positiveTokens() }), user()]), undefined, lookup).totalCost).toBe(0);
   });
 });
 
