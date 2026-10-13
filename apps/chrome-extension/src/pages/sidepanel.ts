@@ -4,7 +4,6 @@ import { $, rpc } from './rpc';
 
 const frame = $<HTMLIFrameElement>('app');
 let webUrl = '';
-let lastSrc = '';
 let mine: Identity | undefined;
 let theirs: Identity | undefined;
 let dismissed = '';
@@ -16,7 +15,7 @@ const handoff = new PanelHandoff(
   (tokenHash) => frame.contentWindow?.postMessage({ type: 'kortix.panel.session', tokenHash }, new URL(webUrl).origin),
 );
 
-const go = (url: string) => { lastSrc = url; handoff.reset(); frame.src = url; };
+const go = (url: string) => { handoff.reset(); frame.src = url; };
 const panelHome = () => `${webUrl}/auth/panel?next=${encodeURIComponent('/projects')}`;
 
 function checkAccounts() {
@@ -24,6 +23,7 @@ function checkAccounts() {
   const key = `${theirs?.userId}|${mine?.userId}`;
   $('warn').hidden = !differ || dismissed === key;
   if (differ) $('warn-text').textContent = `The panel shows ${theirs?.email || 'another account'}. This browser is connected as ${mine?.email || 'a different account'}.`;
+  if (differ) $('switch').textContent = mine?.email ? `Sign in as ${mine.email}` : 'Switch account';
 }
 
 function renderChips(s: Status) {
@@ -87,7 +87,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setMenu(
 $('m-settings').onclick = () => void chrome.runtime.openOptionsPage();
 $('m-signout').onclick = () => rpc({ kortix: 'signout' }).then(() => { mine = undefined; go('about:blank'); webUrl = ''; return refresh(); });
 $('open').onclick = () => openInTab(webUrl);
-$('reload').onclick = () => { theirs = undefined; go(lastSrc); checkAccounts(); };
+$('switch').onclick = () => { theirs = undefined; go(`${webUrl}/auth/panel?switch=1&next=${encodeURIComponent('/projects')}`); checkAccounts(); };
 $('dismiss').onclick = () => { dismissed = `${theirs?.userId}|${mine?.userId}`; checkAccounts(); };
 $('connect').onclick = () => void openWelcome();
 

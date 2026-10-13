@@ -377,7 +377,7 @@ try {
   await panel.eval(`document.querySelector('.chip-open').click()`);
   check('panel: chip opens the session in the iframe', (await panel.eval(`document.getElementById('app').src`)) === `${webOrigin}/projects/p4/sessions/s4`);
   await until('account warning', async () => (await panel.eval(`!document.getElementById('warn').hidden`)) ? true : undefined);
-  check('panel: different web account shows the warning with Reload and Dismiss', /web@example\.test/.test(await panel.eval(`document.getElementById('warn-text').textContent`)) && (await panel.eval(`!!document.getElementById('reload') && !!document.getElementById('dismiss')`)));
+  check('panel: different web account shows the warning with Sign in as and Dismiss', /web@example\.test/.test(await panel.eval(`document.getElementById('warn-text').textContent`)) && (await panel.eval(`/^Sign in as /.test(document.getElementById('switch')?.textContent ?? '') && !!document.getElementById('dismiss')`)));
   await panel.eval(`document.getElementById('menu-btn').click()`);
   check('panel: menu lists Kortix in Chrome settings and Sign out', (await panel.eval(`[...document.querySelectorAll('#menu button')].map((b) => b.textContent).join('|')`)) === 'Kortix in Chrome settings|Sign out');
   // Focus survives a refresh: the 5 s poll and storage events must not rebuild the chip row.
