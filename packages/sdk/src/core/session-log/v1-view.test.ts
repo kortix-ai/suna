@@ -180,6 +180,25 @@ describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks
     expect(sessionLogRowsFor({ kses_1: state }, ROOT, [stub]).map((r) => r.info.id)).toContain('msg_stub');
   });
 
+  test('a compaction marker and its summary row the log lacks (pi: a failed compaction is not in its store) are one message, as on v1', () => {
+    const state = stateOf(golden);
+    const thread = selectSessionLogThread(state)!;
+    const last = Date.parse(thread.messages.at(-1)!.created_at) + 1_000;
+    const marker: V1MessageRow = {
+      info: { id: 'msg_cm', sessionID: ROOT, role: 'user', time: { created: last }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,
+      parts: [{ id: 'msg_cm-p', sessionID: ROOT, messageID: 'msg_cm', type: 'compaction', auto: false } as unknown as Part],
+    };
+    const summary: V1MessageRow = {
+      info: { id: 'msg_cs', sessionID: ROOT, role: 'assistant', parentID: 'msg_cm', summary: true, time: { created: last, completed: last }, error: { name: 'UnknownError', data: { message: 'Compaction failed' } }, modelID: 'm', providerID: 'p', mode: 'compaction', agent: 'compaction', path: { cwd: '/', root: '/' }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } } as unknown as Message,
+      parts: [],
+    };
+    const merged = sessionLogThreadWithV1Rows(state, thread, [marker, summary]);
+    const added = merged.messages.slice(thread.messages.length);
+    const expected = sessionLogOfV1Rows('', ROOT, [marker, summary]).threads[0]!.messages;
+    expect(added.map((m) => m.message_id)).toEqual(['msg_cm']);
+    expect(added.map(({ seq: _s, ...m }) => m)).toEqual(expected.map(({ seq: _s, ...m }) => m));
+  });
+
   test('identity: the same inputs give the same thread; no extra row gives the thread itself; a changed row renews only its message', () => {
     const state = stateOf(v1Golden);
     const thread = selectSessionLogThread(state)!;

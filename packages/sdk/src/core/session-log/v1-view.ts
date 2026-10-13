@@ -165,6 +165,8 @@ const extended = new WeakMap<SessionLogThread, { held: Set<string>; extra: V1Mes
  * `thread` (a thread of `state`) with the v1 store rows the log does not hold appended as
  * `fromV1` live messages, after the thread's own: an optimistic send shows until the log's put
  * of the same id, or of the id the control plane re-minted it under (`echoOf`), replaces it.
+ * A compaction marker and its summary row are one message, as on v1 (pi keeps no failed
+ * compaction in its store, so only the v1 rows hold it).
  * A row the log holds, or tombstoned, stays out. The thread itself when no row is added; the
  * same thread while the same rows are added; a message keeps its identity while its row is
  * unchanged.
@@ -178,7 +180,8 @@ export function sessionLogThreadWithV1Rows(state: SessionLogState, thread: Sessi
   let result = thread;
   if (extra.length) {
     let seq = thread.messages[thread.messages.length - 1]?.seq ?? 0;
-    const added = extra.map((r) => convert(state.session.session_id ?? '', thread.thread_id, r, undefined, ++seq).message);
+    const { paired, used } = pairCompactions(extra);
+    const added = extra.flatMap((r) => (used.has(r) ? [] : [convert(state.session.session_id ?? '', thread.thread_id, r, paired.get(r), ++seq).message]));
     result = { ...thread, messages: [...thread.messages, ...added] };
   }
   extended.set(thread, { held, extra, result });
@@ -227,6 +230,20 @@ function reuseBlocks(native: string, row: V1MessageRow, message: SessionLogMessa
   return reused ? { ...message, blocks } : message;
 }
 
+/** A compaction marker and its summary row are one message, as `fromV1` pairs them. */
+function pairCompactions(rows: readonly V1MessageRow[]): { paired: Map<V1MessageRow, V1MessageRow>; used: Set<V1MessageRow> } {
+  const paired = new Map<V1MessageRow, V1MessageRow>();
+  const used = new Set<V1MessageRow>();
+  for (const row of rows) {
+    if (!isMarker(row)) continue;
+    const sum = rows.find((r) => !used.has(r) && summaryOf(r, row));
+    if (!sum) continue;
+    paired.set(row, sum);
+    used.add(sum);
+  }
+  return { paired, used };
+}
+
 function convert(sessionId: string, native: string, row: V1MessageRow, sum: V1MessageRow | undefined, seq: number): Converted {
   const cached = converted.get(row);
   if (cached && cached.sessionId === sessionId && cached.native === native && cached.sum === sum && cached.seq === seq) return cached;
@@ -252,16 +269,7 @@ export function sessionLogOfV1Rows(sessionId: string, runtimeSessionId: string, 
   const cached = views.get(rows);
   if (cached && cached.sessionId === sessionId && cached.native === runtimeSessionId) return cached.log;
   const sorted = [...rows].sort(v1Order);
-  // A compaction marker and its summary row are one message, as `fromV1` pairs them.
-  const paired = new Map<V1MessageRow, V1MessageRow>();
-  const used = new Set<V1MessageRow>();
-  for (const row of sorted) {
-    if (!isMarker(row)) continue;
-    const sum = sorted.find((r) => !used.has(r) && summaryOf(r, row));
-    if (!sum) continue;
-    paired.set(row, sum);
-    used.add(sum);
-  }
+  const { paired, used } = pairCompactions(sorted);
   const counts: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
   const messages: SessionLogMessage[] = [];
   for (const row of sorted) {
