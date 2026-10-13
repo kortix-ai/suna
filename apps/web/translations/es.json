@@ -19625,7 +19625,9 @@
       "text8258034e2578": "Aprobó la inscripción de un equipo",
       "textd2bea71d87f9": "Rechazó la inscripción de un equipo",
       "text282851365ab1": "Vinculó un dispositivo de Capture a una persona",
-      "text2c380a3fe63f": "Vio los datos de Capture de un dispositivo sin vincular"
+      "textf057c817d7fc": "Cuenta · Kortix Capture",
+      "text4f5507aeedae": "capture grabación pantalla dispositivos política exclusiones retención despliegue inscripción",
+      "text53e7a07c14d4": "Vio un dispositivo de Capture sin vincular"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

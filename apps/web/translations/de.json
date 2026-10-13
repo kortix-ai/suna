@@ -19625,7 +19625,9 @@
       "text8258034e2578": "Hat einen Computer zur Registrierung freigegeben",
       "textd2bea71d87f9": "Hat die Registrierung eines Computers abgelehnt",
       "text282851365ab1": "Hat ein Capture-Gerät einer Person zugeordnet",
-      "text2c380a3fe63f": "Hat die Capture-Daten eines keiner Person zugeordneten Geräts angesehen"
+      "textf057c817d7fc": "Konto · Kortix Capture",
+      "text4f5507aeedae": "Capture Aufnahme Bildschirm Geräte Richtlinie Ausschlüsse Aufbewahrung Rollout Registrierung",
+      "text53e7a07c14d4": "Hat ein nicht zugeordnetes Capture-Gerät angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

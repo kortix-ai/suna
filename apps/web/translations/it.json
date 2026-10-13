@@ -19625,7 +19625,9 @@
       "text8258034e2578": "Ha approvato la registrazione di un computer",
       "textd2bea71d87f9": "Ha rifiutato la registrazione di un computer",
       "text282851365ab1": "Ha collegato un dispositivo Capture a una persona",
-      "text2c380a3fe63f": "Ha visualizzato i dati Capture di un dispositivo non collegato a nessuno"
+      "textf057c817d7fc": "Account · Kortix Capture",
+      "text4f5507aeedae": "capture registrazione schermo dispositivi criterio esclusioni conservazione distribuzione registrazione",
+      "text53e7a07c14d4": "Ha visualizzato un dispositivo Capture non collegato"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

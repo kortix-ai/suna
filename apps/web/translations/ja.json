@@ -19625,7 +19625,9 @@
       "text8258034e2578": "コンピューターの登録を承認しました",
       "textd2bea71d87f9": "コンピューターの登録を拒否しました",
       "text282851365ab1": "Capture デバイスをユーザーに紐付けました",
-      "text2c380a3fe63f": "誰にも紐付いていないデバイスの Capture データを表示しました"
+      "textf057c817d7fc": "アカウント · Kortix Capture",
+      "text4f5507aeedae": "キャプチャ 記録 画面 デバイス ポリシー 除外 保持 展開 登録",
+      "text53e7a07c14d4": "紐付けのない Capture デバイスを表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

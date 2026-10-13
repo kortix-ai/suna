@@ -1231,6 +1231,16 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'audit log logs events history trail compliance',
   },
   {
+    id: 'account-capture',
+    label: 'Account · Kortix Capture',
+    icon: MonitorIcon,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'account',
+    accountTab: 'capture',
+    keywords: 'capture recording screen devices policy exclusions retention rollout enrollment',
+  },
+  {
     id: 'account-help',
     label: 'Account · Permissions help',
     icon: QuestionMark,

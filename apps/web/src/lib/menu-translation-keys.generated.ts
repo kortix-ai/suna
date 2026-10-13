@@ -6,6 +6,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Account · Git': 'text2ab4735ae008',
   'Account · Groups': 'text98d66b217a42',
   'Account · Identity': 'texta9af71008fda',
+  'Account · Kortix Capture': 'textf057c817d7fc',
   'Account · Members': 'text764d25f38250',
   'Account · Permissions help': 'text7b390afe6940',
   'Account · Projects': 'text7b4b05dee831',
@@ -82,6 +83,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textd440cfc72edc',
   'browser chromium agent viewport automation live stream': 'texta019a77aa6df',
   'browser preview app port localhost session': 'textb597cb0305b9',
+  'capture recording screen devices policy exclusions retention rollout enrollment': 'text4f5507aeedae',
   'channels channel slack teams discord email agentmail inbox inbound messaging':
     'text508121aba2d4',
   'connectors connections pipedream mcp openapi postman collections connector': 'text40f61622c4a4',

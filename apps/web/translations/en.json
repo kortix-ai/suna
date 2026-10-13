@@ -19636,7 +19636,9 @@
       "text8258034e2578": "Approved a computer to enroll",
       "textd2bea71d87f9": "Denied a computer from enrolling",
       "text282851365ab1": "Linked a capture device to a person",
-      "text2c380a3fe63f": "Viewed the capture data of a device linked to no one"
+      "textf057c817d7fc": "Account · Kortix Capture",
+      "text4f5507aeedae": "capture recording screen devices policy exclusions retention rollout enrollment",
+      "text53e7a07c14d4": "Viewed an unlinked capture device"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

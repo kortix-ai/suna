@@ -19625,7 +19625,9 @@
       "text8258034e2578": "批准了一台电脑的注册",
       "textd2bea71d87f9": "拒绝了一台电脑的注册",
       "text282851365ab1": "将 Capture 设备关联到了某人",
-      "text2c380a3fe63f": "查看了未关联任何人的设备的 Capture 数据"
+      "textf057c817d7fc": "账户 · Kortix Capture",
+      "text4f5507aeedae": "capture 录制 屏幕 设备 策略 排除 保留 部署 注册",
+      "text53e7a07c14d4": "查看了未关联的 Capture 设备"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

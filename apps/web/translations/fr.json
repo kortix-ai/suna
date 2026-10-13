@@ -19625,7 +19625,9 @@
       "text8258034e2578": "A approuvé l’inscription d’un ordinateur",
       "textd2bea71d87f9": "A refusé l’inscription d’un ordinateur",
       "text282851365ab1": "A associé un appareil Capture à une personne",
-      "text2c380a3fe63f": "A consulté les données Capture d’un appareil associé à personne"
+      "textf057c817d7fc": "Compte · Kortix Capture",
+      "text4f5507aeedae": "capture enregistrement écran appareils politique exclusions conservation déploiement inscription",
+      "text53e7a07c14d4": "A consulté un appareil Capture non associé"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

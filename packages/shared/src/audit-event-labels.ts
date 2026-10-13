@@ -25,7 +25,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'webhook.test': 'Sent audit webhook test',
   'capture.member_view': 'Viewed the capture data of a member',
   'capture.account_view': 'Viewed the capture data of an account',
-  'capture.device_view': 'Viewed the capture data of a device linked to no one',
+  'capture.device_view': 'Viewed an unlinked capture device',
   'capture.enable': 'Turned Capture on',
   'capture.disable': 'Turned Capture off',
   'capture.agent_read': 'Read a capture timeline as an agent',
