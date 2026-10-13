@@ -160,6 +160,29 @@ test('listProjectSecrets says which stored values the server can no longer decry
   expect(statuses).toEqual(['undecryptable', 'ok', undefined]);
 });
 
+test("listProjectSecrets reports the caller's own override apart from the shared value", async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        {
+          identifier: 'OPENAI_API_KEY',
+          configured: true,
+          status: 'ok',
+          effective_source: 'mine',
+          mine: { active: true, updated_at: '2026-10-13T00:00:00.000Z', status: 'undecryptable' },
+        },
+      ],
+      required: [],
+      optional: [],
+    },
+  };
+  const [item] = (await listProjectSecrets('P1')).items;
+  const mine: SecretValueStatus | undefined = item?.mine?.status;
+  expect(item?.status).toBe('ok');
+  expect(mine).toBe('undecryptable');
+});
+
 test('upsertProjectSecret sends an explicit server consumer without a plaintext transition', async () => {
   nextResponse = { status: 200, body: { name: 'OPENAI_API_KEY' } };
   await upsertProjectSecret('P1', {

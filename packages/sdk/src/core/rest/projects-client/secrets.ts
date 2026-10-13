@@ -91,9 +91,12 @@ export interface ProjectSecret {
   managed_by?: string | null;
   /** A shared/project value is set. */
   configured: boolean;
-  /** My own private override (value never returned), and whether it's active.
-   *  Used today only by the CODEX_AUTH_JSON per-user provider login. */
-  mine: { active: boolean; updated_at: string } | null;
+  /** My own private override (value never returned), whether it's active, and
+   *  whether the server can decrypt it (`status`; absent on older servers).
+   *  While `active`, it is the value my sessions read: an `undecryptable` one
+   *  fails them until I set it again (`setPersonalProjectSecret`) or remove it
+   *  (`deletePersonalProjectSecret`). */
+  mine: { active: boolean; updated_at: string; status?: SecretValueStatus } | null;
   /** What actually runs in my sessions for this identifier. */
   effective_source: 'mine' | 'shared' | 'none';
   /** I'm allowed to edit the shared row (project manager). */
@@ -127,9 +130,9 @@ export interface ProjectSecret {
   /** False when the value is shared with specific people and the caller is not
    *  one of them. Absent on older servers. */
   usable?: boolean;
-  /** Can the server decrypt the stored value: the shared value when one is
-   *  set, else my own override. `undecryptable` means re-enter it with
-   *  `upsertProjectSecret`. Absent on older servers. */
+  /** Can the server decrypt the shared value? `undecryptable` means re-enter it
+   *  with `upsertProjectSecret`. Absent when no shared value is set, and on
+   *  older servers. `mine.status` reports my own override. */
   status?: SecretValueStatus;
 }
 

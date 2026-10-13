@@ -10,10 +10,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `'undecryptable'` when the server can no longer decrypt the stored value
   (its encryption key changed, or the row is damaged). The value is lost;
   re-enter it with `upsertProjectSecret` or `rotateAccountSecretResource`.
+  `ProjectSecret.status` reports the shared value and is absent when none is
+  set. `ProjectSecret.mine.status` reports the caller's own override, which
+  the caller's sessions read while it is active: set it again with
+  `setPersonalProjectSecret`, or remove it with `deletePersonalProjectSecret`.
   `SecretValueStatus` is the new public type. Optional: absent on older
   servers. A connector call on such a credential fails with
-  `ConnectorCallError.code === 'credential_undecryptable'`. Additive
-  (KRTX-1719).
+  `ConnectorCallError.code === 'credential_undecryptable'`. Any other request
+  that needs such a value answers `409` with
+  `ApiError.code === 'SECRET_UNDECRYPTABLE'` and a message that names it.
+  Additive (KRTX-1719).
 
 ### Added (permissions)
 - `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine
