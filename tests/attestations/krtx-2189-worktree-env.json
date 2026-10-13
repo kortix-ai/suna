@@ -1,0 +1,16 @@
+{
+  "source_hash": "92b7bef7e960a56fa4e8ea7ed4e3fe8933814d3865d5da25e5658103d4ef0842",
+  "diff_files": [
+    "scripts/worktree/__tests__/launch-env.test.ts",
+    "scripts/worktree/lib/launch-env.ts"
+  ],
+  "diff_hash": "ef8cf87e42a83e3136ba0e0529fb632261e869fa8c60b6a75bee00cbe4a89e2a",
+  "head": "c47c3d8ea0efe4a0c8652e40da625f935a95a0d9",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T06:01:09.408Z"
+}
