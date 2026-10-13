@@ -10,7 +10,10 @@
  * The Storage bucket is `helpers/fake-session-storage.ts`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
-import { fromV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fromV1, SessionLogSchema, toV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
+import { ZodError } from 'zod';
 import {
   projectSessions,
   sessionLogMessages,
@@ -30,7 +33,7 @@ const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
-const { backfillSessionLogs, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { backfillSessionLogs, newBackfillState, roundTripMismatches, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -43,34 +46,35 @@ const T0 = Date.parse('2025-01-01T00:00:00.000Z');
 
 let project: SeededProject;
 
-type Msg = { info: Record<string, unknown>; parts: Array<Record<string, unknown>> };
+type Msg = { info: Record<string, unknown>; parts: Array<Record<string, unknown>>; runtime_session_id?: string | null };
 
 /** A small root history: user/assistant pairs, `msg_<n>` created at n seconds. */
-const plain = (n: number, text = `reply ${n}`): Msg => {
+const plain = (n: number, text = `reply ${n}`, sid = ROOT): Msg => {
   const id = `msg_${String(n).padStart(6, '0')}`;
   const created = 1_790_000_000_000 + n * 1000;
   const info: Record<string, unknown> =
     n % 2 === 0
-      ? { id, sessionID: ROOT, role: 'user', time: { created }, agent: 'build', model: { providerID: 'kortix', modelID: 'm' } }
-      : { id, sessionID: ROOT, role: 'assistant', parentID: `msg_${String(n - 1).padStart(6, '0')}`, time: { created, completed: created + 500 }, providerID: 'kortix', modelID: 'm', finish: 'stop' };
-  return { info, parts: [{ id: `prt_${n}`, sessionID: ROOT, messageID: id, type: 'text', text }] };
+      ? { id, sessionID: sid, role: 'user', time: { created }, agent: 'build', model: { providerID: 'kortix', modelID: 'm' } }
+      : { id, sessionID: sid, role: 'assistant', parentID: `msg_${String(n - 1).padStart(6, '0')}`, time: { created, completed: created + 500 }, providerID: 'kortix', modelID: 'm', finish: 'stop' };
+  return { info, parts: [{ id: `prt_${n}`, sessionID: sid, messageID: id, type: 'text', text }] };
 };
 
 /** An old session: a mirror and its rows, no session log. `createdAt` orders the backfill. */
-async function oldSession(messages: Msg[], opts: { createdAt?: Date } = {}): Promise<string> {
+async function oldSession(messages: Msg[], opts: { createdAt?: Date; root?: string | null } = {}): Promise<string> {
   const sessionId = await seedSession(project, OWNER);
   if (opts.createdAt) await db.update(projectSessions).set({ createdAt: opts.createdAt }).where(eq(projectSessions.sessionId, sessionId));
-  await db.insert(sessionTranscriptMirrors).values({ sessionId, projectId: project.project_id, accountId: project.account_id, runtimeSessionId: ROOT });
+  const runtimeSessionId = opts.root === undefined ? ROOT : opts.root;
+  await db.insert(sessionTranscriptMirrors).values({ sessionId, projectId: project.project_id, accountId: project.account_id, runtimeSessionId });
   if (messages.length === 0) return sessionId;
   await db.insert(sessionTranscriptMessages).values(
     messages.map((m) => ({
       sessionId,
       messageId: String(m.info.id),
-      runtimeSessionId: String(m.info.sessionID),
+      runtimeSessionId: m.runtime_session_id === undefined ? String(m.info.sessionID) : m.runtime_session_id,
       role: String(m.info.role),
       info: m.info,
       parts: m.parts,
-      messageCreatedAt: new Date((m.info.time as { created: number }).created),
+      messageCreatedAt: typeof (m.info.time as { created?: unknown } | undefined)?.created === 'number' ? new Date((m.info.time as { created: number }).created) : null,
     })),
   );
   return sessionId;
@@ -117,6 +121,9 @@ async function deleteLog(sessionId: string) {
 
 const hasLog = async (sessionId: string) => (await db.select({ id: sessionLogs.sessionId }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId))).length > 0;
 const logCount = async () => (await db.execute<{ n: number }>(sql`select count(*)::int as n from kortix.session_logs`))[0]!.n;
+
+/** The sum of one count over the ticks of a pass. */
+const total = (ticks: Array<{ counts: Record<string, number> }>, key: string) => ticks.reduce((n, t) => n + t.counts[key]!, 0);
 
 /** One full pass: ticks until the queue reports no more. */
 async function pass(mode: 'dry' | 'write', state = newBackfillState(), opts: Parameters<typeof backfillSessionLogs>[2] = {}) {
@@ -381,8 +388,12 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         attachment: sum('attachment'),
         record_bytes: messages.reduce((n, m) => n + Buffer.byteLength(JSON.stringify(m)), 0),
         offload_texts: 1,
-        // Neither session has a runtime projection.
+        // Neither session has a runtime projection, and both roots are OpenCode ids.
         harness_defaulted: 2,
+        harness_inferred_pi: 0,
+        validation_failed: 0,
+        roundtrip_mismatch_sessions: 0,
+        roundtrip_mismatch_messages: 0,
         max_session_messages: Math.max(...logs.map(sizeOf)),
         max_session_record_bytes: Math.max(...logs.map(bytesOf)),
       });
@@ -404,5 +415,93 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
     } finally {
       info.mockRestore();
     }
+  });
+});
+
+describe('harness: the runtime projection, else the root id shape, else opencode', () => {
+  // pi mints its root as `ses_pi` + 24 hex (`mintRootId`, kortixd `harness/pi/message-id.ts`).
+  // An OpenCode id is `ses_` + 12 hex clock chars + 14 base62, so it never starts with `ses_pi`.
+  const PI_ROOT = 'ses_pi0123456789abcdef01234567';
+
+  test('no projection and a pi-minted root: the log is pi (harness_inferred_pi); an OpenCode root stays opencode (harness_defaulted)', async () => {
+    const pi = await oldSession([plain(0, 'hi', PI_ROOT), plain(1, 'hello', PI_ROOT)], { root: PI_ROOT });
+    const oc = await oldSession([plain(0), plain(1)]);
+    const dry = await pass('dry');
+    expect([total(dry, 'harness_inferred_pi'), total(dry, 'harness_defaulted')]).toEqual([1, 1]);
+
+    const write = await pass('write');
+    expect([total(write, 'logs'), total(write, 'harness_inferred_pi'), total(write, 'harness_defaulted')]).toEqual([2, 1, 1]);
+    const piLog = await snapshot(pi);
+    expect(piLog.log?.harness).toBe('pi');
+    // fromV1 keys its v1 ext by the harness.
+    expect(piLog.threads.map((t) => Object.keys((t.record as { ext: object }).ext))).toEqual([['pi']]);
+    expect((await snapshot(oc)).log?.harness).toBe('opencode');
+  });
+
+  test('a mirror without a root id is opencode (harness_defaulted)', async () => {
+    const session = await oldSession([plain(0, 'hi', PI_ROOT), plain(1, 'hello', PI_ROOT)], { root: null });
+    const write = await pass('write');
+    expect([total(write, 'harness_inferred_pi'), total(write, 'harness_defaulted')]).toEqual([0, 1]);
+    expect((await snapshot(session)).log?.harness).toBe('opencode');
+  });
+});
+
+describe('validation: every converted log is checked with SessionLogSchema', () => {
+  test('a log that fails validation is counted validation_failed, in dry and in write, and is never written; the others are', async () => {
+    const bad = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 1000) });
+    const good = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
+    const original = SessionLogSchema.safeParse.bind(SessionLogSchema);
+    const parse = spyOn(SessionLogSchema, 'safeParse').mockImplementation(((input: { session_id?: string }) =>
+      input?.session_id === bad ? { success: false, error: new ZodError([]) } : original(input)) as never);
+    try {
+      const dry = await pass('dry');
+      expect([total(dry, 'sessions'), total(dry, 'logs'), total(dry, 'validation_failed'), total(dry, 'failed')]).toEqual([2, 1, 1, 0]);
+      const write = await pass('write');
+      expect([total(write, 'sessions'), total(write, 'logs'), total(write, 'validation_failed'), total(write, 'failed')]).toEqual([2, 1, 1, 0]);
+      expect([await hasLog(bad), await hasLog(good)]).toEqual([false, true]);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+});
+
+describe('display round trip: toV1(fromV1(rows)) against the stored rows', () => {
+  test('roundTripMismatches counts each stored row toV1 does not give back exactly; key order does not count', () => {
+    const rows = [plain(0), plain(1), plain(2), plain(3)].map((m) => ({ runtime_session_id: ROOT, info: m.info, parts: m.parts }) as unknown as V1Row);
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows });
+    expect(roundTripMismatches(log, rows)).toBe(0);
+    // Reversed key order on every object: equal (jsonb stores its own key order).
+    const reorder = (v: unknown): unknown => (Array.isArray(v) ? v.map(reorder) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reorder(x)])) : v);
+    expect(roundTripMismatches(log, rows.map(reorder) as V1Row[])).toBe(0);
+    // One changed text, and one stored row the log does not hold.
+    const changed = structuredClone(rows);
+    (changed[1]!.parts[0] as { text: string }).text = 'edited';
+    expect(roundTripMismatches(log, changed)).toBe(1);
+    expect(roundTripMismatches(log, [...rows, { ...rows[0]!, info: { ...rows[0]!.info, id: 'msg_extra' } } as V1Row])).toBe(1);
+  });
+
+  test('dry over a database seeded from the P1 fixtures: 0 failed, 0 validation failures, 0 round-trip mismatches', async () => {
+    // The 7 v2 fixtures the P1 validators run on (`session-log.test.ts`), as the v1 mirror `toV1` makes of them,
+    // plus the synthetic OpenCode session with a child.
+    const dir = join(import.meta.dir, '../../../../packages/api-contract/src/__tests__/fixtures/session-log');
+    const names = ['pi', 'opencode', 'opencode-v2', 'claude-code', 'codex', 'golden', 'golden21'];
+    for (const name of names) {
+      const v1 = toV1(JSON.parse(readFileSync(join(dir, `${name}.v2.json`), 'utf8')) as SessionLog);
+      expect(v1.rows.length).toBeGreaterThan(0);
+      await oldSession(v1.rows.map((r) => ({ info: r.info as never, parts: r.parts as never, runtime_session_id: r.runtime_session_id })), { root: v1.root_id });
+    }
+    await oldSession(synthetic());
+    const dry = await pass('dry');
+    const keys = ['sessions', 'logs', 'failed', 'skipped', 'validation_failed', 'roundtrip_mismatch_sessions', 'roundtrip_mismatch_messages'];
+    expect(Object.fromEntries(keys.map((k) => [k, total(dry, k)]))).toEqual({
+      sessions: names.length + 1,
+      logs: names.length + 1,
+      failed: 0,
+      skipped: 0,
+      validation_failed: 0,
+      roundtrip_mismatch_sessions: 0,
+      roundtrip_mismatch_messages: 0,
+    });
+    expect(total(dry, 'messages')).toBeGreaterThan(0);
   });
 });

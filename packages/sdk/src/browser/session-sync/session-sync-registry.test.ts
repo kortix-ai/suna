@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Message } from '../../core/runtime/runtime-types';
 import { SandboxNotReadyError } from '../../core/http/runtime-errors';
 import { useSyncStore } from '../stores/sync-store';
@@ -12,6 +12,7 @@ import {
   noteSessionSyncEvent,
   prefetchSessionSyncOnce,
   readSessionMessagePage,
+  reportTelemetry,
   resetSessionSyncControllers,
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
@@ -534,5 +535,37 @@ describe('readSessionMessagePage — error classification', () => {
     const controller = new AbortController();
     await readSessionMessagePage(client, 'session-1', { limit: 50 }, controller.signal);
     expect(seen).toBe(controller.signal);
+  });
+});
+
+describe('session sync telemetry', () => {
+  const debug = console.debug;
+  const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const lines: unknown[][] = [];
+  const setStorage = (value: Record<string, string>) =>
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (key: string) => value[key] ?? null },
+    });
+  beforeEach(() => {
+    lines.length = 0;
+    console.debug = (...args: unknown[]) => void lines.push(args);
+  });
+  afterEach(() => {
+    console.debug = debug;
+    if (storage) Object.defineProperty(globalThis, 'localStorage', storage);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  test('is silent by default', () => {
+    setStorage({});
+    reportTelemetry('s1', { type: 'sync' } as never);
+    expect(lines).toEqual([]);
+  });
+
+  test("logs when localStorage 'kortix:debug' is set", () => {
+    setStorage({ 'kortix:debug': '1' });
+    reportTelemetry('s1', { type: 'sync' } as never);
+    expect(lines).toEqual([['[session-sync]', { sessionId: 's1', type: 'sync' }]]);
   });
 });

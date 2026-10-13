@@ -116,8 +116,8 @@ export async function ssoFixtureToken(
     }),
     body: JSON.stringify({
       password,
-      app_metadata: { sso_provider_id: providerId },
-      user_metadata: { custom_claims: { memberOf: groups } },
+      // A server-written source: the API never trusts user_metadata for groups.
+      app_metadata: { sso_provider_id: providerId, memberOf: groups },
     }),
   });
   if (!res.ok) throw new Error(`SSO fixture metadata update failed: ${res.status}`);

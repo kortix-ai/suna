@@ -5063,7 +5063,7 @@ flow(
     // The gate at the App's own hostname, as APP-6 drives it.
     const gate = async (pathAndQuery: string, headers: Record<string, string> = {}) => {
       const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
-        headers: { accept: 'application/json', 'x-kortix-app-host': appHost, ...headers },
+        headers: { accept: 'application/json', host: `${appHost}:${new URL(apiOrigin).port}`, ...headers },
         redirect: 'manual',
       });
       const text = await response.text();
