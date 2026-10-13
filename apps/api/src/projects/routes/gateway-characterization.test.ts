@@ -38,7 +38,8 @@ const databaseMock = {
     from: (table: unknown) => ({
       where: (_w: unknown) => {
         if (table === gatewayBudgets) return Promise.resolve(exhaustedBudget ? [{ scope: 'project', action: 'block', period: 'month', limitUsd: '1' }] : []);
-        if (table === gatewayRequestLogs && cols && 'cost' in cols) return Promise.resolve([{ cost: 1 }]);
+        // `budgetSpends` selects one `b<index>` sum per budget.
+        if (table === gatewayRequestLogs && cols && 'b0' in cols) return Promise.resolve([{ b0: 1 }]);
         // `GET /gateway/overview`'s aggregate select ends at `.where()`.
         if (cols && 'totalCost' in cols) return Promise.resolve(aggRow ? [aggRow] : []);
         return {

@@ -481,9 +481,41 @@ describe('trigger composer: connector first, then its account', () => {
   });
 });
 
-describe('triggers page: the paused banner keeps a space before the button name', () => {
-  test("`text3bc554b5c290` ends mid-sentence, so the page joins it to the label with {' '}", () => {
+describe('triggers page: the paused banner is one whole sentence', () => {
+  test('`text3bc554b5c290` names Resume all itself, so nothing is appended to it', () => {
     const view = readFileSync(join(import.meta.dir, '..', 'schedule-view.tsx'), 'utf8');
-    expect(view).toMatch(/text3bc554b5c290'\)\}\{' '\}\s*\{copy\.createLabel\}/);
+    expect(view).toMatch(/\{tI18nComplete\.raw\('text3bc554b5c290'\)\}\s*<\/InfoBanner>/);
+  });
+});
+
+describe('composer layout: three groups, one summary', () => {
+  const composer = read('trigger-composer.tsx');
+  const builder = readFileSync(
+    join(import.meta.dir, '..', '..', 'scheduled-tasks', 'schedule-builder.tsx'),
+    'utf8',
+  );
+
+  test('When, Then and Details are separate titled groups', () => {
+    expect(composer).toContain('data-block="when"');
+    expect(composer).toContain('data-block="then"');
+    expect(composer).toContain("tComposer('details')");
+    expect(composer.indexOf('data-block="then"')).toBeLessThan(composer.indexOf('data-block="name"'));
+    expect(composer.indexOf('data-block="name"')).toBeLessThan(composer.indexOf('data-block="options"'));
+  });
+
+  test('the header is the one plain-language summary; the builder repeats it only for errors', () => {
+    expect(composer).toContain('summarize(draft, app');
+    expect(builder).not.toContain('describeSchedule(state)}');
+    expect(builder).toContain('hasPastRunAt ? (');
+  });
+
+  test('Once is a frequency option, not a second segmented control', () => {
+    expect(builder).not.toContain('<TabsList');
+    expect(builder).toContain('<SelectItem value="once">');
+  });
+
+  test('the timezone sits in the schedule row as its last field', () => {
+    expect(read('when-schedule.tsx')).toContain('trailing={');
+    expect(read('when-schedule.tsx')).toContain('inline');
   });
 });

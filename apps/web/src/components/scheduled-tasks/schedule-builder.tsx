@@ -1,15 +1,12 @@
 'use client';
 
-import {
-  CalendarDotsIcon as CalendarClock,
-  CaretDownIcon as ChevronDown,
-  ClockIcon as Clock,
-} from '@phosphor-icons/react';
+import { CalendarDotsIcon as CalendarClock, CaretDownIcon as ChevronDown } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -17,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, warningToast } from '@/components/ui/toast';
 import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -37,11 +33,12 @@ interface ScheduleState {
 interface ScheduleBuilderProps {
   value: string;
   onChange: (cronExpr: string) => void;
-  compact?: boolean;
   disabled?: boolean;
   allowOnce?: boolean;
   runAt?: string | null;
   onRunAtChange?: (iso: string | null) => void;
+  /** A last field for the repeating row, e.g. the host's timezone select. */
+  trailing?: ReactNode;
 }
 
 const DEFAULT_STATE: ScheduleState = {
@@ -229,13 +226,14 @@ function cadenceFor(state: ScheduleState): Cadence {
 export function ScheduleBuilder({
   value,
   onChange,
-  compact = false,
   disabled,
   allowOnce,
   runAt,
   onRunAtChange,
+  trailing,
 }: ScheduleBuilderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tTrigger = useTranslations('triggerComposer');
   const [state, setState] = useState<ScheduleState>(() => cronToState(value) ?? DEFAULT_STATE);
   const [showCron, setShowCron] = useState(() => cronToState(value) === null);
   const [rawCron, setRawCron] = useState(value);
@@ -311,85 +309,195 @@ export function ScheduleBuilder({
     errorToast(tI18nComplete.raw('text641c87998713'), { description: message });
   };
 
-  const needsTime = state.frequency !== 'minutes';
   const cadence = cadenceFor(state);
+  const canOnce = Boolean(allowOnce && onRunAtChange);
+  const cadences = localizeUiCatalog(CADENCES, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS);
+  const weekdayButtons = localizeUiCatalog(
+    WEEKDAY_BUTTONS,
+    tI18nComplete,
+    APP_REGISTRY_TRANSLATION_KEYS,
+  );
+  const intervalUnit = (value: number) =>
+    state.frequency === 'minutes' ? 'minutes' : `hour${value === 1 ? '' : 's'}`;
 
   return (
-    <div
-      className={cn(
-        'space-y-3',
-        compact && 'space-y-2',
-        disabled && 'pointer-events-none opacity-60 select-none',
-      )}
-    >
-      {allowOnce && onRunAtChange ? (
-        <Tabs
-          value={onceMode ? 'once' : 'recurring'}
-          onValueChange={(mode) => (mode === 'once' ? selectOnce() : onRunAtChange(null))}
-        >
-          <TabsList size="sm" className="w-full sm:w-fit">
-            <TabsTrigger value="recurring" className="min-w-24">
-              {tI18nComplete.raw('text92ee0233f013')}
-            </TabsTrigger>
-            <TabsTrigger value="once" className="min-w-24">
-              {tI18nComplete.raw('textd88f6d8372f4')}
-            </TabsTrigger>
-          </TabsList>
+    <div className={cn('space-y-3', disabled && 'pointer-events-none opacity-60 select-none')}>
+      {/* One row of stacked fields: how often, the cadence's own detail, the
+          time, then whatever the host adds (the composer's timezone). It wraps
+          when the column is too narrow; every field keeps its label. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <ScheduleField label={tI18nComplete.raw('textb6b7a0065808')} className="w-full sm:w-44">
+          <Select
+            value={onceMode ? 'once' : cadence}
+            onValueChange={(next) =>
+              next === 'once' ? selectOnce() : selectCadence(next as Cadence)
+            }
+            disabled={disabled}
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {cadences.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+              {canOnce ? (
+                <SelectItem value="once">{tI18nComplete.raw('textd88f6d8372f4')}</SelectItem>
+              ) : null}
+            </SelectContent>
+          </Select>
+        </ScheduleField>
 
-          <TabsContent value="once" className="mt-3 space-y-2">
-            <label className="text-foreground flex flex-col gap-2 text-sm font-medium sm:flex-row sm:items-center">
-              <span className="text-muted-foreground flex items-center gap-2">
-                <CalendarClock className="size-4" />
-                {tI18nComplete.raw('text4b4c31294fb5')}
-              </span>
-              <Input
-                type="datetime-local"
-                value={runAt ? isoToLocalInput(runAt) : ''}
-                min={isoToLocalInput(new Date().toISOString())}
-                onChange={(event) => onRunAtChange(localInputToIso(event.target.value))}
-                onBlur={() => {
-                  if (hasPastRunAt) warningToast(tI18nComplete.raw('textabf586cc6ecb'));
-                }}
-                aria-invalid={hasPastRunAt}
-                className="h-9 w-full sm:w-auto"
-                disabled={disabled}
-              />
-            </label>
-            <SchedulePreview
-              text={
-                runAt ? describeRunAt(runAt, tI18nComplete) : tI18nComplete.raw('text3b4153c0d3c8')
-              }
-              error={hasPastRunAt}
-            />
-          </TabsContent>
-
-          <TabsContent value="recurring" className="mt-3">
-            <RecurringControls
-              state={state}
-              cadence={cadence}
-              compact={compact}
+        {onceMode ? (
+          <ScheduleField label={tI18nComplete.raw('text4b4c31294fb5')} className="w-full sm:w-auto">
+            <Input
+              type="datetime-local"
+              value={runAt ? isoToLocalInput(runAt) : ''}
+              min={isoToLocalInput(new Date().toISOString())}
+              onChange={(event) => onRunAtChange?.(localInputToIso(event.target.value))}
+              onBlur={() => {
+                if (hasPastRunAt) warningToast(tI18nComplete.raw('textabf586cc6ecb'));
+              }}
+              aria-invalid={hasPastRunAt}
+              className="h-9 w-full sm:w-auto"
               disabled={disabled}
-              needsTime={needsTime}
-              previewText={isCustom ? tI18nComplete.raw('text7afd348d0d4b') : undefined}
-              onCadenceChange={selectCadence}
-              onUpdate={update}
-              onToggleWeekday={toggleWeekday}
             />
-          </TabsContent>
-        </Tabs>
-      ) : (
-        <RecurringControls
-          state={state}
-          cadence={cadence}
-          compact={compact}
-          disabled={disabled}
-          needsTime={needsTime}
-          previewText={isCustom ? tI18nComplete.raw('text7afd348d0d4b') : undefined}
-          onCadenceChange={selectCadence}
-          onUpdate={update}
-          onToggleWeekday={toggleWeekday}
-        />
+          </ScheduleField>
+        ) : (
+          <>
+            {(state.frequency === 'minutes' || state.frequency === 'hourly') && (
+              <ScheduleField label={tTrigger('every')} className="w-32">
+                <Select
+                  value={String(state.interval)}
+                  onValueChange={(value) => update({ interval: Number(value) })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(state.frequency === 'minutes'
+                      ? [1, 2, 3, 5, 10, 15, 20, 30, 45]
+                      : [1, 2, 3, 4, 6, 8, 12]
+                    ).map((value) => (
+                      <SelectItem key={value} value={String(value)}>
+                        {value} {intervalUnit(value)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ScheduleField>
+            )}
+
+            {state.frequency === 'monthly' && (
+              <ScheduleField label={tTrigger('dayOfMonth')} className="w-28">
+                <Select
+                  value={String(state.monthDay)}
+                  onValueChange={(value) => update({ monthDay: Number(value) })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 31 }, (_, index) => index + 1).map((value) => (
+                      <SelectItem key={value} value={String(value)}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ScheduleField>
+            )}
+
+            {state.frequency !== 'minutes' && (
+              <ScheduleField
+                label={
+                  state.frequency === 'hourly'
+                    ? tI18nComplete.raw('text5f2ed72dfcbc')
+                    : tI18nComplete.raw('text33b93476cf59')
+                }
+              >
+                <div className="flex items-center gap-1.5">
+                  {state.frequency !== 'hourly' && (
+                    <>
+                      <Select
+                        value={String(state.hour)}
+                        onValueChange={(value) => update({ hour: Number(value) })}
+                        disabled={disabled}
+                      >
+                        <SelectTrigger className="h-9 w-18 tabular-nums">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HOURS.map((value) => (
+                            <SelectItem key={value} value={String(value)}>
+                              {pad2(value)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-muted-foreground">:</span>
+                    </>
+                  )}
+                  <Select
+                    value={String(state.minute)}
+                    onValueChange={(value) => update({ minute: Number(value) })}
+                    disabled={disabled}
+                  >
+                    <SelectTrigger className="h-9 w-18 tabular-nums">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MINUTE_OPTIONS.map((value) => (
+                        <SelectItem key={value} value={String(value)}>
+                          {state.frequency === 'hourly' ? `:${pad2(value)}` : pad2(value)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </ScheduleField>
+            )}
+
+            {trailing}
+          </>
+        )}
+      </div>
+
+      {!onceMode && cadence === 'weekly' && (
+        <div className="flex flex-wrap gap-1.5" aria-label={tI18nComplete.raw('text2069f4549744')}>
+          {weekdayButtons.map(({ value, label }) => {
+            const selected = state.weekdays.includes(value);
+            return (
+              <Button
+                key={value}
+                type="button"
+                variant={selected ? 'secondary' : 'outline'}
+                size="sm"
+                aria-pressed={selected}
+                onClick={() => toggleWeekday(value)}
+                disabled={disabled}
+                className="min-w-10 transition-transform active:scale-[0.96]"
+              >
+                {label}
+              </Button>
+            );
+          })}
+        </div>
       )}
+
+      {/* The plain-language summary lives in the host's header. Only the two
+          things that header cannot say show here: a one-off in the past, and a
+          cron the form cannot describe. */}
+      {onceMode && runAt && hasPastRunAt ? (
+        <SchedulePreview text={describeRunAt(runAt, tI18nComplete)} error />
+      ) : null}
+      {!onceMode && isCustom ? (
+        <SchedulePreview text={tI18nComplete.raw('text7afd348d0d4b')} />
+      ) : null}
 
       {!onceMode && (
         <div className="space-y-2">
@@ -399,10 +507,13 @@ export function ScheduleBuilder({
             size="xs"
             onClick={() => setShowCron((visible) => !visible)}
             disabled={disabled}
-            className="transition-transform active:scale-[0.96]"
+            className="text-muted-foreground hover:text-foreground -ml-1 transition-transform active:scale-[0.96]"
           >
             <ChevronDown
-              className={cn('size-3 transition-transform duration-150', showCron && 'rotate-180')}
+              className={cn(
+                'size-3 transition-transform duration-(--duration-normal)',
+                showCron && 'rotate-180',
+              )}
             />
             {showCron
               ? tI18nComplete.raw('text6c848b936d1d')
@@ -411,12 +522,9 @@ export function ScheduleBuilder({
 
           {showCron && (
             <div className="space-y-1.5">
-              <label
-                className="text-foreground text-sm font-medium"
-                htmlFor="schedule-cron-expression"
-              >
+              <Label className="text-xs" htmlFor="schedule-cron-expression">
                 {tI18nComplete.raw('text4ab444f5a66a')}
-              </label>
+              </Label>
               <Input
                 id="schedule-cron-expression"
                 type="text"
@@ -442,178 +550,20 @@ export function ScheduleBuilder({
   );
 }
 
-interface RecurringControlsProps {
-  state: ScheduleState;
-  cadence: Cadence;
-  compact: boolean;
-  disabled?: boolean;
-  needsTime: boolean;
-  previewText?: string;
-  onCadenceChange: (cadence: Cadence) => void;
-  onUpdate: (partial: Partial<ScheduleState>) => void;
-  onToggleWeekday: (day: number) => void;
-}
-
-function RecurringControls({
-  state,
-  cadence,
-  compact,
-  disabled,
-  needsTime,
-  previewText,
-  onCadenceChange,
-  onUpdate,
-  onToggleWeekday,
-}: RecurringControlsProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const cadences = localizeUiCatalog(CADENCES, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS);
-  const weekdayButtons = localizeUiCatalog(
-    WEEKDAY_BUTTONS,
-    tI18nComplete,
-    APP_REGISTRY_TRANSLATION_KEYS,
-  );
+/** One stacked field of the schedule row: a small label over its control. */
+function ScheduleField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className={cn('space-y-3', compact && 'space-y-2')}>
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-muted-foreground">{tI18nComplete.raw('textb6b7a0065808')}</span>
-        <Select
-          value={cadence}
-          onValueChange={(value) => onCadenceChange(value as Cadence)}
-          disabled={disabled}
-        >
-          <SelectTrigger className="h-9 min-w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {cadences.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {(state.frequency === 'minutes' || state.frequency === 'hourly') && (
-          <>
-            <Select
-              value={String(state.interval)}
-              onValueChange={(value) => onUpdate({ interval: Number(value) })}
-              disabled={disabled}
-            >
-              <SelectTrigger className="h-9 w-18">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(state.frequency === 'minutes'
-                  ? [1, 2, 3, 5, 10, 15, 20, 30, 45]
-                  : [1, 2, 3, 4, 6, 8, 12]
-                ).map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-muted-foreground">
-              {state.frequency === 'minutes' ? 'minutes' : `hour${state.interval === 1 ? '' : 's'}`}
-            </span>
-          </>
-        )}
-
-        {state.frequency === 'monthly' && (
-          <>
-            <span className="text-muted-foreground">{tI18nComplete.raw('textada1fca3e7ad')}</span>
-            <Select
-              value={String(state.monthDay)}
-              onValueChange={(value) => onUpdate({ monthDay: Number(value) })}
-              disabled={disabled}
-            >
-              <SelectTrigger className="h-9 w-18">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 31 }, (_, index) => index + 1).map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </>
-        )}
-      </div>
-
-      {cadence === 'weekly' && (
-        <div className="flex flex-wrap gap-1.5" aria-label={tI18nComplete.raw('text2069f4549744')}>
-          {weekdayButtons.map(({ value, label }) => {
-            const selected = state.weekdays.includes(value);
-            return (
-              <Button
-                key={value}
-                type="button"
-                variant={selected ? 'secondary' : 'outline'}
-                size="sm"
-                aria-pressed={selected}
-                onClick={() => onToggleWeekday(value)}
-                disabled={disabled}
-                className="min-w-10 transition-transform active:scale-[0.96]"
-              >
-                {label}
-              </Button>
-            );
-          })}
-        </div>
-      )}
-
-      {needsTime && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Clock className="text-muted-foreground size-4" />
-          <span className="text-muted-foreground">
-            {state.frequency === 'hourly' ? tI18nComplete.raw('text5f2ed72dfcbc') : 'at'}
-          </span>
-          {state.frequency !== 'hourly' && (
-            <Select
-              value={String(state.hour)}
-              onValueChange={(value) => onUpdate({ hour: Number(value) })}
-              disabled={disabled}
-            >
-              <SelectTrigger className="h-9 w-18">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {HOURS.map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {String(value).padStart(2, '0')}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {state.frequency !== 'hourly' && (
-            <span className="text-muted-foreground font-medium">:</span>
-          )}
-          <Select
-            value={String(state.minute)}
-            onValueChange={(value) => onUpdate({ minute: Number(value) })}
-            disabled={disabled}
-          >
-            <SelectTrigger className="h-9 w-18">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MINUTE_OPTIONS.map((value) => (
-                <SelectItem key={value} value={String(value)}>
-                  {state.frequency === 'hourly'
-                    ? `:${String(value).padStart(2, '0')}`
-                    : String(value).padStart(2, '0')}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      <SchedulePreview text={previewText ?? describeSchedule(state)} />
+    <div className={cn('space-y-1.5', className)}>
+      <Label className="text-xs first-letter:uppercase">{label}</Label>
+      {children}
     </div>
   );
 }

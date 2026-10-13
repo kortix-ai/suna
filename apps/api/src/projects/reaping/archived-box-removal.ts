@@ -22,6 +22,8 @@ import { db } from '../../shared/db';
 import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 
 export const PROVIDER_REMOVAL_PENDING_KEY = 'providerRemovalPendingAt';
+/** Set only when the provider confirmed the archived row's box is gone. */
+export const PROVIDER_REMOVED_KEY = 'providerRemovedAt';
 
 /**
  * Lifecycle fences a deleted session must not keep. A detached restart, wake or
@@ -76,7 +78,7 @@ async function markRemoved(sandboxId: string, now: Date): Promise<void> {
         'providerRemovalAttempts',
         'providerRemovalRetryAfterAt',
         'providerRemovalError',
-      ])}) || ${JSON.stringify({ providerRemovedAt: now.toISOString() })}::jsonb`,
+      ])}) || ${JSON.stringify({ [PROVIDER_REMOVED_KEY]: now.toISOString() })}::jsonb`,
       updatedAt: now,
     })
     .where(
@@ -123,9 +125,16 @@ export async function attemptArchivedBoxRemoval(
   now = new Date(),
 ): Promise<'removed' | 'failed' | 'skipped'> {
   if (!isAllowedProvider(row.provider)) return 'skipped';
-  const provider = getProvider(row.provider as SandboxProviderName);
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
   const attempts = Number(metadata.providerRemovalAttempts ?? 0) || 0;
+  let provider: ReturnType<typeof getProvider>;
+  try {
+    // Throws synchronously for a provider this deployment cannot construct.
+    provider = getProvider(row.provider as SandboxProviderName);
+  } catch (error) {
+    await markRemovalFailed(row.sandboxId, attempts + 1, error, now).catch(() => undefined);
+    return 'failed';
+  }
   try {
     await provider.remove(row.externalId);
     await markRemoved(row.sandboxId, now);
