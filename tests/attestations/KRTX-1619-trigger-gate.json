@@ -1,11 +1,17 @@
 {
-  "source_hash": "9d71a43cdabd971daab035078f7dee0d0720f52455118de33ad3e7b3ef2b1e52",
-  "head": "f359c0b4d3fb7a046a8fb9bdfe877d51ac1f1ad7",
-  "passed": false,
+  "source_hash": "4d85f2e264433f3431882f90761754bb6e12d948242bee9f023be28feb06a22c",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-preview-access.test.ts",
+    "apps/api/src/shared/preview-ownership.test.ts",
+    "apps/api/src/shared/preview-ownership.ts"
+  ],
+  "diff_hash": "b81a628976c5895f473531c23fef580b848115d22cabd7b67a99ac8a60055501",
+  "head": "97327605e40e679e7fae2446330f993847e9a15e",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-13T12:01:42.488Z"
+  "at": "2026-10-13T13:54:07.506Z"
 }
