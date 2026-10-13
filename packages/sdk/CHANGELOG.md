@@ -5,6 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (connector credential re-sync)
+- `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
+  connector the server re-reads the tools after the write: `sync` is that run
+  (`ConnectorSyncResult`), and a per-slug entry in `sync.errors` means the
+  credential is stored but the tools still fail to load. Absent for other
+  providers and on older servers. Additive (KRTX-2185).
+
 ### Added (SSO and MFA remedies)
 - `configureKortix({ onAccessRemedy })` / `createKortix({ onAccessRemedy })`:
   called with `'sso_required'` or `'account_mfa_required'` when the API answers
