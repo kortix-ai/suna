@@ -138,6 +138,7 @@
     "browseAsGuest": "Als Gast durchsuchen",
     "signOutFailed": "Abmelden fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
     "signingOut": "Wird abgemeldet…",
+    "ssoRequired": "Deine Organisation verlangt Single Sign-on. Fahre stattdessen mit SSO fort.",
     "mfa": {
       "title": "Bestätige, dass du es bist",
       "enterCode": "Gib den 6-stelligen Code aus deiner Authenticator-App ein.",

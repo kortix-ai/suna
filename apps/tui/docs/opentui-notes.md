@@ -10,7 +10,7 @@ the `.d.ts` files are the contract.
 | Fact | Value |
 | --- | --- |
 | Packages | `@opentui/core@0.5.11`, `@opentui/react@0.5.11` |
-| Runtime | Bun 1.3.14 (`@opentui/core` exports a `bun` condition backed by Bun FFI) |
+| Runtime | Bun 1.4.3 (`@opentui/core` exports a `bun` condition backed by Bun FFI) |
 | React | 19.3.0, through `react-reconciler@0.33` |
 | Native lib | `@opentui/core-darwin-arm64` (an optionalDependency per platform, no build step) |
 | Install note | `@opentui/core` declares `engines.node: >=26.4.0`; see the comment in the repo `.npmrc` |
