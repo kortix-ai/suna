@@ -1,0 +1,23 @@
+{
+  "source_hash": "f589cf45b1634a6362acda3df5aea69fc97bcd5edc49564c5e310b58b4a107f1",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-transcript-capture.test.ts",
+    "apps/mobile/components/session/__tests__/drawer-rows.test.ts",
+    "apps/web/src/components/i18n-provider-hook-order.test.ts",
+    "apps/web/src/components/i18n-provider.tsx",
+    "apps/web/src/features/project-files/components/drive-grid-view.tsx",
+    "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
+    "apps/web/src/i18n/client-catalog.test.ts",
+    "apps/web/src/i18n/client-catalog.ts",
+    "tests/e2e/specs/42-files-whole-repo.spec.ts"
+  ],
+  "diff_hash": "406a570260299a8c5c65b0b9fa1eadd149f86c3e3b9f9dbe08f0ef4c4550f7b9",
+  "head": "11ce8aa75cccdfc8307c20e1bf524b5460e62580",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T01:18:50.322Z"
+}
