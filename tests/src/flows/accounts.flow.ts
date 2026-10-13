@@ -250,11 +250,11 @@ flow(
         .status(200)
         .json<Array<{ user_id: string }>>()
         .map((m) => m.user_id);
-    const groupIds = async (who: Client) =>
+    const groupRows = async (who: Client) =>
       (await who.get('/v1/accounts/:accountId/iam/groups', { params }))
         .status(200)
-        .json<{ groups: Array<{ group_id: string }> }>()
-        .groups.map((g) => g.group_id);
+        .json<{ groups: Array<{ group_id: string; project_count: number }> }>().groups;
+    const groupIds = async (who: Client) => (await groupRows(who)).map((g) => g.group_id);
     const expectIds = (label: string, ids: string[], present: string[], absent: string[]) => {
       const missing = present.filter((id) => !ids.includes(id));
       const leaked = absent.filter((id) => ids.includes(id));
@@ -300,6 +300,14 @@ flow(
       async () => {
         expectIds('viewer groups', await groupIds(asViewer), [mine, onShared], [elsewhere]);
         expectIds('owner groups', await groupIds(owner), [mine, onShared, elsewhere], []);
+        // The group on `shared` is also granted on `hidden`: the viewer's count
+        // covers only the project they can read.
+        const counted = (rows: Array<{ group_id: string; project_count: number }>) =>
+          rows.find((g) => g.group_id === onShared)?.project_count;
+        const [viewerCount, ownerCount] = [counted(await groupRows(asViewer)), counted(await groupRows(owner))];
+        if (viewerCount !== 1 || ownerCount !== 2) {
+          throw new Error(`onShared project_count: viewer ${viewerCount} (want 1), owner ${ownerCount} (want 2)`);
+        }
       },
     );
 

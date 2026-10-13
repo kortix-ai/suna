@@ -97,9 +97,18 @@ export function registerIamGroupsRoutes(): void {
       const accountId = c.req.param('accountId');
       // `group.read` lists every group; a plain member lists the groups they
       // share access with (iam/directory-visibility.ts).
-      const { groupIds } = await visibleGroups(c, accountId);
+      const { groupIds, projectIds } = await visibleGroups(c, accountId);
 
       const rows = await listGroups(accountId);
+      // Without `group.read`, a group's project count covers only the projects
+      // the caller can read, like its project-grants list below.
+      const readable = groupIds ? projectIds : null;
+      const readableCount = new Map<string, number>();
+      if (readable) {
+        for (const g of await groupProjectGrants({ accountId })) {
+          if (readable.has(g.projectId)) readableCount.set(g.groupId, (readableCount.get(g.groupId) ?? 0) + 1);
+        }
+      }
       return c.json({
         groups: rows.filter((g) => !groupIds || groupIds.has(g.groupId)).map((g) => ({
           group_id: g.groupId,
@@ -108,7 +117,7 @@ export function registerIamGroupsRoutes(): void {
           source: g.source,
           member_count: g.memberCount,
           // Number of project_group_grants for this group.
-          project_count: g.projectCount,
+          project_count: readable ? (readableCount.get(g.groupId) ?? 0) : g.projectCount,
           created_at: g.createdAt.toISOString(),
           updated_at: g.updatedAt.toISOString(),
         })),
