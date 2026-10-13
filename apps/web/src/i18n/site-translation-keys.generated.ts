@@ -26,8 +26,8 @@ export const SITE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'text1e434c761456',
   'Agents run the work. Your people review, approve and handle the exceptions. Then we take the next job.':
     'textfdac9cb7021a',
-  'Agents that do real work for every team. Each one runs on its own cloud computer, works in the tools you already use, and lives as code in one repo you own. Any model, your keys, our cloud or yours.':
-    'text742837d5496a',
+  'Agents that do real work for every team, each on its own cloud computer, in the tools you already use. All of it lives as code in one repo you own.':
+    'textce27be704147',
   'Agents that do the work, not the chat.': 'text784110d33d27',
   'Agents that ship our product.': 'text96b71932c827',
   'Agents, skills and automations for your highest-value work': 'textee458d6539f8',

@@ -1,6 +1,5 @@
 import { localizedKindCopy } from '@/components/projects/schedule/schedule-copy';
 import { faq } from '@/features/marketing/faq/content';
-import { openSource } from '@/features/marketing/open-source/content';
 import { localizedSlashActions } from '@/features/session/composer/menus/slash-actions';
 import { getProviderGuide, getScimGuide } from '@/features/sso-setup/guides';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
@@ -73,13 +72,8 @@ describe('complete UI localization', () => {
     expect(scim?.steps[0]?.title).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
   });
 
-  test('localizes every FAQ entry and open-source link added after the generated catalog', () => {
+  test('localizes every FAQ entry added after the generated catalog', () => {
     const localizedFaq = localizeUiCatalog(faq, srTranslator, REMAINING_UI_TRANSLATION_KEYS);
-    const localizedOpenSource = localizeUiCatalog(
-      openSource,
-      srTranslator,
-      REMAINING_UI_TRANSLATION_KEYS,
-    );
 
     for (const [index, item] of faq.items.entries()) {
       expect(localizedFaq.items[index]?.question).not.toBe(item.question);
@@ -87,8 +81,6 @@ describe('complete UI localization', () => {
       expect(localizedFaq.items[index]?.question).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
       expect(localizedFaq.items[index]?.answer).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
     }
-    expect(localizedOpenSource.aboutLabel).toBe('Зашто га градимо');
-    expect(localizedOpenSource.repoLabel).toBe('Прочитајте изворни кôд');
   });
 
   test('keeps every locale in exact key and placeholder parity with English', () => {

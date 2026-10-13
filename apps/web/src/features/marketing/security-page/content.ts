@@ -76,53 +76,6 @@ export const hero = {
    session_sandboxes.session_id. One branch per session is the boot sequence.
    "microVM" is named ONLY for Platinum, which really is Cloud Hypervisor —
    see correction 2 in the header. */
-export const isolation = {
-  eyebrow: 'Isolation',
-  title: 'Nothing is shared, because nothing is shared.',
-  sub: 'A session is not a tab in a shared runtime. It is a machine of its own, and the database will not let two sessions have the same one. Separating two of your own sessions is the same mechanism as separating two different customers.',
-  /** The boundary diagram: what is inside a session, and what stays out. */
-  inside: {
-    label: 'inside one session',
-    items: [
-      'Its own sandbox, with its own filesystem and its own lifetime',
-      'A clone of the project repo on a branch named after the session',
-      'The tools, dependencies and runtime the project declares',
-      'Only the secrets that session is granted, placed there at boot',
-    ],
-  },
-  outside: {
-    label: 'never crosses in',
-    items: [
-      'Another session — same project, same team, or another customer',
-      'Connector credentials, which are resolved server-side',
-      'Kortix’s own upstream provider keys, which no sandbox may hold',
-      'Write access to main; a session can only propose',
-    ],
-  },
-  rows: [
-    {
-      id: 'sandbox',
-      k: 'One sandbox per session',
-      v: 'A session gets exactly one machine, enforced in the database rather than by convention. Sessions never share a filesystem with each other, and the machine has a bounded lifetime rather than living forever.',
-    },
-    {
-      id: 'microvm',
-      k: 'microVM where you ask for it',
-      v: 'On Kortix’s own Platinum compute a sandbox is a Cloud Hypervisor microVM. Daytona and E2B are also supported. The provider is a deployment choice, and we will tell you which one you are on rather than blur them together.',
-    },
-    {
-      id: 'branch',
-      k: 'One branch per session',
-      v: 'The machine clones the repo and cuts a branch named after the session. Every edit and commit that session makes lives on that branch and nowhere else.',
-    },
-    {
-      id: 'disposable',
-      k: 'Disposable by design',
-      v: 'The machine is not precious. A bad install or a wiped directory goes away with it. Only what the session commits survives.',
-    },
-  ],
-} as const;
-
 /* ── 2 · credentials ───────────────────────────────────────────────────────
    Grounded in apps/api/src/projects/secrets.ts (AES-256-GCM, per-project key
    from HKDF-SHA256 over API_KEY_SECRET salted with the project id, versioned
@@ -255,162 +208,21 @@ export const identity = {
    and argument `conditions`. CORRECTION: default_mode falls back to `allow_all`
    for a project with no `policy:` block, so the copy tells you to set `risk`
    rather than claiming it is already on. */
-export const control = {
-  eyebrow: 'Control',
-  title: 'Decide what needs a human before it happens.',
-  sub: 'Approval is not a setting buried in an admin panel. It is a block in kortix.yaml, versioned with everything else, that says which tool calls run, which stop for a person, and which are refused outright.',
-  yaml: {
-    title: 'kortix.yaml',
-    lines: [
-      '# reads run; writes and destructive calls stop for a human',
-      'policy:',
-      '  default_mode: risk',
-      '',
-      'policies:',
-      '  # a name-only rule cannot gate the target — conditions can',
-      '  - match: gmail.send_email',
-      '    action: require_approval',
-      '    conditions:',
-      '      - arg: to',
-      '        match: /@example\\.com$/',
-      '',
-      '  # anything else through this tool is refused outright',
-      '  - match: gmail.send_email',
-      '    action: block',
-      '',
-      '  # whole connectors can be gated with one glob',
-      '  - match: stripe.*',
-      '    action: require_approval',
-    ],
-  },
-  notes: [
-    {
-      id: 'actions',
-      k: 'Three actions',
-      v: 'always_run, require_approval, block. A rule matches a glob over fully-qualified tool paths, so one line can cover a single call or a whole connector.',
-    },
-    {
-      id: 'conditions',
-      k: 'Gate the target, not just the tool',
-      v: '"May the agent send email" is not a guardrail. Conditions match the arguments, so the rule can be "only to these addresses". An argument that cannot be evaluated fails closed.',
-    },
-    {
-      id: 'percall',
-      k: 'No blanket "allow always"',
-      v: 'Every gated call is approved on its own, with its arguments in front of you. There is no session-wide grant a later call with different arguments can hide behind — that shortcut was removed at the enforcement point, not just from the UI.',
-    },
-    {
-      id: 'default',
-      k: 'Set the default you want',
-      v: 'default_mode: risk makes reads run and sends writes and destructive calls to a person. A project with no policy block keeps the permissive legacy default, so set this explicitly.',
-    },
-  ],
-} as const;
-
 /* ── 5 · change request ────────────────────────────────────────────────────
    Grounded in apps/api/src/projects/routes/change-request-actions.ts, which gates merge twice: the
    human capability `project.gitops.merge` and the per-agent `project.cr.merge`,
    which is DEFAULT-DENY. CORRECTION: "only a human can merge" is too strong —
    an admin can grant an agent that capability. The grant lives in kortix.yaml,
    so widening it is itself a merged change request. That is the real claim. */
-export const landing = {
-  eyebrow: 'How work lands',
-  title: 'Opening a change request and merging it are different powers.',
-  sub: 'An agent can write as much as it likes on its own branch. Landing that work on main is a separate capability it does not have unless you hand it over deliberately — and handing it over is itself a change someone has to approve.',
-  steps: [
-    {
-      n: '00',
-      title: 'The session works on its branch',
-      body: 'Every edit lands on the branch cut for that session. Nothing the agent does is visible to any other session, or to main.',
-    },
-    {
-      n: '01',
-      title: 'It commits and opens a change request',
-      body: 'When the agent wants something to survive the machine, it commits and opens a change request pointed at main. That is the only door.',
-    },
-    {
-      n: '02',
-      title: 'A person reads the diff',
-      body: 'A change request is a diff. An agent rewriting its own prompt is reviewed the same way a code change is — because it is one. A change request whose manifest does not validate cannot merge at all.',
-    },
-    {
-      n: '03',
-      title: 'Merging is default-deny',
-      body: 'Merge is a capability of its own, refused to every agent unless an admin grants it. That grant lives in kortix.yaml — so an agent cannot widen its own reach without a change request someone else approves.',
-    },
-  ],
-} as const;
-
 /* ── 6 · audit ─────────────────────────────────────────────────────────────
    Grounded in TierEntitlements.auditAccess in apps/api/src/types.ts, which is
    explicit that RECORDING is never gated and only read/export/streaming is.
    Stated narrowly on purpose: this is the claim a reviewer will test first. */
-export const audit = {
-  eyebrow: 'Audit',
-  title: 'Recording is never the thing you pay for.',
-  sub: 'Every account action and every agent action is captured on every plan. The plan decides who may read, export, or stream that record — not whether it exists.',
-  rows: [
-    {
-      id: 'account',
-      k: 'Account audit log',
-      v: 'Membership, roles, policies, tokens, groups and IAM changes are recorded as they happen, on every plan.',
-    },
-    {
-      id: 'agent',
-      k: 'Every gated tool call',
-      v: 'Each call an agent makes through a connector is a row: the action, the actor, the session, the risk class, whether it ran, was denied, or waited for a person, and who resolved it. Arguments are stored as a preview built by subtraction, so a credential cannot end up in the record.',
-    },
-    {
-      id: 'stream',
-      k: 'Export it or stream it',
-      v: 'Pull the log as CSV or JSONL, or have every event posted to your own SIEM over a webhook signed with HMAC-SHA256. Read, export and streaming are Enterprise entitlements.',
-    },
-    {
-      id: 'diff',
-      k: 'The repo is its own history',
-      v: 'Configuration is files. Who changed which agent, which skill and which policy, and who approved it, is git history you already know how to read.',
-    },
-  ],
-} as const;
-
 /* ── 7 · deployment + posture ──────────────────────────────────────────────
    HONESTY GATE. SOC 2 Type I is held (the report has landed). SOC 2 Type II is
    IN PROGRESS. GDPR is a posture we operate, not a pending third-party
    certificate, so it has no state string. No ISO. No HIPAA. Do not add a badge
    here without a report to point at. */
-export const posture = {
-  eyebrow: 'Deployment & posture',
-  title: 'Run it where your policy says it has to run.',
-  sub: 'The same product ships as managed cloud, as a stack inside your own network, and as an isolated deployment. Open source, so what you are trusting is code you can read.',
-  deployments: [
-    {
-      id: 'cloud',
-      k: 'Kortix Cloud',
-      v: 'The managed service. We run the control plane and the compute; you run the company.',
-    },
-    {
-      id: 'selfhost',
-      k: 'Self-hosted',
-      v: 'One Docker Compose stack on your box, from the same images the managed cloud runs. Your database and your files sit on disk you control.',
-    },
-    {
-      id: 'vpc',
-      k: 'Your VPC or on-prem',
-      v: 'A single-tenant deployment inside your own network. Isolated topologies are scoped with us rather than self-served.',
-    },
-  ],
-  compliance: {
-    label: 'Where we actually stand',
-    /** Never move an item out of "In progress" without the report in hand. */
-    items: [
-      { k: 'SOC 2 Type I', v: 'Certified' },
-      { k: 'SOC 2 Type II', v: 'In progress' },
-      { k: 'GDPR', v: 'Operated' },
-    ],
-    note: 'We do not hold ISO 27001 or HIPAA, and we do not imply that we do. When a report lands, this line changes that day and not before.',
-  },
-} as const;
-
 /* ── disclosure ────────────────────────────────────────────────────────────
    The mailbox is ALREADY published publicly on
    /support (support/page.tsx), so naming it here adds no new exposure, and the
@@ -420,43 +232,9 @@ export const posture = {
    published externally". Confirm the mailbox is real and watched, or cut the
    SLA rows — publishing a 3-day acknowledgement against an unread inbox is
    worse than publishing no timeline at all. */
-export const disclosure = {
-  eyebrow: 'Responsible disclosure',
-  title: 'Found something? Tell us privately.',
-  sub: 'Please do not open a public issue for a vulnerability. Mail the security contact with the affected version or commit, the reproduction, and the impact.',
-  email: 'security@kortix.com',
-  slas: [
-    { k: 'Acknowledgement', v: 'Within 3 business days' },
-    { k: 'Triage & severity', v: 'Within 5 business days' },
-    { k: 'Coordinated disclosure', v: 'Agreed with you, 90 days by default' },
-  ],
-  credit: 'We credit reporters who want it, once a fix has shipped.',
-} as const;
-
-export const closing = {
-  eyebrow: 'Talk to us',
-  title: 'Bring us your security review.',
-  sub: 'Send the questionnaire, the architecture questions, the deployment constraints. We would rather answer them properly than have you guess from a marketing page.',
-  ctaPrimary: 'Talk to us',
-  ctaPrimaryHref: '/contact',
-  ctaSecondary: 'See enterprise',
-  ctaSecondaryHref: '/enterprise',
-} as const;
-
 export function getLocalizedSecurityContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    {
-      hero,
-      isolation,
-      credentials,
-      identity,
-      control,
-      landing,
-      audit,
-      posture,
-      disclosure,
-      closing,
-    },
+    { hero, credentials, identity },
     tI18nComplete,
     SECURITY_SELFHOST_TRANSLATION_KEYS,
   );

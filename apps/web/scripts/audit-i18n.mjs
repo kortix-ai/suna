@@ -971,9 +971,6 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/faq/content.ts') &&
           catalogRoot === 'faq' &&
           localizedRemainingUiText.has(node.text)) ||
-        (file === path.join(srcDir, 'features/marketing/open-source/content.ts') &&
-          catalogRoot === 'openSource' &&
-          localizedRemainingUiText.has(node.text)) ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
           catalogRoot === 'TOOL_PARTS' &&
           node.text === 'Run the billing suite') ||
@@ -1006,8 +1003,6 @@ function scanFile(file) {
           catalogRoot === 'DRAWER_SOCIALS') ||
         (file === path.join(srcDir, 'components/instance/config.ts') &&
           catalogRoot === 'INSTANCE_CONFIG') ||
-        (file === path.join(srcDir, 'features/marketing/landing/code-panels.tsx') &&
-          catalogRoot === 'TOKEN_CLASS') ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
           catalogRoot === 'TOOL_PARTS' &&
           node.text === 'bun test apps/api/src/billing') ||
