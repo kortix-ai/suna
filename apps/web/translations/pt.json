@@ -20810,7 +20810,7 @@
       "never": "Nunca",
       "pausedUntil": "até {time}",
       "apiLink": "API do Kortix Capture",
-      "rollout": "Implantar",
+      "rollout": "Instalação da empresa",
       "managedBadge": "Implantação de TI",
       "link": "Vincular a uma pessoa…",
       "relink": "Alterar a pessoa vinculada…",
@@ -20955,24 +20955,24 @@
       "done": "Concluir"
     },
     "rollout": {
-      "title": "Implantar nos computadores",
-      "description": "A TI instala o Kortix Capture em muitos computadores com um token de registro. Cada computador se registra sozinho e começa a gravar. O Kortix o vincula ao membro com o e-mail usado para entrar no computador; você pode vincular qualquer computador a uma pessoa depois.",
-      "tokensTitle": "Tokens de registro",
+      "title": "Instalar nos computadores da empresa",
+      "description": "Crie um token de registro e a TI instala o Kortix Capture com ele em cada computador: um comando, ou o Intune e outras ferramentas de gerenciamento. Cada computador começa a gravar sozinho e ninguém precisa entrar. Os computadores aparecem em Dispositivos, vinculados ao membro com o mesmo e-mail; vincule você mesmo qualquer outro computador a uma pessoa.",
+      "tokensTitle": "Seus tokens de registro",
       "tokensEmpty": "Ainda não há token de registro.",
       "guide": "Guia de configuração para TI",
       "done": "Concluído",
       "newTitle": "Novo token de registro",
       "name": "Nome",
-      "namePlaceholder": "Notebooks piloto",
+      "namePlaceholder": "Notebooks de engenharia",
       "domains": "Domínios de e-mail",
-      "domainsHint": "O login no Windows precisa usar um deles. Vazio: qualquer membro.",
+      "domainsHint": "Só pessoas que entram no computador com um e-mail destes domínios. Vazio: qualquer pessoa.",
       "limit": "Limite de computadores",
-      "limitHint": "Vazio: sem limite.",
-      "expires": "Expira",
+      "limitHint": "Quantos computadores podem usar este token. Vazio: sem limite.",
+      "expires": "Válido por",
       "never": "Nunca",
       "days": "{days, plural, one {# dia} other {# dias}}",
       "approval": "Aprovar cada computador",
-      "approvalHint": "Cada computador novo espera um administrador, mesmo quando a pessoa é membro.",
+      "approvalHint": "Cada computador novo aguarda sua aprovação em Dispositivos antes de gravar.",
       "create": "Criar token",
       "createFailed": "Não foi possível criar o token",
       "createdTitle": "{name}: copie o token agora",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "Para você reconhecê-lo, por exemplo a equipe.",
+      "showRevoked": "Mostrar revogados ({count})",
+      "hideRevoked": "Ocultar revogados"
     }
   }
 }

@@ -20810,7 +20810,7 @@
       "never": "Never",
       "pausedUntil": "until {time}",
       "apiLink": "Kortix Capture API",
-      "rollout": "Roll out",
+      "rollout": "Company install",
       "managedBadge": "IT rollout",
       "link": "Link to a person…",
       "relink": "Change linked person…",
@@ -20955,24 +20955,24 @@
       "done": "Done"
     },
     "rollout": {
-      "title": "Roll out to computers",
-      "description": "IT installs Kortix Capture on many computers with one enrollment token. Each computer enrolls on its own and starts recording. Kortix links it to the member whose email the person signs in to the computer with; you can link any computer to a person later.",
-      "tokensTitle": "Enrollment tokens",
+      "title": "Install on company computers",
+      "description": "Create an enrollment token, then IT installs Kortix Capture with it on every computer: one command, or Intune and other device management. Each computer starts recording on its own and nobody signs in. Computers appear in Devices, linked to the member with the same email; link any other computer to a person yourself.",
+      "tokensTitle": "Your enrollment tokens",
       "tokensEmpty": "No enrollment token yet.",
       "guide": "IT setup guide",
       "done": "Done",
       "newTitle": "New enrollment token",
       "name": "Name",
-      "namePlaceholder": "Pilot laptops",
+      "namePlaceholder": "Engineering laptops",
       "domains": "Email domains",
-      "domainsHint": "The Windows sign-in must use one. Empty: any member.",
+      "domainsHint": "Only people who sign in to their computer with an email at these domains. Empty: anyone.",
       "limit": "Computer limit",
-      "limitHint": "Empty: no limit.",
-      "expires": "Expires",
+      "limitHint": "How many computers can use this token. Empty: no limit.",
+      "expires": "Valid for",
       "never": "Never",
       "days": "{days, plural, one {# day} other {# days}}",
       "approval": "Approve each computer",
-      "approvalHint": "Every new computer waits for an admin, also when its person is a member.",
+      "approvalHint": "Every new computer waits for you to approve it in Devices before it records.",
       "create": "Create token",
       "createFailed": "Could not create the token",
       "createdTitle": "{name}: copy the token now",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "For you to recognize it, for example the team.",
+      "showRevoked": "Show revoked ({count})",
+      "hideRevoked": "Hide revoked"
     }
   }
 }

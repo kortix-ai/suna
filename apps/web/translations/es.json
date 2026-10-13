@@ -20810,7 +20810,7 @@
       "never": "Nunca",
       "pausedUntil": "hasta {time}",
       "apiLink": "API de Kortix Capture",
-      "rollout": "Desplegar",
+      "rollout": "Instalación de empresa",
       "managedBadge": "Despliegue de TI",
       "link": "Vincular a una persona…",
       "relink": "Cambiar la persona vinculada…",
@@ -20955,24 +20955,24 @@
       "done": "Listo"
     },
     "rollout": {
-      "title": "Desplegar en equipos",
-      "description": "TI instala Kortix Capture en muchos equipos con un token de inscripción. Cada equipo se inscribe solo y empieza a grabar. Kortix lo vincula al miembro con el correo con el que la persona inicia sesión en el equipo; puedes vincular cualquier equipo a una persona más tarde.",
-      "tokensTitle": "Tokens de inscripción",
+      "title": "Instalar en los equipos de la empresa",
+      "description": "Crea un token de inscripción y TI instala Kortix Capture con él en cada equipo: con un comando, o con Intune y otras herramientas de gestión. Cada equipo empieza a grabar solo y nadie inicia sesión. Los equipos aparecen en Dispositivos, vinculados al miembro con el mismo correo; vincula tú cualquier otro equipo a una persona.",
+      "tokensTitle": "Tus tokens de inscripción",
       "tokensEmpty": "Aún no hay ningún token de inscripción.",
       "guide": "Guía de configuración para TI",
       "done": "Listo",
       "newTitle": "Nuevo token de inscripción",
       "name": "Nombre",
-      "namePlaceholder": "Portátiles piloto",
+      "namePlaceholder": "Portátiles de ingeniería",
       "domains": "Dominios de correo",
-      "domainsHint": "El inicio de sesión de Windows debe usar uno. Vacío: cualquier miembro.",
+      "domainsHint": "Solo personas que inician sesión en su equipo con un correo de estos dominios. Vacío: cualquiera.",
       "limit": "Límite de equipos",
-      "limitHint": "Vacío: sin límite.",
-      "expires": "Caduca",
+      "limitHint": "Cuántos equipos pueden usar este token. Vacío: sin límite.",
+      "expires": "Válido durante",
       "never": "Nunca",
       "days": "{days, plural, one {# día} other {# días}}",
       "approval": "Aprobar cada equipo",
-      "approvalHint": "Cada equipo nuevo espera a un administrador, también si su persona es miembro.",
+      "approvalHint": "Cada equipo nuevo espera a que lo apruebes en Dispositivos antes de grabar.",
       "create": "Crear token",
       "createFailed": "No se pudo crear el token",
       "createdTitle": "{name}: copia el token ahora",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "Para reconocerlo, por ejemplo el equipo.",
+      "showRevoked": "Mostrar revocados ({count})",
+      "hideRevoked": "Ocultar revocados"
     }
   }
 }

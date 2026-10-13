@@ -20810,7 +20810,7 @@
       "never": "Nie",
       "pausedUntil": "bis {time}",
       "apiLink": "Kortix Capture API",
-      "rollout": "Ausrollen",
+      "rollout": "Firmeninstallation",
       "managedBadge": "IT-Rollout",
       "link": "Einer Person zuordnen…",
       "relink": "Zugeordnete Person ändern…",
@@ -20955,24 +20955,24 @@
       "done": "Fertig"
     },
     "rollout": {
-      "title": "Auf Computer ausrollen",
-      "description": "Die IT installiert Kortix Capture mit einem Registrierungstoken auf vielen Computern. Jeder Computer registriert sich selbst und beginnt mit der Aufnahme. Kortix ordnet ihn dem Mitglied zu, mit dessen E-Mail sich die Person am Computer anmeldet; du kannst jeden Computer später einer Person zuordnen.",
-      "tokensTitle": "Registrierungstokens",
+      "title": "Auf Firmencomputern installieren",
+      "description": "Erstelle ein Registrierungstoken; die IT installiert Kortix Capture damit auf jedem Computer: mit einem Befehl oder über Intune und andere Geräteverwaltung. Jeder Computer beginnt selbst mit der Aufnahme, niemand meldet sich an. Die Computer erscheinen unter Geräte, zugeordnet zum Mitglied mit derselben E-Mail; jeden anderen Computer ordnest du selbst einer Person zu.",
+      "tokensTitle": "Deine Registrierungstokens",
       "tokensEmpty": "Noch kein Registrierungstoken.",
       "guide": "Einrichtungsanleitung für die IT",
       "done": "Fertig",
       "newTitle": "Neues Registrierungstoken",
       "name": "Name",
-      "namePlaceholder": "Pilot-Laptops",
+      "namePlaceholder": "Engineering-Laptops",
       "domains": "E-Mail-Domains",
-      "domainsHint": "Die Windows-Anmeldung muss eine davon nutzen. Leer: jedes Mitglied.",
+      "domainsHint": "Nur Personen, die sich mit einer E-Mail dieser Domains am Computer anmelden. Leer: alle.",
       "limit": "Computer-Limit",
-      "limitHint": "Leer: kein Limit.",
-      "expires": "Läuft ab",
+      "limitHint": "Wie viele Computer dieses Token nutzen können. Leer: kein Limit.",
+      "expires": "Gültig für",
       "never": "Nie",
       "days": "{days, plural, one {# Tag} other {# Tage}}",
       "approval": "Jeden Computer freigeben",
-      "approvalHint": "Jeder neue Computer wartet auf einen Admin, auch wenn seine Person Mitglied ist.",
+      "approvalHint": "Jeder neue Computer wartet auf deine Freigabe unter Geräte, bevor er aufnimmt.",
       "create": "Token erstellen",
       "createFailed": "Das Token konnte nicht erstellt werden",
       "createdTitle": "{name}: Kopiere das Token jetzt",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "Damit du es wiedererkennst, zum Beispiel das Team.",
+      "showRevoked": "Widerrufene anzeigen ({count})",
+      "hideRevoked": "Widerrufene ausblenden"
     }
   }
 }

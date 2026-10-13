@@ -20810,7 +20810,7 @@
       "never": "Mai",
       "pausedUntil": "fino alle {time}",
       "apiLink": "API di Kortix Capture",
-      "rollout": "Distribuisci",
+      "rollout": "Installazione aziendale",
       "managedBadge": "Distribuzione IT",
       "link": "Collega a una persona…",
       "relink": "Cambia la persona collegata…",
@@ -20955,24 +20955,24 @@
       "done": "Fatto"
     },
     "rollout": {
-      "title": "Distribuisci sui computer",
-      "description": "L’IT installa Kortix Capture su molti computer con un solo token di registrazione. Ogni computer si registra da solo e inizia a registrare. Kortix lo collega al membro con l’email con cui la persona accede al computer; puoi collegare qualsiasi computer a una persona in seguito.",
-      "tokensTitle": "Token di registrazione",
+      "title": "Installa sui computer aziendali",
+      "description": "Crea un token di registrazione e l’IT installa Kortix Capture con esso su ogni computer: un comando, oppure Intune e altri strumenti di gestione. Ogni computer inizia a registrare da solo e nessuno accede. I computer compaiono in Dispositivi, collegati al membro con la stessa email; collega tu qualsiasi altro computer a una persona.",
+      "tokensTitle": "I tuoi token di registrazione",
       "tokensEmpty": "Ancora nessun token di registrazione.",
       "guide": "Guida di configurazione per l’IT",
       "done": "Fatto",
       "newTitle": "Nuovo token di registrazione",
       "name": "Nome",
-      "namePlaceholder": "Portatili pilota",
+      "namePlaceholder": "Portatili ingegneria",
       "domains": "Domini email",
-      "domainsHint": "L’accesso a Windows deve usarne uno. Vuoto: qualsiasi membro.",
+      "domainsHint": "Solo le persone che accedono al computer con un’email di questi domini. Vuoto: chiunque.",
       "limit": "Limite di computer",
-      "limitHint": "Vuoto: nessun limite.",
-      "expires": "Scade",
+      "limitHint": "Quanti computer possono usare questo token. Vuoto: nessun limite.",
+      "expires": "Valido per",
       "never": "Mai",
       "days": "{days, plural, one {# giorno} other {# giorni}}",
       "approval": "Approva ogni computer",
-      "approvalHint": "Ogni nuovo computer attende un admin, anche se la sua persona è un membro.",
+      "approvalHint": "Ogni nuovo computer attende la tua approvazione in Dispositivi prima di registrare.",
       "create": "Crea token",
       "createFailed": "Impossibile creare il token",
       "createdTitle": "{name}: copia ora il token",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "Per riconoscerlo, per esempio il team.",
+      "showRevoked": "Mostra revocati ({count})",
+      "hideRevoked": "Nascondi revocati"
     }
   }
 }

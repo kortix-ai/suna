@@ -20810,7 +20810,7 @@
       "never": "从未",
       "pausedUntil": "至 {time}",
       "apiLink": "Kortix Capture API",
-      "rollout": "批量部署",
+      "rollout": "公司安装",
       "managedBadge": "IT 部署",
       "link": "关联到某人…",
       "relink": "更改关联的人…",
@@ -20955,24 +20955,24 @@
       "done": "完成"
     },
     "rollout": {
-      "title": "部署到电脑",
-      "description": "IT 使用一个注册令牌在多台电脑上安装 Kortix Capture。每台电脑会自行注册并开始录制。Kortix 会把它关联到登录该电脑所用邮箱对应的成员；你也可以稍后将任意电脑关联到某人。",
-      "tokensTitle": "注册令牌",
+      "title": "安装到公司电脑",
+      "description": "创建一个注册令牌，IT 即可用它在每台电脑上安装 Kortix Capture：一条命令，或通过 Intune 等设备管理工具。每台电脑会自行开始录制，无需任何人登录。电脑会出现在设备中，并关联到邮箱相同的成员；其他电脑由你手动关联到某人。",
+      "tokensTitle": "你的注册令牌",
       "tokensEmpty": "还没有注册令牌。",
       "guide": "IT 设置指南",
       "done": "完成",
       "newTitle": "新建注册令牌",
       "name": "名称",
-      "namePlaceholder": "试点笔记本",
+      "namePlaceholder": "工程部笔记本",
       "domains": "邮箱域名",
-      "domainsHint": "Windows 登录必须使用其中之一。留空：任何成员。",
+      "domainsHint": "仅限使用这些域名邮箱登录电脑的人员。留空：任何人。",
       "limit": "电脑数量上限",
-      "limitHint": "留空：不限。",
+      "limitHint": "可使用此令牌的电脑数量。留空：不限。",
       "expires": "有效期",
       "never": "永不",
       "days": "{days, plural, other {# 天}}",
       "approval": "逐台批准电脑",
-      "approvalHint": "每台新电脑都要等待管理员批准，即使其人员已是成员。",
+      "approvalHint": "每台新电脑在你于设备中批准前不会录制。",
       "create": "创建令牌",
       "createFailed": "无法创建令牌",
       "createdTitle": "{name}：请立即复制令牌",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "方便你识别，例如团队名称。",
+      "showRevoked": "显示已撤销（{count}）",
+      "hideRevoked": "隐藏已撤销"
     }
   }
 }

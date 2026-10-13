@@ -93,6 +93,11 @@ export function RolloutModal({
   const t = useTranslations('capture.rollout');
   const tokens = useCaptureEnrollmentTokens(open ? accountId : null);
   const [created, setCreated] = useState<CaptureEnrollmentTokenSecret | null>(null);
+  // Revoked and expired tokens enroll nothing: kept out of sight until asked for.
+  const [showInactive, setShowInactive] = useState(false);
+  const all = tokens.data?.tokens ?? [];
+  const inactive = all.filter((token) => token.state !== 'active');
+  const shown = showInactive ? all : all.filter((token) => token.state === 'active');
   const close = (next: boolean) => {
     if (!next) setCreated(null);
     onOpenChange(next);
@@ -114,15 +119,25 @@ export function RolloutModal({
             <Label>{t('tokensTitle')}</Label>
             {tokens.isLoading ? (
               <Skeleton className="h-16 rounded-md" />
-            ) : (tokens.data?.tokens.length ?? 0) === 0 ? (
+            ) : shown.length === 0 ? (
               <p className="text-muted-foreground text-xs">{t('tokensEmpty')}</p>
             ) : (
               <ul className="bg-popover divide-border divide-y rounded-md border">
-                {tokens.data!.tokens.map((token) => (
+                {shown.map((token) => (
                   <TokenRow key={token.token_id} accountId={accountId} token={token} />
                 ))}
               </ul>
             )}
+            {inactive.length > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => setShowInactive((v) => !v)}
+              >
+                {showInactive ? t('hideRevoked') : t('showRevoked', { count: inactive.length })}
+              </Button>
+            ) : null}
           </section>
         </ModalBody>
         <ModalFooter className="sm:justify-between">
@@ -172,9 +187,12 @@ function NewTokenForm({
       <Label>{t('newTitle')}</Label>
       <div className="bg-popover divide-border divide-y rounded-md border">
         <div className="grid gap-2 px-4 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
-          <Label htmlFor={ids.name} className="text-sm font-medium">
-            {t('name')}
-          </Label>
+          <span>
+            <Label htmlFor={ids.name} className="text-sm font-medium">
+              {t('name')}
+            </Label>
+            <p className="text-muted-foreground mt-0.5 text-xs">{t('nameHint')}</p>
+          </span>
           <Input
             id={ids.name}
             value={name}

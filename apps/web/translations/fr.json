@@ -20810,7 +20810,7 @@
       "never": "Jamais",
       "pausedUntil": "jusqu’à {time}",
       "apiLink": "API Kortix Capture",
-      "rollout": "Déployer",
+      "rollout": "Installation entreprise",
       "managedBadge": "Déploiement IT",
       "link": "Associer à une personne…",
       "relink": "Changer la personne associée…",
@@ -20955,24 +20955,24 @@
       "done": "Terminé"
     },
     "rollout": {
-      "title": "Déployer sur les ordinateurs",
-      "description": "L’IT installe Kortix Capture sur de nombreux ordinateurs avec un seul jeton d’inscription. Chaque ordinateur s’inscrit seul et commence l’enregistrement. Kortix l’associe au membre dont l’e-mail sert à ouvrir la session de l’ordinateur ; vous pouvez associer tout ordinateur à une personne plus tard.",
-      "tokensTitle": "Jetons d’inscription",
+      "title": "Installer sur les ordinateurs de l’entreprise",
+      "description": "Créez un jeton d’inscription ; l’IT installe Kortix Capture avec sur chaque ordinateur : une commande, ou Intune et d’autres outils de gestion. Chaque ordinateur commence l’enregistrement seul, personne ne se connecte. Les ordinateurs apparaissent dans Appareils, associés au membre qui a le même e-mail ; associez vous-même tout autre ordinateur à une personne.",
+      "tokensTitle": "Vos jetons d’inscription",
       "tokensEmpty": "Aucun jeton d’inscription pour l’instant.",
       "guide": "Guide de configuration pour l’IT",
       "done": "Terminé",
       "newTitle": "Nouveau jeton d’inscription",
       "name": "Nom",
-      "namePlaceholder": "Portables pilotes",
+      "namePlaceholder": "Portables de l’ingénierie",
       "domains": "Domaines e-mail",
-      "domainsHint": "La session Windows doit en utiliser un. Vide : tout membre.",
+      "domainsHint": "Seulement les personnes qui ouvrent leur session avec un e-mail de ces domaines. Vide : tout le monde.",
       "limit": "Limite d’ordinateurs",
-      "limitHint": "Vide : aucune limite.",
-      "expires": "Expire",
+      "limitHint": "Combien d’ordinateurs peuvent utiliser ce jeton. Vide : aucune limite.",
+      "expires": "Valable pendant",
       "never": "Jamais",
       "days": "{days, plural, one {# jour} other {# jours}}",
       "approval": "Approuver chaque ordinateur",
-      "approvalHint": "Chaque nouvel ordinateur attend un admin, même si sa personne est membre.",
+      "approvalHint": "Chaque nouvel ordinateur attend votre approbation dans Appareils avant d’enregistrer.",
       "create": "Créer le jeton",
       "createFailed": "Impossible de créer le jeton",
       "createdTitle": "{name} : copiez le jeton maintenant",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "Pour le reconnaître, par exemple l’équipe.",
+      "showRevoked": "Afficher les révoqués ({count})",
+      "hideRevoked": "Masquer les révoqués"
     }
   }
 }

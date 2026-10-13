@@ -20810,7 +20810,7 @@
       "never": "なし",
       "pausedUntil": "{time} まで",
       "apiLink": "Kortix Capture API",
-      "rollout": "展開",
+      "rollout": "会社のインストール",
       "managedBadge": "IT 展開",
       "link": "ユーザーに紐付け…",
       "relink": "紐付けるユーザーを変更…",
@@ -20955,24 +20955,24 @@
       "done": "完了"
     },
     "rollout": {
-      "title": "コンピューターに展開",
-      "description": "IT は 1 つの登録トークンで多数のコンピューターに Kortix Capture をインストールします。各コンピューターは自動で登録され、記録を開始します。Kortix は、コンピューターへのサインインに使われたメールのメンバーに紐付けます。後から任意のコンピューターをユーザーに紐付けることもできます。",
+      "title": "会社のコンピューターにインストール",
+      "description": "登録トークンを作成すると、IT がそれを使って各コンピューターに Kortix Capture をインストールします。コマンド 1 つ、または Intune などのデバイス管理で配布できます。各コンピューターは自動で記録を開始し、誰もサインインする必要はありません。コンピューターはデバイスに表示され、同じメールのメンバーに紐付きます。それ以外のコンピューターはご自身でユーザーに紐付けてください。",
       "tokensTitle": "登録トークン",
       "tokensEmpty": "登録トークンはまだありません。",
       "guide": "IT 向けセットアップガイド",
       "done": "完了",
       "newTitle": "新しい登録トークン",
       "name": "名前",
-      "namePlaceholder": "パイロット用ノート PC",
+      "namePlaceholder": "エンジニアリングのノート PC",
       "domains": "メールドメイン",
-      "domainsHint": "Windows のサインインはこのいずれかを使う必要があります。空欄: すべてのメンバー。",
+      "domainsHint": "これらのドメインのメールでコンピューターにサインインする人だけ。空欄: 誰でも。",
       "limit": "コンピューター数の上限",
-      "limitHint": "空欄: 上限なし。",
-      "expires": "有効期限",
+      "limitHint": "このトークンを使えるコンピューターの数。空欄: 上限なし。",
+      "expires": "有効期間",
       "never": "なし",
       "days": "{days, plural, other {# 日}}",
       "approval": "コンピューターごとに承認",
-      "approvalHint": "新しいコンピューターは、その人がメンバーでも管理者の承認を待ちます。",
+      "approvalHint": "新しいコンピューターは、デバイスで承認されるまで記録しません。",
       "create": "トークンを作成",
       "createFailed": "トークンを作成できませんでした",
       "createdTitle": "{name}: 今すぐトークンをコピーしてください",
@@ -21037,7 +21037,10 @@
         "windows": "Windows",
         "macos": "macOS",
         "linux": "Linux"
-      }
+      },
+      "nameHint": "見分けるための名前。例: チーム名。",
+      "showRevoked": "取り消し済みを表示 ({count})",
+      "hideRevoked": "取り消し済みを隠す"
     }
   }
 }
