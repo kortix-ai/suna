@@ -1,0 +1,39 @@
+{
+  "source_hash": "f2ad3bc918b25bb3e2ea9fac04ae352580af4e62b1b9c2b8ddeff9f1b484865c",
+  "diff_files": [
+    "apps/api/src/apps/public-proxy-status.ts",
+    "apps/api/src/apps/public-proxy.test.ts",
+    "apps/api/src/apps/routes.ts",
+    "apps/api/src/apps/volumes.provider.test.ts",
+    "apps/api/src/apps/volumes.ts",
+    "apps/api/src/feature-flags/registry.ts",
+    "apps/cli/src/__tests__/host-account-context.test.ts",
+    "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/commands/access.ts",
+    "apps/cli/src/commands/audit.ts",
+    "apps/cli/src/commands/billing.ts",
+    "apps/cli/src/commands/groups.ts",
+    "apps/cli/src/commands/members.ts",
+    "apps/web/content/docs/apps.mdx",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "packages/sdk/examples/10-deploy-app.ts",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/apps.flow.ts"
+  ],
+  "diff_hash": "dea0f5880716831452167cd28e8bf43814ab759e7735a7cc7e6c8f34119ad524",
+  "head": "b6a81593cc03bec26cf3cc837b140a50864dcaef",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T18:48:26.238Z"
+}
