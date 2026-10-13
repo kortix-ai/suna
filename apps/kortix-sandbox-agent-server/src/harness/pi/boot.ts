@@ -49,6 +49,8 @@ import type { PiRuntimeHooks } from './runtime'
 import { createPiHarnessService, type PiHarnessService } from './service'
 import { createPiSessionLogPort } from './session-log'
 import { startSessionLogJournal } from '../shared/session-log-journal'
+import { reconcileSessionLog, type SessionLogBoot } from '../shared/session-log-boot'
+import { readPiSnapshot } from './session-log-restore'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
@@ -143,6 +145,15 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   })
   bootMark('proxy-up')
 
+  // The session log's boot reconcile (P6.4, shared/session-log-boot.ts), beside
+  // the checkout: a restore writes pi's dump, which needs no /workspace, and the
+  // runtime loads it at start. A failed reconcile fails the boot below.
+  const sessionLog: Promise<SessionLogBoot | null | Error> = sessionId
+    ? reconcileSessionLog(
+        createPiSessionLogPort(() => readPiSnapshot(cfg.piStateDir, sessionId), { stateDir: cfg.piStateDir, sessionId, cwd: cfg.projectTarget || cfg.workspace }),
+      ).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    : Promise.resolve(null)
+
   // The first turn's claim is a read; prefetch it while the workspace lands.
   const claimPromise = bootstrapSession && sessionId
     ? claimInitialTurn()
@@ -202,6 +213,12 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   }
   bootState.workspaceReady = true
 
+  const logBoot = await sessionLog
+  if (logBoot instanceof Error) {
+    bootState.initialRuntimeSessionError = `session log restore failed: ${logBoot.message}`
+    logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })
+    return
+  }
   try {
     await harness.lifecycle.start()
   } catch (err) {
@@ -234,11 +251,11 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
 
-  // ── The session log (P2.5) ──────────────────────────────────────────────
-  // Before the first turn, so its turn end flushes it. Nothing mints a session
-  // generation before P6's restore, so this box writes under generation 0.
-  if (startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })) {
-    logger.info('[session-log] journal started', { harness: 'pi', generation: 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
+  // ── The session log (P2.5, P6.4) ────────────────────────────────────────
+  // Before the first turn, so its turn end flushes it, at the generation and
+  // with the cursors the boot reconcile returned.
+  if (logBoot && startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), logBoot)) {
+    logger.info('[session-log] journal started', { harness: 'pi', generation: logBoot.generation, restored: logBoot.cursors.length > 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
   }
 
   // ── The session's root and its first turn ───────────────────────────────

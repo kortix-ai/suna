@@ -1225,6 +1225,10 @@
         "session_log": {
           "name": "Registro de sesión v2",
           "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
+        },
+        "session_log_restore": {
+          "name": "Restauración del registro de sesión",
+          "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
         }
       }
     },
