@@ -51,7 +51,7 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // module (KRTX-355); the shell still passes the turn's props here.
     const turn = flat(between(chat, '<TranscriptTurnRow', 'sessionWorking={lastTurnWorking}'));
     expect(turn).toContain(
-      'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.userMessage.info.id, originId: optimisticOriginOf(sessionId, turn.userMessage.info.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.userMessage.info.id, )?.attachments, })}',
+      'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.id, originId: optimisticOriginOf(sessionId, turn.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.id, )?.attachments, })}',
     );
     // The first prompt's identities outlive its handover, in the chat and in the boot shell.
     expect(shell).toContain('useInstantSessionSend({');
@@ -149,10 +149,10 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     // during render receives `handleSend`, which reads refs.
     expect(chat).not.toContain('heldSendUploadStatuses');
     expect(chat.replace(/\s+/g, ' ')).toContain(
-      'uploadStatus={ heldSendFailures?.[turn.userMessage.info.id] ? {',
+      'uploadStatus={ heldSendFailures?.[turn.id] ? {',
     );
     expect(chat.replace(/\s+/g, ' ')).toContain(
-      'onRetry: () => retryHeldSend( sessionId, turn.userMessage.info.id, resendHeldSend,',
+      'onRetry: () => retryHeldSend( sessionId, turn.id, resendHeldSend,',
     );
   });
 
@@ -395,7 +395,7 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 
   test('a row already on screen — by id, by re-mint alias, or by elimination — is never a queued bubble', () => {
-    expect(chat).toContain('store.optimisticOriginOf(sessionId, message.info.id)');
+    expect(chat).toContain('store.optimisticOriginOf(sessionId, message.message_id)');
     // The set the queue projection reads is the id set PLUS the row claimed by
     // elimination (`claimFirstTurnRow`). The ids alone are not enough for the
     // one window where the drain has re-minted and this tab has not polled
@@ -432,8 +432,11 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
 
   test('the claimed bubble keeps its queued dimming', () => {
     // Hiding the duplicate must not let the surviving copy read as running
-    // while the server still holds the prompt.
-    expect(chat).toContain('if (firstTurnClaim) ids.add(firstTurnClaim.messageId);');
+    // while the server still holds the prompt: its id is held (`sessionLogTurns`
+    // `held`) until a reply names it.
+    const held = between(chat, 'const heldTurnIds = useMemo(() => {', '}, [pendingDisplayIds, firstTurnClaim, messages]);');
+    expect(held).toContain('const claimed = firstTurnClaim?.messageId;');
+    expect(held).toContain('ids.unshift(claimed);');
   });
 
   test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {
@@ -456,7 +459,7 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     // The origin key keeps one element across the re-mint swap; the
     // uniqueness pass keeps React sane when an old echo and its re-placed
     // copy transiently share an origin (duplicate keys corrupt the list).
-    expect(chat).toContain('key={turnRenderKeys.get(turn.userMessage.info.id)}');
+    expect(chat).toContain('key={turnRenderKeys.get(turn.id)}');
     expect(chat).toContain('const origin = optimisticOriginOf(sessionId, id);');
     expect(chat).toContain('while (used.has(key)) key = `${key}~`;');
   });
@@ -513,7 +516,7 @@ describe('Up and the pencil edit a queued entry in place', () => {
     const synthetic = between(
       chat,
       'const queuedSyntheticMessages = useMemo(',
-      'const rawTurns = useMemo(',
+      'const pendingDisplayIds = useMemo(',
     );
     expect(synthetic).toContain("if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;");
   });

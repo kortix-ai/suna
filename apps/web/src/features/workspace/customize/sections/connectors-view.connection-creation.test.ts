@@ -53,7 +53,17 @@ describe('connection creation controls', () => {
 
   test('surfaces connector synchronization errors after adding a connector', () => {
     expect(source).toContain('connectorSyncErrorForSlug(result, draft.slug)');
-    expect(source).toContain("tI18nHardcoded('i18nComplete.textd6a135de3872'");
+  });
+
+  // KRTX-2185: the custom form saves through `useCreateCustomConnector`, which
+  // hands off to the connector page in every outcome. Its behavior (toast,
+  // `addAccount`) is tested in use-create-custom-connector.test.tsx; this pins
+  // that the form uses it with the submitted draft.
+  test('the custom form saves through the hand-off hook', () => {
+    const form = source.slice(source.indexOf('export function CustomConnectorForm'));
+    const body = form.slice(0, form.indexOf('\nexport function '));
+    expect(body).toContain('useCreateCustomConnector(projectId, onAdded)');
+    expect(body).toContain('save.mutate({ draft, oauth2: oauth2Selected ? oauth2 : null })');
   });
 
   // OAuth2-at-creation is offered unconditionally now (no more owner-strategy

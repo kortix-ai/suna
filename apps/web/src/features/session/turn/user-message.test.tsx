@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MentionChip, chipClass } from '@/features/session/mention-chip';
-import type { MessageWithParts } from '@/ui';
+import { sessionLogOfV1Rows, type SessionLogMessage } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
 
 import enMessages from '../../../../translations/en.json';
@@ -28,10 +28,20 @@ import {
 } from './user-message';
 import { pastedTextCounts } from '../pasted-text';
 
+/** A v1 store row: the fixtures are written as v1 rows and read through the converter. */
+type V1Row = Parameters<typeof sessionLogOfV1Rows>[2][number];
+
+/** The session-log message the transcript reads for one v1 row (`sessionLogOfV1Rows`, flag off). */
+const logOf = (row: V1Row): SessionLogMessage =>
+  sessionLogOfV1Rows('session-1', 'ses_runtime', [row]).threads[0]!.messages[0]!;
+
+/** The blocks of a user row that holds `parts`. */
+const blocksOf = (parts: unknown[]) => logOf({ info: { id: 'm', role: 'user' }, parts } as never).blocks;
+
 const message = {
   info: { id: 'message-1', role: 'user' },
   parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: 'ship the thing' }],
-} as MessageWithParts;
+} as V1Row;
 
 /** A synthetic UUID, for `kortix-attachment://` refs. */
 const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -40,17 +50,17 @@ const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0
 const stamped = {
   ...message,
   info: { ...message.info, time: { created: Date.UTC(2026, 7, 12, 9, 34) } },
-} as MessageWithParts;
+} as V1Row;
 
 /** `TooltipProvider` because an enabled rewind renders `Hint`, and Radix's
  *  tooltip throws without a provider above it — the app root supplies one. */
-const render = (rewindDisabled: boolean, msg: MessageWithParts = message) =>
+const render = (rewindDisabled: boolean, msg: V1Row = message) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <TooltipProvider>
           <UserMessage
-            message={msg}
+            message={logOf(msg)}
             sessionId="session-1"
             ownsPlan={false}
             onRewind={() => {}}
@@ -67,12 +77,12 @@ const renderText = (text: string, props: Record<string, unknown> = {}) =>
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <UserMessage
-          message={
+          message={logOf(
             {
               info: { id: 'message-1', role: 'user' },
               parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text }],
-            } as MessageWithParts
-          }
+            } as V1Row,
+          )}
           sessionId="session-1"
           ownsPlan={false}
           {...props}
@@ -93,7 +103,7 @@ describe('UserMessage actions', () => {
     // stamp lands while the prompt is still delivering. A status to its left
     // jumped sideways when the stamp arrived.
     const markup = renderText('ship the thing', {
-      message: stamped,
+      message: logOf(stamped),
       onRewind: () => {},
       rewindDisabled: true,
       deliveryStatus: <span data-queued-status="sending">Sending</span>,
@@ -364,7 +374,7 @@ describe('UserMessage persisted attachments', () => {
           url: 'data:image/png;base64,iVBORw0KGgo=',
         },
       ],
-    } as MessageWithParts;
+    } as V1Row;
 
     const html = render(false, persisted);
     expect(html).toContain('bundle.zip');
@@ -412,7 +422,7 @@ describe('UserMessage persisted attachments', () => {
           url: 'data:application/pdf;base64,JVBERi0=',
         },
       ],
-    } as MessageWithParts;
+    } as V1Row;
 
     const html = render(false, persisted);
     expect(html).toContain('HII');
@@ -439,12 +449,12 @@ describe('UserMessage persisted attachments', () => {
         { id: 'p-text', messageID: 'message-streaming', type: 'text', text: 'REPRO' },
         { id: 'p-png', messageID: 'message-streaming', type: 'file', mime: 'image/png', filename: 'tiny.png', url: 'data:image/png;base64,iVBORw0KGgo=' },
       ],
-    } as MessageWithParts;
+    } as V1Row;
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <UserMessage
-            message={streaming}
+            message={logOf(streaming)}
             sessionId="s"
             ownsPlan={false}
             pendingAttachments={[
@@ -464,7 +474,7 @@ describe('UserMessage persisted attachments', () => {
       renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}>
           <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-            <UserMessage message={streaming} sessionId="s" ownsPlan={false} />
+            <UserMessage message={logOf(streaming)} sessionId="s" ownsPlan={false} />
           </NextIntlClientProvider>
         </QueryClientProvider>,
       ).split('tiny.png').length - 1,
@@ -484,12 +494,12 @@ describe('UserMessage persisted attachments', () => {
     const swapping = {
       info: { id: 'message-swapping', role: 'user', time: { created: Date.parse('2026-09-06T00:00:00.000Z') } },
       parts: [],
-    } as unknown as MessageWithParts;
+    } as unknown as V1Row;
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <UserMessage
-            message={swapping}
+            message={logOf(swapping)}
             sessionId="s"
             ownsPlan={false}
             pendingText="FLICKER"
@@ -537,13 +547,74 @@ describe('UserMessage persisted attachments', () => {
           url: 'data:image/png;base64,iVBORw0KGgo=',
         },
       ],
-    } as MessageWithParts;
+    } as V1Row;
 
     const html = render(false, persisted);
     expect(html).toContain('Review these files.');
     expect(html).not.toContain('&lt;file path=');
     expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('report.pdf'));
     expect(html.indexOf('report.pdf')).toBeLessThan(html.indexOf('shot.png'));
+  });
+});
+
+describe('UserMessage reads a v1 prompt through the session-log converter', () => {
+  // One prompt with every user part kind the bubble reads: text, an image
+  // attachment, a text/plain file mention with its source span, and an agent
+  // mention. `sessionLogOfV1Rows` turns them into one block each, in order.
+  const row = {
+    info: { id: 'message-mixed', role: 'user', time: { created: Date.parse('2026-09-01T10:00:00.000Z') } },
+    parts: [
+      { id: 'p-text', messageID: 'message-mixed', type: 'text', text: 'review @notes.txt with @build please' },
+      {
+        id: 'p-image',
+        messageID: 'message-mixed',
+        type: 'file',
+        mime: 'image/png',
+        filename: 'shot.png',
+        url: 'data:image/png;base64,iVBORw0KGgo=',
+      },
+      {
+        id: 'p-notes',
+        messageID: 'message-mixed',
+        type: 'file',
+        mime: 'text/plain',
+        filename: 'notes.txt',
+        url: 'file:///workspace/notes.txt',
+        source: { type: 'file', path: 'notes.txt', text: { value: '@notes.txt', start: 7, end: 17 } },
+      },
+      {
+        id: 'p-agent',
+        messageID: 'message-mixed',
+        type: 'agent',
+        name: 'build',
+        source: { value: '@build', start: 23, end: 29 },
+      },
+    ],
+  } as V1Row;
+  const log = logOf(row);
+
+  test('the converter keeps one block per part, in part order', () => {
+    expect(log.message_id).toBe('message-mixed');
+    expect(log.blocks.map((b) => [b.id, b.type, b.type === 'harness' ? b.kind : null])).toEqual([
+      ['p-text', 'text', null],
+      ['p-image', 'attachment', null],
+      ['p-notes', 'harness', 'file'],
+      ['p-agent', 'harness', 'agent'],
+    ]);
+  });
+
+  test('draws the mention chips, both tiles in part order, and copies the typed text', () => {
+    const html = render(false, row);
+    expect(html).toContain('aria-label="file mention: notes.txt"');
+    expect(html).toContain('aria-label="agent mention: build"');
+    expect(html).toContain('shot.png');
+    expect(html.indexOf('shot.png')).toBeLessThan(html.lastIndexOf('notes.txt'));
+    expect(normalizeAttachments(log.blocks, []).map((a) => [a.key, a.filename, a.mime])).toEqual([
+      ['p-image', 'shot.png', 'image/png'],
+      ['p-notes', 'notes.txt', 'text/plain'],
+    ]);
+    expect(html).toMatch(/datetime="2026-09-01T10:00:00.000Z"/i);
+    expect(userMessageCopyText(log.blocks)).toBe('review @notes.txt with @build please');
   });
 });
 
@@ -570,7 +641,7 @@ describe('UserMessage renders the plan it owns', () => {
       <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <TooltipProvider>
-            <UserMessage message={message} sessionId={SESSION} ownsPlan={ownsPlan} />
+            <UserMessage message={logOf(message)} sessionId={SESSION} ownsPlan={ownsPlan} />
           </TooltipProvider>
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -737,14 +808,14 @@ describe('sent attachment tiles', () => {
   }
 
   const renderMessage = (
-    msg: MessageWithParts,
+    msg: V1Row,
     props: Record<string, unknown> = {},
     messages: Record<string, unknown> = {},
   ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={messages} onError={() => {}}>
-          <UserMessage message={msg} sessionId="session-1" ownsPlan={false} {...props} />
+          <UserMessage message={logOf(msg)} sessionId="session-1" ownsPlan={false} {...props} />
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
@@ -793,7 +864,7 @@ describe('sent attachment tiles', () => {
             text: '<file path="/workspace/uploads/.kortix-inbox/0-a.png" mime="image/png" filename="a.png">\nuploaded\n</file>',
           },
         ],
-      } as MessageWithParts,
+      } as V1Row,
       { pendingAttachments: sentAttachmentsOf([file]) },
     );
 
@@ -813,7 +884,7 @@ describe('sent attachment tiles', () => {
           text: 'look\n\n<file path="/workspace/uploads/.kortix-inbox/k/0-reload.png" mime="image/png" filename="reload.png">\nuploaded\n</file>',
         },
       ],
-    } as MessageWithParts);
+    } as V1Row);
 
     expect(tiles(html)).toBe(1);
     expect(html).toContain('title="reload.png"');
@@ -844,7 +915,7 @@ describe('sent attachment tiles', () => {
           filename: 'shot.heic',
         },
       ],
-    } as MessageWithParts);
+    } as V1Row);
 
     expect(tiles(html)).toBe(2);
     // The browser already holds these bytes: the picture is the first frame (session open, remount).
@@ -882,7 +953,7 @@ describe('sent attachment tiles', () => {
           {
             info: { id, role: 'user' },
             parts: useSessionStateStore.getState().parts[id] ?? [],
-          } as MessageWithParts,
+          } as V1Row,
           { pendingAttachments: sent },
         ),
       );
@@ -1054,7 +1125,7 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <UserMessage
-            message={
+            message={logOf(
               {
                 info: { id: 'message-1', role: 'user' },
                 parts: [
@@ -1071,8 +1142,8 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
                     text: '<reply_context>quote in part two</reply_context>\nanswer two',
                   },
                 ],
-              } as MessageWithParts
-            }
+              } as V1Row,
+            )}
             sessionId="session-1"
             ownsPlan={false}
           />
@@ -1302,13 +1373,13 @@ describe('UserMessage member author', () => {
     email: 'member@example.test',
     avatar_url: null,
   };
-  const renderWith = (author: typeof MEMBER | undefined, showAuthor: boolean, msg: MessageWithParts = message) =>
+  const renderWith = (author: typeof MEMBER | undefined, showAuthor: boolean, msg: V1Row = message) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
           <TooltipProvider>
             <UserMessage
-              message={msg}
+              message={logOf(msg)}
               sessionId="session-1"
               ownsPlan={false}
               onRewind={() => {}}
@@ -1351,7 +1422,7 @@ describe('UserMessage platform prompts', () => {
         <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
           <TooltipProvider>
             <UserMessage
-              message={{ ...message, parts: [{ ...message.parts[0], text }] } as MessageWithParts}
+              message={logOf({ ...message, parts: [{ ...message.parts[0], text }] } as V1Row)}
               sessionId="session-1"
               ownsPlan={false}
             />
@@ -1470,7 +1541,7 @@ describe('UserMessage pasted-text tiles', () => {
     expect(markup).not.toContain('title="Pasted text"');
     expect(editablePromptText(wire)).toBe(typed);
     const parts = [{ id: 'p', messageID: 'm', type: 'text', text: wire }] as never;
-    expect(userMessageCopyText(parts)).toBe(typed);
+    expect(userMessageCopyText(blocksOf(parts))).toBe(typed);
     expect(editResendAttachments([], typed).text).toBe(wire);
   });
 
@@ -1501,7 +1572,7 @@ describe('UserMessage pasted-text tiles', () => {
 
   test('Copy message copies the paste body, not its XML', () => {
     const parts = [{ id: 'p', messageID: 'm', type: 'text', text: sent('summarize this') }] as never;
-    expect(userMessageCopyText(parts)).toBe(`${PASTE}\n\nsummarize this`);
+    expect(userMessageCopyText(blocksOf(parts))).toBe(`${PASTE}\n\nsummarize this`);
   });
 });
 

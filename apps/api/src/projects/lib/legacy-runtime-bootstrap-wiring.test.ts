@@ -73,6 +73,7 @@ function fakeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown; statu
     fetchOpencodeStatus: async () => (over.status === undefined ? {} : over.status),
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     patchMetadata: async () => {},
+    claimRun: async () => true,
     audit: async () => {},
     log: () => {},
     ...over,
