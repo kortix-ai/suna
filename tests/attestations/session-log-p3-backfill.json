@@ -1,5 +1,5 @@
 {
-  "source_hash": "a378ff5a7f44faaed2e6d0f23125b5c87210909fc0660d0d37b627d0670e8244",
+  "source_hash": "85a2a1c7b3de6fae1cb0058fa10a28181a5265331351e27d5f3976de3696716c",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-log-backfill.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
@@ -11,13 +11,13 @@
     "apps/api/src/projects/surface.ts",
     "apps/api/src/workers/session-log-backfill-worker.ts"
   ],
-  "diff_hash": "4a745e23d3946fdd295b49b0c1885016b4f2fc0c0cec9a037970b28f24169af1",
-  "head": "281c4e016c998c2d750e2ea2e0901540cffec18a",
+  "diff_hash": "cd3bfb52fd5963df08b705931bc275547ef2937d56a2ba3fc82de65e24c57cad",
+  "head": "5a3ace354d647e860c9df84840f826fc0dccfe19",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T13:15:48.879Z"
+  "at": "2026-10-13T13:43:06.061Z"
 }
