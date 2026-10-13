@@ -293,6 +293,11 @@ const envSchema = z.object({
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
+  // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
+  // history only in the v1 mirror gets its v2 log. `off` (default) runs nothing. `dry` converts
+  // in memory, writes nothing, and logs counts per tick and per pass. `write` writes the logs
+  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only.
+  SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -1228,6 +1233,7 @@ export const config = {
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
+  SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,

@@ -19,9 +19,11 @@
  *   client-minted user message id) is the assistant message's `reply_to`. A later
  *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
  *
- * Records are stored as the daemon sent them, not as zod parsed them: the parse
- * drops fields this API does not know, and the record would lose them (the same
- * rule as `upcast`). One exception, F3: a text over 256 kB is stored as a
+ * Records keep the values the daemon sent, not the zod parse: the parse drops
+ * fields this API does not know, and the record would lose them (the same rule
+ * as `upcast`). They do not keep its object key order: the column is jsonb.
+ * Key order is not semantic in this schema (`same` in the contract's `v1.ts`),
+ * and `canonicalizeView` sorts tool-input keys. One exception, F3: a text over 256 kB is stored as a
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
  * are written before the transaction. `content_hash` hashes the sanitized full
  * message before offload, not the stored preview/reference record. The daemon

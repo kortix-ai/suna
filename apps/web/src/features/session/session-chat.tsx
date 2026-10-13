@@ -820,6 +820,7 @@ export function SessionChat({
         id: sessionPrefill.id,
         ...(sessionPrefill.files ? { files: sessionPrefill.files } : {}),
         mode: sessionPrefill.mode ?? ('merge' as const),
+        ...(sessionPrefill.submit ? { submit: true } : {}),
       };
     }
     return null;
