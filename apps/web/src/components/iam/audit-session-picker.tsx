@@ -1,8 +1,7 @@
 'use client';
 
 import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { listProjectSessionsPage } from '@kortix/sdk';
+import { useProjectSessions } from '@kortix/sdk/react';
 import { useState } from 'react';
 
 import {
@@ -20,7 +19,7 @@ import { useDebounce } from '@/hooks/use-debounced-value';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
-/** Rows one search shows. The search narrows the list; a pasted id covers the rest. */
+/** Rows one page of a search shows. Load more reads the next page. */
 export const AUDIT_SESSION_SEARCH_LIMIT = 20;
 
 /** A Kortix session id (`randomUUID()`): only such text is offered as a pasted id. */
@@ -31,10 +30,14 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  *
  * It was a `<Select>` over the first page of the project's sessions, so a
  * session past that page could not be picked. Now the text field searches the
- * project's sessions on the server (`q`: title, starter or session-id prefix)
- * and shows one bounded page of matches. A pasted session id is a filter of
- * its own: the audit read filters by any id, also one of a deleted session
- * that no list returns, and with no project picked.
+ * project's sessions on the server (`q`: title, starter or session-id prefix),
+ * a page at a time (`useProjectSessions`). The server drops sessions the
+ * reader cannot open after a bounded scan, so a page can be empty and still
+ * carry a cursor: the hook reads past such pages on its own, then Load more
+ * offers the next one. "No sessions matched" shows only at the end of the
+ * list. A pasted session id is a filter of its own: the audit read filters by
+ * any id, also one of a deleted session that no list returns, and with no
+ * project picked.
  */
 export function AuditSessionPicker({
   projectId,
@@ -104,28 +107,27 @@ function SessionResults({
   const t = useTranslations('hardcodedUi.i18nComplete');
   const text = search.trim();
   const q = useDebounce(text, 250);
-  const sessionsQuery = useQuery({
-    queryKey: ['audit-project-sessions', projectId, q],
-    queryFn: () =>
-      listProjectSessionsPage(projectId, {
-        scope: 'project',
-        q: q || undefined,
-        limit: AUDIT_SESSION_SEARCH_LIMIT,
-      }),
+  const sessionsQuery = useProjectSessions(projectId, {
+    scope: 'project',
+    q: q || undefined,
+    limit: AUDIT_SESSION_SEARCH_LIMIT,
     enabled: !!projectId,
-    // The previous rows stay while the next search runs.
-    placeholderData: keepPreviousData,
-    staleTime: 15_000,
   });
-  const sessions = projectId ? (sessionsQuery.data?.items ?? []) : [];
+  const sessions = projectId ? sessionsQuery.sessions : [];
+  // Stored ids are lowercase and the audit read matches one exactly.
+  const id = text.toLowerCase();
   const pastedId =
-    SESSION_ID.test(text) && !sessions.some((session) => session.session_id === text) ? text : null;
+    SESSION_ID.test(id) && !sessions.some((session) => session.session_id === id) ? id : null;
+  // A next page the hook does not read on its own: after a page with rows,
+  // past the scan limit, or after a failed page (the retry).
+  const canLoadMore =
+    !!projectId && sessionsQuery.hasNextPage && !sessionsQuery.isFetchingNextPage && !sessionsQuery.isScanning;
   const emptyText = !projectId
     ? t.raw('textf7b9225a1fdc')
-    : sessionsQuery.isError
-      ? t.raw('textda6efefb0490')
-      : q !== text || sessionsQuery.isFetching
-        ? t.raw('textc31723ab3302')
+    : q !== text || sessionsQuery.isFetching || sessionsQuery.isScanning
+      ? t.raw('textc31723ab3302')
+      : sessionsQuery.isError
+        ? t.raw('textda6efefb0490')
         : t('text1fc03af173f4', { value0: text });
 
   return (
@@ -169,6 +171,11 @@ function SessionResults({
               </CommandItem>
             );
           })}
+          {canLoadMore ? (
+            <CommandItem value="load-more" onSelect={() => void sessionsQuery.fetchNextPage()}>
+              <span className="text-muted-foreground">{t.raw('textac8991ef0101')}</span>
+            </CommandItem>
+          ) : null}
         </CommandGroup>
       </CommandList>
     </>

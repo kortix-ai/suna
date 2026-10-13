@@ -20,7 +20,8 @@ import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
  * KRTX-1727: the audit log's Session filter was a Select over the first page
  * (50 rows) of the project's sessions. A session past that page could not be
  * picked, and a session id copied from an event could not be used. The filter
- * now searches the project's sessions on the server and takes a pasted id.
+ * now searches the project's sessions on the server, a page at a time with
+ * Load more, and takes a pasted id in any case.
  *
  * Local only: the sessions are written straight into the database.
  */
@@ -117,6 +118,25 @@ test('49 — the audit Session filter finds a session past page one and takes a 
       const search = sessionSearches.find((params) => params.get('q') === 'Older audited');
       expect(search?.get('scope')).toBe('project');
       expect(search?.get('limit')).toBe('20');
+    });
+
+    await test.step('Load more reads the next page of the project', async () => {
+      await picker(OLDER_TITLE).click();
+      const loadMore = page.getByRole('option', { name: 'Load more', exact: true });
+      await expect(loadMore).toBeVisible();
+      const rows = await page.getByRole('option').count();
+      await loadMore.click();
+      await expect.poll(() => sessionSearches.some((params) => params.has('cursor') && !params.has('q'))).toBe(true);
+      await expect.poll(() => page.getByRole('option').count()).toBeGreaterThan(rows);
+      await page.keyboard.press('Escape');
+    });
+
+    await test.step('a pasted id in upper case filters by the stored lowercase id', async () => {
+      await picker(OLDER_TITLE).click();
+      await searchField.fill(pastedId.toUpperCase());
+      await page.getByRole('option', { name: new RegExp(pastedId) }).click();
+      await expect(picker(pastedId)).toBeVisible();
+      await expect.poll(() => auditSessionIds.at(-1)).toBe(pastedId);
     });
   } finally {
     if (projectId) await deleteDatabaseProject(env, projectId).catch(() => undefined);
