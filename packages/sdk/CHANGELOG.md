@@ -5,6 +5,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (SSO and MFA remedies)
+- `configureKortix({ onAccessRemedy })` / `createKortix({ onAccessRemedy })`:
+  called with `'sso_required'` or `'account_mfa_required'` when the API answers
+  403 with that code, for every REST client (`backendApi`) response, including
+  `showErrors: false` calls. The runtime proxy and the event stream do not call it.
+  A host without DOM events (React Native) cannot receive the
+  `kortix:sso-required` / `kortix:mfa-required` window events; this is its
+  signal. A throw from the hook is caught. The window events are unchanged.
+  Additive (KRTX-1716).
+
 ### Added (account invites)
 - `acceptAccountInviteAndLand(inviteId, invite?)` (`accountInvites.acceptAndLand`)
   accepts an invite and returns `{ accepted, landing }`. `accountInviteLanding`
