@@ -1,5 +1,5 @@
 {
-  "source_hash": "87bcfbd56b24748f68888b52f909cdc675b2df140f84115fb6c605fb69592c34",
+  "source_hash": "a0549cbc4fdca42e8fdfc12bccd17cf49a0bbc6e7ca7b69a4e969866564abc5b",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     "apps/web/next.config.ts",
@@ -163,13 +163,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "2af9102960c253dffe88b94c79c1b07dae17617920a0225f93b393032eeb6083",
-  "head": "8ac1a8eb94bed50966760711ed04a3e34633a2b9",
+  "diff_hash": "74d84f9758beb6f1a14fe9cb2139cee501595a2c613b59aaa621c3edb4e5e591",
+  "head": "c1ed48d2ac2182ee31c5ae4f3fbd390e3592a166",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-13T23:13:21.920Z"
+  "at": "2026-10-13T23:27:30.398Z"
 }
