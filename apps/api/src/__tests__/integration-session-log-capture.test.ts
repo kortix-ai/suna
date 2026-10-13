@@ -548,7 +548,8 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     const rows = await db
       .select({ id: sessionLogMessages.messageId, seq: sessionLogMessages.seq, rev: sessionLogMessages.rev, inContext: sessionLogMessages.inContext, deletedAt: sessionLogMessages.deletedAt, record: sessionLogMessages.record })
       .from(sessionLogMessages)
-      .where(and(eq(sessionLogMessages.sessionId, session), lt(sessionLogMessages.rev, LIMIT)));
+      .where(and(eq(sessionLogMessages.sessionId, session), lt(sessionLogMessages.rev, LIMIT)))
+      .orderBy(asc(sessionLogMessages.messageId));
     for (const r of rows) expect(r.record.in_context).toBe(r.inContext);
     return rows;
   };
