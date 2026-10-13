@@ -31,11 +31,12 @@ import {
   PencilSimpleIcon as PencilSimple,
   ArrowClockwiseIcon as RefreshCw,
   PlugsIcon as Unplug,
+  DotsThreeIcon as DotsThree,
+  ClockIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { m, useReducedMotion } from 'motion/react';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
@@ -60,8 +61,17 @@ import { ScimCard } from '@/components/iam/scim-card';
 import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@/components/ui/badge';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -75,8 +85,8 @@ import {
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SettingsRowGroup } from '@/components/ui/settings-row';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -95,8 +105,6 @@ import {
   ACCESS_ROW_CLASS,
   AccessDialog,
   type AccessDialogPrincipal,
-  AccessList,
-  AccessRow,
   type KebabItem,
   type RoleValue,
   builtinRoleLabel,
@@ -108,13 +116,13 @@ import {
 } from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
+import { cn } from '@/lib/utils';
 import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
   type AccountDetail,
   type AccountInvitation,
   type AccountMember,
-  type AccountMemberProject,
   type AccountRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
@@ -128,7 +136,6 @@ import {
 import {
   MagnifyingGlassIcon as Search,
   TrashIcon,
-  UserPlusIcon as UserPlus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
 import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
@@ -137,6 +144,7 @@ import { type AccountSection, localizedAccountPaneMeta, paneWidth } from './sect
 import { useAccountDetail } from './use-account-detail';
 import { useAccountHubSection } from './use-account-hub-access';
 import { useAccountMembers } from './use-account-members';
+import { useAccountHubSheet } from './hub-sheet';
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
@@ -235,8 +243,13 @@ export function AccountHubContent() {
   const auditEnabled = !!entitlements?.auditAccess;
   const brandingEnabled = !!entitlements?.branding;
   const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
-
-  const prefersReducedMotion = useReducedMotion();
+  // Forms open in the hub's split sheet beside the pane. A sheet belongs to
+  // the pane that opened it, so leaving the pane closes it.
+  const hubSheet = useAccountHubSheet();
+  const closeHubSheet = hubSheet.close;
+  useEffect(() => {
+    closeHubSheet();
+  }, [accountId, activeSection, closeHubSheet]);
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -288,6 +301,34 @@ export function AccountHubContent() {
     );
   };
 
+  const openInvite = (target: AccountDetail) =>
+    hubSheet.open({
+      title: tI18nComplete.raw('text8693768c7e08'),
+      body: (
+        <AccessDialog
+          presentation="split-sheet"
+          open
+          onOpenChange={(next) => {
+            if (!next) hubSheet.close();
+          }}
+          accountId={target.account_id}
+          accountName={target.name}
+          scope={{ kind: 'account' }}
+          mode={{ kind: 'grant' }}
+          rbacEnabled={rbacEnabled}
+          canManageRoles={canManageRoles}
+          onDone={() => {
+            // Membership, roles and invites all move verdicts; the probes are
+            // cached 5 minutes. Same set `MembersCard` busts after a change.
+            void invalidatePermissionProbes(queryClient, { accountId: target.account_id });
+            for (const key of ['account-members', 'account-invites', 'account']) {
+              void queryClient.invalidateQueries({ queryKey: [key, target.account_id] });
+            }
+          }}
+        />
+      ),
+    });
+
   return (
     <AccountPane
       back={{ to: hubTarget(null), label: tI18nComplete.raw('text68d8e728a8ad') }}
@@ -311,15 +352,9 @@ export function AccountHubContent() {
       ) : accountQuery.isLoading ? (
         <AccountPaneSkeleton />
       ) : account ? (
-        /* Keyed remount + a 200ms rise on section switch; opacity-only under
-           reduced motion. */
-        <m.div
-          key={activeSection}
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-          className="min-w-0"
-        >
+        /* Keyed remount on section switch, no transition: a settings tab is
+           switched many times a session, and a rise on every switch read as lag. */
+        <div key={activeSection} className="min-w-0">
           {activeSection === 'billing' && canWriteAccount ? (
             <div className="space-y-6">
               {/* Scope every billing hook nested below to this account so a
@@ -391,6 +426,7 @@ export function AccountHubContent() {
                 canReadPolicies={canReadPolicies}
                 canReadMembers={canReadMembers}
                 onSelectMember={(id) => navigate('members', { member: id })}
+                onInvite={() => openInvite(account)}
               />
             )
           ) : null}
@@ -612,10 +648,12 @@ export function AccountHubContent() {
               ) : null}
             </div>
           ) : null}
-        </m.div>
+          {/* section-panes:end — source tests slice the panes up to here. */}
+        </div>
       ) : null}
     </AccountPane>
   );
+
 }
 
 // ============================== GIT ==============================
@@ -704,7 +742,7 @@ function GitHubConnectionCard({
           onClick={() => setAddOpen(true)}
           title={canManage ? undefined : tI18nComplete.raw('text89a0e2d1b569')}
         >
-          <Github className="size-4" />
+          <Plus className="size-3.5" />
           {tI18nComplete.raw('textee7ee5830f09')}
         </Button>
       </div>
@@ -963,9 +1001,30 @@ function DangerZoneCard() {
 }
 
 // ============================== MEMBERS ==============================
+
+type MemberFilter = 'all' | AccountRole | 'invited';
+const MEMBER_FILTERS: readonly MemberFilter[] = ['all', 'owner', 'admin', 'member', 'invited'];
+/** "Owner" / "Admin" / "Member" — Linear's short role names. */
+const ACCOUNT_ROLE_KEY: Record<AccountRole, string> = {
+  owner: 'text4b1b8aa3608a',
+  admin: 'textc1c224b03cd9',
+  member: 'text7c968fb71f50',
+};
+
+type RoleTone = 'secondary' | 'outline' | 'muted';
+/** Badge variant by rank: the owner reads strongest, a member quietest. A
+ *  custom role reads like an admin; an invite like a member. */
+function roleTone(value: RoleValue): RoleTone {
+  if (value.kind !== 'builtin') return 'outline';
+  if (value.role === 'owner') return 'secondary';
+  if (value.role === 'admin') return 'outline';
+  return 'muted';
+}
 //
-// One list dialect (`AccessList` + `AccessRow`) and ONE modal (`AccessDialog`)
-// for every "give / edit access" interaction on this tab. What used to live
+// Linear's members table (`MemberTableHead` / `MemberTableRow` below): flat
+// rows, a checkbox gutter that appears on hover and stays once anything is
+// selected, a floating bulk bar. Granting opens `AccessDialog` in the hub's
+// split sheet; editing and bulk changes use it as a modal. What used to live
 // here and is now gone: `InviteMemberModal` (457 lines), `BulkAddToGroupDialog`,
 // `BulkSetRoleDialog`, `RoleBadge`, the `DropdownMenuRadioGroup` role changer
 // and its "Change role" confirm, and the `MEMBER_ROW` class copy.
@@ -989,6 +1048,7 @@ function MembersCard({
   canReadPolicies,
   canReadMembers,
   onSelectMember,
+  onInvite,
 }: {
   account: AccountDetail;
   members: AccountMember[];
@@ -1019,9 +1079,10 @@ function MembersCard({
   /** Opens one member's `MemberAccessPanel` in this same pane
    *  (`?tab=members&member=<id>`) — no route change, the rail stays. */
   onSelectMember: (userId: string) => void;
+  /** Opens the grant form in the hub's split sheet. */
+  onInvite: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [grantOpen, setGrantOpen] = useState(false);
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
@@ -1039,6 +1100,8 @@ function MembersCard({
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
   const [search, setSearch] = useState('');
+  // The "All" select beside search: one account role, or pending invites.
+  const [roleFilter, setRoleFilter] = useState<MemberFilter>('all');
   // Bulk-select state. Users can't bulk-modify themselves (would let an
   // admin lock themselves out by demoting their own row in a sweep).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1088,12 +1151,18 @@ function MembersCard({
           return email.includes(q) || m.user_id.toLowerCase().includes(q);
         })
       : members;
-    return [...filtered].sort((a, b) => {
+    const byRole =
+      roleFilter === 'all'
+        ? filtered
+        : roleFilter === 'invited'
+          ? []
+          : filtered.filter((m) => m.account_role === roleFilter);
+    return [...byRole].sort((a, b) => {
       const r = rank[a.account_role] - rank[b.account_role];
       if (r !== 0) return r;
       return principalLabel(a).localeCompare(principalLabel(b));
     });
-  }, [members, search]);
+  }, [members, search, roleFilter]);
 
   const invalidateMembers = () => {
     // Membership, roles and invites all move verdicts. Probes are cached 5
@@ -1260,8 +1329,26 @@ function MembersCard({
     setSelectedIds(failedIds);
   }
 
+  // Linear's selection model: once anything is ticked, every row shows its
+  // checkbox; before that a checkbox shows only on the hovered row.
+  const selecting = selectedCount > 0;
+  const ownerCount = sorted.filter((m) => m.account_role === 'owner').length;
+  const showInvites = roleFilter === 'all' || roleFilter === 'invited';
+  // Owner / Admin / Member for the built-ins; a custom role keeps its name.
+  const shortRoleLabel = (value: RoleValue) =>
+    value.kind === 'builtin' && value.role in ACCOUNT_ROLE_KEY
+      ? tI18nComplete.raw(ACCOUNT_ROLE_KEY[value.role as AccountRole])
+      : roleValueLabel('account', value, rolesQuery.data, tI18nComplete);
+  const filterLabel: Record<MemberFilter, string> = {
+    all: tI18nComplete.raw('texta52ace420f21'),
+    owner: tI18nComplete.raw(ACCOUNT_ROLE_KEY.owner),
+    admin: tI18nComplete.raw(ACCOUNT_ROLE_KEY.admin),
+    member: tI18nComplete.raw(ACCOUNT_ROLE_KEY.member),
+    invited: tI18nComplete.raw('text63b17becd812'),
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {isError ? (
         <ErrorState
           size="sm"
@@ -1276,256 +1363,80 @@ function MembersCard({
       ) : null}
 
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+        <div className="space-y-1">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-11 w-full rounded-lg" />
           ))}
         </div>
       ) : null}
 
-      {/* Search filters EVERYTHING below it — pending invites + members
-          alike. Looking up "@foo.com" shouldn't care whether the person has
-          accepted yet; they're all people you're trying to find. */}
       {!isLoading && !isError ? (
         <>
+          {/* Linear's toolbar: search, a role filter, and Invite pushed right.
+              Search filters invites and members alike. */}
           <div className="flex items-center gap-2">
-            <InputGroupSearch className="flex-1">
-              <InputGroupSearchIcon>
-                <Search />
+            {/* h-8 like the select and Invite beside it. */}
+            <InputGroupSearch className="w-full max-w-90">
+              <InputGroupSearchIcon className="left-2.5">
+                <Search className="size-4" />
               </InputGroupSearchIcon>
               <InputGroupSearchInput
+                size="xs"
+                className="pl-8 text-sm"
                 placeholder={tI18nComplete.raw('text6497fc6f8400')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                variant="popover"
               />
               {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
             </InputGroupSearch>
+            <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as MemberFilter)}>
+              <SelectTrigger className="w-auto shrink-0" aria-label={tI18nComplete.raw('text14736a2eb9f4')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {MEMBER_FILTERS.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {filterLabel[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Bulk actions sit in the toolbar, before Invite, while anything
+                is selected. No count, no floating bar. */}
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              {selecting && canBulk ? (
+                <ButtonGroup>
+                  {canUpdateRole ? (
+                    <Button size="sm" variant="secondary" onClick={() => setBulkDialog('set_role')} disabled={bulkBusy}>
+                      {tI18nComplete.raw('texta43a8d8cfd29')}
+                    </Button>
+                  ) : null}
+                  {canAddToGroup ? (
+                    <Button size="sm" variant="secondary" onClick={() => setBulkDialog('add_to_group')} disabled={bulkBusy}>
+                      {tI18nComplete.raw('textea849eb70c26')}
+                    </Button>
+                  ) : null}
+                  {canRemove ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setBulkDialog('remove')}
+                      disabled={bulkBusy}
+                    >
+                      {tI18nComplete.raw('textc3812fc4acb8')}
+                    </Button>
+                  ) : null}
+                </ButtonGroup>
+              ) : null}
             {canInvite ? (
-              <Button
-                variant="secondary"
-                className="shrink-0 gap-1.5"
-                onClick={() => setGrantOpen(true)}
-              >
-                <Plus className="size-4" />
+              <Button size="sm" className="shrink-0 gap-1.5" onClick={onInvite}>
+                <Plus className="size-3.5" />
                 {tI18nComplete.raw('text1fd9ae1607aa')}
               </Button>
             ) : null}
-          </div>
-
-          {/* Bulk bar. It is the ONLY place a select-all control lives — the
-              list header used to carry a permanently visible "Select all
-              visible" checkbox, which put a bulk affordance on screen before
-              anyone had asked for one (Marko, 2026-08-18). Row checkboxes stay
-              in `AccessRow`; everything else appears once a row is ticked. */}
-          {selectedCount > 0 && canBulk ? (
-            <div className="bg-popover flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm">
-              <span className="text-foreground text-xs font-medium">
-                {selectedCount} {tI18nComplete.raw('textd7cbbb688b2e')}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={toggleAllEligible}
-                disabled={bulkBusy}
-                className="text-muted-foreground"
-              >
-                {allEligibleSelected
-                  ? tI18nComplete.raw('text967549497036')
-                  : tI18nComplete.raw('text1fc9a387654d')}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={clearSelection}
-                disabled={bulkBusy}
-                className="text-muted-foreground"
-              >
-                {tI18nComplete.raw('text83b12c2216ef')}
-              </Button>
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                {canUpdateRole ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBulkDialog('set_role')}
-                    disabled={bulkBusy}
-                  >
-                    {tI18nComplete.raw('texta43a8d8cfd29')}
-                  </Button>
-                ) : null}
-                {canAddToGroup ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBulkDialog('add_to_group')}
-                    disabled={bulkBusy}
-                  >
-                    {tI18nComplete.raw('textea849eb70c26')}
-                  </Button>
-                ) : null}
-                {canRemove ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBulkDialog('remove')}
-                    disabled={bulkBusy}
-                  >
-                    {tI18nComplete.raw('textc3812fc4acb8')}
-                  </Button>
-                ) : null}
-              </div>
             </div>
-          ) : null}
-
-          <PendingInvitesSection
-            accountId={account.account_id}
-            canManage={canInvite}
-            search={search}
-          />
-
-          {members.length > 0 && sorted.length === 0 ? (
-            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              {tI18nComplete.raw('text4caa18882dc4')}
-              {search.trim()}”.
-            </p>
-          ) : null}
-
-          {sorted.length > 0 ? (
-            <AccessList
-              // Count what THIS caller can actually see, not the raw total.
-              // The roster is visibility-filtered server-side for plain
-              // members (owners/admins + self), while account.member_count is
-              // the unfiltered COUNT(*) — using it would leak the roster size
-              // and mismatch the list below.
-              // No `selectable` on the LIST: the header's select-all control
-              // is gone. Selection starts on a row checkbox, and only then
-              // does the bulk bar above offer "Select all" / "Deselect all".
-              header={{ title: tI18nComplete.raw('text1044a4c056d0'), count: sorted.length }}
-            >
-              {sorted.map((member) => {
-                const isSelf = member.user_id === currentUserId;
-                const isLastOwner =
-                  member.account_role === 'owner' &&
-                  sorted.filter((m) => m.account_role === 'owner').length === 1;
-                const pending = pendingUserIds.has(member.user_id);
-                const label = principalLabel(member);
-                const roleValue = roleValueFor(member);
-
-                const kebab: KebabItem[] = [];
-                if (canUpdateRole && !isSelf) {
-                  kebab.push({
-                    label: tI18nComplete.raw('texta514a684676a'),
-                    icon: <PencilSimple className="size-3.5" />,
-                    onSelect: () =>
-                      roleEditor.openEdit({
-                        userId: member.user_id,
-                        label,
-                        accountRole: member.account_role,
-                      }),
-                  });
-                }
-                if (canReadMembers || isSelf) {
-                  kebab.push({
-                    label: tI18nComplete.raw('textf5462009cf42'),
-                    icon: <KeyRound className="size-3.5" />,
-                    onSelect: () => onSelectMember(member.user_id),
-                  });
-                }
-                if (canRemove && !isSelf) {
-                  kebab.push({
-                    label: tI18nComplete.raw('text6bfa319e3d20'),
-                    icon: <TrashIcon className="size-3.5" />,
-                    variant: 'destructive',
-                    separated: true,
-                    disabled: isLastOwner,
-                    onSelect: () => setRemoveTarget(member),
-                  });
-                }
-                if (isSelf) {
-                  kebab.push({
-                    label: tI18nComplete.raw('text1d5b40338c62'),
-                    icon: <TrashIcon className="size-3.5" />,
-                    variant: 'destructive',
-                    separated: true,
-                    disabled: isLastOwner,
-                    onSelect: () => setLeaveConfirmOpen(true),
-                  });
-                }
-
-                return (
-                  <AccessRow
-                    key={member.user_id}
-                    leading={
-                      <UserAvatar
-                        email={member.email ?? member.user_id}
-                        name={member.email ?? undefined}
-                        size="md"
-                      />
-                    }
-                    title={label}
-                    badges={
-                      <>
-                        {isSelf ? (
-                          <Badge variant="secondary" size="sm">
-                            {tI18nComplete.raw('text08b041935798')}
-                          </Badge>
-                        ) : null}
-                        {member.is_super_admin ? (
-                          <Badge
-                            size="sm"
-                            className="bg-kortix-orange/15 text-kortix-orange border-transparent"
-                            title={tI18nComplete.raw('text3cafa764c6f9')}
-                          >
-                            {tI18nComplete.raw('text8185c8ac4656')}
-                          </Badge>
-                        ) : null}
-                        {member.has_verified_mfa ? (
-                          <Badge
-                            variant="success"
-                            size="sm"
-                            title={tI18nComplete.raw('textc56fc40bb882')}
-                          >
-                            2FA
-                          </Badge>
-                        ) : account.mfa_required && !member.is_super_admin ? (
-                          // Account requires MFA and this member has no verified
-                          // factor — they're blocked from gated actions until they
-                          // enrol. Super-admins are exempt, so they're not flagged.
-                          <Badge
-                            variant="destructive"
-                            size="sm"
-                            title={tI18nComplete.raw('text0bd9da305fb1')}
-                          >
-                            {tI18nComplete.raw('textfdeee365fcf3')}
-                          </Badge>
-                        ) : null}
-                      </>
-                    }
-                    meta={<MemberMeta member={member} />}
-                    trailing={roleValueLabel('account', roleValue, rolesQuery.data, tI18nComplete)}
-                    selectable={
-                      canBulk
-                        ? {
-                            // Self rows can't be bulk-acted on — would let an
-                            // admin demote / remove themselves in a sweep — but
-                            // they still reserve the checkbox column so every
-                            // avatar lines up.
-                            reserveSpace: isSelf,
-                            checked: selectedIds.has(member.user_id),
-                            onCheckedChange: () => toggleOne(member.user_id),
-                            label: tI18nComplete('textb4b262ae0516', { value0: label }),
-                          }
-                        : undefined
-                    }
-                    pending={pending}
-                    kebab={kebab}
-                    kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
-                  />
-                );
-              })}
-            </AccessList>
-          ) : null}
+          </div>
 
           {members.length === 0 ? (
             <EmptyState
@@ -1533,36 +1444,145 @@ function MembersCard({
               size="sm"
               title={tI18nComplete.raw('text669a52e9230b')}
               description={tI18nComplete.raw('text9233263288f5')}
-              action={
-                canInvite ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setGrantOpen(true)}
-                  >
-                    <UserPlus className="size-3.5" />
-                    {tI18nComplete.raw('text1fd9ae1607aa')}
-                  </Button>
-                ) : undefined
-              }
             />
+          ) : (
+            // `-ml-7`: the select gutter hangs outside the content edge.
+            <div role="table" aria-label={tI18nComplete.raw('text1044a4c056d0')} className="-ml-7">
+              <MemberTableHead
+                select={
+                  canBulk && bulkEligible.length > 0
+                    ? {
+                        visible: selecting,
+                        checked: allEligibleSelected
+                          ? true
+                          : selecting
+                            ? 'indeterminate'
+                            : false,
+                        onCheckedChange: toggleAllEligible,
+                        label: allEligibleSelected
+                          ? tI18nComplete.raw('text967549497036')
+                          : tI18nComplete.raw('text1fc9a387654d'),
+                      }
+                    : undefined
+                }
+              />
+              <div role="rowgroup">
+                {sorted.map((member) => {
+                  const isSelf = member.user_id === currentUserId;
+                  const isLastOwner = member.account_role === 'owner' && ownerCount === 1;
+                  const label = principalLabel(member);
+
+                  const kebab: KebabItem[] = [];
+                  if (canUpdateRole && !isSelf) {
+                    kebab.push({
+                      label: tI18nComplete.raw('texta514a684676a'),
+                      icon: <PencilSimple className="size-3.5" />,
+                      onSelect: () =>
+                        roleEditor.openEdit({
+                          userId: member.user_id,
+                          label,
+                          accountRole: member.account_role,
+                        }),
+                    });
+                  }
+                  if (canReadMembers || isSelf) {
+                    kebab.push({
+                      label: tI18nComplete.raw('textf5462009cf42'),
+                      icon: <KeyRound className="size-3.5" />,
+                      onSelect: () => onSelectMember(member.user_id),
+                    });
+                  }
+                  if (canRemove && !isSelf) {
+                    kebab.push({
+                      label: tI18nComplete.raw('text6bfa319e3d20'),
+                      icon: <TrashIcon className="size-3.5" />,
+                      variant: 'destructive',
+                      separated: true,
+                      disabled: isLastOwner,
+                      onSelect: () => setRemoveTarget(member),
+                    });
+                  }
+                  if (isSelf) {
+                    kebab.push({
+                      label: tI18nComplete.raw('text1d5b40338c62'),
+                      icon: <TrashIcon className="size-3.5" />,
+                      variant: 'destructive',
+                      separated: true,
+                      disabled: isLastOwner,
+                      onSelect: () => setLeaveConfirmOpen(true),
+                    });
+                  }
+
+                  const checked = selectedIds.has(member.user_id);
+                  return (
+                    <MemberTableRow
+                      key={member.user_id}
+                      selected={checked}
+                      pending={pendingUserIds.has(member.user_id)}
+                      onOpen={() => onSelectMember(member.user_id)}
+                      select={
+                        // Self rows can't be bulk-acted on — an admin could
+                        // demote or remove themselves in a sweep. The gutter
+                        // stays so every avatar lines up.
+                        canBulk && !isSelf
+                          ? {
+                              visible: selecting,
+                              checked,
+                              onCheckedChange: () => toggleOne(member.user_id),
+                              label: tI18nComplete('textb4b262ae0516', { value0: label }),
+                            }
+                          : undefined
+                      }
+                      avatar={<UserAvatar email={member.email ?? member.user_id} size="sm" />}
+                      name={memberHandle(member.email, label)}
+                      email={label}
+                      tags={
+                        <>
+                          {isSelf ? (
+                            <span className="text-muted-foreground text-xs">
+                              {tI18nComplete.raw('text08b041935798')}
+                            </span>
+                          ) : null}
+                          {!member.has_verified_mfa &&
+                          account.mfa_required &&
+                          !member.is_super_admin ? (
+                            // Account requires MFA and this member has no
+                            // verified factor — blocked from gated actions
+                            // until they enrol. Super-admins are exempt.
+                            <Hint label={tI18nComplete.raw('text0bd9da305fb1')}>
+                              <span className="text-destructive text-xs">
+                                {tI18nComplete.raw('textfdeee365fcf3')}
+                              </span>
+                            </Hint>
+                          ) : null}
+                        </>
+                      }
+                      role={shortRoleLabel(roleValueFor(member))}
+                      roleTone={roleTone(roleValueFor(member))}
+                      kebab={kebab}
+                      kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
+                    />
+                  );
+                })}
+                {showInvites ? (
+                  <PendingInvitesSection
+                    accountId={account.account_id}
+                    canManage={canInvite}
+                    search={search}
+                  />
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {members.length > 0 && sorted.length === 0 && roleFilter !== 'invited' ? (
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              {tI18nComplete.raw('text4caa18882dc4')}
+              {search.trim()}”.
+            </p>
           ) : null}
         </>
       ) : null}
-
-      {/* ── The one modal. Grant / edit / bulk-role are three modes of it. ── */}
-      <AccessDialog
-        open={grantOpen}
-        onOpenChange={setGrantOpen}
-        accountId={account.account_id}
-        accountName={account.name}
-        scope={{ kind: 'account' }}
-        mode={{ kind: 'grant' }}
-        rbacEnabled={rbacEnabled}
-        canManageRoles={canManageRoles}
-        onDone={invalidateMembers}
-      />
 
       {roleEditor.dialog}
 
@@ -1659,79 +1679,188 @@ function MembersCard({
   );
 }
 
-/**
- * "Joined … · N projects · N groups · N tokens". The projects count is the
- * affordance: `AccountMember.projects` already ships the names and roles
- * (that is what the SDK field was added for), so the count opens them in a
- * `Popover` instead of making an admin leave the list to find out which ones.
- */
-function MemberMeta({ member }: { member: AccountMember }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const projects = member.projects ?? [];
-  const projectCount =
-    typeof member.explicit_project_count === 'number'
-      ? member.explicit_project_count
-      : projects.length;
-  const showProjects = member.account_role === 'member' && projectCount > 0;
+// ============================== MEMBER TABLE ==============================
 
+/**
+ * Linear's team members table: flat rows, no borders, a full-width fill on
+ * hover. One grid so every row lines up: select gutter · name · email · role ·
+ * actions. The gutter sits OUTSIDE the content edge (the table pulls left by
+ * its width), so avatars align with the toolbar above. Below `sm` the email
+ * column drops.
+ */
+const MEMBER_GRID =
+  'grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,9rem)_2rem] items-center pr-1 sm:grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,18rem)_11rem_2rem]';
+
+/** The name cell's handle: the email's local part, else the label. */
+function memberHandle(email: string | null | undefined, fallback: string): string {
+  return email?.split('@')[0] || fallback;
+}
+
+interface MemberSelect {
+  /** Any row is selected: show every checkbox, not just the hovered one. */
+  visible: boolean;
+  checked: boolean | 'indeterminate';
+  onCheckedChange: () => void;
+  label: string;
+}
+
+function SelectCell({ select }: { select?: MemberSelect }) {
   return (
-    <span className="text-muted-foreground text-xs">
-      <InlineMeta>
-        <span>
-          {tI18nComplete.raw('text69318b0c6a92')} {formatDate(member.joined_at)}
-        </span>
-        {showProjects ? <MemberProjectsChip count={projectCount} projects={projects} /> : null}
-        {member.groups && member.groups.length > 0 ? (
-          <span>
-            {member.groups.length} {tI18nComplete.raw('textad936fcbed63')}
-            {member.groups.length === 1 ? '' : 's'}
-          </span>
-        ) : null}
-        {typeof member.active_pat_count === 'number' && member.active_pat_count > 0 ? (
-          <span>
-            {member.active_pat_count} {tI18nComplete.raw('text3c469e9d6c58')}
-            {member.active_pat_count === 1 ? '' : 's'}
-          </span>
-        ) : null}
-      </InlineMeta>
+    <span role="cell" className="relative z-10 flex items-center justify-center">
+      {select ? (
+        <Checkbox
+          checked={select.checked}
+          onCheckedChange={select.onCheckedChange}
+          onClick={(event) => event.stopPropagation()}
+          aria-label={select.label}
+          className={cn(
+            // A 14px box with a 32px hit area: the pseudo-element takes the clicks.
+            "relative size-3.5 rounded after:absolute after:-inset-2.5 after:content-['']",
+            !select.visible &&
+              'opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100',
+          )}
+        />
+      ) : null}
     </span>
   );
 }
 
-function MemberProjectsChip({
-  count,
-  projects,
-}: {
-  count: number;
-  projects: AccountMemberProject[];
-}) {
+function MemberTableHead({ select }: { select?: MemberSelect }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const label = `${count} project${count === 1 ? '' : 's'}`;
-  if (projects.length === 0) return <span>{label}</span>;
+  const head = 'text-muted-foreground truncate text-xs font-medium';
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <div role="row" className={cn(MEMBER_GRID, 'group/member h-9 px-2')}>
+      <SelectCell select={select} />
+      <span role="columnheader" aria-sort="ascending" className={cn(head, 'flex items-center gap-1')}>
+        {tI18nComplete.raw('textdcd1d5223f73')}
+      </span>
+      <span role="columnheader" className={cn(head, 'max-sm:hidden')}>
+        {tI18nComplete.raw('text969ccbd3cf63')}
+      </span>
+      <span role="columnheader" className={head}>
+        {tI18nComplete.raw('text14736a2eb9f4')}
+      </span>
+      <span aria-hidden />
+    </div>
+  );
+}
+
+function MemberTableRow({
+  select,
+  selected = false,
+  pending = false,
+  invited = false,
+  onOpen,
+  avatar,
+  name,
+  email,
+  tags,
+  role,
+  roleTone: tone = 'muted',
+  kebab,
+  kebabLabel,
+}: {
+  select?: MemberSelect;
+  selected?: boolean;
+  pending?: boolean;
+  /** A pending invite: muted name. */
+  invited?: boolean;
+  /** Row click: opens the member's access panel. */
+  onOpen?: () => void;
+  avatar: ReactNode;
+  name: string;
+  email: string;
+  tags?: ReactNode;
+  role: ReactNode;
+  /** Badge variant by the role's rank (`roleTone`). */
+  roleTone?: RoleTone;
+  kebab?: KebabItem[];
+  kebabLabel: string;
+}) {
+  return (
+    <div
+      role="row"
+      aria-selected={select ? selected : undefined}
+      className={cn(
+        MEMBER_GRID,
+        'group/member relative h-11 rounded-lg px-2',
+        selected ? 'bg-active' : 'hover:bg-hover',
+      )}
+    >
+      {onOpen ? (
+        // The whole row opens the member; checkbox and kebab sit above it.
         <button
           type="button"
-          className="hover:text-foreground cursor-pointer underline decoration-dotted underline-offset-2 transition-colors"
+          aria-label={email}
+          onClick={onOpen}
+          className="focus-visible:ring-ring absolute inset-0 rounded-[inherit] outline-none focus-visible:ring-1"
+        />
+      ) : null}
+      <SelectCell select={select} />
+      <span role="cell" className="flex min-w-0 items-center gap-3">
+        {avatar}
+        <span
+          className={cn(
+            'min-w-0 truncate text-sm',
+            invited ? 'text-muted-foreground' : 'text-foreground',
+          )}
         >
-          {label}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 space-y-0.5 p-2">
-        {projects.map((project) => (
-          <div
-            key={project.project_id}
-            className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs"
-          >
-            <span className="text-foreground min-w-0 truncate">{project.name}</span>
-            <span className="text-muted-foreground shrink-0">
-              {builtinRoleLabel('project', project.role, tI18nComplete)}
-            </span>
+          {name}
+        </span>
+        {tags ? <span className="relative z-10 flex shrink-0 items-center gap-1.5">{tags}</span> : null}
+      </span>
+      <span role="cell" className="text-muted-foreground truncate pr-4 text-sm max-sm:hidden">
+        {email}
+      </span>
+      <span role="cell" className="flex min-w-0">
+        {/* The role as a neutral `Badge` tag in sans, the same recipe as the
+            Roles pane's Built-in / Custom tags. */}
+        <Badge variant={tone} className="max-w-full truncate">
+          {role}
+        </Badge>
+      </span>
+      <span role="cell" className="relative z-10 flex justify-end">
+        {pending ? (
+          <Loading className="size-3.5 shrink-0" />
+        ) : kebab && kebab.length > 0 ? (
+          <MemberKebab items={kebab} label={kebabLabel} />
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+/** The row's actions. Hidden until the row is hovered, focused or open. */
+function MemberKebab({ items, label }: { items: KebabItem[]; label: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+        >
+          <DotsThree className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        {items.map((item, index) => (
+          <div key={item.label}>
+            {item.separated && index > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem
+              variant={item.variant}
+              disabled={item.disabled}
+              onSelect={item.onSelect}
+              className="gap-2"
+            >
+              {item.icon}
+              {item.label}
+            </DropdownMenuItem>
           </div>
         ))}
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1830,23 +1959,30 @@ function PendingInvitesSection({
 
   return (
     <>
-      <AccessList header={{ title: tI18nComplete.raw('text63b17becd812'), count: invites.length }}>
+      <>
         {invites.map((invite) => (
-          <AccessRow
+          <MemberTableRow
             key={invite.invite_id}
-            dashed
-            leading={<UserAvatar email={invite.email} size="md" />}
-            title={invite.email}
-            meta={
-              <span className="text-muted-foreground text-xs">
-                <InlineMeta>
-                  <span>
-                    {tI18nComplete.raw('text2a91147eb974')} {formatDate(invite.expires_at)}
-                  </span>
-                </InlineMeta>
+            invited
+            // Invites are not bulk-selectable; the gutter keeps them aligned.
+            avatar={
+              <span
+                aria-hidden
+                className="text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed text-xs"
+              >
+                {invite.email.charAt(0).toUpperCase()}
               </span>
             }
-            trailing={builtinRoleLabel('account', invite.initial_role, tI18nComplete)}
+            name={memberHandle(invite.email, invite.email)}
+            email={invite.email}
+            // Linear's "Admin (Invited)": the role the invite carries, marked.
+            role={`${tI18nComplete.raw(ACCOUNT_ROLE_KEY[invite.initial_role] ?? ACCOUNT_ROLE_KEY.member)} (${tI18nComplete.raw('text63b17becd812')})`}
+            roleTone="muted"
+            tags={
+              <Hint label={`${tI18nComplete.raw('text2a91147eb974')} ${formatDate(invite.expires_at)}`}>
+                <ClockIcon aria-label={tI18nComplete.raw('text2a91147eb974')} className="text-muted-foreground size-3.5" />
+              </Hint>
+            }
             pending={pendingIds.has(invite.invite_id)}
             kebabLabel={tI18nComplete('text33da220b1a34', { value0: invite.email })}
             kebab={
@@ -1879,7 +2015,7 @@ function PendingInvitesSection({
             }
           />
         ))}
-      </AccessList>
+      </>
 
       <ConfirmDialog
         open={!!cancelTarget}

@@ -1638,6 +1638,9 @@ export function SessionChat({
   const activePendingQuestion = pendingQuestions[0] ?? null;
   const [renderedQuestion, setRenderedQuestion] = useState<QuestionRequest | null>(null);
   const [questionPromptVisible, setQuestionPromptVisible] = useState(false);
+  // A connector call waiting on a decision docks onto the composer the way a
+  // question does (`SessionApprovalPrompt` reports it).
+  const [approvalDocked, setApprovalDocked] = useState(false);
   const questionPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const nextQuestion = activePendingQuestion;
@@ -3609,7 +3612,7 @@ export function SessionChat({
       <>
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
-        <SessionApprovalPrompt />
+        <SessionApprovalPrompt onDockedChange={setApprovalDocked} />
         {/* Runtime tool permissions (bash/edit/…) awaiting a decision —
             the turn is blocked inside the runtime and resumes the moment
             a reply lands. Self-hides when nothing's pending. */}
@@ -4583,7 +4586,7 @@ export function SessionChat({
                 lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
-                questionActive={!!renderedQuestion}
+                questionActive={!!renderedQuestion || approvalDocked}
                 questionCanAct={questionAction.canAct}
                 onQuestionAction={handleQuestionAction}
                 aboveSlot={chatAboveSlot}

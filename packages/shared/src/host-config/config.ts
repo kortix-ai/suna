@@ -582,15 +582,15 @@ function normalizeConfig(parsed: Partial<Config>): Config {
 
   // Legacy `default`: the original single-host name. If it still points at
   // Kortix Cloud, fold it into `cloud`. If it is a never-logged-in placeholder
-  // (no token), it is a stale artifact — drop it and fall back to cloud. A
-  // `default` host that actually carries credentials is left untouched.
+  // (no token and the cloud URL), it is a stale artifact — drop it and fall
+  // back to cloud. Custom deployments keep their registration after logout.
   const legacyDefault = cleaned.default;
   if (legacyDefault) {
     if (!cleaned[CLOUD_HOST_NAME] && legacyDefault.url === DEFAULT_API_BASE) {
       cleaned[CLOUD_HOST_NAME] = legacyDefault;
       delete cleaned.default;
       renamed.default = CLOUD_HOST_NAME;
-    } else if (!legacyDefault.token) {
+    } else if (!legacyDefault.token && legacyDefault.url === DEFAULT_API_BASE) {
       delete cleaned.default;
       renamed.default = CLOUD_HOST_NAME;
     }

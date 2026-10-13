@@ -24,25 +24,26 @@ describe('EnterpriseUpsell component', () => {
     expect(upsellSource).toContain('Request a demo');
   });
 
-  test('covers the gated surfaces, and no longer carries the dead roles variant', () => {
-    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:']) {
+  test('covers the gated surfaces, Roles included', () => {
+    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:', 'roles:']) {
       expect(upsellSource).toContain(feature);
     }
-    // Deleted 2026-08-18: `RolesTab` gates itself with an inline InfoBanner,
-    // so this copy variant was unreachable in every code path.
-    expect(upsellSource).not.toContain('Custom roles are an Enterprise feature');
-    expect(upsellSource).not.toMatch(/^\s{2}roles: \{/m);
+  });
+
+  // Jay, 2026-10-13: the Enterprise tag carried a lock glyph inside a grey
+  // badge. One plan tag now: words only, the info tint, sans text.
+  test('the Enterprise tag has no lock and uses the shared EnterpriseBadge', () => {
+    expect(upsellSource).not.toContain('LockIcon');
+    expect(upsellSource).toContain('export function EnterpriseBadge');
+    expect(upsellSource).toContain('<EnterpriseBadge />');
   });
 });
 
 describe('account page gates each IAM surface behind the entitlement', () => {
-  // Groups and Roles are NOT gated the way Audit/Identity are: `GET
-  // .../groups` and `GET .../roles` carry no entitlement check server-side
-  // (only the mutating routes do), so the built-in roles and an account's
-  // real group list are free content, not upsell. `GroupsTab`/`RolesTab`
-  // always render and gate only their own "Create"/"New role" controls on
-  // `rbacEnabled` internally — see this file's other describe block, and
-  // `page.tsx`'s comment above these two sections.
+  // The hub does not swap Groups or Roles for an upsell: `GET .../groups` and
+  // `GET .../roles` carry no entitlement check server-side. Each tab decides
+  // on its own from `rbacEnabled`: without Enterprise, Roles renders only
+  // `EnterpriseUpsell`, and Groups renders it while the account has no groups.
   // "No entitlement gate" — NOT "no gate". PERMISSION is a separate axis and
   // both panes now carry it (`sectionVisible.groups` / `.roles`, from the
   // `group.read` / `role.read` probes): a caller who cannot read the list must
@@ -117,7 +118,7 @@ describe('account page rail groups every access surface under Access', () => {
     expect(pageSource).toMatch(/activeSection === 'identity' && canWriteAccount/);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     expect(settingsStart).toBeGreaterThan(-1);
-    const settingsEnd = pageSource.indexOf('</m.div>', settingsStart);
+    const settingsEnd = pageSource.indexOf('section-panes:end', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
     // The connection cards (and the tokens-tab cards) still live only on
     // their own sections — SsoCard/ScimCard never move into Settings.
@@ -128,12 +129,12 @@ describe('account page rail groups every access surface under Access', () => {
 
   test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
     const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
-    const identityEnd = pageSource.indexOf('</m.div>', identityStart);
+    const identityEnd = pageSource.indexOf('section-panes:end', identityStart);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
     expect(identityBody).not.toContain('EnterpriseDemoCard');
 
-    const settingsEnd = pageSource.indexOf('</m.div>', settingsStart);
+    const settingsEnd = pageSource.indexOf('section-panes:end', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
     expect(settingsBody).toContain('EnterpriseDemoCard');
     // Placed above Danger zone, not at the top — tucked away.
