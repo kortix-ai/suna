@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const source = ['ProjectLeftDrawer.tsx', 'DrawerSessionRows.tsx', 'DrawerNavRows.tsx']
+const source = ['ProjectLeftDrawer.tsx', 'DrawerSessionRows.tsx', 'DrawerNavRows.tsx', '../kortix/count-badge.tsx']
   .map((file) => {
     try { return readFileSync(resolve(import.meta.dir, '..', file), 'utf8'); }
     catch { return ''; }

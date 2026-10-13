@@ -103,14 +103,14 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // count below cannot tell which element carries the treatment.
     expect(region).toContain('text-muted-foreground hover:text-foreground');
 
-    // One user of the treatment left in this file: `Try again`. `Back to
-    // projects` moved into the shared `AccountTopBar` with the rest of the top
-    // row and carries the same treatment there; Log out moved into that bar's
-    // account menu.
+    // One user of the treatment left on this page: `Try again`. The top
+    // bar's way back is the shared back pill (`backPillClass`) after the
+    // #9687 top-row redesign — also a secondary treatment, so no third
+    // button weight exists anywhere in the top row.
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
     expect(treatmentMatches).toHaveLength(1);
     const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
-    expect(bar).toContain('text-muted-foreground hover:text-foreground');
+    expect(bar).toContain('backPillClass');
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {
