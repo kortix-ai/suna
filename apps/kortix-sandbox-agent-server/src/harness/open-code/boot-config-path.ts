@@ -21,7 +21,7 @@ import {
 } from '@/services/config-provider/api-client'
 import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import { clearConfigReleaseNotice } from '@/services/config-provider/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
+import { obtainRelease } from '@/services/config-provider/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
@@ -159,6 +159,7 @@ function boundedReason(reasons: readonly string[]): string | null {
 async function askForTheDesiredRelease(
   api: ConfigReleaseApi | null,
   timeoutMs: number | undefined,
+  baseSha: string | undefined,
 ): Promise<DescriptorAnswer> {
   if (!api) {
     return {
@@ -168,7 +169,7 @@ async function askForTheDesiredRelease(
     }
   }
   try {
-    return { releasesEnabled: true, descriptor: await fetchConfigReleaseDescriptor(api, { timeoutMs }), reason: null }
+    return { releasesEnabled: true, descriptor: await fetchConfigReleaseDescriptor(api, { timeoutMs, baseSha }), reason: null }
   } catch (err) {
     if (isFeatureDisabledError(err)) {
       return { releasesEnabled: false, descriptor: null, reason: 'config releases are disabled for this project' }
@@ -209,19 +210,14 @@ async function bootCandidates(
       reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     } else {
       try {
-        // The checkout is the release when the box checked out its commit:
-        // wait for it only then. A box with no base pin (KORTIX_BASE_SHA unset)
-        // waits only for a release with no archive, which nothing else may
-        // hold yet; HEAD decides (obtain.ts). Any other boot builds the
-        // release meanwhile.
-        const checkout =
-          checkoutMayHold(cfg.baseSha, answer.descriptor) && (await input.workspace) === null ? cfg.projectTarget : null
+        // Downloaded on its own, while the workspace provider checks out the
+        // same commit: neither waits for the other (obtain.ts).
         const obtained = await obtainRelease({
           root,
           manifest,
           snapshot: answer.descriptor.snapshot,
           api,
-          workspace: checkout,
+          git: cfg,
           managedSkillsDir: input.managedSkillsDir,
           prepare: (staged) =>
             input.prepare
@@ -359,7 +355,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   const started = input.start()
 
   // ── Step 1 ─────────────────────────────────────────────────────────────────
-  const answer = await askForTheDesiredRelease(api, input.descriptorTimeoutMs)
+  const answer = await askForTheDesiredRelease(api, input.descriptorTimeoutMs, cfg.baseSha)
   if (answer.descriptor) input.mark?.('config-release-fetched')
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────

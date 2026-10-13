@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
@@ -141,30 +141,53 @@ describe('pi config releases: boot', () => {
     expect(api.descriptorRequests.length).toBe(requests)
   })
 
-  test('a box that checked out the release commit builds the release from its checkout: no download', async () => {
-    const one = release('deploy', 'from the checkout')
+  test('the config never comes from the checkout: a box at the release commit still downloads it', async () => {
+    const one = release('deploy', 'from the archive')
     serveRelease(api, one)
+    // `repo` is the release commit, checked out: exactly what /workspace holds on a fresh box.
     const { releases } = create(undefined, {}, { projectTarget: repo, baseSha: one.descriptor.source_commit! })
+    const marks: string[] = []
 
-    await releases.boot(undefined, Promise.resolve(null))
+    await releases.boot((label) => marks.push(label))
 
     const id = one.descriptor.release_id!
     expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
-    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
-    expect(api.archiveRequests).toEqual([])
-    expect(api.storageRequests).toEqual([])
+    expect(api.archiveRequests).toHaveLength(1)
+    expect(marks).toEqual(['config-release-fetched', 'config-release-archive', 'config-release-proven'])
+    // The boot names the tip it was created on, so the API can skip a redundant mirror fetch.
+    expect((api.descriptorRequests[0]!.body as { base_sha?: string }).base_sha).toBe(one.descriptor.source_commit!)
+    // A convergence never does: it is how a box learns of a push the API has not fetched.
+    await releases.converge(fakeRuntime())
+    expect((api.descriptorRequests.at(-1)!.body as { base_sha?: string }).base_sha).toBeUndefined()
   })
 
-  test('a box with no base pin builds a release with no archive from its checkout', async () => {
-    const one = release('deploy', 'from the checkout, no pin')
+  test('a release with no archive and no snapshot yet is fetched from the project remote, into its own directory', async () => {
+    const one = release('deploy', 'from git')
+    api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const { releases } = create(undefined, {}, { repoUrl: repo })
+    const marks: string[] = []
+
+    await releases.boot((label) => marks.push(label))
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(marks).toContain('config-release-git')
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), '.git'))).toBe(false)
+    expect(readdirSync(root).filter((name) => name.endsWith('.git'))).toEqual([])
+  })
+
+  test('a release no source holds runs the image default and says why', async () => {
+    const one = release('deploy', 'no source')
     api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
     const { releases } = create(undefined, {}, { projectTarget: repo })
 
-    await releases.boot(undefined, Promise.resolve(null))
+    await releases.boot()
 
-    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true, fallback_reason: null })
+    expect(releases.report()).toMatchObject({ release_id: null, desired_release_id: one.descriptor.release_id, source: 'image-default', proven: true })
+    expect(releases.report().fallback_reason).toContain('the API has no project snapshot of this commit yet')
+    expect(releases.report().fallback_reason).toContain('this box has no project remote')
     expect(api.archiveRequests).toEqual([])
-    expect(api.storageRequests).toEqual([])
   })
 
   test('a release over the archive cap (v3, no archive) boots from the project snapshot', async () => {

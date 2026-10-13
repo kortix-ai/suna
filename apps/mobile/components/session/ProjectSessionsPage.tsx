@@ -34,6 +34,9 @@
  *            under the status mark, titles on the parent title's edge, time
  *            at the far right (`SubsessionTree`); a tap opens the parent
  *            session on that sub-session.
+ *            A page can be empty and still carry a cursor (KRTX-1727): the
+ *            list reads past such pages on its own, then offers "Show older
+ *            sessions", never "No sessions yet".
  *   button   New session, pinned at the bottom right over a fade of the page:
  *            the project drawer's bottom bar (`PinnedBar`). The list scrolls
  *            under it. It returns to project home, whose composer starts the
@@ -57,6 +60,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { directSubsessions } from '@kortix/sdk';
+import { useSessionsNeedingInput } from '@kortix/sdk/react';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
@@ -148,7 +152,8 @@ interface SessionRowProps {
    *  a short connector elbow joins the status mark, indenting the label past the
    *  usual leading slot — the row's own tile stays full width. */
   nested?: boolean;
-  /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
+  /** What waits on the user in this session: review-inbox items, open agent
+   *  questions, approvals (`needsYouBySession`). > 0 marks it `needs-you`. */
   needsYouCount: number;
   /** Who started the run (`initiator`), after the title. */
   starter?: SessionStarter;
@@ -405,10 +410,16 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     useSessionFilterStore.getState().resetProject(projectId);
   }, [projectId]);
 
-  // Sessions that wait on the user, from the review inbox. ProjectScreen
-  // polls it; this reads the same query cache without a second poll.
+  // Sessions that wait on the user: the review inbox and GET needs-input, the
+  // sessions whose agent waits on a question (KRTX-1739). ProjectScreen, the
+  // project stack's layout, polls both while this route shows; this reads the
+  // same query caches without a second poll.
   const reviewItems = useReviewItems(projectId, { poll: false });
-  const needsYou = React.useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
+  const needsInput = useSessionsNeedingInput(projectId, { enabled: false });
+  const needsYou = React.useMemo(
+    () => needsYouBySession(reviewItems.data ?? [], needsInput.data),
+    [reviewItems.data, needsInput.data]
+  );
 
   // The status filter is client-side over the loaded rows (the server has no
   // status param); search and starter are the server's.
@@ -555,16 +566,19 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     newSession();
   }, [newSession]);
 
-  // loading / error / empty / rows — shared with the project drawer
+  // loading / error / empty / more / rows — shared with the project drawer
   // (lib/session/session-pages) so a failed fetch, or a first load paused
   // offline, never reads as "No sessions yet" (COR-146). With a search, a
   // starter or a status filter active, an empty list is "No matching
   // sessions" — and only once the server has answered for the current search.
+  // `more` (KRTX-1727): no row on the pages read so far, but a next page.
   const rawListState = sessionListState({
     isPending: sessionsQuery.isPending,
     isError: sessionsQuery.isError,
     hasSessions,
+    hasMore: hasNextPage,
   });
+  const noRowYet = rawListState === 'more';
   const loading = rawListState === 'loading';
   const loadFailed = rawListState === 'error';
   // The project has no sessions at all: only knowable with no filter on.
@@ -574,9 +588,10 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     : projectEmpty
       ? 'No sessions yet'
       : 'No matching sessions';
-  // Rows exist on later pages but none of the loaded ones pass the status
-  // filter: offer the next page instead of a verdict.
-  const moreBehindStatusFilter = statusFilterActive && filtered.length === 0 && hasNextPage;
+  // Rows may exist on later pages: none loaded yet (`more`), or none of the
+  // loaded ones pass the status filter. Offer the next page instead of a
+  // verdict.
+  const moreBehindStatusFilter = noRowYet || (statusFilterActive && filtered.length === 0 && hasNextPage);
 
   return (
     <View className="flex-1 bg-background">
@@ -611,7 +626,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
           </View>
         ) : (
           <>
-            {hasSessions || filterActive ? (
+            {hasSessions || filterActive || noRowYet ? (
               <SearchListHeader
                 value={query}
                 onChangeText={setQuery}
@@ -690,8 +705,9 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                     accessibilityLabel={emptyMessage}>
                     <PixelDeadFlower color={mutedColor} size={96} animate={isFocused} />
                   </View>
-                ) : !loadFailed && !searchSettled ? (
-                  // The server has not answered for this search yet: no verdict.
+                ) : (!loadFailed && !searchSettled) || sessionsQuery.isScanning ? (
+                  // The server has not answered for this search yet, or the
+                  // list reads past empty pages on its own: no verdict.
                   <View
                     className="flex-1 items-center justify-center px-8"
                     accessible
@@ -700,9 +716,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                   </View>
                 ) : (
                   <View className="flex-1 items-center justify-center gap-3 px-8">
-                    <Text variant="muted" className="text-center">
-                      {emptyMessage}
-                    </Text>
+                    {noRowYet ? null : (
+                      <Text variant="muted" className="text-center">
+                        {emptyMessage}
+                      </Text>
+                    )}
                     {moreBehindStatusFilter ? (
                       <Button variant="secondary" size="sm" className="rounded-full" onPress={() => void fetchNextPage()}>
                         <Text>Show older sessions</Text>

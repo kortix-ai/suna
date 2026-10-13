@@ -31,7 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { useSessionNeedsYouCounts } from '@/features/review-center/hooks/use-review-session-summary';
 import {
   SessionStarterMark,
   useSessionStarter,
@@ -118,7 +118,7 @@ interface ProjectSessionListProps {
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
-  'text-muted-foreground/60 block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
+  'text-muted-foreground block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
 
 /** The one `⋯` box. All three menus in this file — the `Sessions` header, every
  *  section header, and every session row — render `Button variant="ghost"
@@ -320,9 +320,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     refetchOnWindowFocus: true,
   });
 
-  // Review Center is one coherent system: the per-session row indicators, the
-  // footer "Review" pill, and the Customize rail all read the SAME inbox summary.
-  const reviewSummary = useReviewSessionSummary(projectId);
+  // What waits on the viewer, by session: the Review Center inbox (the same
+  // summary the footer "Review" pill reads) plus open agent questions and
+  // connector approvals (KRTX-1739). A positive count makes a row `needs-you`.
+  const needsYouBySession = useSessionNeedsYouCounts(projectId);
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -435,7 +436,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           spawnedCount={spawnedCount}
           spawnedOpen={spawnedOpen}
           onToggleSpawned={() => toggleExpanded(projectId, session.session_id)}
-          reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+          reviewCount={needsYouBySession[session.session_id] ?? 0}
           changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
           canShowHoverCard={canShowSessionHoverCard}
           onDelete={(id, label) => setSessionToDelete({ id, label })}
@@ -541,7 +542,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         <div className="space-y-1.5 px-2 py-2">
           <p className="text-destructive/80 text-xs">{t('sessionList.loadError')}</p>
           {message && (
-            <p className="text-muted-foreground/70 truncate text-xs" title={message}>
+            <p className="text-muted-foreground truncate text-xs" title={message}>
               {message}
             </p>
           )}
@@ -570,7 +571,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     if (viewState === 'no-matches') {
       return (
-        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+        <div className="text-muted-foreground px-2 pt-1 pb-2 text-xs">
           {t('sessionList.noMatches')}
         </div>
       );
@@ -584,7 +585,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       {
         mode: groupMode,
         order: orderMode,
-        reviewCountBySession: reviewSummary.needsYouBySession,
+        reviewCountBySession: needsYouBySession,
         hiddenSections,
         ownerLabels: { you: t('filter.ownerValue.you'), unknown: t('filter.ownerValue.unknown') },
       },
@@ -598,7 +599,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // `more`: no row yet, but a list has a next page. Its Load more renders below.
     if (viewState !== 'more' && grouped.sections.length === 0 && visibleOtherCount === 0) {
       return (
-        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+        <div className="text-muted-foreground px-2 pt-1 pb-2 text-xs">
           {t('allSectionsHidden')}
         </div>
       );
@@ -612,7 +613,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             section={section}
             projectId={projectId}
             sessions={sessions}
-            reviewCountBySession={reviewSummary.needsYouBySession}
+            reviewCountBySession={needsYouBySession}
             showHeader={grouped.showHeaders}
             open={!collapsedSectionIds.has(section.id)}
             onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
@@ -664,7 +665,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       <SessionListHeader
         projectId={projectId}
         sessions={sessions}
-        reviewCountBySession={reviewSummary.needsYouBySession}
+        reviewCountBySession={needsYouBySession}
         onMenuOpenChange={holdPeek}
       />
 
@@ -1220,7 +1221,7 @@ function ProjectSessionRow({
 
       {isMeta && (
         <Hint side="top" label={t('metaCoordinator')}>
-          <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
+          <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
             <SparkleIcon className="size-3.5" weight="fill" />
           </span>
         </Hint>
@@ -1292,7 +1293,7 @@ function ProjectSessionRow({
               data-session-starter={starter.type}
             >
               <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
-                <span className="text-muted-foreground/70 flex size-5 items-center justify-center">
+                <span className="text-muted-foreground flex size-5 items-center justify-center">
                   <SessionStarterMark
                     session={session}
                     starter={starter}

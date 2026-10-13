@@ -644,15 +644,14 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   }
 
   // 5–6. Obtain, verify, prepare, seal, rename: an intact copy from an earlier
-  //      attempt, the checkout when it is at the release's commit, the project
-  //      snapshot, or the archive (obtain.ts).
+  //      attempt, the project snapshot, or the archive (obtain.ts).
   try {
     await obtainRelease({
       root,
       manifest,
       snapshot: descriptor.snapshot,
       api,
-      workspace: cfg.projectTarget,
+      git: cfg,
       managedSkillsDir: deps.managedSkillsDir,
       prepare: deps.prepare
         ? (staged) => deps.prepare!(manifest.config_dir ? join(staged, manifest.config_dir) : staged)

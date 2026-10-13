@@ -8,7 +8,6 @@ import {
   approvalNoticeHeadline,
   approvalNoticeRows,
   approvalRequestFromAction,
-  nextExpandedApproval,
 } from './session-approval-review';
 
 function action(overrides: Partial<SessionAuditAction> = {}): SessionAuditAction {
@@ -205,17 +204,6 @@ describe('approvalNoticeHeadline', () => {
       title: 'Decision recorded',
       hint: null,
     });
-  });
-});
-
-describe('nextExpandedApproval', () => {
-  test('opens a row and collapses the previous one', () => {
-    expect(nextExpandedApproval(null, 'exec-1')).toBe('exec-1');
-    expect(nextExpandedApproval('exec-1', 'exec-2')).toBe('exec-2');
-  });
-
-  test('collapses the row that is already open', () => {
-    expect(nextExpandedApproval('exec-1', 'exec-1')).toBeNull();
   });
 });
 

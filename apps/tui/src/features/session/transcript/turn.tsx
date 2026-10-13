@@ -1,14 +1,17 @@
 /**
- * One message, rendered.
+ * One session-log message, rendered.
  *
  * A user message is a dim-bordered block; an assistant message is plain, so
- * the eye separates "what I asked" from "what it did" without color.
- * Parts come from `classifyTurn` and are laid out by `collapseToolRuns`, so
+ * the eye separates "what I asked" from "what it did" without color. A
+ * compaction is one message (its marker and its summary) and renders plain,
+ * under a `compaction` header.
+ * Parts come from `classifySessionLogMessage` (the message's blocks as
+ * `ClassifiedPart`s) and are laid out by `collapseToolRuns`, so
  * the part `switch` below is exhaustive over `ClassifiedPart['kind']` and a
  * new opencode part type fails the build here.
  */
 
-import { type ClassifiedPart, type MessageWithParts, classifyTurn } from '@kortix/sdk';
+import { type ClassifiedPart, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
 import { useMemo } from 'react';
 
 import { type TurnRow, collapseToolRuns, formatRelativeTime } from '../../../lib/turn-layout.ts';
@@ -31,7 +34,7 @@ import { ToolCard } from './tool-card.tsx';
 const ROLE_GLYPH = { user: '❯', assistant: '◆' } as const;
 
 export interface TurnProps {
-  message: MessageWithParts;
+  message: SessionLogMessage;
   width: number;
   /** Row keys the reader has expanded. */
   expanded: ReadonlySet<string>;
@@ -92,16 +95,18 @@ function PartRow({
   }
 }
 
+/** The prompt the reader typed; anything else (a reply, a compaction) is the agent's. */
+const isPrompt = (message: SessionLogMessage) => message.role === 'user' && message.kind !== 'compaction';
+
 function Header({
   message,
   now,
   width,
-}: { message: MessageWithParts; now: number; width: number }) {
-  const role = message.info.role === 'user' ? 'user' : 'assistant';
-  const agent = 'agent' in message.info ? message.info.agent : undefined;
-  const name = role === 'user' ? 'you' : agent || 'agent';
-  const created = message.info.time?.created;
-  const age = typeof created === 'number' ? formatRelativeTime(created, now) : '';
+}: { message: SessionLogMessage; now: number; width: number }) {
+  const role = isPrompt(message) ? 'user' : 'assistant';
+  const name = role === 'user' ? 'you' : message.kind === 'compaction' ? 'compaction' : message.agent || 'agent';
+  const created = Date.parse(message.created_at);
+  const age = Number.isFinite(created) ? formatRelativeTime(created, now) : '';
   return (
     <text fg={theme.dim} width={Math.max(width, 4)}>
       <span fg={theme.accent}>{ROLE_GLYPH[role]}</span>
@@ -112,9 +117,9 @@ function Header({
 }
 
 export function Turn({ message, width, expanded, cursorKey, streaming, now }: TurnProps) {
-  const classified = useMemo(() => classifyTurn(message), [message]);
+  const classified = useMemo(() => classifySessionLogMessage(message), [message]);
   const rows: TurnRow[] = useMemo(() => collapseToolRuns(classified.parts), [classified.parts]);
-  const isUser = message.info.role === 'user';
+  const isUser = isPrompt(message);
   const inner = Math.max(width - (isUser ? 4 : 0), 8);
   const lastRowKey = rows.at(-1)?.key;
 

@@ -95,6 +95,10 @@ function deadDaemonDeps(
     patchMetadata: async (patch) => {
       calls.patches.push(patch);
     },
+    claimRun: async (patch) => {
+      calls.patches.push(patch);
+      return true;
+    },
     audit: async () => {},
     log: () => {},
     ...over,

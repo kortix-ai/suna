@@ -7,7 +7,7 @@ import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
 import { SessionChat } from '@/features/session/session-chat';
-import { stabilizeTurns } from '@/features/session/turn/stable-turns';
+import { stabilizeTurns } from './stable-turns';
 import { TurnViewport } from '@/features/session/turn/turn-viewport';
 import type { MessageWithParts, SessionStatus, Turn } from '@/ui';
 

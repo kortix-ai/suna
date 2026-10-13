@@ -5,6 +5,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (connector credential re-sync)
+- `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
+  connector the server re-reads the tools after the write: `sync` is that run
+  (`ConnectorSyncResult`), and a per-slug entry in `sync.errors` means the
+  credential is stored but the tools still fail to load. Absent for other
+  providers and on older servers. Additive (KRTX-2185).
+
+### Added (session log reads, P5.5)
+- `getSessionLogPage(projectId, sessionId, query?)` and `session.log(query?)`
+  read one page of the stored session log (`GET /v1/projects/:p/sessions/:s/log`):
+  `SessionLogPage` for `{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`),
+  `null` on a 404 (no stored log, or no such thread). `SessionLogPage` and
+  `SessionLogPageQuery` are now public types. Additive.
+- `classifySessionLogMessage(message)`: `classifyTurn` of a session-log message
+  (`ClassifiedPart`s from its blocks, its `TurnError`). Transitional: it goes with
+  `ClassifiedPart`. Additive.
+- `findSessionAttachments` also reads session-log records: attachment blocks, a
+  harness block's v1 file part, text blocks and `show` tool-call blocks. Additive.
+
 ### Added (session readiness)
 - `session.ensureReady({ session })` takes the session's row when the caller
   already read it. A `running` row that names its sandbox and
@@ -529,6 +548,16 @@ and `useOpenCodeRuntimeReady`; they compile either way.
 The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- A session stream's `question.asked`, `question.replied` and
+  `question.rejected` events refetch `useSessionsNeedingInput` for the
+  stream's project. Before, a question opened or closed showed in the
+  session lists only at the next 30 s poll (KRTX-1739).
+- `useProjectSessions` ends its read past empty pages (`isScanning`) on a
+  failed fetch. Before, it read the failed page again as soon as the fetch
+  ended, for as long as the server failed. It also reads the next page when
+  a page answers before React renders the fetch that asked for it; before,
+  the read stopped there with `isScanning` true and no fetch running
+  (KRTX-1727).
 - `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
   and `throw` of a returned async generator inside its scope. Before, each
   `connector(slug).paginate` page ran outside the scope and used the

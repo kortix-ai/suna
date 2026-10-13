@@ -143,6 +143,8 @@ export interface GroupAccessPanelProps {
   /** `member.update` — the leaf `PATCH .../members/:userId` asserts. The hub
    *  holds it in its batched probe; pass it down, do not re-probe. */
   canUpdateRole: boolean;
+  /** `member.read` — "View access" on another member's row. */
+  canReadMembers: boolean;
   /** "View access" on a member row — the hub opens `?tab=members&member=`. */
   onSelectMember: (userId: string) => void;
   /** Back to the groups list — the hub drops the `?group=` param. */
@@ -158,6 +160,7 @@ export function GroupAccessPanel({
   accountName,
   currentUserId,
   canUpdateRole,
+  canReadMembers,
   onSelectMember,
   onBack,
 }: GroupAccessPanelProps) {
@@ -287,6 +290,7 @@ export function GroupAccessPanel({
             rbacEnabled={rbacEnabled}
             canReadPolicies={canReadPolicies}
             canManageRoles={canManageRoles}
+            canReadMembers={canReadMembers}
             onSelectMember={onSelectMember}
           />
 
@@ -481,6 +485,7 @@ function GroupMembersCard({
   rbacEnabled,
   canReadPolicies,
   canManageRoles,
+  canReadMembers,
   onSelectMember,
 }: {
   accountId: string;
@@ -497,6 +502,7 @@ function GroupMembersCard({
   rbacEnabled: boolean;
   canReadPolicies: boolean;
   canManageRoles: boolean;
+  canReadMembers: boolean;
   onSelectMember: (userId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -588,8 +594,9 @@ function GroupMembersCard({
         onSelect: () => roleEditor.openEdit({ userId, label, accountRole }),
       });
     }
-    // Only a person on the account roster has a member panel to open.
-    if (accountRole) {
+    // Only a person on the account roster has a member panel to open, and
+    // another member's panel needs `member.read`.
+    if (accountRole && (canReadMembers || userId === currentUserId)) {
       items.push({
         label: tI18nComplete.raw('textf5462009cf42'),
         icon: <KeyIcon className="size-3.5" />,

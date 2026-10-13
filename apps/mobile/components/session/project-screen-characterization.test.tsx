@@ -22,6 +22,9 @@ let homeRenders = 0;
 let thread: any;
 let threadRenders = 0;
 let reviewData: any[] = [];
+/** GET needs-input as `useSessionsNeedingInput` returns it, and the options it was called with. */
+let needsInput: any;
+let needsInputCall: any;
 let actionsSheet: any;
 let inbox: any;
 let inboxOptions: any;
@@ -61,7 +64,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/projects/hooks': { useProject: () => ({ data: project }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
   '@tanstack/react-query': { useQueryClient: () => queryClient },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: reviewData }) },
-  '@/lib/session/needs-you': { needsYouBySession: (items: any[]) => new Map(items.map((item) => [item.session_id, item])) },
+  '@/lib/session/needs-you': { needsYouBySession: (items: any[], summary?: any) => new Map([...items.map((item): [string, any] => [item.session_id, item]), ...Object.entries(summary?.sessions ?? {})]) },
   '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
     sessionStartKey: (projectId: string, sessionId: string) => ['start', projectId, sessionId],
     getSessionHealth: async (url: string, init?: RequestInit) => { const res = await globalThis.fetch(`${url}/kortix/health`, init); return { status: res.status, ok: res.ok, health: await res.json(), body: '' }; } },
@@ -74,7 +77,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/hooks/useWarmProjectSession': { useWarmProjectSession() {} },
   '@/lib/haptics': { haptics: { tap: spy('tap') } },
   '@/lib/logger': { log: { log() {}, warn() {}, error() {} } },
-  '@kortix/sdk/react': { KortixProjectProvider: ({ children }: any) => children, useNotificationInbox: (options: any) => { inboxOptions = options; return inbox; } },
+  '@kortix/sdk/react': { KortixProjectProvider: ({ children }: any) => children, useNotificationInbox: (options: any) => { inboxOptions = options; return inbox; },
+    useSessionsNeedingInput: (projectId: string, options: any) => { needsInputCall = { projectId, ...options }; return { data: needsInput }; } },
   '@/lib/notifications/inbox': { NOTIFICATION_INBOX_LIMIT: 50 },
   '@/hooks/useSavedCopy': { useSavedCopy: () => ({ messages: undefined, empty: false }) },
   '@/lib/session/session-store': { addOptimisticMessage: spy('optimistic'), markOptimisticAccepted() {}, sessionMessageIds: () => [], sessionRows: () => [], sessionStatus: () => undefined, setLocalSessionStatus() {} },
@@ -115,6 +119,7 @@ beforeEach(() => {
   homeRenders = 0;
   threadRenders = 0;
   reviewData = [];
+  needsInput = needsInputCall = undefined;
   route = drawer = home = connecting = back = stackListener = thread = actionsSheet = inboxOptions = pendingOpen = undefined;
   inbox = { isSuccess: true, unreadCount: 2, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); } };
   // KRTX-1742 cases run with the project's `notification_center` flag on; the flag-off cases say so.
@@ -412,5 +417,14 @@ describe('ProjectScreen connect and stack', () => {
     reviewData = [{ session_id: 'ps-9' }];
     await act(async () => drawer.onOpenSwitcher());
     expect([...drawer.needsYouBySession.keys()]).toEqual(['ps-9']);
+  });
+
+  // KRTX-1739: a session whose agent waits on a question is in Needs you too.
+  test('the drawer gets the sessions GET needs-input lists, polled while the project is focused', async () => {
+    await renderHook();
+    expect(needsInputCall).toEqual({ projectId: 'project-1', enabled: true });
+    needsInput = { total: 1, sessions: { 'ps-q': 1 } };
+    await act(async () => drawer.onOpenSwitcher());
+    expect([...drawer.needsYouBySession.keys()]).toEqual(['ps-q']);
   });
 });

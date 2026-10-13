@@ -351,7 +351,6 @@ export class PiRuntime {
   /** The compaction in flight: its summary message on the wire. */
   private compaction: KortixAssistantMessageInfo | null = null
   private resetProgressWatchdog: (() => void) | null = null
-  private workspaceReady = true
   /**
    * The Kortix message id of each pi message object (root and children): pi
    * stores its own ids, the session log uses the transcript's. Read into
@@ -446,10 +445,6 @@ export class PiRuntime {
     return (this.env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
   }
 
-  markWorkspaceReady(): void {
-    this.workspaceReady = true
-  }
-
   async start(): Promise<void> {
     if (this.state === 'ok') return
     this.state = 'starting'
@@ -527,6 +522,10 @@ export class PiRuntime {
       this.childAgentOptions = { convertToLlm, ...host.extensionAgentHooks(this.runner) }
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
+      // A `./` package is a file of the running config. The image default has
+      // none, and the workspace is never a config source while a release is in play.
+      const packageRoot = this.projectRoot()
+      if (packageRoot === null) project.entries = project.entries.filter((entry) => host.parseNpmSource(typeof entry === 'string' ? entry : entry.source))
       this.pi = await host.createPiSession({
         projectConfigDir: await this.projectConfigDir(),
         agent,
@@ -535,7 +534,8 @@ export class PiRuntime {
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
         projectPackages: project.entries,
-        packageRoot: this.projectRoot() ?? this.workspace,
+        packageRoot: packageRoot ?? undefined,
+        discoveryRoot: packageRoot,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
@@ -649,7 +649,6 @@ export class PiRuntime {
    */
   admit(input: PromptInput): { messageId: string; done: Promise<TurnOutcome> } {
     if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
-    if (!this.workspaceReady) throw new PromptRejected('workspace is not ready')
     const messageId = input.messageID ?? this.clock.mint(this.now())
     if (this.knows(messageId)) throw new PromptRejected(`message ${messageId} was already admitted`)
     this.clock.observe(messageId)
