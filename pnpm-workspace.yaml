@@ -100,3 +100,9 @@ overrides:
   'minimatch@>=9.0.0 <9.0.7': '9.0.7'
   'ajv@>=8.0.0 <8.18.0': '8.18.0'
   'markdown-it@>=0.0.0 <14.2.0': '14.2.0'
+  # CodeMirror singletons (instanceof-checked): pnpm 11 stopped reading the
+  # package.json `pnpm` block, so the pin lives in both homes. Keep them in
+  # sync; tests/unit/codemirror-single-instance.test.ts guards the lockfile.
+  '@codemirror/state': '6.7.6'
+  '@codemirror/view': '6.43.13'
+  '@lezer/common': '1.5.3'
