@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 
 import Loading from '@/components/ui/loading';
 
@@ -78,31 +78,51 @@ export function FileCategoryContent({
   reloadKey: number;
 }) {
   const {
-    fileCategory, fileContent, rawBlob, blobUrl, imageDataUrl, isHeicImage,
-    heicImageUrl, heicConverting, blobLoading, blobError, isContentReady,
-    bytesOnly, csvAsTable, contentRevision, fileName, readOnly,
-    handleDownload, saveThroughSource,
+    fileCategory,
+    fileContent,
+    rawBlob,
+    blobUrl,
+    imageDataUrl,
+    isHeicImage,
+    heicImageUrl,
+    heicConverting,
+    blobLoading,
+    blobError,
+    isContentReady,
+    bytesOnly,
+    csvAsTable,
+    contentRevision,
+    fileName,
+    readOnly,
+    handleDownload,
+    saveThroughSource,
   } = state;
 
-  const renderCategory = () => {
-    switch (fileCategory) {
-      // HEIC rides the image category but loads exclusively through the blob
-      // pipeline — the text/base64 endpoint often 500s on HEIC — so it keeps
-      // its own loading fallback instead of the shared guard.
-      case 'image': {
-        if (isHeicImage) {
-          if (blobLoading || heicConverting) return <RendererFallback />;
-          return !blobError && heicImageUrl ? (
-            <ImageRenderer url={heicImageUrl} className="h-full" fileName={fileName} />
-          ) : null;
-        }
-        return isContentReady && imageDataUrl ? (
+  let body: ReactNode;
+  switch (fileCategory) {
+    // HEIC rides the image category but loads exclusively through the blob
+    // pipeline — the text/base64 endpoint often 500s on HEIC — so it keeps
+    // its own loading fallback instead of the shared guard.
+    case 'image': {
+      if (isHeicImage) {
+        if (blobLoading || heicConverting) body = <RendererFallback />;
+        else
+          body =
+            !blobError && heicImageUrl ? (
+              <ImageRenderer url={heicImageUrl} className="h-full" fileName={fileName} />
+            ) : null;
+        break;
+      }
+      body =
+        isContentReady && imageDataUrl ? (
           <ImageRenderer url={imageDataUrl} className="h-full" fileName={fileName} />
         ) : null;
-      }
+      break;
+    }
 
-      case 'pdf':
-        return isContentReady && fileContent?.content ? (
+    case 'pdf':
+      body =
+        isContentReady && fileContent?.content ? (
           <PdfRenderer
             fileContent={fileContent.content}
             fileName={fileName}
@@ -111,25 +131,36 @@ export function FileCategoryContent({
             showDownload={false}
           />
         ) : null;
+      break;
 
-      case 'docx':
-        return isContentReady && rawBlob ? (
-          <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" showDownload={false} />
+    case 'docx':
+      body =
+        isContentReady && rawBlob ? (
+          <DocxRenderer
+            blob={rawBlob}
+            fileName={fileName}
+            className="h-full"
+            showDownload={false}
+          />
         ) : null;
+      break;
 
-      // Zip archive — browse the entries, drill into one, extract it.
-      // `key`: the renderer holds per-archive state (which folders are open,
-      // which entry is drilled into), and switching files must not carry one
-      // archive's expansion onto another's paths. Remounting is React's own
-      // reset, and it costs nothing — the blob is already cached by the source.
-      case 'zip':
-        return isContentReady && rawBlob ? (
+    // Zip archive — browse the entries, drill into one, extract it.
+    // `key`: the renderer holds per-archive state (which folders are open,
+    // which entry is drilled into), and switching files must not carry one
+    // archive's expansion onto another's paths. Remounting is React's own
+    // reset, and it costs nothing — the blob is already cached by the source.
+    case 'zip':
+      body =
+        isContentReady && rawBlob ? (
           <ZipRenderer key={filePath} blob={rawBlob} fileName={fileName} className="h-full" />
         ) : null;
+      break;
 
-      // XLSX / XLS preview.
-      case 'xlsx':
-        return isContentReady && (!bytesOnly || blobUrl) ? (
+    // XLSX / XLS preview.
+    case 'xlsx':
+      body =
+        isContentReady && (!bytesOnly || blobUrl) ? (
           <XlsxRenderer
             key={`xlsx-${filePath}-${contentRevision}-${reloadKey}`}
             // A bytes-only source hands the workbook over as a blob URL; the
@@ -140,10 +171,12 @@ export function FileCategoryContent({
             showDownload={false}
           />
         ) : null;
+      break;
 
-      // SQLite database viewer.
-      case 'sqlite':
-        return isContentReady && (!bytesOnly || rawBlob) ? (
+    // SQLite database viewer.
+    case 'sqlite':
+      body =
+        isContentReady && (!bytesOnly || rawBlob) ? (
           <SqliteRenderer
             key={`sqlite-${filePath}-${contentRevision}-${reloadKey}`}
             filePath={filePath}
@@ -153,10 +186,12 @@ export function FileCategoryContent({
             {...(bytesOnly ? { bytes: rawBlob, onSave: saveThroughSource } : {})}
           />
         ) : null;
+      break;
 
-      // CSV / TSV preview.
-      case 'csv':
-        return isContentReady && csvAsTable && fileContent ? (
+    // CSV / TSV preview.
+    case 'csv':
+      body =
+        isContentReady && csvAsTable && fileContent ? (
           <CsvRenderer
             content={fileContent.content}
             fileName={fileName}
@@ -164,14 +199,15 @@ export function FileCategoryContent({
             showDownload={false}
           />
         ) : null;
+      break;
 
-      case 'video':
-        return isContentReady && blobUrl ? (
-          <VideoRenderer url={blobUrl} className="h-full" />
-        ) : null;
+    case 'video':
+      body = isContentReady && blobUrl ? <VideoRenderer url={blobUrl} className="h-full" /> : null;
+      break;
 
-      case 'audio':
-        return isContentReady && blobUrl ? (
+    case 'audio':
+      body =
+        isContentReady && blobUrl ? (
           <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
             <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-sm">
               <svg
@@ -190,9 +226,11 @@ export function FileCategoryContent({
             <audio controls src={blobUrl} className="w-full max-w-sm" />
           </div>
         ) : null;
+      break;
 
-      case 'pptx':
-        return isContentReady && rawBlob ? (
+    case 'pptx':
+      body =
+        isContentReady && rawBlob ? (
           <PptxRenderer
             blob={rawBlob}
             binaryUrl={blobUrl}
@@ -202,14 +240,14 @@ export function FileCategoryContent({
             onDownload={handleDownload}
           />
         ) : null;
+      break;
 
-      // HTML, code, text and the binary fallback are not category
-      // renderers — they render from the chains `file-content-renderer`
-      // keeps, and several of them (text, binary) can carry any category.
-      default:
-        return null;
-    }
-  };
+    // HTML, code, text and the binary fallback are not category
+    // renderers — they render from the chains `file-content-renderer`
+    // keeps, and several of them (text, binary) can carry any category.
+    default:
+      body = null;
+  }
 
-  return <Suspense fallback={<RendererFallback />}>{renderCategory()}</Suspense>;
+  return <Suspense fallback={<RendererFallback />}>{body}</Suspense>;
 }
