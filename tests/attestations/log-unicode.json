@@ -1,19 +1,20 @@
 {
-  "source_hash": "d7237f117f9319e68dbe57e50da63c2ab0443d54b2dd486a128d8fc50a59c7eb",
+  "source_hash": "bd2d7b10b616b84ad164a9c1e59decf55598010cb07f90221d5a59855609263f",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-log-ingest.test.ts",
+    "apps/api/src/projects/lib/jsonb-safe.test.ts",
     "apps/api/src/projects/lib/jsonb-safe.ts",
     "apps/api/src/projects/lib/session-transcript-mirror.ts",
     "apps/api/src/projects/session-log-ingest.ts",
     "apps/api/tsconfig.json"
   ],
-  "diff_hash": "09d73f8b1ae05828ac86428fe51b632f58ba43d6ea70e341f47ec3e9cf1ed7d6",
-  "head": "016139128af0a263739b0482de1d335a75028e80",
+  "diff_hash": "b2be6da01e158ff9c3383089de63b11efa4e17f581dcafa2aa02a0e5d3ff38ae",
+  "head": "f356aafdf47dfbcfc2ee53316b8e6ee4030fbd4b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T06:09:28.101Z"
+  "at": "2026-10-13T08:32:36.471Z"
 }
