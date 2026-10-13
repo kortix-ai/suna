@@ -35,8 +35,11 @@ test.describe('42 — Files lists the whole repository', { tag: '@local-only' },
   test('the root lists a folder past 1,000 files, a big folder loads in pages, and search finds a file and a line', async ({ page }) => {
     test.skip(!databaseUrl || isDeployedTarget(), 'local stack only: pushes into a local bare repository');
     // A cold Next.js compile of the Files route, three pages of `a/`, then
-    // filename and content search.
-    test.setTimeout(240_000);
+    // filename and content search. The CI runner mounts 500 cards in about 25 s
+    // (journey 42 failed 3 of 3 with the default 20 s click wait), so each page
+    // gets `pageWait`.
+    test.setTimeout(420_000);
+    const pageWait = 120_000;
 
     const runId = Date.now().toString(36);
     const email = `e2e-files-whole-${runId}@example.test`;
@@ -101,7 +104,7 @@ test.describe('42 — Files lists the whole repository', { tag: '@local-only' },
       // `a` holds 1,200 files: the first page shows 500 of them and "Load more items".
       const folderA = () => listings.map((search) => new URLSearchParams(search)).filter((q) => q.get('path') === 'a');
       await page.getByText('a', { exact: true }).first().click();
-      await expect(page.getByText('f0000.txt', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('f0000.txt', { exact: true }).first()).toBeVisible({ timeout: pageWait });
       await expect(page.getByText('f0499.txt', { exact: true }).first()).toBeVisible();
       await expect(page.getByText('f0500.txt', { exact: true })).toHaveCount(0);
       const loadMore = page.getByRole('button', { name: 'Load more items' });
@@ -121,11 +124,11 @@ test.describe('42 — Files lists the whole repository', { tag: '@local-only' },
       await page.keyboard.press('Escape');
 
       // Each click reads the next page by cursor: 500, then 200, then no button.
-      await loadMore.click();
-      await expect(page.getByText('f0999.txt', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+      await loadMore.click({ timeout: pageWait });
+      await expect(page.getByText('f0999.txt', { exact: true }).first()).toBeVisible({ timeout: pageWait });
       await expect(page.getByText('f1000.txt', { exact: true })).toHaveCount(0);
-      await loadMore.click();
-      await expect(page.getByText('f1199.txt', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+      await loadMore.click({ timeout: pageWait });
+      await expect(page.getByText('f1199.txt', { exact: true }).first()).toBeVisible({ timeout: pageWait });
       await expect(loadMore).toHaveCount(0);
       await expect(await sortBy()).toBeEnabled();
       await page.keyboard.press('Escape');

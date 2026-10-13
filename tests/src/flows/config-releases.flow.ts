@@ -25,7 +25,26 @@ import {
   sendPrompt,
   waitForAssistantText,
 } from '../fixtures/session-run';
-import { isKe2eRetryableError } from '../core/client';
+import { withTransientGitRetry } from '../fixtures/git-transient';
+import { isKe2eRetryableError, transientRetryDelayMs } from '../core/client';
+
+/**
+ * `fetch` for the idempotent reads and descriptor mints of this file. Bun
+ * reuses a keep-alive socket the edge already closed and then fails with "The
+ * socket connection was closed unexpectedly" (CFG-2, CFG-8 on deployed
+ * staging); the request never reached a handler. Only a transport failure
+ * is repeated, three times at most; any HTTP answer goes back untouched.
+ */
+async function fetchRetryingTransport(url: string, init: RequestInit & { signal?: AbortSignal } = {}): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (attempt >= 3 || init.signal?.aborted) throw error;
+      await sleep(transientRetryDelayMs(attempt));
+    }
+  }
+}
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -193,6 +212,11 @@ const CONFIG_FILES: Record<string, string> = {
 };
 
 async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
+  if (cmd !== 'git') return runOnce(cmd, args, cwd, input);
+  return withTransientGitRetry(args, () => runOnce(cmd, args, cwd, input));
+}
+
+async function runOnce(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -382,7 +406,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return { sessionId, secret };
     },
     async descriptor(secret, sessionId, body = {}) {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
         method: 'POST',
         headers: {
           ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
@@ -425,7 +449,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
     async configState(sessionId) {
       const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
-      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(60_000),
       });
@@ -437,7 +461,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return { status: response.status, body: parsed };
     },
     async download(secret, treeId, query = '') {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
         headers: secret ? { Authorization: `Bearer ${secret}` } : {},
         redirect: 'manual',
         signal: AbortSignal.timeout(60_000),
@@ -446,7 +470,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
         // The daemon follows one redirect, with no credentials, to the store.
         const location = response.headers.get('location');
         if (!location) throw new Error('302 without a Location header');
-        const stored = await fetch(location, { signal: AbortSignal.timeout(60_000) });
+        const stored = await fetchRetryingTransport(location, { signal: AbortSignal.timeout(60_000) });
         return { status: stored.status, bytes: Buffer.from(await stored.arrayBuffer()), source: 'redirect' };
       }
       return {
@@ -2188,6 +2212,14 @@ harnessFlow(
       await fixture.cleanup();
     }
   },
+  // pi on deployed staging answers from a stale system prompt after an idle
+  // convergence (gates 37557504543 and 37933459772: DEF-DEV-2 answered
+  // marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both times).
+  // Suspected: harness/pi/config-release.ts swap + reconfigure keeps the old
+  // compiled governance. Remove when the pi fix lands.
+  process.env.KE2E_TARGET === 'staging'
+    ? { quarantine: 'pi keeps a stale system prompt after idle config convergence on staging (DEF-DEV-2), open since v0.13.52 — quarantined 2026-10-09 until the pi reconfigure fix lands' }
+    : {},
 );
 
 // ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─

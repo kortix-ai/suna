@@ -122,6 +122,10 @@ function auditRow(overrides: Record<string, unknown> = {}) {
 /** The rows the fake `GET .../audit` route serves; tests vary the projection. */
 let auditActions: Record<string, unknown>[] = [];
 
+/** The body the fake `GET /v1/p/config` route serves; tests vary the template. */
+let previewConfig: Record<string, unknown> = { preview_url_template: null };
+let apiBase = '';
+
 function queuedPrompt() {
   return {
     prompt_id: PROMPT_ROW,
@@ -189,7 +193,16 @@ function startServer(): string {
         return Response.json(sessionRow(SESSION_B));
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_C}`) {
-        return Response.json({ ...sessionRow(SESSION_C), metadata: {} });
+        // An underscore external id: the exact shape the CLI preview bug shipped
+        // raw into a hostname, where `_` is not a legal DNS character.
+        return Response.json({
+          ...sessionRow(SESSION_C),
+          metadata: {},
+          sandbox_url: 'http://127.0.0.1/v1/p/sbx_parity/8000',
+        });
+      }
+      if (method === 'GET' && path === '/v1/p/config') {
+        return Response.json(previewConfig);
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_PI}`) {
         return Response.json(sessionRow(SESSION_PI));
@@ -472,7 +485,9 @@ beforeEach(() => {
       result_summary: null,
     }),
   ];
-  config = writeConfig(startServer());
+  previewConfig = { preview_url_template: null };
+  apiBase = startServer();
+  config = writeConfig(apiBase);
 });
 
 afterEach(() => {
@@ -1089,6 +1104,36 @@ describe('kortix sessions preview --list', () => {
     expect(out.port).toBe(3000);
     expect(out.sandbox).toBe(EXTERNAL);
     expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION}/previews`)).toEqual([]);
+  });
+});
+
+describe('kortix sessions preview — the printed URL resolves', () => {
+  test('the deployment template wins: preview origin, label-encoded, one-shot token', async () => {
+    previewConfig = { preview_url_template: 'https://dev-p{port}-{sandbox}.p.kortix.com' };
+    const r = await runCli(['sessions', 'preview', SESSION_C, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(seen.some((s) => s.method === 'GET' && s.path === '/v1/p/config')).toBe(true);
+    const out = JSON.parse(r.stdout);
+    expect(out.sandbox).toBe('sbx_parity');
+    expect(out.url).toBe('https://dev-p3000-sbx-parity.p.kortix.com/?token=kortix_pat_parity');
+  });
+
+  test('no preview domain on a local api: label-encoded localhost origin with the token', async () => {
+    const r = await runCli(['sessions', 'preview', SESSION, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    const out = JSON.parse(r.stdout);
+    const port = new URL(apiBase).port;
+    expect(out.url).toBe(`http://p3000-sandbox-parity.localhost:${port}/?token=kortix_pat_parity`);
+  });
+
+  test('no preview domain on a remote api: the path proxy, never a token in the url', async () => {
+    const remote = writeConfig(`http://127.0.0.2:${new URL(apiBase).port}`);
+    const r = await runCli(['sessions', 'preview', SESSION, '--json', ...P], remote);
+    expect(r.code).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.url).toBe(
+      `http://127.0.0.2:${new URL(apiBase).port}/v1/p/sandbox-parity/3000/`,
+    );
   });
 });
 
