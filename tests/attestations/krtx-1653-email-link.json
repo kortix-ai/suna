@@ -1,5 +1,5 @@
 {
-  "source_hash": "2fed3fd61ca27269b0203f98430f4b6f46cf630544a912462a02450485be6822",
+  "source_hash": "6ce3cb79102da5ced8a7418aeb657eb3540eafe9498ae48270b7527b4a9faae6",
   "diff_files": [
     "apps/web/src/app/[locale]/(auth)/auth/entry-link-default.test.tsx",
     "apps/web/src/app/[locale]/(auth)/auth/entry-password-default.test.tsx",
@@ -7,12 +7,12 @@
     "tests/e2e/specs/01-account-auth.spec.ts"
   ],
   "diff_hash": "0036bdab385b1338c5de94a686da33e8020c60f522213a60fa3b6cd98d71fd6d",
-  "head": "e127bd67d2b7d8a069b085ad45e243502b686a5a",
+  "head": "8741e4441db734a3d912c0807e92c4210504c149",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-13T19:16:00.276Z"
+  "at": "2026-10-13T20:54:32.033Z"
 }
