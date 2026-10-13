@@ -13,6 +13,9 @@
  * - The read. The lock keeps every batch out between the claim and the read, so the
  *   answer is the whole log at the claimed generation: nothing lands in between.
  *
+ * `seq_max` is the highest seq each thread holds, tombstones included: a restored box
+ * numbers its next message above it, so it never collides on (session, thread, seq).
+ *
  * Records are served as stored. A text over 256 kB is its 16 kB preview; `blobs` names
  * each one, and the daemon reads the full text through the attachments route with its
  * own credential. The API never holds a session's full texts in memory here.
@@ -63,6 +66,7 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
       .select({
         messageId: sessionLogMessages.messageId,
         threadId: sessionLogMessages.threadId,
+        seq: sessionLogMessages.seq,
         rev: sessionLogMessages.rev,
         deletedAt: sessionLogMessages.deletedAt,
         record: sessionLogMessages.record,
@@ -80,9 +84,11 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
     );
     const objects = new Map(stored.map((b) => [`kortix-attachment://${b.objectKey}`, b]));
     const revs: Record<string, number> = {};
+    const seqMax: Record<string, number> = {};
     const blobs: SessionLogRestoreBlob[] = [];
     for (const m of messages) {
       revs[m.messageId] = m.rev;
+      seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
       if (m.deletedAt !== null) continue;
       const record = m.record as unknown as SessionLogMessage;
       let thread = byThread.get(m.threadId);
@@ -112,6 +118,6 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
       ...log.record,
       session_id: scope.sessionId,
     } as unknown as Omit<SessionLog, 'threads'>;
-    return { generation: log.generation, log: { ...session, threads: [...byThread.values()] }, revs, blobs } as SessionLogRestore;
+    return { generation: log.generation, log: { ...session, threads: [...byThread.values()] }, revs, seq_max: seqMax, blobs } as SessionLogRestore;
   });
 }
