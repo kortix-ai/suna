@@ -1,5 +1,5 @@
 {
-  "source_hash": "891b17fc08d2a86b2a9c1e7fee95799cd081295af8e8f00eb89b35e72f22a651",
+  "source_hash": "517c29eb7834056cc6654fb657c686f653b622dd5f6cc44348bcd6a2dde34cc9",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-13T115449Z-verify-persisted-revocation-before-printing-cli-success.md",
@@ -9,13 +9,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/connectors.flow.ts"
   ],
-  "diff_hash": "cc3c261c0787b3de1604e111503ac3a0948c6e698dd0e2b7705040c8de3092ed",
-  "head": "d2daf15a68c42be79765a240789242f1177b6b56",
+  "diff_hash": "260a59c9f9c22891ee5190eb01895d36565e0c910171b132304be7c8dc200f64",
+  "head": "a4d49a352642c2079f8b9c1d53f31ab93af05780",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T17:19:04.762Z"
+  "at": "2026-10-13T20:21:05.133Z"
 }
