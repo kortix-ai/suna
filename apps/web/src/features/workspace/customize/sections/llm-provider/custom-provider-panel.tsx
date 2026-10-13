@@ -172,7 +172,7 @@ function CustomProviderDetail({ projectId, id }: { projectId: string; id: string
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to save'),
+    onError: (err) => errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text2c07997249ab')),
   });
 
   const submit = (event: FormEvent) => {

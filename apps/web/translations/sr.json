@@ -19946,7 +19946,8 @@
     "errorsTotal": "{count, plural, one {# грешка} few {# грешке} other {# грешака}}",
     "sessionModel": "Модел {cost}",
     "sessionSandbox": "Sandbox {cost}",
-    "noCapUnlimited": "Без ограничења · потрошња је неограничена"
+    "noCapUnlimited": "Без ограничења · потрошња је неограничена",
+    "tokensSub": "{in} улаз · {out} излаз"
   },
   "triggerComposer": {
     "every": "Сваких",

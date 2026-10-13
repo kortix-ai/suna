@@ -171,7 +171,7 @@ export function GatewayOverview({
     {
       key: 'tokens',
       value: fmtCompact(inTokens + outTokens),
-      sub: `${fmtCompact(inTokens)} in · ${fmtCompact(outTokens)} out`,
+      sub: t('tokensSub', { in: fmtCompact(inTokens), out: fmtCompact(outTokens) }),
     },
     {
       key: 'latency',

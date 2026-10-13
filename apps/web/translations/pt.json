@@ -19946,7 +19946,8 @@
     "errorsTotal": "{count, plural, one {# erro} other {# erros}}",
     "sessionModel": "Modelo {cost}",
     "sessionSandbox": "Sandbox {cost}",
-    "noCapUnlimited": "Sem limite · gasto ilimitado"
+    "noCapUnlimited": "Sem limite · gasto ilimitado",
+    "tokensSub": "{in} entrada · {out} saída"
   },
   "triggerComposer": {
     "every": "A cada",
