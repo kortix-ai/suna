@@ -1,5 +1,5 @@
 {
-  "source_hash": "d4acfa92f553a0abaed5e23554b93a93c61c62e7ca24d1c464cc510092c17926",
+  "source_hash": "20a707843f739dc8a6b751d0c6c7f48b2aa02cefe0cd68775522873f6ed2218c",
   "diff_files": [
     "apps/api/src/apps/public-proxy-status.ts",
     "apps/api/src/apps/public-proxy.test.ts",
@@ -28,13 +28,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/apps.flow.ts"
   ],
-  "diff_hash": "60c5695ba82d1092b2d0ee48e9a5220e2dafefbb73f7cc41c2ebb3202b16a2a8",
-  "head": "ec48f4da852ae3b4c1c9f49a1b140b200af8984a",
-  "passed": true,
+  "diff_hash": "285aed145366c63afe803d935c1fbd06ac72021d2a9cb05ac9f5890a76b7d4b9",
+  "head": "d52db6d0170de81730141c7b916cdb6824741a42",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T19:02:39.019Z"
+  "at": "2026-10-13T19:17:47.891Z"
 }
