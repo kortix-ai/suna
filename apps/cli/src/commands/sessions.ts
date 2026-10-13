@@ -29,8 +29,14 @@ import { runSessionsForward } from './sessions-forward.ts';
 import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { kortixFromAuth } from '../api/sdk.ts';
-import { sessionModelPin } from '@kortix/sdk';
+import { kortixFromAuth, sdkBackendUrl, withKortixScope } from '../api/sdk.ts';
+import {
+  appendPreviewToken,
+  isSubdomainPreviewUrl,
+  loadPreviewUrlTemplate,
+  rewriteLocalhostUrl,
+  sessionModelPin,
+} from '@kortix/sdk';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
@@ -932,12 +938,28 @@ async function sessionsPreview(
     return 1;
   }
   const ext = m[1];
-  const base = new URL(auth.api_base);
-  // Kortix subdomain preview: served at root (so SPA/Next assets resolve), the
-  // `?token` authorizes the subdomain (in-memory TTL) and sets a cookie for
-  // subsequent asset requests. `*.localhost` resolves to 127.0.0.1 in browsers.
-  const scheme = base.protocol.replace(':', '');
-  const url = `${scheme}://p${port}-${ext}.${base.host}/?token=${encodeURIComponent(auth.token)}`;
+  // The preview hostname is a deployment fact: `{env}-p{port}-{label}.{domain}`
+  // needs a wildcard DNS record, a wildcard certificate and an edge Worker that
+  // the API host says nothing about, so a client must not derive it — that is
+  // how this command printed `p{port}-{sandbox}.{api-host}`, a family with no
+  // DNS record on any deployed environment. `GET /v1/p/config` states the
+  // template; the SDK substitutes it (label-encoding `_` → `-`) and falls back
+  // to the localhost or path proxy when the deployment serves none. The
+  // one-shot `?token=` is accepted only on a preview origin (it mints the
+  // preview cookie there); the path proxy rejects query tokens, so it stays
+  // off that form.
+  const url = await withKortixScope(auth, async () => {
+    const backendUrl = sdkBackendUrl(auth.api_base);
+    const template = await loadPreviewUrlTemplate(backendUrl);
+    const parsed = new URL(backendUrl);
+    const origin = rewriteLocalhostUrl(port, '/', {
+      sandboxId: ext,
+      apiBaseUrl: backendUrl,
+      backendPort: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
+      previewUrlTemplate: template,
+    });
+    return isSubdomainPreviewUrl(origin) ? appendPreviewToken(origin, auth.token) : origin;
+  });
 
   if (json) {
     emitJson({ session_id: s.session_id, port, sandbox: ext, url });

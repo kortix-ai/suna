@@ -1,0 +1,30 @@
+{
+  "source_hash": "4581924d500ca7de4884cca3227d3a701422a902ad8972a0b90ef9fddac09cc8",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-log-restore.test.ts",
+    "apps/api/src/projects/session-log-restore.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log-restore.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-restore.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/README.md",
+    "apps/kortix-sandbox-agent-server/src/harness/contract/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/runtime.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/session-log-restore.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-restore.ts",
+    "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
+    "packages/api-contract/src/session-log/wire.ts"
+  ],
+  "diff_hash": "67d25b6231145477247ec8bd972625d452211d2527f9e096b821002d63af171b",
+  "head": "afa1cdf08e3eaf2e1a8d390cba811d5e2406c7bc",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T14:20:39.475Z"
+}

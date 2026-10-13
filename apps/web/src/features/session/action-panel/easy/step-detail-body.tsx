@@ -15,7 +15,7 @@
  * importing it back out of the cards component would be a cycle.
  */
 
-import type { ToolPart } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import { useCallback, useEffect, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
 import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
@@ -23,31 +23,31 @@ import { ToolParts } from './detail-view';
 import { focusIndexForCall } from './easy-panel-logic';
 
 export function StepDetailBody({
-  parts,
+  calls,
   sessionId,
   /** The call the user actually clicked in the chat. A step is a GROUP ("Ran
-   *  13 commands"), so without this the detail always opened on the last part
+   *  13 commands"), so without this the detail always opened on the last call
    *  in live mode — clicking the 4th command showed the 13th. */
   focusCallId,
 }: {
-  parts: ToolPart[];
+  calls: ToolCallBlock[];
   sessionId: string;
   focusCallId?: string;
 }) {
-  const focusIndex = focusIndexForCall(parts, focusCallId);
-  const [index, setIndex] = useState(focusIndex >= 0 ? focusIndex : parts.length - 1);
+  const focusIndex = focusIndexForCall(calls, focusCallId);
+  const [index, setIndex] = useState(focusIndex >= 0 ? focusIndex : calls.length - 1);
   // Arriving from a chat click pins the view to that call; 'live' would drag
   // it straight back to the newest part on the next streaming update.
   const [mode, setMode] = useState<FollowMode>(focusIndex >= 0 ? 'manual' : 'live');
 
   useEffect(() => {
-    if (parts.length === 0) return;
-    setIndex((i) => (mode === 'live' ? parts.length - 1 : clampIndex(i, parts.length)));
-  }, [parts.length, mode]);
+    if (calls.length === 0) return;
+    setIndex((i) => (mode === 'live' ? calls.length - 1 : clampIndex(i, calls.length)));
+  }, [calls.length, mode]);
 
-  const safeIndex = clampIndex(index, parts.length);
-  const current = parts[safeIndex];
-  const atLatest = safeIndex >= parts.length - 1;
+  const safeIndex = clampIndex(index, calls.length);
+  const current = calls[safeIndex];
+  const atLatest = safeIndex >= calls.length - 1;
 
   // Stable identity so ActionNavigator's keydown effect doesn't re-subscribe
   // on every streaming re-render; setState setters are already stable.
@@ -59,10 +59,10 @@ export function StepDetailBody({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-auto">
-        {current && <ToolParts parts={[current]} sessionId={sessionId} />}
+        {current && <ToolParts calls={[current]} sessionId={sessionId} />}
       </div>
       <ActionNavigator
-        parts={parts}
+        calls={calls}
         index={safeIndex}
         isLive={atLatest && mode === 'live'}
         onIndexChange={handleIndexChange}

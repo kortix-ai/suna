@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect } from "@playwright/test";
+import { type Locator, type Page, type Route, expect } from "@playwright/test";
 
 /**
  * The settings panel — ONE full-screen modal that replaced the Customize
@@ -145,4 +145,23 @@ export async function dismissOnboarding(page: Page): Promise<void> {
     await page.waitForTimeout(100);
   }
   await expect(onboarding).toHaveCount(0);
+}
+
+/**
+ * Serve a real API response with its JSON body rewritten. `reload()` or
+ * `goto()` while this handler awaits `route.fetch()` makes the browser abandon
+ * the request, and `route.fulfill()` then throws "Route is already handled!".
+ * That is not a product failure: nobody is left to read the response. Any other
+ * error still fails the test.
+ */
+export async function fulfillRewrittenJson(
+  route: Route,
+  rewrite: (body: any) => unknown,
+): Promise<void> {
+  try {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: rewrite(await response.json()) });
+  } catch (error) {
+    if (!/already handled|has been closed|Target page|aborted/i.test(String(error))) throw error;
+  }
 }

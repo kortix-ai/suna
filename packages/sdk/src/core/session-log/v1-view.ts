@@ -16,7 +16,7 @@
  */
 import type { Message, Part } from '../runtime/runtime-types';
 import type { SessionLogState, SessionLogThreadHead } from './store';
-import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogMessage } from './types';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type GradeCounts, type SessionLog, type SessionLogBlock, type SessionLogMessage, type SessionLogThread } from './types';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '../runtime/transcript-types';
 import { fromV1, toV1 } from './v1';
 
@@ -54,7 +54,8 @@ const nativeOf = (head: SessionLogThreadHead) => {
 /** Rows per message, valid for one runtime session id: a `log.thread` upsert keeps them. */
 const messageRows = new WeakMap<SessionLogMessage, { native: string | null; rows: V1MessageRow[] }>();
 
-function rowsOf(head: SessionLogThreadHead, message: SessionLogMessage): V1MessageRow[] {
+/** The v1 rows `toV1` gives `message` in the thread `head` (a compaction gives two: the marker, then its summary). Internal. */
+export function rowsOf(head: SessionLogThreadHead, message: SessionLogMessage): V1MessageRow[] {
   const native = nativeOf(head);
   const cached = messageRows.get(message);
   if (cached && cached.native === native) return cached.rows;
@@ -115,33 +116,74 @@ const v1Order = (a: V1MessageRow, b: V1MessageRow) =>
 
 const merged = new WeakMap<
   SessionLogMessage[],
-  { v1Rows: readonly V1MessageRow[]; native: string | null; revs: SessionLogState['revs']; result: V1MessageRow[] }
+  { v1Rows: readonly V1MessageRow[]; native: string | null; revs: SessionLogState['revs']; own: V1MessageRow[]; extra: V1MessageRow[]; result: V1MessageRow[] }
 >();
 
 /**
  * The rows the v1 hooks show for runtime session `runtimeSessionId`. `v1Rows` (the v1
  * store's rows) come back as the same array when no session log holds that thread.
  */
+/**
+ * The id the runtime echoes an optimistic row under, when the control plane re-minted it
+ * (`optimisticEchoOf` in the sync store): the log holds the prompt under that id, and the v2
+ * stream carries no v1 echo that would retire the row.
+ */
+export type OptimisticEchoOf = (id: string) => string | undefined;
+
+/** `row` is one the log holds (by its id or its echo id) or a tombstoned one. */
+function heldByLog(row: V1MessageRow, held: ReadonlySet<string>, revs: SessionLogState['revs'], echoOf?: OptimisticEchoOf): boolean {
+  const id = row.info.id;
+  if (held.has(id) || revs[id] !== undefined) return true;
+  const echo = echoOf?.(id);
+  return echo !== undefined && (held.has(echo) || revs[echo] !== undefined);
+}
+
 export function sessionLogRowsFor<R extends V1MessageRow>(
   logs: Record<string, SessionLogState>,
   runtimeSessionId: string,
   v1Rows: R[],
+  echoOf?: OptimisticEchoOf,
 ): R[] {
   const found = findThread(logs, runtimeSessionId);
   if (!found) return v1Rows;
   const { state, head, list } = found;
   const cached = merged.get(list);
   const native = nativeOf(head);
-  if (cached && cached.v1Rows === v1Rows && cached.native === native && cached.revs === state.revs) return cached.result as R[];
   // v1 order, as `toV1` sorts a whole thread: `time.created` (none first), then id. `seq` can disagree (pi stamps coarse times).
-  const result = list.flatMap((m) => rowsOf(head, m)).sort(v1Order);
-  const shown = new Set(result.map((r) => r.info.id));
-  for (const row of v1Rows) {
-    if (shown.has(row.info.id) || state.revs[row.info.id] !== undefined) continue;
-    result.splice(insertAt(result, row), 0, row);
-  }
-  merged.set(list, { v1Rows, native, revs: state.revs, result });
+  const own = cached && cached.v1Rows === v1Rows && cached.native === native && cached.revs === state.revs ? cached.own : list.flatMap((m) => rowsOf(head, m)).sort(v1Order);
+  const shown = new Set(own.map((r) => r.info.id));
+  const extra = v1Rows.filter((row) => !heldByLog(row, shown, state.revs, echoOf));
+  if (cached && cached.own === own && cached.extra.length === extra.length && cached.extra.every((r, i) => r === extra[i])) return cached.result as R[];
+  const result = [...own];
+  for (const row of extra) result.splice(insertAt(result, row), 0, row);
+  merged.set(list, { v1Rows, native, revs: state.revs, own, extra, result });
   return result as R[];
+}
+
+const extended = new WeakMap<SessionLogThread, { held: Set<string>; extra: V1MessageRow[]; result: SessionLogThread }>();
+
+/**
+ * `thread` (a thread of `state`) with the v1 store rows the log does not hold appended as
+ * `fromV1` live messages, after the thread's own: an optimistic send shows until the log's put
+ * of the same id, or of the id the control plane re-minted it under (`echoOf`), replaces it.
+ * A row the log holds, or tombstoned, stays out. The thread itself when no row is added; the
+ * same thread while the same rows are added; a message keeps its identity while its row is
+ * unchanged.
+ */
+export function sessionLogThreadWithV1Rows(state: SessionLogState, thread: SessionLogThread, v1Rows: readonly V1MessageRow[], echoOf?: OptimisticEchoOf): SessionLogThread {
+  const cached = extended.get(thread);
+  // The ids the log's rows carry: a compaction message also gives its summary row.
+  const held = cached?.held ?? new Set(thread.messages.flatMap((m) => rowsOf(thread, m).map((r) => r.info.id)));
+  const extra = v1Rows.filter((r) => !heldByLog(r, held, state.revs, echoOf));
+  if (cached && cached.extra.length === extra.length && cached.extra.every((r, i) => r === extra[i])) return cached.result;
+  let result = thread;
+  if (extra.length) {
+    let seq = thread.messages[thread.messages.length - 1]?.seq ?? 0;
+    const added = extra.map((r) => convert(state.session.session_id ?? '', thread.thread_id, r, undefined, ++seq).message);
+    result = { ...thread, messages: [...thread.messages, ...added] };
+  }
+  extended.set(thread, { held, extra, result });
+  return result;
 }
 
 // ─── v1 rows -> session log (v2 not negotiated) ──────────────────────────────
@@ -159,6 +201,33 @@ const summaryOf = (row: V1MessageRow, marker: V1MessageRow) => {
   return info.role === 'assistant' && info.summary === true && info.parentID === marker.info.id;
 };
 
+/**
+ * The block each part object last converted to, with what else it depends on (the runtime session,
+ * the message id and time, its index and id). A changed row reuses the block of every part object
+ * it still holds, so a streamed text delta does not replace the message's tool-call blocks. A
+ * compaction block also reads the summary row, so it is never reused.
+ */
+const partBlocks = new WeakMap<object, { key: string; block: SessionLogBlock }>();
+
+function reuseBlocks(native: string, row: V1MessageRow, message: SessionLogMessage): SessionLogMessage {
+  const info = row.info as { id?: unknown; time?: { created?: unknown } };
+  const at = `${native}|${String(info.id)}|${String(info.time?.created)}`;
+  let reused = false;
+  const blocks = message.blocks.map((block, i) => {
+    const part = row.parts[i];
+    if (!isObj(part) || block.type === 'compaction') return block;
+    const key = `${at}|${i}|${block.id}`;
+    const prev = partBlocks.get(part);
+    if (prev && prev.key === key) {
+      reused = true;
+      return prev.block;
+    }
+    partBlocks.set(part, { key, block });
+    return block;
+  });
+  return reused ? { ...message, blocks } : message;
+}
+
 function convert(sessionId: string, native: string, row: V1MessageRow, sum: V1MessageRow | undefined, seq: number): Converted {
   const cached = converted.get(row);
   if (cached && cached.sessionId === sessionId && cached.native === native && cached.sum === sum && cached.seq === seq) return cached;
@@ -167,7 +236,8 @@ function convert(sessionId: string, native: string, row: V1MessageRow, sum: V1Me
     { session_id: sessionId, root_id: native, rows: unit.map((r) => ({ runtime_session_id: native, info: r.info as never, parts: r.parts as never })) },
     { live: true },
   );
-  const entry = { sessionId, native, sum, seq, message: { ...log.threads[0]!.messages[0]!, seq }, lost: log.grade_counts! };
+  const message = reuseBlocks(native, row, log.threads[0]!.messages[0]!);
+  const entry = { sessionId, native, sum, seq, message: { ...message, seq }, lost: log.grade_counts! };
   converted.set(row, entry);
   return entry;
 }

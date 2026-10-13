@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { type ShardTarget, listSpecFiles, loadDurations, planBrowserShard } from './browser-shard';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
   type LocalStackHandle,
@@ -86,6 +87,19 @@ function assertShardValue(value: string | undefined, flag: string): void {
   if (!match || current < 1 || total < 2 || current > total) {
     throw new Error(`${flag} must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL`);
   }
+}
+
+/** Playwright args for `--browser-shard=N/M`: the duration-balanced spec files (core/browser-shard.ts). */
+function browserShardPlaywrightArgs(shard: string | undefined, target: ShardTarget): string[] {
+  if (!shard) return [];
+  const [current, total] = shard.split('/').map(Number) as [number, number];
+  const files = planBrowserShard({
+    specs: listSpecFiles(),
+    durations: loadDurations(target),
+    current,
+    total,
+  });
+  return ['--', ...files];
 }
 
 export function buildLocalTestPlan(args: string[]): LocalTestPlan {
@@ -209,7 +223,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'bun',
       'run',
       'test:browser',
-      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+      ...browserShardPlaywrightArgs(browserShard, 'local'),
     ],
     cwd: 'tests',
   };
@@ -264,7 +278,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'bun',
       'run',
       'test:browser',
-      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+      ...browserShardPlaywrightArgs(browserShard, 'deployed'),
     ],
     cwd: 'tests',
     env: {

@@ -2,6 +2,7 @@ import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { AppWindowIcon, GlobeIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
@@ -68,7 +69,7 @@ describe('ShowGroupRenderer', () => {
     const grouped = renderToStaticMarkup(
       withProviders(<ShowGroupRenderer parts={[EDITOR, DOCS]} />),
     );
-    const single = renderToStaticMarkup(withProviders(<ToolPartRenderer part={multi} />));
+    const single = renderToStaticMarkup(withProviders(<ToolPartRenderer call={toolCallBlock(multi)} />));
 
     expect(grouped).toBe(single);
   });
@@ -105,7 +106,7 @@ describe('ShowGroupRenderer file viewers', () => {
   });
 
   test('a single file show draws no name row; its header is the hover-card trigger', () => {
-    const html = renderToStaticMarkup(withProviders(<ToolPartRenderer part={TXT_A} />));
+    const html = renderToStaticMarkup(withProviders(<ToolPartRenderer call={toolCallBlock(TXT_A)} />));
 
     expect(html).not.toMatch(FILE_NAME_ROW);
     expect(html).not.toContain('>q1.txt<');

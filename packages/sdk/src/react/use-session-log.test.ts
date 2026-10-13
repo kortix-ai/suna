@@ -117,6 +117,65 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(seen.at(-1)).toBe(seen[0]);
   });
 
+  test('with a v2 log a v1 row change re-renders no consumer (the v1 fallback is not computed)', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    let renders = 0;
+    const seen: Array<{ log: ReturnType<typeof useSessionLog>; root: unknown }> = [];
+    render(() => {
+      renders++;
+      seen.push({ log: useSessionLog(session), root: useSessionLogThread(session) });
+      return null;
+    });
+    expect(seen.at(-1)!.log!.source).toBe('v2');
+    const before = renders;
+    // The v1 store gets a new row set for the same runtime session (a v1 frame while v2 is read).
+    act(() => useSyncStore.getState().hydrate(RS, rows.slice(0, -1) as never));
+    expect(renders).toBe(before);
+    expect(seen.at(-1)!.log!.source).toBe('v2');
+  });
+
+  test('an optimistic send shows as the thread\'s last message on v1 and on v2, until the log holds it', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session));
+      return null;
+    });
+    const sent = { id: 'msg_zzzoptimistic', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    const part = { id: 'prt_zzzoptimistic', sessionID: RS, messageID: sent.id, type: 'text', text: 'just sent' };
+    act(() => useSyncStore.getState().optimisticAdd(RS, sent as never, [part as never]));
+    expect(seen.at(-1)!.messages.at(-1)).toMatchObject({ message_id: sent.id, role: 'user', status: 'complete', blocks: [{ type: 'text', text: 'just sent' }] });
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const v2 = seen.at(-1)!;
+    expect(v2.messages.at(-1)).toMatchObject({ message_id: sent.id, role: 'user', status: 'complete', blocks: [{ type: 'text', text: 'just sent' }] });
+    expect(v2.messages.slice(0, -1)).toEqual(log.threads[0]!.messages);
+    // The log's put of the same id replaces it: the v1 row stays out.
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: sent.id, seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    expect(seen.at(-1)!.messages.at(-1)).toEqual(put);
+  });
+
+  test('a re-minted optimistic send (a different echo id) leaves once the log holds the echo id', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session));
+      return null;
+    });
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const stub = { id: 'msg_zzzstub', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    act(() => useSyncStore.getState().optimisticAdd(RS, stub as never, [{ id: 'prt_zzzstub', sessionID: RS, messageID: stub.id, type: 'text', text: 'sent' } as never]));
+    expect(seen.at(-1)!.messages.at(-1)!.message_id).toBe(stub.id);
+    // The control plane re-mints the prompt: the inbox announces the echo id, then the log's put arrives under it.
+    act(() => useSyncStore.getState().registerOptimisticEcho(RS, stub.id, 'msg_zzzecho'));
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: 'msg_zzzecho', seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.at(-1)).toBe('msg_zzzecho');
+    expect(ids).not.toContain(stub.id);
+  });
+
   test('null without a runtime session id; source v2 once a page is in the store', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<{ none: unknown; log: ReturnType<typeof useSessionLog> }> = [];

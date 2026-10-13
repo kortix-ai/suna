@@ -30,6 +30,7 @@ import {
   normalizeApprovalNote,
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
+import { actorOf } from '../../middleware/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 
 export function registerApprovalsRoutes(): void {
@@ -323,12 +324,17 @@ export function registerApprovalsRoutes(): void {
         isManager = false;
       }
       const target = await approvalTargetSession(projectId, row);
+      // The resolved actor carries the credential kind: a personal PAT (the
+      // person's own CLI token) is the same human their browser session is;
+      // an agent-session or service-account credential is not.
+      const actor = await actorOf(c, loaded.row.accountId);
       const verdict = mayResolveApproval({
         isManager,
         targetSessionOrigin: target.origin,
         targetSessionCreatedBy: target.createdBy,
         callerUserId: loaded.userId,
         callerAuthType: (c.get('authType') as string | undefined) ?? null,
+        callerCredentialKind: actor.credential.kind,
         callerSessionId: callerKortixSessionId(c),
       });
       if (!verdict.allowed) {

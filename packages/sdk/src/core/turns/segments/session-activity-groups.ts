@@ -1,4 +1,6 @@
 import { isShowPayloadEmpty } from '../tools/show-availability';
+import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 
 export function normalizeActivityToolName(toolName: string | undefined): string {
   return (toolName ?? '').replace(/^oc-/, '').replace(/-/g, '_');
@@ -110,7 +112,8 @@ export interface ActivityPartLike {
  * That keeps this callable from `shouldShowToolPartInActionsPanel`, which is
  * handed a `Pick<ToolPart, 'tool' | 'state'>` with no `type` on it.
  */
-export function isEmptyShowPart(part: ActivityPartLike): boolean {
+export function isEmptyShowPart(call: ActivityPartLike | ToolCallBlock): boolean {
+  const part: ActivityPartLike = isToolCallBlock(call) ? toolPartOf(call) : call;
   const name = normalizeActivityToolName(part.tool);
   if (name !== 'show' && name !== 'show_user') return false;
   if (part.state?.status !== 'completed') return false;

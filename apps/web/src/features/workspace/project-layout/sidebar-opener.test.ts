@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 
+import deMessages from '../../../../translations/de.json';
+
+import { testUiTranslator } from '@/i18n/test-translator';
 import { shouldShowPageSidebarOpener, sidebarOpenerLabel } from './sidebar-opener';
+
+// The labels must come from the caller's catalog, not from hardcoded English:
+// assert the German copy so a hardcoded literal cannot pass as a translation.
+const deUiTranslator = createTranslator({
+  locale: 'de',
+  messages: deMessages,
+  namespace: 'hardcodedUi.i18nComplete',
+});
 
 /**
  * One panel, one opener.
@@ -58,17 +70,38 @@ describe('shouldShowPageSidebarOpener', () => {
 
 describe('sidebarOpenerLabel', () => {
   test('docked: the control collapses', () => {
-    expect(sidebarOpenerLabel({ state: 'expanded' })).toBe('Collapse sidebar');
+    expect(sidebarOpenerLabel({ state: 'expanded' }, testUiTranslator)).toBe('Collapse sidebar');
   });
 
   // Peeking means the panel is already on screen as a hover flyout, so the
   // click docks it. Calling that "Open" reads as a no-op.
   test('peeking: the control pins what is already showing', () => {
-    expect(sidebarOpenerLabel({ state: 'collapsed', peek: true })).toBe('Pin sidebar');
+    expect(sidebarOpenerLabel({ state: 'collapsed', peek: true }, testUiTranslator)).toBe(
+      'Pin sidebar',
+    );
   });
 
   test('hidden: the control opens it', () => {
-    expect(sidebarOpenerLabel({ state: 'collapsed', peek: false })).toBe('Open sidebar');
-    expect(sidebarOpenerLabel({ state: 'collapsed' })).toBe('Open sidebar');
+    expect(sidebarOpenerLabel({ state: 'collapsed', peek: false }, testUiTranslator)).toBe(
+      'Open sidebar',
+    );
+    expect(sidebarOpenerLabel({ state: 'collapsed' }, testUiTranslator)).toBe('Open sidebar');
+  });
+
+  // The labels must come from the caller's catalog, not from hardcoded
+  // English: assert the German copy so a hardcoded literal cannot pass as a
+  // translation — an English translator cannot tell a hardcoded literal from
+  // a catalog hit, because both read the same.
+  test('renders the labels in the caller\'s locale', () => {
+    expect(sidebarOpenerLabel({ state: 'expanded' }, deUiTranslator)).toBe(
+      'Seitenleiste einklappen',
+    );
+    expect(sidebarOpenerLabel({ state: 'collapsed', peek: true }, deUiTranslator)).toBe(
+      'Seitenleiste anheften',
+    );
+    expect(sidebarOpenerLabel({ state: 'collapsed', peek: false }, deUiTranslator)).toBe(
+      'Seitenleiste öffnen',
+    );
+    expect(sidebarOpenerLabel({ state: 'collapsed' }, deUiTranslator)).toBe('Seitenleiste öffnen');
   });
 });

@@ -3948,6 +3948,7 @@ export function SessionChat({
           open={contextModalOpen}
           onOpenChange={setContextModalOpen}
           messages={messages}
+          source={sessionState ?? DETACHED_SESSION_MESSAGES}
           session={session}
           providers={providers}
           allSessions={allSessions}

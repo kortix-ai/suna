@@ -54,7 +54,9 @@ describe('web ECS migration', () => {
     );
     expect(webVerify).toContain('if: ${{ always()');
     expect(webVerify).toContain("needs.publish-web-ecs-dns.result == 'success'");
-    expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev "$alb"');
+    expect(workflow).toContain('environment: dev');
+    expect(workflow).toContain('alb-name: kortix-dev-use2-web-alb');
+    expect(workflow).toContain('./.aws-env/.github/actions/publish-web-dns');
     expect(workflow).not.toContain('detach-web-dev-vercel-domain');
     expect(workflow).not.toContain('detach-vercel-web-domain.mjs');
     expect(workflow).toContain('consecutive_matches=0');
@@ -116,13 +118,17 @@ describe('web ECS migration', () => {
     expect(staging).toContain('  deploy-web-ecs:');
     expect(staging).toContain('bash infra/scripts/sync-web-env.sh staging');
     expect(staging).toContain('kortix/kortix-frontend:staging-${SHA8}');
-    expect(staging).toContain('node infra/scripts/sync-web-dns.mjs staging "$alb"');
+    expect(staging).toContain('./.aws-env/.github/actions/publish-web-dns');
+    expect(staging).toContain('environment: staging');
     expect(staging).toContain('https://${ECS_WEB_HOST}');
     expect(staging).toContain('Deploy staging web to Vercel');
 
     expect(prod).toContain('  deploy-web-ecs:');
     expect(prod).toContain('bash infra/scripts/sync-web-env.sh prod');
-    expect(prod).toContain('node infra/scripts/sync-web-dns.mjs prod "$alb"');
+    expect(prod).toContain('./.aws-env/.github/actions/publish-web-dns');
+    expect(prod).toContain('environment: prod');
+    // The three jobs share one action; it owns the sync call.
+    expect(read('.github/actions/publish-web-dns/action.yml')).toContain('node infra/scripts/sync-web-dns.mjs "$TARGET_ENV" "$alb"');
     expect(prod).toContain('https://prod-fe-ecs.kortix.com');
     expect(prod).toContain('https://kortix.com/api/runtime-config');
     expect(rollback).toContain('kortix/kortix-frontend:${TARGET}');

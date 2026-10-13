@@ -3,7 +3,7 @@
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import type { ToolPart } from '@/ui';
-import { type ShowGroupItem, showGroupItems } from '@kortix/sdk';
+import { type ShowGroupItem, showGroupItems, toolCallBlock } from '@kortix/sdk';
 import { memo, useMemo } from 'react';
 
 /** A failed call keeps its slot and renders through the `error` branch of
@@ -51,7 +51,7 @@ function ShowGroupRendererImpl({
 }) {
   const merged = useMemo(() => mergeShowParts(parts), [parts]);
   return (
-    <ToolPartRenderer part={merged} sessionId={sessionId} disableNavigation={disableNavigation} />
+    <ToolPartRenderer call={toolCallBlock(merged)} sessionId={sessionId} disableNavigation={disableNavigation} />
   );
 }
 

@@ -723,6 +723,45 @@ still v1:
 `toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and
 `shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part.
 
+### Block turns
+
+The root entry also exports the turn model over session-log blocks, the one a
+transcript renders a thread from. It replaces the v1 turn helpers over
+`MessageWithParts` (`groupMessagesIntoTurns`, `collectTurnParts`,
+`getTurnStatus`, `getTurnError`, `getTurnCost`, `findLastTextPart`,
+`getShellModePart`, `isAttachment`, `segmentTurn`, `groupShowSegments`,
+`splitTurnWork`, `mergeBurstSteps`, `compactionTurnInfo`, `resolveWorkingTurn`,
+`hasRetryingAssistantTurn`), which stay until the next major.
+
+- `sessionLogTurns(thread, options?)` returns one `SessionLogTurn` per user message:
+  `user`, `assistant` (the replies, by `reply_to` then order), `blocks`, and the
+  derived fields `status`, `error`, `cost`, `compaction`, `threads`, `plan`,
+  `shell`, `response`, `attachments`, `live`, `queued` and `retrying`, computed
+  once. Options: `busy` (the session works), `liveMessageId` (the working
+  projection's turn), `held` (the prompts the inbox still holds, in queue
+  order), `threads` (the session's threads, for `threads`), `pricing`. A turn
+  keeps its identity while its messages and derived fields do. A message out
+  of context (a failed attempt) keeps its turn.
+- `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
+  and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
+  the settled-turn fold, and the rows of a burst.
+- `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
+  or one the closure rule closed, is `running` or `pending` on a live turn and
+  `interrupted` on any other.
+- `sessionLogActivityText(turn, childMessages?)` is the activity line of a live turn.
+- `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
+  prompt the thread has not placed; append it and name it in `held`.
+- `sessionLogThreadMetrics(thread, { pricing? })` is one thread's `cost` (the turns'
+  cost summed), `messages` (`all`, `user`, `assistant`: a compaction counts as its marker
+  and, once landed, its summary reply), `tokens` (every priced reply's usage summed) and
+  `context` (the last reply with tokens: its `usage` is the context size): what a context
+  modal's overview and its sub-agent rows show.
+- A pending permission or question matches a call by `call.call_id`
+  (`getPermissionForTool`, `getQuestionForTool`).
+
+Both layers give one answer for a record converted from v1: the SDK's test
+suite compares them on every golden fixture.
+
 ## Kortix as a Backend (server-side)
 
 `createKortix()` stores its config — crucially, the bearer-token getter — in a
@@ -971,11 +1010,20 @@ interface KortixPlatformConfig {
   billingEnabled?: boolean;
   sandboxId?: string | null;
   onError?: (error: unknown, context?: unknown) => void;
+  onAccessRemedy?: (code: 'sso_required' | 'account_mfa_required') => void;
   onToast?: (level, message, options?) => void;
   onNotify?: (event) => void;
   featureFlags?: KortixFeatureFlagOverrides; // per-flag overrides for non-Next.js hosts
 }
 ```
+
+`onAccessRemedy` receives the code of a 403 the person can fix: `sso_required`
+(sign in again through the account's identity provider) or
+`account_mfa_required` (complete multi-factor authentication). It runs for every
+response of the REST client (`backendApi`), also one made with `showErrors: false`.
+The session runtime proxy and the event stream do not call it. A browser also receives the
+`kortix:sso-required` or `kortix:mfa-required` window event. React Native has no
+DOM events, so `apps/mobile` uses the hook.
 
 `clientSource` is deprecated and inert. The audit log records what the API
 authenticated (`credential_kind`: browser session, personal access token,

@@ -7,7 +7,8 @@
  * One transaction per batch, under a per-session advisory lock:
  * - Generation fence. `session_logs.generation` is the session's generation. A
  *   batch with an older one answers 409 and writes nothing. An equal one is
- *   accepted. A newer one is accepted and becomes the session's (P6 mints them).
+ *   accepted. A newer one is accepted and becomes the session's (the restore
+ *   claim mints them: `session-log-restore.ts`).
  * - Revisions. A put or a tombstone applies only when its (generation, rev) is
  *   above the stored message's. Every pair of the batch is acknowledged, applied
  *   or not, after commit. A higher put revives a tombstoned message.
@@ -22,10 +23,12 @@
  * drops fields this API does not know, and the record would lose them (the same
  * rule as `upcast`). One exception, F3: a text over 256 kB is stored as a
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
- * are written before the transaction. `content_hash` is always the hash of the
- * record as sent, so the manifest the daemon reconciles against does not change.
- * A second exception: lone UTF-16 surrogates are replaced with U+FFFD
- * (`wellFormedJson`), because Postgres jsonb rejects them outright.
+ * are written before the transaction. `content_hash` hashes the sanitized full
+ * message before offload, not the stored preview/reference record. The daemon
+ * reconciles by rev/seq, not by hash. A second
+ * exception: a NUL and lone UTF-16 surrogates are replaced with U+FFFD
+ * (`jsonbSafeValue`), because Postgres jsonb and text columns reject them
+ * outright.
  *
  * Two writers, one apply path (`applyBatch`):
  * - The journal. Its first committed batch with a put or a tombstone sets
@@ -59,6 +62,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
+import { jsonbSafeValue } from './lib/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
 
 export interface SessionLogScope {
@@ -114,22 +118,18 @@ export const sessionLogContentHash = (message: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(message)).digest('hex')}`;
 
 /**
- * Postgres jsonb rejects lone UTF-16 surrogates (`\ud800`–`\udfff` without
- * their pair) with `unsupported Unicode escape sequence`: a harness slicing
- * an emoji mid-code-point emits one in a block text, JSON keeps it as an
- * escape, and ONE poisoned record failed the whole INSERT — which the daemon
- * then re-sent forever (2026-10-12: 243 5xx in a day on this route, one
- * 730 kB batch retried 171 times). Replace every lone surrogate with U+FFFD
- * before anything is hashed or written, the way a terminal renders it. The
- * round-trip is exact for parsed-JSON data (no undefined/Date/Map values),
- * so the stored record and its `content_hash` keep describing each other.
+ * Postgres jsonb and text columns reject a string carrying U+0000 or an
+ * unpaired surrogate (`unsupported Unicode escape sequence`, 22P05; a raw NUL
+ * byte in a text parameter, 22021): a harness reading binary output emits
+ * UTF-16LE-like NUL padding or gzip bytes in tool text, JSON keeps them as
+ * escapes, and ONE poisoned record failed the whole INSERT — which the daemon
+ * then re-sent forever (243 5xx in a day, one 730 kB batch retried 171 times,
+ * KRTX-211; the same shape with NULs, KRTX-2178). Replace every bad code unit
+ * with U+FFFD before anything is hashed or written, the way a terminal renders
+ * it. `jsonbSafeValue` (`lib/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
+ * the transcript mirror shares; unlike `toWellFormed`, it also strips NUL,
+ * which is a well-formed string Postgres still refuses.
  */
-const wellFormedJson = <T>(value: T): T =>
-  JSON.parse(
-    JSON.stringify(value, (_key, v: unknown) =>
-      typeof v === 'string' && !v.isWellFormed() ? v.toWellFormed() : v,
-    ),
-  ) as T;
 
 /** Apply one journal batch. `batch` is the request body as sent, already validated by `SessionLogJournalRequestSchema`. */
 export async function ingestSessionLogJournal(
@@ -157,7 +157,7 @@ async function applyBatch(
   request: SessionLogJournalRequest,
   capture: CaptureWrite | null,
 ): Promise<SessionLogJournalOutcome | 'skipped'> {
-  const batch = wellFormedJson(request);
+  const batch = jsonbSafeValue(request);
   if (!(await sessionExists(scope))) return NO_SESSION;
   // One put at a time: at most one large text is in memory twice.
   const records: SessionLogPut['message'][] = [];

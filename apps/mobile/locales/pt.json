@@ -138,6 +138,7 @@
     "browseAsGuest": "Navegar como convidado",
     "signOutFailed": "Não foi possível sair. Verifique sua conexão e tente novamente.",
     "signingOut": "Saindo…",
+    "ssoRequired": "Sua organização exige login único. Continue com SSO.",
     "mfa": {
       "title": "Confirme que é você",
       "enterCode": "Digite o código de 6 dígitos do seu app autenticador.",

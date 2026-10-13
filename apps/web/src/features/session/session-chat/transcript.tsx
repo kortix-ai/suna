@@ -121,6 +121,7 @@ import {
 } from '@/ui';
 import {
   isAbortError,
+  toolCallBlock,
   turnEndNotice,
   type SessionTurnOutcome,
   type TurnEndNotice,
@@ -1432,7 +1433,7 @@ function TurnShellMode(
     <TurnLiveContext.Provider value={working}>
       <div className="space-y-1">
         <ToolPartRenderer
-          part={part}
+          call={toolCallBlock(part)}
           sessionId={sessionId}
           disableNavigation={disableToolNavigation}
           permission={nextPermission?.tool ? nextPermission : undefined}
@@ -1789,7 +1790,7 @@ function TurnSegment({
     const visible = segment.parts.filter(shouldShowToolPart);
     if (visible.length === 1) {
       return (
-        <ToolPartRenderer part={visible[0]} sessionId={sessionId} disableNavigation={disableNavigation} />
+        <ToolPartRenderer call={toolCallBlock(visible[0])} sessionId={sessionId} disableNavigation={disableNavigation} />
       );
     }
     return <ShowGroupRenderer parts={visible} sessionId={sessionId} disableNavigation={disableNavigation} />;
@@ -1798,7 +1799,7 @@ function TurnSegment({
     if (!shouldShowToolPart(segment.part)) return null;
     return (
       <ToolPartRenderer
-        part={segment.part}
+        call={toolCallBlock(segment.part)}
         sessionId={sessionId}
         disableNavigation={disableNavigation}
         permission={getPermissionForTool(permissions, segment.part.callID)}
