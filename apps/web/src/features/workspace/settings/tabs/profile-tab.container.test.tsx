@@ -187,13 +187,13 @@ describe('ProfileTab — a failed deletion-status check fails closed', () => {
    *  definitive "isn't available on this deployment" claim. While a retry is
    *  in flight after a failure — `fetchStatus: 'fetching'` with
    *  `errorUpdatedAt > dataUpdatedAt` — the failed row must hold. */
-  test('keeps the failed row while a retry is in flight', async () => {
+  test.each(['fetching', 'paused'] as const)('keeps the failed row while a retry is %s', async (fetchStatus) => {
     const success = deletionStatusAnswer;
     deletionStatusAnswer = {
       data: undefined,
       isLoading: false,
       isError: false,
-      fetchStatus: 'fetching',
+      fetchStatus,
       errorUpdatedAt: 5,
       dataUpdatedAt: 0,
       refetch: () => {},

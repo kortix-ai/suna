@@ -805,7 +805,7 @@ export function ProfileTab() {
   const isDeletionStatusFailed =
     !deletionStatus &&
     (isDeletionStatusError ||
-      (deletionStatusFetchStatus === 'fetching' && deletionStatusFailedAt > deletionStatusAnsweredAt));
+      (deletionStatusFetchStatus !== 'idle' && deletionStatusFailedAt > deletionStatusAnsweredAt));
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);
