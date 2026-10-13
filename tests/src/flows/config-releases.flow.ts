@@ -2586,7 +2586,7 @@ harnessFlow(
       };
 
       let first = '';
-      await ctx.step('the box runs the release over the cap, built from its own checkout with no download', async () => {
+      await ctx.step('the box runs the release over the cap, from the project snapshot or its own git fetch, never the API archive', async () => {
         const release = await waitFor(releaseOf, {
           until: (rel) => Boolean(rel) && rel.source === 'release' && rel.proven === true && rel.running_release_id === rel.desired_release_id,
           timeoutMs: 180_000,
@@ -2596,7 +2596,12 @@ harnessFlow(
         if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
         first = String(release.running_release_id);
         const transport = await materialized(first);
-        if (transport !== 'workspace') throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the checkout`);
+        // Since #9770 the config provider never reads /workspace. A release over
+        // the archive cap comes from the S3 project snapshot when one is built,
+        // else from a depth-1 git fetch of the release commit.
+        if (transport !== 'snapshot' && transport !== 'git') {
+          throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the project snapshot or a git fetch`);
+        }
       });
 
       await ctx.step('the runtime serves the agent of that release', async () => {
