@@ -23,6 +23,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { EPHEMERAL_RETIRED_KEY, ownSessionStateVolume } from '../../platform/services/ephemeral-sandbox';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { PROVIDER_REMOVAL_PENDING_KEY, attemptArchivedBoxRemoval } from '../reaping/archived-box-removal';
 import { SESSION_DELETE_ROWS_DAYS, sessionRestoreUntil } from '../session-log-purge';
 import { transitionSandbox, transitionSession } from './status-transitions';
@@ -60,7 +61,7 @@ const REMOVAL_PENDING = {
 /** The restore lost a race to a write that moved one of its rows. */
 class RestoreLost extends Error {}
 
-const noPurgeMarker = sql`not exists (select 1 from ${sessionContentPurges} where ${sessionContentPurges.sessionId} = ${projectSessions.sessionId})`;
+const noPurgeMarker = sql`not exists (select 1 from ${sessionContentPurges} where ${sessionContentPurges.sessionId} = ${qualifiedColumn(projectSessions.sessionId)})`;
 const removalPending = (metadata: unknown) =>
   (metadata as Record<string, unknown> | null)?.[PROVIDER_REMOVAL_PENDING_KEY] != null;
 

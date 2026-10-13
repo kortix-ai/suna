@@ -1169,13 +1169,14 @@ describe('restore (restoreSession)', () => {
     const deletedAt = Date.parse((await read(f)).session.metadata.deletedAt as string);
 
     expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS))).toMatchObject({ status: 410, code: 'session_purged' });
-    expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS - 1))).toEqual({ ok: true });
 
     const purged = await deletedFixture();
     await db.execute(sql`
       insert into kortix.session_content_purges (session_id, project_id, account_id, reason, rows_purged_at)
       values (${purged.sessionId}, ${project.project_id}::uuid, ${project.account_id}::uuid, 'session_deleted', now())`);
     try {
+      // Another session's marker does not block this one: the guard correlates on its own id.
+      expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS - 1))).toEqual({ ok: true });
       expect(await runRestore(purged)).toMatchObject({ status: 410, code: 'session_purged' });
       const { session, sandbox } = await read(purged);
       expect(typeof session.metadata.deletedAt).toBe('string');
