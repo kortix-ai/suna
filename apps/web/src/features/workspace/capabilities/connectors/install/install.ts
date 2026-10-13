@@ -1,8 +1,4 @@
-import type {
-  AdminConnector,
-  ConnectorDraftInput,
-  ConnectorSyncResult,
-} from '@kortix/sdk';
+import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult } from '@kortix/sdk';
 
 import {
   buildEasyConnectConnectorDraft,
@@ -130,7 +126,8 @@ export interface InstallDeps {
 
 export type InstallResult =
   | { status: 'installed'; slug: string }
-  | { status: 'sync_failed'; name: string; error: string };
+  /** The profile exists; its page shows the error and Retry. */
+  | { status: 'sync_failed'; slug: string; name: string; error: string };
 
 /**
  * Install = add the connector PROFILE to the project, nothing more.
@@ -161,7 +158,7 @@ export async function runInstall(
   // An MCP server that signs in with OAuth answers its first tools/list with
   // 401 or 403: that is the sign-in still to do, not a broken install.
   if (syncError && !(target.provider === 'mcp' && isAuthChallenge(syncError))) {
-    return { status: 'sync_failed', name, error: syncError };
+    return { status: 'sync_failed', slug, name, error: syncError };
   }
   return { status: 'installed', slug };
 }

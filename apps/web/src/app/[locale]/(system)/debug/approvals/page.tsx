@@ -1,31 +1,23 @@
 'use client';
 
-import {
-  COMPOSER_INPUT_SLOT_CLASS,
-  COMPOSER_SHELL_CLASS,
-} from '@/features/session/composer/composer';
+import { Composer } from '@/features/session/composer/composer';
 import { SessionApprovalNotice } from '@/features/session/session-approval-prompt';
-import { approvalNoticeRows } from '@/features/session/session-approval-review';
-import type { SessionAuditAction } from '@kortix/sdk';
-import { useTranslations } from '@/i18n/use-translations';
+import { approvalNoticeRows, type DecidedApproval } from '@/features/session/session-approval-review';
+import { SESSION_NOTICE, type SessionAuditAction } from '@kortix/sdk';
 import { useState } from 'react';
 
 /**
  * /debug/approvals
  *
- * Visual harness for the in-session connector approval card. Seeing it for
- * real otherwise needs a live policy-gated connector call, which is why two
- * defects sat in it unnoticed:
+ * Visual harness for the in-session connector approval, docked onto the REAL
+ * composer the way a session mounts it: the notice goes in `inputSlot`, and
+ * `questionActive` is on while a call is pending — the same docked surface a
+ * question gets. Seeing it for real otherwise needs a live policy-gated
+ * connector call.
  *
- *  1. The card had no `w-full`, so the composer's `items-center` strip sized
- *     it to its CONTENT — the width tracked whatever tool name was pending.
- *  2. Any elided value (a long URL, an 11th recipient, an attachment body)
- *     disabled Approve and printed a warning, leaving Deny as the only answer.
- *
- * The strip below is the REAL one — `COMPOSER_INPUT_SLOT_CLASS` and
- * `COMPOSER_SHELL_CLASS` are imported from the composer, not copied — so a
- * width measured here is the width the session renders. Not linked from
- * anywhere; just hit /debug/approvals.
+ * Deny / Approve here only record the decision locally; the decided call drops
+ * out of the pending set and the next one takes its place, as in a session.
+ * Not linked from anywhere; just hit /debug/approvals.
  */
 
 const BASE: SessionAuditAction = {
@@ -36,14 +28,14 @@ const BASE: SessionAuditAction = {
   status: 'pending_approval',
   risk: 'write',
   acted_by: 'user-1',
-  acted_by_email: 'marko@kortix.ai',
+  acted_by_email: 'user@example.test',
   resolved_by: null,
   resolved_by_email: null,
   result_summary: {
-    args_preview: { to: ['marko@kortix.ai'], subject: 'Weekly report' },
+    args_preview: { to: ['ops@example.test'], subject: 'Weekly report' },
     args_preview_complete: true,
   },
-  at: new Date().toISOString(),
+  at: new Date(Date.now() - 17 * 3_600_000).toISOString(),
   resolved_at: null,
   approval_url: 'https://dev.kortix.com/approve/tok-1',
 };
@@ -54,21 +46,50 @@ const row = (id: string, patch: Partial<SessionAuditAction>): SessionAuditAction
   ...patch,
 });
 
+const SLACK_TEST = row('exec-slack-1', {
+  action: 'kortix_slack.send_message',
+  connector: 'kortix_slack',
+  result_summary: {
+    args_preview: { channel: '#triage', text: 'test' },
+    args_preview_complete: true,
+  },
+});
+
+const SLACK_LONG = row('exec-slack-2', {
+  action: 'kortix_slack.send_message',
+  connector: 'kortix_slack',
+  result_summary: {
+    args_preview: {
+      channel: '#triage',
+      text: 'Fixed — warm "New session" row gone from the sidebar after a reload. Root cause was a stale cache entry kept alive by the optimistic insert; the list now reconciles on the first server page.',
+    },
+    args_preview_complete: true,
+  },
+});
+
 const SCENARIOS: Record<string, SessionAuditAction[]> = {
-  'Complete preview (approvable)': [BASE],
-  // The regression case: `args_preview_complete` is false, but every elision
-  // is written into the preview, so the call is still decidable.
-  'Shortened value — attachment (approvable)': [
+  'Two pending (the screenshot)': [SLACK_TEST, SLACK_LONG],
+  'One pending': [BASE],
+  'Three pending, mixed risk': [
+    BASE,
+    row('exec-2', { action: 'github.repos.delete', risk: 'destructive' }),
+    row('exec-3', {
+      action: 'slack.ping',
+      risk: 'read',
+      result_summary: { args_preview: { channel: '#ops' }, args_preview_complete: true },
+    }),
+  ],
+  'Agent context + shortened value': [
     row('exec-trunc', {
-      action: 'gmail.send_email',
       result_summary: {
         args_preview: {
-          to: ['ops@kortix.ai'],
+          to: ['ops@example.test'],
           subject: 'Signed contract',
           body: 'Attached, please counter-sign.',
           attachment: '[204800 chars omitted]',
         },
         args_preview_complete: false,
+        approval_context: 'The user asked me to send the signed contract to ops once it was ready.',
       },
     }),
   ],
@@ -79,75 +100,88 @@ const SCENARIOS: Record<string, SessionAuditAction[]> = {
       result_summary: { args_preview_complete: false },
     }),
   ],
-  'Short tool name (the width regression)': [
-    row('exec-short', {
-      action: 'slack.ping',
-      risk: 'read',
-      result_summary: { args_preview: { channel: '#ops' }, args_preview_complete: true },
-    }),
-  ],
-  'Three pending at once': [
-    BASE,
-    row('exec-2', { action: 'github.repos.delete', risk: 'destructive' }),
-    row('exec-3', { action: 'slack.ping', risk: 'read' }),
-  ],
 };
 
-export default function DebugApprovalsPage() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [scenario, setScenario] = useState<keyof typeof SCENARIOS>(
-    'Shortened value — attachment (approvable)',
-  );
-  const [expanded, setExpanded] = useState<string | null>('exec-trunc');
-  const [decided, setDecided] = useState<Record<string, 'approve' | 'deny'>>({});
+const NOTICES = { none: null, waking: SESSION_NOTICE.waking } as const;
 
-  const actions = SCENARIOS[scenario];
-  const rows = approvalNoticeRows(actions, {}).map((r) => ({
-    ...r,
-    decision: decided[r.action.execution_id] ?? null,
-  }));
+export default function DebugApprovalsPage() {
+  const [scenario, setScenario] = useState<string>('Two pending (the screenshot)');
+  const [notice, setNotice] = useState<keyof typeof NOTICES>('waking');
+  const [current, setCurrent] = useState<string | null>(null);
+  const [decided, setDecided] = useState<Record<string, DecidedApproval>>({});
+
+  const actions = SCENARIOS[scenario].filter((a) => !decided[a.execution_id]);
+  const rows = approvalNoticeRows(actions, decided);
+  const docked = rows.some((r) => r.decision === null);
+
+  const pill = (active: boolean) =>
+    `cursor-pointer rounded-md border px-2.5 py-1 text-xs ${
+      active
+        ? 'border-foreground bg-foreground text-background'
+        : 'border-border text-muted-foreground hover:text-foreground'
+    }`;
 
   return (
-    <div className="bg-background min-h-screen py-10">
-      <div className="mx-auto mb-6 flex max-w-210 flex-wrap gap-2 px-4">
-        {Object.keys(SCENARIOS).map((key) => (
+    <div className="bg-background flex min-h-screen flex-col">
+      <div className="mx-auto flex w-full max-w-210 flex-col gap-3 px-4 pt-10">
+        <div className="flex flex-wrap gap-2">
+          {Object.keys(SCENARIOS).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                setScenario(key);
+                setCurrent(null);
+                setDecided({});
+              }}
+              className={pill(scenario === key)}
+            >
+              {key}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground text-xs">Notice under the card</span>
+          {(Object.keys(NOTICES) as (keyof typeof NOTICES)[]).map((key) => (
+            <button key={key} type="button" onClick={() => setNotice(key)} className={pill(notice === key)}>
+              {key}
+            </button>
+          ))}
           <button
-            key={key}
             type="button"
             onClick={() => {
-              setScenario(key);
-              setExpanded(SCENARIOS[key][0]?.execution_id ?? null);
+              setCurrent(null);
               setDecided({});
             }}
-            className={`rounded-md border px-2.5 py-1 text-xs ${
-              scenario === key
-                ? 'border-foreground bg-foreground text-background'
-                : 'border-border text-muted-foreground hover:text-foreground'
-            }`}
+            className={pill(false)}
           >
-            {key}
+            Reset decisions
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* The composer's own shell + inset strip, imported not copied. */}
-      <div className={COMPOSER_SHELL_CLASS}>
-        <div className="relative isolate flex w-full flex-col items-center justify-center">
-          <div data-testid="composer-input-slot" className={COMPOSER_INPUT_SLOT_CLASS}>
+      {/* Transcript stand-in, so the docked card reads against real height. */}
+      <div className="flex-1" />
+
+      <div className="pb-6">
+        <Composer
+          onSend={() => {}}
+          sessionId="ses_debug"
+          notice={NOTICES[notice]}
+          questionActive={docked}
+          inputSlot={
             <SessionApprovalNotice
               rows={rows}
-              expanded={expanded}
+              current={current}
               busy={{}}
-              onToggle={(id) => setExpanded((current) => (current === id ? null : id))}
-              onDecide={(id, decision) => setDecided((current) => ({ ...current, [id]: decision }))}
+              onSelect={setCurrent}
+              onDecide={(id, decision) => {
+                const action = SCENARIOS[scenario].find((a) => a.execution_id === id);
+                if (action) setDecided((d) => ({ ...d, [id]: { action, decision } }));
+              }}
             />
-          </div>
-        </div>
-        <div className="bg-popover border-border rounded-b-xl border px-3 py-4">
-          <span className="text-muted-foreground text-sm">
-            {tI18nComplete.raw('textde781187cbfb')}
-          </span>
-        </div>
+          }
+        />
       </div>
     </div>
   );

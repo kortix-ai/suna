@@ -37,40 +37,20 @@ function render(node: React.ReactNode): string {
 }
 
 describe('SessionApprovalNotice', () => {
-  test('collapsed: states the call, offers Review, and keeps the standalone link', () => {
+  test('docks open on the call: names it, shows every parameter, decides in place', () => {
     const html = render(
       <SessionApprovalNotice
         rows={approvalNoticeRows([pendingAction], {})}
-        expanded={null}
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
       />,
     );
 
     expect(html).toContain('The agent needs your approval');
-    expect(html).toContain('waiting for one decision');
-    expect(html).toContain('gmail.send_email');
-    expect(html).toContain('to: sam@example.test · subject: Weekly report');
-    expect(html).toContain('Review');
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
-    expect(html).not.toContain('Approve this call');
-    expect(html).not.toContain('Parameters');
-  });
-
-  test('expanded: reviews every redacted parameter and decides in place', () => {
-    const html = render(
-      <SessionApprovalNotice
-        rows={approvalNoticeRows([pendingAction], {})}
-        expanded="exec-1"
-        busy={{}}
-        onToggle={() => undefined}
-        onDecide={() => undefined}
-      />,
-    );
-
     expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('gmail.send_email');
     expect(html).toContain('Parameters');
     expect(html).toContain('sam@example.test');
     expect(html).toContain('The approver must see the complete email content.');
@@ -78,6 +58,43 @@ describe('SessionApprovalNotice', () => {
     expect(html).toContain('Approve this call');
     expect(html).toContain('Deny');
     expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
+    // One call: no pager.
+    expect(html).not.toContain('1 / 1');
+  });
+
+  test('several pending: pages one call at a time, `current` picks which', () => {
+    const second: SessionAuditAction = {
+      ...pendingAction,
+      execution_id: 'exec-2',
+      action: 'github.repos.delete',
+      risk: 'destructive',
+    };
+    const rows = approvalNoticeRows([pendingAction, second], {});
+    const first = render(
+      <SessionApprovalNotice
+        rows={rows}
+        current={null}
+        busy={{}}
+        onSelect={() => undefined}
+        onDecide={() => undefined}
+      />,
+    );
+    expect(first).toContain('1 / 2');
+    expect(first).toContain('gmail.send_email');
+    expect(first).not.toContain('github.repos.delete');
+
+    const picked = render(
+      <SessionApprovalNotice
+        rows={rows}
+        current="exec-2"
+        busy={{}}
+        onSelect={() => undefined}
+        onDecide={() => undefined}
+      />,
+    );
+    expect(picked).toContain('2 / 2');
+    expect(picked).toContain('github.repos.delete');
+    expect(picked).not.toContain('gmail.send_email');
   });
 
   test('expanded: a SHORTENED value is still approvable in place', () => {
@@ -94,9 +111,9 @@ describe('SessionApprovalNotice', () => {
     const html = render(
       <SessionApprovalNotice
         rows={approvalNoticeRows([truncated], {})}
-        expanded="exec-1"
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
       />,
     );
@@ -115,9 +132,9 @@ describe('SessionApprovalNotice', () => {
     const html = render(
       <SessionApprovalNotice
         rows={approvalNoticeRows([blind], {})}
-        expanded="exec-1"
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
       />,
     );
@@ -133,9 +150,9 @@ describe('SessionApprovalNotice', () => {
         rows={approvalNoticeRows([], {
           'exec-1': { action: pendingAction, decision: 'approve' },
         })}
-        expanded={null}
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
       />,
     );
@@ -149,9 +166,9 @@ describe('SessionApprovalNotice', () => {
     const html = render(
       <SessionApprovalNotice
         rows={[]}
-        expanded={null}
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
       />,
     );
@@ -172,32 +189,22 @@ describe('SessionApprovalNotice with Slack channel names', () => {
     result_summary: { args_preview: { channel: 'C0TEST1', text: 'Deploy done' }, args_preview_complete: true },
   };
 
-  test('collapsed and expanded, a bound channel reads by name', () => {
+  // The collapsed one-line summary is `approvalArgsSummary`, pinned with the
+  // same names in session-approval-review.test.ts.
+  test('the parameters keep the exact id beside the bound name', () => {
     const names = new Map([['C0TEST1', '#general']]);
-    const collapsed = render(
+    const html = render(
       <SessionApprovalNotice
         rows={approvalNoticeRows([slackAction], {})}
-        expanded={null}
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
         channelNames={names}
       />,
     );
-    expect(collapsed).toContain('channel: #general · text: Deploy done');
-
-    const expanded = render(
-      <SessionApprovalNotice
-        rows={approvalNoticeRows([slackAction], {})}
-        expanded="exec-slack"
-        busy={{}}
-        onToggle={() => undefined}
-        onDecide={() => undefined}
-        channelNames={names}
-      />,
-    );
-    expect(expanded).toContain('C0TEST1');
-    expect(expanded).toContain('#general');
+    expect(html).toContain('C0TEST1');
+    expect(html).toContain('#general');
   });
 
   test("the session prompt reads names from the project's bindings, only while an approval shows", () => {

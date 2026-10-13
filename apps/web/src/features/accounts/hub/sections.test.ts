@@ -65,7 +65,7 @@ describe('the catalog', () => {
   test('the ledger is the only full-width pane', () => {
     expect(paneWidth('transactions')).toBe('full');
     expect(paneWidth('settings')).toBe('default');
-    expect(paneWidth('members')).toBe('wide');
+    expect(paneWidth('members')).toBe('fluid');
   });
 });
 
@@ -108,6 +108,53 @@ describe('accountHubCrumbs', () => {
         testUiTranslator,
       )[1]?.pending,
     ).toBe(true);
+  });
+
+  test('a member panel hangs off Members, and its third crumb goes back to the list', () => {
+    expect(
+      accountHubCrumbs(
+        {
+          accountId: id,
+          activeSection: 'members',
+          accountName: 'Acme',
+          memberId: 'u_1',
+          memberName: 'dana@example.com',
+        },
+        testUiTranslator,
+      ),
+    ).toEqual([
+      root,
+      account,
+      { label: 'Members', to: { accountId: id, params: { tab: 'members' } } },
+      { label: 'dana@example.com' },
+    ]);
+    // Before the member list loads, the last crumb is a placeholder.
+    expect(
+      accountHubCrumbs(
+        { accountId: id, activeSection: 'members', accountName: 'Acme', memberId: 'u_1' },
+        testUiTranslator,
+      )[3]?.pending,
+    ).toBe(true);
+  });
+
+  test('a project panel hangs off Projects, and its third crumb goes back to the list', () => {
+    expect(
+      accountHubCrumbs(
+        {
+          accountId: id,
+          activeSection: 'access-projects',
+          accountName: 'Acme',
+          projectId: 'p_1',
+          projectName: 'Website',
+        },
+        testUiTranslator,
+      ),
+    ).toEqual([
+      root,
+      account,
+      { label: 'Projects', to: { accountId: id, params: { tab: 'access-projects' } } },
+      { label: 'Website' },
+    ]);
   });
 
   test('a guided wizard hangs off Identity, and its third crumb goes back there', () => {
