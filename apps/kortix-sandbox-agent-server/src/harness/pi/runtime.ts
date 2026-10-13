@@ -190,7 +190,7 @@ interface ChildSession {
   turnEvents?: PiTurnEvents
 }
 
-interface ChildDump {
+export interface PiChildDump {
   id: string
   title: string
   agentName: string
@@ -201,6 +201,8 @@ interface ChildDump {
   messageIds?: Array<string | null>
   /** The session-log seq of each agent message. Absent in dumps written before P2.5. */
   seqs?: number[]
+  /** The seq the child's next message gets: above every seq the thread ever held (a restore sets it from the API's `seq_max`). Absent before P6.2. */
+  nextSeq?: number
   transcript: KortixMessage[]
 }
 
@@ -228,7 +230,8 @@ interface Steered {
   message: AgentMessage
 }
 
-interface Dump {
+/** The pi native store kortixd keeps per session (`piDumpPath`); `session-log-restore.ts` writes one from a session log. */
+export interface PiDump {
   version: 1
   rootId: string
   title: string
@@ -241,10 +244,24 @@ interface Dump {
   header?: SessionHeader
   /** pi entry id → Kortix message id (session log). Absent in dumps written before P2.5. */
   messageIds?: Record<string, string>
+  /** pi entry id → session-log seq of each entry a restore wrote (session-log.ts, the seq rule). Absent unless the store was restored (P6.2). */
+  seqs?: Record<string, number>
   transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
-  children?: ChildDump[]
+  children?: PiChildDump[]
+}
+
+export const piDumpPath = (stateDir: string, sessionId: string) => join(stateDir, `${sessionId}.json`)
+
+/** The root id a dump names, or null when there is none. ponytail: parses the whole dump once more at start; read a side file if boot time shows it. */
+function dumpRootId(path: string): string | null {
+  try {
+    const rootId = (JSON.parse(readFileSync(path, 'utf8')) as { rootId?: unknown }).rootId
+    return typeof rootId === 'string' && rootId ? rootId : null
+  } catch {
+    return null
+  }
 }
 
 /** The reply `agent` streams now, as the session-log snapshot names it. */
@@ -334,7 +351,6 @@ export class PiRuntime {
   /** The compaction in flight: its summary message on the wire. */
   private compaction: KortixAssistantMessageInfo | null = null
   private resetProgressWatchdog: (() => void) | null = null
-  private workspaceReady = true
   /**
    * The Kortix message id of each pi message object (root and children): pi
    * stores its own ids, the session log uses the transcript's. Read into
@@ -345,6 +361,8 @@ export class PiRuntime {
   private readonly nativeSeqs = new WeakMap<object, number>()
   /** pi entry id → Kortix message id: what `nativeIds` resolved, the restored map and compaction entries. */
   private readonly entryIds = new Map<string, string>()
+  /** pi entry id → seq of each entry a session-log restore wrote (`PiDump.seqs`). */
+  private entrySeqs: Record<string, number> = {}
   /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
   private turnPromptMapped = false
 
@@ -354,7 +372,8 @@ export class PiRuntime {
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
-    this.rootId = mintRootId(opts.sessionId)
+    // A restored store (session-log-restore.ts) names the log's root, so a session keeps one root across harnesses.
+    this.rootId = dumpRootId(piDumpPath(opts.cfg.piStateDir, opts.sessionId)) ?? mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
     this.title = 'New session'
@@ -424,10 +443,6 @@ export class PiRuntime {
 
   get sessionId(): string {
     return (this.env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
-  }
-
-  markWorkspaceReady(): void {
-    this.workspaceReady = true
   }
 
   async start(): Promise<void> {
@@ -507,6 +522,10 @@ export class PiRuntime {
       this.childAgentOptions = { convertToLlm, ...host.extensionAgentHooks(this.runner) }
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
+      // A `./` package is a file of the running config. The image default has
+      // none, and the workspace is never a config source while a release is in play.
+      const packageRoot = this.projectRoot()
+      if (packageRoot === null) project.entries = project.entries.filter((entry) => host.parseNpmSource(typeof entry === 'string' ? entry : entry.source))
       this.pi = await host.createPiSession({
         projectConfigDir: await this.projectConfigDir(),
         agent,
@@ -515,7 +534,8 @@ export class PiRuntime {
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
         projectPackages: project.entries,
-        packageRoot: this.projectRoot() ?? this.workspace,
+        packageRoot: packageRoot ?? undefined,
+        discoveryRoot: packageRoot,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
@@ -629,7 +649,6 @@ export class PiRuntime {
    */
   admit(input: PromptInput): { messageId: string; done: Promise<TurnOutcome> } {
     if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
-    if (!this.workspaceReady) throw new PromptRejected('workspace is not ready')
     const messageId = input.messageID ?? this.clock.mint(this.now())
     if (this.knows(messageId)) throw new PromptRejected(`message ${messageId} was already admitted`)
     this.clock.observe(messageId)
@@ -1753,6 +1772,7 @@ export class PiRuntime {
       entries: manager.getEntries(),
       leafId: manager.getLeafId(),
       entryMessageIds: this.entryMessageIds(),
+      entrySeqs: this.entrySeqs,
       transcript: this.transcript.all(),
       children: [...this.children.values()].map((child) => {
         const agentMessages = child.agent ? child.agent.state.messages : child.agentMessages
@@ -1780,21 +1800,21 @@ export class PiRuntime {
   // ── durability ───────────────────────────────────────────────────────────
 
   private dumpPath(): string {
-    return join(this.cfg.piStateDir, `${this.sessionId}.json`)
+    return piDumpPath(this.cfg.piStateDir, this.sessionId)
   }
 
   private persist(): void {
     if (!this.agent) return
     try {
       mkdirSync(this.cfg.piStateDir, { recursive: true, mode: 0o700 })
-      const dump: Dump = {
+      const dump: PiDump = {
         version: 1,
         rootId: this.rootId,
         title: this.title,
         createdAt: this.createdAt,
         agentMessages: this.agent.state.messages,
         ...(this.pi
-          ? { entries: this.pi.session.sessionManager.getEntries(), header: this.pi.session.sessionManager.getHeader() ?? undefined, messageIds: this.entryMessageIds() }
+          ? { entries: this.pi.session.sessionManager.getEntries(), header: this.pi.session.sessionManager.getHeader() ?? undefined, messageIds: this.entryMessageIds(), seqs: this.entrySeqs }
           : {}),
         transcript: this.transcript.all(),
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
@@ -1807,6 +1827,7 @@ export class PiRuntime {
           agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
           messageIds: (child.agent ? child.agent.state.messages : child.agentMessages).map((m) => this.nativeIds.get(m) ?? null),
           seqs: this.childSeqs(child),
+          nextSeq: child.nextSeq,
           transcript: child.transcript.all(),
         })),
       }
@@ -1833,15 +1854,16 @@ export class PiRuntime {
     }
   }
 
-  private restore(): Dump | null {
+  private restore(): PiDump | null {
     try {
       if (!existsSync(this.dumpPath())) return null
-      const dump = JSON.parse(readFileSync(this.dumpPath(), 'utf8')) as Dump
+      const dump = JSON.parse(readFileSync(this.dumpPath(), 'utf8')) as PiDump
       if (dump.version !== 1 || dump.rootId !== this.rootId) return null
       this.transcript.load(dump.transcript)
       for (const message of dump.transcript) this.clock.observe(message.info.id as string)
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
       for (const [entryId, messageId] of Object.entries(dump.messageIds ?? {})) this.entryIds.set(entryId, messageId)
+      this.entrySeqs = dump.seqs ?? {}
       this.children.clear()
       for (const saved of dump.children ?? []) {
         const transcript = new TranscriptStore()
@@ -1853,7 +1875,7 @@ export class PiRuntime {
           // A dump written before P2.5 has no seqs: its messages number from 1, in order.
           this.nativeSeqs.set(m, seqs?.[i] ?? i + 1)
         })
-        const nextSeq = Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1
+        const nextSeq = Math.max(saved.nextSeq ?? 0, Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1)
         this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null, nextSeq })
       }
       this.title = dump.title

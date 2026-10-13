@@ -51,6 +51,7 @@ const {
   getPublicClientForUrl,
   resetClient,
   resetPublicClient,
+  RuntimeNotReadyError,
   systemReload,
 } = await import('./client');
 
@@ -164,7 +165,7 @@ test('getPublicClientForUrl never sends an Authorization header, even with a tok
 
 test('getPublicClientForUrl works without configureKortix ever having been called (no token-provider requirement)', async () => {
   // A real anonymous visitor's tab may never call configureKortix() with a
-  // getToken — getClientForUrl would throw '[opencode-sdk] No auth token
+  // getToken — getClientForUrl would throw '[kortix-runtime] No auth token
   // provider configured' here; the public client must not.
   const calls = captureRequests();
   const client = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
@@ -290,6 +291,21 @@ test('a JSON body that does not confirm reports failure instead of success', asy
 test('systemReload throws when the active runtime url is not ready', async () => {
   setCurrentRuntime(null);
   await expect(systemReload('full')).rejects.toThrow('Server URL not ready');
+});
+
+// The web no longer ships @opencode-ai/sdk. An "opencode-sdk" label on our
+// own runtime errors sent a bug report to the wrong package.
+test('runtime errors carry the kortix-runtime label, never opencode-sdk', async () => {
+  setCurrentRuntime(null);
+  const messages = [
+    new RuntimeNotReadyError().message,
+    await systemReload('full').catch((e: Error) => e.message),
+    (() => { try { getClientForUrl(''); } catch (e) { return (e as Error).message; } })(),
+    (() => { try { getPublicClientForUrl(''); } catch (e) { return (e as Error).message; } })(),
+  ];
+  for (const message of messages) {
+    expect(message).toStartWith('[kortix-runtime] ');
+  }
 });
 
 test('systemReload throws with the daemon error message on a non-ok response', async () => {

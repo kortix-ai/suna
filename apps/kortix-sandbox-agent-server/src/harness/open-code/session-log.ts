@@ -52,7 +52,12 @@
  * `fromV1`'s. Seqs have gaps.
  *
  * `native_hash` digests the seq and the store rows a record is built from (the
- * message row, its part rows, and a compaction's summary rows). `restore` is P6.3.
+ * message row, its part rows, and a compaction's summary rows).
+ *
+ * IDS. OpenCode accepts only its own id prefixes (`ses`, `msg`, `prt`). A restore
+ * (P6.3, `session-log-restore.ts`) re-keys an id of another harness and records
+ * native id → log id in the same file (`ids`); the export renames each row back
+ * before `fromV1`, so its records carry the log's ids.
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -70,13 +75,14 @@ import {
 import type { KortixMessageInfo, KortixPart } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import type { SessionLogChanges, SessionLogPort } from '../contract/session-log'
+import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges, startSessionLogJournal } from '../shared/session-log-journal'
 import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
 import { isOffloadPlaceholder, opencodeDbPath } from './attachment-offload'
 import { OpencodeDb, type MessageRow, type StoreSnapshot } from './opencode-db'
 import { OPENCODE_HOME } from './paths'
 import { readOpenCodeSessionPin } from './runtime-state'
+import { restoreOpenCodeSessionLog, type OpenCodeRestoreTarget } from './session-log-restore'
 
 export const OPENCODE_ADAPTER_VERSION = '1.0.0'
 
@@ -89,7 +95,7 @@ const native: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
   freeform_tool_input: false,
 }
-/** From the prototype adapter's tests (OpenCode 1.18.23); restore lands in P6.3. */
+/** From the prototype adapter's tests (OpenCode 1.18.23); the restore (P6.3) is proved against them in `opencode-session-log-restore.test.ts`. */
 export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
   harness: 'opencode',
   harness_versions: '1.18',
@@ -114,6 +120,33 @@ const parse = (data: string): J | null => {
 
 /** Per thread: the next seq to issue and the seq of every message ever seen. */
 export type SeqState = Record<string, { next: number; seqs: Record<string, number> }>
+/** Native id → log id, for the ids a restore re-keyed (session, message and part ids). */
+export type IdMap = Record<string, string>
+
+/**
+ * Renames every id field of a v1 row: `ids` for session and message ids, `parts` for a part id
+ * (and a tool attachment's), which is unique only within its message (the row's id before the rename).
+ */
+export function renameRow(
+  row: { runtime_session_id: string | null; info: J; parts: J[] },
+  ids: (id: string) => string,
+  parts: (id: string, messageId: string) => string = ids,
+): void {
+  const messageId = String(row.info.id)
+  const re = (o: J, k: string, f: (id: string) => string) => void (typeof o[k] === 'string' && (o[k] = f(o[k])))
+  const part = (id: string) => parts(id, messageId)
+  if (row.runtime_session_id) row.runtime_session_id = ids(row.runtime_session_id)
+  for (const k of ['id', 'sessionID', 'parentID']) re(row.info, k, ids)
+  for (const p of row.parts) {
+    re(p, 'id', part)
+    for (const k of ['messageID', 'sessionID', 'tail_start_id']) re(p, k, ids)
+    if (p.state?.metadata) re(p.state.metadata, 'sessionId', ids)
+    for (const a of p.state?.attachments ?? []) {
+      re(a, 'id', part)
+      for (const k of ['messageID', 'sessionID']) re(a, k, ids)
+    }
+  }
+}
 
 /**
  * Takes the bytes out of a file part (a prompt attachment or a tool result's),
@@ -145,10 +178,13 @@ export function openCodeSessionLog(input: {
   rootId: string
   store: StoreSnapshot
   seqs: SeqState
+  ids?: IdMap
   sidecar?: (path: string) => Resolved | null
 }): { log: SessionLog; hashes: Map<string, string>; issued: boolean } {
   const { store } = input
   const sidecar = input.sidecar ?? (() => null)
+  const toLog = (id: string) => input.ids?.[id] ?? id
+  const rootId = toLog(input.rootId)
   const partRows = new Map<string, Array<{ id: string; data: string }>>()
   for (const p of store.parts) (partRows.get(p.message_id) ?? partRows.set(p.message_id, []).get(p.message_id)!).push(p)
   const attachments = new Map<string, Resolved>()
@@ -159,8 +195,9 @@ export function openCodeSessionLog(input: {
   for (const row of store.messages) {
     const info = parse(row.data)
     if (!info) continue // OpencodeDb.messagePage drops it too
-    rowById.set(row.id, row)
-    if (info.summary === true && typeof info.parentID === 'string') (summaries.get(info.parentID) ?? summaries.set(info.parentID, []).get(info.parentID)!).push(row)
+    rowById.set(toLog(row.id), row)
+    const parent = typeof info.parentID === 'string' ? toLog(info.parentID) : null
+    if (info.summary === true && parent) (summaries.get(parent) ?? summaries.set(parent, []).get(parent)!).push(row)
     const parts: J[] = []
     for (const p of partRows.get(row.id) ?? []) {
       const part = parse(p.data)
@@ -168,25 +205,27 @@ export function openCodeSessionLog(input: {
       const full: J = { ...part, id: p.id, messageID: row.id, sessionID: row.session_id }
       if (full.type === 'file') {
         const r = takeBytes(full, sidecar)
-        if (r) attachments.set(p.id, r)
+        if (r) attachments.set(toLog(p.id), r)
       }
       const files = full.state?.attachments
       if (Array.isArray(files)) {
         full.state = { ...full.state, attachments: files.map((a: J, i: number) => {
           const copy = { ...a }
           const r = takeBytes(copy, sidecar)
-          if (r) attachments.set(`${p.id}#${i}`, r)
+          if (r) attachments.set(`${toLog(p.id)}#${i}`, r)
           return copy
         }) }
       }
       parts.push(full)
     }
-    rows.push({ runtime_session_id: row.session_id, info: { ...info, id: row.id, sessionID: row.session_id } as KortixMessageInfo, parts: parts as KortixPart[] })
+    const v1 = { runtime_session_id: row.session_id, info: { ...info, id: row.id, sessionID: row.session_id }, parts }
+    if (input.ids) renameRow(v1, toLog)
+    rows.push(v1 as unknown as V1Row)
   }
 
-  const log = fromV1({ session_id: input.sessionId, root_id: input.rootId, rows }, { harness: 'opencode' })
-  const sessions = new Map(store.sessions.map((s) => [s.id, s]))
-  const root = sessions.get(input.rootId)
+  const log = fromV1({ session_id: input.sessionId, root_id: rootId, rows }, { harness: 'opencode' })
+  const sessions = new Map(store.sessions.map((s) => [toLog(s.id), s]))
+  const root = sessions.get(rootId)
   const version = root?.version ?? store.sessions[0]?.version ?? 'unknown'
   const producer = { harness: 'opencode', harness_version: version, adapter_version: OPENCODE_ADAPTER_VERSION }
   const hashes = new Map<string, string>()
@@ -224,7 +263,7 @@ export function openCodeSessionLog(input: {
   delete log.grade_counts
   log.harness = { current: 'opencode', history: [{ harness: 'opencode', version, from_seq: 1, at: log.created_at }] }
   log.todos = store.todos
-    .filter((t) => t.session_id === input.rootId)
+    .filter((t) => toLog(t.session_id) === rootId)
     .map((t) => ({ content: t.content, status: t.status as SessionLog['todos'][number]['status'], priority: t.priority as SessionLog['todos'][number]['priority'] }))
   return { log, hashes, issued }
 }
@@ -234,25 +273,26 @@ export function openCodeSessionLogStatePath(): string {
 }
 
 /**
- * The persisted seq map, or `{}` (a first boot, or a lost or corrupt file:
- * seqs are issued again from 1 until P6 seeds them from the API's cursors).
+ * The persisted seq map and id map, or empty ones (a first boot, or a lost or
+ * corrupt file: seqs are issued again from 1 until a restore seeds them from
+ * the API's log).
  */
-function readSeqs(path: string): SeqState {
-  if (!existsSync(path)) return {}
+export function readSeqState(path: string): { threads: SeqState; ids: IdMap } {
+  if (!existsSync(path)) return { threads: {}, ids: {} }
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { version?: number; threads?: SeqState }
-    if (parsed.version === 1 && parsed.threads && typeof parsed.threads === 'object') return parsed.threads
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { version?: number; threads?: SeqState; ids?: IdMap }
+    if (parsed.version === 1 && parsed.threads && typeof parsed.threads === 'object') return { threads: parsed.threads, ids: parsed.ids ?? {} }
   } catch {
     // reported below
   }
   logger.warn('[session-log] the OpenCode seq map does not parse; seqs restart at 1', { path })
-  return {}
+  return { threads: {}, ids: {} }
 }
 
-function writeSeqs(path: string, threads: SeqState): void {
+export function writeSeqState(path: string, threads: SeqState, ids: IdMap): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   const tmp = `${path}.tmp-${process.pid}`
-  writeFileSync(tmp, JSON.stringify({ version: 1, threads }), { mode: 0o600 })
+  writeFileSync(tmp, JSON.stringify({ version: 1, threads, ...(Object.keys(ids).length && { ids }) }), { mode: 0o600 })
   renameSync(tmp, path)
 }
 
@@ -267,9 +307,11 @@ export function createOpenCodeSessionLogPort(options: {
   sessionId: string
   rootId: () => string | null
   statePath?: string
+  /** Where and how `restore` writes (`session-log-restore.ts`); without it `restore` throws. */
+  restoreTarget?: Omit<OpenCodeRestoreTarget, 'dbPath' | 'sessionId' | 'statePath'>
 }): SessionLogPort {
   const statePath = options.statePath ?? openCodeSessionLogStatePath()
-  const seqs = readSeqs(statePath)
+  let { threads: seqs, ids } = readSeqState(statePath)
   const sidecars = new Map<string, Resolved>()
   const sidecar = (path: string): Resolved | null => {
     const known = sidecars.get(path)
@@ -293,11 +335,11 @@ export function createOpenCodeSessionLogPort(options: {
       const rootId = options.rootId()
       const store = rootId ? read() : null
       if (!rootId || !store) return { messages: [], tombstones: [], threads: [] }
-      const { log, hashes, issued } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, sidecar })
+      const { log, hashes, issued } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
       // The seqs are durable before any record that carries one leaves the box.
       if (issued || unsaved) {
         try {
-          writeSeqs(statePath, seqs)
+          writeSeqState(statePath, seqs, ids)
           unsaved = false
         } catch (err) {
           unsaved = true
@@ -309,14 +351,14 @@ export function createOpenCodeSessionLogPort(options: {
       lastSession = out.sessionJson
       return out.changes
     },
-    /**
-     * P6.3 writes `log` into `opencode.db` here (`opencode import` keeps every
-     * id), records the seqs it wrote, and returns one cursor per thread with
-     * the hash `openCodeSessionLog` computes for each message. Until then a box
-     * restores nothing from the log: no cursors.
-     */
-    async restore(_log: SessionLog): Promise<ExportCursor[]> {
-      return []
+    /** Writes `log` into `opencode.db` and the seq map (`session-log-restore.ts`), then reads that map back. */
+    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult> {
+      if (!options.restoreTarget) throw new Error('OpenCode session-log restore needs a target (binary, project directory)')
+      const result = await restoreOpenCodeSessionLog(log, { ...options.restoreTarget, dbPath: options.dbPath, sessionId: options.sessionId, statePath }, seqMax)
+      ;({ threads: seqs, ids } = readSeqState(statePath))
+      lastSession = null
+      unsaved = false
+      return result
     },
     async fingerprint(): Promise<string> {
       const store = read()
@@ -327,7 +369,7 @@ export function createOpenCodeSessionLogPort(options: {
       if (state.seqs[messageId] === undefined) {
         state.seqs[messageId] = state.next++
         try {
-          writeSeqs(statePath, seqs)
+          writeSeqState(statePath, seqs, ids)
         } catch {
           unsaved = true // changes() writes it before any batch leaves
         }

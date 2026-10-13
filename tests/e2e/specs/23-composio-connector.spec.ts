@@ -53,6 +53,11 @@ test.describe("23 — Composio managed connector", () => {
   // welcome card, fixed bottom-right over the account rows' buttons.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("kortix:marko-welcome-dismissed", "1"));
+    // The founder welcome card can still mount over the account rows; close it
+    // whenever it is in the way of a click.
+    await page.addLocatorHandler(page.getByRole("complementary", { name: "Welcome from Marko" }), async (card) => {
+      await card.getByRole("button", { name: "Dismiss" }).click();
+    });
   });
 
   let user: AuthUser;

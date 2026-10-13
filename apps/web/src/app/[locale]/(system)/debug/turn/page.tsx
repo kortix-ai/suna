@@ -9,7 +9,21 @@ import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { PlanCard } from '@/features/session/turn/plan-card';
 import { UserMessage } from '@/features/session/turn/user-message';
 import type { MessageWithParts, Part } from '@/ui';
+import { sessionLogOfV1Rows } from '@kortix/sdk';
 import { beginOptimisticSend, runtimeKeys } from '@kortix/sdk/react';
+
+/** A burst's v1 parts as the transcript reads them: one reply's blocks (the
+ *  `fromV1` view, `sessionLogOfV1Rows`), one array per parts array. */
+const blocksByParts = new WeakMap<Part[], ReturnType<typeof sessionLogOfV1Rows>['threads'][number]['messages'][number]['blocks']>();
+function burstBlocks(parts: Part[]) {
+  let blocks = blocksByParts.get(parts);
+  if (!blocks) {
+    const row = { info: { id: 'msg_dbg_burst', sessionID: 'ses_dbg', role: 'assistant', time: { created: 1 } }, parts };
+    blocks = sessionLogOfV1Rows('dbg', 'ses_dbg', [row as never]).threads[0]!.messages[0]!.blocks;
+    blocksByParts.set(parts, blocks);
+  }
+  return blocks;
+}
 
 /**
  * /debug/turn
@@ -486,6 +500,9 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   },
 ];
 
+/** A v1 fixture row as the session-log message `UserMessage` reads (`sessionLogOfV1Rows`, flag off). */
+const logOf = (row: MessageWithParts) => sessionLogOfV1Rows('ses_dbg', 'ses_dbg', [row]).threads[0]!.messages[0]!;
+
 const userMessage = {
   info: {
     id: 'msg_dbg_user',
@@ -657,23 +674,23 @@ export default function DebugTurnPage() {
           </p>
 
           <Section label={tI18nComplete.raw('text2f8af80f944f')}>
-            <UserMessage message={userMessage} sessionId="ses_dbg" ownsPlan={false} />
+            <UserMessage message={logOf(userMessage)} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
           <Section label={tI18nComplete.raw('text1bf0f5e57c1f')}>
-            <UserMessage message={userMessage} sessionId="ses_dbg" ownsPlan />
+            <UserMessage message={logOf(userMessage)} sessionId="ses_dbg" ownsPlan />
           </Section>
 
           <Section label={tI18nComplete.raw('text5984b7866ce4')}>
-            <UserMessage message={uploadingMessage} sessionId="ses_dbg" ownsPlan={false} />
+            <UserMessage message={logOf(uploadingMessage)} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
           <Section label={tI18nComplete.raw('textc6e9471a6ab2')}>
-            <UserMessage message={manyAttachmentMessage} sessionId="ses_dbg" ownsPlan={false} />
+            <UserMessage message={logOf(manyAttachmentMessage)} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
           <Section label={tI18nComplete.raw('text292117ca3ac2')}>
-            <UserMessage message={fewAttachmentMessage} sessionId="ses_dbg" ownsPlan={false} />
+            <UserMessage message={logOf(fewAttachmentMessage)} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
           <Section label={tI18nComplete.raw('texte6ad8effaaed')}>
@@ -691,7 +708,7 @@ export default function DebugTurnPage() {
             {BURSTS.map((b) => (
               <Section key={b.label} label={b.label}>
                 <ActivityBurst
-                  parts={b.parts}
+                  blocks={burstBlocks(b.parts)}
                   sessionId="ses_dbg"
                   working={b.working}
                   disableNavigation

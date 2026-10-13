@@ -14,11 +14,10 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
-import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
+import { TopupControls } from '@/features/billing/topup-controls';
 import { useUpgradeModalHost } from '@/features/billing/use-upgrade-modal-host';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import {
@@ -37,7 +36,7 @@ import {
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import type { AccountState, BillingState } from '@kortix/sdk';
+import { type AccountState, type BillingState, canManageBilling } from '@kortix/sdk';
 import { formatCredits } from '@kortix/shared';
 import {
   ArrowRightIcon as ArrowRight,
@@ -114,7 +113,11 @@ export function UpgradePlansModal({
   const seatCount = Math.max(1, accountState?.member_count ?? accountState?.seats?.count ?? 1);
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
-  const canManageBilling = accountState?.can_manage_billing !== false;
+  // `false` until the account state loads (KRTX-1720): Subscribe stays
+  // disabled for that window, and the "owner required" button and the "ask an
+  // owner" note wait for the answer.
+  const mayManageBilling = canManageBilling(accountState);
+  const ownerRequired = !!accountState && !mayManageBilling;
 
   const handleSubscribe = () => {
     createPerSeat.mutate({
@@ -137,7 +140,7 @@ export function UpgradePlansModal({
         {tI18nHardcoded.raw('i18nComplete.text73a7da68c3bf')}
       </Button>
     ),
-    team_seat: canManageBilling ? (
+    team_seat: !ownerRequired ? (
       <div className="space-y-2">
         {hasSeatMath && (
           <p className="text-muted-foreground text-center text-xs tabular-nums">
@@ -149,7 +152,7 @@ export function UpgradePlansModal({
           type="button"
           variant="default"
           className="group w-full"
-          disabled={createPerSeat.isPending}
+          disabled={createPerSeat.isPending || !mayManageBilling}
           onClick={handleSubscribe}
         >
           {createPerSeat.isPending ? (
@@ -231,7 +234,7 @@ export function UpgradePlansModal({
             </button>
           </p>
 
-          {!canManageBilling && (
+          {ownerRequired && (
             <Item variant="outline" size="sm" className="items-start bg-none">
               <Hint
                 label={tI18nHardcoded.raw(
@@ -290,9 +293,6 @@ function CreditTopUpModal({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tBanner = useTranslations('hardcodedUi.componentsSessionSessionErrorBanner');
   const createPortal = useCreatePortalSession();
-  // KRTX-1720: buying credits and auto top-up need `billing.write` (owners by
-  // default); the API answers a member 403. A member is told who can act.
-  const canManageBilling = accountState?.can_manage_billing !== false;
   // Copy is DERIVED, never written here. The title used to be hardcoded
   // `'Out of credits'` with a single `payment_failed` branch, so this modal
   // announced an emergency to every account that opened it — including one
@@ -364,27 +364,27 @@ function CreditTopUpModal({
             )}
           </div>
 
-          {/* One card, two seams — the same shape the Billing tab uses, so the
-              modal and the pane are not two dialects of one control. Both
-              components render their own heading and no chrome, so the card
-              supplies the border and the hairline and nothing repeats. */}
-          {canManageBilling ? (
-            <div className="bg-popover rounded-md border">
-              <section className="space-y-3 px-4 py-4">
-                <h3 className="text-foreground text-sm font-medium">
-                  {tI18nComplete.raw('textd22feb61298b')}
-                </h3>
-                <CreditTopupSection />
-              </section>
-              <div className="border-t px-4 py-4">
-                <AutoTopupCard fetchSettings showSaveButton />
-              </div>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm" data-testid="topup-ask-owner">
-              {tBanner.raw('askOwnerToAddCredits')}
-            </p>
-          )}
+          {/* The same card the Billing tab and the Credits pane render, so
+              the modal and the panes are not two dialects of one control.
+              KRTX-1720: buying credits and auto top-up need `billing.write`
+              (owners by default); the API answers a member 403. A member is
+              told who can act. Nothing renders a purchase control before the
+              account state says who this is. */}
+          <TopupControls
+            state={accountState}
+            heading={tI18nComplete.raw('textd22feb61298b')}
+            fallback={
+              accountState ? (
+                canManageBilling(accountState) ? null : (
+                  <p className="text-muted-foreground text-sm" data-testid="topup-ask-owner">
+                    {tBanner.raw('askOwnerToAddCredits')}
+                  </p>
+                )
+              ) : accountLoading ? (
+                <Skeleton className="h-40 w-full rounded-md" />
+              ) : null
+            }
+          />
         </ModalBody>
 
         <ModalFooter className="pt-4 pb-5 sm:justify-start">

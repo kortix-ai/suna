@@ -71,7 +71,8 @@ const defaultConvergeDeps: ModelCatalogConvergeDeps = {
 
 /** `POST /kortix/catalog/converge`. Null on any failure to reach or parse —
  *  the caller treats that as "could not repair", never as "confirmed absent"
- *  or "confirmed present". */
+ *  or "confirmed present". `unsupported`: the box answered 404, so its runtime
+ *  has no catalog to converge (pi). */
 export async function convergeSandboxModelCatalog(
   sessionId: string,
   deps: ModelCatalogConvergeDeps = defaultConvergeDeps,
@@ -91,6 +92,7 @@ export async function convergeSandboxModelCatalog(
       ...(model ? { body: JSON.stringify({ model }) } : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    if (res.status === 404) return { outcome: 'unsupported' };
     if (!res.ok) return null;
     const body = (await res.json().catch(() => null)) as
       | { outcome?: unknown; missing?: unknown; model_present?: unknown }
@@ -199,6 +201,9 @@ export async function convergeModelCatalogBeforeTurnStart(
     if (!deps.isManagedModelId(requestedManagedModelId)) {
       return await convergeOneModel(sessionId, requestedManagedModelId, deps);
     }
+    // The box said it cannot converge its catalog (pi): asking again is
+    // pointless until the TTL lapses. It cost every prompt a probe and a 404.
+    if (deps.modelConfirmation(sessionId, requestedManagedModelId) === 'legacy') return { decision: 'skipped' };
     let known = deps.lastKnown(sessionId);
     if (known === undefined) known = await deps.probe(sessionId).catch(() => undefined);
     if (known?.ids && known.ids.includes(requestedManagedModelId)) return { decision: 'current' };
@@ -208,6 +213,10 @@ export async function convergeModelCatalogBeforeTurnStart(
     // unnecessary (the model landed between our probe and this call) costs
     // one `unchanged` response, not a wrong restart.
     const result = await deps.convergeCatalog(sessionId);
+    if (result?.outcome === 'unsupported') {
+      deps.noteModelConfirmation(sessionId, null);
+      return { decision: 'skipped' };
+    }
     return result ? { decision: 'converged', daemonOutcome: result.outcome } : { decision: 'unknown' };
   } catch (error) {
     logger.warn('[projects] turn-start model-catalog convergence threw', {

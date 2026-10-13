@@ -35,6 +35,10 @@ It manages:
 - VPC flow logs for the dev (us-east-2) and staging (eu-west-2) VPCs, which had
   none until 2026-10-12 (Drata DCF-406). The prod VPC carries a flow log created
   by CLI. us-west-2 has no VPC since 2026-10-12.
+- Empty default security groups (no ingress, no egress) for the same two VPCs
+  (Drata test 233, CIS 5.4). No ENI, launch template, ECS service, or Lambda
+  used either group on 2026-10-13. The prod VPC's default group was emptied
+  by CLI and is not in this stack.
 - A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
   backups. Velero retains backups for 30 days. S3 expires current and
   noncurrent object versions after 35 days.

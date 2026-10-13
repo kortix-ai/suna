@@ -156,7 +156,7 @@ const TONE_TILE: Record<SessionStatusTone, Pick<StatusTile, 'tile' | 'icon'>> = 
  */
 function sessionStatusTile(
   session: ProjectSession,
-  options: { deleted: boolean; metadataOnly: boolean },
+  options: { deleted: boolean; metadataOnly: boolean; needsYouCount: number },
   tI18nComplete: UiTranslator,
   statusLabel: (status: SessionDisplayStatus) => string,
 ): StatusTile {
@@ -170,7 +170,7 @@ function sessionStatusTile(
   if (options.metadataOnly) {
     return { label: tI18nComplete.raw('textdf0453d185c4'), ...SECONDARY_TILE };
   }
-  const status = sessionDisplayStatus(session);
+  const status = sessionDisplayStatus(session, options.needsYouCount);
   return { label: statusLabel(status), ...TONE_TILE[SESSION_LIST_STATUS[status].tone] };
 }
 
@@ -199,6 +199,9 @@ export interface SessionRowProps {
   restarting: boolean;
   stopping: boolean;
   actions: SessionRowActions;
+  /** Review items, agent questions and approvals that wait on the viewer
+   *  (`useSessionNeedsYouCounts`). Above 0 the tile reads `needs-you`. */
+  needsYouCount?: number;
   /** Spawned sessions under this one (`child_count`). 0 or absent: no toggle. */
   childCount?: number;
   childrenOpen?: boolean;
@@ -218,6 +221,7 @@ function SessionRowImpl({
   restarting,
   stopping,
   actions,
+  needsYouCount = 0,
   childCount = 0,
   childrenOpen = false,
   onToggleChildren,
@@ -249,6 +253,7 @@ function SessionRowImpl({
     {
       deleted: isDeleted,
       metadataOnly: session.can_access === false,
+      needsYouCount,
     },
     tI18nComplete,
     (status) => tStatus(SESSION_STATUS_TRANSLATION_KEY[status]),

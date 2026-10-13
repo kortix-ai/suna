@@ -4,6 +4,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { useTranslations } from '@/i18n/use-translations';
 import type { Part } from '@/ui';
+import { sessionLogOfV1Rows } from '@kortix/sdk';
 import { m, useReducedMotion, type Transition } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
@@ -326,6 +327,15 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
       ) satisfies Part[],
     [t],
   );
+  // The burst renders session-log blocks: the parts as one reply converts
+  // them (`sessionLogOfV1Rows`, the view the transcript reads).
+  const toolBlocks = useMemo(
+    () =>
+      sessionLogOfV1Rows(SESSION, SESSION, [
+        { info: { id: 'msg_showcase', sessionID: SESSION, role: 'assistant', time: { created: 1 } }, parts: toolParts } as never,
+      ]).threads[0]!.messages[0]!.blocks,
+    [toolParts],
+  );
   const toolsShown = Math.max(0, Math.min(beat - 2, TOOL_PARTS.length));
 
   return (
@@ -337,7 +347,7 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
                 burst of a working turn: it is what holds the disclosure open
                 across the gaps between calls instead of blinking it shut. */}
             <ActivityBurst
-              parts={toolParts.slice(0, toolsShown)}
+              blocks={toolBlocks.slice(0, toolsShown)}
               sessionId={SESSION}
               working
               isTrailing

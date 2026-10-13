@@ -149,7 +149,7 @@ function fakeAdapter() {
         }
         cursors.push(cursor)
       }
-      return cursors
+      return { cursors, dropped: {} }
     },
     async fingerprint() {
       return sha(JSON.stringify([...native]))
@@ -333,7 +333,7 @@ describe('session-log journal', () => {
       pending: { questions: [], permissions: [] },
       threads: [{ schema: 'kortix.session/2', v: 1, thread_id: 'thr_root', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '2026-10-11T00:00:00.000Z', messages: [restored] }],
     }
-    const cursors = await fake.port.restore(log)
+    const { cursors } = await fake.port.restore(log)
     fake.put('n1', 2, 'new after restore')
     const journal = new SessionLogJournal(fake.port, { generation: 2, cursors })
 

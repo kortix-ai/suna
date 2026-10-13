@@ -229,6 +229,7 @@ SessionLogRestoreSchema = {
   generation: number(int)(min0)
   log: SessionLogSchema
   revs: record(number(int)(min0))
+  seq_max: record(number(int)(min0)) | absent
   blobs: array(SessionLogRestoreBlobSchema)
 }
 

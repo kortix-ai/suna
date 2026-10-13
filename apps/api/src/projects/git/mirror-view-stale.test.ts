@@ -131,3 +131,19 @@ describe('page-view mirror reads', () => {
     expect(await mirrorTip(repoPath)).toBe(pushed);
   });
 });
+
+describe('reads at a commit', () => {
+  test('a commit the mirror holds is read without a fetch; one it lacks fetches', async () => {
+    const repoPath = await refreshMirror(project); // cold: clones
+    const seeded = await mirrorTip(repoPath);
+    const pushed = await commit('pushed outside Kortix');
+
+    // Every read is past the interval (0 ms), yet nothing at `seeded` can change.
+    expect(await refreshMirror(project, false, { freshRef: seeded })).toBe(repoPath);
+    expect(await mirrorTip(repoPath)).toBe(seeded);
+
+    // A commit the mirror does not hold is fetched as before.
+    await refreshMirror(project, false, { freshRef: pushed });
+    expect(await mirrorTip(repoPath)).toBe(pushed);
+  });
+});

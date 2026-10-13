@@ -389,6 +389,10 @@
       "keyboardTitle": "Пречице на тастатури",
       "keyboardDescription": "Тастер за измену картица и све пречице у апликацији.",
       "modifierKey": "Тастер модификатора",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "Пречица која отвара траку за упит из било које апликације.",
+      "quickEntryOff": "Искључено",
+      "quickEntryInUse": "Друга апликација користи ову пречицу, па она не отвара траку. Изаберите другу.",
       "shortcuts": {
         "newTab": "Нова картица",
         "closeActiveTab": "Затвори активну картицу",
@@ -1134,8 +1138,7 @@
       "origin": {
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
-        "defaultOff": "Подразумевано искључено",
-        "organization": "Cela organizacija, upravlja Kortix"
+        "defaultOff": "Подразумевано искључено"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1168,7 +1171,7 @@
         },
         "apps": {
           "name": "Апликације",
-          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне serverless адресе и покрените бекенде: базу података, серверске функције, упите у реалном времену, складиште датотека, заказивање и претрагу на машини која стално ради."
+          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне адресе и покрените бекенде: базу података, серверске функције, упите у реалном времену, складиште датотека, заказивање и претрагу на машини која стално ради."
         },
         "monitors": {
           "name": "Надгледања",
@@ -1208,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volumeni",
-          "description": "Deljeni fajlovi i sesije na volumenima za celu organizaciju."
+          "description": "Deljeni fajlovi i sesije na volumenima za ovaj projekat."
         },
         "stateless_sessions": {
           "name": "Sesije bez stanja",
@@ -1302,6 +1305,12 @@
       "emptyCanCreate": "Направите кључ да бисте користили CLI, скрипте или CI у своје име.",
       "emptyNoPermission": "Немате дозволу да правите API кључеве на овом налогу.",
       "revokeKey": "Опозови кључ",
+      "keyCount": "{count, plural, one {# API ključ} few {# API ključa} other {# API ključeva}}",
+      "createdOn": "Kreiran {date}",
+      "keyName": "Naziv ključa",
+      "keyPrefix": "Ključ",
+      "statusLabel": "Status",
+      "lastUsedLabel": "Poslednja upotreba",
       "status": {
         "active": "Активан",
         "expired": "Истекао",
@@ -10033,6 +10042,7 @@
       "text0e498a7ede47": "Омогућено: {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Сачувај као PDF",
+      "text926597a39cb3": "Администратори пројекта",
       "text9bf06a86c934": "Нова вештина",
       "texta38668224f1a": "Креирајте помоћу обрасца",
       "textb25ab5d5e2a5": "Вештина је креирана",
@@ -13747,6 +13757,7 @@
       "text79c6ba1d813d": "#1 JumpCloud замка: Test Connection не успева јер тестни user email већ постоји у Kortix-у — мора бити потпуно нова адреса. (И током тог корака кликните на „Activate“, а не на „Save“.)",
       "text79c8764339a5": "извршио",
       "text79e4d7b87c05": "Налет се ставља у ред, не одбацује се",
+      "text79eb7fb19229": "Нема токена налога за услуге",
       "text79ffe7bf8192": "Пројекат је креиран",
       "text7a04f383ef22": "Један рачунар по сесији · Унапред подешен · Ништа се не извршава на вашем лаптопу",
       "text7a098b3b9a9d": "Отварање портала за претплату није успело. Покушајте поново.",
@@ -14325,6 +14336,7 @@
       "text8b624587552a": "Издавање токена није успело",
       "text8b64afef1a24": "Још ништа није припремљено",
       "text8b728638c006": "изгубиће ово заобилажење. Свака радња ће поново пролазити кроз уобичајене провере дозвола.",
+      "text8b7811603173": "Претражи сесије или налепи ID сесије",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Отпремање",
       "text8b9965f7aaa5": "Додајте access policy",
@@ -15245,6 +15257,7 @@
       "texta56145270ce6": "id",
       "texta56281e325c1": "Документ са уграђеним изворима.",
       "texta563730f828d": "iconUpdateFailed",
+      "texta56abb72ba43": "Направите један за CI задатак или скрипту која мора да надживи свог аутора.",
       "texta56be319eda4": "Затражена је синхронизација гране од агента",
       "texta57b08a480b8": "Претходно",
       "texta57d47538d79": "#releases",
@@ -19574,7 +19587,8 @@
       "text6f52b07880a0": "Napravi snimak sada",
       "text91dc861375bc": "Политика издања за мобилне уређаје прегледана",
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
-      "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar"
+      "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
+      "text2313fe21ea84": "Измени {name}"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -19655,40 +19669,15 @@
       "reasonOther": "Ostalo",
       "fallBackToTheImage": "Vrati se na sliku",
       "fallBackToImage": "Povratak na sliku",
-      "saved": "Volumeni su sačuvani",
-      "saveFailed": "Čuvanje volumena nije uspelo",
-      "title": "Volumeni",
-      "description": "Jedan prekidač za Datoteke, montiranje drive-a, volumene sesija i artefakte za pokretanje, po organizaciji. Kada je isključen, organizacija vidi proizvod bez volumena. Promene stižu do svakog API procesa u roku od 30 sekundi.",
+      "saved": "Režimi pokretanja su sačuvani",
+      "saveFailed": "Čuvanje režima pokretanja nije uspelo",
+      "title": "Režimi pokretanja",
+      "description": "Kako se pokreću nove sesije projekta sa uključenim volumenima i koje rezervne korake prave. Volumeni i sesije bez stanja su feature flagovi projekta i ne podešavaju se ovde. Promene stižu do svakog API procesa u roku od 30 sekundi.",
       "discard": "Odbaci",
       "save": "Sačuvaj",
-      "volumesTitle": "Volumeni",
-      "volumesDescription": "Uključeno: Datoteke su drive projekta, a pregledač repozitorijuma je Repo, sesije montiraju svoje fascikle i pokreću se na volumenu. Isključeno: Datoteke su pregledač repozitorijuma, a sesije se pokreću sa slike. Sesija čije su datoteke već na volumenu zadržava svoj volumen kada se njena organizacija isključi.",
-      "everyOrganizationTitle": "Uključeno za svaku organizaciju",
-      "everyOrganizationDetail": "Organizacije isključene ispod ostaju isključene.",
-      "everyOrganizationLabel": "Volumeni za svaku organizaciju",
-      "rolloutTitle": "Postepeno uvođenje",
-      "rolloutUnused": "Ne koristi se dok su volumeni uključeni za svaku organizaciju.",
-      "rolloutPercentDetail": "{percent}% organizacija bez sopstvenog podešavanja, izabranih stabilnim hešom ID-a organizacije.",
-      "rolloutOffDetail": "Uključite volumene za deo organizacija bez sopstvenog podešavanja.",
-      "rolloutPercentLabel": "Procenat uvođenja",
-      "organizationsTitle": "Organizacije",
-      "organizationsDescription": "Sopstveno podešavanje organizacije ima prednost nad prekidačem i postepenim uvođenjem. Njen režim pokretanja važi dok su joj volumeni uključeni.",
-      "findOrganization": "Pronađite organizaciju",
-      "noOtherOrganization": "Nijedna druga organizacija ne odgovara „{search}“. Organizacije koje su već navedene ispod se ne ponavljaju.",
-      "add": "Dodaj",
-      "columnOrganization": "Organizacija",
-      "columnVolumes": "Volumeni",
-      "columnBootMode": "Režim pokretanja",
-      "columnLastStep": "Poslednji korak",
-      "organizationFallbackName": "Organizacija",
-      "organizationVolumesLabel": "Volumeni za {name}",
-      "on": "Uključeno",
       "off": "Isključeno",
-      "defaultModeOption": "Podrazumevano ({mode})",
-      "removeOrganization": "Ukloni organizaciju",
-      "noOrganizations": "Nijedna organizacija nema sopstveno podešavanje.",
       "bootModeTitle": "Režim pokretanja",
-      "bootModeDescription": "Kako se pokreću nove sesije organizacije sa uključenim volumenima, osim ako organizacija nema sopstveni režim.",
+      "bootModeDescription": "Kako se pokreću nove sesije projekta sa uključenim volumenima. Projekat sa uključenim sesijama bez stanja pokreće se na volumenu.",
       "defaultModeTitle": "Podrazumevani režim",
       "killSwitchTitle": "Prekidač za nuždu: pokreni svaku novu sesiju sa slike",
       "killSwitchDetail": "Odjednom zamenjuje svaki režim; Datoteke i drive-ovi ostaju kakvi jesu. Sesija čije su datoteke već na volumenu zadržava svoj volumen.",
@@ -19708,7 +19697,7 @@
       "failedBoots": "neuspelih pokretanja",
       "volumeAttemptsLabel": "Pokušaji sa volumenom",
       "artifactsAttemptsLabel": "Pokušaji sa artefaktima",
-      "lastStepNote": "(uključeno, osim ako pravilo ne isključi poslednji korak)",
+      "lastStepNote": "(uključeno, osim ako podrazumevani režim ne isključi poslednji korak)",
       "whereModesApplyTitle": "Gde se režimi primenjuju",
       "whereModesApplyDescription": "Provajderi i prekidači za primenu dolaze iz okruženja servera. Volumen artefakata može da se podesi ovde; ako je prazno, koristi se onaj iz okruženja.",
       "volumeProviderTitle": "Provajder volumena: {provider}",
@@ -19724,8 +19713,8 @@
       "artifactsVolumeFromEnvironment": "Sesije u režimu Slika + artefakti ili Volumen montiraju {source} (iz okruženja).",
       "artifactsVolumeNone": "Ništa nije podešeno: režimi sa artefaktima se pokreću kao da postoji samo slika.",
       "artifactsVolumeLabel": "Volumen artefakata i oznaka",
-      "ephemeralSandboxesOff": "{variable} je isključen u ovoj primeni: pravila koja traže Volumen pokreću se sa Slika + artefakti.",
-      "nothingSaved": "Još ništa nije sačuvano: volumeni su isključeni za svaku organizaciju."
+      "ephemeralSandboxesOff": "{variable} je isključen u ovoj primeni: sesije bez stanja pokreću se sa Slika + artefakti.",
+      "nothingSaved": "Još ništa nije sačuvano: projekti sa uključenim volumenima pokreću se iz slike."
     }
   },
   "projectOnboarding": {
@@ -20054,6 +20043,7 @@
     "notFoundDescription": "Уклоњен је или је линк погрешан.",
     "backToConnectors": "Назад на конекторе",
     "installed": "{name} је инсталиран",
+    "installedSyncFailed": "{name} је инсталиран. Kortix није могао да учита алате: {error}",
     "newSession": "Нова сесија",
     "sections": "Одељци за {name}",
     "noticeNoAccountTitle": "{name} нема налог",

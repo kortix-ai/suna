@@ -9,15 +9,15 @@ export function createTunnelRouter(
 ): Hono {
   const router = new Hono();
 
-  if (onAuthorizeHTTP) {
-    router.use('*', async (c, next) => {
-      const authorized = await onAuthorizeHTTP(c.req.raw);
-      if (!authorized) {
-        return c.json({ error: 'Unauthorized' }, 403);
-      }
-      await next();
-    });
-  }
+  // Fail closed: these routes list agents and relay RPC to them (shell, files,
+  // desktop). With no authorizer, nobody is authorized.
+  router.use('*', async (c, next) => {
+    const authorized = onAuthorizeHTTP ? await onAuthorizeHTTP(c.req.raw) : false;
+    if (!authorized) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+    await next();
+  });
 
   router.get('/connections', (c) => {
     const agents = relay.getConnectedAgents();

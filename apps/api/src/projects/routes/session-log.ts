@@ -8,11 +8,13 @@
  *
  * The restore, `POST /:projectId/sessions/:sessionId/log/restore` (P6.1), takes the same
  * credential: a fresh box's daemon claims the session and reads its whole log
- * (`../session-log-restore.ts`). Its answer is gzipped for a caller that accepts it.
+ * (`../session-log-restore.ts`). The app-wide `compressResponse` (`../../middleware/compress.ts`)
+ * gzips its answer for a caller that accepts gzip; it falls back to `node:zlib` on the image's Bun 1.2.
  *
- * The read, `GET /:projectId/sessions/:sessionId/log` (P4.2), is the other way round: a
- * project member's session read, never the sandbox credential. Postgres only
- * (`../session-log-read.ts`).
+ * The read, `GET /:projectId/sessions/:sessionId/log` (P4.2), is a session read: the
+ * transcript route's gate, so a session-bound token (a box's `KORTIX_TOKEN`) reads every
+ * session the v1 transcript route serves it. A read claims nothing; the restore claims.
+ * Postgres only (`../session-log-read.ts`).
  *
  * The journal body is gzipped JSON. It is not declared as a validated request schema: the
  * OpenAPI validator would call `req.json()` on gzip bytes (same reason as
@@ -32,7 +34,6 @@ import {
   type SessionLogJournalRequest,
 } from '@kortix/api-contract/session-log';
 import type { Context } from 'hono';
-import { compress } from 'hono/compress';
 import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -150,7 +151,6 @@ export function registerSessionLogRoutes(): void {
     },
   );
 
-  projectsApp.use('/:projectId/sessions/:sessionId/log/restore', compress({ encoding: 'gzip' }));
   projectsApp.openapi(
     createRoute({
       method: 'post',
@@ -161,7 +161,7 @@ export function registerSessionLogRoutes(): void {
         'Session sandbox credential only, no body. Raises the session generation by 1 and answers `SessionLogRestore` ' +
         'at that generation: every thread with its live messages in seq order, the rev of every message (tombstones ' +
         'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
-        'Gzipped when the request accepts gzip. 404 `no_session_log`: no stored log, nothing claimed.',
+        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed.',
       ...auth,
       request: { params },
       responses: {
@@ -189,8 +189,9 @@ export function registerSessionLogRoutes(): void {
       description:
         'One page of one thread of the stored session log (`SessionLogPage`), from Postgres only. ' +
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
-        'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission; ' +
-        'the session sandbox credential is refused. 404 when the session has no stored log or no such thread.',
+        'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
+        'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
+        '404 when the session has no stored log or no such thread.',
       ...auth,
       request: {
         params,
@@ -202,7 +203,6 @@ export function registerSessionLogRoutes(): void {
       },
     }),
     async (c) => {
-      if (isSessionSandboxCredential(c)) return c.json({ error: 'The session sandbox credential cannot read the session log' }, 403);
       const { projectId, sessionId } = c.req.valid('param');
       const query = c.req.valid('query');
       const limit = parseBoundedPositiveInt(query.limit, 40, 1, 500, 'limit');
