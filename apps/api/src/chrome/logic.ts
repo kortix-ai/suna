@@ -89,7 +89,9 @@ export type ChromeErrorCode =
   | 'chrome_offline'
   | 'chrome_access_off'
   | 'chrome_denied'
-  | 'chrome_consent_timeout';
+  | 'chrome_consent_timeout'
+  | 'chrome_panel_forbidden'
+  | 'chrome_panel_no_email';
 
 const ERRORS: Record<ChromeErrorCode, { status: 403 | 404 | 408 | 409; error: string }> = {
   chrome_not_connected: {
@@ -115,6 +117,14 @@ const ERRORS: Record<ChromeErrorCode, { status: 403 | 404 | 408 | 409; error: st
   chrome_consent_timeout: {
     status: 408,
     error: 'Nobody answered the prompt in Chrome within 90 seconds. Ask the user to approve it, then retry.',
+  },
+  chrome_panel_forbidden: {
+    status: 403,
+    error: 'Only the Kortix in Chrome extension can open a side panel session.',
+  },
+  chrome_panel_no_email: {
+    status: 409,
+    error: 'This account has no email address, so the side panel cannot sign in.',
   },
 };
 

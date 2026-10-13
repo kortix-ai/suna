@@ -1,6 +1,7 @@
 import { getEnv } from '@/lib/env-config';
 import { createBrowserClient } from '@supabase/ssr';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants';
+import { authCookieOptions, isInExtensionPanel, writePanelMarker } from './panel-cookies';
 
 /**
  * Resolve the browser-facing Supabase URL as an ABSOLUTE URL.
@@ -54,27 +55,23 @@ export function createClient() {
   // avoid (see the class doc on `@supabase/ssr`).
   const secure = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
+  // Inside the Kortix in Chrome side panel the session lives in a partitioned
+  // cookie (see panel-cookies.ts), and the marker tells the server so.
+  const panel = isInExtensionPanel();
+  if (panel) writePanelMarker();
+  const cookieOptions = { name: KORTIX_SUPABASE_AUTH_COOKIE, ...authCookieOptions(panel, secure) };
+
   if (!url || !key) {
     if (typeof window !== 'undefined') {
       throw new Error('Missing Supabase browser environment variables');
     }
 
     return createBrowserClient('https://placeholder.invalid', 'placeholder-anon-key', {
-      cookieOptions: {
-        name: KORTIX_SUPABASE_AUTH_COOKIE,
-        path: '/',
-        sameSite: 'lax',
-        secure,
-      },
+      cookieOptions,
     });
   }
 
   return createBrowserClient(url, key, {
-    cookieOptions: {
-      name: KORTIX_SUPABASE_AUTH_COOKIE,
-      path: '/',
-      sameSite: 'lax',
-      secure,
-    },
+    cookieOptions,
   });
 }

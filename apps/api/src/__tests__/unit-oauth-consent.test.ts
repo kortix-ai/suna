@@ -151,6 +151,15 @@ describe('OAuth authorization request persistence + consent', () => {
     });
   });
 
+  test('the consent screen names the Kortix extension "Kortix in Chrome"', async () => {
+    const app = createApp();
+    const start = await app.request(authRequestUrl());
+    const requestId = new URL(start.headers.get('location')!).searchParams.get('request_id')!;
+    pendingRequests[0].redirectUri = KORTIX_EXTENSION_REDIRECT_URI;
+    const metadata = await app.request(`/oauth/authorize/consent/${requestId}`, { headers: authed });
+    expect((await metadata.json()).redirect_to).toBe('Kortix in Chrome');
+  });
+
   test('approval mints a code from the STORED request, remembers the consent, and a replay is refused', async () => {
     const app = createApp();
     const start = await app.request(authRequestUrl());

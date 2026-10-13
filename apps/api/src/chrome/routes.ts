@@ -3,6 +3,7 @@
  *
  *   /v1/chrome/connections[/:id]          user routes: JWT, `kortix_pat_` or `kortix_oat_`
  *   /v1/chrome/attach|release  sandbox routes: a session-scoped sandbox credential only
+ *   /v1/chrome/panel-session   the extension's own `kortix_oat_` token only (side panel sign-in)
  *
  * The control socket (`/v1/chrome/ws`) is upgraded in inbound-dispatch.ts.
  * Protocol: .agents/skills/kortix-chrome/references/protocol.md
@@ -15,6 +16,7 @@ import { isSessionSandboxCredential } from '../middleware/session-sandbox-creden
 import { isUuid } from '../shared/validate';
 import type { AppEnv } from '../types';
 import { ChromeError, chromeErrorBody, type ChromeErrorCode } from './logic';
+import { createPanelSession, PanelRateLimited } from './panel';
 import { attachChrome, deleteChromeConnection, listChromeConnectionDtos, patchChrome, releaseChrome } from './service';
 
 export const chromeConnectionsApp = makeOpenApiApp<AppEnv>();
@@ -141,6 +143,38 @@ export function registerChromeRoutes(): void {
         return c.json(result, 200);
       } catch (err) {
         if (err instanceof ChromeError) return fail(c, err.code, err.status) as never;
+        throw err;
+      }
+    },
+  );
+
+  chromeApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/panel-session',
+      tags: ['chrome'],
+      summary: 'Mint a one-time sign-in token for the extension side panel (extension OAuth token only)',
+      ...auth,
+      responses: {
+        200: json(z.object({ tokenHash: z.string() }), 'A single-use token hash for supabase.auth.verifyOtp'),
+        ...errors(401, 403, 409, 429),
+      },
+    }),
+    async (c) => {
+      try {
+        const result = await createPanelSession({
+          userId: c.get('userId'),
+          authType: c.get('authType'),
+          oauthClientId: c.get('oauthClientId'),
+        });
+        c.header('Cache-Control', 'no-store');
+        return c.json(result, 200);
+      } catch (err) {
+        if (err instanceof ChromeError) return fail(c, err.code, err.status) as never;
+        if (err instanceof PanelRateLimited) {
+          c.header('Retry-After', String(err.retryAfterSeconds));
+          return c.json({ error: err.message }, 429) as never;
+        }
         throw err;
       }
     },

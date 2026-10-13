@@ -2453,6 +2453,13 @@
         "updateFailed": "无法更新密码",
         "unexpected": "发生意外错误"
       }
+    },
+    "panel": {
+      "waitingTitle": "正在登录",
+      "waitingBody": "正在将此面板连接到你的 Kortix 账户。",
+      "errorTitle": "无法登录",
+      "errorBody": "请先在浏览器标签页中登录 Kortix，然后重新打开此面板。",
+      "signIn": "登录"
     }
   },
   "onboarding": {

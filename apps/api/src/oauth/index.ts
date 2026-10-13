@@ -41,6 +41,7 @@ import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
 import { bearerToken } from '../shared/bearer-token';
+import { hasOnlyExtensionRedirect, KORTIX_EXTENSION_REDIRECT_URI } from './extension-client';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -602,21 +603,15 @@ oauthApp.openapi(
 /** Stored on a self-registered client; nothing else marks one. */
 export const SELF_REGISTERED_DESCRIPTION = 'Self-registered (RFC 7591 dynamic client registration)';
 
-/**
- * The Kortix Chrome extension registers itself on each install. Only the
- * extension with this id serves a `chrome-extension://<id>/` page, and our
- * signing key pins the id, so a client that can only redirect there is ours.
- */
-export const KORTIX_EXTENSION_REDIRECT_URI = 'chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek/welcome.html';
+export { KORTIX_EXTENSION_REDIRECT_URI };
 
 export function isSelfRegistered(client: Pick<ClientRow, 'accountId' | 'description' | 'redirectUris'>): boolean {
-  const kortixExtension =
-    client.redirectUris?.length === 1 && client.redirectUris[0] === KORTIX_EXTENSION_REDIRECT_URI;
+  const kortixExtension = hasOnlyExtensionRedirect(client.redirectUris);
   return client.accountId === null && client.description === SELF_REGISTERED_DESCRIPTION && !kortixExtension;
 }
 
 function redirectTarget(redirectUri: string): string {
-  if (redirectUri === KORTIX_EXTENSION_REDIRECT_URI) return 'Kortix for Chrome';
+  if (redirectUri === KORTIX_EXTENSION_REDIRECT_URI) return 'Kortix in Chrome';
   const url = parseRedirectUri(redirectUri);
   if (!url) return redirectUri;
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;

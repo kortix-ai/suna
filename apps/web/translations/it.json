@@ -2453,6 +2453,13 @@
         "updateFailed": "Impossibile aggiornare la password",
         "unexpected": "Si è verificato un errore imprevisto"
       }
+    },
+    "panel": {
+      "waitingTitle": "Accesso in corso",
+      "waitingBody": "Collegamento di questo pannello al tuo account Kortix.",
+      "errorTitle": "Accesso non riuscito",
+      "errorBody": "Accedi a Kortix in una scheda del browser, poi riapri questo pannello.",
+      "signIn": "Accedi"
     }
   },
   "onboarding": {

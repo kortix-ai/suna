@@ -2453,6 +2453,13 @@
         "updateFailed": "Could not update password",
         "unexpected": "An unexpected error occurred"
       }
+    },
+    "panel": {
+      "waitingTitle": "Signing you in",
+      "waitingBody": "Connecting this panel to your Kortix account.",
+      "errorTitle": "Couldn't sign in",
+      "errorBody": "Sign in to Kortix in a browser tab, then reopen this panel.",
+      "signIn": "Sign in"
     }
   },
   "onboarding": {

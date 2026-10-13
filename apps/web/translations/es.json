@@ -2453,6 +2453,13 @@
         "updateFailed": "No se pudo actualizar la contraseña",
         "unexpected": "Ocurrió un error inesperado"
       }
+    },
+    "panel": {
+      "waitingTitle": "Iniciando sesión",
+      "waitingBody": "Conectando este panel con tu cuenta de Kortix.",
+      "errorTitle": "No se pudo iniciar sesión",
+      "errorBody": "Inicia sesión en Kortix en una pestaña del navegador y vuelve a abrir este panel.",
+      "signIn": "Iniciar sesión"
     }
   },
   "onboarding": {
