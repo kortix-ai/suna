@@ -158,10 +158,6 @@ async function ensureBranchDatabase(name: string, path: string, db: PrimaryDb): 
   return url;
 }
 
-function primarySupabaseStatusEnvSafe(): Record<string, string> {
-  try { return primarySupabaseStatusEnv(repoRoot()); } catch { return {}; }
-}
-
 async function removeIsolatedSupabase(name: string, pid: string): Promise<void> {
   await spin('Stopping Supabase containers', [supabaseBin(), '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
   await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
@@ -779,7 +775,7 @@ async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string 
   if (dbMode === 'isolated') {
     await removeIsolatedSupabase(name, pid);
   } else if (dbMode === 'branch') {
-    const db = primaryDb(primaryCredsFromStatus(primarySupabaseStatusEnvSafe()).dbUrl);
+    const db = primaryDb(primaryCredsFromStatus(primarySupabaseStatusEnv(repoRoot())).dbUrl);
     const err = db ? dropBranchDb(db, name) : 'the primary Supabase is not running';
     if (err) warn(`${branchDbName(name)} not dropped (${err}) — drop it later: psql postgresql://postgres:postgres@127.0.0.1:${SHARED_SUPABASE_PORTS.sbDb}/postgres -c 'drop database ${branchDbName(name)} with (force)'`);
     else sub(`dropped database ${branchDbName(name)}`);
