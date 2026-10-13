@@ -1219,7 +1219,14 @@ async function sessionsRm(
     return 2;
   }
 
-  const results: Array<{ session_id: string; deleted: boolean; restore_until?: string; error?: string }> = [];
+  const results: Array<{
+    session_id: string;
+    project_id?: string;
+    host?: string;
+    deleted: boolean;
+    restore_until?: string;
+    error?: string;
+  }> = [];
   for (const sessionId of ids) {
     const located = await locateSessionAnywhere(
       sessionId,
@@ -1231,14 +1238,20 @@ async function sessionsRm(
       continue;
     }
     const canonicalSessionId = located.located.session.session_id;
+    const { projectId } = located.located;
+    // `restore` cannot locate a deleted session (its read answers 404), so the
+    // hint names where this session was found.
+    const host = located.located.hostName ?? opts.hostArg;
     try {
       const deleted = await located.located.client.delete<{ ok: boolean; restore_until?: string }>(
-        `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
+        `/projects/${projectId}/sessions/${canonicalSessionId}`,
       );
       // An API that predates restore answers without the window.
       const restoreUntil = deleted?.restore_until;
       results.push({
         session_id: canonicalSessionId,
+        project_id: projectId,
+        ...(host ? { host } : {}),
         deleted: true,
         ...(restoreUntil ? { restore_until: restoreUntil } : {}),
       });
@@ -1248,7 +1261,7 @@ async function sessionsRm(
         );
         if (restoreUntil) {
           process.stdout.write(
-            `  ${C.dim}Restorable until ${restoreUntil.slice(0, 10)}: kortix sessions restore ${canonicalSessionId}${C.reset}\n`,
+            `  ${C.dim}Restorable until ${restoreUntil.slice(0, 10)}: kortix sessions restore ${canonicalSessionId} --project ${projectId}${host ? ` --host ${host}` : ''}${C.reset}\n`,
           );
         }
       }

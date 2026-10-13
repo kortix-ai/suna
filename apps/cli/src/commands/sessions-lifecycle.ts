@@ -62,7 +62,8 @@ fresh sandbox from the branch. After 30 days its messages and files are
 deleted, and only the branch remains. Public links stay revoked.
 
 Pass the full session id: a deleted session is not in \`sessions ls\`, so a
-short id cannot be expanded. \`sessions rm\` prints it.
+short id cannot be expanded, and no other project is searched for it.
+\`sessions rm\` prints the exact command, with --project (and --host).
 
 Options:
   --project <id>   Operate on this project id (default: linked).
