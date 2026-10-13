@@ -115,7 +115,7 @@ export const SITE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'text21f7e0aebe8a',
   'Software · Kortix, our own company': 'textb7838cef1d5c',
   'Teams that will try a new way of working this month': 'text6a9da335f73a',
-  'The AI Operating System for AI-native companies.': 'text5d8b4e9bd102',
+  'The AI Operating System for AI‑native companies.': 'text6d4ca6042dc3',
   'The goal': 'text95ba32af60a0',
   'The offer': 'text0b864d6bafe3',
   'The sales team follows up.': 'textc544a648d608',

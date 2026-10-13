@@ -21,7 +21,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * selector is dev-only and renders nothing in production.
  */
 export const hero = {
-  title: 'The AI Operating System for AI-native companies',
+  title: 'The AI Operating System for AI‑native companies',
   sub: 'Agents that do real work across every team: on their own computers, in your tools, from one repo you own.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Book a demo',

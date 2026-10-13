@@ -45,13 +45,13 @@ export default function ProductPage(): ReactNode {
             {i > 0 ? <SectionDivider /> : null}
             <section id={part.id} className={cn(SECTION, 'scroll-mt-20')}>
               <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-16">
-                <div className={cn('flex flex-col gap-8', i % 2 === 1 && 'lg:order-2')}>
+                <div className={cn('flex min-w-0 flex-col gap-8', i % 2 === 1 && 'lg:order-2')}>
                   <SectionHeader eyebrow={part.eyebrow} title={part.title} description={part.sub} />
                   <Reveal delay={0.06}>
                     <RowList rows={part.points} />
                   </Reveal>
                 </div>
-                <Reveal delay={0.08} className="lg:sticky lg:top-24">
+                <Reveal delay={0.08} className="min-w-0 lg:sticky lg:top-24">
                   <Visual />
                 </Reveal>
               </div>
@@ -63,7 +63,7 @@ export default function ProductPage(): ReactNode {
       <SectionDivider />
 
       <section id="developers" className={cn(SECTION, 'scroll-mt-20')}>
-        <div className="grid items-end gap-10 lg:grid-cols-2">
+        <div className="grid items-end gap-10 lg:grid-cols-2 [&>*]:min-w-0">
           <SectionHeader eyebrow={build.eyebrow} title={build.title} description={build.sub} />
           <Reveal delay={0.06}>
             <div className="flex flex-col gap-4">

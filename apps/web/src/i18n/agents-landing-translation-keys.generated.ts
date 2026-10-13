@@ -383,7 +383,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Share context': 'text4d035b49f7eb',
   'Skills and memory live in one repo, so every agent works from what the company knows.':
     'textde01be4fff97',
-  'The AI Operating System for AI-native companies': 'textea7e60e0d340',
+  'The AI Operating System for AI‑native companies': 'text9beb9f1085af',
   'The company': 'text4205f77c3e5b',
   'Want us to do it with you?': 'text4b4da16e05a1',
   'memory/': 'textae3f53994b15',

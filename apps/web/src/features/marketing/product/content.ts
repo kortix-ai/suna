@@ -27,7 +27,7 @@ import type { UiTranslator } from '@/i18n/translator';
 
 export const hero = {
   eyebrow: 'Product',
-  title: 'The AI Operating System for AI-native companies.',
+  title: 'The AI Operating System for AI‑native companies.',
   sub: 'Agents that do real work for every team. Each one runs on its own cloud computer, works in the tools you already use, and lives as code in one repo you own. Any model, your keys, our cloud or yours.',
   ctaPrimary: 'Get started',
   ctaPrimaryHref: '/auth',

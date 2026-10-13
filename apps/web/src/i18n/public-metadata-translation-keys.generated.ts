@@ -99,5 +99,5 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   "Customer stories: companies running on agents": 'text79dac922e5b8',
   "How a credit fund, a fiber contractor, a homebuilder and Kortix itself run real work on agents, with a person in every loop.": 'text48768c91b943',
   "Services: we make your company AI-native": 'text4c11cf73c39c',
-  "The AI Operating System for AI-native companies": 'textea7e60e0d340',
+  'The AI Operating System for AI-native companies': 'textea7e60e0d340',
 };
