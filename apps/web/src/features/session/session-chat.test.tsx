@@ -107,11 +107,23 @@ mock.module('@/features/session/composer/composer', () => ({
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
+const sdk = await import('@kortix/sdk');
 const { changeRequestKeys } = await import(
   '@/features/project-files/hooks/use-change-requests'
 );
 
-const errorTurn = (error?: unknown) => ({ assistantMessages: [{ info: { error } }] });
+/** A turn whose one reply carries `error`, as the transcript reads it (the `fromV1` view, grouped). */
+const errorTurn = (error?: unknown) => {
+  const { sessionLogOfV1Rows, sessionLogTurns } = sdk;
+  const rows = [
+    { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [] },
+    {
+      info: { id: 'msg_a', sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: { created: 2, completed: 3 }, ...(error ? { error } : {}) },
+      parts: [{ id: 'prt_a', sessionID: 'ses', messageID: 'msg_a', type: 'text', text: 'x' }],
+    },
+  ];
+  return sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!)[0]!;
+};
 
 const changeRequestFixture = (): ChangeRequest => ({
   cr_id: 'cr-fixture',
