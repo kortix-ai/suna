@@ -38,7 +38,7 @@ export function FilesView({ projectId }: { projectId: string }) {
   const availability = useDriveAvailability(projectId);
   const drive = useProjectDrive(projectId, availability.enabled);
   const router = useRouter();
-  // Volumes off for the organization: there is no drive page; Files is the repo browser.
+  // Volumes off for the project: there is no drive page; Files is the repo browser.
   // Trust only a fresh answer: a cached one may predate a switch flip.
   const detail = useQuery({
     queryKey: qk.project.detail(projectId),
