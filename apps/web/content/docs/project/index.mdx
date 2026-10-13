@@ -138,7 +138,7 @@ The `marketplace` feature flag gates `install`. It is on by default. With the fl
 
 | Change | When it reaches sessions |
 | --- | --- |
-| A commit that reaches the default branch: agents, skills, tools, harness files, `kortix.yaml` | Each commit is a new config release. New sessions start on it. Running sessions converge to it in the background. A prompt to a session that is behind converges first. |
+| A commit that reaches the default branch: agents, skills, tools, harness files, `kortix.yaml` | Each commit is a new config release. New sessions start on it. Running sessions converge to it in the background. A session that is behind converges when its current turn ends, and its next turn runs the new config. A prompt never waits for it. |
 | An edit inside a session's `/workspace` | Never on its own. It takes effect only when a change request merges it into the default branch. |
 | A secret value | Kortix pushes it to the project's running sandboxes. |
 | A sandbox template | Sessions that start after the change. Running sandboxes keep their image. |
@@ -242,10 +242,11 @@ Branch on `code`, never on `error`. The SDK exports `isFeatureDisabledError(erro
 | --- | --- |
 | A normal flag | `<Name> is not enabled for this project. Enable it in Settings → Feature flags.` |
 | A flag managed by Kortix (`apps`) | `<Name> is not enabled for this project. Contact Kortix to enable it.` |
-| A flag that follows the account's Volumes setting (`drives`, `ephemeral_sandboxes`) | `<Name> is not enabled for this organization.` |
+| A flag that follows the project's Volumes flag (`drives`, `ephemeral_sandboxes`) | `<Name> is not enabled for this project. Turn on Volumes in Settings → Feature flags.` |
 
 - **`apps`** is managed by Kortix. Kortix turns it on for a project on request. Settings and the CLI list it only while it is on, with a locked switch and origin `kortix`. A write from anyone else answers `403` `feature_operator_only`.
-- **`drives`** and **`ephemeral_sandboxes`** follow the account's Volumes setting, which a platform admin sets in the [admin console](/docs/host#the-platform-admin-console). They are never listed. A write answers `400`.
+- **`volumes`** and **`stateless_sessions`** are ordinary project flags. They are listed only on a deployment with Platinum. Turning `stateless_sessions` on while `volumes` is off answers `400` `Turn on Volumes first`.
+- **`drives`** and **`ephemeral_sandboxes`** follow the project's `volumes` flag. They are never listed. A write answers `400`. With Volumes off, every Files write answers `403` `feature_disabled`, and a file a session already wrote under `/drives` still opens.
 
 ## Delete a project
 

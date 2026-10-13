@@ -1,7 +1,7 @@
 // Fail-closed freeze of moved state keys in the old us-west-2 bucket: adds (or extends) one bucket-policy
 // statement that denies PutObject/DeleteObject on those keys for every principal. Saves the previous policy.
 // usage: node infra/terraform/scripts/statemove/deny-old-keys.mjs <group...> | --show | --remove
-//        groups: dev global staging prod
+//        groups: dev global staging prod vps-demo
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +14,7 @@ const GROUPS = {
   global: ['security/baseline.tfstate', 'security/compliance-monitoring.tfstate'],
   staging: ['staging-eu-west-2/ecs-api.tfstate', 'staging-eu-west-2/ecs-web.tfstate'],
   prod: ['prod/ecs-api.tfstate', 'prod/ecs-web.tfstate'],
+  'vps-demo': ['vps-demo/terraform.tfstate'],
 };
 // Credentials: AWS_PROFILE if set, else the `kortix` profile.
 const aws = (...a) => execFileSync('aws', [...a, '--profile', process.env.AWS_PROFILE || 'kortix', '--region', 'us-west-2', '--output', 'json']).toString();

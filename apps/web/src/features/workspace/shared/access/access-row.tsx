@@ -212,6 +212,9 @@ export function AccessRow({
         >
           {trailing ? <span className="text-muted-foreground text-sm">{trailing}</span> : null}
           {actions}
+          {/* Drawn only when it holds something: an empty 28px box left a
+              hole after the role on read-only rows. */}
+          {pending || notEditable || items.length > 0 ? (
           <div className="flex w-7 shrink-0 justify-end">
             {pending ? (
               <Loading className="text-muted-foreground size-4 shrink-0" />
@@ -225,13 +228,15 @@ export function AccessRow({
               <RowKebab items={items} label={kebabLabel} />
             ) : null}
           </div>
+          ) : null}
         </div>
       ) : null}
     </li>
   );
 }
 
-function RowKebab({ items, label }: { items: KebabItem[]; label: string }) {
+/** The row's kebab, exported for table-shaped lists (API tokens, OAuth apps) that keep its menu. */
+export function RowKebab({ items, label }: { items: KebabItem[]; label: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

@@ -2,8 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["@types/bun"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "DOM.AsyncIterable", "ES2024.String"]
+    "types": ["@types/bun"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]

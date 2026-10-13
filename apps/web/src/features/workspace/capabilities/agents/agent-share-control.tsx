@@ -110,7 +110,7 @@ export function AgentShareControl({
               </span>
             ))}
             {rest > 0 ? (
-              <span className="bg-muted text-muted-foreground ring-background -ml-1.5 inline-flex size-6 items-center justify-center rounded-full text-xs font-medium tabular-nums ring-2">
+              <span className="bg-muted text-muted-foreground ring-background -ml-1.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-medium tabular-nums ring-2">
                 +{rest}
               </span>
             ) : null}

@@ -30,6 +30,43 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   may buy credits AND the caller may change billing). Both return `false` while
   the account state is unknown. Additive.
 
+### Added (connector credential re-sync)
+- `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
+  connector the server re-reads the tools after the write: `sync` is that run
+  (`ConnectorSyncResult`), and a per-slug entry in `sync.errors` means the
+  credential is stored but the tools still fail to load. Absent for other
+  providers and on older servers. Additive (KRTX-2185).
+
+### Added (session log reads, P5.5)
+- `getSessionLogPage(projectId, sessionId, query?)` and `session.log(query?)`
+  read one page of the stored session log (`GET /v1/projects/:p/sessions/:s/log`):
+  `SessionLogPage` for `{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`),
+  `null` on a 404 (no stored log, or no such thread). `SessionLogPage` and
+  `SessionLogPageQuery` are now public types. Additive.
+- `classifySessionLogMessage(message)`: `classifyTurn` of a session-log message
+  (`ClassifiedPart`s from its blocks, its `TurnError`). Transitional: it goes with
+  `ClassifiedPart`. Additive.
+- `findSessionAttachments` also reads session-log records: attachment blocks, a
+  harness block's v1 file part, text blocks and `show` tool-call blocks. Additive.
+
+### Added (session readiness)
+- `session.ensureReady({ session })` takes the session's row when the caller
+  already read it. A `running` row that names its sandbox and
+  `runtime_session_id` is adopted without `POST /start`; any other row, or a row
+  of another session, falls through to `/start` as before. The Kortix CLI
+  passes it, so a one-shot `kortix sessions chat -p` on a running session saves
+  the 1.2–2.4 s `/start` round trip. Additive.
+
+### Added (SSO and MFA remedies)
+- `configureKortix({ onAccessRemedy })` / `createKortix({ onAccessRemedy })`:
+  called with `'sso_required'` or `'account_mfa_required'` when the API answers
+  403 with that code, for every REST client (`backendApi`) response, including
+  `showErrors: false` calls. The runtime proxy and the event stream do not call it.
+  A host without DOM events (React Native) cannot receive the
+  `kortix:sso-required` / `kortix:mfa-required` window events; this is its
+  signal. A throw from the hook is caught. The window events are unchanged.
+  Additive (KRTX-1716).
+
 ### Added (account invites)
 - `acceptAccountInviteAndLand(inviteId, invite?)` (`accountInvites.acceptAndLand`)
   accepts an invite and returns `{ accepted, landing }`. `accountInviteLanding`
@@ -536,6 +573,12 @@ and `useOpenCodeRuntimeReady`; they compile either way.
 The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- `useProjectSessions` ends its read past empty pages (`isScanning`) on a
+  failed fetch. Before, it read the failed page again as soon as the fetch
+  ended, for as long as the server failed. It also reads the next page when
+  a page answers before React renders the fetch that asked for it; before,
+  the read stopped there with `isScanning` true and no fetch running
+  (KRTX-1727).
 - `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
   and `throw` of a returned async generator inside its scope. Before, each
   `connector(slug).paginate` page ran outside the scope and used the

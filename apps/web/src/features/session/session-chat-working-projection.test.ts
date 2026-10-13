@@ -190,7 +190,7 @@ describe('the composer reads ONE working answer', () => {
     // contains. Pin BOTH links of the chain so this test can still fail if
     // either is severed: the retry predicate must flow into the
     // `resolveEffectiveBusy` call, and the composer must read `effectiveBusy`.
-    expect(chat).toContain('hasRetryingAssistantTurn(messages)');
+    expect(chat).toContain('sessionLogRetrying(thread)');
     const busyResolution = between(chat, 'const effectiveBusy = resolveEffectiveBusy({', '});');
     expect(busyResolution).toContain('hasRetryingAssistant');
     expect(chat).toContain('sessionWorking={effectiveBusy}');
@@ -223,8 +223,11 @@ describe('the turn card reads the same working answer', () => {
     expect(chat).toContain('sessionWorking={lastTurnWorking}');
     // The projection names the turn first; only where it names none does this
     // tab's own unanswered idle send (`freshSendHint`) — the one-frame "queued"
-    // flash on send that anchored the scroll back and forth.
-    expect(chat).toContain('hintMessageId: working.turnId ?? freshSendTurnId,');
+    // flash on send that anchored the scroll back and forth. Both reach
+    // `sessionLogTurns` as `liveMessageId`.
+    expect(chat).toContain('sessionLogTurns(turnThread, turnOptions(working.turnId))');
+    expect(chat).toContain('if (working.turnId || !freshSend || freshSend.sessionId !== sessionId) return null;');
+    expect(chat).toContain('sessionLogTurns(turnThread, turnOptions(freshSendTurnId))');
     expect(chat).toContain('setFreshSend({ sessionId, messageId: messageID });');
   });
 

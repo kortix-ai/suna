@@ -237,14 +237,29 @@ in before any non-trivial change. **Do not create a branch by reflex.**
 2. **Start a new canonical branch** only when the work is genuinely a new thing.
    Give it its own worktree: `pnpm worktree create --name <slug> --yes
    --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
-   only when the work needs migrations, destructive data work, schema drift, or
-   independent auth/storage state. See the **worktree** skill.
+   when the work needs migrations, destructive data work, or schema drift: it
+   copies the primary local database into the worktree's own database
+   (`kortix_wt_<slug>`, ~5 s, no extra containers). `--full-supabase` (a whole
+   Supabase stack, ~0.75 GB RAM) is only for independent auth/storage config.
+   See the **worktree** skill.
 3. **Never switch a worktree you did not create.** It belongs to one session and
    its canonical branch. The pre-commit hook refuses a commit on any other branch
    there (`scripts/check-worktree-branch.sh`). A throwaway probe branch goes in a
    private `git worktree add` in your scratchpad.
 4. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
    and investigating. Do not park feature work there.
+5. **Run `pnpm test` only from a worktree that has `.kortix-worktree.json`.** The
+   runner reads its ports from that marker. A bare `git worktree add` has none,
+   so its test stack takes the primary ports and talks to another session's
+   `pnpm dev` (2026-10-13: 156 flows failed with that stack's 503s).
+6. **Never kill a process you did not start.** Many sessions share this machine.
+   Kill by PID from your own process tree, or by a pattern that contains your
+   own worktree or scratchpad path. Never by a bare pattern such as
+   `pkill -f "bun test"`, and never in a loop. Need CPU? Lower your own
+   concurrency (`KE2E_API_WORKERS`, `KORTIX_DB_SUITE_WORKERS`) or ask the user.
+   2026-10-13: a guard loop that SIGTERMed every other session's `pnpm test`,
+   `tsc` and `vitest` every 20 s made 259 kills, and every suite on the machine
+   died with exit 143 and no failing test.
 
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
 stale-reference sweep, and the change that caused them all belong on the same
@@ -281,38 +296,25 @@ Never add a label by default or from automation. CI otherwise runs here:
 | Pull request into `staging` (release candidate) | full CI: `Tests` (reuses the green `dev` run of its head SHA), `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
-**Tests are attested, not run by CI.** `pnpm test` writes
-`tests/attestations/<branch>.json` on a green run (`/` and every char outside
-`[A-Za-z0-9._-]` become `-`; a detached HEAD writes `detached-<short-sha>.json`):
-`diff_files` + `diff_hash` (the files the PR itself changed —
-`git diff origin/dev...HEAD` — and their sha256, minus every attestation file),
-`source_hash` (full-tree fallback for a direct dev push), `head`, `passed`,
-per-lane results, `at`. The same write deletes every other file in
-`tests/attestations/` and the legacy `tests/test-attestation.json`. Commit
-`tests/attestations/`. One file per branch means two PRs never edit the same
-path, so a merge to `dev` never makes another PR conflict on its attestation.
-The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
-rejects the push when the attestation is stale, red, or missing. Never bypass
-it with `--no-verify`: the merge gate runs
-`pnpm test:verify --rev <head> --branch <headRefName>`: exit `0` green, `1`
-stale/red/missing (`--strict` exits `3` when `db-suites` is skipped). Verify
-reads the attestation file the PR's diff adds or edits under
-`tests/attestations/` (with several, the `--branch` match, else the newest
-`at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
-carries the legacy file and conflicts on it after a merge of `origin/dev`:
-delete it and re-run `pnpm test`.
-The attestation stays green after a merge of `origin/dev` that touches other
-files; it goes stale only when a file the PR itself changed is edited after the
-run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
-Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db`. That is the only skip, and it is not a pass: on `dev` the DB
-is gated after the merge (path-gated `DB Migrations`) and by the staging
-promote. The `packages` lane runs everywhere, including a Kortix factory
-sandbox — it has no skip and must attest `pass`.
+**You decide which tests a change needs.** No hook or gate requires a test run
+before a push or a merge into `dev`. Pick the checks that cover what you
+changed, run them, and write in the PR body what you ran and why. A diff that
+no test reads (docs, a README, a skill, a standalone script) needs no run. A
+change to shared code, the API, the SDK, a migration, or the runtime needs the
+tests that exercise it: the package's own tests, the affected flows
+(`pnpm test -- --id <ID>` / `--domain <d>`), or the diff-scoped `pnpm test`.
+`dev` is gated after the merge: every push runs every `Tests` lane, and a red
+run blocks the next promotion. If your merge turns `dev` red, you fix forward.
+A green `pnpm test` still writes `tests/attestations/<branch>.json`. The runner
+reads it to reuse lane groups that already passed on the same diff
+(`tests/README.md`, "Diff-scoped default run"). Committing it is optional for a
+person or a Claude session. The company factory's merge gate (G11) still
+requires it on factory PRs and checks it with
+`pnpm test:verify --rev <head> --branch <headRefName>`.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
-2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
-   command first, then `pnpm test`. Start the worktree's stack
+2. Verify in your box, with real inputs and outputs. Run the tests that cover
+   the change (see above), narrowest first. Start the worktree's stack
    (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
    HTTP route, the real CLI process, or the page with agent-browser. There is
    no CI lane to catch what you skip.
@@ -325,7 +327,7 @@ sandbox — it has no skip and must attest `pass`.
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
    - the relevant local checks ran with real inputs and outputs (rule 2), and
-     they passed, and `pnpm test:verify` exits `0` on the branch head;
+     they passed;
    - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
    A failing check blocks the merge until you fix it or state why it is
@@ -351,8 +353,7 @@ sandbox — it has no skip and must attest `pass`.
    dev" on the merged pull request, and "Not live on dev yet" names the
    surface that failed. The surfaces and their checks are in
    `.github/workflows/deploy-dev.yml`. The merge push runs every `Tests`
-   lane on `dev` (queued, about one run per 25 min). The attestation
-   (`pnpm test:verify`) was the pre-merge gate; the `dev` run is the check
+   lane on `dev` (queued, about one run per 25 min). That run is the check
    before staging. A red run comments the failing lanes and every commit since
    the last green run, once per new set of failing lanes. The author whose
    commit broke `dev` fixes forward. If `dev` is still red 1 hour after the
@@ -550,9 +551,9 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- Run the suite in your box before merging into `dev`: the narrowest relevant
-  command first, then `pnpm test`. A pull request into `dev` runs no CI job
-  unless a person adds `test` or `preview`. Your machine is the pre-merge gate.
+- Before merging into `dev`, run the tests that cover your change, narrowest
+  first. A pull request into `dev` runs no CI job unless a person adds `test`
+  or `preview`, and no hook requires a run: the choice is yours.
 - Every Linux CI job runs on a free GitHub-hosted runner (`ubuntu-24.04`,
   `ubuntu-24.04-arm`, `ubuntu-22.04`; 4 vCPU / 16 GB on this public repo) through
   `runs-on: ${{ vars.CI_RUNNER_<tier> || '<label>' }}`. Setting a

@@ -292,6 +292,26 @@ describe('kortixBinding', () => {
     expect(asked).toBe('/_kortix/token?audience=db');
   });
 
+  test('replays an early token response through the fetch option, then asks the gate again', async () => {
+    const early = Promise.resolve(Response.json({ token: 'jwt-early', expires_at: new Date(Date.now() + 900_000).toISOString() }));
+    let first: Promise<Response> | null = early;
+    const gate: string[] = [];
+    const binding = kortixBinding('replay-db', {
+      origin: 'https://crm.apps.example.test',
+      fetch: (async (input: RequestInfo | URL) => {
+        const reply = first;
+        first = null;
+        if (reply) return reply;
+        gate.push(String(input));
+        return Response.json({ token: 'jwt-late', expires_at: new Date(Date.now() + 900_000).toISOString() });
+      }) as typeof fetch,
+    });
+    expect(await binding.token()).toBe('jwt-early');
+    expect(gate).toEqual([]);
+    expect(await binding.token({ forceRefreshToken: true })).toBe('jwt-late');
+    expect(gate).toEqual(['/_kortix/token?audience=replay-db']);
+  });
+
   test('trims trailing slashes off the origin in linear time (CodeQL js/polynomial-redos)', () => {
     expect(kortixBinding('db', { origin: 'https://crm.apps.example.test///' }).url).toBe(
       'https://crm.apps.example.test/_kortix/apps/db',

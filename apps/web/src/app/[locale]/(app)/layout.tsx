@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 
+import { DesktopQuickEntry } from '@/components/desktop/desktop-quick-entry';
 import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
 import { MfaGate } from '@/features/auth/mfa-step-up';
@@ -33,6 +34,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <BillingReturnWatcher />
       </Suspense>
       <ProjectSwitchWatcher />
+      {/* Desktop app only: starts a session from the Quick Entry bar the global
+          shortcut opens over any app. */}
+      <DesktopQuickEntry />
       {/* Closed, this is one store subscription and a `popstate` listener. The
           hub's own chunk is not fetched until the first open — or until
           `preloadAccountHub()` warms it on pointer intent. */}

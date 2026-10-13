@@ -8,13 +8,12 @@ import type {
   Agent,
   Command,
   FlatModel,
-  MessageWithParts,
   ProviderListResponse,
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
-import { SESSION_NOTICE } from '@kortix/sdk';
+import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
 import { newPastedContentId, type PastedContent, splitPastedContent } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
@@ -25,6 +24,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -224,7 +224,7 @@ export interface SessionChatInputProps {
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
-  messages?: MessageWithParts[];
+  messages?: SessionLogMessage[];
   sessionId?: string;
   projectId?: string;
   /**
@@ -382,8 +382,9 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
-  /** A question is docked above the card: the strip goes full width and
-   *  the card squares its top corners, so both read as one surface. */
+  /** A question or a pending approval is docked above the card: the strip
+   *  goes full width and the card squares its top corners, so both read as
+   *  one surface. */
   questionActive?: boolean;
   /**
    * A labeled submit button replaces the icon send/stop control, busy or
@@ -1718,9 +1719,13 @@ function ComposerImpl(props: SessionChatInputProps) {
    * must survive re-renders (a fresh latch mid-send would reopen the
    * double-fire window), while each later submit must read the CURRENT
    * dispatch closure, not the one from the render that created the latch.
+   *
+   * A layout effect, so it runs before every passive effect of the same
+   * commit: the prefill effect above submits in the commit that delivers the
+   * prefill, and must send with this render's agent, model and effort.
    */
   const dispatchSubmissionRef = useRef(dispatchSubmission);
-  useEffect(() => {
+  useLayoutEffect(() => {
     dispatchSubmissionRef.current = dispatchSubmission;
   });
   const submitLatchRef = useRef<(() => Promise<void>) | null>(null);

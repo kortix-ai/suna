@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src blob:;" />
+    <title>Quick Entry</title>
+    <style>
+      /* Kortix tokens: .agents/skills/kortix-brand/references/visual/tokens.css, inlined because
+         the CSP blocks every load. The scheme follows the theme the web app sets (nativeTheme). */
+      :root {
+        color-scheme: light dark;
+        --popover: #ffffff;
+        --foreground: #1f1f1f;
+        --muted-foreground: #666666;
+        --border: #e2e2e2;
+        --primary: #1f1f1f;
+        --primary-foreground: #ffffff;
+        --ring: #0099ff;
+        --hover: rgb(0 0 0 / 0.045);
+        --kortix-green: #199338;
+        --kortix-yellow: #cca300;
+        --kortix-red: #f14b4c;
+        --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        --font-sans: Roobert, ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", "Noto Sans", sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --popover: #141414;
+          --foreground: #ffffff;
+          --muted-foreground: #999999;
+          --border: #262626;
+          --primary: #ffffff;
+          --primary-foreground: #090909;
+          --hover: rgb(255 255 255 / 0.06);
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+        font: 500 14px/20px var(--font-sans);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      /* The margin holds the shadow inside the transparent window (quick-entry.js WIDTH). */
+      body { padding: 40px 48px 56px; }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 12px 10px 16px;
+        background: var(--popover);
+        color: var(--foreground);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        /* A hairline, a close contact shadow and a wide soft one, so the bar floats over the dim. */
+        box-shadow:
+          0 0 0 1px rgb(0 0 0 / 0.04),
+          0 2px 6px -1px rgb(0 0 0 / 0.12),
+          0 20px 44px -12px rgb(0 0 0 / 0.45);
+        /* Closed until main shows the bar. Open and close run with the dim (quick-entry.js OPEN_MS, CLOSE_MS). */
+        opacity: 0;
+        transform: translateY(16px) scale(0.96);
+        transform-origin: 50% 100%;
+      }
+      @media (prefers-color-scheme: dark) {
+        form {
+          box-shadow:
+            0 2px 6px -1px rgb(0 0 0 / 0.4),
+            0 20px 48px -12px rgb(0 0 0 / 0.75);
+        }
+      }
+      body.open form {
+        opacity: 1;
+        transform: none;
+        transition:
+          opacity 180ms cubic-bezier(0.2, 0, 0, 1),
+          transform 250ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      body.closing form {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+        transition:
+          opacity 150ms cubic-bezier(0.4, 0, 1, 1),
+          transform 150ms cubic-bezier(0.4, 0, 1, 1);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        form, body.open form, body.closing form { transform: none; transition: none; }
+      }
+      form.dragging { border-color: var(--ring); }
+      .top { display: flex; gap: 12px; }
+      .mark { flex: none; align-self: flex-start; height: 16px; margin-top: 7px; }
+      textarea {
+        flex: 1;
+        min-width: 0;
+        height: 20px;
+        max-height: 200px;
+        margin: 0;
+        padding: 5px 0;
+        border: 0;
+        outline: none;
+        resize: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      textarea::placeholder { color: var(--muted-foreground); }
+      /* Screenshots and files that ride with the prompt. */
+      .files { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 28px; }
+      .files:empty { display: none; }
+      .file {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 48px;
+        max-width: 200px;
+        padding: 0 8px 0 0;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 13px;
+        color: var(--muted-foreground);
+      }
+      .file img { width: 48px; height: 48px; object-fit: cover; }
+      .file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 8px; }
+      .file img + span { padding-left: 0; }
+      .file:has(img) { padding: 0; max-width: none; }
+      .file:has(img) span { display: none; }
+      .remove {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        opacity: 0;
+      }
+      .file:hover .remove, .remove:focus-visible { opacity: 1; }
+      .remove svg { width: 10px; height: 10px; }
+      .notice { padding-left: 28px; font-size: 13px; color: var(--muted-foreground); }
+      .notice:empty { display: none; }
+      .notice button { height: auto; padding: 0; background: none; color: var(--ring); font-size: 13px; text-decoration: underline; }
+      .bottom { display: flex; align-items: center; gap: 2px; padding-left: 22px; }
+      .spacer { flex: 1; }
+      button {
+        flex: none;
+        height: 30px;
+        padding: 0;
+        border: 0;
+        font: inherit;
+        cursor: pointer;
+        transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1), background-color 150ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+      button[hidden] { display: none; }
+      /* A control in the bottom row: an icon, a label and a caret, like the composer's. */
+      .control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 220px;
+        padding: 0 8px;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted-foreground);
+        font-size: 13px;
+      }
+      .control:hover { background: var(--hover); color: var(--foreground); }
+      .control span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .control svg { flex: none; width: 16px; height: 16px; }
+      .control svg.caret { width: 12px; height: 12px; }
+      .icon { width: 30px; justify-content: center; padding: 0; }
+      #pick { max-width: 320px; }
+      /* The sidebar's session status mark (session-status-mark.tsx), at 8 px. */
+      .dot { flex: none; width: 8px; height: 8px; border-radius: 999px; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+      .dot[hidden] { display: none; }
+      .dot[data-status="running"], .dot[data-status="needs-you"] { background: var(--kortix-green); box-shadow: none; }
+      .dot[data-status="starting"] { background: var(--kortix-yellow); box-shadow: none; }
+      .dot[data-status="failed"] { background: var(--kortix-red); box-shadow: none; }
+      .send {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        margin-left: 6px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+      }
+      .send:disabled { opacity: 0.4; cursor: default; }
+      .send svg { width: 16px; height: 16px; }
+    </style>
+  </head>
+  <body>
+    <form id="bar" autocomplete="off">
+      <div class="files" id="files"></div>
+      <div class="top">
+        <!-- The symbol: path data of apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg. -->
+        <svg class="mark" viewBox="0 0 164 140" aria-hidden="true">
+          <path fill="currentColor" d="M139.737 139.53H163.055C163.055 109.932 147.261 84.0225 123.642 69.7694C147.261 55.5163 163.054 29.6068 163.054 0.0085907H139.736C139.736 28.0165 119.67 51.4471 93.2922 56.9406V0.0085907H69.9773V56.9406C43.4754 51.5428 23.5331 28.1045 23.5331 0.0085907H0.21529C0.21529 29.6068 16.0088 55.5163 39.6282 69.7694C16.0086 84.0225 0.214773 109.932 0.214773 139.53H23.5325C23.5325 111.434 43.4754 87.996 69.9773 82.5981V139.556H93.2922V82.598C119.794 87.9957 139.737 111.434 139.737 139.53Z" />
+        </svg>
+        <textarea id="prompt" rows="1" placeholder="Describe a task to start a session…" aria-label="Prompt"></textarea>
+      </div>
+      <div class="notice" id="notice" role="status"></div>
+      <div class="bottom">
+        <!-- Phosphor icons (regular), the composer's set. -->
+        <button type="button" class="control icon" id="attach" aria-label="Attach files" title="Attach files"><svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M209.66,122.34a8,8,0,0,1,0,11.32l-82.05,82a56,56,0,0,1-79.2-79.21L147.67,35.73a40,40,0,1,1,56.61,56.55L105,193A24,24,0,1,1,71,159L154.3,74.38A8,8,0,1,1,165.7,85.6L82.39,170.31a8,8,0,1,0,11.27,11.36L192.93,81A24,24,0,1,0,159,47L59.76,147.68a40,40,0,1,0,56.53,56.62l82.06-82A8,8,0,0,1,209.66,122.34Z" /></svg></button>
+        <button type="button" class="control icon" id="screenshot" aria-label="Take a screenshot" title="Take a screenshot" hidden><svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M208,56H180.28L166.65,35.56A8,8,0,0,0,160,32H96a8,8,0,0,0-6.65,3.56L75.71,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.56L100.28,48h55.43l13.63,20.44A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,88Zm0,72a28,28,0,1,1,28-28A28,28,0,0,1,128,160Z" /></svg></button>
+        <!-- A new session's agent, model and effort; a picked session keeps its own. -->
+        <button type="button" class="control" id="agent" aria-haspopup="menu" hidden><span id="agent-label"></span><svg class="caret" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" /></svg></button>
+        <span class="spacer"></span>
+        <!-- Where the prompt goes: a new session in the project, or a picked recent session. -->
+        <button type="button" class="control" id="pick" aria-haspopup="menu">
+          <span class="dot" id="dot" hidden></span>
+          <span id="pick-label">New session</span>
+          <svg class="caret" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" /></svg>
+        </button>
+        <button type="submit" class="send" id="send" aria-label="Start session" disabled>
+          <!-- Phosphor ArrowUp (regular), the composer's send glyph. -->
+          <svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z" /></svg>
+        </button>
+      </div>
+      <input type="file" id="file-input" multiple hidden />
+    </form>
+    <script>
+      const bar = window.kortixQuickEntry;
+      const form = document.getElementById('bar');
+      const prompt = document.getElementById('prompt');
+      const send = document.getElementById('send');
+      const pick = document.getElementById('pick');
+      const pickLabel = document.getElementById('pick-label');
+      const dot = document.getElementById('dot');
+      const filesEl = document.getElementById('files');
+      const fileInput = document.getElementById('file-input');
+      const notice = document.getElementById('notice');
+      const controls = { agent: document.getElementById('agent') };
+      const removeIcon = '<svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" /></svg>';
+      /** @type {{ id: number, name: string, type: string, bytes: Uint8Array, url: string | null }[]} */
+      let attachments = [];
+      let nextId = 1;
+
+      const hasContent = () => Boolean(prompt.value.trim()) || attachments.length > 0;
+      // Grow with the text up to max-height, then scroll; the window follows.
+      const fit = () => {
+        prompt.style.height = '20px';
+        prompt.style.height = `${Math.min(prompt.scrollHeight - 10, 200)}px`;
+        send.disabled = !hasContent();
+        bar.resize(Math.ceil(document.documentElement.getBoundingClientRect().height));
+      };
+
+      const renderFiles = () => {
+        filesEl.replaceChildren(
+          ...attachments.map((file) => {
+            const chip = document.createElement('div');
+            chip.className = 'file';
+            chip.title = file.name;
+            if (file.url) {
+              const img = document.createElement('img');
+              img.src = file.url;
+              img.alt = file.name;
+              chip.append(img);
+            }
+            const name = document.createElement('span');
+            name.textContent = file.name;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'remove';
+            remove.setAttribute('aria-label', `Remove ${file.name}`);
+            remove.innerHTML = removeIcon;
+            remove.addEventListener('click', () => {
+              if (file.url) URL.revokeObjectURL(file.url);
+              attachments = attachments.filter((other) => other.id !== file.id);
+              renderFiles();
+              prompt.focus();
+            });
+            chip.append(name, remove);
+            return chip;
+          }),
+        );
+        fit();
+      };
+      const addFile = (name, type, bytes) => {
+        if (!bytes?.byteLength) return;
+        const url = type.startsWith('image/') ? URL.createObjectURL(new Blob([bytes], { type })) : null;
+        attachments.push({ id: nextId++, name, type, bytes, url });
+        renderFiles();
+      };
+      const addFiles = async (list) => {
+        for (const file of list) addFile(file.name, file.type || 'application/octet-stream', new Uint8Array(await file.arrayBuffer()));
+      };
+
+      const submit = () => {
+        if (!hasContent()) return;
+        bar.submit(
+          prompt.value,
+          attachments.map(({ name, type, bytes }) => ({ name, type, bytes })),
+        );
+        prompt.value = '';
+        for (const file of attachments) if (file.url) URL.revokeObjectURL(file.url);
+        attachments = [];
+        notice.textContent = '';
+        renderFiles();
+      };
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submit();
+      });
+      prompt.addEventListener('input', fit);
+      prompt.addEventListener('keydown', (event) => {
+        // Enter sends and Shift+Enter is a new line, as in the composer. Never
+        // during IME composition: that Enter commits the candidate.
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+          event.preventDefault();
+          submit();
+        }
+      });
+      // A pasted image or file rides along, as in the composer.
+      prompt.addEventListener('paste', (event) => {
+        const files = [...(event.clipboardData?.files ?? [])];
+        if (!files.length) return;
+        event.preventDefault();
+        void addFiles(files);
+      });
+      form.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        form.classList.add('dragging');
+      });
+      form.addEventListener('dragleave', () => form.classList.remove('dragging'));
+      form.addEventListener('drop', (event) => {
+        event.preventDefault();
+        form.classList.remove('dragging');
+        void addFiles([...(event.dataTransfer?.files ?? [])]);
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          bar.dismiss();
+        }
+      });
+      document.getElementById('attach').addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', async () => {
+        await addFiles([...fileInput.files]);
+        fileInput.value = '';
+        prompt.focus();
+      });
+      document.getElementById('screenshot').addEventListener('click', () => bar.screenshot());
+      // Each picker is a native menu under its button.
+      const menuAt = (button, kind) => {
+        const rect = button.getBoundingClientRect();
+        bar.menu(kind, { x: rect.left, y: rect.bottom + 4 });
+      };
+      pick.addEventListener('click', () => menuAt(pick, 'session'));
+      for (const [kind, button] of Object.entries(controls)) button.addEventListener('click', () => menuAt(button, kind));
+
+      // `session` is the picked recent session, or null for a new session in `target`.
+      // `composer` labels the new session's agent; null hides it.
+      const render = ({ target: name, session, composer, canScreenshot }) => {
+        pickLabel.textContent = session ? session.title : 'New session';
+        pick.title = session ? `Send to ${session.title}` : name ? `New session in ${name}` : 'New session';
+        pick.setAttribute('aria-label', `${pick.title}. Choose a session`);
+        dot.hidden = !session;
+        if (session) dot.dataset.status = session.status;
+        send.setAttribute('aria-label', session ? 'Send' : 'Start session');
+        document.getElementById('screenshot').hidden = !canScreenshot;
+        for (const [kind, button] of Object.entries(controls)) {
+          const value = !session && composer ? composer[kind] : null;
+          button.hidden = !value;
+          if (value) {
+            document.getElementById(`${kind}-label`).textContent = value;
+            button.title = `Agent: ${value}`;
+            button.setAttribute('aria-label', button.title);
+          }
+        }
+        fit();
+      };
+      bar.onShow((state) => {
+        // Restart the open transition from the closed state on every show.
+        document.body.classList.remove('open', 'closing');
+        void document.body.offsetWidth;
+        requestAnimationFrame(() => document.body.classList.add('open'));
+        render(state);
+        prompt.focus();
+        prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+      });
+      bar.onHide(() => {
+        document.body.classList.remove('open');
+        document.body.classList.add('closing');
+      });
+      bar.onState((state) => {
+        render(state);
+        // After a pick the menu leaves focus on its button; typing continues in the prompt.
+        if (document.activeElement?.closest('.bottom')) prompt.focus();
+      });
+      bar.onAttach(({ name, type, bytes }) => {
+        notice.textContent = '';
+        addFile(name, type, bytes);
+        prompt.focus();
+      });
+      // A one-line explanation, with an optional action (open the macOS privacy pane).
+      bar.onNotice(({ text, action }) => {
+        notice.textContent = text ?? '';
+        if (text && action) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = action;
+          button.addEventListener('click', () => bar.noticeAction());
+          notice.append(' ', button);
+        }
+        fit();
+      });
+      fit();
+    </script>
+  </body>
+</html>

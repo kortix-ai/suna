@@ -23,9 +23,11 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
   and its CMK were removed on 2026-10-12 with the last us-west-2 VPC.
 - Regional Terraform state buckets, each with its own CMK, versioning and
   365-day noncurrent retention: `kortix-terraform-state-eu-west-2-935064898258`
-  (`terraform-state-euw2.tf`) and `kortix-terraform-state-us-east-2-935064898258`
-  (`terraform-state-use2.tf`). The drift role `kortix-gha-tf-plan` may decrypt
-  with these two keys through S3 and with no other key.
+  (`terraform-state-euw2.tf`), `kortix-terraform-state-us-east-2-935064898258`
+  (`terraform-state-use2.tf`) and `kortix-terraform-state-us-east-1-935064898258`
+  (`terraform-state-use1.tf`, for the external vps-demo root). The drift role
+  `kortix-gha-tf-plan` may decrypt with the eu-west-2 and us-east-2 keys through
+  S3 and with no other key.
 - IAM groups, attachments, memberships + 4 customer-managed policies (DCF-776)
 - Weekly SSM security-patch installation and reboot-if-needed for every current
   and replacement dev/prod EKS worker, serialized one node at a time

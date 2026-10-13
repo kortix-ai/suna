@@ -153,8 +153,3 @@ export function approvalNoticeHeadline(
     hint: tI18nComplete('text5726504025dc', { value0: pendingCount }),
   };
 }
-
-/** Accordion toggle — one open row at a time keeps the pinned notice small. */
-export function nextExpandedApproval(current: string | null, executionId: string): string | null {
-  return current === executionId ? null : executionId;
-}

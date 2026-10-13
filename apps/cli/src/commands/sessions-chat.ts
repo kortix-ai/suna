@@ -1,11 +1,18 @@
 import { createInterface } from 'node:readline';
 import {
   type MessageWithParts,
-  type Part,
-  extractGatewayErrorDetails,
+  type SessionLogBlock,
+  type SessionLogMessage,
+  type SessionLogPage,
+  type SessionLogPageQuery,
+  type SessionLogThread,
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
+  classifySessionLogMessage,
   findSessionAttachments,
+  sessionLogCallStatus,
+  sessionLogOfV1Rows,
   sessionModelPin,
-  unwrapError,
 } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
@@ -97,57 +104,58 @@ export async function loadSessionForChat(
   return { ...runtime, ctx };
 }
 
-/** Extract a plain-text representation of a message's parts. */
-export function extractMessageText(msg: MessageWithParts): string {
-  return msg.parts
-    .map((p) => partToText(p))
-    .filter((s) => s.length > 0)
-    .join('\n');
-}
+const fileText = (name: string | undefined) => `${C.faded}[file${name ? ` · ${name}` : ''}]${C.reset}`;
 
-function partToText(part: Part): string {
-  if (part.type === 'text' && typeof (part as { text?: string }).text === 'string') {
-    if ((part as { synthetic?: boolean }).synthetic) return '';
-    return (part as { text: string }).text;
-  }
-  if (part.type === 'reasoning' && typeof (part as { text?: string }).text === 'string') {
-    return `${C.dim}[reasoning] ${(part as { text: string }).text}${C.reset}`;
-  }
-  if (part.type === 'tool') {
-    const name = (part as { tool?: string }).tool ?? 'tool';
-    const state = (part as { state?: { status?: string; output?: string } }).state;
-    const out = state?.output ? `\n${C.dim}${state.output}${C.reset}` : '';
-    return `${C.faded}[${name}${state?.status ? ` · ${state.status}` : ''}]${C.reset}${out}`;
-  }
-  if (part.type === 'file') {
-    const filename = (part as { filename?: string }).filename;
-    return `${C.faded}[file${filename ? ` · ${filename}` : ''}]${C.reset}`;
-  }
-  return '';
-}
-
-export function printMessage(msg: MessageWithParts): void {
-  const role = msg.info.role === 'assistant' ? 'assistant' : msg.info.role;
-  const color = role === 'assistant' ? C.cyan : C.green;
-  const ts = msg.info.time?.created ? new Date(msg.info.time.created).toLocaleTimeString() : '';
-  process.stdout.write(`\n${color}${C.bold}${role}${C.reset} ${C.faded}${ts}${C.reset}\n`);
-  const body = extractMessageText(msg);
-  if (body) {
-    for (const line of body.split('\n')) {
-      process.stdout.write(`  ${line}\n`);
+/** One block as the text `sessions log` prints; empty for a block with nothing to read. */
+function blockToText(block: SessionLogBlock, streaming: boolean): string {
+  switch (block.type) {
+    case 'text':
+      return block.synthetic ? '' : block.text;
+    case 'reasoning':
+      return `${C.dim}[reasoning] ${block.text}${C.reset}`;
+    case 'tool_call': {
+      const status = sessionLogCallStatus(block, streaming);
+      const output = (block.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n');
+      return `${C.faded}[${block.name} · ${status}]${C.reset}${output ? `\n${C.dim}${output}${C.reset}` : ''}`;
     }
+    case 'attachment':
+      return fileText(block.name);
+    case 'compaction':
+      return block.summary ?? '';
+    case 'harness': {
+      // A file the harness keeps in its own form (OpenCode inlines a text file) holds its v1 part.
+      const data = block.data as { type?: unknown; filename?: unknown } | null;
+      return block.kind === 'file' && data?.type === 'file' ? fileText(typeof data.filename === 'string' ? data.filename : undefined) : '';
+    }
+    default:
+      // step and subtask blocks carry no text of their own.
+      return '';
   }
-  if (msg.info.role === 'assistant' && msg.info.error) {
-    const error = msg.info.error;
-    const name = typeof error.name === 'string' && error.name ? `${error.name}: ` : '';
-    // The transcript contract carries the failure reason on `error.data.*` — never a
-    // top-level `message` — and an LLM-gateway rejection puts its own sentence in a
-    // JSON body (`data.responseBody`, or that body re-serialized into `data.message`).
-    // Same extraction as the web's turn renderer: the gateway's own sentence wins
-    // over the HTTP status text an `APIError` carries as its message.
-    const reason = extractGatewayErrorDetails(error)?.message || unwrapError(error);
-    process.stdout.write(`  ${C.red}error: ${name}${reason}${C.reset}\n`);
+}
+
+/** Print one session-log message: a role header, its blocks as text, and its error. */
+export function printLogMessage(message: SessionLogMessage): void {
+  const role = message.kind === 'compaction' ? 'compaction' : message.role;
+  const color = role === 'user' || role === 'system' ? C.green : C.cyan;
+  const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
+  process.stdout.write(`\n${color}${C.bold}${role}${C.reset} ${C.faded}${ts}${C.reset}\n`);
+  const streaming = message.status === 'streaming';
+  const body = message.blocks
+    .map((block) => blockToText(block, streaming))
+    .filter((text) => text.length > 0)
+    .join('\n');
+  if (body) {
+    for (const line of body.split('\n')) process.stdout.write(`  ${line}\n`);
   }
+  // The SDK's error: a converted record keeps the gateway's own sentence, which `error.message` does not carry.
+  const error = classifySessionLogMessage(message).error;
+  if (error) process.stdout.write(`  ${C.red}error: ${error.name}: ${error.message}${C.reset}\n`);
+}
+
+/** Print one v1 message (`sessions chat`), through the same block renderer. */
+export function printMessage(msg: MessageWithParts): void {
+  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
+  if (message) printLogMessage(message);
 }
 
 /** Promise-based readline `question` (single line). */
@@ -548,12 +556,25 @@ Print a session agent's recent messages — a read-only peek at what an agent is
 doing, without sending it anything. With no session id, uses your most recent
 running session.
 
-A running session is read live from its sandbox. A stopped session is read from
-the transcript the server saves at the end of every turn, so it never has to be
-woken up just to be read; the source is noted on stderr.
+The messages come from the session log (kortix.session/2) the server stores
+at the end of every turn, so a stopped session is never woken up just to be
+read. A running session adds the messages of the turn it runs now, read live
+from its sandbox. A session with no stored log yet, or a credential the log
+does not answer (a session-bound token, as inside a sandbox), is read from the
+v1 transcript: live while the session runs, else the copy the server saved. The source is
+noted on stderr when the session is not read live.
 
-  --limit, -n <N>   How many recent messages to show (default 10).
-  --json            Emit structured JSON (role / text / parts) for scripting.
+  --limit, -n <N>   How many recent messages to show, per thread (default 10).
+  --json            Emit the session log as JSON for scripting: the session
+                    record with "schema": "kortix.session/2", "source" ("log",
+                    or "v1" for a session with no stored log, converted), and
+                    "threads" (root and sub-agents), each with its newest
+                    messages and "has_more". A running turn's messages
+                    the log does not hold yet carry "provisional": true
+                    (their seq is not stored yet).
+  --schema v1       Deprecated: emit the old JSON (role / text / parts per
+                    root message) from the v1 transcript. Goes in the next
+                    release.
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -563,16 +584,17 @@ agents: list them, then \`kortix sessions log <id>\` to read what any one of
 them is currently doing. Aliases: \`messages\`, \`history\`.`;
 
 /**
- * `kortix sessions log` — print a session's recent OpenCode messages.
- * Read-only: it never sends a prompt, so it's the safe way for one agent to
- * observe what other agents are doing.
+ * `kortix sessions log` — print a session's recent messages, rendered from
+ * session-log blocks. Read-only: it never sends a prompt, so it's the safe way
+ * for one agent to observe what other agents are doing.
  *
- * TWO SOURCES. A running session is read live. Anything else is read from the
- * server's saved transcript — written at every turn end — and so is a running
- * session whose box is not answering. This used to refuse a stopped session
- * outright ("a stopped session has no sandbox to query") and tell the user to
- * restart it: a paid, minutes-long wake just to read text the server already
- * held.
+ * SOURCES. The stored session log (`GET …/log`) first: it answers while the box
+ * is stopped, and holds every thread. It is journaled at each turn end, so a
+ * running session appends the messages of its open turn from the live read. A
+ * session with no stored log (404) reads v1 as before — live while running,
+ * else the server's saved transcript — converted to the same records
+ * (`sessionLogOfV1Rows`), so `--json` has one shape. `--schema v1` keeps the old
+ * v1 JSON for one release.
  */
 export async function runSessionsLog(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -584,11 +606,13 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   let projectArg: string | undefined;
   let hostArg: string | undefined;
   let limitRaw: string | undefined;
+  let schemaRaw: string | undefined;
   let json = false;
   try {
     projectArg = takeFlagValue(rest, ['--project']);
     hostArg = takeFlagValue(rest, ['--host']);
     limitRaw = takeFlagValue(rest, ['--limit', '-n']);
+    schemaRaw = takeFlagValue(rest, ['--schema']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -603,6 +627,14 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   if (!Number.isInteger(limit) || limit <= 0) {
     process.stderr.write(`${status.err(`Invalid --limit "${limitRaw}".`)}\n`);
     return 2;
+  }
+  const schema = schemaRaw ?? 'v2';
+  if (schema !== 'v1' && schema !== 'v2') {
+    process.stderr.write(`${status.err(`Invalid --schema "${schemaRaw}": use v2 (default) or v1.`)}\n`);
+    return 2;
+  }
+  if (schema === 'v1') {
+    process.stderr.write(`${C.dim}--schema v1 is deprecated and goes in the next release; the default is kortix.session/2.${C.reset}\n`);
   }
   const opts: CtxOpts = { projectArg, hostArg };
 
@@ -638,47 +670,82 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     );
   }
 
-  let messages: MessageWithParts[] | null = null;
+  let live: { messages: MessageWithParts[]; runtimeSessionId: string } | null = null;
   let liveError: unknown = null;
   if (session.status === 'running') {
     try {
       const runtime = await resolveSessionRuntime({ auth, client, projectId, session });
-      messages = await withKortixScope(auth, async () =>
+      const messages = await withKortixScope(auth, async () =>
         (await runtime.handle.messages({ conversationId: runtime.runtimeSessionId, limit })).messages,
       );
+      live = { messages, runtimeSessionId: runtime.runtimeSessionId };
     } catch (err) {
       // A box that is not answering — still waking, just parked, mid-restart —
-      // is not a reason to show nothing: the saved copy below is the same
+      // is not a reason to show nothing: the stored copy below is the same
       // conversation up to its last turn. The live error is reported only when
-      // there is no saved copy to show instead.
+      // there is no stored copy to show instead.
       liveError = err instanceof SessionRuntimeError ? (err.cause ?? err) : err;
     }
   }
-  if (messages === null) {
-    const saved = await readSavedTranscript(auth, projectId, session.session_id, limit);
-    if (saved.kind !== 'ok' && liveError !== null) return surfaceApiError(liveError);
-    if (saved.kind === 'error') return surfaceApiError(saved.error);
-    if (saved.kind === 'none') {
-      process.stderr.write(
-        `${status.err(`No saved transcript for session ${session.session_id} yet.`)}\n` +
-          `  ${C.dim}It is saved at the end of every turn. Start the session with ` +
-          `\`kortix sessions start ${session.session_id}\` to read it live.${C.reset}\n`,
-      );
-      return 1;
+  const why = liveError !== null ? 'its sandbox is not answering' : `session is ${session.status}`;
+
+  let stored: StoredSessionLog | null = null;
+  if (schema === 'v2') {
+    const handle = kortixFromAuth(auth).session(projectId, session.session_id);
+    try {
+      stored = await readStoredSessionLog((query) => withKortixScope(auth, () => handle.log(query)), limit);
+    } catch (err) {
+      return surfaceApiError(err);
     }
-    messages = saved.messages;
-    const why =
-      liveError !== null
-        ? 'its sandbox is not answering'
-        : `session is ${session.status}`;
-    process.stderr.write(
-      `${C.dim}Saved transcript — ${why}` +
-        `${saved.capturedAt ? `; saved ${saved.capturedAt}` : ''}.${C.reset}\n`,
-    );
+  }
+
+  let output: SessionLogOutput;
+  if (stored) {
+    let threads = stored.threads;
+    if (live) {
+      const liveThread = sessionLogOfV1Rows(session.session_id, live.runtimeSessionId, live.messages).threads[0];
+      if (liveThread) threads = withLiveTurn(threads, liveThread, limit);
+    } else {
+      process.stderr.write(`${C.dim}Stored session log — ${why}.${C.reset}\n`);
+    }
+    output = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, source: 'log', ...stored.session, threads };
+  } else {
+    let messages: MessageWithParts[];
+    let runtimeSessionId: string;
+    let hasMore: boolean;
+    if (live) {
+      ({ messages, runtimeSessionId } = live);
+      hasMore = messages.length >= limit;
+    } else {
+      const saved = await readSavedTranscript(auth, projectId, session.session_id, limit);
+      if (saved.kind !== 'ok' && liveError !== null) return surfaceApiError(liveError);
+      if (saved.kind === 'error') return surfaceApiError(saved.error);
+      if (saved.kind === 'none') {
+        process.stderr.write(
+          `${status.err(`No saved transcript for session ${session.session_id} yet.`)}\n` +
+            `  ${C.dim}It is saved at the end of every turn. Start the session with ` +
+            `\`kortix sessions start ${session.session_id}\` to read it live.${C.reset}\n`,
+        );
+        return 1;
+      }
+      messages = saved.messages;
+      runtimeSessionId = saved.runtimeSessionId ?? messages[0]?.info.sessionID ?? session.session_id;
+      hasMore = saved.hasMore;
+      process.stderr.write(
+        `${C.dim}Saved transcript — ${why}` +
+          `${saved.capturedAt ? `; saved ${saved.capturedAt}` : ''}.${C.reset}\n`,
+      );
+    }
+    if (json && schema === 'v1') {
+      process.stdout.write(`${JSON.stringify(messages.map(messageToJson), null, 2)}\n`);
+      return 0;
+    }
+    const converted = sessionLogOfV1Rows(session.session_id, runtimeSessionId, messages);
+    output = { ...converted, source: 'v1', threads: converted.threads.map((thread) => ({ ...thread, has_more: hasMore })) };
   }
 
   if (json) {
-    process.stdout.write(`${JSON.stringify(messages.map(messageToJson), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     return 0;
   }
 
@@ -687,17 +754,19 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     `\n${C.bold}${s.name ?? s.session_id.split('-')[0]}${C.reset} ` +
       `${C.faded}(${s.agent_name} · ${s.status})${C.reset}\n`,
   );
+  const root = output.threads.find((thread) => thread.parent_thread_id === null) ?? output.threads[0];
+  const messages = root?.messages ?? [];
   if (messages.length === 0) {
     process.stdout.write(`  ${C.dim}No messages yet.${C.reset}\n\n`);
     return 0;
   }
-  for (const msg of messages) printMessage(msg);
+  for (const message of messages) printLogMessage(message);
   // A `[file · name]` line says a file exists; it does not say it can be
   // fetched. Point at the command that fetches it — sandbox or no sandbox.
-  const stored = findSessionAttachments(messages).length;
-  if (stored > 0) {
+  const stored_files = findSessionAttachments(messages).length;
+  if (stored_files > 0) {
     process.stdout.write(
-      `\n  ${C.dim}${stored} stored file${stored === 1 ? '' : 's'} — download with ` +
+      `\n  ${C.dim}${stored_files} stored file${stored_files === 1 ? '' : 's'} — download with ` +
         `\`kortix sessions attachments ${s.session_id}\`.${C.reset}\n`,
     );
   }
@@ -705,11 +774,104 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   return 0;
 }
 
+type LogThread = SessionLogThread & { has_more: boolean };
+
+/** What `sessions log --json` prints: the session record, where it came from, and every thread read. */
+type SessionLogOutput = Record<string, unknown> & { schema: string; source: 'log' | 'v1'; threads: LogThread[] };
+
+export interface StoredSessionLog {
+  /** The session record without its threads. */
+  session: SessionLogPage['session'];
+  /** Every thread the log holds, in the page's order, each with its newest messages. */
+  threads: LogThread[];
+}
+
+/**
+ * Every thread of the session's stored log, each with its newest `limit`
+ * messages, oldest first. A thread pages back by `before_seq` in windows of at
+ * most `pageMax` (the route's limit). Null when the session has no stored log,
+ * and when the route refuses the credential (403: a session-bound token).
+ */
+export async function readStoredSessionLog(
+  log: (query?: SessionLogPageQuery) => Promise<SessionLogPage | null>,
+  limit: number,
+  pageMax = SAVED_WINDOW_MAX,
+): Promise<StoredSessionLog | null> {
+  const readThread = async (thread?: string) => {
+    const messages: SessionLogMessage[] = [];
+    let page: SessionLogPage | null;
+    let before: number | undefined;
+    do {
+      page = await log({
+        ...(thread !== undefined && { thread }),
+        limit: Math.min(pageMax, limit - messages.length),
+        ...(before !== undefined && { before_seq: before }),
+      });
+      if (!page) return null;
+      messages.unshift(...page.messages);
+      before = page.messages[0]?.seq;
+    } while (page.has_more && messages.length < limit && before !== undefined);
+    return { page, messages, has_more: page.has_more };
+  };
+  let root: Awaited<ReturnType<typeof readThread>>;
+  try {
+    root = await readThread();
+  } catch (error) {
+    // The route refuses a session-bound token (the sandbox's KORTIX_TOKEN) with 403: read v1 then, as without a stored log.
+    if ((error as { status?: unknown } | null)?.status === 403) return null;
+    throw error;
+  }
+  if (!root) return null;
+  const threads = await Promise.all(
+    root.page.threads.map(async (head) => {
+      const read = head.thread_id === root.page.thread_id ? root : await readThread(head.thread_id);
+      return { ...head, messages: read?.messages ?? [], has_more: read?.has_more ?? false };
+    }),
+  );
+  return { session: root.page.session, threads };
+}
+
+/**
+ * A running session's threads with the turn it runs now. The stored log is
+ * journaled at each turn end, so the root thread takes the live messages it
+ * does not hold yet (newer than its last), marked `provisional: true`: their
+ * seq is not stored yet. A tail keeps the seqs `fromV1` gives the live read
+ * when those agree with the stored ones, else it goes above the newest stored
+ * seq. A deleted message's seq is not served, so a provisional seq can differ
+ * from the one the journal stores. An empty or missing root thread is the live
+ * read. Only for the runtime session the root thread stores; each thread keeps
+ * its newest `limit` messages, and `has_more` says when older ones exist.
+ */
+export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit: number): LogThread[] {
+  const provisional = (message: SessionLogMessage) => ({ ...message, thread_id: live.thread_id, provisional: true });
+  const fit = (thread: SessionLogThread, messages: SessionLogMessage[], older: boolean): LogThread => ({
+    ...thread,
+    messages: messages.slice(-limit),
+    has_more: older || messages.length > limit,
+  });
+  const at = threads.findIndex((thread) => thread.parent_thread_id === null);
+  const root = threads[at];
+  if (!root) return live.messages.length ? [fit(live, live.messages.map(provisional), false), ...threads] : threads;
+  if (root.thread_id !== live.thread_id) return threads;
+  const stored = new Map(root.messages.map((message) => [message.message_id, message.seq]));
+  const last = root.messages[root.messages.length - 1];
+  const tail = live.messages.filter((message) => !stored.has(message.message_id) && (!last || message.created_at > last.created_at));
+  if (tail.length === 0) return threads;
+  const max = Math.max(0, ...root.messages.map((message) => message.seq));
+  const agree =
+    live.messages.every((message) => (stored.get(message.message_id) ?? message.seq) === message.seq) &&
+    tail.every((message) => message.seq > max);
+  const numbered = tail.map((message, i) => ({ ...provisional(message), seq: agree ? message.seq : max + 1 + i }));
+  const next = [...threads];
+  next[at] = fit(root, [...root.messages, ...numbered], root.has_more);
+  return next;
+}
+
 /** The mirror's largest window; the route answers 400 above it. */
 const SAVED_WINDOW_MAX = 500;
 
 export type SavedTranscript =
-  | { kind: 'ok'; messages: MessageWithParts[]; capturedAt: string | null }
+  | { kind: 'ok'; messages: MessageWithParts[]; capturedAt: string | null; runtimeSessionId: string | null; hasMore: boolean }
   | { kind: 'none' }
   | { kind: 'error'; error: unknown };
 
@@ -731,6 +893,7 @@ export async function readSavedTranscript(
   const windows: MessageWithParts[][] = [];
   let collected = 0;
   let capturedAt: string | null = null;
+  let runtimeSessionId: string | null = null;
   let before: string | null = null;
   const seen = new Set<string>();
   try {
@@ -740,6 +903,7 @@ export async function readSavedTranscript(
       );
       if (!envelope.available) break;
       capturedAt ??= envelope.captured_at;
+      runtimeSessionId ??= envelope.runtime_session_id ?? null;
       const page = envelope.messages as unknown as MessageWithParts[];
       windows.unshift(page);
       collected += page.length;
@@ -753,7 +917,7 @@ export async function readSavedTranscript(
     return { kind: 'error', error };
   }
   if (windows.length === 0) return { kind: 'none' };
-  return { kind: 'ok', messages: windows.flat(), capturedAt };
+  return { kind: 'ok', messages: windows.flat(), capturedAt, runtimeSessionId, hasMore: before !== null };
 }
 
 /** Compact, ANSI-free shape of a message for `--json` consumption. */
