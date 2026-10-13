@@ -101,8 +101,11 @@ conflict, build the branch as a merge instead:
 
 ```bash
 git switch --detach origin/staging
-git merge --no-ff -m "Merge dev $SHA10 into staging" "$SHA"   # resolve every file toward $SHA
-git diff --quiet "$SHA" && echo "tree == $SHA"                # must print; remove leftovers until it does
+git merge --no-ff -m "Merge dev $SHA10 into staging" "$SHA" || {
+  git read-tree --reset -u "$SHA"     # take the tested tree for every file
+  git commit --no-edit
+}
+git diff --quiet "$SHA" && echo "tree == $SHA"                # must print
 git push origin "HEAD:refs/heads/promote/dev-$SHA10"
 ```
 

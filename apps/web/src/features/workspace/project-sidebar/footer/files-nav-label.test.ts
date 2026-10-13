@@ -1,4 +1,4 @@
-// The sidebar's Files entry follows the organization's Volumes switch: off, it
+// The sidebar's Files entry follows the project's Volumes flag: off, it
 // is the repo browser (the product before volumes); on, Files is the project
 // drive and the repo browser is Repo.
 import { describe, expect, test } from 'bun:test';
