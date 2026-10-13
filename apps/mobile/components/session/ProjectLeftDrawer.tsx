@@ -423,14 +423,16 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // loading / error / empty / more / rows — shared with the Sessions page
   // (lib/session/session-pages) so a failed fetch, or a first load paused
   // offline, never reads as "No sessions yet" (COR-146). Judged on the
-  // viewer's own list; Shared and Automated add rows, never a verdict. A next
-  // page in any of the three is `more`, never empty (KRTX-1727).
+  // viewer's own list; Shared and Automated add rows, never a verdict: a
+  // Shared cursor must not hide the own list's error. A next page in Shared
+  // or Automated only hides the empty flower (KRTX-1727).
   const sessionsListState = sessionListState({
     isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasSessions: mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0,
-    hasMore: hasNextPage || shared.hasNextPage || automated.hasNextPage,
+    hasMore: hasNextPage,
   });
+  const sideHasMore = shared.hasNextPage || automated.hasNextPage;
   // The viewer's own list is reading a next page: the footer loader shows.
   const mineLoadingMore = isFetchingNextPage || mineScanning;
   // Only a pull shows the refresh spinner; a background poll does not.
@@ -696,11 +698,11 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             </Button>
           </View>
         </View>
-      ) : sessionsListState === 'empty' ? (
+      ) : sessionsListState === 'empty' && !sideHasMore ? (
         <View className="items-center py-8" accessible accessibilityRole="image" accessibilityLabel="No sessions yet">
           <DrawerEmptyFlower color={mutedColor} />
         </View>
-      ) : sessionsListState === 'more' && hasNextPage && !mineLoadingMore ? (
+      ) : sessionsListState === 'more' && !mineLoadingMore ? (
         // No row on the pages read so far, and the viewer's own list has a
         // next page (KRTX-1727): offer it. While it loads, the footer loader
         // shows. A Shared or Automated next page has its section's Show more.
@@ -775,7 +777,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       needsYouSessions,
       needsYouBySession,
       sessionsListState,
-      hasNextPage,
+      sideHasMore,
       mineLoadingMore,
       handleShowMoreSessions,
       open,

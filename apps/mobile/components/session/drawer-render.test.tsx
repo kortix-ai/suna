@@ -300,9 +300,10 @@ describe('ProjectLeftDrawer past page one', () => {
     expect(fetched).toBe(1);
   });
 
+  // The render between two scan pages: no page fetch runs, the scan is not over.
   test('while the list reads past empty pages on its own: a loader, no button', async () => {
     paged = {
-      me: { ...page([]), hasNextPage: true, isScanning: true, isFetchingNextPage: true },
+      me: { ...page([]), hasNextPage: true, isScanning: true, isFetchingNextPage: false },
       others: page([]),
       automated: page([]),
     };
@@ -310,6 +311,43 @@ describe('ProjectLeftDrawer past page one', () => {
     expect(emptyFlower()).toHaveLength(0);
     expect(buttons('Show more')).toHaveLength(0);
     expect(tree.root.findAll((node: any) => node.type === 'Loader').length).toBeGreaterThan(0);
+  });
+
+  test('Shared between two scan pages: its row reads Loading…, not Show more', async () => {
+    const { useSessionTreeStore, sectionKey } = await import('@/stores/session-tree-store');
+    useSessionTreeStore.getState().setChoice(sectionKey('proj', 'shared'), true);
+    paged.others = { ...page([]), hasNextPage: true, isScanning: true, isFetchingNextPage: false };
+    await mount();
+    expect(buttons('Show more')).toHaveLength(0);
+    expect(buttons('Loading…')).toHaveLength(1);
+    expect(buttons('Loading…')[0].props.disabled).toBe(true);
+  });
+
+  // COR-146: a failed own list is an error with a retry, also while Shared
+  // has a next page. Shared and Automated never decide that verdict.
+  test('the own list failed and Shared has a next page: the error and Try again', async () => {
+    paged = {
+      me: { ...page([]), isError: true },
+      others: { ...page([]), hasNextPage: true },
+      automated: page([]),
+    };
+    await mount();
+    const texts = tree.root.findAll((node: any) => node.type === 'Text').map(textOf);
+    expect(texts).toContain("Couldn't load sessions");
+    expect(buttons('Try again')).toHaveLength(1);
+    expect(emptyFlower()).toHaveLength(0);
+  });
+
+  test('no own row and no own next page, but Shared has one: no empty flower, no error', async () => {
+    paged = {
+      me: page([]),
+      others: { ...page([]), hasNextPage: true },
+      automated: page([]),
+    };
+    await mount();
+    expect(emptyFlower()).toHaveLength(0);
+    expect(header('Shared')).toHaveLength(1);
+    expect(buttons('Try again')).toHaveLength(0);
   });
 
   test('no row and no next page anywhere: the empty flower as before', async () => {
