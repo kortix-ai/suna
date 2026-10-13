@@ -1,5 +1,5 @@
 {
-  "source_hash": "d07c3d00e0c147fe6f668c55f54c1d4fb1623c2cbba0e938ce12ed7ebea347a7",
+  "source_hash": "21b3acdbf9afd3bfe30f53eae8698337566033a55bb0d4b84d6f7430e94a2730",
   "diff_files": [
     "apps/web/src/features/workspace/project-layout/sidebar-opener.test.ts",
     "apps/web/src/features/workspace/project-layout/sidebar-opener.ts",
@@ -21,12 +21,12 @@
     "apps/web/translations/zh.json"
   ],
   "diff_hash": "062c705a3c9a65ae0ca8ecfae8e0a34362a102b07aa98a4a48bc5b24c233de34",
-  "head": "03f0e1a859e3ab5a8d56c5e47b88146b8d1b4aa1",
-  "passed": false,
+  "head": "a253de3dcef35b391c7ee2bab4e4a97529ea771b",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T22:16:47.317Z"
+  "at": "2026-10-13T05:04:20.444Z"
 }
