@@ -536,6 +536,10 @@
       "keyboardTitle": "Atajos de teclado",
       "keyboardDescription": "La tecla modificadora utilizada para cambiar de pestaña y todos los accesos directos de la aplicación.",
       "modifierKey": "Tecla modificadora",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "El atajo que abre la barra de instrucciones desde cualquier app.",
+      "quickEntryOff": "Desactivado",
+      "quickEntryInUse": "Otra app usa este atajo, así que no abre la barra. Elige otro.",
       "shortcuts": {
         "newTab": "Nueva pestaña",
         "closeActiveTab": "Cerrar pestaña activa",

@@ -236,6 +236,26 @@ describe('Electron integration wiring', () => {
     expect(preloadSource).toContain("CustomEvent('kortix-desktop-command'");
   });
 
+  it('hands a Quick Entry prompt only to the trusted app page, as a pull', () => {
+    // The poke carries no text; the page pulls it through the sender-gated funnel.
+    expect(preloadSource).toContain("CustomEvent('kortix-desktop-quick-entry')");
+    const funnel = mainSource.slice(mainSource.indexOf("ipcMain.handle('kortix:invoke'"));
+    expect(funnel.indexOf('if (!isTrustedSender(event))')).toBeLessThan(funnel.indexOf("case 'quick_entry_take':"));
+    // Starts after first-launch setup, and gives the OS shortcut back on quit.
+    expect(mainSource.indexOf('quickEntry.start()')).toBeGreaterThan(mainSource.indexOf("openInstanceChooser({ mode: 'setup'"));
+    expect(mainSource).toContain("app.on('will-quit', () => globalShortcut.unregisterAll())");
+    // A hidden bar must not keep Windows/Linux running after the app window closes.
+    expect(mainSource).toContain('quickEntry?.close();');
+  });
+
+  it('isolates the Quick Entry bar like every other shell window', () => {
+    const quickEntry = readFileSync(join(__dirname, 'quick-entry.js'), 'utf8');
+    expect(quickEntry).toContain('contextIsolation: true');
+    expect(quickEntry).toContain('nodeIntegration: false');
+    expect(quickEntry).toContain('sandbox: true');
+    expect(quickEntry).toContain('event.sender === win.webContents');
+  });
+
   it('asks before a prevented unload and accepts proxy Basic challenges', () => {
     expect(mainSource).toContain("webContents.on('will-prevent-unload'");
     expect(mainSource).toContain(

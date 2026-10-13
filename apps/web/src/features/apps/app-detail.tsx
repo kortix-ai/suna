@@ -29,7 +29,7 @@ import { AppPreview } from './app-preview';
 import { frameKey, reloadFrame } from './app-preview-pool';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
-import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
+import { AppMachinesPanel, AppVolumesPanel } from './app-fleet';
 import { localizedAppCopy, appCan, appCommand, appHost, appStatus, appTabLabel, childApps, deployNotice, DeployCommand } from './app-shared';
 
 /**
@@ -49,7 +49,6 @@ export function AppDetailModal({
   canWrite,
   canDeploy,
   canAdmin = false,
-  onOpenLinked,
   open,
   onOpenChange,
 }: {
@@ -59,8 +58,6 @@ export function AppDetailModal({
   canDeploy: boolean;
   /** project.app.admin: restore a volume. */
   canAdmin?: boolean;
-  /** Open another App of the project by slug: the uses / used-by links in the header. */
-  onOpenLinked: (slug: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -205,21 +202,6 @@ export function AppDetailModal({
                   </Badge>
                 </button>
               ) : null}
-              {/* How this App connects to the others: the Apps it uses (its
-                  code mints their sign-in tokens and binds them) and the Apps
-                  that use it. Each slug opens that App. */}
-              <AppLinks label={tI18nComplete.raw('text9e6151acb057')} slugs={app.uses} onOpen={onOpenLinked} />
-              {/* A tab of this App already shows it: not listed again as a user. */}
-              <AppLinks
-                label={tI18nComplete.raw('text681bf81aba87')}
-                slugs={app.used_by?.filter((slug) => !children.some((child) => child.slug === slug))}
-                onOpen={onOpenLinked}
-              />
-              {/* Its other services (each on its own host) and its labels. */}
-              <AppServices app={app} />
-              {(app.labels ?? []).map((label) => (
-                <Badge key={label} variant="secondary" size="xs" className="hidden shrink-0 md:inline-flex">{label}</Badge>
-              ))}
             </div>
 
             {/* Two registers, and the gap is what separates them: the App's own
@@ -523,21 +505,6 @@ export function AppDetailModal({
         />
       ) : null}
     </Modal>
-  );
-}
-
-/** "Uses db, auth": the linked Apps by slug, each one a button that opens it. Nothing when there are none. */
-function AppLinks({ label, slugs, onOpen }: { label: string; slugs?: string[]; onOpen: (slug: string) => void }) {
-  if (!slugs?.length) return null;
-  return (
-    <span className="text-muted-foreground hidden shrink-0 items-center gap-1 text-xs md:flex">
-      {label}
-      {slugs.map((slug) => (
-        <Button key={slug} size="xs" variant="ghost" onClick={() => onOpen(slug)}>
-          {slug}
-        </Button>
-      ))}
-    </span>
   );
 }
 

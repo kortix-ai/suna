@@ -400,3 +400,30 @@ describe('POST /pool-rate-limit', () => {
     expect(cooledDown).toHaveLength(1);
   });
 });
+
+describe('the /internal edge key, enforced at the origin', () => {
+  const EDGE = 'edge-key-'.padEnd(64, 'e');
+  const call = (headers: Record<string, string>, path = '/budget-check') => {
+    process.env.KORTIX_INTERNAL_EDGE_KEY = EDGE;
+    try {
+      return createInternalGatewayRoutes().request(`http://test${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, ...headers },
+        body: JSON.stringify({ principal: {} }),
+      });
+    } finally {
+      delete process.env.KORTIX_INTERNAL_EDGE_KEY;
+    }
+  };
+
+  // Pentest H-1/M-1: the backend origins skip the api-router Worker, and a
+  // percent-encoded path skipped its raw prefix check. The bearer alone is not enough.
+  test('a caller with the bearer token but no edge key gets 404', async () => {
+    expect((await call({})).status).toBe(404);
+    expect((await call({ 'x-kortix-internal-edge-key': 'nope' })).status).toBe(404);
+  });
+
+  test('the gateway, which sends both, is served', async () => {
+    expect((await call({ 'x-kortix-internal-edge-key': EDGE })).status).not.toBe(404);
+  });
+});

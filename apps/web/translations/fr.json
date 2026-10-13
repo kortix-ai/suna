@@ -536,6 +536,10 @@
       "keyboardTitle": "Raccourcis clavier",
       "keyboardDescription": "La touche de modification utilisée pour changer d'onglet et chaque raccourci de l'application.",
       "modifierKey": "Touche de modification",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "Le raccourci qui ouvre la barre de saisie depuis n'importe quelle app.",
+      "quickEntryOff": "Désactivé",
+      "quickEntryInUse": "Une autre app utilise ce raccourci, il n'ouvre donc pas la barre. Choisissez-en un autre.",
       "shortcuts": {
         "newTab": "Nouvel onglet",
         "closeActiveTab": "Fermer l'onglet actif",

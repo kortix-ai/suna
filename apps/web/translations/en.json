@@ -1192,6 +1192,10 @@
       "keyboardTitle": "Keyboard shortcuts",
       "keyboardDescription": "The modifier key used for tab switching, and every shortcut in the app.",
       "modifierKey": "Modifier key",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "The shortcut that opens the prompt bar from any app.",
+      "quickEntryOff": "Off",
+      "quickEntryInUse": "Another app uses this shortcut, so it does not open the bar. Choose another one.",
       "shortcuts": {
         "newTab": "New tab",
         "closeActiveTab": "Close active tab",

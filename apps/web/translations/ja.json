@@ -536,6 +536,10 @@
       "keyboardTitle": "キーボードショートカット",
       "keyboardDescription": "タブの切り替えとアプリ内のすべてのショートカットに使用される修飾キー。",
       "modifierKey": "修飾キー",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "どのアプリからでもプロンプトバーを開くショートカット。",
+      "quickEntryOff": "オフ",
+      "quickEntryInUse": "このショートカットは別のアプリが使用しているため、バーは開きません。別のものを選んでください。",
       "shortcuts": {
         "newTab": "新しいタブ",
         "closeActiveTab": "アクティブなタブを閉じる",
