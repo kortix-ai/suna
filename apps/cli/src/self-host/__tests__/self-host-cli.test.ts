@@ -725,8 +725,15 @@ esac
   // The `env set` path is already covered black-box by the doctor test above;
   // what this one asserts is the STATUS WORDING, which only needs the file.
   test('status shows preview origins as NOT configured on a domain instance, and names the domain once set', async () => {
-    await run(['init', '--yes', '--domain', 'kortix.example.com']);
-    const missing = await run(['status']);
+    // Status shells out to `docker compose ps` and the updater probe. This test
+    // asserts wording from the .env file only, so stub the Docker boundary: a
+    // slow Docker daemon on a CI runner hung the real call for the full 60 s.
+    const bin = join(tmp, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const env = { PATH: `${bin}:${process.env.PATH}` };
+    await run(['init', '--yes', '--domain', 'kortix.example.com'], env);
+    const missing = await run(['status'], env);
     expect(missing.stdout).toContain('preview origins NOT configured');
 
     const envFile = join(configRoot, instance, '.env');
@@ -738,7 +745,7 @@ esac
       ),
     );
 
-    const set = await run(['status']);
+    const set = await run(['status'], env);
     expect(set.stdout).toContain('*.p.kortix.example.com');
     expect(set.stdout).not.toContain('NOT configured');
   }, 60_000);
