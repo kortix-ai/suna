@@ -24,8 +24,8 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
     const content = await buildOpencodeConfigContent({})
     // autoupdate:false is unconditional (SampleCo 2026-08-22/25: OpenCode's
     // self-upgrade via plain `pnpm add -g` left a postinstall-less stub).
-    // The built-in customize-opencode skill is denied in every composed config.
-    expect(JSON.parse(content!)).toEqual({ autoupdate: false, permission: { skill: { 'customize-opencode': 'deny' } } })
+    // The built-in customize-opencode skill is denied in every composed config, and kortix-genui while its flag is off.
+    expect(JSON.parse(content!)).toEqual({ autoupdate: false, permission: { skill: { 'customize-opencode': 'deny', 'kortix-genui': 'deny' } } })
   })
 
   test('the session pin does not clobber an explicit base-config model', async () => {

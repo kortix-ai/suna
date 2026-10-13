@@ -31,7 +31,11 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
 2. Only `@kortix/sdk/genui` imports `@openuidev/*`. Pin it to an exact version.
 3. Every component has a zod schema, a web renderer, a native renderer, and
    `toMarkdown`. A component enters the prompt only when all four exist.
-4. Project flag off = no UI instructions in the prompt.
+4. The catalog is the `kortix-genui` managed system skill
+   (`packages/starter/templates/managed/skills/kortix-genui/SKILL.md`), generated from
+   `buildGenuiPrompt()` by `bun packages/sdk/scripts/genui-skill.ts`; `packages/sdk/src/genui/skill.test.ts`
+   fails while it is stale. It is never in the system prompt. Project flag off = kortixd hides the skill
+   (`apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui.ts`).
 5. No raw model output reaches Slack, push, email, or the CLI. Run `toMarkdown`.
 6. Query, Mutation, Form, Input, and Button are Phase 4 only, with the guards in
    `references/spec.md` §9.

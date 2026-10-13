@@ -5,7 +5,7 @@ import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 
-/** Read by kortixd (services/sandbox-env/genui-instruction.ts). Boot-only. */
+/** Read by kortixd (services/sandbox-env/genui.ts): 1 lists the kortix-genui system skill. Boot-only. */
 export const GENUI_ENV_NAME = 'KORTIX_GENUI';
 
 /** '1' only when the kill switch is open and the project flag is on. */

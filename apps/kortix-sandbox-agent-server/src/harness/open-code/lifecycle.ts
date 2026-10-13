@@ -121,7 +121,7 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
-import { writeGenuiInstruction } from '@/services/sandbox-env/genui-instruction'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
 import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
@@ -374,8 +374,6 @@ export async function buildOpencodeConfigContent(
     /** The project root's `skills/`, only while OpenCode serves the working tree. */
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
-    /** The generative-UI catalog prompt, when the project has it on (sandbox-env/genui-instruction.ts). */
-    genuiInstructionPath?: string | null
     /** The config-release notice, when one exists (config-provider/notice.ts). */
     configReleaseNoticePath?: string | null
     /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
@@ -424,8 +422,6 @@ export async function buildOpencodeConfigContent(
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
       : null
-  const genuiInstructionPath =
-    opts.genuiInstructionPath && existsSync(opts.genuiInstructionPath) ? opts.genuiInstructionPath : null
   // Native mode (no gateway): the session's model pin still has to reach
   // opencode's config — without an explicit `model`, opencode's default is
   // catalog-order-dependent (Provider.defaultModel walks the models.dev map in
@@ -488,7 +484,7 @@ export async function buildOpencodeConfigContent(
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.
-  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath, genuiInstructionPath]) {
+  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath]) {
     if (!instructionPath) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
@@ -622,13 +618,15 @@ export async function buildOpencodeConfigContent(
   // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
   // OpenCode tool: the tools a capability covers get its rule (E9).
   // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
-  // a Kortix project: every permission block denies them.
-  out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
+  // a Kortix project: every permission block denies them. The kortix-genui
+  // system skill is denied the same way while the project's `genui` flag is off.
+  const deniedSkills = genuiEnabled(env) ? DENIED_BUILTIN_SKILLS : [...DENIED_BUILTIN_SKILLS, GENUI_SKILL_NAME]
+  out.permission = denyBuiltinSkills(capabilityToolRules(out.permission), deniedSkills)
   if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
     for (const agent of Object.values(out.agent as Record<string, unknown>)) {
       if (agent && typeof agent === 'object' && 'permission' in agent) {
         const entry = agent as Record<string, unknown>
-        entry.permission = denyBuiltinSkills(capabilityToolRules(entry.permission))
+        entry.permission = denyBuiltinSkills(capabilityToolRules(entry.permission), deniedSkills)
       }
     }
   }
@@ -678,19 +676,19 @@ export function capabilityToolRules(permission: unknown): unknown {
 const DENIED_BUILTIN_SKILLS = ['customize-opencode']
 
 /**
- * Deny the built-in skills in one permission block. OpenCode flattens the
+ * Deny the built-in skills (or the `denied` names) in one permission block. OpenCode flattens the
  * global block and then the agent's into one rule list and the LAST match
  * wins, so an agent's own `permission: allow` outranks a global deny: every
  * block gets the rule, as its last `skill` entry. A bare action becomes its
  * `*` form, which OpenCode reads the same way. A block that already denies
  * every skill is left alone.
  */
-export function denyBuiltinSkills(permission: unknown): unknown {
+export function denyBuiltinSkills(permission: unknown, denied: readonly string[] = DENIED_BUILTIN_SKILLS): unknown {
   if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
   const { skill, ...rest }: Record<string, unknown> = typeof permission === 'string' ? { '*': permission } : ((permission ?? {}) as Record<string, unknown>)
   if (skill === 'deny' || (skill === undefined && rest['*'] === 'deny')) return permission
   const rules: Record<string, unknown> = typeof skill === 'string' ? { '*': skill } : { ...(skill as Record<string, unknown> | undefined) }
-  for (const name of DENIED_BUILTIN_SKILLS) {
+  for (const name of denied) {
     delete rules[name]
     rules[name] = 'deny'
   }
@@ -1004,7 +1002,6 @@ export async function writeKortixOpencodeConfig(
     injectedSkillsDir?: string | null
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
-    genuiInstructionPath?: string | null
     configReleaseNoticePath?: string | null
     servesRelease?: boolean
     /** Write the hosted tools' bridge plugin (tool-bridge.ts) for this daemon and checkout. */
@@ -1024,7 +1021,6 @@ export async function writeKortixOpencodeConfig(
     injectedSkillsDir: opts.injectedSkillsDir,
     projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
-    genuiInstructionPath: opts.genuiInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
     servesRelease: opts.servesRelease,
     toolBridgeSpec,
@@ -2077,14 +2073,6 @@ export function createOpencodeLifecycle(
         err: err instanceof Error ? err.message : String(err),
       })
     }
-    let genuiInstructionPath: string | null = null
-    try {
-      genuiInstructionPath = writeGenuiInstruction(baseEnv)
-    } catch (err) {
-      logger.warn('[opencode] genui instruction write failed; sessions start without generative UI', {
-        err: err instanceof Error ? err.message : String(err),
-      })
-    }
     // The project root's `skills/` joins whenever the boot link names a config
     // dir inside a project checkout: the working tree (config releases off), or
     // a release, which is a checkout of the base branch with the same layout.
@@ -2097,7 +2085,6 @@ export function createOpencodeLifecycle(
       projectSkillsDir: servesProject ? join(projectRoot, SKILLS_DIR) : null,
       servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
-      genuiInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
       toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: servesProject ? projectRoot : null, configDir: served },
     })

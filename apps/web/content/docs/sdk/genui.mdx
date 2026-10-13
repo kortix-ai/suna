@@ -8,6 +8,14 @@ The agent answers in markdown. When a project turns on **Generative UI**, the ag
 tool data, places on a map. Prose stays the default; the agent uses a block only when the content
 has structure.
 
+## How the agent learns the blocks
+
+The catalog ships as the `kortix-genui` system skill, not as system-prompt text. With the `genui`
+[project flag](/docs/project#feature-flags) on, every new session lists the skill by name and a
+one-line description. The agent loads the full catalog only when an answer needs a block, so a turn
+without UI pays nothing for it. With the flag off, the skill is hidden. An agent with an explicit
+`skills:` list in `kortix.yaml` sees the skill only when the list names `kortix-genui`.
+
 ## Install
 
 Generative UI uses two optional peer dependencies. Install them before you import any

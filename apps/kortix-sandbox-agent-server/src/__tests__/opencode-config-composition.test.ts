@@ -93,20 +93,19 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
     expect(JSON.parse(content!).instructions).toEqual(['/workspace/AGENTS.md', file])
   })
 
-  test('appends the genui instruction only when its file exists', async () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'genui-')), 'genui.md')
-    writeFileSync(file, 'genui')
-    const withFile = JSON.parse((await buildOpencodeConfigContent(ENV, { genuiInstructionPath: file }))!)
-    expect(withFile.instructions).toContain(file)
-    const absent = join(tmpdir(), 'genui-absent', 'genui.md')
-    const missing = JSON.parse((await buildOpencodeConfigContent(ENV, { genuiInstructionPath: absent }))!)
-    expect(missing.instructions ?? []).not.toContain(absent)
+  test('flag off: every permission block denies the kortix-genui skill, as its last rule', async () => {
+    const config = { agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } } }
+    for (const flag of [undefined, '0']) {
+      const out = JSON.parse((await buildOpencodeConfigContent({ ...ENV, KORTIX_GENUI: flag, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }))!)
+      expect(out.permission.skill).toEqual({ 'customize-opencode': 'deny', 'kortix-genui': 'deny' })
+      expect(out.agent.build.permission.skill).toEqual({ deploy: 'allow', '*': 'deny', 'customize-opencode': 'deny', 'kortix-genui': 'deny' })
+    }
   })
 
-  test('flag off: the composed config is byte-identical to one built without the option (R-FLAG-1)', async () => {
-    const baseline = await buildOpencodeConfigContent(ENV, {})
-    expect(await buildOpencodeConfigContent(ENV, { genuiInstructionPath: null })).toBe(baseline)
-    expect(await buildOpencodeConfigContent(ENV, { genuiInstructionPath: undefined })).toBe(baseline)
+  test('flag on: the kortix-genui skill is listed, and no instruction file carries the catalog', async () => {
+    const out = JSON.parse((await buildOpencodeConfigContent({ ...ENV, KORTIX_GENUI: '1' }))!)
+    expect(out.permission.skill).toEqual({ 'customize-opencode': 'deny' })
+    expect(JSON.stringify(out.instructions ?? [])).not.toContain('genui')
   })
 })
 
@@ -383,6 +382,7 @@ describe("OpenCode's built-in customize-opencode skill is denied in every permis
 
   test('the composed config carries it globally and on an agent whose own block would outrank the global one', async () => {
     const content = await buildOpencodeConfigContent({
+      KORTIX_GENUI: '1',
       KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ permission: 'allow', agent: { open: { permission: 'allow' }, plain: { mode: 'primary' } } }),
     } as never)
     const config = JSON.parse(content!) as { permission: unknown; agent: Record<string, { permission?: unknown }> }
@@ -425,7 +425,7 @@ describe('capability rules reach the tools that cannot ask (E9)', () => {
       agent: { locked: { mode: 'primary', permission: { bash: 'deny', edit: 'deny' } }, open: { mode: 'primary' } },
     })
     const config = JSON.parse(
-      (await buildOpencodeConfigContent({ KORTIX_COMPILED_AGENT_CONFIG: compiled, SLACK_CHANNEL_ID: 'C123' }))!,
+      (await buildOpencodeConfigContent({ KORTIX_GENUI: '1', KORTIX_COMPILED_AGENT_CONFIG: compiled, SLACK_CHANNEL_ID: 'C123' }))!,
     )
     expect(config.agent.locked.permission).toMatchObject({ bash: 'deny', edit: 'deny', pty_spawn: 'deny', pty_kill: 'deny' })
     expect(config.agent.open.permission).toBeUndefined()
