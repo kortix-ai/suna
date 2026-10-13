@@ -25,7 +25,10 @@ import {
 import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, type PiSessionSnapshot } from '@/harness/pi/session-log'
 import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import { mintRootId } from '@/harness/pi/message-id'
-import { resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { SessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { TranscriptStore } from '@/harness/pi/transcript'
+import { PiTurnEvents } from '@/harness/pi/turn-events'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
 
 const ROOT = 'ses_piroot000000000000000001'
@@ -404,5 +407,78 @@ describe('pi session-log adapter through the journal', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  test('live turn (P4.8): the live puts, the deltas and the turn end\'s put name each block and each call alike', async () => {
+    resetKortixEventBusForTests()
+    n = 0
+    leaf = null
+    const prompt = user('List files.')
+    const entries: Array<Record<string, unknown>> = [prompt]
+    const entryMessageIds: Record<string, string> = { [prompt.id]: 'msg_u' }
+    const store = new TranscriptStore()
+    let busy = true
+    const snapshot = (): PiSessionSnapshot => ({
+      sessionId: 'session-pi-live', rootId: ROOT, title: 'List files.', header: null, entries: entries as never, leafId: leaf, entryMessageIds,
+      transcript: store.all(), children: [], busy, reply: busy ? { id: 'msg_r', timestamp: ts(2) } : null, agent: 'build', model: { provider: 'kortix', model: 'answer-model' },
+    })
+    let clock = ts(2)
+    const turn = new PiTurnEvents({
+      sessionID: ROOT, mintMessageId: () => 'msg_r', parentMessageId: () => 'msg_u', model: () => ({ providerID: 'kortix', modelID: 'answer-model' }),
+      agent: () => 'build', workspace: '/workspace', now: () => ++clock,
+    })
+    // As PiRuntime.publish: every frame into the transcript, all but the full-text twins onto the v1 bus.
+    const emit = (event: unknown) => {
+      for (const frame of turn.translate(event as never)) {
+        store.apply(frame as never)
+        if (!frame.transcriptOnly) kortixEventBus().publish(frame.type, frame.properties, ROOT)
+      }
+    }
+    store.apply({ type: 'message.updated', properties: { sessionID: ROOT, info: { id: 'msg_u', sessionID: ROOT, role: 'user', time: { created: ts(1) } } } } as never)
+    store.apply({ type: 'message.part.updated', properties: { sessionID: ROOT, part: { id: 'msg_u-p0', messageID: 'msg_u', sessionID: ROOT, type: 'text', text: 'List files.' } } } as never)
+    const journal = new SessionLogJournal(createPiSessionLogPort(snapshot), { generation: 1 })
+    await journal.collect()
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+
+    const final = { role: 'assistant', api: 'openai-completions', provider: 'kortix', model: 'answer-model', usage, stopReason: 'toolUse', timestamp: ts(2), content: [
+      { type: 'thinking', thinking: 'List them.' },
+      { type: 'text', text: 'Listing.' },
+      { type: 'toolCall', id: 'call-7201ad64fe82', name: 'bash', arguments: { command: 'ls' } },
+    ] }
+    const update = (assistantMessageEvent: Record<string, unknown>) => emit({ type: 'message_update', message: final, assistantMessageEvent })
+    emit({ type: 'agent_start' })
+    emit({ type: 'message_start', message: { ...final, content: [] } })
+    update({ type: 'thinking_start', contentIndex: 0 })
+    update({ type: 'thinking_delta', contentIndex: 0, delta: 'List them.' })
+    update({ type: 'thinking_end', contentIndex: 0, content: 'List them.' })
+    update({ type: 'text_start', contentIndex: 1 })
+    update({ type: 'text_delta', contentIndex: 1, delta: 'Listing.' })
+    update({ type: 'text_end', contentIndex: 1, content: 'Listing.' })
+    emit({ type: 'message_end', message: final })
+    entries.push(assistant(final.content, { stopReason: 'toolUse' }))
+    entryMessageIds[leaf!] = 'msg_r'
+    emit({ type: 'tool_execution_start', toolCallId: 'call-7201ad64fe82', toolName: 'bash', args: { command: 'ls' } })
+    // A permission or question on this call names it as the block does.
+    const ref = turn.toolRef('call-7201ad64fe82')
+    emit({ type: 'tool_execution_end', toolCallId: 'call-7201ad64fe82', toolName: 'bash', result: { content: [{ type: 'text', text: 'a.txt' }] }, isError: false })
+    entries.push(toolResult('call-7201ad64fe82', 'bash', 'a.txt'))
+    busy = false
+    emit({ type: 'agent_end', messages: [] })
+    const livePuts = frames.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === 'msg_r').map((f) => f.payload.message)
+    const deltas = frames.filter((f) => f.type === 'log.block.delta').map((f) => f.payload.block_id)
+    await journal.collect()
+    const turnEnd = frames.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === 'msg_r').at(-1)!.payload.message
+    await journal.stop(0)
+
+    expect(turnEnd.status).toBe('complete')
+    const shape = (m: SessionLogMessage) => m.blocks.map((b) => (b.type === 'tool_call' ? [b.type, b.id, b.call_id] : [b.type, b.id]))
+    expect(shape(turnEnd)).toEqual([['reasoning', 'msg_r-p0'], ['text', 'msg_r-p1'], ['tool_call', 'msg_r-p2', 'call-7201ad64fe82']])
+    expect(livePuts.length).toBeGreaterThan(2)
+    // Each live put names its blocks (and calls) as the turn end's put does.
+    for (const put of livePuts) expect(shape(turnEnd).slice(0, put.blocks.length)).toEqual(shape(put))
+    expect(shape(livePuts.at(-1)!)).toEqual(shape(turnEnd))
+    expect(deltas).toEqual(['msg_r-p0', 'msg_r-p1'])
+    expect(ref).toEqual({ messageID: 'msg_r', callID: 'call-7201ad64fe82' })
   })
 })

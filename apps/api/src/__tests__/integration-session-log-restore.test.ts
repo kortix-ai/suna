@@ -226,6 +226,7 @@ describe('POST .../log/restore', () => {
     const res = await restore(big, tokens[big]!, { 'Accept-Encoding': 'gzip' });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-encoding')).toBe('gzip');
+    expect(res.headers.get('vary')).toContain('Accept-Encoding');
     const gz = new Uint8Array(await res.arrayBuffer());
     const raw = gunzipSync(gz);
     const body = SessionLogRestoreSchema.parse(JSON.parse(raw.toString('utf8')));
@@ -234,9 +235,11 @@ describe('POST .../log/restore', () => {
     console.info(`[restore size] 500 messages: ${raw.byteLength} bytes raw, ${gz.byteLength} bytes gzipped`);
     expect(gz.byteLength).toBeLessThan(raw.byteLength / 4);
 
-    // Without Accept-Encoding the answer is plain JSON.
+    // Without Accept-Encoding the answer is plain JSON: the same log, one generation on.
     const plain = await restore(big);
     expect(plain.headers.get('content-encoding')).toBeNull();
-    expect(SessionLogRestoreSchema.parse(await plain.json()).generation).toBe(2);
+    const plainBody = SessionLogRestoreSchema.parse(await plain.json());
+    expect(plainBody.generation).toBe(2);
+    expect({ ...plainBody, generation: 1 }).toEqual(body);
   });
 });
