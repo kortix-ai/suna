@@ -311,7 +311,9 @@ export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTur
       blocks,
       status: retries ? 'streaming' : reply ? reply.status : d.user.kind === 'compaction' ? d.user.status : 'pending',
       error: errorOf(d),
-      cost: costOf(d.assistant, options.pricing),
+      // A prompt has no usage. A compaction's is its summary reply's (folded onto the marker), and a
+      // thread with no prompt heads its turn with a reply: both are priced like any reply.
+      cost: costOf([d.user, ...d.assistant], options.pricing),
       compaction: compactionOf(d.user),
       threads,
       plan: d === anchor,
