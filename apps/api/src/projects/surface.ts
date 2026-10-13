@@ -59,6 +59,10 @@ export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
 export { isAlreadyNotRunning } from './reaping/policy';
 
+// Offboarding pauses the reminders a departed member set (consumed by
+// ../accounts/core/offboard-member).
+export { disableRemindersAuthoredBy } from './lib/session-reminders';
+
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
 

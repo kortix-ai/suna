@@ -521,6 +521,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Revoked SCIM token': 'textaba314822529',
   'Revoked SCIM user invitation': 'text56185876d445',
   'Revoked a connected app': 'text37698a37f9d2',
+  'Revoked a departed member\'s computers and reminders': 'texte20af60a2b8d',
   'Revoked a role assignment': 'texte75eb1c6178c',
   'Revoked account session': 'text167024ef8e9c',
   'Revoked account trial': 'text486a3ab5a7b4',

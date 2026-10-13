@@ -36,6 +36,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'iam.assignment.revoked': 'Revoked a role assignment',
   'iam.assignment.expired': 'Expired a role',
   'iam.member.super_admin.revoke': 'Revoked super-admin',
+  'member.offboarded': "Revoked a departed member's computers and reminders",
   'iam.mfa_required.enable': 'Required MFA for the account',
   'iam.mfa_required.disable': 'Disabled MFA requirement',
   'iam.session_oversight.enable': 'Let admins open every session',
