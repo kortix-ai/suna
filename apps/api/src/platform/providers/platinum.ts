@@ -823,9 +823,20 @@ export class PlatinumProvider implements SandboxProvider {
         // the wake fence gave up at 90 s with start_timeout (KRTX-197; 162 of
         // 241 prod unarchives on 2026-09-25 outran the inline wait).
         const state = String(started.body?.state ?? '').toLowerCase();
-        if (started.status !== 202 && !state.includes('archiv')) return;
-        if (await restored()) continue;
-        return;
+        // 202 {state:'starting'}: Platinum joined a start already in flight, or
+        // keeps moving the box to another host (code 'relocating',
+        // kortix-ai/platinum#1535). Wait here as for a 409 join. Returning
+        // would hand a silent `starting` to the wake fence, whose 90 s
+        // no-change grace a slow S3 copy outlasts.
+        if (started.status === 202 && START_IN_FLIGHT_STATES.has(state)) {
+          firstConflict ??= new Error(
+            `platinum sandbox ${externalId} still ${state} after the ${START_RESTORE_BUDGET_MS / 1000}s start budget`,
+          );
+        } else {
+          if (started.status !== 202 && !state.includes('archiv')) return;
+          if (await restored()) continue;
+          return;
+        }
       } catch (error) {
         // The CALL gave up, not Platinum: a restore it started keeps going
         // server-side. Wait on the box's real state instead of failing the wake.

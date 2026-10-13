@@ -205,6 +205,13 @@ test('a start another caller is running past the stop grace is joined, not faile
   expect(renewals).toBe(2);
 }, 15_000);
 
+test('a 202 for a start in flight (or a relocation in progress) is waited on inside start()', async () => {
+  starts = [{ status: 202, state: 'starting', code: 'relocating' }];
+  gets = [ok('starting'), ok('starting'), ok('running')];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 202', 'GET starting', 'GET starting', 'GET running']);
+}, 15_000);
+
 test('a relocation Platinum asks to retry is retried until the box starts', async () => {
   starts = [
     { status: 503, state: 'stopped', code: 'relocation_fetch_timeout' },
