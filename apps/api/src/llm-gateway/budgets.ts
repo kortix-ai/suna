@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import { db } from '../shared/db';
@@ -34,16 +34,45 @@ export interface BudgetCheckResult {
   crossings?: BudgetCrossing[];
 }
 
-async function spendForPeriod(
+/** The start of a budget's current period: UTC midnight, the Monday of a week, the 1st of a month. */
+export function startOfBudgetPeriod(period: Period, now: Date = new Date()): Date {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (period === 'week') start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+  if (period === 'month') start.setUTCDate(1);
+  return start;
+}
+
+/** When a budget's current period ends and its spend starts again from 0. */
+export function budgetPeriodResetsAt(period: Period, now: Date = new Date()): Date {
+  const next = startOfBudgetPeriod(period, now);
+  if (period === 'month') next.setUTCMonth(next.getUTCMonth() + 1);
+  else next.setUTCDate(next.getUTCDate() + (period === 'week' ? 7 : 1));
+  return next;
+}
+
+export interface BudgetSpend {
+  spentUsd: number;
+  periodStart: Date;
+  resetsAt: Date;
+}
+
+/**
+ * A budget's spend in its current period: the number `checkBudget` compares
+ * with the limit. GET /gateway/budgets reports this same number, so the meter
+ * and the gate cannot disagree (KRTX-1725). A member budget counts the
+ * requests of its member only.
+ */
+export async function budgetSpend(
   projectId: string,
-  subjectUserId: string | null,
-  period: Period,
-): Promise<number> {
-  const conds = [
-    eq(gatewayRequestLogs.projectId, projectId),
-    sql`${gatewayRequestLogs.createdAt} >= date_trunc(${period}, now())`,
-  ];
-  if (subjectUserId) conds.push(eq(gatewayRequestLogs.actorUserId, subjectUserId));
+  budget: { scope: string; subjectUserId: string | null; period: string },
+  now: Date = new Date(),
+): Promise<BudgetSpend> {
+  const period = budget.period as Period;
+  const periodStart = startOfBudgetPeriod(period, now);
+  const conds = [eq(gatewayRequestLogs.projectId, projectId), gte(gatewayRequestLogs.createdAt, periodStart)];
+  if (budget.scope === 'member' && budget.subjectUserId) {
+    conds.push(eq(gatewayRequestLogs.actorUserId, budget.subjectUserId));
+  }
   const [agg] = await db
     // TOTAL spend, not the Kortix-billed slice. A gateway budget caps what a
     // project spends on inference; measuring it with `final_cost` alone made
@@ -53,7 +82,7 @@ async function spendForPeriod(
     .select({ cost: totalSpendSql })
     .from(gatewayRequestLogs)
     .where(and(...conds));
-  return agg?.cost ?? 0;
+  return { spentUsd: agg?.cost ?? 0, periodStart, resetsAt: budgetPeriodResetsAt(period, now) };
 }
 
 // ─── In-flight admission reservation for 'block' budgets ───────────────────
@@ -156,6 +185,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
     .where(eq(gatewayBudgets.projectId, principal.projectId));
   if (budgets.length === 0) return { exceeded: false };
 
+  const now = new Date();
   const warnings: string[] = [];
   const crossings: BudgetCrossing[] = [];
   const signals = () => ({
@@ -165,7 +195,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
   for (const b of budgets) {
     if (b.scope === 'member' && b.subjectUserId !== principal.userId) continue;
     const subject = b.scope === 'member' ? b.subjectUserId : null;
-    const spent = await spendForPeriod(principal.projectId, subject, b.period as Period);
+    const { spentUsd: spent } = await budgetSpend(principal.projectId, b, now);
     const limit = Number(b.limitUsd);
     const threshold = spent >= limit ? 100 : spent >= limit * 0.8 ? 80 : null;
     if (threshold && b.budgetId) {
@@ -183,7 +213,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
 
     if (b.action === 'block') {
       // Fold in other admissions still in flight for this exact project/
-      // member key — see the reservation comment above spendForPeriod.
+      // member key — see the reservation comment above.
       const key = reservationKey(principal.projectId, subject);
       const effectiveSpent = spent + activeReservedUsd(key);
       if (effectiveSpent >= limit) {

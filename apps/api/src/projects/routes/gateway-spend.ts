@@ -2,6 +2,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../shared/db';
+import { budgetSpend } from '../../llm-gateway/budgets';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -274,7 +275,7 @@ export function registerGatewaySpendRoutes(): void {
       request: { params: z.object({ projectId: z.string() }) },
       responses: { 200: json(z.any(), 'Gateway budgets + per-member spend'), ...errors(404) },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -286,6 +287,7 @@ export function registerGatewaySpendRoutes(): void {
         PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
       );
 
+      const now = new Date();
       const budgets = await db
         .select()
         .from(gatewayBudgets)
@@ -330,15 +332,26 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       return c.json({
+        // Month-to-date, whatever the budgets' periods. A meter reads its own
+        // budget's `spent_usd`.
         project_spend: { requests: projectAgg?.requests ?? 0, cost: projectAgg?.cost ?? 0 },
-        budgets: budgets.map((b) => ({
-          budget_id: b.budgetId,
-          scope: b.scope,
-          subject_user_id: b.subjectUserId,
-          limit_usd: Number(b.limitUsd),
-          period: b.period,
-          action: b.action,
-        })),
+        budgets: await Promise.all(
+          budgets.map(async (b) => {
+            // The gate's own measure of this budget (KRTX-1725).
+            const spend = await budgetSpend(projectId, b, now);
+            return {
+              budget_id: b.budgetId,
+              scope: b.scope,
+              subject_user_id: b.subjectUserId,
+              limit_usd: Number(b.limitUsd),
+              period: b.period,
+              action: b.action,
+              spent_usd: spend.spentUsd,
+              period_start: spend.periodStart.toISOString(),
+              resets_at: spend.resetsAt.toISOString(),
+            };
+          }),
+        ),
         members: memberRows.map((r) => ({
           user_id: r.userId,
           email: r.userId ? (emails.get(r.userId) ?? null) : null,

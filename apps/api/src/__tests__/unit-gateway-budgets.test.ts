@@ -10,15 +10,14 @@ import { PgDialect } from 'drizzle-orm/pg-core';
  * hard-filtered to `action = 'block'` — a 'warn' budget (a real, persisted,
  * API-creatable option) was fetched nowhere and did nothing at all. This file
  * covers: block vs warn (warn never blocks but IS reported), project vs
- * member scope, and the multi-budget mix. Period rollover (date_trunc at the
- * SQL level) is deliberately NOT covered here — spend is a mocked constant per
- * test, not a live time-bucketed query, so day/week/month boundary behavior
- * needs a real Postgres integration test; noted as a follow-up rather than
- * faked here.
+ * member scope, and the multi-budget mix. Period rollover is NOT covered here
+ * — spend is a mocked constant per test, not a live time-bucketed query. The
+ * day/week/month boundaries run against real Postgres in
+ * integration-gateway-budget-meters-http.test.ts.
  */
 
 // One FIFO queue per (projectId, subjectUserId, period) key, in the exact
-// call order spendForPeriod issues them in checkBudget's budget loop — avoids
+// call order budgetSpend issues them in checkBudget's budget loop — avoids
 // needing to introspect drizzle's `where` condition object, since the mock
 // below never inspects it.
 let spendQueue: number[] = [];
@@ -223,7 +222,7 @@ describe('checkBudget', () => {
   describe('in-flight admission reservation (BILLING-CORRECTNESS: concurrent check-then-act race)', () => {
     // Every concurrent checkBudget call under test reads the SAME `spent`
     // value from gatewayRequestLogs (nothing has settled yet — that's the
-    // whole bug) but each call still gets its own spendForPeriod query, so we
+    // whole bug) but each call still gets its own budgetSpend query, so we
     // queue that constant value once per call.
     test('N concurrent admissions against a nearly-full block budget are bounded, not all admitted', async () => {
       budgetRows = [
