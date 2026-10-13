@@ -25,21 +25,29 @@ import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-he
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { relativeTime } from '@/lib/relative-time';
 import {
+  ChromeButtonMark,
   ChromeConnectModal,
   ChromeConnectSteps,
+  ChromeCopyLink,
+  ChromeInstallActions,
   ChromeOnlineDot,
-  ChromeButtonMark,
+  useChromeConnect,
 } from './chrome-connect';
 import { BrowserLogoTile } from './browser-icon';
+import { chromeDisplayNames, offlineLongerThan } from './chrome-names';
 import { ChromeMock } from './chrome-mock';
 
 const ACCESS_MODES: readonly ChromeAccessMode[] = ['always', 'ask', 'off'];
 // `all` first: it is the recommended default.
 const TAB_SCOPES: readonly ChromeTabScope[] = ['all', 'own'];
 
+/** Offline longer than this shows when the browser was last seen. Shorter is just "Offline". */
+const LAST_SEEN_AFTER_MS = 10 * 60_000;
+
 /**
- * Settings › Chrome extension: the browsers this person connected with the Kortix
- * extension. With none, the three connect steps stand inline.
+ * Settings → Kortix in Chrome: the browsers this person connected with the
+ * Kortix extension. With none, the three connect steps stand inline and the
+ * connect action sits in the page header.
  */
 export function ChromeConnectionsTab() {
   const t = useTranslations('chrome');
@@ -47,6 +55,9 @@ export function ChromeConnectionsTab() {
   const [connectOpen, setConnectOpen] = useState(false);
   const list = connections.data ?? [];
 
+  if (connections.isSuccess && list.length === 0) return <ChromeEmptyTab />;
+
+  const names = chromeDisplayNames(list);
   return (
     // `max-w-2xl`: the form tier every person-scoped pane in this dialog uses.
     <div className="mx-auto w-full max-w-2xl space-y-5">
@@ -81,39 +92,68 @@ export function ChromeConnectionsTab() {
             </Button>
           }
         />
-      ) : list.length === 0 ? (
-        <div className="space-y-4">
-          <ChromeMock className="mx-auto max-w-md" />
-          <div className="bg-popover flex flex-col gap-5 rounded-md border px-4 py-5">
-            <ChromeConnectSteps />
-          </div>
-        </div>
       ) : (
-        <section className="space-y-3">
-          <SettingsSubsectionHeader title={t('listTitle')} />
-          <ul className="space-y-3">
-            {list.map((chrome) => (
-              <ChromeRow key={chrome.id} chrome={chrome} />
-            ))}
-          </ul>
-        </section>
+        <>
+          <section className="space-y-3">
+            <SettingsSubsectionHeader title={t('listTitle')} />
+            <ul className="space-y-3">
+              {list.map((chrome) => (
+                <ChromeRow key={chrome.id} chrome={chrome} displayName={names.get(chrome.id) ?? chrome.name} />
+              ))}
+            </ul>
+          </section>
+
+          <section className="space-y-2">
+            <SettingsSubsectionHeader title={t('how.title')} />
+            <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm text-pretty">
+              <li>{t('how.group')}</li>
+              <li>{t('how.control')}</li>
+              <li>{t('how.own')}</li>
+            </ul>
+          </section>
+        </>
       )}
 
-      <section className="space-y-2">
-        <SettingsSubsectionHeader title={t('how.title')} />
-        <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm text-pretty">
-          <li>{t('how.group')}</li>
-          <li>{t('how.control')}</li>
-          <li>{t('how.own')}</li>
-        </ul>
-      </section>
-
-      <ChromeConnectModal open={connectOpen} onOpenChange={setConnectOpen} />
+      <ChromeConnectModal open={connectOpen} onOpenChange={setConnectOpen} fresh />
     </div>
   );
 }
 
-function ChromeRow({ chrome }: { chrome: ChromeConnection }) {
+/** No browser yet: the steps stand inline, the one action is in the header. */
+function ChromeEmptyTab() {
+  const state = useChromeConnect();
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-5">
+      <SettingsTabHeader
+        tab="chrome"
+        action={
+          state.environment === 'unsupported' ? (
+            <ChromeCopyLink />
+          ) : (
+            <ChromeInstallActions state={state} showGuide={false} />
+          )
+        }
+      />
+      <div className="space-y-4">
+        <ChromeMock className="mx-auto max-w-md" />
+        <div className="bg-popover flex flex-col gap-5 rounded-md border px-4 py-5">
+          <ChromeConnectSteps state={state} showActions={false} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** "Chromium on macOS · Work · v1.0.0": what tells two browsers apart. The name is not repeated. */
+function chromeMeta(chrome: ChromeConnection, displayName: string): string[] {
+  // The profile label already sits in the display name of a duplicate: say it once.
+  const profile = chrome.profileLabel && !displayName.includes(chrome.profileLabel) ? chrome.profileLabel : null;
+  return [profile, chrome.extensionVersion ? `v${chrome.extensionVersion}` : null].filter(
+    (part): part is string => Boolean(part),
+  );
+}
+
+function ChromeRow({ chrome, displayName }: { chrome: ChromeConnection; displayName: string }) {
   const t = useTranslations('chrome');
   const locale = useLocale();
   const update = useUpdateChromeConnection();
@@ -130,13 +170,22 @@ function ChromeRow({ chrome }: { chrome: ChromeConnection }) {
 
   const commitName = () => {
     const name = draft?.trim();
+    // An empty name is not a name: keep the field open and flag it. Blur reverts.
+    if (!name) return false;
     setDraft(null);
-    if (name && name !== chrome.name) save({ name });
+    if (name !== chrome.name) save({ name });
+    return true;
   };
 
   const sessions = chrome.activeSessions.length;
-  const lastSeen = chrome.lastSeenAt ? relativeTime(chrome.lastSeenAt, locale) : '';
-  const maker = [chrome.brand, chrome.os].filter(Boolean).join(' · ');
+  // "Last seen just now" beside "Offline" contradicts itself: say it only once it is a while ago.
+  const longOffline = !chrome.online && offlineLongerThan(chrome.lastSeenAt, LAST_SEEN_AFTER_MS);
+  const status = chrome.online
+    ? t('online')
+    : longOffline
+      ? t('lastSeen', { time: relativeTime(chrome.lastSeenAt as string, locale) })
+      : t('offline');
+  const meta = [...chromeMeta(chrome, displayName), status];
 
   return (
     <li>
@@ -149,11 +198,12 @@ function ChromeRow({ chrome }: { chrome: ChromeConnection }) {
               {draft === null ? (
                 <button
                   type="button"
-                  aria-label={t('rename', { name: chrome.name })}
-                  className="group/name flex min-w-0 items-center gap-1.5 text-left"
+                  aria-label={t('rename', { name: displayName })}
+                  title={displayName}
+                  className="focus-visible:ring-ring/50 -mx-1 flex min-w-0 items-center gap-1.5 rounded-sm px-1 text-left outline-none focus-visible:ring-3"
                   onClick={() => setDraft(chrome.name)}
                 >
-                  <span className="truncate text-sm font-medium">{chrome.name}</span>
+                  <span className="truncate text-sm font-medium">{displayName}</span>
                   <PencilSimpleIcon className="text-muted-foreground size-3.5 shrink-0" />
                 </button>
               ) : (
@@ -162,23 +212,22 @@ function ChromeRow({ chrome }: { chrome: ChromeConnection }) {
                   value={draft}
                   maxLength={255}
                   aria-label={t('renameLabel')}
-                  className="h-7"
+                  className="h-6 py-0"
+                  aria-invalid={draft.trim() === '' ? true : undefined}
                   onChange={(event) => setDraft(event.target.value)}
-                  onBlur={commitName}
+                  onBlur={() => {
+                    if (!commitName()) setDraft(null);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') commitName();
+                    // Closes the field only. The settings dialog ignores Escape from a text field.
                     if (event.key === 'Escape') setDraft(null);
                   }}
                 />
               )}
             </div>
             <InlineMeta>
-              {maker}
-              {chrome.online
-                ? t('online')
-                : lastSeen
-                  ? t('lastSeen', { time: lastSeen })
-                  : t('offline')}
+              {meta}
               {sessions > 0 ? t('usedBy', { count: sessions }) : ''}
             </InlineMeta>
           </div>
@@ -228,8 +277,13 @@ function ChromeRow({ chrome }: { chrome: ChromeConnection }) {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={t('disconnectTitle', { name: chrome.name })}
-        description={t('disconnectDescription')}
+        title={t('disconnectTitle', { name: displayName })}
+        description={
+          <>
+            <span className="text-muted-foreground mb-2 block text-xs">{meta.join(' · ')}</span>
+            {t('disconnectDescription')}
+          </>
+        }
         confirmLabel={t('disconnect')}
         confirmVariant="destructive"
         isPending={remove.isPending}

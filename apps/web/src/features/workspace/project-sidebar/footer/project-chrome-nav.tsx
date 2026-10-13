@@ -6,7 +6,6 @@ import { useCallback, useState } from 'react';
 
 import {
   SidebarMenuAction,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
@@ -26,7 +25,7 @@ function readDismissed(): boolean {
 }
 
 /**
- * "Chrome extension": an advertisement, not a status widget. It shows
+ * "Kortix in Chrome": an advertisement, not a status widget. It shows
  * until the caller connected a browser or dismisses it. The sidebar owns the
  * connect dialog, not this row: on a phone the row lives in the sidebar sheet,
  * and closing the sheet unmounts it together with anything it renders.
@@ -57,7 +56,6 @@ function ChromePromo({
   onOpenConnect: () => void;
 }) {
   const t = useTranslations('chrome');
-  const tSidebar = useTranslations('sidebar');
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   // One a minute until the first browser connects: the connect dialog polls
@@ -69,7 +67,7 @@ function ChromePromo({
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        className="text-sidebar-foreground bg-hover group-has-data-[sidebar=menu-action]/menu-item:pr-12"
+        className="text-sidebar-foreground bg-hover group-has-data-[sidebar=menu-action]/menu-item:pr-8"
         onClick={() => {
           onOpenConnect();
           if (isMobile) setOpenMobile(false);
@@ -78,11 +76,6 @@ function ChromePromo({
         <BrowserIcon brand="chrome" tone="current" className="text-muted-foreground size-4" />
         <span className="min-w-0 flex-1 truncate">{t('promoLabel')}</span>
       </SidebarMenuButton>
-      {/* Same slot as the dismiss action: the badge gives way to it on hover
-          and focus, and on a phone, where the action is always shown. */}
-      <SidebarMenuBadge className="bg-kortix-blue/15 text-kortix-blue rounded-sm px-1.5 mr-1 group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0 max-md:hidden">
-        {tSidebar('new')}
-      </SidebarMenuBadge>
       <SidebarMenuAction onClick={onDismiss} aria-label={t('dismissPromo')} showOnHover className="mr-1">
         <XIcon />
       </SidebarMenuAction>

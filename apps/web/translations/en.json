@@ -20227,16 +20227,17 @@
     "calendarUpcomingSr": "Upcoming"
   },
   "chrome": {
-    "pill": "Chrome extension",
+    "pill": "Kortix in Chrome",
     "connectTitle": "Add Kortix to Chrome",
     "connectDescription": "Let your sessions use Chrome, with your logins. You see what they do and can stop them at any time.",
-    "promoLabel": "Chrome extension",
+    "promoLabel": "Kortix in Chrome",
     "dismissPromo": "Dismiss",
     "steps": {
       "install": {
         "title": "Add the extension",
         "description": "From the Chrome Web Store.",
-        "done": "Kortix is in Chrome."
+        "done": "Kortix is in Chrome.",
+        "descriptionUnlisted": "Load it in Chrome."
       },
       "connect": {
         "title": "Sign in",
@@ -20245,7 +20246,7 @@
       },
       "done": {
         "title": "Connected",
-        "description": "Waiting for your browser."
+        "description": "Your browser appears here."
       }
     },
     "addToChrome": "Add to Chrome",
@@ -20253,8 +20254,7 @@
     "connect": "Connect",
     "connecting": "Connecting…",
     "done": "Done",
-    "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to connect it.",
-    "openStore": "Open the Chrome Web Store",
+    "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to connect it. Copy the link to open it there.",
     "connectFailed": "Could not connect the browser. Try again.",
     "online": "Online",
     "offline": "Offline",
@@ -20277,7 +20277,7 @@
       "always": "Without asking",
       "ask": "Ask first",
       "off": "Off",
-      "description": "When a session may use this browser."
+      "description": "Whether a session asks you first."
     },
     "scope": {
       "label": "Tabs",
@@ -20290,6 +20290,16 @@
       "group": "Each session works in its own tab group, with a glow on the page.",
       "control": "Take over or Stop from the bar on the page at any time.",
       "own": "Only your own sessions can use your browser."
+    },
+    "howToInstall": "How to install",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "copyFailed": "Could not copy the link. Try again.",
+    "extensionMissing": "Kortix did not find the extension. Add it, then reload this page.",
+    "another": {
+      "title": "Another browser",
+      "waiting": "Waiting for the new browser to connect.",
+      "description": "Open Kortix in the other browser or Chrome profile, then add Kortix to Chrome there. Copy the link to open it."
     }
   },
   "computers": {
@@ -20666,8 +20676,8 @@
     "viewFolderAccess": "See access"
   },
   "appsModal": {
-    "title": "Do more with Kortix, everywhere you work",
-    "name": "Apps and extensions",
+    "title": "Apps and extensions",
+    "subtitle": "Use Kortix in your browser, on your computer and from your tools.",
     "mock": {
       "group": "Kortix · Return my order",
       "button": "Start return",
@@ -20676,14 +20686,15 @@
       "stop": "Stop"
     },
     "chrome": {
-      "name": "Chrome",
+      "name": "Kortix in Chrome",
       "description": "Kortix opens pages, clicks and fills forms in your own browser, with your logins. You see every step.",
-      "add": "Add to Chrome",
-      "installedConnect": "Installed it? Connect",
       "connect": "Connect",
       "connecting": "Connecting…",
       "manage": "Manage",
-      "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to add it."
+      "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to add it. Copy the link to open it there.",
+      "group": "Browser",
+      "manageLabel": "Manage Kortix in Chrome",
+      "summary": "{count, plural, one {# browser} other {# browsers}} · {online} online"
     },
     "computer": {
       "title": "Your computer",
@@ -20693,9 +20704,11 @@
       "connect": "Connect",
       "manage": "Manage",
       "desktop": "Desktop app",
-      "desktopDescription": "Kortix on your own machine.",
+      "desktopDescription": "Kortix as an app on your computer.",
       "desktopRunning": "You are using it.",
-      "download": "Download"
+      "download": "Download",
+      "manageLabel": "Manage this computer",
+      "connectLabel": "Connect this computer"
     },
     "developers": {
       "title": "Developers",
@@ -20705,7 +20718,9 @@
       "copied": "Copied",
       "mcp": "MCP",
       "mcpDescription": "Use Kortix from Claude, Cursor or Codex.",
-      "connect": "Connect"
+      "connect": "Connect",
+      "connectLabel": "Connect MCP",
+      "copyFailed": "Could not copy the command. Try again."
     }
   }
 }
