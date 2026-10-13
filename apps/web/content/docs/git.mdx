@@ -371,7 +371,17 @@ What a verdict does depends on the item:
 
 An item an agent submitted takes every verdict: `approve`, `reject`, `changes`, `answer` and `dismiss`.
 
-The Review page shows a verdict only to a role that holds its permission. Merging a change (**Ship it**, or **Merge** on mobile) needs `project.gitops.merge`. Every other verdict needs `project.review.act`. A built-in member holds neither, so it sees the inbox without verdicts. On mobile, the **+** that opens a change request needs `project.gitops.push`.
+The Review page shows a verdict only to a role that holds its permissions. Every verdict on a change or on an agent's item needs write access to the project (`project.write`):
+
+| Control | Needs |
+| --- | --- |
+| **Ship it** (web), **Merge** (mobile) | `project.write` + `project.gitops.merge` |
+| **Solve with agent** (web), **Resolve conflicts** (mobile): it replaces the merge on a conflicted change | `project.write` + `project.gitops.merge` |
+| Ask for changes, close, dismiss, answer, and every verdict on an agent's item | `project.write` + `project.review.act` |
+| **Approve** and **Deny** on a connector approval | A project manager, or the person who launched the session. The API refuses anyone else. |
+| **+** on mobile, to open a change request | `project.write` + `project.gitops.push` |
+
+A built-in member holds none of these permissions. It sees changes and agent items without verdicts, and it decides a connector approval only in a session it launched. The change request dialog on the Files page and on a session's change card follows the same rule: **Apply changes** and **Fix with agent** need `project.write` + `project.gitops.merge`, **Dismiss** and **Reopen** need `project.write`.
 
 | Command | Does |
 | --- | --- |
