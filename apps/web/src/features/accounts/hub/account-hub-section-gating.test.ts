@@ -6,12 +6,12 @@
 // (role.read)". `role.read` lives in ADMIN_EXTRAS (`apps/api/src/iam/
 // role-perms.ts`), and `GET .../iam/roles` asserts it
 // (`apps/api/src/accounts/iam/custom-roles.ts`), so that item could never
-// resolve for a member. Same class of hole for Members/Groups, which were also
-// unconditional — they happen to be in the member baseline today, but nothing
-// said so and nothing would have caught it changing.
+// resolve for a member.
 //
 // The rule these tests hold: a nav item is visible when the probe for the
-// leaf its own list route asserts came back `true`. Nothing else.
+// leaf its own list route asserts came back `true`. Members and Groups have
+// no such leaf since 20261013172952181: their list routes answer every account
+// member with the people and groups that member may see, never a 403.
 //
 // Where the rule lives moved on 2026-09-01: the sidebar left `page.tsx` for
 // `accounts/layout.tsx` (so every `/accounts/**` route shares it), and a
@@ -63,7 +63,6 @@ describe('account hub — the read probes exist and are ordered', () => {
 
     expect(actions).toEqual([
       'member.read',
-      'group.read',
       'role.read',
       'policy.read',
       'audit.read',
@@ -78,7 +77,6 @@ describe('account hub — the read probes exist and are ordered', () => {
     ]);
     expect(bindings).toEqual([
       'canReadMembers',
-      'canReadGroups',
       'canReadRoles',
       'canReadPolicies',
       'canReadAudit',
@@ -113,10 +111,8 @@ describe('account hub — the read probes exist and are ordered', () => {
 describe('account hub — every Access nav item maps to its own READ probe', () => {
   // The mapping, one line per section. `access-projects` and `help` are the
   // only two without an account leaf, and both have a stated reason.
-  test('members/groups/roles/audit each gate on their own read probe', () => {
+  test('roles/audit each gate on their own read probe', () => {
     for (const [section, gate] of [
-      ['members', 'canReadMembers === true'],
-      ['groups', 'canReadGroups === true'],
       ['roles', 'canReadRoles === true'],
       ['audit', 'canReadAudit === true'],
     ] as const) {
@@ -126,8 +122,23 @@ describe('account hub — every Access nav item maps to its own READ probe', () 
 
   test('roles is no longer hard-coded visible — the original bug', () => {
     expect(sectionVisible).not.toContain('roles: true');
-    expect(sectionVisible).not.toContain('members: true');
-    expect(sectionVisible).not.toContain('groups: true');
+  });
+
+  // `GET .../members` and `GET .../iam/groups` filter to what the caller may
+  // see (apps/api/src/iam/directory-visibility.ts): at least the caller and the
+  // owners. A plain member gets a short list, never a 403.
+  test('members and groups are visible to every account member', () => {
+    expect(sectionVisible).toContain('members: true');
+    expect(sectionVisible).toContain('groups: true');
+    expect(probes).not.toContain("'group.read'");
+  });
+
+  // Another member's panel reads `.../iam/members/:id/*`, which asserts
+  // `member.read`. Offering it without the leaf opens a pane that cannot load.
+  test("'View access' on another member's row needs member.read", () => {
+    expect(code).toContain('if (canReadMembers || isSelf) {');
+    const panel = strip(readFileSync(join(hubDir, '../../../components/iam/group-access-panel.tsx'), 'utf8'));
+    expect(panel).toContain('if (accountRole && (canReadMembers || userId === currentUserId)) {');
   });
 
   // Its list is `GET /projects?account_id=` (already scoped to what the caller
@@ -176,23 +187,17 @@ describe('account hub — nothing renders into a section the nav hides', () => {
     expect(sidebar).toContain('group.items.filter((item) => sectionVisible[item.id])');
   });
 
-  // `members` is `[]` when the query never runs, and "0" beside Members on an
-  // account the viewer is demonstrably a member of is a lie, not a placeholder.
-  test('the nav member count is suppressed when the member list is unreadable', () => {
-    expect(sidebar).toContain('sectionVisible.members && !membersQuery.isLoading ?');
+  // The count of the people this caller sees; nothing while it loads.
+  test('the nav member count is hidden while the member list loads', () => {
+    expect(sidebar).toContain('membersQuery.isLoading ? null : (membersQuery.data ?? []).length');
   });
 
-  // Optimistic (`!== false`, not `=== true`): an in-flight probe must not
-  // delay the list for someone who does hold the leaf. One hook, read by the
-  // page and the sidebar, so the list is fetched once for both.
-  test('the member list waits for its read probe before firing', () => {
-    const query = membersHook.slice(
-      membersHook.indexOf("queryKey: ['account-members', accountId]"),
-      membersHook.indexOf('staleTime: 20_000'),
-    );
-    expect(query).toContain('canReadMembers !== false');
-    expect(code).toContain('useAccountMembers(accountId, canReadMembers)');
-    expect(sidebar).toContain('useAccountMembers(accountId, canReadMembers)');
+  // No probe to wait for: the route answers every account member. One hook,
+  // read by the page and the sidebar, so the list is fetched once for both.
+  test('the member list fires without a read probe', () => {
+    expect(membersHook).toContain('enabled: !!user && !!accountId,');
+    expect(code).toContain('useAccountMembers(accountId)');
+    expect(sidebar).toContain('useAccountMembers(accountId)');
     // The page still NAMES the key when it invalidates after a mutation; what
     // it must not do is run a list query of its own.
     expect(code).not.toContain('listAccountMembers(');

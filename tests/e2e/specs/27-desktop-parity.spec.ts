@@ -24,6 +24,7 @@ import { runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createManifestProject,
+  fundAccount,
   isDeployedTarget,
   type ManifestProject,
 } from "../helpers/manifest-project";
@@ -301,15 +302,17 @@ for (const runtime of runtimes) {
         await expect(hub).toBeVisible();
         const hubRow = hub.locator(".kx-overlay-sidebar-titlebar");
         const back = hubRow.getByRole("button", { name: /Back to app/i });
-        const search = hubRow.getByRole("button", { name: /Search/i });
+        // Since #9750 the hub titlebar is Back to app + account switcher on the
+        // left and the sidebar collapse trigger on the right (no search button).
+        const collapse = hubRow.getByRole("button", { name: /Toggle Sidebar/i });
         await expect(back).toBeVisible();
-        await expect(search).toBeVisible();
+        await expect(collapse).toBeVisible();
         expect(
           await hubRow.evaluate((row) => getComputedStyle(row).justifyContent),
         ).toBe(desktop ? "flex-end" : "space-between");
         const backBox = (await back.boundingBox())!;
-        const searchBox = (await search.boundingBox())!;
-        expect(backBox.x + backBox.width).toBeLessThan(searchBox.x);
+        const collapseBox = (await collapse.boundingBox())!;
+        expect(backBox.x + backBox.width).toBeLessThan(collapseBox.x);
         if (!desktop) {
           const rowBox = (await hubRow.boundingBox())!;
           expect(backBox.x - rowBox.x).toBeLessThan(24);
@@ -1559,6 +1562,343 @@ for (const runtime of runtimes) {
       },
     );
     nativeTest?.(
+      "Quick Entry starts a session in the open project from the prompt bar",
+      async ({ page, desktopApp, baseURL }) => {
+        if (!desktopApp)
+          throw new Error("native Electron application is required");
+        test.setTimeout(240_000);
+        const databaseUrl =
+          process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+        if (!databaseUrl)
+          throw new Error("Quick Entry requires the configured test database");
+        const email = `e2e-desktop-quick-entry-${randomUUID()}@example.test`;
+        const user = await createAuthUser(email, authOptions);
+        const session = await signIn(email, authOptions);
+        let project: ManifestProject | undefined;
+        try {
+          const accounts = await api<{ account_id: string }[]>(
+            session.access_token,
+            "GET",
+            "/accounts",
+          );
+          await fundAccount(databaseUrl, accounts[0].account_id);
+          project = await createManifestProject({
+            api,
+            accessToken: session.access_token,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+            name: "Quick Entry target",
+            databaseUrl,
+          });
+          const projectId = project.id;
+          const { resolvedForCaller: modelId } = await api<{
+            resolvedForCaller: string | null;
+          }>(session.access_token, "GET", `/projects/${projectId}/model-defaults`);
+          expect(modelId).toBeTruthy();
+          const picker = await api<Record<string, unknown>>(
+            session.access_token,
+            "GET",
+            `/projects/${projectId}/model-picker`,
+          );
+          const creates: { pending_prompt?: { text?: string } }[] = [];
+          await page.route("**/*", async (route) => {
+            const request = route.request();
+            const path = new URL(request.url()).pathname;
+            // The local profile has no managed model catalog: serve its
+            // resolved default so the composer can send (as in spec 28).
+            if (
+              !isDeployedTarget() &&
+              request.method() === "GET" &&
+              path === `/v1/projects/${projectId}/model-picker`
+            ) {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  ...picker,
+                  models: {
+                    [modelId!]: {
+                      id: modelId,
+                      name: "E2E managed model",
+                      provider: "openai",
+                      enabled: true,
+                      tool_call: true,
+                      attachment: true,
+                      limit: { context: 128_000, output: 8_000 },
+                    },
+                  },
+                  defaultModel: modelId,
+                }),
+              });
+              return;
+            }
+            // No warm session on any target, so the create carries the prompt.
+            if (
+              request.method() === "POST" &&
+              path === `/v1/projects/${projectId}/sessions/warm`
+            ) {
+              await route.fulfill({
+                status: 503,
+                contentType: "application/json",
+                body: JSON.stringify({
+                  error: { message: "Injected warm-session refusal" },
+                }),
+              });
+              return;
+            }
+            if (
+              request.method() === "POST" &&
+              path === `/v1/projects/${projectId}/sessions`
+            ) {
+              creates.push(request.postDataJSON());
+            }
+            await route.continue();
+          });
+          // Electron windows have no Playwright baseURL: pass an absolute URL.
+          await installBrowserSessionDirect(
+            page,
+            session,
+            `${baseURL}/projects/${projectId}`,
+            authOptions,
+          );
+          await dismissOnboarding(page);
+          await expect(
+            page.getByRole("textbox", { name: "Message input" }),
+          ).toBeVisible({ timeout: 60_000 });
+
+          // The default shortcut is registered for the whole OS. Linux under
+          // Wayland has no global shortcuts, so only macOS and Windows assert it.
+          if (process.platform === "darwin" || process.platform === "win32") {
+            expect(
+              await desktopApp.evaluate(({ globalShortcut }) =>
+                globalShortcut.isRegistered("CommandOrControl+Shift+Space"),
+              ),
+            ).toBe(true);
+          }
+
+          // File ▸ Open Quick Entry runs the same show() as the shortcut.
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.getApplicationMenu()
+              ?.getMenuItemById("kx-file-quick-entry")
+              ?.click();
+          });
+          await expect
+            .poll(() =>
+              desktopApp
+                .windows()
+                .some((window) => window.url().endsWith("/quick-entry.html")),
+            )
+            .toBe(true);
+          const bar = desktopApp
+            .windows()
+            .find((window) => window.url().endsWith("/quick-entry.html"))!;
+          await expect(bar.locator("#pick-label")).toHaveText("New session");
+          await expect(bar.locator("#pick")).toHaveAttribute(
+            "title",
+            "New session in Quick Entry target",
+          );
+          // The new session's agent, resolved as project home does. The model
+          // and effort stay the composer's own: the bar has no control for them.
+          await expect(bar.locator("#agent")).toBeVisible({ timeout: 30_000 });
+          await expect(bar.locator("#model, #effort")).toHaveCount(0);
+          const prompt = `Quick Entry prompt ${randomUUID()}`;
+          const created = page.waitForResponse(
+            (response) =>
+              response.request().method() === "POST" &&
+              new URL(response.url()).pathname ===
+                `/v1/projects/${projectId}/sessions`,
+            { timeout: 60_000 },
+          );
+          await bar.locator("#prompt").fill(prompt);
+          await bar.locator("#prompt").press("Enter");
+
+          // The project home composer submitted the prompt: one create, and it
+          // carries the text as the session's first prompt.
+          const response = await created;
+          expect(creates).toHaveLength(1);
+          expect(creates[0]?.pending_prompt?.text).toBe(prompt);
+          if (isDeployedTarget()) {
+            expect(response.ok()).toBe(true);
+            await expect(page).toHaveURL(
+              new RegExp(`/projects/${projectId}/sessions/[^/?#]+`),
+              { timeout: 60_000 },
+            );
+            await expect(page.getByText(prompt).first()).toBeVisible();
+          } else {
+            // The local profile has no tunnel, so the API refuses every
+            // create (503 KORTIX_URL_UNREACHABLE, as in spec 28). The prompt
+            // is not lost: the composer keeps it.
+            expect(response.status()).toBe(503);
+            await expect(
+              page.getByRole("textbox", { name: "Message input" }),
+            ).toHaveText(prompt, { timeout: 15_000 });
+          }
+          // The bar hid itself, and the prompt was taken exactly once.
+          expect(
+            await desktopApp.evaluate(({ BrowserWindow }) =>
+              BrowserWindow.getAllWindows()
+                .find((window) =>
+                  window.webContents.getURL().endsWith("/quick-entry.html"),
+                )
+                ?.isVisible(),
+            ),
+          ).toBe(false);
+          expect(
+            await page.evaluate(() =>
+              (
+                window as unknown as {
+                  __TAURI__: { core: { invoke: (cmd: string) => Promise<unknown> } };
+                }
+              ).__TAURI__.core.invoke("quick_entry_take"),
+            ),
+          ).toBeNull();
+        } finally {
+          await page.unrouteAll({ behavior: "ignoreErrors" });
+          await project?.dispose();
+          await deleteAuthUser(user.id, authOptions);
+        }
+      },
+    );
+    nativeTest?.(
+      "Quick Entry sends to a recent session picked in the bar",
+      async ({ page, desktopApp, baseURL }) => {
+        if (!desktopApp)
+          throw new Error("native Electron application is required");
+        test.setTimeout(240_000);
+        const databaseUrl =
+          process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+        if (!databaseUrl)
+          throw new Error("Quick Entry requires the configured test database");
+        const email = `e2e-desktop-quick-entry-pick-${randomUUID()}@example.test`;
+        const user = await createAuthUser(email, authOptions);
+        const session = await signIn(email, authOptions);
+        let project: ManifestProject | undefined;
+        type PickerMenu = {
+          items: { label: string; click: () => void }[];
+          closePopup: () => void;
+        };
+        type PickerHolder = { quickEntryPicker?: PickerMenu };
+        try {
+          const accounts = await api<{ account_id: string }[]>(
+            session.access_token,
+            "GET",
+            "/accounts",
+          );
+          await fundAccount(databaseUrl, accounts[0].account_id);
+          project = await createManifestProject({
+            api,
+            accessToken: session.access_token,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+            name: "Quick Entry picker",
+            databaseUrl,
+          });
+          const projectId = project.id;
+          const pickedId = await createDatabaseSession(loadEnv(), {
+            projectId,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+            metadata: { session_name: "Picked session target" },
+          });
+          await installBrowserSessionDirect(
+            page,
+            session,
+            `${baseURL}/projects/${projectId}`,
+            authOptions,
+          );
+          await dismissOnboarding(page);
+          await expect(
+            page.getByRole("textbox", { name: "Message input" }),
+          ).toBeVisible({ timeout: 60_000 });
+
+          // Playwright cannot click an OS menu: keep the menu the bar pops up,
+          // read its real items, and choose one through its own click handler.
+          await desktopApp.evaluate(({ Menu }) => {
+            const popup = Menu.prototype.popup;
+            Menu.prototype.popup = function (options) {
+              (globalThis as unknown as PickerHolder).quickEntryPicker =
+                this as unknown as PickerMenu;
+              return popup.call(this, options);
+            };
+          });
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.getApplicationMenu()
+              ?.getMenuItemById("kx-file-quick-entry")
+              ?.click();
+          });
+          await expect
+            .poll(() =>
+              desktopApp
+                .windows()
+                .some((window) => window.url().endsWith("/quick-entry.html")),
+            )
+            .toBe(true);
+          const bar = desktopApp
+            .windows()
+            .find((window) => window.url().endsWith("/quick-entry.html"))!;
+          await expect(bar.locator("#pick-label")).toHaveText("New session");
+
+          // The list arrives with the sidebar's session query.
+          const readPicker = async () => {
+            await bar.locator("#pick").click();
+            const labels = await desktopApp.evaluate(() => {
+              const menu = (globalThis as unknown as PickerHolder).quickEntryPicker;
+              menu?.closePopup();
+              return menu?.items.map((item) => item.label) ?? [];
+            });
+            return labels;
+          };
+          await expect(async () => {
+            expect(await readPicker()).toEqual([
+              "New session",
+              "",
+              "Recent sessions",
+              "Picked session target",
+            ]);
+          }).toPass({ timeout: 30_000 });
+          await bar.locator("#pick").click();
+          await desktopApp.evaluate(() => {
+            const menu = (globalThis as unknown as PickerHolder).quickEntryPicker!;
+            menu.closePopup();
+            menu.items[3].click();
+          });
+          await expect(bar.locator("#pick-label")).toHaveText(
+            "Picked session target",
+          );
+          await expect(bar.locator("#dot")).toBeVisible();
+
+          await bar.locator("#prompt").fill("Follow-up from Quick Entry");
+          await bar.locator("#prompt").press("Enter");
+          // The picked session's page opens; its composer sends once the chat
+          // resolves (a deployed target runs it; the local profile has no box).
+          await expect(page).toHaveURL(
+            new RegExp(`/projects/${projectId}/sessions/${pickedId}`),
+            { timeout: 60_000 },
+          );
+          // The next open keeps the pick while the session is live (running,
+          // starting, needs you); any other status starts a new session.
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.getApplicationMenu()
+              ?.getMenuItemById("kx-file-quick-entry")
+              ?.click();
+          });
+          await expect(bar.locator("#prompt")).toBeFocused();
+          const live =
+            (await bar.locator("#dot").isVisible()) &&
+            ["running", "starting", "needs-you"].includes(
+              (await bar.locator("#dot").getAttribute("data-status")) ?? "",
+            );
+          await expect(bar.locator("#pick-label")).toHaveText(
+            live ? "Picked session target" : "New session",
+          );
+          await bar.locator("#prompt").press("Escape");
+        } finally {
+          await project?.dispose();
+          await deleteAuthUser(user.id, authOptions);
+        }
+      },
+    );
+    nativeTest?.(
       "dock activation recreates the main window with its persisted native state",
       async ({ desktopApp, baseURL }) => {
         if (!desktopApp)
@@ -2444,17 +2784,14 @@ nativeBrowserTest?.(
       await centeredInBand(sidebarRow);
       await centeredInBand(breadcrumbRow);
       await centeredInBand(breadcrumbRow.getByRole("navigation", { name: "breadcrumb" }));
+      // Since #9750 the hub titlebar carries no search button.
       const back = sidebarRow.getByRole("button", { name: /Back to app/i });
-      const search = sidebarRow.getByRole("button", { name: /Search/i });
       const collapse = sidebarRow.getByRole("button", { name: "Toggle Sidebar" });
-      for (const control of [back, search, collapse]) {
+      for (const control of [back, collapse]) {
         await expect(control).toBeVisible();
         await centeredInBand(control);
         await clearsLights(control);
       }
-      await search.click();
-      await expect(main.locator('[data-slot="command-input"]')).toBeVisible();
-      await main.keyboard.press("Escape");
       await collapse.click();
       await expect(breadcrumbRow).toHaveAttribute("data-sidebar-collapsed", "");
       const reopen = breadcrumbRow.getByRole("button", { name: "Toggle Sidebar" });

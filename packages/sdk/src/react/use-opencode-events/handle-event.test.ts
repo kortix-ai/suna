@@ -1196,6 +1196,50 @@ describe('question.asked / question.replied / question.rejected', () => {
     });
     expect(removeQuestion.calls).toEqual([['q_2']]);
   });
+
+  // KRTX-1739: the session lists read Needs you from GET needs-input. The API
+  // closes a stored question before it returns the answer, so a refetch on the
+  // event reads it current instead of after the next 30 s poll.
+  test('each question event refetches the project needs-input summary', () => {
+    const { handleEvent, queryClient } = buildHandler({ projectId: 'proj_q' });
+    const needsInput = countInvalidations(queryClient, qk.project.needsInput('proj_q'));
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'question.asked',
+      properties: { id: 'q_1', sessionID: 'ses_1', questions: [] },
+    });
+    handleEvent({
+      id: 'evt_2',
+      type: 'question.replied',
+      properties: { sessionID: 'ses_1', requestID: 'q_1', answers: [] },
+    });
+    handleEvent({
+      id: 'evt_3',
+      type: 'question.rejected',
+      properties: { sessionID: 'ses_1', requestID: 'q_2' },
+    });
+
+    expect(needsInput.n).toBe(3);
+  });
+
+  test('a stream with no project refetches no needs-input summary', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    const invalidated: unknown[] = [];
+    const real = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      invalidated.push(opts.queryKey);
+      return real(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'question.replied',
+      properties: { sessionID: 'ses_1', requestID: 'q_1', answers: [] },
+    });
+
+    expect(invalidated).toEqual([]);
+  });
 });
 
 // ============================================================================

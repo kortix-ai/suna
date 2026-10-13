@@ -16,8 +16,10 @@ flow(
       // `kortix sessions digest` lists, then digests each session.
       "GET /v1/projects/:projectId/sessions",
       "GET /v1/accounts/me",
-      // `kortix sessions log` locates the session, then reads its saved copy.
+      // `kortix sessions log` locates the session, asks for its stored session
+      // log (404: none), then reads its saved copy.
       "GET /v1/projects/:projectId/sessions/:sessionId",
+      "GET /v1/projects/:projectId/sessions/:sessionId/log",
       "GET /v1/projects/:projectId/sessions/:sessionId/snapshot",
     ],
   },
@@ -299,17 +301,34 @@ flow(
           throwIfCliInfraFailure(run, "kortix sessions log");
           if (run.exitCode !== 0)
             throw new Error(`kortix sessions log exited ${run.exitCode}: ${run.all}`);
-          // stdout stays the same JSON array scripts already parse; the source
-          // is reported on stderr so it cannot break them.
-          const messages = JSON.parse(run.stdout) as Array<{ role: string; text: string }>;
-          if (messages.length !== 2)
-            throw new Error(`expected the 2 saved messages, got ${messages.length}: ${run.stdout}`);
+          // No stored session log: the saved v1 transcript, converted to the
+          // kortix.session/2 records, so scripts read one shape. The source is
+          // reported on stderr so it cannot break them.
+          const log = JSON.parse(run.stdout) as {
+            schema: string;
+            source: string;
+            threads: Array<{ messages: Array<{ role: string; blocks: Array<{ type: string; text?: string }> }> }>;
+          };
+          if (log.schema !== "kortix.session/2" || log.source !== "v1")
+            throw new Error(`expected schema kortix.session/2 from source v1: ${run.stdout.slice(0, 300)}`);
+          const messages = log.threads[0]?.messages ?? [];
+          if (log.threads.length !== 1 || messages.length !== 2)
+            throw new Error(`expected 1 thread with the 2 saved messages: ${run.stdout.slice(0, 300)}`);
           if (messages[0]!.role !== "user" || messages[1]!.role !== "assistant")
             throw new Error(`saved messages out of order: ${run.stdout}`);
-          if (!messages[1]!.text.includes("stored in the database"))
+          if (!messages[1]!.blocks.some((b) => b.type === "text" && b.text?.includes("stored in the database")))
             throw new Error(`log lost the saved reply: ${run.stdout}`);
           if (!run.stderr.includes("Saved transcript"))
             throw new Error(`log did not say where the messages came from: ${run.stderr}`);
+          // The old v1 JSON, for one release: the message array, and a deprecation note on stderr.
+          const old = await cli.run(["sessions", "log", sessionId, "--project", project.id, "--json", "--schema", "v1"]);
+          throwIfCliInfraFailure(old, "kortix sessions log --schema v1");
+          if (old.exitCode !== 0) throw new Error(`--schema v1 exited ${old.exitCode}: ${old.all}`);
+          const array = JSON.parse(old.stdout) as Array<{ role: string; text: string }>;
+          if (array.length !== 2 || !array[1]!.text.includes("stored in the database"))
+            throw new Error(`--schema v1 lost the old shape: ${old.stdout}`);
+          if (!old.stderr.includes("deprecated"))
+            throw new Error(`--schema v1 did not say it is deprecated: ${old.stderr}`);
           const status = (await owner.get("/v1/projects/:projectId/sessions/:sessionId", {
             params: { projectId: project.id, sessionId },
           })).status(200).json<{ status: string }>();
@@ -625,7 +644,7 @@ flow(
       },
     );
     await ctx.step(
-      "deleting the session removes its stored bytes and denies subsequent reads",
+      "deleting the session denies every read and keeps its stored bytes for a restore until the retention purge",
       async () => {
         (
           await owner.request(
@@ -644,8 +663,10 @@ flow(
             "SELECT count(*)::int AS count FROM storage.objects WHERE bucket_id='session-attachments' AND name=$1",
             [`${project.id}/${sessionId}/${attachmentId}`],
           );
-          if (result.rows[0].count !== 0)
-            throw new Error("Deleted session still owns attachment bytes");
+          // KRTX-1734: the session is restorable for 30 days, so its file is
+          // kept. The purge deletes it 37 days after the delete (SESS-51).
+          if (result.rows[0].count !== 1)
+            throw new Error(`a deleted session's file should stay until the purge, found ${result.rows[0].count}`);
         } finally {
           await db.end();
         }

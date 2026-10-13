@@ -4,6 +4,7 @@ import {
   type ConnectionSharePrincipal,
   getConnectorCatalog,
   renameConnection,
+  revokeConnection,
   setConnectorSecretBinding,
   shareConnection,
 } from '@kortix/sdk';
@@ -1615,10 +1616,20 @@ async function runConnections(input: {
     case 'default': {
       const connectionId = positional[0];
       if (!connectionId) return missing('a connection id');
-      const response = await ctx.client.put<{ ok: true }>(
-        `${base}/${encodeURIComponent(connectionId)}/${action}`,
-        {},
-      );
+      const response = action === 'revoke'
+        ? await withKortixScope(ctx.auth, () => revokeConnection(ctx.projectId, connectionId))
+        : await ctx.client.put<{ ok: true }>(
+            `${base}/${encodeURIComponent(connectionId)}/${action}`,
+            {},
+          );
+      if (action === 'revoke') {
+        if (response?.ok !== true) return fail('Revoke was not acknowledged by the server.');
+        // A 200 acknowledgement is not proof that the connection stopped being usable.
+        const persisted = await ctx.client.get<{ connections: Connection[] }>(base);
+        if (persisted?.connections?.find((row) => row.connection_id === connectionId)?.status !== 'revoked') {
+          return fail('Could not verify the connection is revoked. Read its status before retrying.');
+        }
+      }
       if (json) emitJson(response);
       else
         process.stdout.write(

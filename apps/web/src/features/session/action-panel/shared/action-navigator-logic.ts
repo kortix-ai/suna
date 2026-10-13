@@ -7,7 +7,7 @@
  * cheaper to pin as a pure function than by mounting a panel and a DOM.
  */
 
-import type { ToolPart } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 
 export type FollowMode = 'live' | 'manual';
 
@@ -42,11 +42,11 @@ export function prevIndex(current: number): { index: number; mode: 'manual' } {
  * `now` is a parameter, not `new Date()`, so the same-day boundary is testable
  * without freezing the clock.
  */
-export function actionTimeLabel(part: ToolPart | undefined, now: Date): string {
-  const time = (part?.state as { time?: { start?: number; end?: number } } | undefined)?.time;
-  const ms = time?.end ?? time?.start;
-  if (typeof ms !== 'number') return '';
-  const d = new Date(ms);
+export function actionTimeLabel(call: ToolCallBlock | undefined, now: Date): string {
+  const at = call?.ended_at ?? call?.started_at;
+  if (!at) return '';
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
   return d.toDateString() === now.toDateString()
     ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })
     : d.toLocaleString(undefined, {

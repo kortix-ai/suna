@@ -73,10 +73,14 @@ export function toolPartOf(call: ToolCallBlock): ToolPart {
 export const isToolCallBlock = (value: unknown): value is ToolCallBlock =>
   typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'tool_call';
 
+/** The v1 part of a part or a block. Internal: a widened part helper reads its argument through it. */
+export const asToolPart = (value: ToolPart | ToolCallBlock): ToolPart => (isToolCallBlock(value) ? toolPartOf(value) : value);
+
 /**
  * The harness's display metadata of a tool call: the `state.metadata` of the v1 part it was
  * converted from (bash `command`, read `loaded`, task `sessionId`, edit `filediff`, ...), whole.
- * A native record carries only what its fields map (`exit` from `result.exit_code`). The same
+ * A native record carries its `details` (`result.details`, else its adapter's ext: pi's
+ * `ext.pi.data.details`) and `exit` from `result.exit_code`. The same
  * frozen empty object when there is none. Transitional: it stays until the session-log schema
  * carries display metadata of its own.
  */

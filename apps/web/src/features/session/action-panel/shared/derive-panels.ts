@@ -1,7 +1,7 @@
 /**
  * What the agent MADE (Outputs) versus what it LOOKED AT (Context).
  *
- * Both are derived from the same ToolPart[] the Progress list reads — Easy mode
+ * Both are derived from the same ToolCallBlock[] the Progress list reads — Easy mode
  * adds no data source, it only re-partitions what is already there.
  *
  * Classification is delegated to narration.ts wherever it already owns the
@@ -14,7 +14,6 @@
  */
 
 import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
-import type { ToolPart } from '@/ui';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
@@ -33,7 +32,7 @@ import {
   familyForTool,
   humanizeToolName,
 } from './narration';
-import { toolKind } from '@kortix/sdk';
+import { toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 interface OutputItemBase {
   callID: string;
@@ -91,18 +90,26 @@ export interface ContextItem {
   path?: string;
   /** Every call behind a `tool` item, so the UI can show what the tool
    * actually did (its real tool views) when the user opens the chip. */
-  parts?: ToolPart[];
+  calls?: ToolCallBlock[];
 }
 
-function filePathOf(part: ToolPart): string | undefined {
-  const input = (part.state?.input ?? {}) as Record<string, unknown>;
+function filePathOf(call: ToolCallBlock): string | undefined {
+  const input = inputOf(call);
   const p = input.filePath ?? input.file_path ?? input.path;
   return typeof p === 'string' && p ? p : undefined;
 }
 
+/** `s` without trailing `/`. A loop, not `/\/+$/`: that regex backtracks
+ *  quadratically on a long run of slashes (CodeQL js/polynomial-redos). */
+export function trimTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end -= 1;
+  return s.slice(0, end);
+}
+
 /** Last path segment, tolerant of both `/` and `\` separators. */
 function basename(p: string): string {
-  const cleaned = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const cleaned = trimTrailingSlashes(p.replace(/\\/g, '/'));
   const idx = cleaned.lastIndexOf('/');
   return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
 }
@@ -119,35 +126,36 @@ function truncate(s: string, max = 60): string {
   return trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed;
 }
 
-/** `part.state.output`, without the bash-only tag stripping `partOutput`
- * (tool/shared/infrastructure.tsx) does — image_gen/presentation_gen output
- * is a flat JSON payload, never bash's tagged output. */
-function rawOutputOf(part: ToolPart): string {
-  const state = part.state as { status?: string; output?: string } | undefined;
-  return state?.status === 'completed' && typeof state.output === 'string' ? state.output : '';
+/** A call's arguments as an object. A pending call that still streams its
+ * arguments as text has none yet, as a v1 part's `state.input` had none. */
+function inputOf(call: ToolCallBlock): Record<string, unknown> {
+  const input = call.input;
+  return typeof input === 'object' && input !== null && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : {};
 }
 
-/** `part.state.metadata`, mirroring `partMetadata` (tool/shared/infrastructure.tsx)
- * without importing that client-component module into this plain data file. */
-function rawMetadataOf(part: ToolPart): Record<string, unknown> {
-  const state = part.state as { status?: string; metadata?: unknown } | undefined;
-  const status = state?.status;
-  if (status === 'completed' || status === 'running' || status === 'error') {
-    return (state?.metadata as Record<string, unknown>) ?? {};
-  }
-  return {};
+/** A completed call's output text as the tool returned it, without the
+ * bash-only tag stripping `partOutput` (tool/shared/infrastructure.tsx) does —
+ * image_gen/presentation_gen output is a flat JSON payload, never bash's
+ * tagged output. */
+function rawOutputOf(call: ToolCallBlock): string {
+  if (call.status !== 'complete') return '';
+  let text = '';
+  for (const item of call.result?.content ?? []) if (item.type === 'text') text += item.text;
+  return text;
 }
 
 /**
  * apply_patch's INPUT is an opaque patch blob — no filename lives there.
- * The per-file paths only exist in its OUTPUT metadata (`state.metadata.files`),
+ * The per-file paths only exist in its OUTPUT metadata (`toolCallMetadata(call).files`),
  * the exact shape ApplyPatchTool itself renders from (see PatchFileLite). One
  * call can touch several files, so this returns one OutputItem per file
  * actually changed — never a single item named after the tool. Deletions are
  * skipped: there is nothing left for the user to open.
  */
-function applyPatchOutputs(part: ToolPart): OutputItem[] {
-  const raw = rawMetadataOf(part).files;
+function applyPatchOutputs(call: ToolCallBlock): OutputItem[] {
+  const raw = toolCallMetadata(call).files;
   if (!Array.isArray(raw)) return [];
 
   const items: OutputItem[] = [];
@@ -161,24 +169,24 @@ function applyPatchOutputs(part: ToolPart): OutputItem[] {
     if (!path) continue;
     const name = basename(path);
     if (!name) continue;
-    items.push({ callID: part.callID, name, path: filePath || path, kind: 'file' });
+    items.push({ callID: call.call_id, name, path: filePath || path, kind: 'file' });
   }
   return items;
 }
 
 /**
  * The real artifact name (and path, if known) for image_gen / presentation_gen
- * calls — never `humanizeToolName(part.tool)` ("Image Gen"/"Presentation Gen").
+ * calls — never `humanizeToolName(call.name)` ("Image Gen"/"Presentation Gen").
  * Both components resolve their real name the same way: parse the tool's
  * OUTPUT payload (parseImageOutput / parsePresentationOutput), falling back to
  * the request's own input fields, and only then to a truthful generic noun.
  */
-function createArtifactName(part: ToolPart): { name: string; path?: string } {
-  const t = normalizeName(part.tool);
-  const input = (part.state?.input ?? {}) as Record<string, unknown>;
+function createArtifactName(call: ToolCallBlock): { name: string; path?: string } {
+  const t = normalizeName(call.name);
+  const input = inputOf(call);
 
   if (t === 'image_gen') {
-    const { imagePath } = parseImageOutput(rawOutputOf(part));
+    const { imagePath } = parseImageOutput(rawOutputOf(call));
     if (imagePath) {
       const name = basename(imagePath);
       if (name) return { name, path: imagePath };
@@ -188,7 +196,7 @@ function createArtifactName(part: ToolPart): { name: string; path?: string } {
   }
 
   if (t === 'presentation_gen') {
-    const parsed = parsePresentationOutput(rawOutputOf(part));
+    const parsed = parsePresentationOutput(rawOutputOf(call));
     const presentationName =
       parsed?.presentation_name ||
       (typeof input.presentation_name === 'string' ? input.presentation_name : '');
@@ -202,15 +210,10 @@ function createArtifactName(part: ToolPart): { name: string; path?: string } {
   }
 
   // video_gen / show / show_user — unchanged behavior.
-  return { name: getToolPrimaryArg(part) || humanizeToolName(part.tool) };
+  return { name: getToolPrimaryArg(call) || humanizeToolName(call.name) };
 }
 
-/** The part's raw `state.status`, however it's currently framed. */
-function statusOf(part: ToolPart): string | undefined {
-  return (part.state as { status?: string } | undefined)?.status;
-}
-
-export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string> }): OutputItem[] {
+export function deriveOutputs(calls: ToolCallBlock[], opts?: { latestRun?: Set<string> }): OutputItem[] {
   const out: OutputItem[] = [];
   // key → index into `out`. Later occurrences of a key REPLACE the row in
   // place (last-write-wins): a file rewritten in run 5 is the run-5 file, and
@@ -236,31 +239,30 @@ export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string
     out[existing] = item;
   };
 
-  for (const part of parts) {
+  for (const call of calls) {
     // A call that errored produced nothing — surfacing it here would
     // advertise a file/image/presentation that doesn't exist, and clicking
     // it would fire `requestFileOpen` on a path that was never written. A
     // call still 'running'/'pending' hasn't produced anything YET either —
     // an artifact only exists once the call actually completes.
-    const status = statusOf(part);
-    if (status === 'error' || status === 'running' || status === 'pending') continue;
+    if (call.status !== 'complete') continue;
 
-    const family = familyForTool(part.tool);
+    const family = familyForTool(call.name);
     if (family === 'hidden') continue;
 
     if (family === 'edit') {
       // apply_patch has no name in its input at all — its per-file paths
       // live only in output metadata, and one call can produce several files.
-      if (toolKind(part.tool) === 'apply_patch') {
-        for (const item of applyPatchOutputs(part)) push(item);
+      if (toolKind(call.name) === 'apply_patch') {
+        for (const item of applyPatchOutputs(call)) push(item);
         continue;
       }
 
       // write / edit / morph_edit — a file the agent wrote.
-      const path = filePathOf(part);
-      const name = getToolPrimaryArg(part);
+      const path = filePathOf(call);
+      const name = getToolPrimaryArg(call);
       if (!name) continue;
-      push({ callID: part.callID, name, path, kind: 'file' });
+      push({ callID: call.call_id, name, path, kind: 'file' });
       continue;
     }
 
@@ -276,7 +278,7 @@ export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string
       // whole reason a run that produced a CSV, an XLSX, a DOCX, a PPTX and a
       // PDF in one show showed *none* of them: the payload had no top-level
       // path, only `items[]`.
-      const shown = showOutputsOf(part);
+      const shown = showOutputsOf(call);
       if (shown.length > 0) {
         for (const item of shown) push(item);
         continue;
@@ -285,14 +287,14 @@ export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string
       // image_gen / video_gen / presentation_gen — ask narration.ts's own action
       // tables whether this specific call made anything, rather than assuming
       // every call to these tool names did.
-      const kind = createArtifactKind(part);
+      const kind = createArtifactKind(call);
       if (!kind) continue;
-      const { name, path } = createArtifactName(part);
+      const { name, path } = createArtifactName(call);
       const presentationName =
         kind === 'presentation'
-          ? parsePresentationOutput(rawOutputOf(part))?.presentation_name
+          ? parsePresentationOutput(rawOutputOf(call))?.presentation_name
           : undefined;
-      push({ callID: part.callID, name, path, kind, presentationName });
+      push({ callID: call.call_id, name, path, kind, presentationName });
     }
   }
 
@@ -359,26 +361,26 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
  * has no top-level `path` at all — only `items[]` — which is exactly why a run
  * that produced a CSV, XLSX, DOCX, PPTX and PDF surfaced none of them.
  */
-function showOutputsOf(part: ToolPart): OutputItem[] {
-  const tool = normalizeName(part.tool);
+function showOutputsOf(call: ToolCallBlock): OutputItem[] {
+  const tool = normalizeName(call.name);
   if (tool !== 'show' && tool !== 'show_user') return [];
 
-  const input = (part.state?.input ?? {}) as Record<string, unknown> & ShowPayload;
+  const input = inputOf(call) as Record<string, unknown> & ShowPayload;
 
   const items = parseShowItems(input.items);
   if (items.length > 0) {
     return items
-      .map((item) => showPayloadToOutput(item ?? {}, part.callID))
+      .map((item) => showPayloadToOutput(item ?? {}, call.call_id))
       .filter((item): item is OutputItem => item !== null);
   }
 
-  const single = showPayloadToOutput(input, part.callID);
+  const single = showPayloadToOutput(input, call.call_id);
   return single ? [single] : [];
 }
 
 /**
  * `items` reaches us as EITHER an array or a JSON string — the model serializes
- * it, and nothing downstream normalizes that before it lands in `state.input`.
+ * it, and nothing downstream normalizes that before it lands in the call's `input`.
  * `ShowTool` handles both (`typeof raw === 'string' ? JSON.parse(raw) : raw`),
  * which is why the chat rendered all five files perfectly while Outputs showed
  * none of them: an `Array.isArray` check sees a string and quietly moves on.
@@ -439,21 +441,20 @@ function appOutput(
  * the user — `web[].label` is always a title or a domain (see `webSourceOf`).
  */
 function normalizeUrl(raw: string): string {
-  return raw
+  return trimTrailingSlashes(raw
     .trim()
     .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
     .replace(/^www\./i, '')
-    .replace(/\/+$/, '')
-    .toLowerCase();
+    .toLowerCase());
 }
 
 /** A page title extracted from a `web_fetch`/`webfetch` call's own HTML
  * output, reusing the exact same parsing WebFetchTool itself uses — never a
  * second, divergent HTML-sniffing implementation. `undefined` for non-HTML
  * output (plain text/markdown fetches carry no separate title). */
-function titleFromFetchOutput(part: ToolPart): string | undefined {
-  const output = rawOutputOf(part);
-  const input = (part.state?.input ?? {}) as Record<string, unknown>;
+function titleFromFetchOutput(call: ToolCallBlock): string | undefined {
+  const output = rawOutputOf(call);
+  const input = inputOf(call);
   const format = typeof input.format === 'string' ? input.format : '';
   const isHtml = format === 'html' || (!format && looksLikeHtml(output));
   if (!isHtml || !output) return undefined;
@@ -472,12 +473,12 @@ function titleFromFetchOutput(part: ToolPart): string | undefined {
  *   later fetches still dedups: both resolve to the same normalized key.
  * - A search with no parseable result falls back to its query text.
  */
-function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
-  const input = (part.state?.input ?? {}) as Record<string, unknown>;
+function webSourcesOf(call: ToolCallBlock): Array<{ url: string; label: string }> {
+  const input = inputOf(call);
 
-  if (toolKind(part.tool) === 'web_search') {
+  if (toolKind(call.name) === 'web_search') {
     const results: WebSearchSource[] = [];
-    for (const parsed of parseWebSearchOutput(rawOutputOf(part))) {
+    for (const parsed of parseWebSearchOutput(rawOutputOf(call))) {
       for (const source of parsed.sources) {
         if (source.url) results.push(source);
       }
@@ -497,10 +498,10 @@ function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
   // own output is parseable HTML; otherwise the domain — never the raw URL.
   const url = typeof input.url === 'string' ? input.url : '';
   if (!url) return [];
-  return [{ url, label: titleFromFetchOutput(part) || wsDomain(url) }];
+  return [{ url, label: titleFromFetchOutput(call) || wsDomain(url) }];
 }
 
-export function deriveContext(parts: ToolPart[]): {
+export function deriveContext(calls: ToolCallBlock[]): {
   files: ContextItem[];
   web: ContextItem[];
   tools: ContextItem[];
@@ -512,22 +513,22 @@ export function deriveContext(parts: ToolPart[]): {
   const seenWeb = new Set<string>();
   const seenTools = new Map<string, ContextItem>();
 
-  for (const part of parts) {
+  for (const call of calls) {
     // A failed call didn't successfully look at anything — it must not
     // surface as something the agent inspected either (a failed read never
     // actually saw the file's contents, a failed fetch never saw the page).
-    if (statusOf(part) === 'error') continue;
+    if (call.status === 'error') continue;
 
-    const family = familyForTool(part.tool);
+    const family = familyForTool(call.name);
     if (family === 'hidden') continue; // context-engine bookkeeping — never shown
 
-    if (toolKind(part.tool) === 'read') {
-      const path = filePathOf(part) ?? getToolPrimaryArg(part);
+    if (toolKind(call.name) === 'read') {
+      const path = filePathOf(call) ?? getToolPrimaryArg(call);
       if (!path || seenFiles.has(path)) continue;
       seenFiles.add(path);
       files.push({
-        callID: part.callID,
-        label: getToolPrimaryArg(part) || path,
+        callID: call.call_id,
+        label: getToolPrimaryArg(call) || path,
         kind: 'file',
         path,
       });
@@ -543,7 +544,7 @@ export function deriveContext(parts: ToolPart[]): {
     if (family === 'edit' || family === 'create') continue;
 
     if (family === 'web') {
-      for (const source of webSourcesOf(part)) {
+      for (const source of webSourcesOf(call)) {
         // Dedup by the normalized URL when one is known (a search that
         // surfaced the exact page a later fetch visited collapses here);
         // otherwise fall back to the label itself (a bare query has no URL).
@@ -551,7 +552,7 @@ export function deriveContext(parts: ToolPart[]): {
         if (seenWeb.has(key)) continue;
         seenWeb.add(key);
         web.push({
-          callID: part.callID,
+          callID: call.call_id,
           label: source.label,
           kind: 'web',
           url: source.url || undefined,
@@ -561,7 +562,7 @@ export function deriveContext(parts: ToolPart[]): {
     }
 
     // Everything else is recorded once, by name, as "a tool that was used".
-    // Every call to that tool rides along on `parts` so the UI can show what
+    // Every call to that tool rides along on `calls` so the UI can show what
     // the tool actually did when the user asks — one chip, all its calls.
     //
     // The name comes from `contextLabelForTool`, not `humanizeToolName`: a
@@ -569,13 +570,13 @@ export function deriveContext(parts: ToolPart[]): {
     // get_mem / mem_search / ltm_search) must fold into ONE row, and the
     // by-label `seenTools` map below is what folds it — so the fold is only
     // as good as the label. `narration.ts` owns that mapping, keyed on family.
-    const label = contextLabelForTool(part.tool);
+    const label = contextLabelForTool(call.name);
     const seen = seenTools.get(label);
     if (seen) {
-      (seen.parts ??= []).push(part);
+      (seen.calls ??= []).push(call);
       continue;
     }
-    const item: ContextItem = { callID: part.callID, label, kind: 'tool', parts: [part] };
+    const item: ContextItem = { callID: call.call_id, label, kind: 'tool', calls: [call] };
     seenTools.set(label, item);
     tools.push(item);
   }

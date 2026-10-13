@@ -144,6 +144,76 @@ Plain `pnpm dev` (unpackaged `electron .`) is great for fast iteration, and your
 session persists across relaunches — but a *fresh* login won't round-trip back
 until you run the bundled build above.
 
+## Quick Entry (global shortcut)
+
+**Command+Shift+Space** (Ctrl+Shift+Space on Windows and Linux) opens a prompt
+bar over any app: 760 px wide, centered near the bottom of the display, with a
+soft shadow and a light dim (25% black) over the rest of that display. The bar
+rises and fades in with the dim over 250 ms and drops and fades out over 150 ms
+(none with Reduce Motion).
+Enter starts a new session with that prompt. The same bar opens from
+**File ▸ Open Quick Entry**.
+
+- **Where the session starts.** The project the app window shows, else the
+  project this profile opened last (the `kortix_last_project` cookie). The bar
+  reads "New session"; its tooltip names the project. With no project known, the prompt
+  opens `/projects/start?q=…`: it fills the composer there and does not send.
+- **Send to a recent session.** The picker on the right of the bar is a native
+  menu: "New session", then the person's 5 most recent root sessions there
+  (the sidebar's list, title and status dot, plus last activity). A pick stays
+  for the next open while its session is running, starting or needs you
+  (`keptPick`); otherwise the bar opens on a new session. The web app
+  publishes the list with `quick_entry_set_target`; a picked prompt is taken
+  as `{ text, projectId, sessionId }` and submitted by that session's composer
+  (Enter semantics: a running turn is steered). The session page moves the
+  prefill from the route id onto the chat id when the chat resolves.
+- **How it sends.** The bar never calls Kortix. Enter stores the prompt in the
+  main process, brings the app window forward, and pokes it
+  (`kortix:quick-entry`, no text). The web app pulls the prompt once with the
+  sender-gated `quick_entry_take` command and submits it from the project home
+  composer: the same agent, model, billing gate and warm session as a typed
+  message (`apps/web/src/components/desktop/desktop-quick-entry.tsx`). A
+  window that is still loading, or signed out, takes it when the app mounts.
+  An untaken prompt expires after 10 minutes.
+- **Agent (new session).** The row under the prompt has the project-home
+  composer's agent picker. The web app runs the composer's own selection hooks
+  headless (`desktop-quick-entry-composer.tsx`) and publishes the agents and
+  the resolved selection in `quick_entry_set_target` (`composer`). A pick in
+  the native menu is sent to the app window (`kortix:quick-entry-select`) and
+  applied with the composer's own setter; the bar shows what the app sends
+  back. The model and effort are the composer's own for that agent. On send,
+  the prefill carries `options`, and `ComposerChatInput` applies agent, then
+  model, then effort, one per commit, before the composer submits.
+- **Files and screenshots.** Paperclip, paste or drop; at most 10 files of
+  20 MB each (`normalizeAttachments`). On macOS the camera button hides the bar
+  and runs `screencapture -i` (region, or Space for a window); the image comes
+  back as a thumbnail. Without Screen Recording access the first click runs a
+  `desktopCapturer` capture, which shows the macOS prompt and lists Kortix, and
+  the bar links to the privacy pane; macOS applies a grant after Kortix restarts.
+  An unpackaged build started from a terminal is listed as that terminal app
+  (iTerm, Terminal): macOS credits the app that launched it. Files reach the web app
+  in `quick_entry_take` and are staged by the composer like any attachment. A
+  screenshot for a model whose catalog says it cannot read images fills the
+  composer instead of sending.
+- **Keys.** Enter sends. Shift+Enter adds a line. Esc, the shortcut again, or a
+  click in another app closes the bar and keeps the typed text for the next
+  open. The prompt replaces an unsent draft in the project home composer.
+- **Choose the shortcut.** **File ▸ Quick Entry Shortcut** or **Settings ▸
+  Preferences ▸ Keyboard shortcuts ▸ Quick Entry** (the web app calls
+  `quick_entry_shortcut` / `quick_entry_set_shortcut`): Command+Shift+Space
+  (default), Option+Space, Option+Shift+Space, or Off. The choice is saved in
+  `userData/quick_entry.json`. A shortcut another app holds shows "(in use)".
+  Option+Space is not the default because Claude and ChatGPT use it.
+- **macOS.** The bar is a non-activating panel: it takes keys over a
+  full-screen app and on every Space, and the app you typed over stays active
+  until you press Enter. A Kortix hidden with Command+H stays hidden after Esc.
+- **Linux.** Electron has no global shortcuts under Wayland. Use the menu item.
+
+Files: `src/quick-entry.js` (window, shortcut, IPC), `src/quick-entry-rules.js`
+(choices, placement, expiry; tested), `src/quick-entry-preload.js`,
+`assets/quick-entry.html`. The native journey in
+`tests/e2e/specs/27-desktop-parity.spec.ts` drives it end to end.
+
 ## This computer (local agent + tray)
 
 The app bundles the computer agent, `@kortix/agent-tunnel`

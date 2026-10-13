@@ -54,7 +54,7 @@ import {
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
 } from '@/services/config-provider/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
+import { obtainRelease, type ReleaseTransport } from '@/services/config-provider/obtain'
 import {
   ConvergeBusyError,
   deliverGovernance,
@@ -147,15 +147,11 @@ export interface PiConfigReleases {
   governanceOwned(): boolean
   inFlight(): boolean
   /**
-   * Choose what the runtime starts on. Runs once, before `PiRuntime.start()`;
-   * a second call joins the first. Never throws for a config reason.
+   * Choose the config the runtime starts on. Runs once, before
+   * `PiRuntime.start()`; a second call joins the first. Never reads or waits
+   * for the `/workspace` checkout. Never throws for a config reason.
    */
-  /**
-   * Choose the config the runtime starts on. `workspace` settles once the
-   * checkout is in place, with its failure message or null; a release of the
-   * commit the box checked out is then copied from it instead of downloaded.
-   */
-  boot(mark?: (label: string) => void, workspace?: Promise<string | null>): Promise<void>
+  boot(mark?: (label: string) => void): Promise<void>
   /** Apply the desired release. Single flight: a call while one runs throws `ConvergeBusyError`. */
   converge(runtime: PiReleaseRuntime | null, options?: { delayBeforeSwapMs?: number }): Promise<HarnessConfigConvergeResult>
 }
@@ -293,21 +289,15 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   }
 
   /** Put a release on this box from the first source that holds it (obtain.ts). */
-  const materialize = async (
-    manifest: ReleaseManifest,
-    descriptor: ConfigReleaseDescriptor,
-    workspace: string | null,
-  ): Promise<string> => {
-    const obtained = await obtainRelease({
+  const materialize = (manifest: ReleaseManifest, descriptor: ConfigReleaseDescriptor): Promise<{ dir: string; transport: ReleaseTransport }> =>
+    obtainRelease({
       root,
       manifest,
       snapshot: descriptor.snapshot,
       api,
-      workspace,
+      git: cfg,
       managedSkillsDir: options.managedSkillsDir,
     })
-    return obtained.dir
-  }
 
   const settleRelease = async (releaseId: string, manifest: ReleaseManifest, dir: string) => {
     const previous = await readBootConfigPointer(root).catch(() => null)
@@ -323,7 +313,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
 
   // ── Boot ─────────────────────────────────────────────────────────────────
 
-  async function chooseBootConfig(mark?: (label: string) => void, workspace?: Promise<string | null>): Promise<void> {
+  async function chooseBootConfig(mark?: (label: string) => void): Promise<void> {
     // 1. The descriptor request decides whether this boot runs a release.
     let descriptor: ConfigReleaseDescriptor | null = null
     let disabled: string | null = api
@@ -332,7 +322,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     const reasons: string[] = []
     if (api) {
       try {
-        descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs })
+        descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs, baseSha: cfg.baseSha })
         mark?.('config-release-fetched')
       } catch (err) {
         if (isFeatureDisabledError(err)) disabled = 'config releases are disabled for this project'
@@ -392,11 +382,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           await quarantineRelease(root, desiredId, problem)
         } else {
           try {
-            // The checkout is the release when the box checked out its commit (obtain.ts).
-            const checkout =
-              checkoutMayHold(cfg.baseSha, descriptor) && workspace && (await workspace) === null ? cfg.projectTarget : null
-            const dir = await materialize(manifest, descriptor, checkout)
-            mark?.('config-release-extracted')
+            const { dir, transport } = await materialize(manifest, descriptor)
+            mark?.(`config-release-${transport}`)
             await useRelease(desiredId, desiredId, manifest, dir, reasons, null)
             mark?.('config-release-proven')
             return
@@ -612,7 +599,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
 
     try {
-      await materialize(manifest, descriptor, cfg.projectTarget)
+      await materialize(manifest, descriptor)
     } catch (err) {
       if (isFeatureDisabledError(err)) return revert(runtime, err.message)
       const reason = `could not build release ${releaseId.slice(0, 12)}: ${(err as Error).message}`
@@ -686,8 +673,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     },
     governanceOwned: () => current.release_id !== null,
     inFlight: () => inFlight !== null,
-    boot(mark, workspace) {
-      booted ??= chooseBootConfig(mark, workspace).catch((err: unknown) => {
+    boot(mark) {
+      booted ??= chooseBootConfig(mark).catch((err: unknown) => {
         // A broken release store must not keep the runtime from starting: the
         // provisioned governance and the managed skills still run.
         setCurrent({

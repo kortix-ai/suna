@@ -1772,7 +1772,7 @@ export async function detectOpencodeBinary(
   return null
 }
 
-async function resolveOpencodeCwd(cfg: Config): Promise<string> {
+export async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   try {
     const project = await stat(cfg.projectTarget)
     if (project.isDirectory()) return cfg.projectTarget

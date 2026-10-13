@@ -255,8 +255,10 @@ const costDiffers = (d: Difference) => {
 const ACCEPTED: Array<{ fields: string[]; cases?: RegExp; when?: (d: Difference) => boolean; reason: string }> = [
   {
     fields: ['cost', 'tokens'],
+    // A v1-derived message prices its v1 parts exactly as `getTurnCost` does (the v1 view, a `fromV1` record).
+    cases: / native /,
     when: costDiffers,
-    reason: "the reply's `usage` is the record's own field (`cost` as reported, else the lookup); v1 sums step-finish parts, which a native record's `toV1` writes with zero totals and OpenCode's `info.tokens` (the last step's) does not add up to on a multi-step reply, and without a step part it prices usage only through the lookup",
+    reason: "a native record's reply `usage` is the record's own field (`cost` as reported, else the lookup); v1 sums step-finish parts, which a native record's `toV1` writes with zero totals and OpenCode's `info.tokens` (the last step's) does not add up to on a multi-step reply, and without a step part it prices usage only through the lookup",
   },
   {
     fields: ['plan'],

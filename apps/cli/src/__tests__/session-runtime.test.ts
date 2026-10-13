@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
@@ -134,5 +134,39 @@ describe('resolveSessionRuntime', () => {
     }).catch((e) => e)) as SessionRuntimeError;
     expect(err.kind).toBe('not-running');
     expect(err.message).toContain('is provisioning, not running');
+  });
+});
+
+describe('resolveSessionRuntime on a running row', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  test('adopts the row\'s runtime and never calls /start', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: unknown) => {
+      const url = input instanceof Request ? input.url : String(input);
+      urls.push(url);
+      return Response.json({
+        stage: 'ready',
+        sandbox: { external_id: 'sb-start' },
+        runtime_session_id: 'ses_start',
+      });
+    }) as unknown as typeof fetch;
+    const { client } = fakeClient([]);
+    const runtime = await resolveSessionRuntime({
+      auth,
+      client,
+      projectId: 'proj',
+      session: {
+        ...session,
+        session_id: 'abcd1234-0000-0000-0000-00000000run1',
+        sandbox_url: 'https://api.example.test/v1/p/sb-1/8000',
+        runtime_session_id: 'ses_row',
+      },
+    });
+    expect(urls.filter((url) => url.includes('/start'))).toEqual([]);
+    expect(runtime.runtimeSessionId).toBe('ses_row');
   });
 });

@@ -31,11 +31,13 @@ in the same region (`backend.tf`, same key as before the move):
 | --- | --- | --- |
 | `kortix-terraform-state-eu-west-2-935064898258` | `environments/prod`, `environments/prod-web`, `environments/staging-eu-west-2`, `environments/staging-web-eu-west-2`, `security-baseline`, `compliance-monitoring` | `security-baseline/terraform-state-euw2.tf` |
 | `kortix-terraform-state-us-east-2-935064898258` | `environments/dev-us-east-2`, `environments/dev-web-us-east-2` | `security-baseline/terraform-state-use2.tf` |
+| `kortix-terraform-state-us-east-1-935064898258` | external: `kortix-ai/kortix-vps-demo-infra` (key `vps-demo/terraform.tfstate`) | `security-baseline/terraform-state-use1.tf` |
 
-Both buckets are versioned, keep noncurrent versions for 365 days and encrypt
+All three buckets are versioned, keep noncurrent versions for 365 days and encrypt
 state with their own CMK. Locking is S3 native (`use_lockfile`): Terraform
 writes `<key>.tflock` next to the state, so there is no lock table. The drift
-role `kortix-gha-tf-plan` may decrypt with the two state keys through S3 only.
+role `kortix-gha-tf-plan` may decrypt with the eu-west-2 and us-east-2 state keys
+through S3 only. No drift job plans the us-east-1 root.
 
 Before every backend `terraform init`, CI runs
 `.github/actions/state-copy-guard` (in `terraform-apply.yml`, and in the
@@ -48,15 +50,15 @@ instead of planning against a stale state. The guard is the backstop, not the
 procedure: before a root group's first run on its regional bucket, copy its
 state and freeze the old key with `scripts/statemove/copy-states.mjs <group>`
 and `scripts/statemove/deny-old-keys.mjs <group>` (groups `dev`, `global`,
-`staging`, `prod`). `dev` and `global` moved on 2026-10-13. `staging` moves
+`staging`, `prod`, `vps-demo`). `dev` and `global` moved on 2026-10-13. `staging` moves
 right before the first staging promotion that carries #9693 merges, `prod`
 right before the release that carries it merges (the **kortix-release**
 skill, Steps 3 and 9).
 
 The old us-west-2 bucket `kortix-terraform-state` and table
 `kortix-terraform-locks` held every state until 2026-10. No root in this
-repository uses them. The external `kortix-ai/kortix-vps-demo-infra` root still
-does, until it moves its backend.
+repository uses them. The external `kortix-ai/kortix-vps-demo-infra` root moves
+to the us-east-1 bucket with the `vps-demo` group.
 
 The us-west-2 roots `dev`, `dev-web`, `staging` and `staging-web`
 were destroyed on 2026-10-12 (dev 58, dev-web 2, staging 74, staging-web 19

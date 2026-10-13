@@ -536,6 +536,10 @@
       "keyboardTitle": "Atajos de teclado",
       "keyboardDescription": "La tecla modificadora utilizada para cambiar de pestaña y todos los accesos directos de la aplicación.",
       "modifierKey": "Tecla modificadora",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "El atajo que abre la barra de instrucciones desde cualquier app.",
+      "quickEntryOff": "Desactivado",
+      "quickEntryInUse": "Otra app usa este atajo, así que no abre la barra. Elige otro.",
       "shortcuts": {
         "newTab": "Nueva pestaña",
         "closeActiveTab": "Cerrar pestaña activa",
@@ -1134,8 +1138,7 @@
       "origin": {
         "overridden": "Modificado para este proyecto",
         "defaultOn": "Activado de forma predeterminada",
-        "defaultOff": "Desactivado de forma predeterminada",
-        "organization": "Toda la organización, gestionado por Kortix"
+        "defaultOff": "Desactivado de forma predeterminada"
       },
       "search": "Buscar funciones",
       "loadFailed": "No se pudo cargar el proyecto",
@@ -1168,7 +1171,7 @@
         },
         "apps": {
           "name": "Aplicaciones",
-          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL serverless estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
+          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
         },
         "monitors": {
           "name": "Monitores",
@@ -1208,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volúmenes",
-          "description": "Archivos compartidos y sesiones en volúmenes para toda la organización."
+          "description": "Archivos compartidos y sesiones en volúmenes para este proyecto."
         },
         "stateless_sessions": {
           "name": "Sesiones sin estado",
@@ -1225,6 +1228,10 @@
         "session_log": {
           "name": "Registro de sesión v2",
           "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
+        },
+        "session_log_restore": {
+          "name": "Restauración del registro de sesión",
+          "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
         }
       }
     },
@@ -1302,6 +1309,12 @@
       "emptyCanCreate": "Crea una clave para usar la CLI, scripts o CI con tu identidad.",
       "emptyNoPermission": "No tienes permiso para crear claves de API en esta cuenta.",
       "revokeKey": "Revocar clave",
+      "keyCount": "{count, plural, one {# clave de API} other {# claves de API}}",
+      "createdOn": "Creada el {date}",
+      "keyName": "Nombre de la clave",
+      "keyPrefix": "Clave",
+      "statusLabel": "Estado",
+      "lastUsedLabel": "Último uso",
       "status": {
         "active": "Activa",
         "expired": "Caducada",
@@ -1785,6 +1798,14 @@
       "pending": "Reiniciando…",
       "ownerOnly": "Solo el propietario de la sesión o un administrador del proyecto puede reiniciar esta sesión."
     }
+  },
+  "sessionDelete": {
+    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurar la sesión durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada sesión durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "restoring": "Restaurando la sesión…",
+    "undo": "Deshacer",
+    "restored": "Sesión restaurada",
+    "restoreFailed": "No se pudo restaurar la sesión"
   },
   "modelSelector": {
     "search": "Buscar modelos",
@@ -6884,8 +6905,6 @@
       "line120JsxTextFailedToLoadSessions": "No se pudieron cargar las sesiones",
       "line132JsxTextNoSessionsYet": "Aún no hay sesiones.",
       "line189JsxTextDeleteSession": "¿Eliminar sesión?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Esto destruirá permanentemente la rama y el sandbox de",
-      "line193JsxTextThisActionCannotBeUndone": ". Esta acción no se puede deshacer.",
       "line312JsxAttrAriaLabelSessionActions": "Acciones de sesión"
     },
     "componentsProjectsProjectSidebar": {
@@ -10033,6 +10052,7 @@
       "text0e498a7ede47": "{value0} activado",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Guardar como PDF",
+      "text926597a39cb3": "Administradores del proyecto",
       "text9bf06a86c934": "Nueva habilidad",
       "texta38668224f1a": "Crear con un formulario",
       "textb25ab5d5e2a5": "Habilidad creada",
@@ -10757,6 +10777,7 @@
       "text2380f018cc45": "Buscar modelos…",
       "text23922935b1f8": "Conexión guardada",
       "text2395784386a5": "Elegir quién puede abrirla",
+      "text239ee7bae236": "Un miembro",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "Las sesiones llaman a la puerta de enlace dentro de tu propia pila, mediante tu propio dominio o túnel. Kortix no tiene ninguna credencial en ese recorrido ni visibilidad sobre él.",
       "text23b0caa9d34a": "Miembro eliminado",
@@ -12030,6 +12051,7 @@
       "text48845bff334a": "Descartar",
       "text4891f0add1ec": "Grupo desvinculado del proyecto",
       "text489314dd2a13": "Este enlace no se puede abrir.",
+      "text489b7ab47238": "por día",
       "text48b2c90ba0f7": "T1 26",
       "text48b8f318d5d6": "gobernanza: qué puede tocar cada agente",
       "text48bb9aa078f3": "Este conector gestiona la autenticación mediante su conexión de plataforma.",
@@ -13747,6 +13769,7 @@
       "text79c6ba1d813d": "#1 Problema típico de JumpCloud: Test Connection falla porque el email del usuario de prueba ya existe en Kortix; debe ser una dirección completamente nueva. (Y haz clic en «Activate», no en «Save», durante ese paso).",
       "text79c8764339a5": "realizada por",
       "text79e4d7b87c05": "Un pico se pone en cola; no se descarta",
+      "text79eb7fb19229": "No hay tokens de cuenta de servicio",
       "text79ffe7bf8192": "Proyecto creado",
       "text7a04f383ef22": "Una máquina por sesión · Preconfigurada · Nada se ejecuta en tu portátil",
       "text7a098b3b9a9d": "No se pudo abrir el portal de suscripciones. Inténtalo de nuevo.",
@@ -14235,6 +14258,7 @@
       "text888f1dba5133": "El cómputo de sandbox se factura actualmente al",
       "text889485d2bdde": "Explicaciones diarias de la plataforma y sus funciones.",
       "text88a550e0f44e": "Se ejecuta en",
+      "text88b1d1a67e34": "por mes",
       "text88b1dfafbd5f": "Facturado por",
       "text88c2105adecf": "Responde a la pregunta anterior para continuar.",
       "text88c45d9e526c": "Colores",
@@ -14325,6 +14349,7 @@
       "text8b624587552a": "No se pudo generar el token",
       "text8b64afef1a24": "Aún no hay nada preparado",
       "text8b728638c006": "perderá esta excepción. Todas las acciones volverán a pasar por las comprobaciones de permisos normales.",
+      "text8b7811603173": "Buscar sesiones o pegar un ID de sesión",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Subiendo",
       "text8b9965f7aaa5": "Añade una política de acceso",
@@ -15245,6 +15270,7 @@
       "texta56145270ce6": "id",
       "texta56281e325c1": "Un documento con sus fuentes incorporadas.",
       "texta563730f828d": "iconUpdateFailed",
+      "texta56abb72ba43": "Crea uno para un trabajo de CI o un script que deba sobrevivir a su autor.",
       "texta56be319eda4": "Se pidió al agente que sincronizara la rama",
       "texta57b08a480b8": "Anterior",
       "texta57d47538d79": "#releases",
@@ -15504,7 +15530,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "El ensamblaje, no el criterio.",
       "textac318011a661": "Cargar solicitudes anteriores",
-      "textac371f652a2d": "Esto destruye permanentemente la rama y el sandbox de cada sesión. No se puede deshacer.",
       "textac4059cfd550": "Cada cambio está versionado, es revisable y reversible",
       "textac454bda92f9": "Creando proyecto…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15772,7 +15797,6 @@
       "textb400f4160d8e": "Cargando el resumen de costes",
       "textb40f3be54b3e": "Elige una sesión",
       "textb4214ac48923": "Acceso de solo lectura",
-      "textb427c3dec904": "por",
       "textb439f94567ff": "Suscripción activada",
       "textb4415e2f9e92": "Vuelve a intentar la solicitud de auditoría de la sesión.",
       "textb4518309c8a3": "y cualquier otra sesión que inicies, cada una en su propia máquina",
@@ -16686,6 +16710,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "nombre del atributo",
       "textcdbf6975e8a3": "Objetivo",
+      "textcdca8801db76": "por semana",
       "textcdcdff6eb6db": "las herramientas que escribiste tú mismo",
       "textcdd3dd706df5": "Panel para crear tu propia aplicación con la opción Non-gallery seleccionada",
       "textcdd43080fef2": "Comparado aquí:",
@@ -19475,6 +19500,7 @@
       "texte7cd9e292007": "Indica qué debe hacer el agente.",
       "textb67ba8d96c42": "Ponle un nombre a este activador.",
       "text2b8e1487be3b": "Elige qué sesión usar.",
+      "text2b8fcd81df9b": "Se restablece el {value0}",
       "text473d5c3c6169": "Indica por qué agrupar las ejecuciones, para que cada conversación tenga su propia sesión.",
       "text8f4597a69c3c": "Cada condición necesita un campo y un valor.",
       "text01bed311e7d0": "Todas las aplicaciones",
@@ -19574,7 +19600,8 @@
       "text6f52b07880a0": "Tomar instantánea ahora",
       "text91dc861375bc": "Política de versiones móviles consultada",
       "texta37dd5ef6ef2": "Personalizar barra lateral",
-      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar"
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar",
+      "text2313fe21ea84": "Editar {name}"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -19655,40 +19682,15 @@
       "reasonOther": "Otro",
       "fallBackToTheImage": "Recurrir a la imagen",
       "fallBackToImage": "Recurrir a la imagen",
-      "saved": "Volúmenes guardados",
-      "saveFailed": "No se pudieron guardar los volúmenes",
-      "title": "Volúmenes",
-      "description": "Un único interruptor para Archivos, montajes de drive, volúmenes de sesión y artefactos de arranque, por organización. Desactivado, una organización ve el producto sin volúmenes. Los cambios llegan a todos los procesos de la API en 30 segundos.",
+      "saved": "Modos de arranque guardados",
+      "saveFailed": "No se pudieron guardar los modos de arranque",
+      "title": "Modos de arranque",
+      "description": "Cómo arrancan las nuevas sesiones de un proyecto con los volúmenes activados y qué pasos de respaldo toman. Los volúmenes y las sesiones sin estado son feature flags del proyecto y no se configuran aquí. Los cambios llegan a todos los procesos de la API en 30 segundos.",
       "discard": "Descartar",
       "save": "Guardar",
-      "volumesTitle": "Volúmenes",
-      "volumesDescription": "Activado: Archivos es el drive del proyecto y el explorador del repositorio se llama Repo, las sesiones montan sus carpetas y arrancan en un volumen. Desactivado: Archivos es el explorador del repositorio y las sesiones arrancan desde la imagen. Una sesión cuyos archivos ya están en un volumen conserva su volumen cuando se desactiva su organización.",
-      "everyOrganizationTitle": "Activado para todas las organizaciones",
-      "everyOrganizationDetail": "Las organizaciones desactivadas abajo siguen desactivadas.",
-      "everyOrganizationLabel": "Volúmenes para todas las organizaciones",
-      "rolloutTitle": "Despliegue gradual",
-      "rolloutUnused": "No se usa mientras los volúmenes estén activados para todas las organizaciones.",
-      "rolloutPercentDetail": "{percent} % de las organizaciones sin ajuste propio, elegidas mediante un hash estable del id de la organización.",
-      "rolloutOffDetail": "Activa los volúmenes para una parte de las organizaciones sin ajuste propio.",
-      "rolloutPercentLabel": "Porcentaje de despliegue",
-      "organizationsTitle": "Organizaciones",
-      "organizationsDescription": "El ajuste propio de una organización prevalece sobre el interruptor y el despliegue gradual. Su modo de arranque se aplica mientras tenga los volúmenes activados.",
-      "findOrganization": "Buscar una organización",
-      "noOtherOrganization": "Ninguna otra organización coincide con «{search}». Las organizaciones ya listadas abajo no se repiten.",
-      "add": "Añadir",
-      "columnOrganization": "Organización",
-      "columnVolumes": "Volúmenes",
-      "columnBootMode": "Modo de arranque",
-      "columnLastStep": "Último paso",
-      "organizationFallbackName": "Organización",
-      "organizationVolumesLabel": "Volúmenes para {name}",
-      "on": "Activado",
       "off": "Desactivado",
-      "defaultModeOption": "Predeterminado ({mode})",
-      "removeOrganization": "Quitar organización",
-      "noOrganizations": "Ninguna organización tiene un ajuste propio.",
       "bootModeTitle": "Modo de arranque",
-      "bootModeDescription": "Cómo arrancan las nuevas sesiones de una organización con los volúmenes activados, salvo que la organización tenga un modo propio.",
+      "bootModeDescription": "Cómo arrancan las nuevas sesiones de un proyecto con los volúmenes activados. Un proyecto con las sesiones sin estado activadas arranca en un volumen.",
       "defaultModeTitle": "Modo predeterminado",
       "killSwitchTitle": "Interruptor de emergencia: arrancar cada nueva sesión desde la imagen",
       "killSwitchDetail": "Anula todos los modos a la vez; Archivos y los drives no cambian. Una sesión cuyos archivos ya están en un volumen conserva su volumen.",
@@ -19708,7 +19710,7 @@
       "failedBoots": "arranques fallidos",
       "volumeAttemptsLabel": "Intentos con volumen",
       "artifactsAttemptsLabel": "Intentos con artefactos",
-      "lastStepNote": "(activado salvo que una regla desactive el último paso)",
+      "lastStepNote": "(activado salvo que el modo predeterminado desactive el último paso)",
       "whereModesApplyTitle": "Dónde se aplican los modos",
       "whereModesApplyDescription": "Los proveedores y los interruptores de despliegue vienen del entorno del servidor. El volumen de artefactos se puede definir aquí; si está vacío, se usa el del entorno.",
       "volumeProviderTitle": "Proveedor de volúmenes: {provider}",
@@ -19724,8 +19726,8 @@
       "artifactsVolumeFromEnvironment": "Las sesiones en Imagen + artefactos o Volumen montan {source} (del entorno).",
       "artifactsVolumeNone": "Sin definir: los modos con artefactos arrancan como si solo existiera la imagen.",
       "artifactsVolumeLabel": "Volumen de artefactos y etiqueta",
-      "ephemeralSandboxesOff": "{variable} está desactivado en este despliegue: las reglas que piden Volumen arrancan con Imagen + artefactos.",
-      "nothingSaved": "Aún no hay nada guardado: los volúmenes están desactivados para todas las organizaciones."
+      "ephemeralSandboxesOff": "{variable} está desactivado en este despliegue: las sesiones sin estado arrancan con Imagen + artefactos.",
+      "nothingSaved": "Aún no hay nada guardado: los proyectos con los volúmenes activados arrancan desde la imagen."
     }
   },
   "projectOnboarding": {
@@ -20054,6 +20056,7 @@
     "notFoundDescription": "Se eliminó o el enlace es incorrecto.",
     "backToConnectors": "Volver a conectores",
     "installed": "{name} está instalado",
+    "installedSyncFailed": "{name} está instalado. Kortix no pudo cargar sus herramientas: {error}",
     "newSession": "Nueva sesión",
     "sections": "Secciones de {name}",
     "noticeNoAccountTitle": "{name} no tiene ninguna cuenta",

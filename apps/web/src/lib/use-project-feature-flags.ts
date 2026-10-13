@@ -47,6 +47,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const drives = useFeatureFlag(projectId, 'drives');
   const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
+  const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
 
   return {
     flags: {
@@ -70,8 +71,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       drives: drives.enabled,
       ephemeral_sandboxes: ephemeralSandboxes.enabled,
       session_log: sessionLog.enabled,
+      session_log_restore: sessionLogRestore.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: sessionLog.isLoading,
+    isLoading: sessionLogRestore.isLoading,
   };
 }

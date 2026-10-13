@@ -40,8 +40,8 @@ import {
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
-import type { MessageWithParts } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk';
+import { useSessionLogThread } from '@kortix/sdk/react';
 import { FileTextIcon as FileText } from '@phosphor-icons/react';
 import {
   createContext,
@@ -69,12 +69,14 @@ import {
 import { FilePreview, reportsIntrinsicSize } from './easy/file-preview';
 import { StepDetailBody } from './easy/step-detail-body';
 import { StepIcon } from './easy/step-icon';
-import { collectAllToolParts } from './shared/collect-tool-parts';
+import { collectAllToolCalls } from './shared/collect-tool-parts';
 import { deriveContext, deriveOutputs, type OutputItem } from './shared/derive-panels';
 import { groupSteps } from './shared/group-steps';
-import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
+import { latestRunMessages } from './shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
 import { deriveRunOutcome } from './shared/run-outcome';
+import { useDeliverableReadiness } from './shared/use-deliverable-readiness';
+import { samePartsList } from '../turn/same-parts';
 
 /** Where an open was triggered from. Telemetry only (W5) — never read for
  *  behavior, only reported alongside `deliverable_opened`. */
@@ -126,16 +128,22 @@ export function useOptionalSessionPanel(): SessionPanelValue | null {
   return useContext(SessionPanelContext);
 }
 
+/** The previous list while its elements are unchanged, so memos keyed on it hold across a text delta. */
+function useSameList<T>(next: T[]): T[] {
+  const ref = useRef(next);
+  if (!samePartsList(ref.current, next)) ref.current = next;
+  return ref.current;
+}
+
 export function SessionPanelProvider({
   sessionId,
-  messages,
   isSessionBusy = false,
   projectId,
   projectSessionId,
   children,
 }: {
+  /** The runtime session id: the root thread of the session log. */
   sessionId: string;
-  messages: MessageWithParts[] | undefined;
   /** The session's own busy/retry status — see `deriveIsRunning`. */
   isSessionBusy?: boolean;
   /** Route ids the Audit detail needs to resolve a session's audit trail —
@@ -146,19 +154,31 @@ export function SessionPanelProvider({
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const parts = useMemo(() => collectAllToolParts(messages), [messages]);
-  const steps = useMemo(() => groupSteps(parts), [parts]);
-  const latestIds = useMemo(() => latestRunCallIds(messages), [messages]);
-  const outputs = useMemo(() => deriveOutputs(parts, { latestRun: latestIds }), [parts, latestIds]);
-  const context = useMemo(() => deriveContext(parts), [parts]);
+  // The root thread's messages: the `fromV1` live view of the v1 rows while
+  // v2 is off, the API's session log on v2. Tool calls and message info only:
+  // a streamed text delta replaces its message, never the message's tool-call
+  // blocks, so the call lists below keep their identity (`useSameList`), every
+  // memo on them holds, and nothing under the provider re-renders per delta.
+  const thread = useSessionLogThread({
+    projectId: projectId ?? '',
+    sessionId: projectSessionId ?? '',
+    runtimeSessionId: sessionId,
+  });
+  const messages = thread?.messages;
+  const calls = useSameList(useMemo(() => collectAllToolCalls(messages), [messages]));
+  const steps = useMemo(() => groupSteps(calls), [calls]);
+  const latestCalls = useSameList(
+    useMemo(() => collectAllToolCalls(latestRunMessages(messages)), [messages]),
+  );
+  const latestIds = useMemo(() => new Set(latestCalls.map((c) => c.call_id)), [latestCalls]);
+  const outputs = useMemo(() => deriveOutputs(calls, { latestRun: latestIds }), [calls, latestIds]);
+  const context = useMemo(() => deriveContext(calls), [calls]);
 
   // The latest run's own steps, not the session's — read by `outcome` below (a
   // text-only turn must never inherit a verdict from an old errored run
   // further back in the session).
-  const latestSteps = useMemo(
-    () => groupSteps(collectAllToolParts(latestRunMessages(messages))),
-    [messages],
-  );
+  const latestSteps = useMemo(() => groupSteps(latestCalls), [latestCalls]);
+
 
   // A running app is not "one of" the outputs — it's the thing the user asked
   // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
@@ -538,6 +558,10 @@ export function SessionPanelProvider({
     [messages, latestSteps],
   );
 
+  // W1/W9 — announce finished deliverables and blocked-on-you states while the
+  // panel is closed. Headless: writes the ready chip; the header renders it.
+  useDeliverableReadiness(sessionId, { isRunning, outcome, outputs });
+
   // Auto-expand Outputs the moment a run finishes with something to show —
   // never on every render of an already-finished (or still-running) run, and
   // never on a failed one: a pile of half-written files is not a celebration.
@@ -662,7 +686,7 @@ export function SessionPanelProvider({
         padded: false,
         body: (
           <StepDetailBody
-            parts={step.parts}
+            calls={step.parts}
             sessionId={sessionId}
             focusCallId={focusedToolCallId}
           />

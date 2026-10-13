@@ -575,7 +575,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
@@ -697,18 +697,19 @@ session-log types, and a test fails when the two differ. See the
 [reference](https://kortix.com/docs/sdk/reference#session-log-types).
 
 `@kortix/sdk/react` adds `useSessionLog(session)` and
-`useSessionLogThread(session, threadId?)`: the log of a session `useSession`
+`useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
 reads only when the runtime lists `session.log.v2`, the project flag
-`session_log` is on, and the API holds a log for an OpenCode session. Every
-other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+`session_log` is on, and the API holds a log for the session (OpenCode or pi).
+Every other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
-`runtimeSessionId`; without it, or before the first row, they return `null`. The
+`runtimeSessionId`; without it, or before the first row, they return `null`.
+`throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
 either way. See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).
 
-Two transitional functions bridge a host that renders blocks while its rows are
+Three transitional functions bridge a host that renders blocks while its rows are
 still v1:
 
 - `toolCallBlock(part)`: the `ToolCallBlock` of a v1 tool part, the block
@@ -717,8 +718,20 @@ still v1:
   the SDK major that removes the v1 rows.
 - `toolCallMetadata(call)`: the harness's display metadata of a tool call, the
   whole `state.metadata` of the v1 part it came from (bash `command`, read
-  `loaded`, task `sessionId`, edit `filediff`). It stays until the session-log
-  schema carries display metadata of its own.
+  `loaded`, task `sessionId`, edit `filediff`); for a record a harness wrote
+  natively (pi), its `details`. It stays until the session-log schema carries
+  display metadata of its own.
+- `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)`: the `fromV1` live view
+  of one runtime session's v1 rows, the log `useSessionLogThread` returns on v1,
+  for rows a host reads without a `useSession` (a sub-agent's chat). One message
+  per row object, kept while the row is unchanged. It goes away with the v1 rows.
+
+`getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
+reads one page of the stored session log (`SessionLogPage`: the session record,
+every thread head, a thread's newest messages by `seq`, `has_more`). `query` is
+`{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`). It answers while the
+sandbox is stopped, and is `null` when the session has no stored log yet.
+`findSessionAttachments` reads session-log records as well as v1 messages.
 
 `toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and
 `shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part.
@@ -747,15 +760,37 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   the settled-turn fold, and the rows of a burst.
 - `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
   or one the closure rule closed, is `running` or `pending` on a live turn and
-  `interrupted` on any other.
+  `interrupted` on any other. `sessionLogOpenCall(call)` is the call in that open
+  shape (a closure-rule call reopened, without its result), so the v1 live view and
+  the v2 page render one call the same.
+- `sessionLogBurstSummary(blocks)` counts a burst's steps (`total`, `failed`,
+  `completed`, `hasPlumbing`); `sessionLogBurstRunning(blocks, { working, trailing? })`
+  says whether it is still in progress.
+- `sessionLogShowGroupCall(calls)` is a `show-group` segment as one `show` call
+  whose `input.items` is the carousel. `sessionLogAnsweredQuestionCall(call, answers, input?)`
+  is a `question` call with answers the harness has not confirmed yet.
 - `sessionLogActivityText(turn, childMessages?)` is the activity line of a live turn.
+- `sessionLogRetrying(thread)` says whether the thread's last reply retries a provider
+  error (a turn's `retrying`), without grouping turns: the busy state a host passes
+  as `busy` reads it. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept block
+  turns as well as v1 turns, and `stepLabel` any session-log block.
+- `classifySessionLogMessage(message)` is `classifyTurn` of one session-log message:
+  its blocks as `ClassifiedPart`s and its error with the gateway's own sentence. A
+  host whose renderers take `ClassifiedPart`s renders a thread through it until the
+  v1 helpers go.
 - `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
   prompt the thread has not placed; append it and name it in `held`.
+- `sessionLogThreadMetrics(thread, { pricing? })` is one thread's `cost` (every reply's
+  usage priced: its reported cost, else the lookup), `messages` (`all`, `user`, `assistant`: a compaction counts as its marker
+  and, once landed, its summary reply), `tokens` (every priced reply's usage summed) and
+  `context` (the last reply with tokens: its `usage` is the context size): what a context
+  modal's overview and its sub-agent rows show.
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).
 
-Both layers give one answer for a record converted from v1: the SDK's test
-suite compares them on every golden fixture.
+Both layers give one answer for a record converted from v1 (its `cost` too: a
+v1-derived reply is priced over its v1 parts): the SDK's test suite compares them
+on every golden fixture.
 
 ## Kortix as a Backend (server-side)
 
@@ -1001,6 +1036,7 @@ interface KortixPlatformConfig {
   /** @deprecated Inert: the SDK sends no client label. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   clientVersion?: string; // '<surface>/<version>', sent as X-Kortix-Client-Version
+  credentialHeader?: string; // send the raw token in this header instead of Authorization
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -1030,6 +1066,29 @@ Set `clientVersion` to the host's surface and release version, for example
 The API writes it to its request log only, so a route is retired only when no
 supported client version still calls it. It is telemetry: it never reaches the
 audit log and grants nothing. A blank value sends nothing.
+
+Set `credentialHeader` when a backend proxy reads the credential from a custom
+header, for example `credentialHeader: 'x-app-reader-token'`. The SDK then sends
+the raw token from `getToken` in that header and sends no `Authorization`. The
+401 replay still asks `getToken` for a fresh token. A caller-set header of the
+same name wins.
+
+To start the first App-binding token fetch before the SDK loads (an inline
+`<script>`), hand its response to `kortixBinding` through the `fetch` option. The
+binding calls `fetch` once per token; return the early response for the first
+call and the real `fetch` after:
+
+```ts
+const early = fetch('/_kortix/token?audience=backend', { credentials: 'same-origin' });
+let first: Promise<Response> | null = early;
+const backend = kortixBinding('backend', {
+  fetch: (input, init) => {
+    const reply = first;
+    first = null;
+    return reply ?? fetch(input, init);
+  },
+});
+```
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

@@ -536,6 +536,10 @@
       "keyboardTitle": "キーボードショートカット",
       "keyboardDescription": "タブの切り替えとアプリ内のすべてのショートカットに使用される修飾キー。",
       "modifierKey": "修飾キー",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "どのアプリからでもプロンプトバーを開くショートカット。",
+      "quickEntryOff": "オフ",
+      "quickEntryInUse": "このショートカットは別のアプリが使用しているため、バーは開きません。別のものを選んでください。",
       "shortcuts": {
         "newTab": "新しいタブ",
         "closeActiveTab": "アクティブなタブを閉じる",
@@ -1134,8 +1138,7 @@
       "origin": {
         "overridden": "このプロジェクトで上書き",
         "defaultOn": "デフォルトでオン",
-        "defaultOff": "デフォルトでオフ",
-        "organization": "組織全体（Kortix が管理）"
+        "defaultOff": "デフォルトでオフ"
       },
       "search": "機能を検索",
       "loadFailed": "プロジェクトを読み込めませんでした",
@@ -1208,7 +1211,7 @@
         },
         "volumes": {
           "name": "ボリューム",
-          "description": "組織全体で共有ファイルとボリューム上のセッションを使えます。"
+          "description": "このプロジェクトで共有ファイルとボリューム上のセッションを使えます。"
         },
         "stateless_sessions": {
           "name": "ステートレスセッション",
@@ -1225,6 +1228,10 @@
         "session_log": {
           "name": "セッションログ v2",
           "description": "セッションを v1 のトランスクリプトではなく v2 のセッションログ経由で読み取ります。Kortix がプロジェクトごとに有効にします。"
+        },
+        "session_log_restore": {
+          "name": "セッションログからの復元",
+          "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
         }
       }
     },
@@ -1302,6 +1309,12 @@
       "emptyCanCreate": "本人として CLI、スクリプト、CI を使用するためのキーを作成します。",
       "emptyNoPermission": "このアカウントで API キーを作成する権限がありません。",
       "revokeKey": "キーを取り消す",
+      "keyCount": "{count, plural, other {# 件の API キー}}",
+      "createdOn": "{date} に作成",
+      "keyName": "キー名",
+      "keyPrefix": "キー",
+      "statusLabel": "ステータス",
+      "lastUsedLabel": "最終使用",
       "status": {
         "active": "有効",
         "expired": "期限切れ",
@@ -1785,6 +1798,14 @@
       "pending": "再起動中…",
       "ownerOnly": "このセッションを再起動できるのは、セッションの所有者またはプロジェクト管理者のみです。"
     }
+  },
+  "sessionDelete": {
+    "description": "<name>{label}</name> を削除し、そのサンドボックスを破棄します。セッションは {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
+    "bulkDescription": "選択した各セッションを削除し、そのサンドボックスを破棄します。各セッションは {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
+    "restoring": "セッションを復元しています…",
+    "undo": "元に戻す",
+    "restored": "セッションを復元しました",
+    "restoreFailed": "セッションを復元できませんでした"
   },
   "modelSelector": {
     "search": "モデルを検索",
@@ -6884,8 +6905,6 @@
       "line120JsxTextFailedToLoadSessions": "セッションを読み込めませんでした",
       "line132JsxTextNoSessionsYet": "まだセッションはありません。",
       "line189JsxTextDeleteSession": "セッションを削除しますか？",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "これにより、次のブランチとサンドボックスが完全に破棄されます:",
-      "line193JsxTextThisActionCannotBeUndone": "。この操作は元に戻せません。",
       "line312JsxAttrAriaLabelSessionActions": "セッション操作"
     },
     "componentsProjectsProjectSidebar": {
@@ -10033,6 +10052,7 @@
       "text0e498a7ede47": "{value0}を有効にしました",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "PDFとして保存",
+      "text926597a39cb3": "プロジェクト管理者",
       "text9bf06a86c934": "新しいスキル",
       "texta38668224f1a": "フォームで作成",
       "textb25ab5d5e2a5": "スキルを作成しました",
@@ -10757,6 +10777,7 @@
       "text2380f018cc45": "モデルを検索…",
       "text23922935b1f8": "接続を保存しました",
       "text2395784386a5": "開けるユーザーを選択",
+      "text239ee7bae236": "メンバー",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "セッションは、あなた自身のスタック内のゲートウェイを、あなた自身のドメインまたはトンネル経由で呼び出します。この経路にKortixの認証情報はなく、Kortixからの可視性もありません。",
       "text23b0caa9d34a": "メンバーを削除しました",
@@ -12030,6 +12051,7 @@
       "text48845bff334a": "閉じる",
       "text4891f0add1ec": "プロジェクトからグループの関連付けを解除しました",
       "text489314dd2a13": "このリンクは開けません。",
+      "text489b7ab47238": "1日あたり",
       "text48b2c90ba0f7": "Q1 26",
       "text48b8f318d5d6": "governance：各エージェントがアクセスできる対象",
       "text48bb9aa078f3": "このコネクタは、プラットフォーム接続を通じて認証を管理します。",
@@ -13747,6 +13769,7 @@
       "text79c6ba1d813d": "#1 JumpCloudの注意点：テストユーザーのメールアドレスがすでにKortixに存在するとTest Connectionに失敗します。必ず新しいアドレスを使用してください。（この手順では「Save」ではなく「Activate」をクリックしてください。）",
       "text79c8764339a5": "実行者",
       "text79e4d7b87c05": "集中実行はキューに入り、破棄されません",
+      "text79eb7fb19229": "サービスアカウントトークンはありません",
       "text79ffe7bf8192": "プロジェクトを作成しました",
       "text7a04f383ef22": "セッションごとに1台 · 事前設定済み · ノートPCでは実行しない",
       "text7a098b3b9a9d": "サブスクリプションポータルを開けませんでした。もう一度お試しください。",
@@ -14235,6 +14258,7 @@
       "text888f1dba5133": "現在、サンドボックスのコンピュート料金は",
       "text889485d2bdde": "プラットフォームと機能を毎日解説します。",
       "text88a550e0f44e": "実行環境",
+      "text88b1d1a67e34": "1か月あたり",
       "text88b1dfafbd5f": "請求元",
       "text88c2105adecf": "続行するには上の質問に回答してください。",
       "text88c45d9e526c": "カラー",
@@ -14325,6 +14349,7 @@
       "text8b624587552a": "トークンの発行に失敗しました",
       "text8b64afef1a24": "まだ準備されていません",
       "text8b728638c006": "はバイパス権限を失います。以後、すべての操作で通常の権限チェックが行われます。",
+      "text8b7811603173": "セッションを検索、またはセッションIDを貼り付け",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "アップロード中",
       "text8b9965f7aaa5": "アクセス ポリシーを追加",
@@ -15245,6 +15270,7 @@
       "texta56145270ce6": "id",
       "texta56281e325c1": "出典を含むドキュメント",
       "texta563730f828d": "iconUpdateFailed",
+      "texta56abb72ba43": "作成者がいなくなっても動き続ける CI ジョブやスクリプト用に作成します。",
       "texta56be319eda4": "ブランチを同期するようエージェントに依頼しました",
       "texta57b08a480b8": "前へ",
       "texta57d47538d79": "#releases",
@@ -15504,7 +15530,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "判断ではなく、組み立て。",
       "textac318011a661": "過去のリクエストを読み込む",
-      "textac371f652a2d": "各セッションのブランチとサンドボックスが完全に削除されます。元に戻すことはできません。",
       "textac4059cfd550": "すべての変更をバージョン管理、レビュー可能、元に戻せる状態に",
       "textac454bda92f9": "プロジェクトを作成中…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15772,7 +15797,6 @@
       "textb400f4160d8e": "コスト概要を読み込み中",
       "textb40f3be54b3e": "セッションを選択",
       "textb4214ac48923": "読み取り専用アクセス",
-      "textb427c3dec904": "ごと",
       "textb439f94567ff": "サブスクリプションを有効化しました",
       "textb4415e2f9e92": "セッション監査リクエストを再試行してください。",
       "textb4518309c8a3": "開始した他のすべてのセッションも、それぞれ専用マシンで実行されます",
@@ -16686,6 +16710,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "属性名",
       "textcdbf6975e8a3": "目標",
+      "textcdca8801db76": "1週間あたり",
       "textcdcdff6eb6db": "自分で作成したツール",
       "textcdd3dd706df5": "Non-gallery を選択した独自のアプリケーション作成パネル",
       "textcdd43080fef2": "ここで比較：",
@@ -19475,6 +19500,7 @@
       "texte7cd9e292007": "エージェントに何をさせるか書いてください。",
       "textb67ba8d96c42": "このトリガーに名前を付けてください。",
       "text2b8e1487be3b": "使用するセッションを選んでください。",
+      "text2b8fcd81df9b": "{value0} にリセット",
       "text473d5c3c6169": "実行をまとめる基準を指定してください。会話ごとに専用のセッションが作られます。",
       "text8f4597a69c3c": "各条件にはフィールドと値の両方が必要です。",
       "text01bed311e7d0": "すべてのアプリ",
@@ -19574,7 +19600,8 @@
       "text6f52b07880a0": "今すぐスナップショット",
       "text91dc861375bc": "モバイルのリリースポリシーを表示しました",
       "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
-      "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar"
+      "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar",
+      "text2313fe21ea84": "{name}を編集"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -19655,40 +19682,15 @@
       "reasonOther": "その他",
       "fallBackToTheImage": "イメージにフォールバック",
       "fallBackToImage": "イメージへのフォールバック",
-      "saved": "ボリューム設定を保存しました",
-      "saveFailed": "ボリューム設定を保存できませんでした",
-      "title": "ボリューム",
-      "description": "ファイル、ドライブのマウント、セッションボリューム、起動アーティファクトを組織ごとに切り替える単一のスイッチです。オフの場合、組織にはボリュームなしの製品が表示されます。変更は30秒以内にすべてのAPIプロセスに反映されます。",
+      "saved": "起動モードを保存しました",
+      "saveFailed": "起動モードを保存できませんでした",
+      "title": "起動モード",
+      "description": "ボリュームがオンのプロジェクトで新しいセッションがどう起動し、どのフォールバックを取るか。ボリュームとステートレスセッションはプロジェクトの機能フラグで、ここでは設定しません。変更は30秒以内にすべてのAPIプロセスに反映されます。",
       "discard": "破棄",
       "save": "保存",
-      "volumesTitle": "ボリューム",
-      "volumesDescription": "オン: ファイルはプロジェクトのドライブになり、リポジトリブラウザーは Repo になります。セッションはフォルダーをマウントし、ボリューム上で起動します。オフ: ファイルはリポジトリブラウザーになり、セッションはイメージから起動します。ファイルがすでにボリューム上にあるセッションは、組織がオフになってもそのボリュームを保持します。",
-      "everyOrganizationTitle": "すべての組織でオン",
-      "everyOrganizationDetail": "下でオフにした組織はオフのままです。",
-      "everyOrganizationLabel": "すべての組織のボリューム",
-      "rolloutTitle": "段階的ロールアウト",
-      "rolloutUnused": "すべての組織でボリュームがオンの間は使用されません。",
-      "rolloutPercentDetail": "独自の設定がない組織の {percent}%。組織IDの安定したハッシュで選ばれます。",
-      "rolloutOffDetail": "独自の設定がない組織の一部でボリュームをオンにします。",
-      "rolloutPercentLabel": "ロールアウトの割合",
-      "organizationsTitle": "組織",
-      "organizationsDescription": "組織独自の設定は、スイッチやロールアウトより優先されます。その組織でボリュームがオンの間は、組織の起動モードが適用されます。",
-      "findOrganization": "組織を検索",
-      "noOtherOrganization": "「{search}」に一致する組織はほかにありません。下に表示済みの組織は繰り返し表示されません。",
-      "add": "追加",
-      "columnOrganization": "組織",
-      "columnVolumes": "ボリューム",
-      "columnBootMode": "起動モード",
-      "columnLastStep": "最後の段階",
-      "organizationFallbackName": "組織",
-      "organizationVolumesLabel": "{name} のボリューム",
-      "on": "オン",
       "off": "オフ",
-      "defaultModeOption": "デフォルト ({mode})",
-      "removeOrganization": "組織を削除",
-      "noOrganizations": "独自の設定を持つ組織はありません。",
       "bootModeTitle": "起動モード",
-      "bootModeDescription": "組織に独自のモードがない場合に、ボリュームがオンの組織で新しいセッションがどう起動するか。",
+      "bootModeDescription": "ボリュームがオンのプロジェクトで新しいセッションがどう起動するか。ステートレスセッションがオンのプロジェクトはボリューム上で起動します。",
       "defaultModeTitle": "デフォルトモード",
       "killSwitchTitle": "キルスイッチ: すべての新しいセッションをイメージから起動",
       "killSwitchDetail": "すべてのモードを一度に上書きします。ファイルとドライブはそのままです。ファイルがすでにボリューム上にあるセッションは、そのボリュームを保持します。",
@@ -19708,7 +19710,7 @@
       "failedBoots": "回続いたら",
       "volumeAttemptsLabel": "ボリュームの試行回数",
       "artifactsAttemptsLabel": "アーティファクトの試行回数",
-      "lastStepNote": "(ルールで最後の段階をオフにしない限りオン)",
+      "lastStepNote": "(デフォルトモードで最後の段階をオフにしない限りオン)",
       "whereModesApplyTitle": "モードが適用される場所",
       "whereModesApplyDescription": "プロバイダーとデプロイのスイッチはサーバーの環境から取得されます。アーティファクトボリュームはここで設定でき、空の場合は環境の値を使います。",
       "volumeProviderTitle": "ボリュームプロバイダー: {provider}",
@@ -19724,8 +19726,8 @@
       "artifactsVolumeFromEnvironment": "イメージ + アーティファクトまたはボリュームのセッションは {source} をマウントします (環境から)。",
       "artifactsVolumeNone": "未設定: アーティファクトのモードはイメージのみの場合と同じように起動します。",
       "artifactsVolumeLabel": "アーティファクトボリュームとタグ",
-      "ephemeralSandboxesOff": "このデプロイでは {variable} がオフです: ボリュームを求めるルールはイメージ + アーティファクトで起動します。",
-      "nothingSaved": "まだ何も保存されていません: すべての組織でボリュームはオフです。"
+      "ephemeralSandboxesOff": "このデプロイでは {variable} がオフです: ステートレスセッションはイメージ + アーティファクトで起動します。",
+      "nothingSaved": "まだ何も保存されていません: ボリュームがオンのプロジェクトはイメージから起動します。"
     }
   },
   "projectOnboarding": {
@@ -20054,6 +20056,7 @@
     "notFoundDescription": "削除されたか、リンクが正しくありません。",
     "backToConnectors": "コネクターに戻る",
     "installed": "{name} をインストールしました",
+    "installedSyncFailed": "{name} をインストールしました。Kortix はツールを読み込めませんでした: {error}",
     "newSession": "新しいセッション",
     "sections": "{name} のセクション",
     "noticeNoAccountTitle": "{name} にアカウントがありません",

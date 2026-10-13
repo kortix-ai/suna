@@ -1,6 +1,6 @@
 /**
- * What the sidebar calls the repo browser. With Volumes on for the
- * organization, Files is the project drive and the repo browser is Repo.
+ * What the sidebar calls the repo browser. With the project's Volumes flag
+ * on, Files is the project drive and the repo browser is Repo.
  * With Volumes off, the repo browser is Files, as it was before volumes.
  * Volumes reaches the client as the project's derived `drives` flag.
  */

@@ -114,7 +114,15 @@ async function errorFromResponse(res: Response, what: string): Promise<ConfigRel
  */
 export async function fetchConfigReleaseDescriptor(
   api: ConfigReleaseApi,
-  opts: { timeoutMs?: number } = {},
+  opts: {
+    timeoutMs?: number
+    /**
+     * A booting box's `KORTIX_BASE_SHA`: the tip the API resolved at session
+     * create. It lets the API skip a mirror fetch that would only prove it
+     * again; it never chooses the release. Convergence sends none.
+     */
+    baseSha?: string
+  } = {},
 ): Promise<ConfigReleaseDescriptor> {
   const fetchImpl = api.fetchImpl ?? fetch
   const url =
@@ -125,7 +133,7 @@ export async function fetchConfigReleaseDescriptor(
     res = await fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.token}` },
-      body: JSON.stringify({ accept: ACCEPTED_FORMATS }),
+      body: JSON.stringify({ accept: ACCEPTED_FORMATS, ...(opts.baseSha ? { base_sha: opts.baseSha } : {}) }),
       redirect: 'error',
       signal: AbortSignal.timeout(opts.timeoutMs ?? DESCRIPTOR_TIMEOUT_MS),
     })

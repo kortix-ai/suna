@@ -536,6 +536,10 @@
       "keyboardTitle": "键盘快捷键",
       "keyboardDescription": "用于选项卡切换的修饰键以及应用程序中的每个快捷方式。",
       "modifierKey": "修饰键",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "在任意应用中打开提示栏的快捷键。",
+      "quickEntryOff": "关闭",
+      "quickEntryInUse": "另一个应用正在使用此快捷键，因此它无法打开提示栏。请选择其他快捷键。",
       "shortcuts": {
         "newTab": "新标签页",
         "closeActiveTab": "关闭活动选项卡",
@@ -1134,8 +1138,7 @@
       "origin": {
         "overridden": "已为此项目覆盖",
         "defaultOn": "默认开启",
-        "defaultOff": "默认关闭",
-        "organization": "整个组织，由 Kortix 管理"
+        "defaultOff": "默认关闭"
       },
       "search": "搜索功能",
       "loadFailed": "无法加载项目",
@@ -1208,7 +1211,7 @@
         },
         "volumes": {
           "name": "卷",
-          "description": "为整个组织提供共享文件和基于卷的会话。"
+          "description": "为此项目提供共享文件和基于卷的会话。"
         },
         "stateless_sessions": {
           "name": "无状态会话",
@@ -1225,6 +1228,10 @@
         "session_log": {
           "name": "会话日志 v2",
           "description": "通过 v2 会话日志而不是 v1 转录读取会话。由 Kortix 按项目启用。"
+        },
+        "session_log_restore": {
+          "name": "会话日志恢复",
+          "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
         }
       }
     },
@@ -1302,6 +1309,12 @@
       "emptyCanCreate": "创建密钥，以你的身份使用 CLI、脚本或 CI。",
       "emptyNoPermission": "你无权在此帐户中创建 API 密钥。",
       "revokeKey": "撤销密钥",
+      "keyCount": "{count, plural, other {# 个 API 密钥}}",
+      "createdOn": "创建于 {date}",
+      "keyName": "密钥名称",
+      "keyPrefix": "密钥",
+      "statusLabel": "状态",
+      "lastUsedLabel": "上次使用",
       "status": {
         "active": "有效",
         "expired": "已过期",
@@ -1785,6 +1798,14 @@
       "pending": "正在重启…",
       "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
     }
+  },
+  "sessionDelete": {
+    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内恢复该会话。之后，其消息和文件将被删除。分支会保留。",
+    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
+    "restoring": "正在恢复会话…",
+    "undo": "撤销",
+    "restored": "会话已恢复",
+    "restoreFailed": "无法恢复会话"
   },
   "modelSelector": {
     "search": "搜索模型",
@@ -6884,8 +6905,6 @@
       "line120JsxTextFailedToLoadSessions": "无法加载会话",
       "line132JsxTextNoSessionsYet": "还没有会话。",
       "line189JsxTextDeleteSession": "删除会话？",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "这将永久销毁以下对象的分支和沙盒：",
-      "line193JsxTextThisActionCannotBeUndone": "。此操作无法撤销。",
       "line312JsxAttrAriaLabelSessionActions": "会话操作"
     },
     "componentsProjectsProjectSidebar": {
@@ -10033,6 +10052,7 @@
       "text0e498a7ede47": "已启用 {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "另存为 PDF",
+      "text926597a39cb3": "项目管理员",
       "text9bf06a86c934": "新建技能",
       "texta38668224f1a": "使用表单创建",
       "textb25ab5d5e2a5": "技能已创建",
@@ -10757,6 +10777,7 @@
       "text2380f018cc45": "搜索模型…",
       "text23922935b1f8": "连接已保存",
       "text2395784386a5": "选择可打开的用户",
+      "text239ee7bae236": "一名成员",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "会话通过您自己的域名或隧道，调用您自己栈内的网关。Kortix 在该路径中没有凭据，也无法看到其中内容。",
       "text23b0caa9d34a": "成员已移除",
@@ -12030,6 +12051,7 @@
       "text48845bff334a": "关闭",
       "text4891f0add1ec": "已将群组从项目中移除关联",
       "text489314dd2a13": "无法打开此链接。",
+      "text489b7ab47238": "每天",
       "text48b2c90ba0f7": "2026 年第一季度",
       "text48b8f318d5d6": "治理：每个智能体可以触及的内容",
       "text48bb9aa078f3": "此连接器通过其平台连接管理身份验证。",
@@ -13747,6 +13769,7 @@
       "text79c6ba1d813d": "#1 JumpCloud 易错点：Test Connection 失败，因为测试用户的 email 已存在于 Kortix 中——必须使用全新的地址。（并且在此步骤中点击“Activate”，而不是“Save”。）",
       "text79c8764339a5": "执行者",
       "text79e4d7b87c05": "突发任务会排队，不会丢失",
+      "text79eb7fb19229": "没有服务账号令牌",
       "text79ffe7bf8192": "已创建项目",
       "text7a04f383ef22": "每个会话一台计算机 · 预配置 · 不在你的笔记本电脑上运行任何内容",
       "text7a098b3b9a9d": "打开订阅门户失败。请重试。",
@@ -14235,6 +14258,7 @@
       "text888f1dba5133": "Sandbox 计算当前按",
       "text889485d2bdde": "每日平台与功能讲解。",
       "text88a550e0f44e": "运行于",
+      "text88b1d1a67e34": "每月",
       "text88b1dfafbd5f": "计费方",
       "text88c2105adecf": "请回答上面的问题以继续。",
       "text88c45d9e526c": "颜色",
@@ -14325,6 +14349,7 @@
       "text8b624587552a": "生成令牌失败",
       "text8b64afef1a24": "尚未准备任何内容",
       "text8b728638c006": "将失去绕过权限的能力。所有操作将重新通过常规权限检查。",
+      "text8b7811603173": "搜索会话或粘贴会话 ID",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "正在上传",
       "text8b9965f7aaa5": "添加访问策略",
@@ -15245,6 +15270,7 @@
       "texta56145270ce6": "id",
       "texta56281e325c1": "一份包含来源的文档。",
       "texta563730f828d": "iconUpdateFailed",
+      "texta56abb72ba43": "为需要在创建者离开后继续运行的 CI 任务或脚本创建一个。",
       "texta56be319eda4": "已要求代理同步分支",
       "texta57b08a480b8": "上一步",
       "texta57d47538d79": "#releases",
@@ -15504,7 +15530,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "负责汇总，而不是做判断。",
       "textac318011a661": "加载较早的请求",
-      "textac371f652a2d": "这将永久销毁每个会话的分支和沙箱，且无法撤销。",
       "textac4059cfd550": "每次更改都可版本控制、审查和撤销",
       "textac454bda92f9": "正在创建项目…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15772,7 +15797,6 @@
       "textb400f4160d8e": "正在加载成本摘要",
       "textb40f3be54b3e": "选择会话",
       "textb4214ac48923": "只读访问",
-      "textb427c3dec904": "每",
       "textb439f94567ff": "订阅已激活",
       "textb4415e2f9e92": "重试会话审计请求。",
       "textb4518309c8a3": "以及你启动的其他每个会话，每个都运行在自己的计算机上",
@@ -16686,6 +16710,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "属性名称",
       "textcdbf6975e8a3": "目标",
+      "textcdca8801db76": "每周",
       "textcdcdff6eb6db": "你亲自编写的工具",
       "textcdd3dd706df5": "创建自己的应用面板，已选择 Non-gallery 选项",
       "textcdd43080fef2": "此处对比：",
@@ -19475,6 +19500,7 @@
       "texte7cd9e292007": "说明代理应该做什么。",
       "textb67ba8d96c42": "给这个触发器起个名称。",
       "text2b8e1487be3b": "选择要使用的会话。",
+      "text2b8fcd81df9b": "{value0} 重置",
       "text473d5c3c6169": "说明按什么对运行分组，这样每个对话都有自己的会话。",
       "text8f4597a69c3c": "每个条件都需要一个字段和一个值。",
       "text01bed311e7d0": "所有应用",
@@ -19574,7 +19600,8 @@
       "text6f52b07880a0": "立即创建快照",
       "text91dc861375bc": "已查看移动端发布策略",
       "texta37dd5ef6ef2": "自定义侧边栏",
-      "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar"
+      "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar",
+      "text2313fe21ea84": "编辑 {name}"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -19655,40 +19682,15 @@
       "reasonOther": "其他",
       "fallBackToTheImage": "回退到镜像",
       "fallBackToImage": "回退到镜像",
-      "saved": "卷设置已保存",
-      "saveFailed": "无法保存卷设置",
-      "title": "卷",
-      "description": "按组织控制文件、云盘挂载、会话卷和启动制品的统一开关。关闭时，组织看到的是不含卷的产品。更改会在 30 秒内同步到所有 API 进程。",
+      "saved": "启动模式已保存",
+      "saveFailed": "无法保存启动模式",
+      "title": "启动模式",
+      "description": "开启卷的项目中新会话如何启动，以及会采取哪些回退步骤。卷和无状态会话是项目的功能开关，不在此处设置。更改会在 30 秒内同步到所有 API 进程。",
       "discard": "放弃",
       "save": "保存",
-      "volumesTitle": "卷",
-      "volumesDescription": "开启：文件即项目云盘，仓库浏览器为 Repo，会话挂载其文件夹并在卷上启动。关闭：文件即仓库浏览器，会话从镜像启动。若会话的文件已在卷上，其组织关闭后该会话仍保留其卷。",
-      "everyOrganizationTitle": "为所有组织开启",
-      "everyOrganizationDetail": "下方已关闭的组织保持关闭。",
-      "everyOrganizationLabel": "所有组织的卷",
-      "rolloutTitle": "逐步发布",
-      "rolloutUnused": "卷为所有组织开启时不使用。",
-      "rolloutPercentDetail": "无自有设置的组织中的 {percent}%，按组织 ID 的稳定哈希选出。",
-      "rolloutOffDetail": "为一部分无自有设置的组织开启卷。",
-      "rolloutPercentLabel": "发布百分比",
-      "organizationsTitle": "组织",
-      "organizationsDescription": "组织的自有设置优先于开关和逐步发布。当卷对该组织开启时，适用其启动模式。",
-      "findOrganization": "查找组织",
-      "noOtherOrganization": "没有其他组织与“{search}”匹配。下方已列出的组织不再重复显示。",
-      "add": "添加",
-      "columnOrganization": "组织",
-      "columnVolumes": "卷",
-      "columnBootMode": "启动模式",
-      "columnLastStep": "最后一步",
-      "organizationFallbackName": "组织",
-      "organizationVolumesLabel": "{name} 的卷",
-      "on": "开启",
       "off": "关闭",
-      "defaultModeOption": "默认（{mode}）",
-      "removeOrganization": "移除组织",
-      "noOrganizations": "没有组织拥有自有设置。",
       "bootModeTitle": "启动模式",
-      "bootModeDescription": "开启卷的组织中新会话的启动方式，除非该组织有自己的模式。",
+      "bootModeDescription": "开启卷的项目中新会话的启动方式。开启无状态会话的项目会在卷上启动。",
       "defaultModeTitle": "默认模式",
       "killSwitchTitle": "紧急开关：所有新会话均从镜像启动",
       "killSwitchDetail": "一次性覆盖所有模式；文件和云盘保持不变。若会话的文件已在卷上，该会话保留其卷。",
@@ -19708,7 +19710,7 @@
       "failedBoots": "次启动失败后",
       "volumeAttemptsLabel": "卷尝试次数",
       "artifactsAttemptsLabel": "制品尝试次数",
-      "lastStepNote": "（默认开启，除非规则关闭最后一步）",
+      "lastStepNote": "（默认开启，除非默认模式关闭最后一步）",
       "whereModesApplyTitle": "模式适用范围",
       "whereModesApplyDescription": "提供方和部署开关来自服务器环境。可在此设置制品卷；留空则使用环境中的值。",
       "volumeProviderTitle": "卷提供方：{provider}",
@@ -19724,8 +19726,8 @@
       "artifactsVolumeFromEnvironment": "镜像 + 制品或卷模式下的会话会挂载 {source}（来自环境）。",
       "artifactsVolumeNone": "未设置：制品模式按仅有镜像的方式启动。",
       "artifactsVolumeLabel": "制品卷和标签",
-      "ephemeralSandboxesOff": "此部署中 {variable} 已关闭：请求卷的规则会以镜像 + 制品启动。",
-      "nothingSaved": "尚未保存任何设置：卷对所有组织均为关闭。"
+      "ephemeralSandboxesOff": "此部署中 {variable} 已关闭：无状态会话会以镜像 + 制品启动。",
+      "nothingSaved": "尚未保存任何设置：开启卷的项目会从镜像启动。"
     }
   },
   "projectOnboarding": {
@@ -20054,6 +20056,7 @@
     "notFoundDescription": "它已被移除，或链接有误。",
     "backToConnectors": "返回连接器",
     "installed": "{name} 已安装",
+    "installedSyncFailed": "{name} 已安装。Kortix 无法加载其工具：{error}",
     "newSession": "新建会话",
     "sections": "{name} 的分区",
     "noticeNoAccountTitle": "{name} 没有账户",

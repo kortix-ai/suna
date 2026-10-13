@@ -104,6 +104,12 @@ const { runtimeSessionId, runtimeUrl, sandboxId } = await s.ensureReady({ readyT
 - The default deadline is 180 s. Pass `readyTimeoutMs` to wait longer.
 - It throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'` at the deadline, or at once on a terminal `failed` or `stopped` answer.
 - Concurrent calls for one session share one start request. A second call on a ready handle returns at once.
+- Pass `session`, the session's row from `sessions.get()` or `sessions.list()`, when you already have it. A `running` row that names its sandbox and `runtime_session_id` is used as is, without a start request. Any other row, or the row of another session, changes nothing.
+
+```ts
+const row = await kortix.projects.sessions.get(projectId, sessionId);
+const { runtimeSessionId } = await s.ensureReady({ session: row });
+```
 
 Which methods ready the session for you:
 
@@ -111,7 +117,7 @@ Which methods ready the session for you:
 | --- | --- |
 | Call `ensureReady()` themselves | `send`, `abort`, `rewind`, `restoreRewind`, `stream`, `messages`, `pending`, `answerPermission`, `answerQuestion`, `compact`, every `files.*` method |
 | Throw `SessionNotReadyError` before a ready | `previewUrl`, `proxyUrl`, `sandboxPortUrl` |
-| Read only the Kortix API, never the sandbox | `get`, `update`, `cost`, `scope`, `transcript`, `transcriptSync`, `messageAuthors`, `modelUsage`, `turn`, `attachments.read` |
+| Read only the Kortix API, never the sandbox | `get`, `update`, `cost`, `scope`, `transcript`, `transcriptSync`, `log`, `messageAuthors`, `modelUsage`, `turn`, `attachments.read` |
 
 `s.health()` never throws `SessionNotReadyError`. Before this handle has a runtime it returns `{ status: 0, ok: false }`.
 
@@ -267,6 +273,7 @@ A React app uses `useSession` instead of `stream()`. See [React](/docs/sdk/react
 | --- | --- | --- |
 | `s.messages({ limit?, before?, conversationId? })` | A page of messages, oldest first, as `{ info, parts }` (`kortix.transcript.v1`), and `hasMore`. `conversationId` reads a subagent's conversation. | Yes |
 | `s.transcriptSync({ limit?, before?, child? })` | The copy the server saves after every turn: every part, with tool inputs and outputs. `limit` at most 500. Pass `next_cursor` as `before` for the older window. `child` reads a subagent's saved transcript. | No |
+| `s.log({ thread?, before_seq?, limit? })` | One page of the stored session log (`kortix.session/2`, `SessionLogPage`): the session record, every thread head, and the thread's newest `limit` messages (default 40, at most 500) by `seq`. `thread` defaults to the root thread; pass the first message's `seq` as `before_seq` for older ones. `null` when the session has no stored log yet (it is journaled at each turn end), or no such thread. | No |
 | `s.transcript({ limit?, chars? })` | A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
 | `s.get()` | The session record: status, agent, model, labels, metadata. | No |
 | `s.messageAuthors()` | The member or session that sent each message, keyed by message id. | No |
@@ -291,7 +298,8 @@ await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per quest
 | `s.compact(model?)` | Summarizes the conversation into a shorter context. Needs `session.compact`. |
 | `s.stop()` | Stops the sandbox. The disk, the branch and the conversation stay. |
 | `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
-| `s.delete()` | Deletes the session and its sandbox. This cannot be undone. |
+| `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days), and its branch is kept. |
+| `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs/work/sessions#restore-a-deleted-session). |
 | `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |
 | `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs/work/sessions#who-can-open-a-session). |
 | `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs/work/sessions#public-links). |

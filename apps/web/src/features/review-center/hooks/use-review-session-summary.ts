@@ -1,7 +1,9 @@
 'use client';
 
-import { listReviewItems, type ApiReviewItem } from '@kortix/sdk';
+import { listReviewItems, type ApiReviewItem, type SessionsNeedingInputResponse } from '@kortix/sdk';
+import { useSessionsNeedingInput } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 import { reviewKeys } from './use-review-items';
 
@@ -68,4 +70,37 @@ export function useReviewSessionSummary(
     select: (result) => summarizeReviewSessions(result.review_items),
   });
   return data ?? EMPTY_SUMMARY;
+}
+
+/**
+ * Fold GET needs-input (open agent questions and pending connector approvals,
+ * per session) into the review counts by session (KRTX-1739). A session takes
+ * the larger of its two counts: a pending connector approval is in both lists,
+ * and a sum would count it twice. The summary also keys each session by its
+ * runtime id; the lists look sessions up by `session_id`, so that key is inert.
+ * Pure + exported for unit tests.
+ */
+export function withNeedsInput(
+  bySession: Record<string, number>,
+  needsInput: SessionsNeedingInputResponse | undefined,
+): Record<string, number> {
+  if (!needsInput?.total) return bySession;
+  const merged = { ...bySession };
+  for (const [sessionId, count] of Object.entries(needsInput.sessions)) {
+    merged[sessionId] = Math.max(merged[sessionId] ?? 0, count);
+  }
+  return merged;
+}
+
+/**
+ * What waits on the viewer, by session, for the session lists: the review
+ * inbox and every open agent question or connector approval. A positive count
+ * makes the row `needs-you` (`sessionDisplayStatus`). The sidebar and the
+ * Sessions page read this one shape. The needs-input read is the project
+ * shell's 30 s poll (`ProjectShell`); this only reads its cache.
+ */
+export function useSessionNeedsYouCounts(projectId: string): Record<string, number> {
+  const { needsYouBySession } = useReviewSessionSummary(projectId);
+  const { data: needsInput } = useSessionsNeedingInput(projectId, { enabled: false });
+  return useMemo(() => withNeedsInput(needsYouBySession, needsInput), [needsYouBySession, needsInput]);
 }
