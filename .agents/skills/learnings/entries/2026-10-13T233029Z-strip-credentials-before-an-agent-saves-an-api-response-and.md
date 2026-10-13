@@ -4,10 +4,10 @@ incident_date: 2026-10-13
 ---
 # Strip credentials before an agent saves an API response, and delete its credential files when the check ends
 
-**Rule:** An agent that verifies a change (a worker, a reviewer, a dev verifier) saves an API response to a file only after it drops every credential field, such as the managed repo push token, a JWT, a PAT or a key. When its check ends, it deletes every file it wrote that holds a credential: env files, cookie and JWT files, HAR captures, provision responses. It never prints a file's contents to find out what is in it. It reads named fields with `jq` instead.
+**Rule:** Drop every credential field before you save an API response to a file. Credential fields include a managed repo push token, a JWT, a PAT and a key. Delete every file with a credential when your check ends: env files, cookie and JWT files, HAR captures, provision responses. Read named fields with `jq`. Never print a whole file to see what it holds.
 
-**Trigger surface:** Dev and stack checks that call `POST /v1/projects/provision`, mint a Supabase session, or read secrets with `dotenvx get`. Also orchestrators that run many verifiers against one shared scratch directory over a long session.
+**Trigger surface:** A worker, reviewer or dev verifier that calls `POST /v1/projects/provision`, mints a Supabase session or reads a secret with `dotenvx get`. An orchestrator whose verifiers share one scratch directory over a long session.
 
-**Incident:** 2026-10-13, Session Log Plan orchestration. A dev verifier saved a full `POST /v1/projects/provision` response, which includes a short-lived managed-repo push token, to a scratch file and left it there. A later verifier read old scratch files and printed that token into its own transcript. The token had already expired and stayed in a local, private transcript. Nothing was published. The same scratch directory then held 103 credential-bearing files from finished runs, all deleted the same day.
+**Incident:** 2026-10-13, Session Log Plan orchestration. A verifier printed an expired managed-repo push token into its local transcript. An earlier verifier had left the full provision response in a shared scratch file. Nothing was published, and 103 credential files from finished runs were deleted the same day.
 
-**Enforcement:** none yet. The enforcer to build is a small helper for agent checks that saves an API response through a field denylist (`token`, `push_token`, `access_token`, `refresh_token`, `key`, `secret`), plus a scratch-directory sweep at the end of a check that fails on a credential pattern.
+**Enforcement:** none yet: a save-response helper for agent checks that drops a field denylist (`token`, `push_token`, `access_token`, `refresh_token`, `key`, `secret`), and a scratch-directory sweep at the end of a check that fails on a credential pattern.
