@@ -68,7 +68,7 @@ describe('GatewayBudgetSection', () => {
     expect(out).not.toContain('$280');
   });
 
-  test('a member cap reads the spend of its own period, not the member\'s month', () => {
+  test("a member cap reads the spend of its own period, not the member's month", () => {
     data = {
       project_spend: { requests: 900, cost: 280 },
       budgets: [budget({ scope: 'member', subject_user_id: 'u1', limit_usd: 5, spent_usd: 1 })],
@@ -98,20 +98,86 @@ describe('GatewayBudgetSection', () => {
     };
     const out = text();
     expect(out).toContain('Budget exceeded');
-    expect(out).toMatch(new RegExp(`alice@example\\.test — over limit · ${resets('Oct 14').source}`));
+    expect(out).toMatch(
+      new RegExp(`alice@example\\.test — over limit · ${resets('Oct 14').source}`),
+    );
     expect(out).toMatch(new RegExp(`Project — 85% used · ${resets('Oct 19').source}`));
     expect(out).toContain('$85.00 of $100 per week · warns only · 85% used');
     expect(out).toContain('alice@example.test $6.00 of $5.00 per day');
   });
 
-  test('a member cap alerts even when its member has no spend this month', () => {
+  test("a member cap with no spend this month alerts with its member's email and keeps a row to edit it", () => {
     data = {
       project_spend: { requests: 0, cost: 0 },
-      budgets: [budget({ scope: 'member', subject_user_id: 'u2', period: 'week', limit_usd: 10, spent_usd: 9 })],
+      budgets: [
+        budget({
+          scope: 'member',
+          subject_user_id: 'u2',
+          subject_email: 'quiet@example.test',
+          period: 'week',
+          limit_usd: 10,
+          spent_usd: 9,
+        }),
+      ],
       members: [],
     };
     const out = text();
     expect(out).toContain('Approaching budget');
-    expect(out).toContain('A member — 90% used');
+    expect(out).toContain('quiet@example.test — 90% used');
+    expect(out).not.toContain('A member');
+    // The row carries the cap and its Remove control.
+    expect(out).toContain('quiet@example.test $9.00 of $10.00 per week Remove');
+  });
+
+  describe('a server older than KRTX-1725 sends no spent_usd', () => {
+    test('a monthly project cap reads month-to-date spend, so an exceeded cap still says so', () => {
+      data = {
+        project_spend: { requests: 900, cost: 60 },
+        budgets: [budget({ period: 'month', limit_usd: 50, spent_usd: undefined })],
+        members: [],
+      };
+      const out = text();
+      expect(out).toContain('$60.00 of $50.00 per month · blocks at limit · 120% used');
+      expect(out).toContain('Budget exceeded');
+      expect(out).toContain('Project — over limit');
+    });
+
+    test("a monthly member cap reads the member's month-to-date spend", () => {
+      data = {
+        project_spend: { requests: 900, cost: 60 },
+        budgets: [
+          budget({
+            scope: 'member',
+            subject_user_id: 'u1',
+            period: 'month',
+            limit_usd: 5,
+            spent_usd: undefined,
+          }),
+        ],
+        members: [
+          { user_id: 'u1', email: 'alice@example.test', requests: 3, cost: 4.5, tokens: 1 },
+        ],
+      };
+      const out = text();
+      expect(out).toContain('alice@example.test $4.50 of $5.00 per month');
+      expect(out).toContain('alice@example.test — 90% used');
+    });
+
+    test('a daily cap shows its limit with no spend, percentage, meter or alert: its spend is unknown', () => {
+      data = {
+        project_spend: { requests: 900, cost: 280 },
+        budgets: [budget({ limit_usd: 20, spent_usd: undefined })],
+        members: [],
+      };
+      const markup = renderToStaticMarkup(<GatewayBudgetSection projectId="p1" canWrite />);
+      const out = text();
+      expect(out).toContain('$20.00 per day · blocks at limit');
+      expect(out).not.toContain('% used');
+      expect(out).not.toContain('$0.0000');
+      expect(out).not.toContain('Budget exceeded');
+      expect(out).not.toContain('Approaching budget');
+      // The meter's track.
+      expect(markup).not.toContain('bg-primary/[0.06]');
+    });
   });
 });
