@@ -61,7 +61,10 @@ describe('GatewayBudgetSection', () => {
       members: [],
     };
     const out = text();
-    expect(out).toContain('$15.00 of $20.00 per day · blocks at limit · 75% used');
+    expect(out).toContain('$15.00 of $20.00 today · Blocks requests at the limit');
+    expect(renderToStaticMarkup(<GatewayBudgetSection projectId="p1" canWrite />)).toContain(
+      'aria-valuenow="75"',
+    );
     expect(out).toMatch(resets('Oct 14'));
     expect(out).not.toContain('Budget exceeded');
     expect(out).not.toContain('Approaching budget');
@@ -75,7 +78,7 @@ describe('GatewayBudgetSection', () => {
       members: [{ user_id: 'u1', email: 'alice@example.test', requests: 300, cost: 50, tokens: 1 }],
     };
     const out = text();
-    expect(out).toContain('alice@example.test $1.00 of $5.00 per day');
+    expect(out).toContain('alice@example.test $1.00 20% of $5.00');
     expect(out).not.toContain('Budget exceeded');
     expect(out).not.toContain('Approaching budget');
   });
@@ -102,8 +105,8 @@ describe('GatewayBudgetSection', () => {
       new RegExp(`alice@example\\.test — over limit · ${resets('Oct 14').source}`),
     );
     expect(out).toMatch(new RegExp(`Project — 85% used · ${resets('Oct 19').source}`));
-    expect(out).toContain('$85.00 of $100 per week · warns only · 85% used');
-    expect(out).toContain('alice@example.test $6.00 of $5.00 per day');
+    expect(out).toContain('$85.00 of $100 this week · Warns at the limit, never blocks');
+    expect(out).toContain('alice@example.test $6.00 120% of $5.00');
   });
 
   test("a member cap with no spend this month alerts with its member's email and keeps a row to edit it", () => {
@@ -126,7 +129,7 @@ describe('GatewayBudgetSection', () => {
     expect(out).toContain('quiet@example.test — 90% used');
     expect(out).not.toContain('A member');
     // The row carries the cap and its Remove control.
-    expect(out).toContain('quiet@example.test $9.00 of $10.00 per week Remove');
+    expect(out).toContain('quiet@example.test $9.00 90% of $10.00 Edit cap Remove');
   });
 
   describe('a server older than KRTX-1725 sends no spent_usd', () => {
@@ -137,7 +140,7 @@ describe('GatewayBudgetSection', () => {
         members: [],
       };
       const out = text();
-      expect(out).toContain('$60.00 of $50.00 per month · blocks at limit · 120% used');
+      expect(out).toContain('$60.00 of $50.00 this month · Blocks requests at the limit');
       expect(out).toContain('Budget exceeded');
       expect(out).toContain('Project — over limit');
     });
@@ -159,7 +162,7 @@ describe('GatewayBudgetSection', () => {
         ],
       };
       const out = text();
-      expect(out).toContain('alice@example.test $4.50 of $5.00 per month');
+      expect(out).toContain('alice@example.test $4.50 90% of $5.00');
       expect(out).toContain('alice@example.test — 90% used');
     });
 
@@ -171,13 +174,12 @@ describe('GatewayBudgetSection', () => {
       };
       const markup = renderToStaticMarkup(<GatewayBudgetSection projectId="p1" canWrite />);
       const out = text();
-      expect(out).toContain('$20.00 per day · blocks at limit');
+      expect(out).toContain('$20.00 per day · Blocks requests at the limit');
       expect(out).not.toContain('% used');
       expect(out).not.toContain('$0.0000');
       expect(out).not.toContain('Budget exceeded');
       expect(out).not.toContain('Approaching budget');
-      // The meter's track.
-      expect(markup).not.toContain('bg-primary/[0.06]');
+      expect(markup).not.toContain('role="meter"');
     });
   });
 });
