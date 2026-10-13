@@ -87,19 +87,17 @@ describe('buildInviteUser', () => {
 });
 
 /**
- * Deprovisioning through SCIM must release the paid seat.
+ * Deprovisioning through SCIM must revoke the member's YOLO token.
  *
- * Removing the member row is not the whole offboarding: on a per-seat account
- * the Stripe subscription QUANTITY is what gets invoiced, and only
- * `onMemberRemoved` lowers it. The UI removal path has always called it
- * (accounts/core/members.ts:549, :704). SCIM never did — so an enterprise
- * offboarding through its IdP, the automated channel we tell enterprises to
- * use, kept paying for every departed employee indefinitely. Nothing reconciles
- * seats periodically, so it never self-healed.
+ * Removing the member row is not the whole offboarding: the departed member's
+ * YOLO token (the credential their sessions spend under) must die with it, or
+ * the removed person keeps a working credential. There are no seats to release;
+ * members are unlimited and free. The UI removal path calls
+ * `revokeYoloTokenForMember`; SCIM must too.
  *
- * Asserted against the source: `deprovisionMember` is module-private, its two
- * collaborators are a DB delete and a Stripe round-trip, and the property that
- * matters is simply that the call is on the path at all.
+ * Asserted against the source: `deprovisionMember` is module-private, its
+ * collaborators are DB deletes, and the property that matters is simply that
+ * the call is on the path at all, after the member row is gone.
  */
 import { readFileSync as readScimSource } from 'node:fs';
 import { join as joinScimPath } from 'node:path';
@@ -109,7 +107,7 @@ const SCIM_USERS_SRC = readScimSource(
   'utf8',
 );
 
-describe('SCIM deprovision releases the seat', () => {
+describe('SCIM deprovision revokes the member YOLO token', () => {
   function deprovisionBody(): string {
     const body = SCIM_USERS_SRC.split('async function deprovisionMember(')[1]?.split('\n}\n')[0];
     expect(body).toBeTruthy();
@@ -119,23 +117,24 @@ describe('SCIM deprovision releases the seat', () => {
     return body as string;
   }
 
-  test('onMemberRemoved is called on the deprovision path', () => {
-    expect(deprovisionBody()).toContain('onMemberRemoved(accountId, userId)');
+  test('revokeYoloTokenForMember is called on the deprovision path', () => {
+    expect(deprovisionBody()).toContain('revokeYoloTokenForMember(userId, accountId)');
   });
 
-  test('it is awaited, so the seat release cannot race the SCIM reply', () => {
-    expect(deprovisionBody()).toContain('await onMemberRemoved(');
+  test('it is awaited, so the revoke cannot race the SCIM reply', () => {
+    expect(deprovisionBody()).toContain('await revokeYoloTokenForMember(');
   });
 
-  test('the seat release happens after the member row is gone', () => {
-    // Ordering matters: syncSeatQuantity counts remaining members, so releasing
-    // before the delete would recount the leaving member and change nothing.
+  test('the revoke happens after the member row is gone', () => {
     const body = deprovisionBody();
-    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(body.indexOf('onMemberRemoved('));
+    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(
+      body.indexOf('revokeYoloTokenForMember('),
+    );
   });
 
-  test('the module actually imports it', () => {
-    expect(SCIM_USERS_SRC).toContain("from '../billing/services/seat-management'");
+  test('the module imports it from billing/services/yolo-tokens, not seat management', () => {
+    expect(SCIM_USERS_SRC).toContain("from '../billing/services/yolo-tokens'");
+    expect(SCIM_USERS_SRC).not.toContain('seat-management');
   });
 });
 

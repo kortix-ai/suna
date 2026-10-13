@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  getTier,
-  getTierEntitlements,
-  getVisibleTiers,
-} from '../billing/services/tiers';
+import { getTierEntitlements } from '../billing/services/tiers';
 
 const tierHasEntitlement = (tier: string, key: keyof ReturnType<typeof getTierEntitlements>) =>
   getTierEntitlements(tier)[key] === true;
@@ -29,6 +25,7 @@ describe('tier entitlements (enterprise gating)', () => {
     for (const t of [
       'none',
       'free',
+      'credits',
       'pro',
       'per_seat',
       'tier_2_20',
@@ -60,12 +57,9 @@ describe('tier entitlements (enterprise gating)', () => {
     });
   });
 
-  test('the Team (per_seat) plan kept its $40 anchor — gating did not touch price', () => {
-    expect(getTier('per_seat').monthlyPrice).toBe(40);
-  });
-
-  test('enterprise is sales-assigned: hidden from the self-serve pricing grid', () => {
-    const visibleNames = getVisibleTiers().map((t) => t.name);
-    expect(visibleNames).not.toContain('enterprise');
+  test('a legacy plan key is gated exactly like credits', () => {
+    for (const t of ['per_seat', 'pro', 'tier_25_200']) {
+      expect(getTierEntitlements(t)).toEqual(getTierEntitlements('credits'));
+    }
   });
 });

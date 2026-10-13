@@ -52,7 +52,7 @@ mock.module('./wallet-debits', () => ({
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => {
     storageCalls.push('getCreditAccount');
-    return { billingModel: 'per_seat', tier: 'free' };
+    return { tier: 'free' };
   },
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,

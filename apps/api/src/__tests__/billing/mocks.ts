@@ -247,7 +247,8 @@ export function createMockCreditAccount(overrides: Record<string, any> = {}) {
     lifetimeGranted: '500.0000',
     lifetimePurchased: '100.0000',
     lifetimeUsed: '400.0000',
-    tier: 'tier_6_50',
+    tier: 'credits',
+    planMonthlyUsd: '50',
     provider: 'stripe',
     planType: 'monthly',
     stripeSubscriptionId: 'sub_test_123',
@@ -313,7 +314,7 @@ export function createMockStripeSubscription(overrides: Record<string, any> = {}
     },
     metadata: {
       account_id: 'acc_test_123',
-      tier_key: 'tier_6_50',
+      tier_key: 'credits',
     },
     ...overrides,
   };
@@ -353,7 +354,7 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
     payment_intent: null,
     metadata: {
       account_id: 'acc_test_123',
-      tier_key: 'tier_6_50',
+      tier_key: 'credits',
       commitment_type: 'monthly',
     },
     ...overrides,

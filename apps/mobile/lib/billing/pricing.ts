@@ -144,7 +144,7 @@ export const PRICING_TIERS: PricingTier[] = [
 ];
 
 // =============================================================================
-// WEB-SYNCED PLANS (Billing v2 — per-seat)
+// WEB-SYNCED PLANS (credits-only)
 //
 // Source of truth: apps/web/src/features/billing/pricing-plans.ts
 // Mobile has NO in-app purchase — plans are display-only and the "Get Started"
@@ -155,7 +155,7 @@ export const PRICING_TIERS: PricingTier[] = [
 // path and tier-key → name mapping; it is not shown in the plans UI.)
 // =============================================================================
 
-export type PricingPlanId = 'free' | 'team' | 'enterprise';
+export type PricingPlanId = 'free' | 'credits' | 'enterprise';
 
 export type UpgradeModalPlanId = Exclude<PricingPlanId, 'enterprise'>;
 
@@ -186,20 +186,20 @@ export const PRICING_PLANS: PricingPlan[] = [
     ],
   },
   {
-    id: 'team',
-    name: 'Team',
-    price: '$40',
-    unit: '/ seat / mo',
-    note: 'For teams running real work on agents.',
+    id: 'credits',
+    name: 'Credits',
+    price: 'From $20',
+    unit: '/ mo',
+    note: 'Pick any monthly amount. One credit pool for everyone.',
     highlight: true,
     badge: 'Most popular',
     icon: Users,
     features: [
       'Everything in Free',
-      '2,500 credits / month per seat, pooled',
-      'Optional managed models use pooled credits',
-      'BYOK and ChatGPT subscription still supported',
-      'Up to 200 projects, up to 100 seats',
+      'Any monthly credit amount, from 2,000 credits',
+      'Unlimited members share one credit pool',
+      'Every managed model, all features',
+      'Unused monthly credits roll over one month',
       'Top up credits anytime',
       'Support via email',
     ],
@@ -211,7 +211,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     note: 'Scale, security, and your deployment.',
     icon: Building2,
     features: [
-      'Everything in Team',
+      'Everything in Credits',
       'SAML SSO + SCIM directory sync',
       'Advanced RBAC + audit logs',
       'Cloud, VPC, or on-prem',

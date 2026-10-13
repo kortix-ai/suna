@@ -10,7 +10,7 @@ import { markTrialConverted } from './trial-admin';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { getCustomerByStripeId } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
-import { billingPeriodForSubscription, monthlyCreditsForSubscription, planForSubscription, planMonthlyUsd } from './tiers';
+import { billingPeriodForSubscription, canonicalTier, monthlyCreditsForSubscription, planForSubscription, planMonthlyUsd } from './tiers';
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
@@ -248,7 +248,9 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     const deadStatuses = ['canceled', 'unpaid', 'incomplete_expired'];
     const currentSubIsDead = deadStatuses.includes(account.stripeSubscriptionStatus ?? '')
       || account.paymentStatus === 'cancelling';
-    const isOrphanedPlanRecovery = incomingSubIsLive && currentSubIsDead && resolvedTier === 'credits';
+    // A legacy machine subscription (`server_type`) never stands in for a plan.
+    const isOrphanedPlanRecovery =
+      incomingSubIsLive && currentSubIsDead && resolvedTier === 'credits' && !subscription.metadata?.server_type;
 
     if (isFreeUpgrade) {
       console.log(
@@ -288,8 +290,10 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
 
   // The amount follows the subscription even before it pays, so the plan page
   // shows what the customer is about to be billed. The tier needs payment.
-  if (resolvedTier === 'credits') {
-    updates.planMonthlyUsd = String(monthlyCreditsForSubscription(subscription));
+  // A comped $0 subscription leaves the stored amount alone.
+  const subscriptionUsd = monthlyCreditsForSubscription(subscription);
+  if (resolvedTier === 'credits' && subscriptionUsd > 0) {
+    updates.planMonthlyUsd = String(subscriptionUsd);
   }
   if (resolvedTier && subIsPaying) {
     updates.tier = resolvedTier;
@@ -306,6 +310,9 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     !!updates.tier &&
     (subscription.status === 'active' || subscription.status === 'trialing');
 
+  // Every paid key is `credits` now, so "the tier this subscription granted" is
+  // "this is the account's own subscription": a different id returned early
+  // above as stale.
   const neverPaidTierGrantedByThisSub =
     subscription.status === 'incomplete_expired' &&
     account &&
@@ -333,7 +340,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   }
 
   if (shouldGrantRecoveryCredits && resolvedTier) {
-    const recoveryCredits = allowanceForSubscription(resolvedTier, subscription);
+    const recoveryCredits = allowanceForSubscription(resolvedTier, subscription, account);
     if (recoveryCredits > 0) {
       await wallet.reset({
         accountId,
@@ -391,7 +398,8 @@ async function tryRestoreOtherActiveSubscription(
 
   if (otherSubs.length === 0) return false;
 
-  const target = otherSubs.find((s) => planForSubscription(s) === 'credits') ?? otherSubs[0];
+  const target =
+    otherSubs.find((s) => planForSubscription(s) === 'credits' && !s.metadata?.server_type) ?? otherSubs[0];
   const resolvedTier = planForSubscription(target);
 
   console.log(
@@ -413,7 +421,9 @@ async function tryRestoreOtherActiveSubscription(
   };
   if (resolvedTier) {
     updates.tier = resolvedTier;
-    updates.planMonthlyUsd = resolvedTier === 'credits' ? String(monthlyCreditsForSubscription(target)) : null;
+    const targetUsd = monthlyCreditsForSubscription(target);
+    if (resolvedTier !== 'credits') updates.planMonthlyUsd = null;
+    else if (targetUsd > 0) updates.planMonthlyUsd = String(targetUsd);
   }
   await applyStripeSync(accountId, updates, {
     account,
@@ -489,8 +499,8 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   // The allowance comes from the subscription that was billed, not from the
   // stored row: a quantity change since the last renewal takes effect here.
-  const tierName = planForSubscription(subscription) ?? account.tier ?? 'free';
-  const allowance = allowanceForSubscription(tierName, subscription);
+  const tierName = planForSubscription(subscription) ?? canonicalTier(account.tier ?? 'free');
+  const allowance = allowanceForSubscription(tierName, subscription, account);
   // Rollover (paid plan only): the unused part of LAST month's allowance
   // carries one month. It is capped at last month's allowance, so a carry
   // never compounds. Free resets to its $2.

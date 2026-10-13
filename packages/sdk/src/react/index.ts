@@ -180,6 +180,7 @@ export * from './use-admin-feedback';
 export * from './use-system-status';
 export * from './use-ops-overview';
 export * from './use-admin-billing';
+export * from './use-billing-plan';
 export * from './use-impersonation';
 export * from './use-teams-installations';
 export * from './use-tunnel';

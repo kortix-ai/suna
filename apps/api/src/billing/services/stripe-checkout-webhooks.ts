@@ -4,7 +4,7 @@ import { applyStripeSync } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { markTrialConverted } from './trial-admin';
 import { upsertCustomer } from '../repositories/customers';
-import { getTier, monthlyCreditsForSubscription } from './tiers';
+import { getTier, paidMonthlyUsd } from './tiers';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
@@ -17,10 +17,15 @@ export function planKeyFromMetadata(
 
 /**
  * The monthly allowance a plan grants from this subscription: the subscription's
- * own amount on a paid plan, the plan's fixed grant otherwise (free = $2).
+ * own amount on a paid plan (a comped $0 subscription keeps the row's amount),
+ * the plan's fixed grant otherwise (free = $2).
  */
-export function allowanceForSubscription(tierKey: string, subscription: Stripe.Subscription): number {
-  return tierKey === 'free' ? getTier('free').monthlyCredits : monthlyCreditsForSubscription(subscription);
+export function allowanceForSubscription(
+  tierKey: string,
+  subscription: Stripe.Subscription,
+  row?: Parameters<typeof paidMonthlyUsd>[1],
+): number {
+  return tierKey === 'free' ? getTier('free').monthlyCredits : paidMonthlyUsd(subscription, row);
 }
 
 /**
@@ -68,7 +73,7 @@ export async function activateSubscriptionForAccount(params: {
         : null
     );
 
-  const monthlyUsd = allowanceForSubscription(tierKey, subscription);
+  const monthlyUsd = allowanceForSubscription(tierKey, subscription, existingAccount);
 
   // For monthly plans, set next_credit_grant to the period-end so the
   // renewal loop knows when the next grant is due.

@@ -1178,8 +1178,6 @@
     "plan": "Offre",
     "current": "Actuelle",
     "currentPlan": "Offre actuelle",
-    "seats": "{{count}} sièges × ${{price}}",
-    "perMonth": "${{total}} / mois",
     "includes": "{{plan}} comprend",
     "askOwner": "Demandez à un propriétaire du compte de changer d'offre",
     "contactSales": "Contacter les ventes",
@@ -1187,10 +1185,9 @@
     "switchTo": "Basculer vers {{plan}}"
   },
   "upgrade": {
-    "teamPlan": "Kortix Team",
-    "perSeatMonthly": "par siège / mois",
+    "creditsPlan": "Kortix Credits",
+    "pickAmount": "Choisissez n'importe quel montant mensuel sur le web. Les membres illimités partagent une seule réserve de crédits.",
     "includes": "Inclus",
-    "askOwner": "Demandez un siège à un propriétaire du compte",
     "notNow": "Pas maintenant"
   },
   "sessions": {

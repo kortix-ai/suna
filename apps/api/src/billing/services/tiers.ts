@@ -362,6 +362,20 @@ export function planMonthlyUsd(row: {
   return LEGACY_TIER_MONTHLY_USD[tier] ?? getTier(tier).monthlyCredits;
 }
 
+/**
+ * The monthly allowance of a PAID account billed by `subscription`. The
+ * subscription's list price decides, except for a comped account: support
+ * assigns a paid plan to an account that stays on a $0 price, and that account
+ * keeps its stored (or legacy) monthly amount.
+ */
+export function paidMonthlyUsd(
+  subscription: { items: { data: SubscriptionItemLike[] } },
+  row: Parameters<typeof planMonthlyUsd>[0] | null | undefined,
+): number {
+  const fromSubscription = monthlyCreditsForSubscription(subscription);
+  return fromSubscription > 0 || !row ? fromSubscription : planMonthlyUsd(row);
+}
+
 // ─── Tier helpers ────────────────────────────────────────────────────────────
 
 /** The plan config a stored tier key means. Legacy keys resolve to `credits`. */

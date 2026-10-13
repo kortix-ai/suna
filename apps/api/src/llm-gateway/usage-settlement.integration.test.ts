@@ -83,7 +83,7 @@ withDb('gateway usage settlement is idempotent per request', () => {
     accountId = await seedAccount('usage-settlement');
     await db.insert(creditAccounts).values({
       accountId,
-      billingModel: 'per_seat',
+      tier: 'credits',
       balance: '10',
       nonExpiringCredits: '10',
     });

@@ -32,9 +32,9 @@ beforeAll(async () => {
     await insertIntoView(db, accountMembers, { userId: OWNER, accountId: account.account_id, accountRole: 'owner' });
   }
   await db.insert(creditAccounts).values([
-    { accountId: paid.account_id, tier: 'tier_2_20', autoTopupEnabled: false },
+    { accountId: paid.account_id, tier: 'credits', autoTopupEnabled: false },
     { accountId: free.account_id, tier: 'free', autoTopupEnabled: false },
-    { accountId: refilling.account_id, tier: 'tier_2_20', autoTopupEnabled: true },
+    { accountId: refilling.account_id, tier: 'credits', autoTopupEnabled: true },
   ]);
   setOwnerAlertSenderForTest(async (message) => {
     sent.push(message);

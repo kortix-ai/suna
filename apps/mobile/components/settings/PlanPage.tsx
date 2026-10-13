@@ -8,14 +8,14 @@
  * current and what the button does come from `lib/billing/plan-action`.
  *
  * Layout (apps/mobile/design.md): a Plan picker (icon · name · price, or
- * "Current" · check), the seat total for Team, the selected plan's features,
+ * "Current" · check), the selected plan's features,
  * and one pill pinned above the home indicator.
  */
 
 import * as React from 'react';
 import { AppState, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowUpRightIcon as ArrowUpRight, CheckIcon as Check, UsersIcon as Users } from '@/lib/icons';
+import { ArrowUpRightIcon as ArrowUpRight, CheckIcon as Check } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -32,6 +32,7 @@ import { useActiveAccount } from '@/hooks/useActiveAccount';
 import { useAccountState } from '@/lib/billing/hooks';
 import { openExternalUrl } from '@/lib/billing/checkout';
 import {
+  canManageBilling,
   defaultPlanSelection,
   getPlanAction,
   getPlanFamily,
@@ -39,7 +40,6 @@ import {
   type PlanAction,
 } from '@/lib/billing/plan-action';
 import { PRICING_PLANS, type PricingPlan, type PricingPlanId } from '@/lib/billing/pricing';
-import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
 import { getWebBillingUrl, getWebContactSalesUrl } from '@/lib/billing/web-links';
 import { haptics } from '@/lib/haptics';
 
@@ -70,12 +70,11 @@ export function PlanPage({ visible = true }: PlanPageProps) {
   }, [visible, refetch]);
 
   const current = getPlanFamily(accountState);
-  const offer = getTeamUpgradeOffer(accountState);
   // Until the user taps a plan, the selection follows the loaded account.
   const [picked, setPicked] = React.useState<PricingPlanId | null>(null);
   const selected = picked ?? defaultPlanSelection(current);
   const plan = PRICING_PLANS.find((p) => p.id === selected) ?? PRICING_PLANS[0];
-  const action = getPlanAction({ selected, current, canManageBilling: offer.canManageBilling });
+  const action = getPlanAction({ selected, current, canManageBilling: canManageBilling(accountState) });
 
   if (!visible) return null;
 
@@ -83,7 +82,7 @@ export function PlanPage({ visible = true }: PlanPageProps) {
     // "Current" only once the account state is loaded, so Free is never
     // briefly marked current for a paying account.
     if (accountState && isCurrentPlan(p.id, current)) return t('plans.current', 'Current');
-    return p.id === 'team' ? `$${offer.pricePerSeat} / seat` : p.price;
+    return p.price;
   };
 
   const runAction = async () => {
@@ -116,20 +115,6 @@ export function PlanPage({ visible = true }: PlanPageProps) {
             />
           ))}
         </SettingsGroup>
-
-        {selected === 'team' && offer.hasSeatMath ? (
-          <SettingsGroup>
-            <SettingsRow
-              icon={Users}
-              label={t('plans.seats', {
-                defaultValue: '{{count}} seats × ${{price}}',
-                count: offer.seatCount,
-                price: offer.pricePerSeat,
-              })}
-              value={t('plans.perMonth', { defaultValue: '${{total}} / mo', total: offer.monthlyTotal })}
-            />
-          </SettingsGroup>
-        ) : null}
 
         <SettingsGroup title={t('plans.includes', { defaultValue: '{{plan}} includes', plan: plan.name })}>
           {plan.features.map((feature) => (

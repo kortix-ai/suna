@@ -6,6 +6,7 @@ import {
 } from '../billing/services/tiers';
 
 const PAID_TIER_NAMES = [
+  'credits',
   'pro',
   'per_seat',
   'tier_2_20',
@@ -39,12 +40,11 @@ describe('tierGrantsAllModels', () => {
 
   test('free tier exposes 200 display credits without premium gateway entitlement', () => {
     const free = getTier('free');
-    expect(free.hidden).toBe(false);
     expect(free.monthlyCredits * 100).toBe(200);
     expect(free.models).not.toContain('all');
   });
 
-  test('per-seat and the legacy pro/tier_* plans are all entitled', () => {
+  test('credits and every legacy paid plan key are entitled', () => {
     for (const name of PAID_TIER_NAMES) {
       expect(tierGrantsAllModels(name)).toBe(true);
     }

@@ -1178,8 +1178,6 @@
     "plan": "Tarif",
     "current": "Aktuell",
     "currentPlan": "Aktueller Tarif",
-    "seats": "{{count}} Plätze × ${{price}}",
-    "perMonth": "${{total}} / Monat",
     "includes": "{{plan}} enthält",
     "askOwner": "Bitte einen Kontoinhaber um ein Upgrade",
     "contactSales": "Vertrieb kontaktieren",
@@ -1187,10 +1185,9 @@
     "switchTo": "Zu {{plan}} wechseln"
   },
   "upgrade": {
-    "teamPlan": "Kortix Team",
-    "perSeatMonthly": "pro Platz / Monat",
+    "creditsPlan": "Kortix Credits",
+    "pickAmount": "Wähle im Web einen beliebigen Monatsbetrag. Unbegrenzt viele Mitglieder teilen sich einen Credit-Pool.",
     "includes": "Enthalten",
-    "askOwner": "Bitte einen Kontoinhaber um einen Platz",
     "notNow": "Nicht jetzt"
   },
   "sessions": {

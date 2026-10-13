@@ -1178,8 +1178,6 @@
     "plan": "套餐",
     "current": "当前",
     "currentPlan": "当前套餐",
-    "seats": "{{count}} 个席位 × ${{price}}",
-    "perMonth": "${{total}} / 月",
     "includes": "{{plan}} 包含",
     "askOwner": "请联系账户所有者升级",
     "contactSales": "联系销售",
@@ -1187,10 +1185,9 @@
     "switchTo": "切换到 {{plan}}"
   },
   "upgrade": {
-    "teamPlan": "Kortix Team",
-    "perSeatMonthly": "每席位 / 月",
+    "creditsPlan": "Kortix Credits",
+    "pickAmount": "在网页上选择任意月度金额。不限成员数量，共用同一个额度池。",
     "includes": "包含",
-    "askOwner": "请向账户所有者申请席位",
     "notNow": "以后再说"
   },
   "sessions": {

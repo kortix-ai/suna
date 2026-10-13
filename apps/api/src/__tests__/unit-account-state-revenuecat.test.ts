@@ -44,7 +44,8 @@ const { buildMinimalAccountState } = await import('../billing/services/account-s
 describe('buildMinimalAccountState revenuecat', () => {
   beforeEach(() => {
     account = {
-      tier: 'tier_2_20',
+      tier: 'credits',
+      planMonthlyUsd: '20',
       provider: 'revenuecat',
       planType: 'monthly',
       stripeSubscriptionId: null,
@@ -81,8 +82,9 @@ describe('buildMinimalAccountState revenuecat', () => {
     expect(state.subscription.provider).toBe('revenuecat');
     expect(state.subscription.status).toBe('active');
     expect(state.subscription.subscription_id).toBe('rc_sub_123');
-    expect(state.tier.name).toBe('tier_2_20');
-    expect(state.can_claim_computer).toBe(true);
+    expect(state.tier.name).toBe('credits');
+    expect(state.plan?.monthly_usd).toBe(20);
+    expect((state as any).can_claim_computer).toBeUndefined();
   });
 
   test('reports past_due revenuecat subscription correctly', async () => {

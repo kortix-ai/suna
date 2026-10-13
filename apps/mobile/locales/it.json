@@ -1178,8 +1178,6 @@
     "plan": "Piano",
     "current": "Attuale",
     "currentPlan": "Piano attuale",
-    "seats": "{{count}} postazioni × ${{price}}",
-    "perMonth": "${{total}} / mese",
     "includes": "{{plan}} include",
     "askOwner": "Chiedi a un proprietario dell'account di effettuare l'upgrade",
     "contactSales": "Contatta le vendite",
@@ -1187,10 +1185,9 @@
     "switchTo": "Torna a {{plan}}"
   },
   "upgrade": {
-    "teamPlan": "Kortix Team",
-    "perSeatMonthly": "per postazione / mese",
+    "creditsPlan": "Kortix Credits",
+    "pickAmount": "Scegli sul web qualsiasi importo mensile. Membri illimitati condividono un unico pool di crediti.",
     "includes": "Include",
-    "askOwner": "Chiedi una postazione a un proprietario dell'account",
     "notNow": "Non ora"
   },
   "sessions": {

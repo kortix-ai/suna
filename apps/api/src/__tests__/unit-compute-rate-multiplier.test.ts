@@ -41,7 +41,7 @@ mock.module('../billing/services/billing-cache', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
-  getCreditAccount: async () => ({ billingModel: 'per_seat' }),
+  getCreditAccount: async () => ({ tier: 'credits' }),
   upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
