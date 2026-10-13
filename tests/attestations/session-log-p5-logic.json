@@ -1,5 +1,5 @@
 {
-  "source_hash": "ab941e74abe9eae617980bf909a5219d27933e46fcd91e98f70eca31ace392d5",
+  "source_hash": "695dbea8390da0c2576d45e6cf5b54861628564189589cb0338827d0723644a7",
   "diff_files": [
     "apps/web/content/docs/sdk/reference.mdx",
     "apps/web/src/app/[locale]/(system)/debug/session-fixture/fixture-turn.tsx",
@@ -79,12 +79,12 @@
     "packages/sdk/src/react/use-session-log.ts"
   ],
   "diff_hash": "428b0e8e91090188dbb5c8b686e0f7e8025394473562c1c90462850a00d1591f",
-  "head": "af62e3ef09ba31e551d348a2a0b5be8666e86ea4",
+  "head": "f5b6639bd3bcb8020d68612edc31e93486ded85d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T12:37:33.748Z"
+  "at": "2026-10-13T13:24:10.993Z"
 }
