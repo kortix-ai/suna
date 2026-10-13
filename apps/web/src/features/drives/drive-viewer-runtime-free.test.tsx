@@ -14,7 +14,7 @@ const runtimeCalls: string[] = [];
 const realRuntime = await import('@/features/files/api/runtime-files');
 const refuse = (name: string) => async () => {
   runtimeCalls.push(name);
-  throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+  throw new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
 };
 mock.module('@/features/files/api/runtime-files', () => ({
   ...realRuntime,
@@ -38,6 +38,12 @@ mock.module('@/features/file-renderers/sqlite-renderer', () => ({
     sqliteProps.push(props);
     return createElement('div', { 'data-sqlite': props.bytes ? 'bytes' : 'path' });
   },
+}));
+
+// CodeMirror mounts on the client only; this stands in so the prerender shows
+// which text reached the editor.
+mock.module('@/components/file-editors/lazy-code-editor', () => ({
+  CodeEditor: (props: { content: string }) => createElement('pre', { 'data-code-editor': true }, props.content),
 }));
 
 const { FileSourceProvider } = await import('@/features/file-viewer/file-source');
@@ -116,7 +122,7 @@ describe('Files viewer without a session runtime', () => {
     const source: FileSource = {
       ...driveLikeSource([]),
       useFileContent: () => ({
-        data: { type: 'text', content: '<h1>hi</h1>' },
+        data: { type: 'text', content: '<h1>drive-html-marker</h1>' },
         isLoading: false,
         error: null,
         refetch: async () => undefined,
@@ -126,7 +132,7 @@ describe('Files viewer without a session runtime', () => {
 
     expect(html).not.toContain('<iframe');
     expect(html).not.toContain('Starting preview server');
-    expect(html).toContain('hi');
+    expect(html).toContain('drive-html-marker');
     expect(runtimeCalls).toEqual([]);
   });
 });

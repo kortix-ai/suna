@@ -504,7 +504,9 @@ export function FileContentRenderer({
             fileContent.type === 'text' &&
             !imageDataUrl &&
             !csvAsTable &&
-            fileCategory !== 'html' && (
+            // HTML has its own preview/source branches above, except from a
+            // bytes-only source: there it is plain text in the editor.
+            !isHtmlFile && (
               <div
                 className={cn(
                   'relative flex flex-col',

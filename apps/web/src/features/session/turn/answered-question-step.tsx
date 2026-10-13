@@ -20,8 +20,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { DisclosureContent } from '@/components/ui/disclosure';
-import { isToolPart, type Part, type ToolPart } from '@/ui';
-import { toToolView } from '@kortix/sdk';
+import { toToolView, type ToolCallBlock } from '@kortix/sdk';
 import { ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';
 import { isQuestionTool } from '../session-activity-groups';
@@ -32,30 +31,29 @@ interface QuestionInput {
   options?: { label: string }[];
 }
 
-function readQuestions(part: ToolPart): QuestionInput[] {
-  const input = (part.state as { input?: { questions?: unknown } } | undefined)?.input;
+function readQuestions(call: ToolCallBlock): QuestionInput[] {
+  const input = call.input as { questions?: unknown } | null | undefined;
   return Array.isArray(input?.questions) ? (input.questions as QuestionInput[]) : [];
 }
 
-function readAnswers(part: ToolPart): string[][] {
-  return toToolView(part).answers ?? [];
+function readAnswers(call: ToolCallBlock): string[][] {
+  return toToolView(call).answers ?? [];
 }
 
 /**
- * True when this part has a renderable Q&A: a `question` call with both the
+ * True when this call has a renderable Q&A: a `question` call with both the
  * questions asked and the user's answers. Anything less (pending, dismissed,
  * malformed) falls through to the generic tool row instead.
  */
-export function isAnsweredQuestionPart(part: Part): part is ToolPart {
-  if (!isToolPart(part)) return false;
-  if (!isQuestionTool(part.tool)) return false;
-  return readQuestions(part).length > 0 && readAnswers(part).length > 0;
+export function isAnsweredQuestionCall(call: ToolCallBlock): boolean {
+  if (!isQuestionTool(call.name)) return false;
+  return readQuestions(call).length > 0 && readAnswers(call).length > 0;
 }
 
-function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boolean }) {
+function AnsweredQuestionStepImpl({ call }: { call: ToolCallBlock; bare?: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const questions = readQuestions(part);
-  const answers = readAnswers(part);
+  const questions = readQuestions(call);
+  const answers = readAnswers(call);
   const answeredCount = answers.filter((a) => a.length > 0).length;
 
   return (
@@ -91,7 +89,7 @@ function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boole
   );
 }
 
-/** Same boundary as `ActivityStep`: the part keeps its identity until it
+/** Same boundary as `ActivityStep`: the call keeps its identity until it
  *  changes, so the default shallow compare holds. */
 export const AnsweredQuestionStep = memo(AnsweredQuestionStepImpl);
 AnsweredQuestionStep.displayName = 'AnsweredQuestionStep';
