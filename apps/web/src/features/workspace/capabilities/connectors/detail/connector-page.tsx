@@ -35,7 +35,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 
 import { isManagedConnectorProvider } from '../provider-label';
 import { ConnectorAccounts } from './connector-accounts';
-import { connectorNotice, splitNoticeReason } from './connector-notice';
+import { connectorNotice, noticeTarget, splitNoticeReason } from './connector-notice';
 import { connectHandoff, connectorPageState } from './connector-page-state';
 import { ConnectorSettings } from './connector-settings';
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
@@ -204,7 +204,6 @@ function ConnectorPageBody({
     headerCta,
     connectPending,
     refreshAccounts,
-    replaceSoleAccount,
     startPrivateSession,
     reconnectAccount,
     credentialTarget,
@@ -365,20 +364,15 @@ function ConnectorPageBody({
     },
     onError: (error: Error) => errorToast(error.message),
   });
-  // The one account the banner's button can act on. A shared account is
-  // changed only by someone who manages the project's connections.
-  const soleAccount = accounts.length === 1 ? accounts[0]! : null;
-  const canFixSoleAccount =
-    soleAccount !== null && (soleAccount.owner_type !== 'project' || canManageConnections);
-  const mayChange = (account: { owner_type: string }) =>
-    account.owner_type !== 'project' || canManageConnections;
-  // The account the sign-in button finishes: the first one not signed in that
-  // the caller may change, else the only account.
-  const signInAccount =
-    accounts.find(
-      (account) =>
-        (account.authorized === false || account.status !== 'active') && mayChange(account),
-    ) ?? (canFixSoleAccount ? soleAccount : null);
+  // The banner's button fixes one of the caller's own accounts. With none it
+  // opens "Add account" ("Only you" preselected), never the project's shared
+  // account: a shared account is signed in from its own row.
+  const target = noticeTarget(accounts);
+  const fixNotice = (signInFlow: boolean) => {
+    if (target === 'add') requestAdd();
+    else if (target && signInFlow) signIn.mutate(target);
+    else if (target) reconnectAccount(target);
+  };
   // Connect on an account row: the same sign-in the notice runs. A managed
   // account reconnects through its provider window.
   const needsSignIn = isManagedProvider || Boolean(connector.authSecret);
@@ -530,11 +524,11 @@ function ConnectorPageBody({
                   </Button>
                 ) : null}
                 {notice.kind === 'sign_in' ? (
-                  signInAccount ? (
+                  target ? (
                     <Button
                       size="sm"
                       className="gap-1.5"
-                      onClick={() => signIn.mutate(signInAccount)}
+                      onClick={() => fixNotice(true)}
                       disabled={signIn.isPending}
                     >
                       {signIn.isPending ? (
@@ -545,20 +539,22 @@ function ConnectorPageBody({
                   ) : null
                 ) : notice.action === 'add_account' ? (
                   addAccountControl
-                ) : notice.action !== 'retry' && canFixSoleAccount ? (
-                  // One account: fix it here. `replaceSoleAccount` opens
-                  // credential entry for a direct account and the provider
-                  // window for a managed one.
+                ) : notice.action !== 'retry' && target ? (
+                  // Fix it here: credential entry for a direct account, the
+                  // provider window for a managed one, or "Add account" for
+                  // a caller with no account of their own.
                   <Button
                     size="sm"
                     className="gap-1.5"
-                    onClick={replaceSoleAccount}
+                    onClick={() => fixNotice(false)}
                     disabled={connectPending}
                   >
                     {connectPending ? <Loading className="size-4 shrink-0" /> : null}
-                    {isManagedProvider
-                      ? tI18nComplete.raw('textbf8a9eab9e7e')
-                      : tI18nComplete.raw('text3d6627454174')}
+                    {!isManagedProvider
+                      ? tI18nComplete.raw('text3d6627454174')
+                      : target === 'add'
+                        ? t('connectAccount')
+                        : tI18nComplete.raw('textbf8a9eab9e7e')}
                   </Button>
                 ) : null}
               </NoticeRow>

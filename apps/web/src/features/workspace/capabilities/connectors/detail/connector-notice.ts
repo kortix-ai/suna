@@ -75,6 +75,25 @@ export function connectorNotice(input: {
   return { kind: 'needs_credential', action: fixAccount };
 }
 
+/**
+ * The account the banner's Sign in / Set credential button fixes: one of the
+ * caller's OWN accounts (any owner but the project), the first one not signed
+ * in, else the only one. With no account of their own it is `'add'`: the
+ * button opens "Add account" with "Only you" preselected, so a personal
+ * sign-in never lands on the project's shared account. A shared account is
+ * still signed in from its own row.
+ */
+export function noticeTarget<T extends { owner_type: string; status: string; authorized?: boolean }>(
+  accounts: readonly T[],
+): T | 'add' | null {
+  const own = accounts.filter((account) => account.owner_type !== 'project');
+  if (own.length === 0) return 'add';
+  return (
+    own.find((account) => account.authorized === false || account.status !== 'active') ??
+    (own.length === 1 ? own[0]! : null)
+  );
+}
+
 /** A failure line split for the log row: `MCP tools/list failed: HTTP 401` → `401` + `MCP tools/list failed`. */
 export function splitNoticeReason(reason: string): { code: string | null; detail: string } {
   const match = /[:\s]*\bHTTP (\d{3})\b/.exec(reason);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectorNotice, splitNoticeReason } from './connector-notice';
+import { connectorNotice, noticeTarget, splitNoticeReason } from './connector-notice';
 
 const base = {
   provider: 'mcp' as const,
@@ -110,5 +110,36 @@ describe('connectorNotice: MCP sign-in still to do', () => {
         accountCount: 1,
       }),
     ).toEqual({ kind: 'sign_in' });
+  });
+});
+
+describe('noticeTarget: the account the banner button fixes', () => {
+  const project = { owner_type: 'project', status: 'active', authorized: false };
+  const mine = { owner_type: 'member', status: 'active', authorized: false };
+
+  test('no account of your own: Add account, never the empty project account', () => {
+    expect(noticeTarget([project])).toBe('add');
+    expect(noticeTarget([])).toBe('add');
+  });
+
+  test('your own unsigned account comes before a project account listed first', () => {
+    expect(noticeTarget([project, mine])).toBe(mine);
+  });
+
+  test('your only account is the target even when it reads signed in', () => {
+    const signed = { ...mine, authorized: true };
+    expect(noticeTarget([project, signed])).toBe(signed);
+  });
+
+  test('an account of yours in error counts as not signed in', () => {
+    const work = { ...mine, authorized: true };
+    const broken = { ...mine, authorized: true, status: 'error' };
+    expect(noticeTarget([work, broken])).toBe(broken);
+  });
+
+  test('several signed-in accounts of your own: no single target', () => {
+    const work = { ...mine, authorized: true };
+    const personal = { ...mine, authorized: true };
+    expect(noticeTarget([work, personal])).toBeNull();
   });
 });
