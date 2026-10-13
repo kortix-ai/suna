@@ -10,6 +10,9 @@ import {
   accountGroups,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { nonSsoIdentitySql, ssoProviderIdOf } from '../shared/auth-identity';
+import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
+import { forgetUserJwtLiveness } from '../shared/jwt-liveness';
 import { accountGroupNameRow, ssoGroupByNameRow } from '../iam/group-read';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
 
@@ -170,6 +173,56 @@ export async function setSsoDomainVerified(accountId: string, verified: boolean)
   // the cache TTL. Break-glass depends on this.
   await invalidateIamCacheForAccount(accountId);
   return row ?? null;
+}
+
+/**
+ * End every GoTrue sign-in the SSO-only gate refuses on this account: a member
+ * whose email is in the enforced, verified domain and whose auth user is not
+ * an identity of the account's own IdP. The predicate is `ssoRequired` in
+ * `iam/authorize.ts`; keep the two identical. One exception: a platform admin
+ * (the rule of `getPlatformRole`) keeps the sign-in. Break-glass on the admin
+ * routes needs it, and a self-host operator in the enforced domain cannot sign
+ * in again. The gate still refuses that sign-in on this account.
+ *
+ * Deleting the session cascades to its refresh tokens, so it cannot renew, and
+ * its access token fails GoTrue's liveness check. API keys stay: the gate
+ * refuses them while enforcement is on. Call it after every provider write
+ * that can make enforcement effective. A member who joins later is refused by
+ * the gate and keeps the sign-in until the next such write. Returns the number
+ * of sign-ins ended: 0 when enforcement is not effective, and 0 on a repeat.
+ */
+export async function signOutNonSsoMembers(accountId: string, revokedBy: string | null): Promise<number> {
+  const operators = selfHostOperatorAllowlist();
+  const ended = (await db.execute(sql`
+    WITH ended AS (
+      DELETE FROM auth.sessions s
+       USING kortix.account_sso_providers enforcing, kortix.account_memberships m, auth.users person
+       WHERE enforcing.account_id = ${accountId}::uuid
+         AND enforcing.enforce_sso
+         AND enforcing.domain_verified_at IS NOT NULL
+         AND m.account_id = enforcing.account_id
+         AND person.id = m.user_id
+         AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
+         AND ${ssoProviderIdOf(sql`person`)} IS DISTINCT FROM enforcing.supabase_sso_provider_id::text
+         AND s.user_id = person.id
+         AND NOT EXISTS (
+           SELECT 1 FROM kortix.platform_user_roles r
+            WHERE r.account_id = person.id AND r.role IN ('admin', 'super_admin')
+         )
+         ${operators.length > 0 ? sql`AND NOT (${nonSsoIdentitySql(sql`person`)} AND lower(trim(person.email)) = ANY(${sql.param(operators)}::text[]))` : sql``}
+      RETURNING s.id, s.user_id
+    ), stamped AS (
+      -- A liveness cache on another replica can still answer "live"; the
+      -- session gate (iam/session-gate.ts) reads this row and refuses.
+      UPDATE kortix.account_session_activity a
+         SET revoked_at = now(), revoked_reason = 'sso_enforced', revoked_by = ${revokedBy}::uuid
+        FROM ended
+       WHERE a.session_id = ended.id AND a.user_id = ended.user_id AND a.revoked_at IS NULL
+    )
+    SELECT ended.user_id::text AS user_id FROM ended
+  `)) as unknown as Array<{ user_id: string }>;
+  for (const userId of new Set(ended.map((row) => row.user_id))) forgetUserJwtLiveness(userId);
+  return ended.length;
 }
 
 export async function upsertSsoProvider(args: {

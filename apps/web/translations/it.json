@@ -11630,7 +11630,7 @@
       "text3e11e93e0f42": "Approva o nega l'azione in sospeso per continuare.",
       "text3e18e2dab6f2": "Negoziazione",
       "text3e26769ed36a": "I proprietari e gli amministratori sono Manager in ogni progetto.",
-      "text3e29ac703c2f": "I membri devono accedere con il tuo identity provider — l'opzione password scompare appena lo attivi e da quel momento funziona solo l'identity provider.",
+      "text3e29ac703c2f": "I membri devono accedere con il tuo identity provider. Attivandolo, ogni membro di questo dominio che ha effettuato l'accesso in un altro modo viene disconnesso, e questo può includere anche te.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Marketplace in evidenza elencati",
       "text3e3d7edf97ee": "Accesso ai repository",

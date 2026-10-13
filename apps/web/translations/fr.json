@@ -11630,7 +11630,7 @@
       "text3e11e93e0f42": "Approuvez ou refusez l’action en attente pour continuer.",
       "text3e18e2dab6f2": "Négociation",
       "text3e26769ed36a": "Les propriétaires et administrateurs sont Managers sur chaque projet.",
-      "text3e29ac703c2f": "Les membres doivent se connecter avec votre fournisseur d’identité. L’option de mot de passe disparaît dès que cette option est activée, et seul votre fournisseur d’identité fonctionne ensuite.",
+      "text3e29ac703c2f": "Les membres doivent se connecter avec votre fournisseur d’identité. L’activer déconnecte chaque membre de ce domaine qui s’est connecté autrement, ce qui peut vous inclure.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Marketplaces à la une répertoriées",
       "text3e3d7edf97ee": "Accès aux dépôts",

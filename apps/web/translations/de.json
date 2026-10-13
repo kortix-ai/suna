@@ -11630,7 +11630,7 @@
       "text3e11e93e0f42": "Genehmige oder lehne die ausstehende Aktion ab, um fortzufahren.",
       "text3e18e2dab6f2": "Verhandlung",
       "text3e26769ed36a": "Inhaber und Administratoren sind in jedem Projekt Manager.",
-      "text3e29ac703c2f": "Mitglieder müssen sich über deinen Identitätsanbieter anmelden. Sobald dies aktiviert ist, verschwindet die Passwortoption und nur dein Identitätsanbieter funktioniert.",
+      "text3e29ac703c2f": "Mitglieder müssen sich über deinen Identitätsanbieter anmelden. Wenn du dies aktivierst, wird jedes Mitglied dieser Domain abgemeldet, das sich auf andere Weise angemeldet hat. Das kann auch dich betreffen.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Vorgestellte Marktplätze aufgelistet",
       "text3e3d7edf97ee": "Repository-Zugriff",
