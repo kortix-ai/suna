@@ -108,7 +108,7 @@ for (const size of ['1-10', '11-50']) {
     globalThis.fetch = (async (
       _input: RequestInfo | URL,
       _init?: RequestInit,
-    ) => {
+    ): Promise<Response> => {
       throw new TypeError('Network unavailable');
     }) as typeof fetch;
     const renderer = await form(size);
