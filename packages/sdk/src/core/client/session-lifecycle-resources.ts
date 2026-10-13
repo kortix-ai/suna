@@ -40,6 +40,8 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       ctx.forgetReady();
       return P.deleteProjectSession(ctx.projectId, ctx.sessionId);
     },
+    /** Take the deleted session out of the trash before its `restore_until`. */
+    restore: () => P.restoreProjectSession(ctx.projectId, ctx.sessionId),
     start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
       P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
     /** `start`, but a failed request rejects with the API error instead of yielding `null`. */

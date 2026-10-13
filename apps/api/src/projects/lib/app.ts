@@ -7,6 +7,7 @@ import {
   SecretSchema as ContractSecretSchema,
   SessionCreateInputSchema as ContractSessionCreateInputSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
+  SessionDeleteResultSchema as ContractSessionDeleteResultSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
@@ -41,6 +42,8 @@ export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi
 export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.openapi('SessionCreateAccepted');
 
 export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
+
+export const SessionDeleteResultSchema = ContractSessionDeleteResultSchema.openapi('SessionDeleteResult');
 
 export const WarmProjectSessionResultSchema =
   ContractWarmProjectSessionResultSchema.openapi('WarmProjectSessionResult');

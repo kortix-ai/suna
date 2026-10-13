@@ -683,6 +683,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/sessions/:sessionId/reload': { action: 'session.agent_config.reload', title: 'Reloaded session agent config' },
   'POST /v1/projects/:projectId/sessions/:sessionId/reload-stream': 'POST /v1/projects/:projectId/sessions/:sessionId/reload',
   'POST /v1/projects/:projectId/sessions/:sessionId/restart': { action: 'session.restart', title: 'Restarted session' },
+  'POST /v1/projects/:projectId/sessions/:sessionId/restore': { action: 'session.restore', title: 'Restored deleted session' },
   'GET /v1/projects/:projectId/sessions/:sessionId/scope': { action: 'session.scope.read', title: 'Viewed session scope' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/scope': { action: 'session.scope.update', title: 'Updated session scope' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/sharing': { action: 'session.sharing.update', title: 'Updated session sharing' },
