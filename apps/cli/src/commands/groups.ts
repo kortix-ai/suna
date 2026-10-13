@@ -86,7 +86,7 @@ Options:
   --name <n>          New group name (set).
   --description <t>   Description (create, set).
   --no-description    Clear the description (set).
-  --account <id>      Operate on this account (default: the active account).
+  --account <id>      Operate on this account (default: the linked project's account, else the active account).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output (read subcommands).
   -y, --yes           Skip the confirmation prompt.
