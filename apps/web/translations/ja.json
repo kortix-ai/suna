@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "このプロジェクトで上書き",
         "defaultOn": "デフォルトでオン",
-        "defaultOff": "デフォルトでオフ",
-        "organization": "組織全体（Kortix が管理）"
+        "defaultOff": "デフォルトでオフ"
       },
       "search": "機能を検索",
       "loadFailed": "プロジェクトを読み込めませんでした",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "ボリューム",
-          "description": "組織全体で共有ファイルとボリューム上のセッションを使えます。"
+          "description": "このプロジェクトで共有ファイルとボリューム上のセッションを使えます。"
         },
         "stateless_sessions": {
           "name": "ステートレスセッション",

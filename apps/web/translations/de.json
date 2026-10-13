@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "Für dieses Projekt überschrieben",
         "defaultOn": "Standardmäßig an",
-        "defaultOff": "Standardmäßig aus",
-        "organization": "Ganze Organisation, von Kortix verwaltet"
+        "defaultOff": "Standardmäßig aus"
       },
       "search": "Funktionen suchen",
       "loadFailed": "Projekt konnte nicht geladen werden",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Geteilte Dateien und Sitzungen auf Volumes für die ganze Organisation."
+          "description": "Geteilte Dateien und Sitzungen auf Volumes für dieses Projekt."
         },
         "stateless_sessions": {
           "name": "Zustandslose Sitzungen",

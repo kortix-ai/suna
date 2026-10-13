@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "Remplacé pour ce projet",
         "defaultOn": "Activé par défaut",
-        "defaultOff": "Désactivé par défaut",
-        "organization": "Toute l'organisation, géré par Kortix"
+        "defaultOff": "Désactivé par défaut"
       },
       "search": "Rechercher des fonctionnalités",
       "loadFailed": "Impossible de charger le projet",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Fichiers partagés et sessions sur volumes pour toute l'organisation."
+          "description": "Fichiers partagés et sessions sur volumes pour ce projet."
         },
         "stateless_sessions": {
           "name": "Sessions sans état",

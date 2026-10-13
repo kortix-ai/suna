@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
-        "defaultOff": "Подразумевано искључено",
-        "organization": "Cela organizacija, upravlja Kortix"
+        "defaultOff": "Подразумевано искључено"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volumeni",
-          "description": "Deljeni fajlovi i sesije na volumenima za celu organizaciju."
+          "description": "Deljeni fajlovi i sesije na volumenima za ovaj projekat."
         },
         "stateless_sessions": {
           "name": "Sesije bez stanja",

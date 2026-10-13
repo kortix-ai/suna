@@ -144,11 +144,6 @@ export interface FeatureFlagView {
    * `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
-  /**
-   * `organization`: one value for every project of the organization (`volumes`).
-   * Changing it needs `account.write`. Absent on servers older than this field.
-   */
-  scope?: 'project' | 'organization';
 }
 
 /** @deprecated Renamed to {@link FeatureFlagKey}. Removed in the next major. */

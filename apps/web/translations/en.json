@@ -960,8 +960,7 @@
       "origin": {
         "overridden": "Overridden for this project",
         "defaultOn": "Default on",
-        "defaultOff": "Default off",
-        "organization": "Whole organization, managed by Kortix"
+        "defaultOff": "Default off"
       },
       "search": "Search features",
       "loadFailed": "Failed to load project",
@@ -1034,7 +1033,7 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Shared Files and volume-backed sessions for the whole organization."
+          "description": "Shared Files and volume-backed sessions for this project."
         },
         "stateless_sessions": {
           "name": "Stateless sessions",
