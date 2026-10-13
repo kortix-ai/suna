@@ -82,7 +82,7 @@ export const SESSION_PROMPTS_CHANGED_CHANNEL = 'kortix_session_prompts_changed';
 export const SESSION_CHANGED_CHANNEL = 'kortix_session_changed';
 
 /**
- * A seventh channel: "send this frame to a Kortix for Chrome extension". The
+ * A seventh channel: "send this frame to a Kortix in Chrome extension". The
  * payload is `{"chromeId","frame"}`, always under 8 KB. The replica that holds
  * the extension's control socket delivers it; see `chrome/registry.ts`.
  */

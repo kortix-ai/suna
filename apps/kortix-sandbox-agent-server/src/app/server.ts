@@ -142,7 +142,7 @@ export function buildDaemonApp(
   kortixRouter.route('/env-rpc/', envRpcRouter)
   // Hosted tools for a harness outside this process (OpenCode's bridge plugin).
   kortixRouter.route('/tools', createToolsRouter(cfg))
-  // Kortix for Chrome: attach/release/status for `kortix chrome` (the bridge socket upgrades in startProxy).
+  // Kortix in Chrome: attach/release/status for `kortix chrome` (the bridge socket upgrades in startProxy).
   kortixRouter.route('/chrome', createChromeRouter(cfg))
 
   // Kortix Drive off Platinum: the API's pre-stop request for the final push.

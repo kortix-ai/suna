@@ -1,4 +1,4 @@
-// Kortix for Chrome on PostgreSQL: the migration's three tables, the attach flow
+// Kortix in Chrome on PostgreSQL: the migration's three tables, the attach flow
 // (granted at once, consent granted, consent denied), Stop denying a session,
 // ask=true overriding that deny, revoke, and owner isolation.
 import { describe, expect, test } from 'bun:test';

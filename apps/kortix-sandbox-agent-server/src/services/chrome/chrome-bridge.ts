@@ -1,5 +1,5 @@
 /**
- * Kortix for Chrome, sandbox side (protocol: .agents/skills/kortix-chrome/references/protocol.md §5, §6, §8).
+ * Kortix in Chrome, sandbox side (protocol: .agents/skills/kortix-chrome/references/protocol.md §5, §6, §8).
  *
  * The user's Chrome extension dials a bridge websocket into this daemon (the
  * API preview proxy forwards it). A loopback CDP listener on 127.0.0.1:9333
@@ -138,7 +138,7 @@ export function createChromeBridge(opts: BridgeOptions = {}) {
           return Response.json({
             Browser: `Kortix/${brand}`,
             'Protocol-Version': '1.3',
-            'User-Agent': `Kortix for Chrome (${brand})`,
+            'User-Agent': `Kortix in Chrome (${brand})`,
             webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/browser/kortix`,
           })
         }

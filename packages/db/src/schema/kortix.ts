@@ -7396,7 +7396,7 @@ export const feedback = kortixSchema.table('feedback', {
 ]);
 
 /**
- * Kortix for Chrome: a person's own Chrome, connected to Kortix through the
+ * Kortix in Chrome: a person's own Chrome, connected to Kortix through the
  * extension's control socket (apps/api/src/chrome). One row per browser
  * profile. `last_seen_at` is the liveness clock: online means not revoked and
  * seen in the last 75 s. Protocol: .agents/skills/kortix-chrome/references/protocol.md.

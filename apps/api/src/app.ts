@@ -146,7 +146,7 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/drives', drivesApp); // personal, agent and company drives + their files and versions
-// Kortix for Chrome: the user's own Chrome, driven from a session sandbox. The
+// Kortix in Chrome: the user's own Chrome, driven from a session sandbox. The
 // control socket (/v1/chrome/ws) is upgraded in inbound-dispatch.ts. The sandbox
 // routes (attach, release) take only a session-scoped credential, checked in the
 // handler; enforceTokenProjectScope lets that credential through (auth-scope.ts).

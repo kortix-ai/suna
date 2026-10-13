@@ -143,7 +143,7 @@ export {
   webPushSubscriptions,
   // Product feedback (POST /v1/feedback)
   feedback,
-  // Kortix for Chrome (apps/api/src/chrome)
+  // Kortix in Chrome (apps/api/src/chrome)
   chromeConnections,
   chromeGrants,
   chromeAttachments,

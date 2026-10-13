@@ -807,7 +807,7 @@ returned digest and persisted bytes. Same-length corrupted bytes with the source
 checksum fail without replacing the destination. Malformed base64 returns 400.
 Cleanup removes the machine and temporary files.
 
-### Kortix for Chrome (a person's own Chrome, driven from a session sandbox)
+### Kortix in Chrome (a person's own Chrome, driven from a session sandbox)
 
 Protocol: `.agents/skills/kortix-chrome/references/protocol.md`. The extension signs in with OAuth (public client, PKCE, scope `kortix`) and holds a control socket at `wss://<api>/v1/chrome/ws`. A flow plays the extension: it opens the socket, sends the first-frame `auth`, and answers `attach` frames. User routes (`/v1/chrome/connections*`) take a JWT, `kortix_pat_` or `kortix_oat_`. Sandbox routes (`/v1/chrome/attach|release`) take only a session-scoped sandbox credential.
 

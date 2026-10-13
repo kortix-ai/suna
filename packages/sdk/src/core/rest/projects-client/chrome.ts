@@ -1,4 +1,4 @@
-// Kortix for Chrome: the Chrome extension that connects a person's own browser to
+// Kortix in Chrome: the Chrome extension that connects a person's own browser to
 // Kortix. These calls manage the browsers the caller connected. A session
 // attaches to one through the sandbox routes, which are not part of this SDK.
 
@@ -42,7 +42,7 @@ export interface ChromeConnectionUpdate {
 
 const chromePath = (id: string) => `/chrome/connections/${encodeURIComponent(id)}`;
 
-/** The browsers the caller connected, newest `lastSeenAt` first. */
+/** The browsers the caller connected, oldest first (stable order). */
 export async function listChromeConnections(): Promise<ChromeConnection[]> {
   return unwrap(await backendApi.get<ChromeConnection[]>('/chrome/connections'), 'Failed to load browsers');
 }

@@ -1,5 +1,5 @@
 /**
- * Kortix for Chrome: the pure rules. No database, no sockets.
+ * Kortix in Chrome: the pure rules. No database, no sockets.
  * Protocol: .agents/skills/kortix-chrome/references/protocol.md
  */
 
@@ -108,7 +108,7 @@ const ERRORS: Record<ChromeErrorCode, { status: 403 | 404 | 408 | 409; error: st
   },
   chrome_access_off: {
     status: 403,
-    error: 'The user turned off agent access for this browser. Ask the user to turn it on in Settings → Chrome extension.',
+    error: 'The user turned off agent access for this browser. Ask the user to turn it on in Settings → Kortix in Chrome.',
   },
   chrome_denied: {
     status: 403,

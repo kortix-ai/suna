@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Kortix for Chrome hooks — TanStack React Query hooks for the browsers a person
+ * Kortix in Chrome hooks — TanStack React Query hooks for the browsers a person
  * connected with the Kortix Chrome extension:
  *   - useChromeConnections()       — the caller's browsers (online state, active sessions)
  *   - useUpdateChromeConnection()  — rename a browser, change its access mode or tab scope

@@ -105,7 +105,7 @@ test('routeIngress() sends Kortix-native PTY websockets through the authenticate
 
 test('routeIngress() carries the signed user context on every daemon websocket, not only PTY', async () => {
   const p = await makeProvider();
-  // The Kortix for Chrome bridge: the edge drops headers on an upgrade, so kortixd
+  // The Kortix in Chrome bridge: the edge drops headers on an upgrade, so kortixd
   // only sees the user context in the query.
   expect(p.routeIngress({ port: 8000, transport: 'websocket', path: '/kortix/chrome/bridge' })).toEqual({
     effectivePort: 8000,

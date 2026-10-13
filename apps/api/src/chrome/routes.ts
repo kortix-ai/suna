@@ -1,5 +1,5 @@
 /**
- * Kortix for Chrome REST routes.
+ * Kortix in Chrome REST routes.
  *
  *   /v1/chrome/connections[/:id]          user routes: JWT, `kortix_pat_` or `kortix_oat_`
  *   /v1/chrome/attach|release  sandbox routes: a session-scoped sandbox credential only

@@ -1,5 +1,5 @@
 /**
- * The Kortix for Chrome routes must be REACHABLE, not merely correct. The same
+ * The Kortix in Chrome routes must be REACHABLE, not merely correct. The same
  * failure as unit-boot-timeline-auth-mount.test.ts: a route mounted without auth
  * middleware, or a session-scoped sandbox credential the scope gate refuses, is
  * a silent 401 or 403. The sandbox calls `kortix chrome use` through

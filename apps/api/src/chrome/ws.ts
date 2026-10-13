@@ -1,5 +1,5 @@
 /**
- * The control socket of the Kortix for Chrome extension: `wss://<api>/v1/chrome/ws`.
+ * The control socket of the Kortix in Chrome extension: `wss://<api>/v1/chrome/ws`.
  *
  * The upgrade carries no credential. The first frame is `auth` with a
  * `kortix_oat_` token (scope `kortix`) or a user `kortix_pat_` token, and it

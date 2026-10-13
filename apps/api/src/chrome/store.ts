@@ -1,4 +1,4 @@
-/** Kortix for Chrome rows: connections, grants, attachments. */
+/** Kortix in Chrome rows: connections, grants, attachments. */
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   chromeAttachments,

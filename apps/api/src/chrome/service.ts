@@ -1,5 +1,5 @@
 /**
- * Kortix for Chrome services. Plain values in, plain values out: no Hono Context.
+ * Kortix in Chrome services. Plain values in, plain values out: no Hono Context.
  * The routes (routes.ts) and the control socket (ws.ts) call these.
  */
 import {

@@ -1,5 +1,5 @@
 /**
- * Kortix for Chrome (apps/api/src/chrome): a person's own Chrome, connected to
+ * Kortix in Chrome (apps/api/src/chrome): a person's own Chrome, connected to
  * Kortix through the extension's control socket and driven from a session
  * sandbox. Maps to spec CHR-*. Protocol:
  * .agents/skills/kortix-chrome/references/protocol.md
@@ -30,7 +30,7 @@ async function oauthToken(
   redirectUri = 'http://127.0.0.1:33417/callback',
 ): Promise<string> {
   const reg = await ctx.client.as(ctx.P.ANON).post('/v1/oauth/register', {
-    client_name: 'Kortix for Chrome',
+    client_name: 'Kortix in Chrome',
     redirect_uris: [redirectUri],
     token_endpoint_auth_method: 'none',
     scope,

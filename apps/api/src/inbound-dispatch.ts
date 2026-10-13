@@ -95,7 +95,7 @@ export async function dispatchInbound(
     if (tunnelResult !== false) return tunnelResult;
   }
 
-  // ── Kortix for Chrome control socket ───────────────────────────────────
+  // ── Kortix in Chrome control socket ───────────────────────────────────
   // The extension connects, then authenticates with its first frame. The token
   // is never in the URL, and there is no Origin check: the token is the gate.
   if (isWsUpgrade && url.pathname === '/v1/chrome/ws') {

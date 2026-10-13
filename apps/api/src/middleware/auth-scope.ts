@@ -54,7 +54,7 @@ export function extractPreviewSandboxId(path: string): string | null {
 const SESSION_BOUND_PLATFORM_SINKS = new Set([
   '/v1/platform/runtime-projection',
   '/v1/platform/boot-timeline',
-  // Kortix for Chrome: the session asks for the owner's Chrome. The handler checks
+  // Kortix in Chrome: the session asks for the owner's Chrome. The handler checks
   // isSessionSandboxCredential and resolves the owner from the token.
   '/v1/chrome/attach',
   '/v1/chrome/release',
