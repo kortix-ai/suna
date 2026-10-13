@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "Implantar nos computadores",
-      "description": "A TI instala o Kortix Capture em muitos computadores com um token de registro. Cada computador se registra sozinho e começa a gravar. O Kortix o vincula ao membro com o e-mail usado para entrar no Windows; você pode vincular qualquer computador a uma pessoa depois.",
+      "description": "A TI instala o Kortix Capture em muitos computadores com um token de registro. Cada computador se registra sozinho e começa a gravar. O Kortix o vincula ao membro com o e-mail usado para entrar no computador; você pode vincular qualquer computador a uma pessoa depois.",
       "tokensTitle": "Tokens de registro",
       "tokensEmpty": "Ainda não há token de registro.",
       "guide": "Guia de configuração para TI",

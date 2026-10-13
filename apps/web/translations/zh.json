@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "部署到电脑",
-      "description": "IT 使用一个注册令牌在多台电脑上安装 Kortix Capture。每台电脑会自行注册并开始录制。Kortix 会把它关联到登录 Windows 所用邮箱对应的成员；你也可以稍后将任意电脑关联到某人。",
+      "description": "IT 使用一个注册令牌在多台电脑上安装 Kortix Capture。每台电脑会自行注册并开始录制。Kortix 会把它关联到登录该电脑所用邮箱对应的成员；你也可以稍后将任意电脑关联到某人。",
       "tokensTitle": "注册令牌",
       "tokensEmpty": "还没有注册令牌。",
       "guide": "IT 设置指南",

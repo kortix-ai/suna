@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "Distribuisci sui computer",
-      "description": "L’IT installa Kortix Capture su molti computer con un solo token di registrazione. Ogni computer si registra da solo e inizia a registrare. Kortix lo collega al membro con l’email con cui la persona accede a Windows; puoi collegare qualsiasi computer a una persona in seguito.",
+      "description": "L’IT installa Kortix Capture su molti computer con un solo token di registrazione. Ogni computer si registra da solo e inizia a registrare. Kortix lo collega al membro con l’email con cui la persona accede al computer; puoi collegare qualsiasi computer a una persona in seguito.",
       "tokensTitle": "Token di registrazione",
       "tokensEmpty": "Ancora nessun token di registrazione.",
       "guide": "Guida di configurazione per l’IT",

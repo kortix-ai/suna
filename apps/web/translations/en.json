@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "Roll out to computers",
-      "description": "IT installs Kortix Capture on many computers with one enrollment token. Each computer enrolls on its own and starts recording. Kortix links it to the member whose email the person signs in to Windows with; you can link any computer to a person later.",
+      "description": "IT installs Kortix Capture on many computers with one enrollment token. Each computer enrolls on its own and starts recording. Kortix links it to the member whose email the person signs in to the computer with; you can link any computer to a person later.",
       "tokensTitle": "Enrollment tokens",
       "tokensEmpty": "No enrollment token yet.",
       "guide": "IT setup guide",

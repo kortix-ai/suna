@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "Auf Computer ausrollen",
-      "description": "Die IT installiert Kortix Capture mit einem Registrierungstoken auf vielen Computern. Jeder Computer registriert sich selbst und beginnt mit der Aufnahme. Kortix ordnet ihn dem Mitglied zu, mit dessen E-Mail sich die Person bei Windows anmeldet; du kannst jeden Computer später einer Person zuordnen.",
+      "description": "Die IT installiert Kortix Capture mit einem Registrierungstoken auf vielen Computern. Jeder Computer registriert sich selbst und beginnt mit der Aufnahme. Kortix ordnet ihn dem Mitglied zu, mit dessen E-Mail sich die Person am Computer anmeldet; du kannst jeden Computer später einer Person zuordnen.",
       "tokensTitle": "Registrierungstokens",
       "tokensEmpty": "Noch kein Registrierungstoken.",
       "guide": "Einrichtungsanleitung für die IT",

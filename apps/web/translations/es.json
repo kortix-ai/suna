@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "Desplegar en equipos",
-      "description": "TI instala Kortix Capture en muchos equipos con un token de inscripción. Cada equipo se inscribe solo y empieza a grabar. Kortix lo vincula al miembro con el correo con el que la persona inicia sesión en Windows; puedes vincular cualquier equipo a una persona más tarde.",
+      "description": "TI instala Kortix Capture en muchos equipos con un token de inscripción. Cada equipo se inscribe solo y empieza a grabar. Kortix lo vincula al miembro con el correo con el que la persona inicia sesión en el equipo; puedes vincular cualquier equipo a una persona más tarde.",
       "tokensTitle": "Tokens de inscripción",
       "tokensEmpty": "Aún no hay ningún token de inscripción.",
       "guide": "Guía de configuración para TI",

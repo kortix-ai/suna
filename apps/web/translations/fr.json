@@ -20950,7 +20950,7 @@
     },
     "rollout": {
       "title": "Déployer sur les ordinateurs",
-      "description": "L’IT installe Kortix Capture sur de nombreux ordinateurs avec un seul jeton d’inscription. Chaque ordinateur s’inscrit seul et commence l’enregistrement. Kortix l’associe au membre dont l’e-mail sert à la session Windows ; vous pouvez associer tout ordinateur à une personne plus tard.",
+      "description": "L’IT installe Kortix Capture sur de nombreux ordinateurs avec un seul jeton d’inscription. Chaque ordinateur s’inscrit seul et commence l’enregistrement. Kortix l’associe au membre dont l’e-mail sert à ouvrir la session de l’ordinateur ; vous pouvez associer tout ordinateur à une personne plus tard.",
       "tokensTitle": "Jetons d’inscription",
       "tokensEmpty": "Aucun jeton d’inscription pour l’instant.",
       "guide": "Guide de configuration pour l’IT",
