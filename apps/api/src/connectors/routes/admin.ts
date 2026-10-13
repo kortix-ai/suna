@@ -283,7 +283,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         },
       },
       responses: {
-        200: json(OkSchema, 'Credential set'),
+        200: json(CrudOkSchema, 'Credential set, with the MCP re-sync it ran'),
         ...errors(400, 403, 404, 409, 501),
       },
     }),
@@ -320,8 +320,10 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       } catch (error) {
         return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
       }
+      // An MCP connector re-syncs on a credential write: return that run, so
+      // the caller sees whether the tools load with the new credential.
       return result.ok
-        ? c.json({ ok: true })
+        ? c.json({ ok: true, ...(result.sync ? { sync: result.sync } : {}) })
         : c.json({ error: result.error }, result.status as 400 | 404 | 409);
     },
   );

@@ -1045,15 +1045,47 @@ describe('api-router worker', () => {
       expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
     });
 
-    test('gateway with the key is forwarded and the key is stripped', async () => {
+    test('gateway with the key is forwarded with the key, which the API checks again', async () => {
       const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
       expect(response.status).toBe(200);
-      expect(seen).toEqual([null]);
+      expect(seen).toEqual(['edge-key-1']);
     });
+
+    // The API routes the decoded path, so an encoded or case-shifted prefix is gated too.
+    test.each(['/%69nternal/gateway/refresh-credential', '/%49NTERNAL/gateway/x', '/Internal/gateway/x'])(
+      '%s without the key gets 404',
+      async (path) => {
+        const { response, seen } = await call(path);
+        expect(response.status).toBe(404);
+        expect(seen).toEqual([]);
+      },
+    );
 
     test('non-internal paths and an unset key are unaffected', async () => {
       expect((await call('/v1/health')).response.status).toBe(200);
       expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
+  });
+
+  describe('security headers', () => {
+    const call = (body, contentType) => {
+      globalThis.fetch = async () => new Response(body, { status: 200, headers: { 'Content-Type': contentType } });
+      return worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    };
+
+    test('a JSON response cannot be framed and names a referrer policy', async () => {
+      const response = await call('{}', 'application/json');
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; frame-ancestors 'none'");
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    });
+
+    test('an HTML response (a framed sandbox preview) keeps its own framing headers', async () => {
+      const response = await call('<p>hi</p>', 'text/html');
+      expect(response.headers.get('X-Frame-Options')).toBeNull();
+      expect(response.headers.get('Content-Security-Policy')).toBeNull();
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
     });
   });
 });

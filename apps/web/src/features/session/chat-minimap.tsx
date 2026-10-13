@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import { useIsSidePanelOpen } from '@/stores/kortix-computer-store';
-import type { Turn } from '@/ui';
+import type { SessionLogTurn } from '@kortix/sdk';
 
 import { MENU_PANEL } from '@/components/ui/menu-recipe';
 import {
@@ -23,7 +23,7 @@ import {
 } from './chat-minimap-items';
 
 interface ChatMinimapProps {
-  turns: Turn[];
+  turns: SessionLogTurn[];
   scrollRef: React.RefObject<HTMLDivElement>;
   contentRef: React.RefObject<HTMLDivElement>;
 }
@@ -88,7 +88,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
   const items = useMemo<MinimapItem[]>(() => {
     const result: MinimapItem[] = [];
     for (const turn of turns) {
-      const id = turn.userMessage.info.id;
+      const id = turn.id;
       let item = itemCache.get(id);
       if (item === undefined) {
         item = extractMinimapItem(turn);

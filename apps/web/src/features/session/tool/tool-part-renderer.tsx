@@ -28,8 +28,7 @@ import {
   getChildSessionId,
   shouldShowToolPart,
 } from '@/ui';
-import { toolKind, type ToolCallBlock } from '@kortix/sdk';
-import { openCall } from '@/features/session/tool/shared/call-liveness';
+import { sessionLogCallStatus, sessionLogOpenCall, toolKind, type ToolCallBlock } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -95,9 +94,9 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
 
 interface ToolPartRendererProps {
   /**
-   * The session-log tool call. A caller that still holds a v1 part passes
-   * `toolCallBlock(part)` (the transcript until P5.2c). A closure-rule block is
-   * read open (`openCall`), so a dead call renders the same on v1 and v2.
+   * The session-log tool call. A caller that still holds a v1 part (a child
+   * session's rows) passes `toolCallBlock(part)`. A closure-rule block is read
+   * open (`sessionLogOpenCall`), so a dead call renders the same on v1 and v2.
    */
   call: ToolCallBlock;
   permission?: PermissionRequest;
@@ -121,9 +120,9 @@ function ToolPartRendererImpl({
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // One open block per call object (`openCall` caches it), so the memos below
-  // and the renderers' own memos hold while the call is unchanged.
-  const call = openCall(given);
+  // One open block per call object (`sessionLogOpenCall` caches it), so the memos
+  // below and the renderers' own memos hold while the call is unchanged.
+  const call = sessionLogOpenCall(given);
   const toolDurationMs = useMemo(() => {
     const s = call.started_at ? Date.parse(call.started_at) : undefined;
     const e = call.ended_at ? Date.parse(call.ended_at) : undefined;
@@ -225,7 +224,9 @@ function ToolPartRendererImpl({
   // the frozen-looking row under a status line that was still saying
   // "Making changes...".
   const isStalePending =
-    !turnLive && call.status === 'pending' && Object.keys(partStreamingInput(call)).length === 0;
+    sessionLogCallStatus(call, turnLive) === 'interrupted' &&
+    call.status === 'pending' &&
+    Object.keys(partStreamingInput(call)).length === 0;
 
   const isRunning = !isStalePending && (call.status === 'running' || call.status === 'pending');
 

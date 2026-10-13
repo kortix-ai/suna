@@ -8,13 +8,12 @@ import type {
   Agent,
   Command,
   FlatModel,
-  MessageWithParts,
   ProviderListResponse,
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
-import { SESSION_NOTICE } from '@kortix/sdk';
+import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
 import { newPastedContentId, type PastedContent, splitPastedContent } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
@@ -225,7 +224,7 @@ export interface SessionChatInputProps {
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
-  messages?: MessageWithParts[];
+  messages?: SessionLogMessage[];
   sessionId?: string;
   projectId?: string;
   /**
@@ -383,8 +382,9 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
-  /** A question is docked above the card: the strip goes full width and
-   *  the card squares its top corners, so both read as one surface. */
+  /** A question or a pending approval is docked above the card: the strip
+   *  goes full width and the card squares its top corners, so both read as
+   *  one surface. */
   questionActive?: boolean;
   /**
    * A labeled submit button replaces the icon send/stop control, busy or
