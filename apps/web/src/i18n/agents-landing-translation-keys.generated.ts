@@ -398,4 +398,10 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'See the service': 'text8557980ba384',
   'About us': 'textb4b580a9ad8c',
   'Customer stories': 'text8d0aa6d95144',
+  'Runs the SEO program week after week.': 'text35a70a362888',
+  'Cost center': 'text0d62bd94d462',
+  '9 receipts chased and attached · 1 center over plan': 'text2a562d07f5cc',
+  'Turns what customers say into what ships.': 'text2e3a52a96ca0',
+  'improves the agents and memory on a cron': 'textf89e1e7e5c4d',
+  'reviews one session for the reflector': 'text2e9fa468e92b',
 };

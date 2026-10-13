@@ -48,7 +48,7 @@ export default function ProductPage(): ReactNode {
                 <div className={cn('flex min-w-0 flex-col gap-8', i % 2 === 1 && 'lg:order-2')}>
                   <SectionHeader eyebrow={part.eyebrow} title={part.title} description={part.sub} />
                   <Reveal delay={0.06}>
-                    <RowList rows={part.points} />
+                    <RowList rows={part.points.map((p) => ({ id: p.id, k: p.label, v: p.body }))} />
                   </Reveal>
                 </div>
                 <Reveal delay={0.08} className="min-w-0 lg:sticky lg:top-24">

@@ -71,7 +71,7 @@ export default function ServicesPage(): ReactNode {
 
       {/* ── the offer ─────────────────────────────────────────────────────── */}
       <section id="team" className={cn(SECTION, 'scroll-mt-20')}>
-        <SectionHeader eyebrow={offer.eyebrow} title={offer.title} description={offer.note} />
+        <SectionHeader eyebrow={offer.eyebrow} title={offer.title} description={offer.description} />
         <div className="mt-10 grid gap-4 md:grid-cols-2">
           {offer.roles.map((r, i) => (
             <Reveal key={r.id} delay={0.04 * i}>

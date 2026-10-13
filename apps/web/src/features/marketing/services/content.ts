@@ -38,7 +38,7 @@ export const offer = {
   title: 'Two people, full time on your company.',
   price: '$20k',
   per: 'per month',
-  note: 'Built on Kortix. Everything we build lives in a repo you own.',
+  description: 'Built on Kortix. Everything we build lives in a repo you own.',
   fullTime: { label: 'Full time' },
   roles: [
     {
