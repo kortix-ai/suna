@@ -6,7 +6,6 @@ import {
   configFilePath,
   envTokenHost,
   getHost,
-  removeHost,
   upsertHost,
 } from './config.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
@@ -112,11 +111,14 @@ export function saveAuthForHost(name: string, auth: Auth, makeActive: boolean): 
   upsertHost(name, authToHost(auth, getHost(name)), makeActive);
 }
 
-/** Remove the active host (or a named one). Returns true if anything was removed. */
+/** Clear only the stored token, keeping the host registration for re-login. */
 export function clearAuth(name?: string): boolean {
   const target = name ?? activeHostName();
   if (!target) return false;
-  return removeHost(target).removed;
+  const host = getHost(target);
+  if (!host?.token) return false;
+  upsertHost(target, { ...host, token: '' });
+  return true;
 }
 
 /** Display path of the config file backing this CLI's auth state. */

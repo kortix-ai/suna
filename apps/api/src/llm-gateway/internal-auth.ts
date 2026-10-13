@@ -18,10 +18,12 @@ export function matchesInternalToken(
   if (!provided) return false;
 
   const providedBuf = Buffer.from(provided);
+  // A short token is brute-forceable: it never matches (weakInternalTokenWarnings
+  // logs why at boot).
   const accepted = tokensCsv
     .split(',')
     .map((t) => t.trim())
-    .filter(Boolean);
+    .filter((t) => t.length >= MIN_INTERNAL_TOKEN_LENGTH);
 
   let ok = false;
   for (const token of accepted) {
@@ -37,14 +39,10 @@ export function matchesInternalToken(
 }
 
 /**
- * Cheap defense-in-depth for the API↔standalone-gateway-pod control plane,
- * which is otherwise a single shared static bearer token (see
- * RELIABILITY-BACKLOG.md item 7b — full mutual auth (mTLS/HMAC) is an
- * infra-level change, tracked there). This does not reject a weak token —
- * only a real mTLS/HMAC upgrade should ever do that, and this repo has no
- * mechanism to safely block a running deployment from serving traffic — it
- * just surfaces a loud, cheap boot-time signal so a short
- * `GATEWAY_INTERNAL_TOKEN` entry doesn't sit unnoticed in a production config.
+ * Boot-time reasons a configured `GATEWAY_INTERNAL_TOKEN` entry is refused.
+ * The API↔standalone-gateway control plane is a shared static bearer token
+ * (plus the edge key where set), so an entry under 24 chars never matches —
+ * this names it in the log instead of failing silently with 401s.
  */
 export function weakInternalTokenWarnings(tokensCsv: string | undefined): string[] {
   if (!tokensCsv) return [];
@@ -57,7 +55,7 @@ export function weakInternalTokenWarnings(tokensCsv: string | undefined): string
   for (const token of tokens) {
     if (token.length < MIN_INTERNAL_TOKEN_LENGTH) {
       warnings.push(
-        `GATEWAY_INTERNAL_TOKEN entry is only ${token.length} chars (want >= ${MIN_INTERNAL_TOKEN_LENGTH}) — a short static bearer token is brute-forceable.`,
+        `GATEWAY_INTERNAL_TOKEN entry is only ${token.length} chars (want >= ${MIN_INTERNAL_TOKEN_LENGTH}) — it is refused: a short static bearer token is brute-forceable.`,
       );
     }
   }
