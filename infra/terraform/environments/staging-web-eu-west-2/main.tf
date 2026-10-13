@@ -116,11 +116,12 @@ module "web" {
   alb_ingress_cidrs      = local.cloudflare_ip_ranges
   enable_postgres_egress = false
 
-  task_cpu         = 512
-  task_memory      = 1024
-  desired_count    = 1
-  min_capacity     = 1
-  max_capacity     = 4
+  # Prod's web sizing (prod-web/main.tf).
+  task_cpu         = 1024
+  task_memory      = 2048
+  desired_count    = 2
+  min_capacity     = 2
+  max_capacity     = 12
   use_fargate_spot = false
   tags             = local.tags
 }

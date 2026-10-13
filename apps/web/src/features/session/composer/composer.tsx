@@ -382,8 +382,9 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
-  /** A question is docked above the card: the strip goes full width and
-   *  the card squares its top corners, so both read as one surface. */
+  /** A question or a pending approval is docked above the card: the strip
+   *  goes full width and the card squares its top corners, so both read as
+   *  one surface. */
   questionActive?: boolean;
   /**
    * A labeled submit button replaces the icon send/stop control, busy or

@@ -556,6 +556,23 @@ mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 export KORTIX_SUPERVISED=1
 export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
 
+# ONE SUPERVISOR PER BOX. Platinum's pt-init launches this script once, but a
+# relaunch from outside (the control plane's runtime repair, an operator) starts
+# another. Prod 2026-10-13: four repairs raced, four supervisors started at once,
+# three daemons lost the :8000 bind, and their fast exits counted as a bad update
+# here: the box rolled back and pinned updates off. A second supervisor now
+# waits for the first one's lock (a relaunch that just killed it gets it within
+# seconds) and otherwise exits without launching anything. fd 9 is closed for
+# the daemon, so the lock dies with this loop and never with a stray child.
+# E2B wraps this script in `flock -n /run/kortix-entrypoint.lock` already; this
+# lock is a separate file so the two never contend.
+if command -v flock >/dev/null 2>&1 && exec 9>"${AGENT_STATE_DIR}/supervisor.lock"; then
+  if ! flock -w "${KORTIX_SUPERVISOR_LOCK_WAIT_S:-30}" 9; then
+    echo "[entrypoint] another supervisor owns this box; exiting without launching a daemon" >&2
+    exit 0
+  fi
+fi
+
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2
 while :; do
   # A staged binary from the previous run is installed before launch, never
@@ -565,7 +582,7 @@ while :; do
   agent_bin="$(select_agent)"
   started=$(date +%s)
   set +e
-  "${agent_bin}" "$@"
+  "${agent_bin}" "$@" 9>&-
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))

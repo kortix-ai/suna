@@ -324,3 +324,20 @@ resource "aws_flow_log" "euw2_staging" {
   vpc_id               = data.aws_vpc.euw2_staging.id
   tags                 = local.tags
 }
+
+# Drata test 233 (CIS 5.4): the default security group allows no traffic.
+# Nothing attaches it; every ECS service carries its own group.
+resource "aws_default_security_group" "euw2_staging" {
+  provider = aws.euw2
+  vpc_id   = data.aws_vpc.euw2_staging.id
+
+  ingress = []
+  egress  = []
+
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-staging-euw2-default"
+  }
+}
