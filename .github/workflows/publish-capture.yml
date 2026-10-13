@@ -50,18 +50,17 @@ jobs:
           [[ "$TAG" =~ ^v[0-9][0-9A-Za-z.+-]*$ ]] || { echo "::error::tag must look like v0.39"; exit 1; }
           mkdir installers && cd installers
           GH_TOKEN="$CAPTURE_RELEASES_TOKEN" gh release download "$TAG" --repo kortix-ai/capture \
-            --pattern 'KortixCapture-*-x64.msi' --pattern 'KortixCapture-*-universal.pkg' --pattern 'KortixCapture-*-universal.dmg' --pattern 'kortix-capture_*_amd64.deb'
-          for want in 'KortixCapture-*-x64.msi' 'KortixCapture-*-universal.pkg' 'KortixCapture-*-universal.dmg' 'kortix-capture_*_amd64.deb'; do
+            --pattern 'KortixCapture-*-x64.msi' --pattern 'KortixCapture-*-universal.pkg' --pattern 'kortix-capture_*_amd64.deb'
+          for want in 'KortixCapture-*-x64.msi' 'KortixCapture-*-universal.pkg' 'kortix-capture_*_amd64.deb'; do
             compgen -G "$want" > /dev/null || { echo "::error::kortix-ai/capture $TAG has no $want"; exit 1; }
           done
           # Stable names for the copy-paste install commands (Devices → Roll out, docs).
           cp KortixCapture-*-x64.msi KortixCapture-x64.msi
           cp KortixCapture-*-universal.pkg KortixCapture-universal.pkg
-          cp KortixCapture-*-universal.dmg KortixCapture-universal.dmg
           cp kortix-capture_*_amd64.deb kortix-capture_amd64.deb
           sha256sum ./* > SHA256SUMS
           release="capture-$TAG"
-          notes="Kortix Capture $TAG: Windows (.msi), macOS (.dmg; .pkg for IT) and Linux (.deb). Install guide: https://kortix.com/docs/capture#install-kortix-capture"
+          notes="Kortix Capture $TAG: Windows (.msi), macOS (.pkg) and Linux (.deb). Install guide: https://kortix.com/docs/capture#install-kortix-capture"
           if gh release view "$release" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$release" ./* --clobber --repo "$GITHUB_REPOSITORY"
           else

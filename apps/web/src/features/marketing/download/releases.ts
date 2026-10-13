@@ -52,11 +52,10 @@ export function pickDesktopAsset(assets: ReleaseAsset[], os: DesktopOs): Release
 /**
  * Kortix Capture, the separate recorder app, ships in its own `capture-v*`
  * Releases (the publish-capture workflow): `KortixCapture-<v>-x64.msi`,
- * `KortixCapture-<v>-universal.dmg` (a person's Mac; the .pkg is IT's),
- * `kortix-capture_<v>_amd64.deb`.
+ * `KortixCapture-<v>-universal.pkg`, `kortix-capture_<v>_amd64.deb`.
  */
 export function pickCaptureAsset(assets: ReleaseAsset[], os: DesktopOs): ReleaseAsset | undefined {
-  const pattern = { windows: /^kortixcapture.*\.msi$/, macos: /^kortixcapture.*\.dmg$/, linux: /^kortix-capture.*\.deb$/ }[os];
+  const pattern = { windows: /^kortixcapture.*\.msi$/, macos: /^kortixcapture.*\.pkg$/, linux: /^kortix-capture.*\.deb$/ }[os];
   return pattern ? assets.find((a) => pattern.test(a.name.toLowerCase())) : undefined;
 }
 
