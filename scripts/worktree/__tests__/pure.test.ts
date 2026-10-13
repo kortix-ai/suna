@@ -17,6 +17,7 @@ import {
   webLaunchEnv,
   type Ports,
   type Registry,
+  branchDbName, withDatabase,
 } from '../lib';
 
 describe('computePorts', () => {
@@ -212,5 +213,16 @@ describe('launch envs', () => {
       expect(typeof computePorts(slot).gateway).toBe('number');
       expect(gatewayLaunchEnv(computePorts(slot)).PORT).toMatch(/^\d+$/);
     }
+  });
+});
+
+describe('branch database names', () => {
+  test('kortix_wt_ prefix, dashes become underscores, fits a Postgres identifier', () => {
+    expect(branchDbName('session-log-p6')).toBe('kortix_wt_session_log_p6');
+    expect(branchDbName(sanitizeName('x'.repeat(80))).length).toBeLessThanOrEqual(63);
+  });
+  test('withDatabase swaps only the database of an admin URL', () => {
+    expect(withDatabase('postgresql://postgres:postgres@127.0.0.1:54322/postgres', 'kortix_wt_a'))
+      .toBe('postgresql://postgres:postgres@127.0.0.1:54322/kortix_wt_a');
   });
 });

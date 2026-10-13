@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { OpenAI } from '@/features/icon/icons/open-ai';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -30,6 +31,16 @@ import { PlugsConnectedIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 const CONNECTED_APPS_KEY = ['oauth-grants'];
+
+/** A third-party logo tile: white in both themes, black mark, no border
+ *  (the same rule as the Kortix logo tile). */
+const OPENAI_TILE = 'bg-white text-black';
+
+/** ChatGPT signs in through OpenAI: match on the app name or a redirect host. */
+export function isOpenAiApp(grant: Pick<OAuthGrant, 'name' | 'redirect_hosts'>): boolean {
+  const pattern = /(chatgpt|openai)/i;
+  return pattern.test(grant.name) || grant.redirect_hosts.some((host) => pattern.test(host));
+}
 
 export interface ConnectedAppMetaCopy {
   lastActive: (time: string) => string;
@@ -70,7 +81,7 @@ export function ConnectedApps({ relativeTime }: { relativeTime: (iso: string) =>
 
   return (
     <section className="space-y-3 pt-4">
-      <SettingsSectionHeader title={t('title')} description={t('description')} />
+      <SettingsSectionHeader title={t('title')} />
       {grantsQuery.isLoading ? (
         <Skeleton className="h-14 rounded-md" />
       ) : grantsQuery.isError ? (
@@ -91,7 +102,17 @@ export function ConnectedApps({ relativeTime }: { relativeTime: (iso: string) =>
           {grants.map((grant) => (
             <AccessRow
               key={grant.client_id}
-              leading={<EntityAvatar icon={PlugsConnectedIcon} label={grant.name} size="sm" />}
+              leading={
+                isOpenAiApp(grant) ? (
+                  <span
+                    className={`flex size-8 shrink-0 items-center justify-center rounded-md ${OPENAI_TILE}`}
+                  >
+                    <OpenAI className="size-5" />
+                  </span>
+                ) : (
+                  <EntityAvatar icon={PlugsConnectedIcon} label={grant.name} size="sm" />
+                )
+              }
               title={grant.name}
               badges={
                 grant.self_registered ? (

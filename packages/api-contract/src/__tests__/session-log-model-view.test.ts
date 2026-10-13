@@ -530,4 +530,13 @@ describe('request normalizers', () => {
     const wrong: ModelView = [noChannel[0], { role: 'tool', call_id: 'other', content: 'x', is_error: false }];
     expect(compareViews(expected, wrong).pass).toBe(false);
   });
+
+  test('tool input key order does not count (jsonb reorders keys, v1 `same`); values and array order do', () => {
+    const call = (input: unknown): ModelView => [{ role: 'assistant', text: [], calls: [{ id: 'a', name: 'write', input }] }];
+    const stored = call({ path: 'a.txt', content: 'x', opts: { mode: 1, flags: [{ b: 2, a: 1 }, 'z'] } });
+    const sent = call({ content: 'x', opts: { flags: [{ a: 1, b: 2 }, 'z'], mode: 1 }, path: 'a.txt' });
+    expect(compareViews(stored, sent).pass).toBe(true);
+    expect(compareViews(stored, call({ content: 'y', opts: { flags: [{ a: 1, b: 2 }, 'z'], mode: 1 }, path: 'a.txt' })).pass).toBe(false);
+    expect(compareViews(stored, call({ content: 'x', opts: { flags: ['z', { a: 1, b: 2 }], mode: 1 }, path: 'a.txt' })).pass).toBe(false);
+  });
 });

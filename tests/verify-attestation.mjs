@@ -7,7 +7,8 @@
 // two branches that delete it merge clean.
 //
 //   node tests/verify-attestation.mjs verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict]
-//   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db> ...
+//   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db|skipped-unaffected> ...
+//   node tests/verify-attestation.mjs status   # {files, lanes} for the diff-scoped runner
 //
 // verify reads the attestation the PR itself added or edited under
 // tests/attestations/ (`git diff origin/dev...rev`). With none, it reads
@@ -21,17 +22,20 @@
 // changed is edited after the run. On dev (no diverging merge-base) it falls
 // back to source_hash: sha256 over every file the commit would contain. Both
 // are recomputed from `--rev`, so committing the attestation never changes them.
+// A write hashes the working tree (uncommitted edits included), so committing
+// exactly what was tested afterwards keeps the attestation fresh.
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). Only one skip exists: db-suites
-// "skipped-no-db"; it is not a pass.
+// suites), browser (only when run). Two skips exist, both for db-suites and
+// neither a pass: "skipped-no-db" (no Docker) and "skipped-unaffected" (the
+// diff-scoped run found no change the flows or DB suites read).
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
 // attestation with a skipped lane exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,23 +63,29 @@ function currentBranch() {
   }
 }
 
-/** Hash the tree of `rev`, or of the working tree (staged + unstaged + untracked, not ignored). */
+/** The tree of the working tree (staged + unstaged + untracked, not ignored), via a scratch index. */
+function workingTree() {
+  const tmp = mkdtempSync(join(tmpdir(), 'attest-index-'));
+  const index = join(tmp, 'index');
+  try {
+    const real = resolve(root, git(['rev-parse', '--git-path', 'index']).toString().trim());
+    copyFileSync(real, index);
+    // Keep the index mtime: git re-hashes an entry whose file is not older than
+    // the index (its racy-entry check). A fresh copy mtime would let `add -A`
+    // trust the stat of a same-size edit made in the second of the last write.
+    const { atime, mtime } = statSync(real);
+    utimesSync(index, atime, mtime);
+  } catch {} // no index yet: `add -A` builds one
+  const env = { GIT_INDEX_FILE: index };
+  git(['add', '-A'], env);
+  const tree = git(['write-tree'], env).toString().trim();
+  rmSync(tmp, { recursive: true, force: true });
+  return tree;
+}
+
+/** Hash the tree of `rev`, or of the working tree. */
 export function sourceHash(rev) {
-  let tree;
-  let tmp;
-  if (rev) {
-    tree = rev;
-  } else {
-    tmp = mkdtempSync(join(tmpdir(), 'attest-index-'));
-    const index = join(tmp, 'index');
-    try {
-      copyFileSync(resolve(root, git(['rev-parse', '--git-path', 'index']).toString().trim()), index);
-    } catch {} // no index yet: `add -A` builds one
-    const env = { GIT_INDEX_FILE: index };
-    git(['add', '-A'], env);
-    tree = git(['write-tree'], env).toString().trim();
-    rmSync(tmp, { recursive: true, force: true });
-  }
+  const tree = rev ?? workingTree();
   const entries = git(['ls-tree', '-r', '-z', tree]).toString().split('\0').filter(Boolean);
   const lines = entries
     .map((e) => {
@@ -91,11 +101,13 @@ export function sourceHash(rev) {
 const sha = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex');
 
 /**
- * The files the PR itself changed: `git diff <merge-base origin/dev>...<rev>`.
+ * The files the PR itself changed: `git diff <merge-base origin/dev>...<rev>`,
+ * or against the working tree when `rev` is omitted.
  * Returns { files: sorted paths, lines: { path -> "<mode> <blob> <path>" }, hash,
  * attestations: the files the PR added or edited under tests/attestations/ },
- * or null when there is no diverging merge-base (on/behind dev, or origin/dev
- * unavailable) — the caller then falls back to the full-tree source_hash.
+ * or null when there is no diverging merge-base (on/behind dev with nothing
+ * uncommitted, or origin/dev unavailable) — the caller then falls back to the
+ * full-tree source_hash.
  */
 export function changedFiles(rev) {
   try {
@@ -109,8 +121,9 @@ export function changedFiles(rev) {
   } catch {
     return null; // no origin/dev (unrelated histories) → full-tree fallback
   }
-  if (!base || base === head) return null; // on or behind dev → full-tree fallback
-  const tokens = git(['diff', '--raw', '-z', '--no-renames', '--no-abbrev', base, head])
+  if (!base || (rev && base === head)) return null; // on or behind dev → full-tree fallback
+  const target = rev ? head : workingTree();
+  const tokens = git(['diff', '--raw', '-z', '--no-renames', '--no-abbrev', base, target])
     .toString()
     .split('\0')
     .filter(Boolean);
@@ -122,6 +135,7 @@ export function changedFiles(rev) {
     if (!isAttestation(path)) entries.push({ path, line: `${mode} ${blob} ${path}` });
     else if (path.startsWith(`${DIR}/`) && status !== 'D') attestations.push(path);
   }
+  if (base === head && entries.length === 0) return null; // a clean checkout of dev
   entries.sort((a, b) => (a.path < b.path ? -1 : 1));
   const lines = Object.fromEntries(entries.map((e) => [e.path, e.line]));
   return { files: entries.map((e) => e.path), lines, hash: sha(entries.map((e) => e.line)), attestations };
@@ -154,11 +168,12 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  // The only allowed skip: db-suites without Postgres (no Docker). `packages`
-  // has no skip: a factory sandbox runs it like any laptop. Mirrors the
-  // company merge gate's G11 rule.
-  const SKIPS = { 'db-suites': 'skipped-no-db' };
-  const ok = (l) => lanes[l] === 'pass' || (l in SKIPS && lanes[l] === SKIPS[l]);
+  // The only allowed skips: db-suites without Postgres (no Docker), and
+  // db-suites on a diff that cannot affect it. `packages` has no skip: a
+  // factory sandbox runs it like any laptop. Mirrors the company merge gate's G11 rule.
+  const SKIPS = { 'db-suites': ['skipped-no-db', 'skipped-unaffected'] };
+  const isSkip = (l) => SKIPS[l]?.includes(lanes[l]) ?? false;
+  const ok = (l) => lanes[l] === 'pass' || isSkip(l);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
   // A diff that changes the schema package must have run the DB suites. The
@@ -167,9 +182,9 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (touchesDb && lanes['db-suites'] !== 'pass') {
     return { code: 1, reason: 'db-suites must pass: this diff changes packages/db and skipped-no-db is not accepted' };
   }
-  const skipped = Object.keys(SKIPS).filter((l) => lanes[l] === SKIPS[l]);
+  const skipped = Object.keys(SKIPS).filter(isSkip);
   if (skipped.length) {
-    return { code: strict ? 3 : 0, reason: `green, skipped: ${skipped.map((l) => `${l} ${SKIPS[l]}`).join(', ')}` };
+    return { code: strict ? 3 : 0, reason: `green, skipped: ${skipped.map((l) => `${l} ${lanes[l]}`).join(', ')}` };
   }
   return { code: 0, reason: 'green' };
 }
@@ -195,18 +210,31 @@ export function locate(rev, branch, changed) {
   return (mine && read(mine, rev)) ?? read(LEGACY, rev);
 }
 
+const ownPath = () =>
+  attestationPath(currentBranch() ?? `detached-${git(['rev-parse', '--short', 'HEAD']).toString().trim()}`);
+
+/**
+ * This branch's attestation, when it tested exactly `current`: fresh, and no
+ * file joined the diff since (verify tolerates one; reusing a lane must not).
+ */
+function freshPrior(path, current) {
+  const prior = read(path);
+  if (!prior || !isFresh(prior, current)) return null;
+  const sameFiles = !current.changed || prior.diff_files?.length === current.changed.files.length;
+  return sameFiles ? prior : null;
+}
+
 /**
  * Record lane results for the current source in this branch's file, and delete
- * every other attestation file. Lanes of the same source_hash accumulate.
+ * every other attestation file. Lanes accumulate while the attestation stays
+ * fresh: the same PR diff (an unrelated dev merge keeps it), else the same tree.
  */
 export function write(results) {
   const source_hash = sourceHash();
   const diff = changedFiles();
-  const path = attestationPath(
-    currentBranch() ?? `detached-${git(['rev-parse', '--short', 'HEAD']).toString().trim()}`,
-  );
-  const prior = read(path);
-  const lanes = prior?.source_hash === source_hash ? { ...prior.lanes, ...results } : { ...results };
+  const path = ownPath();
+  const prior = freshPrior(path, { sourceHash: source_hash, changed: diff });
+  const lanes = prior ? { ...prior.lanes, ...results } : { ...results };
   const attestation = {
     source_hash,
     ...(diff ? { diff_files: diff.files, diff_hash: diff.hash } : {}),
@@ -236,6 +264,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const results = Object.fromEntries(args.map((a) => a.split('=')));
     const { path, attestation } = write(results);
     console.log(`[attest] wrote ${path}: ${JSON.stringify(attestation.lanes)}`);
+  } else if (cmd === 'status') {
+    // The diff-scoped runner's input: the working tree's PR diff (null on dev)
+    // and the lanes this branch's attestation still holds for it.
+    const changed = changedFiles();
+    const prior = freshPrior(ownPath(), { sourceHash: sourceHash(), changed });
+    console.log(JSON.stringify({ files: changed?.files ?? null, lanes: prior?.lanes ?? {} }));
   } else if (cmd === 'verify') {
     const rev = flag('--rev');
     const required = flag('--require')?.split(',') ?? REQUIRED_LANES;
@@ -246,7 +280,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(code);
   } else {
     console.error(
-      'usage: verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict] | write <lane>=<result>...',
+      'usage: verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict] | write <lane>=<result>... | status',
     );
     process.exit(2);
   }

@@ -511,8 +511,9 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(dbCard.getByTestId('app-instance-tile')).toHaveCount(0);
       await dbCard.click();
       const dbModal = page.getByRole('dialog', { name: 'Seed DB App' });
-      // Used by: the slug opens the App that uses it.
-      await expect(dbModal.getByRole('button', { name: seeded.slug, exact: true })).toBeVisible();
+      // The header shows the App, not its wiring: no Uses / Used by links, even with `used_by` set.
+      await expect(dbModal.getByRole('button', { name: 'More actions' })).toBeVisible();
+      await expect(dbModal.getByRole('button', { name: seeded.slug, exact: true })).toHaveCount(0);
       await dbModal.getByRole('button', { name: 'More actions' }).click();
       await expect(page.getByRole('menuitem', { name: /^Connect…/ })).toBeVisible();
       for (const retired of ['Backups…', 'Rotate admin key', 'Resize…']) {

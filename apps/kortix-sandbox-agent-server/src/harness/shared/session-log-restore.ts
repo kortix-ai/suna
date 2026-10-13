@@ -17,7 +17,7 @@
  * The boot decides what a truncated text means for the session (P6.4).
  */
 import { createHash } from 'node:crypto'
-import type { SessionLog, SessionLogRestore } from '@kortix/api-contract/session-log'
+import type { CompactionBlock, SessionLog, SessionLogMessage, SessionLogRestore, SessionLogThread } from '@kortix/api-contract/session-log'
 import type { SandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { logger } from '@/lib/log/logger'
 
@@ -63,8 +63,8 @@ export async function sessionLogFromRestore(answer: SessionLogRestore, readText:
 
 const READ_ATTEMPTS = 3
 
-/** Reads a stored text of this session through the attachments route; null when it is missing, foreign or unreadable after 3 attempts of `attemptMs` each. */
-export function apiTextReader(ctx: SandboxRelayContext, { attemptMs = 15_000, retryMs = 200 } = {}): TextReader {
+/** Reads a stored object of this session through the attachments route; null when it is missing, foreign or unreadable after 3 attempts of `attemptMs` each. */
+export function apiBytesReader(ctx: SandboxRelayContext, { attemptMs = 15_000, retryMs = 200 } = {}): BytesReader {
   const own = `kortix-attachment://${ctx.projectId}/${ctx.sessionId}/`
   return async (ref, budget) => {
     if (!ref.startsWith(own) || ref.slice(own.length).includes('/')) return null
@@ -73,7 +73,7 @@ export function apiTextReader(ctx: SandboxRelayContext, { attemptMs = 15_000, re
       try {
         const attempt = AbortSignal.timeout(attemptMs)
         const response = await fetch(url, { headers: { Authorization: `Bearer ${ctx.token}` }, signal: budget ? AbortSignal.any([attempt, budget]) : attempt })
-        if (response.ok) return await response.text()
+        if (response.ok) return Buffer.from(await response.arrayBuffer())
         // A 4xx other than 408/429 does not change on a retry.
         if (response.status < 500 && response.status !== 408 && response.status !== 429) return null
       } catch {
@@ -83,4 +83,53 @@ export function apiTextReader(ctx: SandboxRelayContext, { attemptMs = 15_000, re
       await Bun.sleep(retryMs * n)
     }
   }
+}
+
+/** Reads a stored text of this session through the attachments route (`apiBytesReader`, as UTF-8). */
+export function apiTextReader(ctx: SandboxRelayContext, options: { attemptMs?: number; retryMs?: number } = {}): TextReader {
+  const read = apiBytesReader(ctx, options)
+  return async (ref, budget) => (await read(ref, budget))?.toString('utf8') ?? null
+}
+
+export type BytesReader = (ref: string, signal?: AbortSignal) => Promise<Buffer | null>
+
+/**
+ * The bytes of every attachment the log names (blocks and tool results), by `ref`, checked
+ * against `sha256` (or the digest a `blob:` ref names). Null when `read` has no bytes for it,
+ * they do not match, or the reads ran past their budget (60 s for all of them, separate from
+ * the texts' budget). An adapter's restore writes what it gets and counts the rest.
+ */
+export async function attachmentBytes(log: SessionLog, read: BytesReader | undefined, { budgetMs = 60_000 } = {}): Promise<Map<string, Buffer | null>> {
+  const budget = AbortSignal.timeout(budgetMs)
+  const refs = new Map<string, string | undefined>()
+  for (const m of log.threads.flatMap((t) => t.messages)) {
+    for (const b of m.blocks) {
+      if (b.type === 'attachment' && b.ref) refs.set(b.ref, b.sha256)
+      if (b.type === 'tool_call') for (const c of [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])]) if (c.type === 'attachment' && c.ref) refs.set(c.ref, c.sha256)
+    }
+  }
+  const out = new Map<string, Buffer | null>()
+  for (const [ref, digest] of refs) {
+    const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
+    const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
+    out.set(ref, bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null)
+  }
+  return out
+}
+
+/**
+ * The messages of a thread that modelView shows next: in context, and not summarized away by
+ * its last compaction. A restore counts a loss in `dropped` only inside one of these.
+ */
+export function visibleMessageIds(thread: SessionLogThread): Set<string> {
+  const msgs = [...thread.messages].sort((a, b) => a.seq - b.seq)
+  const c = msgs.findLastIndex((m) => m.kind === 'compaction' && m.in_context)
+  const block = msgs[c]?.blocks.find((b): b is CompactionBlock => b.type === 'compaction')
+  const turn = (m: SessionLogMessage) => m.in_context && m.kind === 'turn'
+  if (!block) return new Set(msgs.filter(turn).map((m) => m.message_id))
+  const k = block.first_kept_message_id ? msgs.findIndex((m) => m.message_id === block.first_kept_message_id) : -1
+  const kept = block.layout
+    ? block.layout.flatMap((e) => ('message_id' in e ? [e.message_id] : []))
+    : k < 0 ? [] : msgs.slice(k, c).filter(turn).map((m) => m.message_id)
+  return new Set([...kept, ...msgs.slice(c + 1).filter(turn).map((m) => m.message_id)])
 }

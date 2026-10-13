@@ -34,6 +34,13 @@ export interface KortixPlatformConfig {
    * asks for a fresh token instead of re-sending the dead one.
    */
   getToken: (() => Promise<string | null>) & { invalidate?: (rejectedToken: string) => void };
+  /**
+   * Send the token from `getToken` raw in this header instead of
+   * `Authorization: Bearer`. For a backend proxy that reads the credential from
+   * a custom header (for example `x-app-reader-token`). `Authorization` stays
+   * unset; the 401 replay still asks `getToken()` for a fresh token.
+   */
+  credentialHeader?: string;
   /** Optional fetch implementation for tests, edge runtimes, and compatibility adapters.
    *  Any fetch-shaped function is accepted (the global `fetch` type also carries
    *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */

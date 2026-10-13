@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Ports } from './ports';
 
-export type DbMode = 'shared' | 'isolated';
+export type DbMode = 'shared' | 'branch' | 'isolated';
 
 export const KORTIX_HOME = process.env.KORTIX_HOME || join(homedir(), '.kortix');
 export const WT_HOME = join(KORTIX_HOME, 'worktrees');
@@ -21,6 +21,8 @@ export interface SlotEntry {
   ports: Ports;
   /**
    * shared: use the primary checkout's standard local Supabase project.
+   * branch: own database `kortix_wt_<name>` inside the primary Supabase
+   *   (`lib/branch-db.ts`); auth, storage and studio stay shared.
    * isolated: provision this worktree's own Supabase project/containers/volumes.
    *
    * Optional for backward compatibility with registry entries created before

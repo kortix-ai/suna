@@ -30,7 +30,7 @@ mock.module('../sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.test',
 }));
 
-type Reply = { status: number; state: string } | 'timeout';
+type Reply = { status: number; state: string; code?: string } | 'timeout';
 let starts: Reply[] = [];
 let gets: Reply[] = [];
 let events: string[] = [];
@@ -57,7 +57,7 @@ beforeEach(() => {
       throw error;
     }
     events.push(post ? `POST ${reply.status}` : `GET ${reply.state}`);
-    return new Response(JSON.stringify({ id: 'sbx_1', state: reply.state }), {
+    return new Response(JSON.stringify({ id: 'sbx_1', state: reply.state, code: reply.code }), {
       status: reply.status,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -189,6 +189,47 @@ test('a restore that outlasts the budget fails the start outright', async () => 
   // Not "ambiguous": the wake fails now instead of polling a box that cannot
   // boot on this call, and the next wake finds it restored.
   expect(isAmbiguousRuntimeStartError(error)).toBe(false);
+}, 15_000);
+
+// Prod 2026-10-13: a box that had to move hosts sat in `starting` past the
+// 30 s stop grace, and the second caller's start failed with the 409.
+test('a start another caller is running past the stop grace is joined, not failed', async () => {
+  getAdvancesMs = 20_000;
+  starts = [conflict];
+  gets = [...Array(4).fill(ok('starting')), ok('running')];
+  let renewals = 0;
+  await (await provider()).start('sbx_1', { onProgress: async () => void (renewals += 1) });
+  expect(events).toEqual(['POST 409', ...Array(4).fill('GET starting'), 'GET running']);
+  // The waiting caller keeps its lease: on the first read (t = 20 s), then
+  // per 30 s (t = 60 s).
+  expect(renewals).toBe(2);
+}, 15_000);
+
+test('a 202 for a start in flight (or a relocation in progress) is waited on inside start()', async () => {
+  starts = [{ status: 202, state: 'starting', code: 'relocating' }];
+  gets = [ok('starting'), ok('starting'), ok('running')];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 202', 'GET starting', 'GET starting', 'GET running']);
+}, 15_000);
+
+test('a relocation Platinum asks to retry is retried until the box starts', async () => {
+  starts = [
+    { status: 503, state: 'stopped', code: 'relocation_fetch_timeout' },
+    { status: 503, state: 'stopped', code: 'relocation_failed' },
+    ok('starting'),
+  ];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 503', 'POST 503', 'POST 200']);
+}, 15_000);
+
+test('a 503 that is not a retry-later relocation fails the start at once', async () => {
+  starts = [{ status: 503, state: 'stopped', code: 'relocation_snapshot_unavailable' }];
+  const error = await (await provider()).start('sbx_1').then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(String(error)).toContain('503');
+  expect(events).toEqual(['POST 503']);
 }, 15_000);
 
 test('the restore budget fits the wake, and renewals outpace every lease they keep', async () => {
