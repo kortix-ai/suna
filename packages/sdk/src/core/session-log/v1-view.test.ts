@@ -37,10 +37,12 @@ const NONE: V1MessageRow[] = [];
 
 describe('sessionLogRowsFor: the v1 rows of a v2 thread', () => {
   for (const [name, native] of fixtures) {
-    test(`${name}: a thread without the kortix.transcript.v1 ext keeps the v1 store rows (as the API's v1 reads do)`, () => {
+    test(`${name}: a native thread (no kortix.transcript.v1 ext, as pi writes) reads as toV1 of that thread, by its thread id`, () => {
       const logs = { kses_1: stateOf(native) };
-      const v1Rows: V1MessageRow[] = [];
-      for (const thread of native.threads) expect(sessionLogRowsFor(logs, thread.thread_id, v1Rows)).toBe(v1Rows);
+      for (const thread of native.threads) {
+        const expected = rowsOfV1(toV1({ ...native, threads: [thread] }));
+        expect(sessionLogRowsFor(logs, thread.thread_id, NONE)).toEqual(expected);
+      }
     });
     test(`${name}: a thread fromV1 marked reads as toV1 of that thread`, () => {
       const log = asV1Threads(native);
