@@ -598,6 +598,13 @@ export interface LegacyBootstrapDeps {
    */
   mintRepairToken?: () => Promise<{ secret: string; release: () => Promise<void> } | null>;
   patchMetadata: (patch: Record<string, unknown>) => Promise<void>;
+  /**
+   * Write the `running` record ONLY if no other attempt holds a fresh one
+   * (`lastAttemptAt` after `staleBeforeIso`). True = this call owns the run.
+   * The in-progress gate in `probeRuntimeForBootstrap` reads a snapshot, and
+   * each API replica dedupes only its own runs, so the write must be the lock.
+   */
+  claimRun: (patch: Record<string, unknown>, staleBeforeIso: string) => Promise<boolean>;
   audit: (event: {
     outcome: 'success' | 'failure';
     phase: string;
@@ -762,14 +769,21 @@ export async function bootstrapLegacyRuntime(
     from: { opencode: classification.opencode },
     classification: { klass: classification.klass, staleReasons: classification.staleReasons },
   };
-  await deps.patchMetadata({
-    [LEGACY_BOOTSTRAP_METADATA_KEY]: running,
-    [LEGACY_CHECK_METADATA_KEY]: {
-      at: nowIso,
-      klass: classification.klass,
-      staleReasons: classification.staleReasons,
-    } satisfies LegacyCheckRecord,
-  });
+  // Four concurrent `/start` polls on four replicas each relaunched the chain
+  // on one prod box (2026-10-13): the fresh daemon was killed, four
+  // supervisors fought over :8000, and the entrypoint rolled back and pinned.
+  const claimed = await deps.claimRun(
+    {
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: running,
+      [LEGACY_CHECK_METADATA_KEY]: {
+        at: nowIso,
+        klass: classification.klass,
+        staleReasons: classification.staleReasons,
+      } satisfies LegacyCheckRecord,
+    },
+    new Date(nowMs - LEGACY_BOOTSTRAP_STALE_RUNNING_MS).toISOString(),
+  );
+  if (!claimed) return { outcome: 'skipped-in-progress' };
   deps.log('legacy runtime bootstrap starting', {
     sandboxId: input.sandboxId,
     externalId: input.externalId,

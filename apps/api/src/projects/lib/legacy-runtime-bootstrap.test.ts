@@ -399,6 +399,10 @@ function makeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown[]; sta
     patchMetadata: async (p) => {
       calls.patches.push(p);
     },
+    claimRun: async (p) => {
+      calls.patches.push(p);
+      return true;
+    },
     audit: async (e) => {
       calls.audits.push(e);
     },
