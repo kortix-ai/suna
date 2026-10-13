@@ -8,7 +8,8 @@ import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { RowList, SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { ConnectorsHeroVisual } from '@/features/marketing/connectors/hero-visual';
-import { build, hero, parts } from '@/features/marketing/product/content';
+import { getLocalizedProductContent, parts as PARTS } from '@/features/marketing/product/content';
+import { useTranslations } from '@/i18n/use-translations';
 import { PermissionMatrix } from '@/features/marketing/security-page/permission-matrix';
 import { SECTION } from '@/features/marketing/site/blocks';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
@@ -18,7 +19,7 @@ import { ArrowRightIcon } from '@phosphor-icons/react';
 import { Fragment, type ReactNode } from 'react';
 
 /** One drawn visual per part, in the order of `parts`. No screenshots. */
-const VISUALS: Record<(typeof parts)[number]['id'], () => ReactNode> = {
+const VISUALS: Record<(typeof PARTS)[number]['id'], () => ReactNode> = {
   agents: RepoTree,
   connect: ConnectorsHeroVisual,
   automate: ScheduleTable,
@@ -31,6 +32,8 @@ const VISUALS: Record<(typeof parts)[number]['id'], () => ReactNode> = {
  * `features/marketing/product/content.ts`.
  */
 export default function ProductPage(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { build, hero, parts } = getLocalizedProductContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero {...hero} visual={<AgentComputerHeroVisual />} />

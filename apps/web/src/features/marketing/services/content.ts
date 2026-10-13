@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SITE_TRANSLATION_KEYS } from '@/i18n/site-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/services` copy — the forward deployed team.
  *
@@ -36,25 +40,26 @@ export const offer = {
   per: 'per month',
   note: 'Built on Kortix. Everything we build lives in a repo you own.',
   cta: 'Book a call',
+  fullTime: { label: 'Full time' },
   roles: [
     {
       id: 'strategist',
-      role: 'Deployment Strategist',
+      title: 'Deployment Strategist',
       body: 'Sits with your leaders and teams. Maps every recurring job, decides what agents take first, and redesigns the work around them.',
     },
     {
       id: 'engineer',
-      role: 'Forward Deployed Engineer',
+      title: 'Forward Deployed Engineer',
       body: 'Builds it. Connects your systems, writes the agents and skills, ships the automations and internal apps, and keeps them running.',
     },
   ],
   includes: [
-    'A map of the work: every recurring job, who does it, and in which tool',
-    'One company knowledge base your agents read',
-    'Your data, unified and connected',
-    'Agents, skills and automations for your highest-value work',
-    'Internal apps your people use every day',
-    'Your team trained to build the next agent themselves',
+    { id: 'includes-1', label: 'A map of the work: every recurring job, who does it, and in which tool' },
+    { id: 'includes-2', label: 'One company knowledge base your agents read' },
+    { id: 'includes-3', label: 'Your data, unified and connected' },
+    { id: 'includes-4', label: 'Agents, skills and automations for your highest-value work' },
+    { id: 'includes-5', label: 'Internal apps your people use every day' },
+    { id: 'includes-6', label: 'Your team trained to build the next agent themselves' },
   ],
 } as const;
 
@@ -99,14 +104,14 @@ export const fit = {
   title: 'Low bureaucracy. High access.',
   sub: 'This works when we can move fast inside your company.',
   yes: [
-    'A leader who can say yes and wants the company to change',
-    'Access to your people, your tools and your data',
-    'Teams that will try a new way of working this month',
+    { id: 'yes-1', label: 'A leader who can say yes and wants the company to change' },
+    { id: 'yes-2', label: 'Access to your people, your tools and your data' },
+    { id: 'yes-3', label: 'Teams that will try a new way of working this month' },
   ],
   no: [
-    'A decision that needs six committees',
-    'A pilot whose goal is a report',
-    'AI as a side project nobody owns',
+    { id: 'no-1', label: 'A decision that needs six committees' },
+    { id: 'no-2', label: 'A pilot whose goal is a report' },
+    { id: 'no-3', label: 'AI as a side project nobody owns' },
   ],
 } as const;
 
@@ -116,24 +121,32 @@ export const faq = {
   items: [
     {
       id: 'own',
-      q: 'What do we own at the end?',
-      a: 'Everything we build: the agents, skills, automations, apps and the knowledge base live as code in a git repo you own.',
+      title: 'What do we own at the end?',
+      body: 'Everything we build: the agents, skills, automations, apps and the knowledge base live as code in a git repo you own.',
     },
     {
       id: 'cloud',
-      q: 'Do we have to use Kortix Cloud?',
-      a: 'No. Kortix runs on Kortix Cloud, in your VPC, or on your own on-prem network. Any model provider with your own keys.',
+      title: 'Do we have to use Kortix Cloud?',
+      body: 'No. Kortix runs on Kortix Cloud, in your VPC, or on your own on-prem network. Any model provider with your own keys.',
     },
     {
       id: 'team',
-      q: 'Can our own engineers keep building?',
-      a: 'Yes, that is the point. Your team works in the same repo with us and keeps building after we leave.',
+      title: 'Can our own engineers keep building?',
+      body: 'Yes, that is the point. Your team works in the same repo with us and keeps building after we leave.',
     },
     {
       id: 'start',
-      q: 'How do we start?',
-      a: 'Book a call. We talk about how your company works and pick the first job together.',
+      title: 'How do we start?',
+      body: 'Book a call. We talk about how your company works and pick the first job together.',
     },
   ],
 } as const;
 
+
+export function getLocalizedServicesContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, offer, how, goal, fit, faq },
+    tI18nComplete,
+    SITE_TRANSLATION_KEYS,
+  );
+}

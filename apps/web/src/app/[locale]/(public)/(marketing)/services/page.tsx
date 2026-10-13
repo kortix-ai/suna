@@ -6,7 +6,8 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { faq, fit, goal, hero, how, offer } from '@/features/marketing/services/content';
+import { getLocalizedServicesContent } from '@/features/marketing/services/content';
+import { useTranslations } from '@/i18n/use-translations';
 import { GoalBar, SECTION, StoriesSection } from '@/features/marketing/site/blocks';
 import { cn } from '@/lib/utils';
 import { CheckIcon, MinusIcon } from '@phosphor-icons/react';
@@ -22,6 +23,8 @@ const GRID_4_RULES = [
 
 /** The hero scene: the two people, and the share of work agents carry. */
 function TeamVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { offer } = getLocalizedServicesContent(tI18nComplete);
   return (
     <div className="border-border bg-card w-full max-w-lg rounded-sm border p-6 sm:p-8">
       <p className="text-muted-foreground font-mono text-xs tracking-widest uppercase">
@@ -37,8 +40,8 @@ function TeamVisual(): ReactNode {
             key={r.id}
             className="border-border text-foreground flex items-center justify-between rounded-sm border px-4 py-3 text-sm font-medium"
           >
-            {r.role}
-            <span className="text-muted-foreground font-mono text-xs">full time</span>
+            {r.title}
+            <span className="text-muted-foreground font-mono text-xs">{offer.fullTime.label}</span>
           </li>
         ))}
       </ul>
@@ -54,6 +57,8 @@ function TeamVisual(): ReactNode {
  * gate: `features/marketing/services/content.ts`.
  */
 export default function ServicesPage(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { faq, fit, goal, hero, how, offer } = getLocalizedServicesContent(tI18nComplete);
   const openDemo = useRequestDemo();
   return (
     <div className="bg-background relative">
@@ -91,7 +96,7 @@ export default function ServicesPage(): ReactNode {
                 <p className="text-muted-foreground font-mono text-xs tracking-widest uppercase">
                   {`0${i + 1}`}
                 </p>
-                <h3 className="text-foreground text-xl font-medium tracking-tight">{r.role}</h3>
+                <h3 className="text-foreground text-xl font-medium tracking-tight">{r.title}</h3>
                 <p className="text-muted-foreground text-base leading-relaxed">{r.body}</p>
               </div>
             </Reveal>
@@ -100,9 +105,9 @@ export default function ServicesPage(): ReactNode {
         <Reveal delay={0.1}>
           <ul className="border-border bg-card mt-4 grid gap-x-8 gap-y-3 rounded-sm border p-8 sm:grid-cols-2">
             {offer.includes.map((item) => (
-              <li key={item} className="text-foreground flex items-start gap-3 text-sm leading-relaxed">
+              <li key={item.id} className="text-foreground flex items-start gap-3 text-sm leading-relaxed">
                 <CheckIcon className="text-foreground mt-0.5 size-4 shrink-0" aria-hidden />
-                {item}
+                {item.label}
               </li>
             ))}
           </ul>
@@ -164,9 +169,9 @@ export default function ServicesPage(): ReactNode {
             ].map(({ id, items, Icon, tone }) => (
               <ul key={id} className="border-border bg-card flex flex-col gap-4 rounded-sm border p-8">
                 {items.map((item) => (
-                  <li key={item} className={cn('flex items-start gap-3 text-base leading-relaxed', tone)}>
+                  <li key={item.id} className={cn('flex items-start gap-3 text-base leading-relaxed', tone)}>
                     <Icon className="mt-1 size-4 shrink-0" aria-hidden />
-                    {item}
+                    {item.label}
                   </li>
                 ))}
               </ul>
@@ -191,8 +196,8 @@ export default function ServicesPage(): ReactNode {
                 key={item.id}
                 className={cn('border-border grid gap-2 px-6 py-5 sm:grid-cols-12 sm:gap-8 sm:px-8', i > 0 && 'border-t')}
               >
-                <dt className="text-foreground text-base font-medium sm:col-span-5">{item.q}</dt>
-                <dd className="text-muted-foreground text-sm leading-relaxed sm:col-span-7">{item.a}</dd>
+                <dt className="text-foreground text-base font-medium sm:col-span-5">{item.title}</dt>
+                <dd className="text-muted-foreground text-sm leading-relaxed sm:col-span-7">{item.body}</dd>
               </div>
             ))}
           </dl>

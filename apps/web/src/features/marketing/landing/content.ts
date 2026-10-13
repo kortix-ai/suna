@@ -25,6 +25,7 @@ export const hero = {
   sub: 'Agents that do real work across every team: on their own computers, in your tools, from one repo you own. Any model, your keys, self-hosted or cloud.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Book a demo',
+  shot: { label: 'Kortix: an agent session with its plan, outputs and context' },
   trust: 'Open source · Any model, your keys · Self-host, VPC, or on-prem',
 } as const;
 
@@ -442,7 +443,7 @@ export const servicesTeaser = {
 
 export function getLocalizedLandingContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { hero, heroEyebrow, cta, trust, useCases },
+    { hero, heroEyebrow, cta, trust, useCases, shared, servicesTeaser },
     tI18nComplete,
     AGENTS_LANDING_TRANSLATION_KEYS,
   );

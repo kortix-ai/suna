@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SITE_TRANSLATION_KEYS } from '@/i18n/site-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/product` copy — the AI Operating System on one page.
  *
@@ -171,3 +175,7 @@ export const build = {
   ctaHref: '/docs',
 } as const;
 
+
+export function getLocalizedProductContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog({ hero, parts, build }, tI18nComplete, SITE_TRANSLATION_KEYS);
+}

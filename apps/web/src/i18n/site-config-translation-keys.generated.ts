@@ -59,4 +59,28 @@ export const SITE_CONFIG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   X: 'text4b68ab3847fe',
   'Your own VPC or your own on-prem network': 'textfe7fcc4818d3',
   'Kortix – the open-source AI Operating System.': 'textdcb3e70ce4dc',
+  '3,000+ apps, Slack and Microsoft Teams': 'text082afbd5687d',
+  'A strategist and a forward deployed engineer, inside your company, building on Kortix. $20k per month.':
+    'text442da0fab552',
+  'Agents that do real work for your company, on their own computers, from one repo you own.':
+    'text9a1bc9e667e9',
+  'Belgrade and San Francisco': 'text11f1ca0e6b3f',
+  'Companies already running on agents': 'textd02c9206c93a',
+  Company: 'textde4743c87973',
+  'How companies run on agents': 'text0402047585d3',
+  'Kortix runs on Kortix': 'text5d74e5900bdd',
+  'Map the work, unify the data, deploy agents': 'textd32a11f29856',
+  'One strategist, one engineer, full time': 'textc1be4bf08b17',
+  'Open source. Read it, fork it, audit it.': 'textd688fa4dd718',
+  'Our own sales, support and engineering run on the AI Operating System we sell.':
+    'textb209842bfcc8',
+  'Permissions, audit, any model, any cloud': 'textb5b0714c82e8',
+  Product: 'textfb9ef894175c',
+  'Schedules and webhooks, a person in the loop': 'text7efe2ab258b4',
+  Services: 'text604dce445e32',
+  'Skills, memory and their own cloud computer': 'textb6bf2ba3f78d',
+  'Talk to us about your company': 'text5bdb8e28c506',
+  'The AI Operating System': 'text72e9cb3a34a8',
+  'We make your company AI-native': 'text93b81f1f60f4',
+  'What we shipped': 'text9f3661f62903',
 };

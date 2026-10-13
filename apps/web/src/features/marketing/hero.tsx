@@ -17,19 +17,19 @@ import { type ReactNode } from 'react';
  * running app with synthetic data (`public/media/product/`). It replaces the
  * old tabbed showcase of recordings. Re-capture it when the app changes.
  */
-function HeroShot() {
+function HeroShot({ alt }: { alt: string }) {
   return (
     <div className="border-border bg-card overflow-hidden rounded-xl border shadow-sm">
       {/* eslint-disable-next-line @next/next/no-img-element -- static marketing asset, two themes */}
       <img
         src="/media/product/hero-light.webp"
-        alt="Kortix: a project with its agents and sessions"
+        alt={alt}
         className="block w-full dark:hidden"
       />
       {/* eslint-disable-next-line @next/next/no-img-element -- static marketing asset, two themes */}
       <img
         src="/media/product/hero-dark.webp"
-        alt="Kortix: a project with its agents and sessions"
+        alt={alt}
         className="hidden w-full dark:block"
       />
     </div>
@@ -159,7 +159,7 @@ const Hero = () => {
           id="demo"
           className="kx-hero-frame relative z-10 mx-auto mt-10 max-w-7xl scroll-mt-24 px-6 [--kx-enter:290ms] sm:mt-12 lg:mt-8"
         >
-          <HeroShot />
+          <HeroShot alt={hero.shot.label} />
         </div>
 
         {/* 490ms + the 620ms text ramp lands this at 1110ms — the exact moment

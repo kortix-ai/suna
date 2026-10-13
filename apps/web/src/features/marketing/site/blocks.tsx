@@ -3,8 +3,9 @@
 import { Reveal } from '@/components/home/reveal';
 import Link from '@/components/site-link';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { goal } from '@/features/marketing/services/content';
-import { stories, type Story } from '@/features/marketing/stories/content';
+import { getLocalizedServicesContent } from '@/features/marketing/services/content';
+import { getLocalizedStoriesContent, type Story } from '@/features/marketing/stories/content';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { ArrowRightIcon, CaretRightIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
@@ -52,7 +53,7 @@ export function StoryCard({ story, large }: { story: Story; large?: boolean }) {
     >
       <div className="flex flex-col gap-4">
         <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-          {story.who}
+          {story.eyebrow}
         </span>
         <h3
           className={cn(
@@ -66,7 +67,7 @@ export function StoryCard({ story, large }: { story: Story; large?: boolean }) {
       </div>
       <div className="flex flex-col gap-4">
         <Flow steps={story.flow} />
-        <p className="text-foreground text-sm font-medium">{story.people}</p>
+        <p className="text-foreground text-sm font-medium">{story.caption}</p>
       </div>
     </article>
   );
@@ -85,6 +86,8 @@ export function StoriesSection({
   showAll?: boolean;
   as?: 'h1' | 'h2';
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { stories } = getLocalizedStoriesContent(tI18nComplete);
   const items = limit ? stories.items.slice(0, limit) : stories.items;
   return (
     <section id="stories" className={SECTION}>
@@ -115,6 +118,8 @@ export function StoriesSection({
 
 /** 80% agents, 20% people, drawn to scale. The goal of the service. */
 export function GoalBar(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { goal } = getLocalizedServicesContent(tI18nComplete);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-sm">

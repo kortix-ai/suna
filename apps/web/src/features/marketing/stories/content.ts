@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SITE_TRANSLATION_KEYS } from '@/i18n/site-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * Customer stories — shared by `/customers`, `/services` and the home page.
  *
@@ -19,13 +23,13 @@ export type StoryStep = { readonly id: string; readonly label: string };
 export type Story = {
   readonly id: string;
   /** Industry · class of company. Never a name. */
-  readonly who: string;
+  readonly eyebrow: string;
   readonly title: string;
   readonly body: string;
   /** The workflow, left to right: what starts it, what the agents do, what comes out. */
   readonly flow: readonly StoryStep[];
   /** Who still decides. Every story keeps a person in it. */
-  readonly people: string;
+  readonly caption: string;
 };
 
 export const stories = {
@@ -36,7 +40,7 @@ export const stories = {
   items: [
     {
       id: 'credit-fund',
-      who: 'Finance · A credit fund',
+      eyebrow: 'Finance · A credit fund',
       title: 'Every new bond issue, analysed before the desk opens.',
       body: 'When a new issue is announced, a trigger starts the same multi-step analysis every time: read the offering documents, run the models, check the result against the fund’s strategy with deterministic checks. The desk opens a buy or no-buy case in a dashboard the whole team shares.',
       flow: [
@@ -46,11 +50,11 @@ export const stories = {
         { id: 'check', label: 'Check the strategy' },
         { id: 'out', label: 'Buy or no-buy case' },
       ],
-      people: 'The trader decides.',
+      caption: 'The trader decides.',
     },
     {
       id: 'infrastructure',
-      who: 'Infrastructure · A fiber contractor',
+      eyebrow: 'Infrastructure · A fiber contractor',
       title: 'From the map to the permit to the offer.',
       body: 'Agents route new fiber around what is in the way, draft the permit report the authorities ask for, and turn the plan into the customer offer. Field teams add photos and inspection points through an internal App, and the agents read what they add.',
       flow: [
@@ -59,11 +63,11 @@ export const stories = {
         { id: 'offer', label: 'Build the offer' },
         { id: 'field', label: 'Field photos in an App' },
       ],
-      people: 'Engineers approve every route.',
+      caption: 'Engineers approve every route.',
     },
     {
       id: 'homebuilder',
-      who: 'Construction · A homebuilder',
+      eyebrow: 'Construction · A homebuilder',
       title: 'Lots, renders and a letter in the mailbox.',
       body: 'Agents find buildable lots in public geodata, render a house that fits each one, and send the owner the render by physical mail.',
       flow: [
@@ -71,11 +75,11 @@ export const stories = {
         { id: 'render', label: 'Render a house' },
         { id: 'mail', label: 'Mail the owner' },
       ],
-      people: 'The sales team follows up.',
+      caption: 'The sales team follows up.',
     },
     {
       id: 'kortix-sales',
-      who: 'Software · Kortix, our own company',
+      eyebrow: 'Software · Kortix, our own company',
       title: 'Every signup researched and answered.',
       body: 'Each new signup starts a session. The agent researches the company, scores the fit, keeps the CRM current and writes the follow-up.',
       flow: [
@@ -84,11 +88,11 @@ export const stories = {
         { id: 'crm', label: 'Update the CRM' },
         { id: 'draft', label: 'Draft the follow-up' },
       ],
-      people: 'A person decides what it may send.',
+      caption: 'A person decides what it may send.',
     },
     {
       id: 'kortix-engineering',
-      who: 'Software · Kortix, our own company',
+      eyebrow: 'Software · Kortix, our own company',
       title: 'Agents that ship our product.',
       body: 'Bug reports from Slack become tracked issues. Agents reproduce them, write the fix and open the pull request on their own branch. A reviewer agent checks the work, and an engineer merges it.',
       flow: [
@@ -97,11 +101,11 @@ export const stories = {
         { id: 'fix', label: 'Fix on a branch' },
         { id: 'pr', label: 'Pull request' },
       ],
-      people: 'An engineer merges.',
+      caption: 'An engineer merges.',
     },
     {
       id: 'kortix-studio',
-      who: 'Media · Kortix, our own studio',
+      eyebrow: 'Media · Kortix, our own studio',
       title: 'One prompt, one finished music video.',
       body: 'A director agent writes the lyrics, scores the song, animates the scenes and cuts the video, handing parts to sub-agents along the way. It runs for hours without anyone watching.',
       flow: [
@@ -110,7 +114,11 @@ export const stories = {
         { id: 'scenes', label: 'Scenes' },
         { id: 'cut', label: 'Finished video' },
       ],
-      people: 'We pick what gets published.',
+      caption: 'We pick what gets published.',
     },
   ] satisfies readonly Story[],
 } as const;
+
+export function getLocalizedStoriesContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog({ stories }, tI18nComplete, SITE_TRANSLATION_KEYS);
+}

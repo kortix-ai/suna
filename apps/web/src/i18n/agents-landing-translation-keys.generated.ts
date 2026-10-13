@@ -357,4 +357,35 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Teams at that stage lose about a week a month to': 'text830ec669b118',
   'manual reconciliation. We built an agent that closes': 'text3685aac7952f',
   'that loop and shows its working. Worth twenty minutes?': 'textb38cb5e18525',
+  'A Deployment Strategist and a Forward Deployed Engineer join your company, map the work and put agents to work on Kortix. The goal: 80% agents, 20% people.':
+    'text35fe13eb2914',
+  'A team': 'textd361cb1a1746',
+  'Agents that do real work across every team: on their own computers, in your tools, from one repo you own. Any model, your keys, self-hosted or cloud.':
+    'textd65264a91527',
+  Allow: 'texte213c161d5ce',
+  'An assistant helps one person. Kortix is shared: what one team builds, every team can use.':
+    'text0ee26a1e7b69',
+  Ask: 'textb8c209cdead6',
+  Block: 'text211d0bb8cf4f',
+  'Built for the whole company, not one person.': 'text65581ace11ab',
+  'Connect a tool once. Decide who and which agents may use it, and what each call may do.':
+    'text3154646aeb88',
+  'Deployment Strategist': 'textac46605d06aa',
+  'Forward Deployed Engineer': 'text67642d777064',
+  'Give an agent to one person, a team or the whole company, with the permissions to match.':
+    'text28185c89f039',
+  'Kortix: an agent session with its plan, outputs and context': 'texte7f22838ab03',
+  Multiplayer: 'text563370a7b0ef',
+  'One person': 'textc8e647c63a60',
+  Services: 'text604dce445e32',
+  'Share agents': 'text222012f07e74',
+  'Share connections': 'textf64520704622',
+  'Share context': 'text4d035b49f7eb',
+  'Skills and memory live in one repo, so every agent works from what the company knows.':
+    'textde01be4fff97',
+  'The AI Operating System for AI-native companies': 'textea7e60e0d340',
+  'The company': 'text4205f77c3e5b',
+  'Want us to do it with you?': 'text4b4da16e05a1',
+  'memory/': 'textae3f53994b15',
+  'skills/': 'textf1e8d760c12c',
 };

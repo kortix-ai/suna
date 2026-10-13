@@ -8,7 +8,8 @@ import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
-import { servicesTeaser, shared } from '@/features/marketing/landing/content';
+import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
+import { useTranslations } from '@/i18n/use-translations';
 import { LogoStrip } from '@/features/marketing/landing/logo-strip';
 import { TrustSection } from '@/features/marketing/landing/trust-section';
 import { UseCaseWheel } from '@/features/marketing/landing/use-case-wheel';
@@ -37,6 +38,8 @@ const SHARED_ICONS: Record<'agents' | 'connections' | 'context', Icon> = {
  *   6. will IT say yes (security), the last questions (FAQ), then start.
  */
 export default function Home() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { servicesTeaser, shared } = getLocalizedLandingContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <Hero />

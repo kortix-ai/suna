@@ -151,4 +151,9 @@ export const MARKETING_SECONDARY_TRANSLATION_KEYS: Readonly<Record<string, strin
   'kortix.yaml declares the machine image, the connectors and the triggers': 'text52771248cb6a',
   'linkedin.com/in/markokraemer': 'textc998ec5c08d3',
   'marko@kortix.com': 'textb9addc023078',
+  'Most AI tools hand you one layer and rent you the rest. Kortix is the whole stack an AI-native company runs on, and the last layer commits the work back into the first.':
+    'texta307aaf07e89',
+  'Six layers. One operating system. All of it yours.': 'text86a08af3e190',
+  'The AI Operating System': 'text72e9cb3a34a8',
+  'Web, Slack, Microsoft Teams, CLI and API all start the same session': 'textfa437cf662e7',
 };
