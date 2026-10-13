@@ -44,6 +44,7 @@ import { accountPrefix } from './format';
 import { CAPTURE_DISABLED, registerCaptureAgentRoutes } from './account-routes';
 import { captureAccountsFor, captureEnabled, isAccountMember } from './workspace';
 import { ensurePolicyObject } from './policy';
+import { registerDeviceEnrollRoute } from './enrollment-routes';
 
 /** RFC 8628 / RFC 6749 §5.2 error body. */
 const RfcError = z.object({ error: z.string(), error_description: z.string().optional() });
@@ -416,6 +417,7 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
 export function createCaptureRouter() {
   const app = makeOpenApiApp<AppEnv>();
   registerDeviceIssuerRoutes(app);
+  registerDeviceEnrollRoute(app);
   registerDeviceGrantRoutes(app);
   registerCaptureAgentRoutes(app);
   return app;

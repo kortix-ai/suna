@@ -58,6 +58,13 @@ const R = {
   meSearch: 'GET /v1/capture/me/search',
   meTimeline: 'GET /v1/capture/me/timeline',
   meFrame: 'GET /v1/capture/me/frames/:frameId',
+  enroll: 'POST /v1/capture/device/enroll',
+  enrollTokens: `GET ${A}/enrollment-tokens`,
+  enrollTokenCreate: `POST ${A}/enrollment-tokens`,
+  enrollTokenRevoke: `DELETE ${A}/enrollment-tokens/:tokenId`,
+  enrollments: `GET ${A}/enrollments`,
+  enrollApprove: `POST ${A}/enrollments/:enrollmentId/approve`,
+  enrollDeny: `POST ${A}/enrollments/:enrollmentId/deny`,
 };
 const path = (route: string) => route.split(' ')[1]!;
 
@@ -596,6 +603,184 @@ flow(
       (await asMember.get(path(R.frame), { params: { ...params, frameId: frame.frame_id } })).status(200).body().has('$.display.id', 2).has('$.display.name', external.name);
       const hits = (await asMember.get(path(R.search), { params, query: { q: 'quarterly', kinds: 'screen', limit: 50 } })).status(200).json<any>().hits;
       if (!hits.some((h: any) => h.display_id === 2 && h.display_name === external.name)) throw new Error(`hits ${JSON.stringify(hits.map((h: any) => [h.display_id, h.display_name]))}`);
+    });
+  },
+);
+
+/** The body the machine service sends to /device/enroll: the token, the machine, the Windows person. */
+const engineEnroll = (token: string, machineKey: string, principalName: string | null, accountName = 'CORP\\fixture') => ({
+  enrollment_token: token,
+  machine_key_sha256: machineKey,
+  user: { principal_name: principalName, account_name: accountName },
+  device: { hostname: 'fixture-pc', computer_name: 'Fixture PC', os: 'windows', os_version: '10.0.26100', arch: 'x86_64', app_version: '0.1.0' },
+});
+
+flow(
+  'CAP-7',
+  {
+    domain: 'capture',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [R.enroll, R.enrollTokens, R.enrollTokenCreate, R.enrollTokenRevoke, R.enrollments, R.enrollApprove, R.enrollDeny, R.devices, R.revoke, R.credentials, R.setEnabled],
+  },
+  async (ctx) => {
+    const { team, member } = await captureAccount(ctx);
+    const anon = ctx.client.as(ctx.P.ANON);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    const params = { accountId: team.id };
+    const domain = member.email!.split('@')[1]!.toLowerCase();
+    const stranger = `${ctx.fixtures.name('cap7-stranger')}@${domain}`.toLowerCase();
+    const machine = (label: string) => syntheticMachineKey(ctx.fixtures.name(`cap7-${label}`));
+    const [pcA, pcB, pcC, pcD] = [machine('a'), machine('b'), machine('c'), machine('d')];
+    const enroll = (token: string, machineKey: string, principal: string | null) => anon.post(path(R.enroll), engineEnroll(token, machineKey, principal));
+    let token = { token_id: '', token: '', created_by: '' };
+    let deviceA = { device_token: '', device_id: '' };
+    let pendingB = '';
+    let strictToken = '';
+
+    await enableCapture(ctx, team.id);
+
+    await ctx.step('only capture.manage manages the rollout: the member lists or creates tokens → 403 capture_forbidden; a bad email domain → 400', async () => {
+      (await asMember.get(path(R.enrollTokens), { params })).status(403).body().has('$.code', 'capture_forbidden');
+      (await asMember.post(path(R.enrollTokenCreate), { name: 'x' }, { params })).status(403).body().has('$.code', 'capture_forbidden');
+      (await owner.post(path(R.enrollTokenCreate), { name: 'x', email_domains: ['not a domain'] }, { params })).status(400).body().has('$.code', 'capture_enrollment_invalid');
+    });
+
+    await ctx.step('the owner creates a token for the member’s domain, 2 computers → 201 with the kortix_enr_ secret once; the list shows it without the secret, 0 computers, expiring in 30 days', async () => {
+      const r = await owner.post(path(R.enrollTokenCreate), { name: 'Pilot laptops', email_domains: [`@${domain.toUpperCase()}`], max_devices: 2 }, { params });
+      r.status(201).body().has('$.state', 'active').has('$.device_count', 0).has('$.email_domains', [domain]).has('$.max_devices', 2).has('$.require_approval', false);
+      token = r.json();
+      if (!token.token.startsWith('kortix_enr_') || token.token.length !== 51) throw new Error(`token shape ${token.token.slice(0, 12)}`);
+      const listed = (await owner.get(path(R.enrollTokens), { params })).status(200).json<{ tokens: Array<Record<string, unknown>> }>();
+      const row = listed.tokens.find((t) => t.token_id === token.token_id)!;
+      if (!row || 'token' in row || !String(row.token_prefix).startsWith('kortix_enr_')) throw new Error(`list row ${JSON.stringify(row)}`);
+      const days = (Date.parse(String(row.expires_at)) - Date.now()) / 86_400_000;
+      if (days < 29.9 || days > 30.1) throw new Error(`expires in ${days} days`);
+    });
+
+    await ctx.step('enroll refusals: no token → 400; a 63-hex machine key → 400; an unknown token → 401 enrollment_token_invalid; a person outside the domain → 403 enrollment_domain_not_allowed', async () => {
+      (await anon.post(path(R.enroll), { machine_key_sha256: pcA, user: { principal_name: member.email } })).status(400).body().has('$.code', 'invalid_request');
+      (await enroll(token.token, pcA.slice(1), member.email!)).status(400).body().has('$.code', 'invalid_request');
+      (await enroll('kortix_enr_unknown', pcA, member.email!)).status(401).body().has('$.code', 'enrollment_token_invalid');
+      (await enroll(token.token, pcA, 'someone@elsewhere.example')).status(403).body().has('$.code', 'enrollment_domain_not_allowed');
+    });
+
+    await ctx.step('the member’s Windows sign-in (UPN, upper case) on computer A → 200 enrolled: a kortix_cap_ device token, prefix orgs/<account>, the account name and the member; the device lists with the token id; the device token buys credentials (503 on a store without STS, not 401)', async () => {
+      const r = await enroll(token.token, pcA, member.email!.toUpperCase());
+      r.status(200).body().has('$.status', 'enrolled').has('$.token_type', 'Bearer').has('$.prefix', `orgs/${team.id}`).has('$.member.email', member.email!);
+      deviceA = r.json();
+      if (!deviceA.device_token.startsWith('kortix_cap_')) throw new Error('device token prefix');
+      if (!r.json<{ account: { name: string } }>().account.name) throw new Error('no account name');
+      const devices = (await owner.get(path(R.devices), { params, query: { scope: 'account' } })).status(200).json<{ devices: Array<Record<string, unknown>> }>();
+      const row = devices.devices.find((d) => d.device_id === deviceA.device_id);
+      if (row?.user_id !== member.userId || row?.enrollment_token_id !== token.token_id || row?.os !== 'windows') throw new Error(`device ${JSON.stringify(row)}`);
+      (await anon.withBearer(deviceA.device_token).post(path(R.credentials))).status(503).body().has('$.code', 'capture_credentials_unavailable');
+    });
+
+    await ctx.step('a person of the domain who is no member, on computer B → 202 pending no_member with retry_after_s 60; calling again → the same enrollment; the owner sees it waiting with its Windows names', async () => {
+      const r = await enroll(token.token, pcB, stranger);
+      r.status(202).body().has('$.status', 'pending').has('$.reason', 'no_member').has('$.retry_after_s', 60);
+      pendingB = r.json<{ enrollment_id: string }>().enrollment_id;
+      (await enroll(token.token, pcB, stranger)).status(202).body().has('$.enrollment_id', pendingB);
+      const waiting = (await owner.get(path(R.enrollments), { params, query: { status: 'pending' } })).status(200).json<{ enrollments: Array<Record<string, any>> }>();
+      const row = waiting.enrollments.find((e) => e.enrollment_id === pendingB);
+      if (row?.principal_name !== stranger || row?.account_name !== 'CORP\\fixture' || row?.device?.name !== 'Fixture PC' || row?.token_name !== 'Pilot laptops') {
+        throw new Error(`waiting row ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('the token counts 2 computers; a third computer → 403 enrollment_limit_reached', async () => {
+      const listed = (await owner.get(path(R.enrollTokens), { params })).status(200).json<{ tokens: Array<Record<string, unknown>> }>();
+      if (listed.tokens.find((t) => t.token_id === token.token_id)?.device_count !== 2) throw new Error(`count ${JSON.stringify(listed)}`);
+      (await enroll(token.token, pcC, member.email!)).status(403).body().has('$.code', 'enrollment_limit_reached');
+    });
+
+    await ctx.step('the owner approves computer B to the member (a non-member user id → 400) → approved; B’s next call → 200 enrolled as the member; the same person on computer A now enrolls as the member too (the admin’s decision names the person)', async () => {
+      (await owner.post(path(R.enrollApprove), { user_id: ctx.P.NONMEMBER.userId }, { params: { ...params, enrollmentId: pendingB } })).status(400);
+      (await owner.post(path(R.enrollApprove), { user_id: member.userId }, { params: { ...params, enrollmentId: pendingB } }))
+        .status(200)
+        .body()
+        .has('$.status', 'approved')
+        .has('$.user_id', member.userId!)
+        .has('$.decided_by', ctx.P.OWNER.userId!);
+      (await enroll(token.token, pcB, stranger)).status(200).body().has('$.status', 'enrolled').has('$.member.email', member.email!);
+      (await enroll(token.token, pcA, stranger)).status(200).body().has('$.status', 'enrolled').has('$.member.email', member.email!);
+    });
+
+    await ctx.step('the owner denies computer B → its device token stops working (401) and its calls → 403 enrollment_denied', async () => {
+      const b = (await enroll(token.token, pcB, stranger)).status(200).json<{ device_token: string }>();
+      (await owner.post(path(R.enrollDeny), {}, { params: { ...params, enrollmentId: pendingB } })).status(200).body().has('$.status', 'denied');
+      (await anon.withBearer(b.device_token).post(path(R.credentials))).status(401).body().has('$.code', 'capture_device_unauthorized');
+      (await enroll(token.token, pcB, stranger)).status(403).body().has('$.code', 'enrollment_denied');
+    });
+
+    await ctx.step('a device the owner revoked is not revived by enroll: computer A → 202 approval_required until the owner approves; then enrolled with the same device id, and the token before it → 401', async () => {
+      const before = (await enroll(token.token, pcA, member.email!)).status(200).json<{ device_token: string; device_id: string }>();
+      if (before.device_id !== deviceA.device_id) throw new Error('re-enroll changed the device id');
+      (await anon.withBearer(deviceA.device_token).post(path(R.credentials))).status(401);
+      (await owner.del(path(R.revoke), { params: { ...params, deviceId: deviceA.device_id } })).status(200);
+      const waiting = await enroll(token.token, pcA, member.email!);
+      waiting.status(202).body().has('$.reason', 'approval_required');
+      const enrollmentId = waiting.json<{ enrollment_id: string }>().enrollment_id;
+      (await owner.post(path(R.enrollApprove), { user_id: member.userId }, { params: { ...params, enrollmentId } })).status(200);
+      const after = (await enroll(token.token, pcA, member.email!)).status(200).json<{ device_token: string; device_id: string }>();
+      if (after.device_id !== deviceA.device_id) throw new Error('approval created a new device');
+      (await anon.withBearer(after.device_token).post(path(R.credentials))).status(503);
+      (await anon.withBearer(before.device_token).post(path(R.credentials))).status(401);
+      deviceA = after;
+    });
+
+    await ctx.step('a token that requires approval: the member on computer D → 202 approval_required; approved → enrolled', async () => {
+      const created = await owner.post(path(R.enrollTokenCreate), { name: 'Approve each', require_approval: true, expires_in_days: null }, { params });
+      created.status(201).body().has('$.expires_at', null).has('$.require_approval', true);
+      const strict = created.json<{ token: string }>();
+      strictToken = strict.token;
+      const waiting = await enroll(strict.token, pcD, member.email!);
+      waiting.status(202).body().has('$.reason', 'approval_required');
+      (await owner.post(path(R.enrollApprove), { user_id: member.userId }, { params: { ...params, enrollmentId: waiting.json<{ enrollment_id: string }>().enrollment_id } })).status(200);
+      (await enroll(strict.token, pcD, member.email!)).status(200).body().has('$.status', 'enrolled');
+    });
+
+    await ctx.step('the owner revokes the first token → new enrolls 401; computer A keeps its device token (503, not 401); the list shows revoked', async () => {
+      (await owner.del(path(R.enrollTokenRevoke), { params: { ...params, tokenId: token.token_id } })).status(200).body().has('$.state', 'revoked');
+      (await enroll(token.token, pcA, member.email!)).status(401).body().has('$.code', 'enrollment_token_invalid');
+      (await anon.withBearer(deviceA.device_token).post(path(R.credentials))).status(503);
+      (await asMember.del(path(R.enrollTokenRevoke), { params: { ...params, tokenId: token.token_id } })).status(403);
+    });
+
+    await ctx.step('the team’s audit log (not the owner’s own account) holds the owner’s two successful capture.enrollment_token.create rows and the enrolls as capture.device.enroll by the token (system actor), with the device as resource', async () => {
+      const db = await openDb(ctx);
+      try {
+        const rows = await waitFor(
+          async () =>
+            (await db.query<{ action: string; actor_user_id: string | null; actor_type: string; resource_id: string | null }>(
+              `SELECT action, actor_user_id, actor_type, resource_id FROM kortix.audit_events
+                WHERE account_id = $1 AND outcome = 'success' AND action IN ('capture.device.enroll', 'capture.enrollment_token.create')`,
+              [team.id],
+            )).rows,
+          {
+            until: (r) => r.filter((x) => x.action === 'capture.enrollment_token.create').length >= 2 && r.some((x) => x.action === 'capture.device.enroll'),
+            timeoutMs: 20_000,
+            intervalMs: 500,
+            description: 'the enrollment audit rows',
+          },
+        );
+        const creates = rows.filter((r) => r.action === 'capture.enrollment_token.create');
+        if (creates.length < 2 || creates.some((r) => r.actor_user_id !== token.created_by)) throw new Error(`creates ${JSON.stringify(creates)} vs ${token.created_by}`);
+        const enrolls = rows.filter((r) => r.action === 'capture.device.enroll');
+        if (!enrolls.some((r) => r.actor_type === 'system' && r.actor_user_id === null && r.resource_id === deviceA.device_id)) {
+          throw new Error(`enrolls ${JSON.stringify(enrolls)}`);
+        }
+      } finally {
+        await db.end();
+      }
+    });
+
+    await ctx.step('with Capture off, enroll with a live token → 403 capture_disabled, and the rollout routes → 403 capture_disabled', async () => {
+      (await owner.patch(path(R.setEnabled), { enabled: false }, { params })).status(200);
+      (await enroll(strictToken, pcD, member.email!)).status(403).body().has('$.code', 'capture_disabled');
+      (await owner.get(path(R.enrollTokens), { params })).status(403).body().has('$.code', 'capture_disabled');
     });
   },
 );

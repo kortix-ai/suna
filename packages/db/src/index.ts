@@ -268,6 +268,8 @@ export {
   jobQueue,
   captureDeviceGrants,
   captureDevices,
+  captureEnrollmentTokens,
+  captureEnrollments,
   captureWorkspaces,
   timelineChunks,
   timelineFrames,

@@ -17,6 +17,17 @@ export function bindAccountCapture(accountId: string) {
       revoke: (deviceId: string) => C.revokeCaptureDevice(accountId, deviceId),
       assetUrl: (deviceId: string, name: string) => C.getCaptureAssetUrl(accountId, deviceId, name),
     },
+    /** IT rollout (IAM `capture.manage`): enrollment tokens and the computers waiting on them. */
+    enrollment: {
+      tokens: {
+        list: () => C.listCaptureEnrollmentTokens(accountId),
+        create: (input: C.CaptureEnrollmentTokenInput) => C.createCaptureEnrollmentToken(accountId, input),
+        revoke: (tokenId: string) => C.revokeCaptureEnrollmentToken(accountId, tokenId),
+      },
+      list: (opts?: { status?: C.CaptureEnrollmentStatus }) => C.listCaptureEnrollments(accountId, opts),
+      approve: (enrollmentId: string, userId: string) => C.approveCaptureEnrollment(accountId, enrollmentId, userId),
+      deny: (enrollmentId: string) => C.denyCaptureEnrollment(accountId, enrollmentId),
+    },
     policy: {
       get: () => C.getCapturePolicy(accountId),
       set: (policy: C.CapturePolicy) => C.setCapturePolicy(accountId, policy),

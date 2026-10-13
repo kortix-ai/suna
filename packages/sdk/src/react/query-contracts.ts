@@ -202,4 +202,8 @@ export const FRESHNESS = {
   captureTimeline: 'inventory',
   capturePolicy: 'config',
   captureWorkspace: 'config',
+  /** Changed only through this UI, which invalidates on success. */
+  captureEnrollmentTokens: 'config',
+  /** A waiting computer calls again every 60 s; an admin decides elsewhere. */
+  captureEnrollments: 'directory',
 } as const satisfies Record<string, FreshnessTier>;

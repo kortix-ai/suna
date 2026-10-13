@@ -7266,6 +7266,8 @@ export const captureDevices = kortixSchema.table(
     indexLines: integer('index_lines').default(0).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by'),
+    /** The enrollment token the device enrolled with. Null: a person signed it in. */
+    enrollmentTokenId: uuid('enrollment_token_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -7277,6 +7279,86 @@ export const captureDevices = kortixSchema.table(
     ),
     uniqueIndex('idx_capture_devices_token').on(table.tokenHash),
     index('idx_capture_devices_account_user').on(table.accountId, table.userId),
+  ],
+);
+
+/**
+ * An IT rollout secret: a computer that presents it enrolls itself into the
+ * account, as the person signed in to Windows, with no browser sign-in.
+ * Stored only as `hashSecretKey(token)`; `token_prefix` names it in the UI.
+ */
+export const captureEnrollmentTokens = kortixSchema.table(
+  'capture_enrollment_tokens',
+  {
+    tokenId: uuid('token_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tokenHash: varchar('token_hash', { length: 128 }).notNull(),
+    tokenPrefix: text('token_prefix').notNull(),
+    /** Lower-case email domains a person must sign in to Windows with. Empty: any member. */
+    emailDomains: text('email_domains').array().default(sql`'{}'::text[]`).notNull(),
+    /** At most this many computers enroll with the token. Null: no limit. */
+    maxDevices: integer('max_devices'),
+    /** Every new computer waits for an admin, also when its person is a member. */
+    requireApproval: boolean('require_approval').default(false).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_enrollment_tokens_hash').on(table.tokenHash),
+    index('idx_capture_enrollment_tokens_account').on(table.accountId),
+  ],
+);
+
+/**
+ * One computer + Windows person that presented an enrollment token. The row
+ * is the poll state: `pending` until a member is matched or an admin decides,
+ * `enrolled` once a device token was minted for it.
+ */
+export const captureEnrollments = kortixSchema.table(
+  'capture_enrollments',
+  {
+    enrollmentId: uuid('enrollment_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => captureEnrollmentTokens.tokenId, { onDelete: 'cascade' }),
+    machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /** The Windows person, lower-case: the UPN, else the login name. */
+    principal: text('principal').notNull(),
+    principalName: text('principal_name'),
+    accountName: text('account_name'),
+    /** Untrusted device description sent with the request (hostname, os, …). */
+    deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('pending').notNull(),
+    /** Why a pending row waits: `no_member` or `approval_required`. */
+    reason: text('reason'),
+    userId: uuid('user_id'),
+    deviceId: uuid('device_id'),
+    decidedBy: uuid('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_enrollments_identity').on(
+      table.accountId,
+      table.machineKeySha256,
+      table.principal,
+    ),
+    index('idx_capture_enrollments_token').on(table.tokenId),
+    check(
+      'capture_enrollments_status',
+      sql`${table.status} in ('pending', 'approved', 'denied', 'enrolled')`,
+    ),
   ],
 );
 

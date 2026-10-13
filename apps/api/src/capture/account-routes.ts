@@ -31,6 +31,7 @@ import { callerKortixSessionId } from '../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../middleware/on-behalf-of';
 import { supabaseAuth } from '../middleware/auth';
 import { recordAuditEvent } from '../shared/audit';
+import { bindAuditPrincipal } from '../shared/audit-scope';
 import type { AppEnv } from '../types';
 import { parseDisplay, PolicySchema } from './format';
 import { readAccountPolicy, writeAccountPolicy } from './policy';
@@ -131,6 +132,9 @@ export async function captureAccessFor(
   const { viewer, sessionId } = who;
   if (!viewer) return refuse(c, 403, 'capture_no_human', 'This credential does not act for a person, so it has no capture timeline');
   if (!(await isAccountMember(accountId, viewer))) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
+  // The request's audit row belongs to this account's log. Without this a
+  // browser session's row lands in the caller's own account (its token's).
+  bindAuditPrincipal({ accountId });
   if (!(await readWorkspace(accountId)).enabled) return c.json(CAPTURE_DISABLED, 403);
   const subject = opts.accountWide ? null : (opts.userId ?? viewer);
   const powers = subject === viewer ? { readsAll: false, manages: false } : await capturePowers(c, accountId, sessionId);
@@ -145,7 +149,7 @@ export async function captureAccessFor(
 }
 
 /** Access plus the caller's IAM powers, for a route that names a device or writes (assets, revoke, policy). */
-async function captureAccessWithPowers(c: Ctx): Promise<Access | Response> {
+export async function captureAccessWithPowers(c: Ctx): Promise<Access | Response> {
   const access = await captureAccess(c);
   if (isResponse(access)) return access;
   return { ...access, ...(await capturePowers(c, access.accountId, access.sessionId)) };
@@ -320,6 +324,7 @@ accountsRouter.openapi(
     if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     if (who.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot turn Capture on or off');
     if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
+    bindAuditPrincipal({ accountId });
     if (!(await capturePowers(c, accountId, null)).manages) {
       return refuse(c, 403, 'capture_forbidden', 'Turning Capture on or off needs the capture.manage permission');
     }

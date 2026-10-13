@@ -119,7 +119,73 @@ export interface CaptureDevice {
   };
   last_credentials_at: string | null;
   revoked_at: string | null;
+  /** The enrollment token the device enrolled with (an IT rollout); null when a person signed it in. */
+  enrollment_token_id?: string | null;
   created_at: string;
+}
+
+/**
+ * An IT rollout secret: a computer that presents it enrolls itself as the
+ * person signed in to Windows, with no browser sign-in. The secret itself is
+ * in the create answer only ({@link CaptureEnrollmentTokenSecret}).
+ */
+export interface CaptureEnrollmentToken {
+  token_id: string;
+  name: string;
+  /** The first characters of the secret, to recognise it. */
+  token_prefix: string;
+  state: 'active' | 'revoked' | 'expired';
+  /** Windows sign-in domains a person must use; empty: any member. */
+  email_domains: string[];
+  /** At most this many computers; null: no limit. */
+  max_devices: number | null;
+  /** Computers that enrolled or wait with this token (a denied one not counted). */
+  device_count: number;
+  /** Every new computer waits for an admin, also when its person is a member. */
+  require_approval: boolean;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CaptureEnrollmentTokenSecret extends CaptureEnrollmentToken {
+  /** `kortix_enr_…`: shown once. IT writes it to the computers. */
+  token: string;
+}
+
+export interface CaptureEnrollmentTokenInput {
+  name: string;
+  email_domains?: string[];
+  max_devices?: number | null;
+  require_approval?: boolean;
+  /** Default 30; null: never expires. */
+  expires_in_days?: number | null;
+}
+
+export type CaptureEnrollmentStatus = 'pending' | 'approved' | 'denied' | 'enrolled';
+
+/** One computer + Windows person that presented an enrollment token. */
+export interface CaptureEnrollment {
+  enrollment_id: string;
+  token_id: string;
+  token_name: string | null;
+  status: CaptureEnrollmentStatus;
+  /** Why a pending computer waits: no member has its person's email, or the token requires approval. */
+  reason: 'no_member' | 'approval_required' | null;
+  /** The Windows UPN. */
+  principal_name: string | null;
+  /** The Windows login name (`DOMAIN\\user`). */
+  account_name: string | null;
+  device: { name: string | null; os: string | null; os_version: string | null; arch: string | null; app_version: string | null };
+  /** The member the computer records (matched or approved). */
+  user_id: string | null;
+  device_id: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  last_seen_at: string;
 }
 
 /** Whose data and when. `day` (UTC `YYYY-MM-DD`) or `from`/`to` (ISO, at most 31 days); default today. */
@@ -401,6 +467,41 @@ export async function listCaptureDevices(accountId: string, opts: { userId?: str
 /** Revoke a device: its token stops working at once. Your own device, or any device with `capture.manage`. */
 export async function revokeCaptureDevice(accountId: string, deviceId: string) {
   return unwrap(await backendApi.delete<CaptureDevice>(`${base(accountId)}/devices/${deviceId}`));
+}
+
+// ── Enrollment (IT rollout, `capture.manage`) ────────────────────────────────
+
+export async function listCaptureEnrollmentTokens(accountId: string) {
+  return unwrap(await backendApi.get<{ tokens: CaptureEnrollmentToken[] }>(`${base(accountId)}/enrollment-tokens`));
+}
+
+/** Create an enrollment token. The answer carries the secret once. */
+export async function createCaptureEnrollmentToken(accountId: string, input: CaptureEnrollmentTokenInput) {
+  return unwrap(await backendApi.post<CaptureEnrollmentTokenSecret>(`${base(accountId)}/enrollment-tokens`, input));
+}
+
+/** Revoke an enrollment token. Computers it enrolled keep recording; new ones are refused. */
+export async function revokeCaptureEnrollmentToken(accountId: string, tokenId: string) {
+  return unwrap(await backendApi.delete<CaptureEnrollmentToken>(`${base(accountId)}/enrollment-tokens/${tokenId}`));
+}
+
+/** Computers that presented an enrollment token, last seen first. */
+export async function listCaptureEnrollments(accountId: string, opts: { status?: CaptureEnrollmentStatus } = {}) {
+  return unwrap(
+    await backendApi.get<{ enrollments: CaptureEnrollment[] }>(`${base(accountId)}/enrollments${captureQuery({ status: opts.status })}`),
+  );
+}
+
+/** Approve a waiting computer to a member; it enrolls at its next call, within a minute. */
+export async function approveCaptureEnrollment(accountId: string, enrollmentId: string, userId: string) {
+  return unwrap(
+    await backendApi.post<CaptureEnrollment>(`${base(accountId)}/enrollments/${enrollmentId}/approve`, { user_id: userId }),
+  );
+}
+
+/** Deny a computer; a device it enrolled is revoked at once. */
+export async function denyCaptureEnrollment(accountId: string, enrollmentId: string) {
+  return unwrap(await backendApi.post<CaptureEnrollment>(`${base(accountId)}/enrollments/${enrollmentId}/deny`, {}));
 }
 
 // ── Policy ────────────────────────────────────────────────────────────────────

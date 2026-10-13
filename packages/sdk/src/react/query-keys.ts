@@ -85,6 +85,10 @@ export const qk = {
     timelineRead: (accountId: string, kind: string, query: unknown) =>
       [...qk.capture.timeline(accountId), kind, query] as const,
     policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
+    /** `listCaptureEnrollmentTokens` — the IT rollout tokens. */
+    enrollmentTokens: (accountId: string) => [...qk.capture.account(accountId), 'enrollment-tokens'] as const,
+    /** `listCaptureEnrollments` — computers that presented a token; every status filter under one prefix. */
+    enrollments: (accountId: string) => [...qk.capture.account(accountId), 'enrollments'] as const,
   },
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.

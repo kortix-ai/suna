@@ -1058,6 +1058,13 @@
       "when": 1791841879311,
       "tag": "20261012215119_capture_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1791894096360,
+      "tag": "20261013122136_capture_enrollment",
+      "breakpoints": true
     }
   ]
 }

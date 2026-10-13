@@ -70,6 +70,8 @@ export function deviceView(device: Device, now = Date.now()) {
     live: { state: liveState(device.status, now), status: device.status, reported_at: device.statusReportedAt?.toISOString() ?? null },
     last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,
     revoked_at: device.revokedAt?.toISOString() ?? null,
+    /** The enrollment token the device enrolled with (an IT rollout); null when a person signed it in. */
+    enrollment_token_id: device.enrollmentTokenId,
     created_at: device.createdAt.toISOString(),
   };
 }

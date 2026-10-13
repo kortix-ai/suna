@@ -242,3 +242,71 @@ test('a null account reads no workspace', async () => {
   await h.mount(Probe);
   expect(h.calls).toEqual([]);
 });
+
+test('the Devices page: tokens and waiting computers refresh after create, revoke, approve and deny', async () => {
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const calls: string[] = [];
+  let tokens: unknown[] = [];
+  let enrollments: unknown[] = [{ enrollment_id: 'e1', status: 'pending' }];
+  globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
+    const method = options.method ?? 'GET';
+    const path = String(url).replace('http://test.local/accounts/a1/capture', '');
+    calls.push(`${method} ${path}`);
+    if (method === 'POST' && path === '/enrollment-tokens') {
+      tokens = [{ token_id: 't1', state: 'active' }];
+      return Response.json({ token_id: 't1', state: 'active', token: 'kortix_enr_secret' }, { status: 201 });
+    }
+    if (method === 'DELETE') tokens = [{ token_id: 't1', state: 'revoked' }];
+    if (method === 'POST' && path.endsWith('/approve')) enrollments = [{ enrollment_id: 'e1', status: 'approved' }];
+    if (method === 'POST' && path.endsWith('/deny')) enrollments = [{ enrollment_id: 'e1', status: 'denied' }];
+    if (path === '/enrollment-tokens') return Response.json({ tokens });
+    if (path.startsWith('/enrollments?') || path === '/enrollments') return Response.json({ enrollments });
+    return Response.json({});
+  }) as unknown as typeof fetch;
+  let list: ReturnType<typeof hooks.useCaptureEnrollmentTokens>;
+  let create_: ReturnType<typeof hooks.useCreateCaptureEnrollmentToken>;
+  let revoke: ReturnType<typeof hooks.useRevokeCaptureEnrollmentToken>;
+  let waiting: ReturnType<typeof hooks.useCaptureEnrollments>;
+  let approve: ReturnType<typeof hooks.useApproveCaptureEnrollment>;
+  let deny: ReturnType<typeof hooks.useDenyCaptureEnrollment>;
+  function Probe() {
+    list = hooks.useCaptureEnrollmentTokens('a1');
+    create_ = hooks.useCreateCaptureEnrollmentToken('a1');
+    revoke = hooks.useRevokeCaptureEnrollmentToken('a1');
+    waiting = hooks.useCaptureEnrollments('a1');
+    approve = hooks.useApproveCaptureEnrollment('a1');
+    deny = hooks.useDenyCaptureEnrollment('a1');
+    return null;
+  }
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  await act(async () => {
+    create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+  });
+  await settle();
+  expect(list!.data?.tokens).toEqual([]);
+  expect(waiting!.data?.enrollments).toEqual([{ enrollment_id: 'e1', status: 'pending' }]);
+
+  let secret = '';
+  await act(async () => {
+    secret = (await create_!.mutateAsync({ name: 'Pilot laptops', max_devices: 20 })).token;
+  });
+  await settle();
+  expect(secret).toBe('kortix_enr_secret');
+  expect(list!.data?.tokens).toEqual([{ token_id: 't1', state: 'active' }]);
+
+  await act(async () => { await revoke!.mutateAsync('t1'); });
+  await settle();
+  expect(calls).toContain('DELETE /enrollment-tokens/t1');
+  expect(list!.data?.tokens).toEqual([{ token_id: 't1', state: 'revoked' }]);
+
+  await act(async () => { await approve!.mutateAsync({ enrollmentId: 'e1', userId: 'u1' }); });
+  await settle();
+  expect(calls).toContain('POST /enrollments/e1/approve');
+  expect(waiting!.data?.enrollments).toEqual([{ enrollment_id: 'e1', status: 'approved' }]);
+
+  await act(async () => { await deny!.mutateAsync('e1'); });
+  await settle();
+  expect(calls).toContain('POST /enrollments/e1/deny');
+  expect(waiting!.data?.enrollments).toEqual([{ enrollment_id: 'e1', status: 'denied' }]);
+});

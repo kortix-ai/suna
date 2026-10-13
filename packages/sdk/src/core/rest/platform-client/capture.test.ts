@@ -211,7 +211,7 @@ test('the facade binds Capture to an account; sign-in approval and the agent rea
   await capture.workspace.setEnabled(true);
   expect(last()).toMatchObject({ method: 'PATCH', url: P });
   // Raw capture only: the account handle has nothing else.
-  expect(Object.keys(capture).sort()).toEqual(['devices', 'frame', 'media', 'policy', 'search', 'timeline', 'workspace']);
+  expect(Object.keys(capture).sort()).toEqual(['devices', 'enrollment', 'frame', 'media', 'policy', 'search', 'timeline', 'workspace']);
   expect(Object.keys(capture.devices).sort()).toEqual(['assetUrl', 'list', 'revoke']);
   await kortix.capture.approveDevice('ABCD-1234', 'a1');
   expect(last().url).toBe('http://test.local/capture/device/grants/ABCD-1234/approve');
@@ -219,4 +219,47 @@ test('the facade binds Capture to an account; sign-in approval and the agent rea
   expect(last().url).toBe('http://test.local/capture/me/search?q=x');
   // No project anywhere in Capture.
   expect('capture' in kortix.project('p1')).toBe(false);
+});
+
+test('enrollment: tokens for an IT rollout, and the computers that wait for an admin', async () => {
+  nextBody = { tokens: [{ token_id: 't1', state: 'active', device_count: 3 }] };
+  const listed = await Capture.listCaptureEnrollmentTokens('a1');
+  expect(last()).toMatchObject({ method: 'GET', url: `${P}/enrollment-tokens` });
+  expect(listed.tokens[0]?.device_count).toBe(3);
+
+  nextBody = { token_id: 't2', token: 'kortix_enr_x' };
+  const created = await Capture.createCaptureEnrollmentToken('a1', {
+    name: 'Pilot laptops',
+    email_domains: ['corp.example'],
+    max_devices: 20,
+    require_approval: false,
+    expires_in_days: 14,
+  });
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: `${P}/enrollment-tokens`,
+    body: { name: 'Pilot laptops', email_domains: ['corp.example'], max_devices: 20, require_approval: false, expires_in_days: 14 },
+  });
+  expect(created.token).toBe('kortix_enr_x');
+
+  await Capture.revokeCaptureEnrollmentToken('a1', 't2');
+  expect(last()).toMatchObject({ method: 'DELETE', url: `${P}/enrollment-tokens/t2` });
+
+  nextBody = { enrollments: [] };
+  await Capture.listCaptureEnrollments('a1');
+  expect(last().url).toBe(`${P}/enrollments`);
+  await Capture.listCaptureEnrollments('a1', { status: 'pending' });
+  expect(last().url).toBe(`${P}/enrollments?status=pending`);
+  await Capture.approveCaptureEnrollment('a1', 'e1', 'u9');
+  expect(last()).toMatchObject({ method: 'POST', url: `${P}/enrollments/e1/approve`, body: { user_id: 'u9' } });
+  await Capture.denyCaptureEnrollment('a1', 'e1');
+  expect(last()).toMatchObject({ method: 'POST', url: `${P}/enrollments/e1/deny` });
+
+  const capture = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).capture.account('a1');
+  expect(Object.keys(capture.enrollment).sort()).toEqual(['approve', 'deny', 'list', 'tokens']);
+  expect(Object.keys(capture.enrollment.tokens).sort()).toEqual(['create', 'list', 'revoke']);
+  await capture.enrollment.tokens.list();
+  expect(last().url).toBe(`${P}/enrollment-tokens`);
+  await capture.enrollment.approve('e2', 'u1');
+  expect(last()).toMatchObject({ method: 'POST', url: `${P}/enrollments/e2/approve`, body: { user_id: 'u1' } });
 });

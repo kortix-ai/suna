@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 815,
+  "count": 822,
   "routes": [
     {
       "method": "GET",
@@ -293,6 +293,30 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/capture/devices/:deviceId/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/enrollment-tokens"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/enrollment-tokens"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/capture/enrollment-tokens/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/enrollments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/enrollments/:enrollmentId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/enrollments/:enrollmentId/deny"
     },
     {
       "method": "GET",
@@ -1061,6 +1085,10 @@
     {
       "method": "POST",
       "path": "/v1/capture/device/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/enroll"
     },
     {
       "method": "GET",

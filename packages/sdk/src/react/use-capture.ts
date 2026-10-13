@@ -3,6 +3,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   approveCaptureDeviceGrant,
+  approveCaptureEnrollment,
+  createCaptureEnrollmentToken,
+  denyCaptureEnrollment,
+  listCaptureEnrollments,
+  listCaptureEnrollmentTokens,
+  revokeCaptureEnrollmentToken,
+  type CaptureEnrollmentStatus,
+  type CaptureEnrollmentTokenInput,
   denyCaptureDeviceGrant,
   getCaptureChunkMedia,
   getCaptureDays,
@@ -142,6 +150,71 @@ export function useCaptureChunkMedia(
     // The URLs expire after 300 s; read them again before that.
     staleTime: 240_000,
     refetchInterval: 240_000,
+  });
+}
+
+// ── Enrollment (IT rollout, `capture.manage`) ────────────────────────────────
+
+export function useCaptureEnrollmentTokens(accountId: AccountId) {
+  return useQuery({
+    queryKey: qk.capture.enrollmentTokens(accountId ?? ''),
+    queryFn: () => listCaptureEnrollmentTokens(accountId as string),
+    enabled: !!accountId,
+    ...contract(FRESHNESS.captureEnrollmentTokens),
+  });
+}
+
+/** Create an enrollment token. The result carries the secret once: show it, never store it. */
+export function useCreateCaptureEnrollmentToken(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CaptureEnrollmentTokenInput) => createCaptureEnrollmentToken(accountId as string, input),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.capture.enrollmentTokens(accountId ?? '') }),
+  });
+}
+
+/** Revoke an enrollment token. Computers it enrolled keep recording. */
+export function useRevokeCaptureEnrollmentToken(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tokenId: string) => revokeCaptureEnrollmentToken(accountId as string, tokenId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.capture.enrollmentTokens(accountId ?? '') }),
+  });
+}
+
+/** Computers that presented an enrollment token (`status` filters, e.g. `pending`). */
+export function useCaptureEnrollments(accountId: AccountId, opts: { status?: CaptureEnrollmentStatus } = {}) {
+  return useQuery({
+    queryKey: [...qk.capture.enrollments(accountId ?? ''), opts.status ?? 'all'] as const,
+    queryFn: () => listCaptureEnrollments(accountId as string, opts),
+    enabled: !!accountId,
+    ...contract(FRESHNESS.captureEnrollments),
+  });
+}
+
+/** After a decision: the computers, the token counts and the devices (a deny revokes one) are stale. */
+function invalidateRollout(queryClient: ReturnType<typeof useQueryClient>, accountId: string) {
+  for (const queryKey of [qk.capture.enrollments(accountId), qk.capture.enrollmentTokens(accountId), [...qk.capture.account(accountId), 'devices']]) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
+
+/** Approve a waiting computer to a member; it enrolls at its next call, within a minute. */
+export function useApproveCaptureEnrollment(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { enrollmentId: string; userId: string }) =>
+      approveCaptureEnrollment(accountId as string, args.enrollmentId, args.userId),
+    onSuccess: () => invalidateRollout(queryClient, accountId ?? ''),
+  });
+}
+
+/** Deny a computer; a device it enrolled is revoked at once. */
+export function useDenyCaptureEnrollment(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enrollmentId: string) => denyCaptureEnrollment(accountId as string, enrollmentId),
+    onSuccess: () => invalidateRollout(queryClient, accountId ?? ''),
   });
 }
 
