@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { ViewerNotice } from './viewer-notice';
+import { FileCategoryContent } from './file-category-content';
 import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
@@ -29,60 +30,13 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import React, { lazy, Suspense, useCallback } from 'react';
+import React from 'react';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
 import { FileHeader } from './file-header';
 import { useFileContentState } from './use-file-content-state';
 import { Download } from '@/features/icon/icons/download';
-
-// ---------------------------------------------------------------------------
-// Lazy-load heavy renderers to keep initial bundle small
-// ---------------------------------------------------------------------------
-
-const PdfRenderer = lazy(() =>
-  import('@/features/file-renderers/pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
-);
-const DocxRenderer = lazy(() =>
-  import('@/features/file-renderers/docx/docx-renderer').then((m) => ({ default: m.DocxRenderer })),
-);
-const VideoRenderer = lazy(() =>
-  import('@/features/file-renderers/video-renderer').then((m) => ({ default: m.VideoRenderer })),
-);
-const CsvRenderer = lazy(() =>
-  import('@/features/file-renderers/csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
-);
-const XlsxRenderer = lazy(() =>
-  import('@/features/file-renderers/xlsx/xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
-);
-const PptxRenderer = lazy(() =>
-  import('@/features/file-renderers/pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
-);
-const ImageRenderer = lazy(() =>
-  import('@/features/file-renderers/image-renderer').then((m) => ({ default: m.ImageRenderer })),
-);
-const SqliteRenderer = lazy(() =>
-  import('@/features/file-renderers/sqlite-renderer').then((m) => ({
-    default: m.SqliteRenderer,
-  })),
-);
-const ZipRenderer = lazy(() =>
-  import('@/features/file-renderers/zip/zip-renderer').then((m) => ({ default: m.ZipRenderer })),
-);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Spinner placeholder used inside <Suspense> for lazy-loaded renderers. */
-function RendererFallback() {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <Loading className="text-muted-foreground/40 h-4 w-4" />
-    </div>
-  );
-}
 
 /** The two icon tiles the notices sit on — the failed look and the missing look. */
 const notFoundMedia = (
@@ -159,19 +113,7 @@ export function FileContentRenderer({
   codeEditorEditorClassName,
   reloadKey = 0,
 }: FileContentRendererProps) {
-  const {
-    source, Breadcrumbs, fileContent, isLoading, error,
-    contentRevision, fetchRevision, hasUnsavedChanges, setHasUnsavedChanges, isSaving,
-    saveFlash, latestContentRef, discardKey, fileName, isHeicImage,
-    language, fileCategory, isMarkdownFile, isMermaidFile, hasPreviewToggle,
-    isJsonFile, isHtmlFile, isMarkdownPreview, setIsMarkdownPreview, isJsonTreeView,
-    setIsJsonTreeView, isHtmlPreview, setIsHtmlPreview, fileDiagErrorCount, fileDiagWarningCount,
-    fileDiagnostics, tHardcodedUi, tI18nHardcoded, blobUrl, rawBlob,
-    blobLoading, blobError, heicImageUrl, heicConverting, displayContent,
-    handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
-    needsBlob, isContentReady, contentError, showLoadingState, isSandboxWaking,
-    isNotFound,
-  } = useFileContentState({
+  const state = useFileContentState({
     filePath,
     onUnsavedChange,
     onSaved,
@@ -181,17 +123,19 @@ export function FileContentRenderer({
     onStatusChange,
     targetLine,
   });
-  const bytesOnly = !!source.bytesOnly;
-  // The table has no lines: a jump to a line (a content-search match) opens
-  // CSV and TSV in the code editor.
-  const csvAsTable = fileCategory === 'csv' && !targetLine;
-  const saveThroughSource = useCallback(
-    (file: File) =>
-      source.save
-        ? source.save(filePath, file)
-        : source.upload(file, filePath.substring(0, filePath.lastIndexOf('/')) || undefined),
-    [source, filePath],
-  );
+  const {
+    Breadcrumbs, fileContent, isLoading, error,
+    fetchRevision, hasUnsavedChanges, setHasUnsavedChanges, isSaving,
+    saveFlash, latestContentRef, discardKey, fileName, isHeicImage,
+    language, fileCategory, isMarkdownFile, isMermaidFile, hasPreviewToggle,
+    isJsonFile, isHtmlFile, isMarkdownPreview, setIsMarkdownPreview, isJsonTreeView,
+    setIsJsonTreeView, isHtmlPreview, setIsHtmlPreview, fileDiagErrorCount, fileDiagWarningCount,
+    fileDiagnostics, tHardcodedUi, tI18nHardcoded, blobUrl, rawBlob,
+    displayContent,
+    handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
+    contentError, showLoadingState, isSandboxWaking,
+    isNotFound, csvAsTable,
+  } = state;
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
@@ -298,145 +242,10 @@ export function FileContentRenderer({
               />
             ))}
 
-          {/* Image content (non-HEIC) */}
-          {!isLoading && !error && imageDataUrl && (
-            <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer url={imageDataUrl} className="h-full" fileName={fileName} />
-            </Suspense>
-          )}
+          {/* The category renderer — one switch over FileCategory behind one
+              Suspense boundary, in its own module. */}
+          <FileCategoryContent {...{ state, filePath, fitOnOpen, reloadKey }} />
 
-          {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
-          {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
-          {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
-            <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer url={heicImageUrl} className="h-full" fileName={fileName} />
-            </Suspense>
-          )}
-
-          {/* The rich renderers below get `showDownload={false}`: every host of
-              this component (the session panel, the file preview modal, the
-              public share page) already shows Download in its own toolbar, and
-              a second one inside the viewer is the duplicate we removed. */}
-
-          {/* PDF preview */}
-          {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
-            <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer
-                fileContent={fileContent.content}
-                fileName={fileName}
-                className="h-full"
-                fitOnOpen={fitOnOpen}
-                showDownload={false}
-              />
-            </Suspense>
-          )}
-
-          {/* DOCX preview */}
-          {isContentReady && fileCategory === 'docx' && rawBlob && (
-            <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer
-                blob={rawBlob}
-                fileName={fileName}
-                className="h-full"
-                showDownload={false}
-              />
-            </Suspense>
-          )}
-
-          {/* Zip archive — browse the entries, drill into one, extract it */}
-          {isContentReady && fileCategory === 'zip' && rawBlob && (
-            <Suspense fallback={<RendererFallback />}>
-              {/* `key`: the renderer holds per-archive state (which folders
-                  are open, which entry is drilled into), and switching files
-                  must not carry one archive's expansion onto another's paths.
-                  Remounting is React's own reset, and it costs nothing — the
-                  blob is already cached by the source. */}
-              <ZipRenderer key={filePath} blob={rawBlob} fileName={fileName} className="h-full" />
-            </Suspense>
-          )}
-
-          {/* XLSX / XLS preview */}
-          {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (!bytesOnly || blobUrl) && (
-            <Suspense fallback={<RendererFallback />}>
-              <XlsxRenderer
-                key={`xlsx-${filePath}-${contentRevision}-${reloadKey}`}
-                // A bytes-only source hands the workbook over as a blob URL;
-                // the renderer reads a sandbox path only for a session.
-                filePath={bytesOnly ? blobUrl! : filePath}
-                fileName={fileName}
-                className="h-full"
-                showDownload={false}
-              />
-            </Suspense>
-          )}
-
-          {/* SQLite database viewer */}
-          {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (!bytesOnly || rawBlob) && (
-            <Suspense fallback={<RendererFallback />}>
-              <SqliteRenderer
-                key={`sqlite-${filePath}-${contentRevision}-${reloadKey}`}
-                filePath={filePath}
-                fileName={fileName}
-                className="h-full"
-                readOnly={readOnly}
-                {...(bytesOnly ? { bytes: rawBlob, onSave: saveThroughSource } : {})}
-              />
-            </Suspense>
-          )}
-
-          {/* CSV / TSV preview */}
-          {!isLoading && !error && csvAsTable && fileContent && (
-            <Suspense fallback={<RendererFallback />}>
-              <CsvRenderer
-                content={fileContent.content}
-                fileName={fileName}
-                className="h-full"
-                showDownload={false}
-              />
-            </Suspense>
-          )}
-
-          {/* Video preview */}
-          {isContentReady && fileCategory === 'video' && blobUrl && (
-            <Suspense fallback={<RendererFallback />}>
-              <VideoRenderer url={blobUrl} className="h-full" />
-            </Suspense>
-          )}
-
-          {/* Audio preview */}
-          {isContentReady && fileCategory === 'audio' && blobUrl && (
-            <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
-              <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-sm">
-                <svg
-                  className="text-muted-foreground/40 h-6 w-6"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <path d="M9 18V5l12-2v13" />
-                  <circle cx="6" cy="18" r="3" />
-                  <circle cx="18" cy="16" r="3" />
-                </svg>
-              </div>
-              <p className="text-muted-foreground/60 text-sm">{fileName}</p>
-              <audio controls src={blobUrl} className="w-full max-w-sm" />
-            </div>
-          )}
-
-          {/* PPTX preview */}
-          {isContentReady && fileCategory === 'pptx' && rawBlob && (
-            <Suspense fallback={<RendererFallback />}>
-              <PptxRenderer
-                blob={rawBlob}
-                binaryUrl={blobUrl}
-                filePath={filePath}
-                fileName={fileName}
-                className="h-full"
-                onDownload={handleDownload}
-              />
-            </Suspense>
-          )}
 
           {/* HTML preview — served by the sandbox's static file server, so the
               page's own relative assets resolve. `HtmlPreview` owns the wait,
