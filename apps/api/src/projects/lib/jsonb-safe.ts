@@ -27,9 +27,9 @@ export function jsonbSafeValue<T>(value: T): T {
   if (typeof value === 'string') return jsonbSafeText(value) as T;
   if (Array.isArray(value)) return value.map(jsonbSafeValue) as T;
   if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) out[jsonbSafeText(key)] = jsonbSafeValue(item);
-    return out as T;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [jsonbSafeText(key), jsonbSafeValue(item)]),
+    ) as T;
   }
   return value;
 }

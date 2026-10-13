@@ -149,6 +149,15 @@ describe('journal', () => {
     expect(block!.text).toBe('sliced emoji \uFFFD done');
   });
 
+  test('nested own __proto__ JSON data survives journal persistence', async () => {
+    const future = JSON.parse('{"__proto__":{"kept":"😀 café"},"nested":[{"__proto__":{"note":"nul\\u0000"},"bad\\u0000key":"漢字"}]}');
+    const record = message('msg_own_proto', 8, { future });
+    expect((await journal(batch({ puts: [{ rev: REV + 71, message: record }] }), tokens[OTHER]!, OTHER)).status).toBe(200);
+    const [row] = await db.select({ record: sessionLogMessages.record }).from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, OTHER), eq(sessionLogMessages.messageId, 'msg_own_proto')));
+    expect(row?.record.future).toEqual(JSON.parse('{"__proto__":{"kept":"😀 café"},"nested":[{"__proto__":{"note":"nul�"},"bad�key":"漢字"}]}'));
+  });
+
   test('the highest rev wins; a lower rev is acknowledged and changes nothing', async () => {
     const edited = message('msg_u1', 0, { status: 'aborted' });
     expect((await journal(batch({ puts: [{ rev: REV + 10, message: edited }] }))).status).toBe(200);

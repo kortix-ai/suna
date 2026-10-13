@@ -22,9 +22,9 @@
  * drops fields this API does not know, and the record would lose them (the same
  * rule as `upcast`). One exception, F3: a text over 256 kB is stored as a
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
- * are written before the transaction. `content_hash` is the hash of the record
- * as stored — the sanitized form — so the stored record and its hash describe
- * each other; the daemon reconciles by rev/seq, not by hash. A second
+ * are written before the transaction. `content_hash` hashes the sanitized full
+ * message before offload, not the stored preview/reference record. The daemon
+ * reconciles by rev/seq, not by hash. A second
  * exception: a NUL and lone UTF-16 surrogates are replaced with U+FFFD
  * (`jsonbSafeValue`), because Postgres jsonb and text columns reject them
  * outright.
