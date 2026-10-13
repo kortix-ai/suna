@@ -1,5 +1,5 @@
 {
-  "source_hash": "f804593e9bbeb8e98df280cd29d1eea64a058569104e8ece144cdf23061d46d9",
+  "source_hash": "b5eb126bb3b23aa56b2b7683f6376c8e20070b754e5ac4324e40fee8f159ca65",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-env-grants.test.ts",
     "apps/api/src/__tests__/unit-feature-flags.test.ts",
@@ -39,13 +39,13 @@
     "packages/sdk/src/core/rest/projects-client/projects.test.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts"
   ],
-  "diff_hash": "73287c8a1e3b174cd6d5b501a53389b75512dea56597648154bde74a135448e5",
-  "head": "7f98a43a239dfdbeac9f31e46a7b5ba43a3b71a6",
+  "diff_hash": "fbbd163f292eebc5fb857d5dd2e65efd0308e8ff616fc7bade7bcd92a165cb00",
+  "head": "9d3613df8298340bbc26a8d5cd82e9d0647b5228",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T17:40:40.648Z"
+  "at": "2026-10-13T18:49:04.068Z"
 }
