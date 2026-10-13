@@ -33,7 +33,11 @@ import {
   type TextBlock,
   type ToolCallBlock,
 } from '../types';
+import { isV1Thread } from '../v1-view';
 import { messageOfBlock, v1RowsOf } from './v1-parts';
+
+/** The producer `fromV1` stamps on every message it converts. */
+const V1_IMPORT = 'kortix-v1-import';
 
 /** The turn's state: `pending` before a reply, else the last reply's `status` (`streaming` while a reply retries). */
 export type SessionLogTurnStatus = 'pending' | SessionLogMessage['status'];
@@ -234,8 +238,17 @@ function errorOf(d: Draft): SessionLogTurnError | null {
   return { code: m.error.code, message: details?.message || unwrapError(error), ...(details && { details }), ...(raw !== undefined && { raw }) };
 }
 
-/** `getTurnCost` over one synthetic step-finish per reply that reports usage, so both layers price alike. */
-function costOf(replies: SessionLogMessage[], lookup?: ModelPricingLookup): TurnCostInfo | null {
+/**
+ * `getTurnCost` of the replies. A v1-derived message (`exact`: a `fromV1` thread, or a row
+ * `fromV1` converted) is priced over its own v1 parts, so the result is v1's to the token
+ * (OpenCode's `info.tokens` is not the sum of a multi-step reply's step-finish parts, and a
+ * reply with no step part and no price counts nothing). A native record carries no step
+ * totals: one synthetic step-finish per reply that reports usage prices it.
+ */
+function costOf(replies: SessionLogMessage[], exact: (m: SessionLogMessage) => boolean, lookup?: ModelPricingLookup): TurnCostInfo | null {
+  if (replies.length && replies.every(exact)) {
+    return getTurnCost(replies.flatMap((m) => v1RowsOf(m).flatMap((row) => row.parts.map((part) => ({ part, message: row })))), lookup) ?? null;
+  }
   const parts = replies.flatMap((m) => {
     const u = m.usage;
     if (!u) return [];
@@ -290,6 +303,8 @@ export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTur
     unrunTurnIds: held,
   });
   const anchor = last(list, writesPlan) ?? list[list.length - 1];
+  const v1Thread = isV1Thread(thread);
+  const exact = (m: SessionLogMessage) => v1Thread || m.producer.harness === V1_IMPORT;
   const heads = options.threads ?? [];
   const known = new Set(heads.map((h) => h.thread_id));
   return list.map((d) => {
@@ -313,7 +328,7 @@ export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTur
       error: errorOf(d),
       // A prompt has no usage. A compaction's is its summary reply's (folded onto the marker), and a
       // thread with no prompt heads its turn with a reply: both are priced like any reply.
-      cost: costOf([d.user, ...d.assistant], options.pricing),
+      cost: costOf([d.user, ...d.assistant], exact, options.pricing),
       compaction: compactionOf(d.user),
       threads,
       plan: d === anchor,

@@ -697,18 +697,19 @@ session-log types, and a test fails when the two differ. See the
 [reference](https://kortix.com/docs/sdk/reference#session-log-types).
 
 `@kortix/sdk/react` adds `useSessionLog(session)` and
-`useSessionLogThread(session, threadId?)`: the log of a session `useSession`
+`useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
 reads only when the runtime lists `session.log.v2`, the project flag
 `session_log` is on, and the API holds a log for an OpenCode session. Every
 other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
-`runtimeSessionId`; without it, or before the first row, they return `null`. The
+`runtimeSessionId`; without it, or before the first row, they return `null`.
+`throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
 either way. See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).
 
-Two transitional functions bridge a host that renders blocks while its rows are
+Three transitional functions bridge a host that renders blocks while its rows are
 still v1:
 
 - `toolCallBlock(part)`: the `ToolCallBlock` of a v1 tool part, the block
@@ -719,6 +720,10 @@ still v1:
   whole `state.metadata` of the v1 part it came from (bash `command`, read
   `loaded`, task `sessionId`, edit `filediff`). It stays until the session-log
   schema carries display metadata of its own.
+- `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)`: the `fromV1` live view
+  of one runtime session's v1 rows, the log `useSessionLogThread` returns on v1,
+  for rows a host reads without a `useSession` (a sub-agent's chat). One message
+  per row object, kept while the row is unchanged. It goes away with the v1 rows.
 
 `toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and
 `shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part.
@@ -747,7 +752,15 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   the settled-turn fold, and the rows of a burst.
 - `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
   or one the closure rule closed, is `running` or `pending` on a live turn and
-  `interrupted` on any other.
+  `interrupted` on any other. `sessionLogOpenCall(call)` is the call in that open
+  shape (a closure-rule call reopened, without its result), so the v1 live view and
+  the v2 page render one call the same.
+- `sessionLogBurstSummary(blocks)` counts a burst's steps (`total`, `failed`,
+  `completed`, `hasPlumbing`); `sessionLogBurstRunning(blocks, { working, trailing? })`
+  says whether it is still in progress.
+- `sessionLogShowGroupCall(calls)` is a `show-group` segment as one `show` call
+  whose `input.items` is the carousel. `sessionLogAnsweredQuestionCall(call, answers, input?)`
+  is a `question` call with answers the harness has not confirmed yet.
 - `sessionLogActivityText(turn, childMessages?)` is the activity line of a live turn.
 - `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
   prompt the thread has not placed; append it and name it in `held`.
@@ -759,8 +772,9 @@ transcript renders a thread from. It replaces the v1 turn helpers over
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).
 
-Both layers give one answer for a record converted from v1: the SDK's test
-suite compares them on every golden fixture.
+Both layers give one answer for a record converted from v1 (its `cost` too: a
+v1-derived reply is priced over its v1 parts): the SDK's test suite compares them
+on every golden fixture.
 
 ## Kortix as a Backend (server-side)
 

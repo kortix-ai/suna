@@ -10,6 +10,10 @@
  *   `planAnchorMessageId` (`plan`) and `getChildSessionId` lookups (`threads`).
  * - `sessionLogTurnSegments`: `segmentTurn` + `groupShowSegments`. `splitSessionLogTurnWork`: `splitTurnWork`.
  * - `sessionLogBurstSteps`: `mergeBurstSteps` + `stepLabel` + the host's `burstSteps`.
+ * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
+ * - `sessionLogOpenCall`: the host's `openCall` (the open shape of a closure-rule call).
+ * - `sessionLogShowGroupCall`: the host's `mergeShowParts`. `sessionLogAnsweredQuestionCall`: the
+ *   host's synthetic answered question part.
  * - `sessionLogActivityText`: `getTurnStatus` (the activity line).
  * - `sessionLogCallStatus`: the per-call status rule (new: a closure-rule block is open on a live turn).
  * - `sessionLogPromptMessage`: the host's synthetic row for a queued inbox prompt.
@@ -19,7 +23,12 @@
  */
 export {
   sessionLogActivityText,
+  sessionLogAnsweredQuestionCall,
+  sessionLogBurstRunning,
   sessionLogBurstSteps,
+  sessionLogBurstSummary,
+  sessionLogOpenCall,
+  sessionLogShowGroupCall,
   sessionLogTurnSegments,
   splitSessionLogTurnWork,
   type SessionLogBurstStep,
