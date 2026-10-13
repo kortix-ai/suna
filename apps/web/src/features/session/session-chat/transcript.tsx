@@ -1059,7 +1059,6 @@ useEffect(() => {
     }, 2500 - elapsed);
   }
   return () => clearTimeout(statusTimeoutRef.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [blocks, rawStatus, throttledStatus]);
   return throttledStatus;
 }
