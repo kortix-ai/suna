@@ -11,9 +11,7 @@ const source = ['ProjectLeftDrawer.tsx', 'DrawerSessionRows.tsx', 'DrawerNavRows
 
 test('drawer renders nested session rows, review count and switcher accessibility labels', () => {
   expect(source).toContain('nested ? `${title}, sub-agent session, ${statusLabel}`');
-  // #9687 moved the "99+" clamp into the shared `CountBadge`; the drawer's
-  // review count reaches it through the `waiting` tone.
-  expect(source).toContain('trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}');
+  expect(source).toContain('count > 99 ? \'99+\' : String(count)');
   expect(source).toContain('`Switch project, ${projectName}, ${accountName}`');
   expect(source).toContain('TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)');
 });
