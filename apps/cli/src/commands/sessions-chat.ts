@@ -790,7 +790,8 @@ export interface StoredSessionLog {
  * Every thread of the session's stored log, each with its newest `limit`
  * messages, oldest first. A thread pages back by `before_seq` in windows of at
  * most `pageMax` (the route's limit). Null when the session has no stored log,
- * and when the route refuses the credential (403: a session-bound token).
+ * and when the route refuses the credential (403: an API before P4.2b refuses a
+ * session-bound token).
  */
 export async function readStoredSessionLog(
   log: (query?: SessionLogPageQuery) => Promise<SessionLogPage | null>,
@@ -817,7 +818,7 @@ export async function readStoredSessionLog(
   try {
     root = await readThread();
   } catch (error) {
-    // The route refuses a session-bound token (the sandbox's KORTIX_TOKEN) with 403: read v1 then, as without a stored log.
+    // An API before P4.2b refuses a session-bound token (the sandbox's KORTIX_TOKEN) with 403: read v1 then, as without a stored log.
     if ((error as { status?: unknown } | null)?.status === 403) return null;
     throw error;
   }

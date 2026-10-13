@@ -243,7 +243,7 @@ describe('withLiveTurn — a running session shows the turn the log does not hol
 });
 
 describe('readStoredSessionLog — a credential the log route refuses', () => {
-  test('a 403 (a session-bound token, as inside a sandbox) reads as no stored log; another error rejects', async () => {
+  test('a 403 (an older API refusing a session-bound token) reads as no stored log; another error rejects', async () => {
     const refused = Object.assign(new Error('The session sandbox credential cannot read the session log'), { status: 403 });
     expect(await readStoredSessionLog(async () => { throw refused; }, 10)).toBeNull();
     const broken = Object.assign(new Error('boom'), { status: 500 });
