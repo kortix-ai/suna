@@ -994,7 +994,7 @@
         },
         "apps": {
           "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
+          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
         },
         "monitors": {
           "name": "Monitors",

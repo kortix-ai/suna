@@ -1187,7 +1187,7 @@ metadata stays in the wrapper's data store.
 
 ## 28. Kortix Apps
 
-Kortix Apps are project-owned serverless deployments. The API owns the stable
+Kortix Apps are project-owned deployments that run on machines. The API owns the stable
 hostname, immutable artifact and deployment records, provider-neutral machine
 specification, runtime lifecycle, billing attribution, and atomic active
 deployment pointer. The provider remains an implementation detail.

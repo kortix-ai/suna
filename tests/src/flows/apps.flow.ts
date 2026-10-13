@@ -1,5 +1,5 @@
 /**
- * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
+ * Kortix Apps — project-owned App CRUD, artifact registration, and
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
  * exec and volume routes. Maps to spec section 28 (APP-1..8,

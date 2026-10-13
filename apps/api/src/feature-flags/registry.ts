@@ -231,7 +231,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'apps',
     name: 'Apps',
     description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
     stability: 'stable',
     available: () => true,
     platformDefault: () => false,
