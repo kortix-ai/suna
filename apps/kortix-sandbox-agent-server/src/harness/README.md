@@ -67,7 +67,7 @@ route, the body, the credential, the retries and the dead-token breaker.
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b, P6.2)
+## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b, P6.2, P6.3)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
@@ -117,7 +117,7 @@ starts the journal (generation 0) before the event loop and the first prompt;
 the service's host `lifecycle.stop()` stops it before OpenCode stops, and a
 restart (`this.stop()` inside the native lifecycle) leaves it running.
 
-### Restore (P6.2, pi)
+### Restore (P6.2 pi, P6.3 OpenCode)
 
 Nothing calls a restore yet: P6.4 decides when it runs, behind a flag. The steps
 the boot will run:
@@ -131,7 +131,10 @@ the boot will run:
    60 s for all reads; only refs in this session's own folder), checks its `sha256`, and puts it back in place of
    the 16 kB preview. A text with `ref` + `bytes` and no `blobs` entry, an
    unreadable one and a wrong digest keep the preview and are listed in
-   `truncated` (`not_listed`, `unreadable`, `sha256_mismatch`).
+   `truncated` (`not_listed`, `unreadable`, `sha256_mismatch`). An adapter's
+   `readAttachment` reads attachment bytes the same way: `apiBytesReader(ctx)`
+   returns a `kortix-attachment://` object of this session, and the adapter
+   checks it against the block's `sha256` (`attachmentBytes`).
 3. `port.restore(log, seq_max)` before the runtime starts. pi:
    `restorePiSessionLog` (`pi/session-log-restore.ts`, the mapping is in its
    header) writes the dump the runtime loads: the root's entries with a header,
@@ -144,6 +147,22 @@ the boot will run:
    `kortix.seq-floor` entry for the root, `nextSeq` for a child). It returns one cursor per thread with the
    hash the export computes for each message of the written store, and
    `dropped` (counts by kind, only for messages modelView shows next).
+   OpenCode: `restoreOpenCodeSessionLog` (`open-code/session-log-restore.ts`,
+   the mapping is in its header) writes one session file per thread and runs
+   `opencode --pure import` on each in the directory OpenCode serves, so the
+   sessions join the box's project and keep every id. It first removes every
+   session from `opencode.db`: the store then holds exactly the log. The root
+   thread's id is the OpenCode session id (a pi root `ses_pi…` included) and
+   the pin (`opencode-session-id`) names it; sub-agent threads are child
+   sessions that their spawning call names. A message `fromV1` built from
+   OpenCode rows is written as `toV1` gives it back, with its attachment bytes
+   as data URLs; any other message is written for what the model sees. An id
+   OpenCode rejects (no `ses`/`msg`/`prt` prefix, such as pi's `msg_…-p0`
+   part ids) is re-keyed, and `opencode-session-log.json` keeps native id →
+   log id (`ids`) beside the seqs, so the export renames it back. New
+   messages number above the floor (`seq_max` and every seq of the log). A
+   running OpenCode (a warm seed) needs no stop: it reads sessions per request.
+   It returns the cursors of the written store and `dropped`, as pi does.
 4. `startSessionLogJournal(port, { generation, cursors })`: the export skips
    every restored message by hash (C13).
 
@@ -154,8 +173,23 @@ root and for each sub-agent resumed through `task` with its `task_id`. The
 recorded session round-trips: export → restore → export is equal except pi's
 system prompt messages (`kind: 'context'`), which pi rebuilds at the next prompt.
 
+Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
+`opencode serve` in an isolated home against a fake model, dummy key): the 7
+golden fixtures, converted and partial logs, an OpenCode session and a pi
+session recorded in the test, a second restore after a journaled turn, the seq
+floor, and a restore into a running OpenCode. Each checks the hash guard
+(`changes(cursors)` returns no message and no tombstone) and the next request
+of the root and of each sub-agent (resumed through `task` with its `task_id`)
+against `modelView(log)`. The recorded OpenCode session round-trips: export →
+restore → export is equal.
+
+Known limits of the OpenCode restore:
+- `opencode import` runs once per thread (about 1 s each on a laptop): a session with many sub-agents restores in seconds, not milliseconds.
+- An attachment of an OpenCode session has its bytes only in the native store (`ref: blob:<sha256>`, nothing uploads them yet): a fresh box restores it only when `readAttachment` has the bytes. Without them it is left out and counts in `dropped.attachment` when the model would see it next.
+- A layout OpenCode cannot show in its order (an assistant message before the summary, a kept run that is not the contiguous run before the marker) counts in `dropped.layout`.
+
 Known limits of the pi restore:
-- Images of a pi session cannot be restored in a fresh box: the export keeps their bytes only in the native store (`ref: blob:<sha256>`), and there is no bytes reader for a `kortix-attachment://` image yet. They count in `dropped.attachment`. Restore must not be on by default before the journal uploads image bytes.
+- Images of a pi session cannot be restored in a fresh box: the export keeps their bytes only in the native store (`ref: blob:<sha256>`), and nothing uploads them yet (`apiBytesReader` reads only a `kortix-attachment://` object). They count in `dropped.attachment`. Restore must not be on by default before the journal uploads image bytes.
 - A call input that is not an object or a string (a converted row that lost it) goes out as `{}` and counts in `dropped.tool_input`.
 - A `layout` compaction is rendered as entries after hiding the history; a native pi compaction before it cannot be hidden and keeps its summary first.
 
@@ -166,7 +200,7 @@ Known limits of the pi export:
 Known limits of the OpenCode export:
 - OpenCode 1.18.23's compaction part has no `tail_start_id` on a live box, so the compaction block's `first_kept_message_id` is `null` (what OpenCode stored; a restore into another harness counts it as a missing cut point).
 - A daemon restart sends every message again in its first batch: nothing gives the journal its cursors before P6.
-- A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until P6 seeds seqs from the API's cursors.
+- A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until a restore (P6.3) writes the seqs of the API's log.
 
 ### The v2 stream (P4.3)
 

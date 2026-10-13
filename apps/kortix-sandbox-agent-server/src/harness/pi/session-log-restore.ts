@@ -59,7 +59,6 @@
  * journal's next export skips them (C13), so the API keeps the records it has
  * and never receives the lossy re-derivation of a log from another harness.
  */
-import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { buildSessionProjection, type SessionEntry } from '@earendil-works/pi-coding-agent'
 import {
@@ -75,6 +74,7 @@ import type { KortixMessage } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
 import { piDumpPath, type PiChildDump, type PiDump } from './runtime'
+import { attachmentBytes, visibleMessageIds } from '../shared/session-log-restore'
 import { PI_NO_RESULT, piSessionLog, type PiSessionSnapshot } from './session-log'
 
 export interface PiRestoreTarget {
@@ -134,22 +134,8 @@ class Chain {
   }
 }
 
-/** `drop` counts a loss in the message being written, when the model sees it next (`visibleIds`). */
+/** `drop` counts a loss in the message being written, when the model sees it next (`visibleMessageIds`). */
 type Ctx = { images: Map<string, string | null>; drop: (kind: string) => void }
-
-/** The messages of a thread that modelView shows: in context, and not summarized away by its last compaction. */
-function visibleIds(thread: SessionLogThread): Set<string> {
-  const msgs = [...thread.messages].sort((a, b) => a.seq - b.seq)
-  const c = msgs.findLastIndex((m) => m.kind === 'compaction' && m.in_context)
-  const block = msgs[c]?.blocks.find((b): b is CompactionBlock => b.type === 'compaction')
-  const turn = (m: SessionLogMessage) => m.in_context && m.kind === 'turn'
-  if (!block) return new Set(msgs.filter(turn).map((m) => m.message_id))
-  const k = block.first_kept_message_id ? msgs.findIndex((m) => m.message_id === block.first_kept_message_id) : -1
-  const kept = block.layout
-    ? block.layout.flatMap((e) => ('message_id' in e ? [e.message_id] : []))
-    : k < 0 ? [] : msgs.slice(k, c).filter(turn).map((m) => m.message_id)
-  return new Set([...kept, ...msgs.slice(c + 1).filter(turn).map((m) => m.message_id)])
-}
 
 /** pi image content for an attachment, or null when its bytes are missing or pi cannot send its type. */
 function image(a: { ref?: string; mime: string }, ctx: Ctx): J | null {
@@ -244,7 +230,7 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
 /** One thread as pi entries. `nextSeq` numbers the entries a layout compaction renders, above `floor`. */
 function writeThread(thread: SessionLogThread, images: Ctx['images'], drop: Ctx['drop'], floor: number): Chain {
   const chain = new Chain()
-  const visible = visibleIds(thread)
+  const visible = visibleMessageIds(thread)
   let current = ''
   const ctx: Ctx = { images, drop: (kind) => void (visible.has(current) && drop(kind)) }
   const msgs = [...thread.messages].sort((a, b) => a.seq - b.seq)
@@ -345,25 +331,6 @@ function transcripts(log: SessionLog): Map<string, KortixMessage[]> {
   return out
 }
 
-/** The bytes of every attachment the log names, base64, checked against its digest. */
-async function readImages(log: SessionLog, read: PiRestoreTarget['readAttachment']): Promise<Map<string, string | null>> {
-  const refs = new Map<string, string | undefined>()
-  for (const m of log.threads.flatMap((t) => t.messages)) {
-    for (const b of m.blocks) {
-      if (b.type === 'attachment' && b.ref) refs.set(b.ref, b.sha256)
-      if (b.type === 'tool_call') for (const c of [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])]) if (c.type === 'attachment' && c.ref) refs.set(c.ref, c.sha256)
-    }
-  }
-  const out = new Map<string, string | null>()
-  for (const [ref, digest] of refs) {
-    const bytes = read ? await read(ref).catch(() => null) : null
-    const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
-    const ok = bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want)
-    out.set(ref, ok ? bytes.toString('base64') : null)
-  }
-  return out
-}
-
 /** `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`). */
 export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTarget, seqMax: Readonly<Record<string, number>> = {}): Promise<SessionLogRestoreResult> {
   const log = structuredClone(input)
@@ -374,7 +341,7 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
   for (const t of log.threads) if (t !== root && t.parent_thread_id === null) t.parent_thread_id = rootId
   log.threads = log.threads.filter((t) => t === root || t.thread_id !== rootId)
   const dropped: Record<string, number> = {}
-  const images = await readImages(log, target.readAttachment)
+  const images = new Map([...(await attachmentBytes(log, target.readAttachment))].map(([ref, bytes]) => [ref, bytes?.toString('base64') ?? null]))
   const drop = (kind: string) => void (dropped[kind] = (dropped[kind] ?? 0) + 1)
   const v1 = transcripts(log)
 

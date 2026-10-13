@@ -7,8 +7,8 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { SessionLogRestoreSchema, type SessionLogMessage, type SessionLogRestore } from '@kortix/api-contract/session-log'
-import { apiTextReader, sessionLogFromRestore } from '@/harness/shared/session-log-restore'
+import { SessionLogRestoreSchema, type SessionLog, type SessionLogMessage, type SessionLogRestore } from '@kortix/api-contract/session-log'
+import { apiBytesReader, apiTextReader, attachmentBytes, sessionLogFromRestore } from '@/harness/shared/session-log-restore'
 
 const PROJECT = '11111111-1111-4111-8111-111111111111'
 const SESSION = '22222222-2222-4222-8222-222222222222'
@@ -159,5 +159,32 @@ describe('deadlines (P6.2 review)', () => {
       ['msg_unlisted', 'not_listed'],
       ['msg_corrupt', 'unreadable'],
     ])
+  })
+})
+
+describe('attachment bytes (P6.3)', () => {
+  test('apiBytesReader returns the stored bytes unchanged; attachmentBytes keeps only bytes that match the digest', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x0d, 0x0a])
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (request) => new URL(request.url).pathname.endsWith(id(0)) ? new Response(bytes, { headers: { 'content-type': 'image/png' } }) : new Response('not found', { status: 404 }),
+    })
+    servers.push(server)
+    const read = apiBytesReader({ projectId: PROJECT, sessionId: SESSION, token: 'sandbox-token', apiRoot: `http://127.0.0.1:${server.port}/v1` })
+    expect(await read(ref(0))).toEqual(bytes)
+    expect(await read(ref(1))).toBeNull()
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    const log = restoreAnswer().log as SessionLog
+    log.threads[0]!.messages[0]!.blocks.push(
+      { type: 'attachment', id: 'a1', mime: 'image/png', ref: ref(0), bytes: bytes.length, sha256: digest },
+      { type: 'attachment', id: 'a2', mime: 'image/png', ref: `blob:${'0'.repeat(64)}`, bytes: 1 },
+    )
+    const out = await attachmentBytes(log, read)
+    expect(out.get(ref(0))).toEqual(bytes)
+    // A ref the reader cannot serve (a native `blob:` with no upload) has no bytes.
+    expect(out.get(`blob:${'0'.repeat(64)}`)).toBeNull()
+    // Wrong bytes for the digest: none.
+    expect((await attachmentBytes(log, async () => Buffer.from('tampered'))).get(ref(0))).toBeNull()
   })
 })
