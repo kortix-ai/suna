@@ -1,7 +1,7 @@
 /**
  * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
  * config gate then again by the catalog gate" is named explicitly as the
- * shape R4 forbids. Parallelising `convergeBeforeTurnStart` and
+ * shape R4 forbids. Parallelising `convergeConfigIfBehind` and
  * `convergeModelCatalogForTurnStart` (R2) makes that race REAL: both gates
  * call the module-private `probeRunningRelease`, and with no coalescing two
  * concurrent callers for the same session would each issue their own

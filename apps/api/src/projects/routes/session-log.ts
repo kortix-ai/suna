@@ -6,6 +6,11 @@
  * file pins its session. Wire and status codes: `@kortix/api-contract/session-log` (`wire.ts`).
  * The writes and their rules: `../session-log-ingest.ts`.
  *
+ * The restore, `POST /:projectId/sessions/:sessionId/log/restore` (P6.1), takes the same
+ * credential: a fresh box's daemon claims the session and reads its whole log
+ * (`../session-log-restore.ts`). The app-wide `compressResponse` (`../../middleware/compress.ts`)
+ * gzips its answer for a caller that accepts gzip; it falls back to `node:zlib` on the image's Bun 1.2.
+ *
  * The read, `GET /:projectId/sessions/:sessionId/log` (P4.2), is the other way round: a
  * project member's session read, never the sandbox credential. Postgres only
  * (`../session-log-read.ts`).
@@ -23,6 +28,8 @@ import {
   SessionLogJournalSeqConflictSchema,
   SessionLogManifestSchema,
   SessionLogPageSchema,
+  SessionLogRestoreMissingSchema,
+  SessionLogRestoreSchema,
   type SessionLogJournalRequest,
 } from '@kortix/api-contract/session-log';
 import type { Context } from 'hono';
@@ -37,6 +44,7 @@ import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { ingestSessionLogJournal, readSessionLogManifest, type SessionLogScope } from '../session-log-ingest';
 import { readSessionLogPage } from '../session-log-read';
+import { claimSessionLog } from '../session-log-restore';
 import { resolveSessionBinding } from './lib/route-bindings';
 
 const MAX_GZIP_BYTES = 2 * 1024 * 1024;
@@ -139,6 +147,35 @@ export function registerSessionLogRoutes(): void {
       const manifest = await readSessionLogManifest(scope);
       if (!manifest) return c.json({ error: 'Session not found' }, 404);
       return c.json(manifest, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/log/restore',
+      tags: ['projects'],
+      summary: 'Claim the session and read its whole session log, for a fresh box',
+      description:
+        'Session sandbox credential only, no body. Raises the session generation by 1 and answers `SessionLogRestore` ' +
+        'at that generation: every thread with its live messages in seq order, the rev of every message (tombstones ' +
+        'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
+        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed.',
+      ...auth,
+      request: { params },
+      responses: {
+        200: json(SessionLogRestoreSchema, 'The claimed generation and the whole stored log'),
+        404: json(SessionLogRestoreMissingSchema, 'The session has no stored log; nothing was claimed'),
+        ...errors(403, 503),
+      },
+    }),
+    async (c) => {
+      const scope = sandboxScope(c);
+      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!config.SESSION_LOG_RESTORE_ENABLED) return c.json({ error: 'Session log restore is off' }, 503);
+      const restored = await claimSessionLog(scope);
+      if (!restored) return c.json({ error: 'no_session_log' as const }, 404);
+      return c.json(restored, 200);
     },
   );
 

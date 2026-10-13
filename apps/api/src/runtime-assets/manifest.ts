@@ -624,13 +624,12 @@ export function _resetRuntimeAssetsCache(): void {
 // ---------------------------------------------------------------------------
 // "Is this box running what this deploy serves?"
 //
-// THE ASYMMETRY THAT DECIDES THIS WHOLE LANE, stated once where every later
-// reader will find it: CONFIG blocks the turn, because config changes what the
-// agent IS — `convergeBeforeTurnStart` awaits, and a stale box pays
-// 10,287-10,907 ms. BINARIES MUST NOT BLOCK. A box one turn behind on the CLI
-// is the state that already exists today; a box that makes the user wait for
-// ~100 MB is a regression. So everything below DETECTS and SCHEDULES. It never
-// applies and it is never awaited on the send path.
+// THE RULE THAT DECIDES THIS WHOLE LANE: BINARIES MUST NOT BLOCK A TURN (and
+// since 2026-10-13 config does not either: `convergeConfigIfBehind` runs after
+// a turn ends). A box one turn behind on the CLI is the state that already
+// exists today; a box that makes the user wait for ~100 MB is a regression. So
+// everything below DETECTS and SCHEDULES. It never applies and it is never
+// awaited on the send path.
 // ---------------------------------------------------------------------------
 
 /** What a daemon says it is running, from the health `runtime.running` block. */

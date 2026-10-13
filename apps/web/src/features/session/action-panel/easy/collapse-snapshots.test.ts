@@ -1,14 +1,15 @@
 import type { ToolPart } from '@/ui';
+import { toolCallBlock, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, it } from 'bun:test';
 import { collapseSnapshots } from './detail-view';
 
-function part(tool: string, id: string): ToolPart {
-  return {
+function part(tool: string, id: string): ToolCallBlock {
+  return toolCallBlock({
     type: 'tool',
     tool,
     callID: id,
     state: { status: 'completed', input: {} },
-  } as unknown as ToolPart;
+  } as unknown as ToolPart);
 }
 
 describe('collapseSnapshots', () => {
@@ -18,7 +19,7 @@ describe('collapseSnapshots', () => {
       part('todo_write', 'b'),
       part('todo_write', 'c'),
     ]);
-    expect(kept.map((p) => p.callID)).toEqual(['c']);
+    expect(kept.map((c) => c.call_id)).toEqual(['c']);
   });
 
   it('normalizes aliases (todowrite, oc- prefix, kebab-case)', () => {
@@ -27,12 +28,12 @@ describe('collapseSnapshots', () => {
       part('todowrite', 'b'),
       part('todo_write', 'c'),
     ]);
-    expect(kept.map((p) => p.callID)).toEqual(['c']);
+    expect(kept.map((c) => c.call_id)).toEqual(['c']);
   });
 
   it('leaves non-snapshot calls alone — each is a real distinct event', () => {
     const kept = collapseSnapshots([part('bash', 'a'), part('bash', 'b')]);
-    expect(kept.map((p) => p.callID)).toEqual(['a', 'b']);
+    expect(kept.map((c) => c.call_id)).toEqual(['a', 'b']);
   });
 
   it('keeps other calls around the surviving snapshot, in order', () => {
@@ -42,12 +43,12 @@ describe('collapseSnapshots', () => {
       part('todo_write', 'snap2'),
       part('read', 'file'),
     ]);
-    expect(kept.map((p) => p.callID)).toEqual(['cmd', 'snap2', 'file']);
+    expect(kept.map((c) => c.call_id)).toEqual(['cmd', 'snap2', 'file']);
   });
 
   it('is a no-op for a single snapshot', () => {
     const kept = collapseSnapshots([part('todo_write', 'only')]);
-    expect(kept.map((p) => p.callID)).toEqual(['only']);
+    expect(kept.map((c) => c.call_id)).toEqual(['only']);
   });
 
   it('handles an empty list', () => {

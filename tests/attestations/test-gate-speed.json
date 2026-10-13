@@ -1,0 +1,16 @@
+{
+  "source_hash": "5015e7c6b62eaca3194164fb438b6a4c330a216c534eb98cfecc6fc80e8d1567",
+  "diff_files": [
+    "tests/unit/attestation-diff.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "47efd06ef8f49ab3ff784baf29e282353139e45f23f89f70055352faf82bc1ea",
+  "head": "03f4e1f9887b8127426501f206b305395bbc6c37",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T16:39:20.362Z"
+}

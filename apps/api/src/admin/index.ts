@@ -20,6 +20,7 @@ import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
 import { readJsonObject } from '../shared/http-body';
 import { errorSqlstate } from '../shared/error-cause';
+import { logger } from '../lib/logger';
 import {
   deleteSessionSandbox,
   findAccountName,
@@ -1208,7 +1209,8 @@ adminApp.openapi(
 // An operator can record the same fact after proving domain control another way
 // (a support ticket from the domain's mail, a signed order form), or withdraw it.
 // A verified domain makes the IdP's asserted emails trusted outside the account
-// and turns on `enforce_sso`, so the change is audited on the account.
+// and turns on `enforce_sso`, which signs out every member it refuses, so the
+// change is audited on the account. Unverifying restores no sign-in.
 adminApp.openapi(
   createRoute({
     method: 'put',
@@ -1236,8 +1238,13 @@ adminApp.openapi(
       const accountId = c.req.param('id');
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { verified: boolean };
-      const { domainVerifiedByOtherAccount, getSsoProvider, isSsoDomainVerified, setSsoDomainVerified } =
-        await import('../repositories/sso');
+      const {
+        domainVerifiedByOtherAccount,
+        getSsoProvider,
+        isSsoDomainVerified,
+        setSsoDomainVerified,
+        signOutNonSsoMembers,
+      } = await import('../repositories/sso');
       const before = await getSsoProvider(accountId);
       if (!before) return c.json({ error: 'no SSO provider configured' }, 404);
       if (body.verified && (await domainVerifiedByOtherAccount(accountId, before.primaryDomain))) {
@@ -1248,6 +1255,16 @@ adminApp.openapi(
       }
       const after = await setSsoDomainVerified(accountId, body.verified);
       if (!after) return c.json({ error: 'no SSO provider configured' }, 404);
+      // With `enforce_sso` on, verifying turns enforcement on: end the sign-ins
+      // the gate now refuses. Ends nothing otherwise; repeating the request
+      // retries a failed run. null = it failed, after the change was saved.
+      // Unverifying (break-glass) ends nothing, so it never runs the query.
+      const revokedSessions = body.verified
+        ? await signOutNonSsoMembers(accountId, actorUserId).catch((err: unknown) => {
+            logger.error('[admin] could not end the sign-ins SSO only refuses', { accountId, error: String(err) });
+            return null;
+          })
+        : 0;
       try {
         const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
@@ -1257,12 +1274,26 @@ adminApp.openapi(
           resourceType: 'sso_provider',
           resourceId: after.ssoProviderId,
           before: { primary_domain: before.primaryDomain, domain_verified: isSsoDomainVerified(before) },
-          after: { primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after), method: 'operator' },
+          after: {
+            primary_domain: after.primaryDomain,
+            domain_verified: isSsoDomainVerified(after),
+            method: 'operator',
+            revoked_sessions: revokedSessions,
+          },
           ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the change */
+      }
+      if (revokedSessions === null) {
+        return c.json(
+          {
+            error: 'Could not sign out the members who signed in without SSO. Repeat this request to retry.',
+            code: 'sso_sign_out_failed',
+          },
+          500,
+        );
       }
       return c.json({ ok: true, primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after) });
     } catch (e: any) {

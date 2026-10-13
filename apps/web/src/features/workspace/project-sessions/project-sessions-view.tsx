@@ -64,6 +64,7 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  bulkDeleteConfirmLabel,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -812,7 +813,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           value1: selectedCount === 1 ? 'session' : 'sessions',
         })}
         description={tI18nComplete.raw('textac371f652a2d')}
-        confirmLabel={`Delete ${selectedCount}`}
+        confirmLabel={bulkDeleteConfirmLabel(selectedCount, tI18nComplete)}
         confirmVariant="destructive"
         isPending={bulkDeleteMutation.isPending}
         onConfirm={() => bulkDeleteMutation.mutate([...visibleSelection])}

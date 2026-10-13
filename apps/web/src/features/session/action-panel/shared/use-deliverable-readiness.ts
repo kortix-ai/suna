@@ -3,9 +3,9 @@
 /**
  * The headless half of the Ready moment (W1) and the needs-input chip (W9).
  *
- * Lives in `session-layout` — NOT in `EasyPanel` — because the panel body is
- * exactly the thing the user hasn't opened; the announcement must come from a
- * component that is mounted while the panel is closed.
+ * Lives in `SessionPanelProvider` — NOT in `EasyPanel` — because the panel
+ * body is exactly the thing the user hasn't opened; the announcement must come
+ * from a component that is mounted while the panel is closed.
  *
  * The existing notification system (`notifyTaskComplete`) already covers the
  * away cases (tab hidden, other session) and deliberately stays silent while
@@ -15,21 +15,16 @@
 
 import { track } from '@/lib/track';
 import { useIsSidePanelOpen, useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { MessageWithParts } from '@/ui';
 import { useRuntimePendingStore } from '@kortix/sdk/react';
-import { useEffect, useMemo, useRef } from 'react';
-import { deriveIsRunning } from '../easy/easy-panel-logic';
-import { collectAllToolParts } from './collect-tool-parts';
+import { useEffect, useRef } from 'react';
 import {
   chipForCompletion,
   completionYieldsToPendingInput,
   pendingInputCount,
 } from './deliverable-readiness';
-import { deriveOutputs } from './derive-panels';
-import { groupSteps } from './group-steps';
-import { latestRunCallIds, latestRunMessages } from './latest-run';
+import type { OutputItem } from './derive-panels';
 import { selectPrimaryDeliverable } from './output-priority';
-import { deriveRunOutcome } from './run-outcome';
+import type { RunOutcome } from './run-outcome';
 
 /**
  * Sessions whose CURRENT pending-input episode has already been reported to
@@ -45,17 +40,11 @@ const needsInputReported = new Set<string>();
 
 export function useDeliverableReadiness(
   sessionId: string,
-  messages: MessageWithParts[] | undefined,
-  isSessionBusy: boolean,
+  /** The provider's own derivations (`session-panel-provider.tsx`): one computation, not a second one here. */
+  run: { isRunning: boolean; outcome: RunOutcome; outputs: OutputItem[] },
 ): void {
   const isPanelOpen = useIsSidePanelOpen();
-
-  const parts = useMemo(() => collectAllToolParts(messages), [messages]);
-  const steps = useMemo(() => groupSteps(parts), [parts]);
-  const isRunning = deriveIsRunning(
-    steps.some((s) => s.status === 'running'),
-    isSessionBusy,
-  );
+  const { isRunning, outcome, outputs } = run;
 
   // Pending questions/permissions for THIS session — read above the W1 effect
   // because completion has to consult it: a run can settle to idle while a
@@ -75,12 +64,8 @@ export function useDeliverableReadiness(
     // (which won't re-run on this render if pendingForSession didn't change).
     if (completionYieldsToPendingInput(pendingForSession)) return;
 
-    // Scoped to the latest run's own steps, not the session's — otherwise a
-    // text-only turn after an old errored write reads as failed forever
-    // (the session-wide last step never moves off 'error').
-    const latestSteps = groupSteps(collectAllToolParts(latestRunMessages(messages)));
-    const outcome = deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status);
-    const outputs = deriveOutputs(parts, { latestRun: latestRunCallIds(messages) });
+    // `outcome` is scoped to the latest run's own steps by the provider, so a
+    // text-only turn after an old errored write reads as succeeded.
     const freshDeliverables = outputs.filter((o) => o.fresh);
     const primary = selectPrimaryDeliverable(
       freshDeliverables.filter((o) => o.kind === 'app'),
@@ -96,7 +81,7 @@ export function useDeliverableReadiness(
       track('ready_chip_shown', { outcome: chip.outcome });
       useKortixComputerStore.getState().setReadyChip(chip);
     }
-  }, [isRunning, isPanelOpen, messages, parts, steps, sessionId, pendingForSession]);
+  }, [isRunning, isPanelOpen, outcome, outputs, sessionId, pendingForSession]);
 
   // W9 — the agent is blocked on the user. This is not a transition: the chip
   // holds for as long as the question does, and yields to nothing (a

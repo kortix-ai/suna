@@ -33,6 +33,10 @@ describe('project page ?q= prefill wiring', () => {
     expect(source).not.toContain('.consume(');
   });
 
+  test('a ?q= prompt never sends itself: anyone can write a link', () => {
+    expect(source).not.toContain('submit: true');
+  });
+
   test('strips q from the URL via router.replace without scrolling', () => {
     expect(source).toContain("nextParams.delete('q')");
     expect(source).toContain('router.replace(');
