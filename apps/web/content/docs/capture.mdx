@@ -37,29 +37,58 @@ profile menu open it.
 From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
 From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.
 
-## Record on your computer
+## Install Kortix Capture
 
-Each member turns recording on for their own computer. Capture never starts on
-a computer by itself, except where IT installed it for the organization: see
-[Capture IT rollout](/docs/capture-rollout). On such a computer the desktop
-app shows **Managed by your organization** and has no switch.
+Kortix Capture is its own app, installed apart from the Kortix app. It runs in
+the background on Windows, macOS and Linux, shows an icon in the notification
+area (the menu bar on macOS), and records into one Kortix account. A computer
+connects in one of two ways:
 
-1. Install the Kortix desktop app, or the standalone `kortix-capture` engine.
-2. In the desktop app, open **Capture → This computer** and turn recording on.
-   With the engine alone, run
-   `kortix-capture sync setup --provider kortix --issuer <your Kortix API>`.
-3. Approve the sign-in. The browser opens `/capture/authorize` with a code.
-   Check that the code matches, then choose the account. Only accounts with
-   Capture on are listed.
-4. On macOS, grant the permissions when asked: Screen Recording for the
+| Way | For | How |
+|---|---|---|
+| Sign in with Kortix | one person on their own computer | the person approves the computer in the browser |
+| Enrollment token | IT, for many computers at once | IT installs with a token; nobody signs in. See [Capture IT rollout](/docs/capture-rollout) |
+
+Download the installer for the computer: [Windows](/download/capture/windows)
+(`.msi`), [macOS](/download/capture/macos) (`.pkg`) or
+[Linux](/download/capture/linux) (`.deb`).
+
+To sign in with Kortix:
+
+1. Install Kortix Capture and open it from the Kortix Capture icon.
+2. Choose **Sign in with Kortix…**. The browser opens `/capture/authorize`
+   with a code. Check that the code matches, then choose the account. Only
+   accounts with Capture on are listed.
+3. On macOS, grant the permissions when asked: Screen Recording for the
    screen, Accessibility and Input Monitoring for actions, Microphone for
-   audio. Windows asks for none.
+   audio. Windows and Linux ask for none.
 
-The device records into that account as you, 24/7, and uploads every finished
-item. It gets a revocable device token and, from it, short-lived storage
-credentials for its own folder (`orgs/<account_id>/<device_id>/`) and read
-access to the policy. Signing in again on the same computer reuses the device.
-Forgetting a time range on the device removes it from Kortix too.
+Without the icon, the same sign-in is
+`kortix-capture sync setup --provider kortix --issuer <your Kortix API>`.
+
+The computer records into that account as you, 24/7, and uploads every
+finished item. It gets a revocable device token and, from it, short-lived
+storage credentials for its own folder (`orgs/<account_id>/<device_id>/`) and
+read access to the policy. Signing in again on the same computer reuses the
+device. Forgetting a time range on the device removes it from Kortix too.
+
+## Link a computer to a person
+
+Every computer is a device in **Capture → Devices**. A computer you signed in
+records for you. A computer IT enrolled records for the member whose email the
+person signs in to the computer with; when no member has that email, it
+records **linked to no one** until an admin links it.
+
+To link or change it, choose **Link to a person…** on the device
+(`capture.manage`). From then on the computer records for that person. What it
+recorded linked to no one moves to them within minutes; what it recorded for
+an earlier person stays theirs. From the API:
+`PUT /v1/accounts/<account_id>/capture/devices/<device_id>/link` with
+`{"user_id": "<member>"}`, or `{"user_id": null}` to unlink.
+
+Only people with `capture.read_all` see a computer linked to no one. Every
+read of it writes `capture.device_view` to the audit log. An agent never reads
+it.
 
 ## Who sees what
 
@@ -127,7 +156,10 @@ notebook, a BI tool or an agent.
 **Scoping.** Every route reads your own data by default. With
 `capture.read_all`, pass `user_id=<member>` (audited as `capture.member_view`)
 or, where the route takes it, `scope=account` for every member (audited as
-`capture.account_view`). A read outside your permissions answers `403`
+`capture.account_view`). A device linked to no one is read by its `device_id`
+without `user_id` (`capture.read_all`, audited as `capture.device_view`);
+without that permission the same request returns only your own rows of it. A
+read outside your permissions answers `403`
 `capture_forbidden`. While Capture is off, every route answers `403`
 `capture_disabled`.
 
@@ -137,6 +169,7 @@ or, where the route takes it, `scope=account` for every member (audited as
 | `PATCH /` `{ "enabled": true }` | the same; needs `capture.manage` |
 | `GET enrollment-tokens` · `POST enrollment-tokens` · `DELETE enrollment-tokens/<token_id>` | the IT rollout tokens; needs `capture.manage` (see [Capture IT rollout](/docs/capture-rollout)) |
 | `GET enrollments?status=pending` · `POST enrollments/<id>/approve` `{ "user_id" }` · `POST enrollments/<id>/deny` | computers that wait for a decision; needs `capture.manage` |
+| `PUT devices/<device_id>/link` `{ "user_id" }` | links the device to a member, or unlinks it with `null`; needs `capture.manage` |
 | `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence |
 | `DELETE devices/<device_id>` | revokes the device: its token stops working at once |
 | `GET devices/<device_id>/assets/<name>` | a signed URL of one action screenshot (5 minutes) |

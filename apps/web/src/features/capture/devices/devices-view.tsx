@@ -2,7 +2,7 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
-import { BuildingsIcon, CodeIcon, DesktopIcon, LaptopIcon, PlusIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, BuildingsIcon, CodeIcon, DesktopIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { Fragment, useMemo, useState } from 'react';
 
@@ -28,7 +28,6 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { desktopDownloadUrl, isDesktop } from '@/lib/desktop';
 
 import { relativeTime } from '@/lib/relative-time';
 import { CaptureApiModal } from '../api/capture-api-modal';
@@ -40,7 +39,6 @@ import {
   useCaptureArea,
   useCaptureDirectory,
 } from '../area/use-capture-area';
-import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
 import { deviceStatus, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, StatusLabel } from './device-status-ui';
 import { RolloutModal, WaitingComputers } from './rollout';
@@ -70,8 +68,6 @@ export function DevicesView({ accountId }: { accountId: string }) {
   const scope: Scope = area.readsEveryone ? scopePick : 'mine';
   const [filter, setFilter] = useState<Filter>('all');
   const query = useCaptureDevices(accountId, { scope });
-  const desktop = useDesktopCaptureStatus();
-  const thisDeviceId = desktop.data?.deviceId ?? null;
   const devices = useMemo(
     () => (query.data?.devices ?? []).filter((device) => !device.revoked_at),
     [query.data],
@@ -93,7 +89,6 @@ export function DevicesView({ accountId }: { accountId: string }) {
   const rows = devices.filter(
     (device) => filter === 'all' || filterOf(deviceStatus(device).key) === filter,
   );
-  const onDesktop = isDesktop();
   const [apiOpen, setApiOpen] = useState(false);
   const [rolloutOpen, setRolloutOpen] = useState(false);
 
@@ -126,19 +121,12 @@ export function DevicesView({ accountId }: { accountId: string }) {
               {t('rollout')}
             </Button>
           ) : null}
-          {/* One way to add a computer: in the desktop app, record this one; in a browser, get the app. */}
+          {/* Kortix Capture is its own app: a person installs it and signs in, or IT rolls it out. */}
           <Button asChild size="sm" className="gap-1.5">
-            {onDesktop ? (
-              <Link href={captureHref(accountId, 'this-computer')}>
-                <LaptopIcon className="size-3.5 shrink-0" />
-                {t('thisComputer')}
-              </Link>
-            ) : (
-              <a href={desktopDownloadUrl()} target="_blank" rel="noreferrer">
-                <PlusIcon className="size-3.5 shrink-0" />
-                {t('addDevice')}
-              </a>
-            )}
+            <Link href="/docs/capture#install-kortix-capture" target="_blank" rel="noreferrer">
+              {t('getCapture')}
+              <ArrowSquareOutIcon className="size-3.5 shrink-0" />
+            </Link>
           </Button>
         </>
       }
@@ -208,7 +196,6 @@ export function DevicesView({ accountId }: { accountId: string }) {
             byMember={scope === 'account'}
             withIdleMembers={filter === 'all'}
             canManage={area.canManage}
-            thisDeviceId={thisDeviceId}
           />
           {rows.length === 0 ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">{t('noMatch')}</p>
@@ -239,11 +226,20 @@ function groupByMember(
   viewerId: string | null,
   emailOf: (userId: string) => string,
 ) {
-  const groups = new Map<string, CaptureDevice[]>(memberIds.map((id) => [id, []]));
+  const groups = new Map<string | null, CaptureDevice[]>(memberIds.map((id) => [id, []]));
   for (const device of rows)
     groups.set(device.user_id, [...(groups.get(device.user_id) ?? []), device]);
+  // You first, then by email; devices linked to no one last.
   return [...groups.entries()].sort(([a], [b]) =>
-    a === viewerId ? -1 : b === viewerId ? 1 : emailOf(a).localeCompare(emailOf(b)),
+    a === null
+      ? 1
+      : b === null
+        ? -1
+        : a === viewerId
+          ? -1
+          : b === viewerId
+            ? 1
+            : emailOf(a).localeCompare(emailOf(b)),
   );
 }
 
@@ -253,14 +249,12 @@ function DeviceTable({
   byMember,
   withIdleMembers,
   canManage,
-  thisDeviceId,
 }: {
   accountId: string;
   rows: readonly CaptureDevice[];
   byMember: boolean;
   withIdleMembers: boolean;
   canManage: boolean;
-  thisDeviceId: string | null;
 }) {
   const t = useTranslations('capture.devices');
   const people = useCaptureDirectory(accountId, byMember);
@@ -290,12 +284,16 @@ function DeviceTable({
       <TableBody>
         {groups.map(([userId, devices]) => {
           const person = people.personOf(userId);
-          const label = person.isYou ? t('you') : (person.email ?? t('member'));
+          const label = person.isYou
+            ? t('you')
+            : person.userId === null
+              ? t('unlinked')
+              : (person.email ?? t('member'));
           const recording = devices.filter(
             (device) => deviceStatus(device).key === 'recording',
           ).length;
           return (
-            <Fragment key={userId}>
+            <Fragment key={userId ?? 'unlinked'}>
               {byMember ? (
                 <TableRow className="bg-card hover:bg-card">
                   <TableCell colSpan={columns} className="pl-4">
@@ -317,7 +315,7 @@ function DeviceTable({
                   accountId={accountId}
                   device={device}
                   canAct={canManage || device.user_id === people.viewerId}
-                  isThisComputer={device.device_id === thisDeviceId}
+                  canLink={canManage}
                 />
               ))}
             </Fragment>
@@ -332,12 +330,13 @@ function DeviceRow({
   accountId,
   device,
   canAct,
-  isThisComputer,
+  canLink,
 }: {
   accountId: string;
   device: CaptureDevice;
   canAct: boolean;
-  isThisComputer: boolean;
+  /** `capture.manage`: link the device to a person, or unlink it. */
+  canLink: boolean;
 }) {
   const t = useTranslations('capture.devices');
   const locale = useLocale();
@@ -352,11 +351,6 @@ function DeviceRow({
         >
           <DesktopIcon className="text-muted-foreground size-4 shrink-0" />
           <span className="truncate">{name}</span>
-          {isThisComputer ? (
-            <Badge variant="outline" size="xs">
-              {t('thisComputerBadge')}
-            </Badge>
-          ) : null}
           {device.enrollment_token_id ? (
             <Badge variant="outline" size="xs">
               {t('managedBadge')}
@@ -384,7 +378,14 @@ function DeviceRow({
       </TableCell>
       <TableCell className="pr-4 text-right">
         <span className="relative z-10 inline-flex items-center gap-1">
-          {canAct ? <DeviceActionsMenu accountId={accountId} device={device} name={name} /> : null}
+          {canAct ? (
+            <DeviceActionsMenu
+              accountId={accountId}
+              device={device}
+              name={name}
+              canLink={canLink}
+            />
+          ) : null}
         </span>
       </TableCell>
     </TableRow>

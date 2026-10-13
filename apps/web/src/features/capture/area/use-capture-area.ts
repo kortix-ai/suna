@@ -36,7 +36,7 @@ export function useCaptureArea(accountId: string) {
 
 /** The pages of the area, in the header's order. */
 export const CAPTURE_SECTIONS = ['devices'] as const;
-export type CaptureSection = (typeof CAPTURE_SECTIONS)[number] | 'this-computer';
+export type CaptureSection = (typeof CAPTURE_SECTIONS)[number];
 
 export function captureHref(accountId: string, section: CaptureSection = 'devices', rest = '') {
   return `/capture/${accountId}/${section}${rest}`;
@@ -45,7 +45,7 @@ export function captureHref(accountId: string, section: CaptureSection = 'device
 /** The section of a `/capture/[accountId]/…` path. */
 export function sectionOf(pathname: string | null): CaptureSection {
   const part = pathname?.split('/capture/')[1]?.split('/')[1] ?? '';
-  return ([...CAPTURE_SECTIONS, 'this-computer'] as readonly string[]).includes(part)
+  return (CAPTURE_SECTIONS as readonly string[]).includes(part)
     ? (part as CaptureSection)
     : 'devices';
 }
@@ -73,7 +73,8 @@ export function lastCaptureAccount(): string | null {
 // ── People: names for user ids ──────────────────────────────────────────────
 
 export interface CapturePerson {
-  userId: string;
+  /** null: a device linked to no one (an IT-enrolled computer). */
+  userId: string | null;
   /** The member's email, or null when the viewer may not read the member list. */
   email: string | null;
   isYou: boolean;
@@ -92,11 +93,14 @@ export function useCaptureDirectory(accountId: string, enabled: boolean) {
   );
   const viewerId = user?.id ?? null;
   const personOf = useCallback(
-    (userId: string): CapturePerson => ({
-      userId,
-      email: byId.get(userId) ?? (userId === viewerId ? (user?.email ?? null) : null),
-      isYou: userId === viewerId,
-    }),
+    (userId: string | null): CapturePerson =>
+      userId === null
+        ? { userId: null, email: null, isYou: false }
+        : {
+            userId,
+            email: byId.get(userId) ?? (userId === viewerId ? (user?.email ?? null) : null),
+            isYou: userId === viewerId,
+          },
     [byId, viewerId, user?.email],
   );
   return { personOf, viewerId, members: members.data ?? [], isLoading: members.isLoading };

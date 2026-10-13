@@ -19605,7 +19605,9 @@
       "textd4806967bdd6": "撤销了 Capture 注册令牌",
       "textb3e9170332a7": "列出了等待注册的电脑",
       "text8258034e2578": "批准了一台电脑的注册",
-      "textd2bea71d87f9": "拒绝了一台电脑的注册"
+      "textd2bea71d87f9": "拒绝了一台电脑的注册",
+      "text282851365ab1": "将 Capture 设备关联到了某人",
+      "text2c380a3fe63f": "查看了未关联任何人的设备的 Capture 数据"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20777,9 +20779,6 @@
       "viewLabel": "视图",
       "viewAll": "所有人",
       "viewMine": "我的设备",
-      "thisComputer": "此电脑",
-      "thisComputerBadge": "此电脑",
-      "addDevice": "添加设备",
       "filterLabel": "按状态筛选",
       "filter": {
         "all": "全部",
@@ -20793,9 +20792,8 @@
       "empty": {
         "allTitle": "还没有电脑向 {name} 录制",
         "mineTitle": "你还没有录制任何电脑",
-        "body": "安装 Kortix 桌面版并登录，然后在“此电脑”中开启 Kortix Capture。"
+        "body": "在电脑上安装 Kortix Capture 并用 Kortix 账号登录，或使用注册令牌批量部署到多台电脑。"
       },
-      "getDesktop": "获取 Kortix 桌面应用",
       "listLabel": "设备列表",
       "noMatch": "没有处于此状态的设备。",
       "col": {
@@ -20817,7 +20815,11 @@
       "pausedUntil": "至 {time}",
       "apiLink": "Kortix Capture API",
       "rollout": "批量部署",
-      "managedBadge": "IT 部署"
+      "managedBadge": "IT 部署",
+      "link": "关联到某人…",
+      "relink": "更改关联的人…",
+      "unlinked": "未关联任何人",
+      "getCapture": "获取 Kortix Capture"
     },
     "settings": {
       "title": "组织设置",
@@ -20843,7 +20845,25 @@
           "messagingHint": "信息、WhatsApp、Signal、Telegram 及其通知横幅。",
           "banking": "银行与金融",
           "bankingHint": "银行与金融应用，以及约 950 个银行和金融科技网站。"
-        }
+        },
+        "orgIntro": "对 {org} 的每台设备强制生效：任何设备都不会录制这些内容，成员也无法关闭。每位成员可在自己电脑上的 Kortix 桌面应用中添加自己的排除项。",
+        "kindLabel": "应用或网站",
+        "apps": "应用",
+        "websites": "网站",
+        "searchOrAddApp": "搜索应用，或按应用 ID 添加",
+        "searchWebsites": "搜索或添加网站",
+        "addApp": "排除 {app}",
+        "addDomain": "排除 {domain}",
+        "categories": "类别",
+        "appCount": "{count, plural, other {# 个应用}}",
+        "siteCount": "{count, plural, other {# 个网站}}",
+        "setByOrg": "由 {org} 设置",
+        "privateBrowsing": "无痕浏览",
+        "privateBrowsingDescription": "所有受支持浏览器中的隐私窗口和无痕窗口。",
+        "excluded": "已排除",
+        "noMatch": "没有匹配项。",
+        "noExcludedApps": "没有已排除的应用。",
+        "noExcludedSites": "没有已排除的网站。"
       },
       "localHours": "设备上",
       "localHoursHint": "电脑在上传后保留录制的时长。0 表示不限时长。",
@@ -20879,148 +20899,6 @@
       "experimentalTitle": "实验功能",
       "experimentalHint": "可用，但可能会变化。请先试用。"
     },
-    "dialog": {
-      "product": "Kortix Capture",
-      "title": "记录这台电脑",
-      "status": {
-        "off": "关闭",
-        "turningOn": "正在启动",
-        "signInRequired": "已退出",
-        "error": "因错误而停止",
-        "needsPermission": "需要权限",
-        "paused": "已暂停",
-        "pausedUntil": "暂停至 {time}",
-        "pausedByOrg": "你的组织已暂停",
-        "locked": "屏幕已锁定",
-        "excluded": "已排除的应用在前台",
-        "starting": "正在启动",
-        "recording": "正在记录",
-        "unavailable": "不可用",
-        "captureOff": "你的组织已关闭",
-        "managed": "由你的组织管理"
-      },
-      "unavailable": "此桌面应用不包含 Kortix Capture。请将 Kortix 更新到最新版本。",
-      "orgOff": "{org} 的 Kortix Capture 已关闭。所有者或管理员可以开启它。",
-      "intro": "为 {org} 录制这台电脑，让你和你的智能体可以搜索你做过的事。你和 {org} 的所有者及管理员可以查看。",
-      "layersTitle": "记录的内容",
-      "layers": {
-        "screen": "屏幕",
-        "screenDescription": "大约每 2 秒一张截图及其文字。",
-        "actions": "操作",
-        "actionsDescription": "点击、按键和输入的文字，附带截图。",
-        "audio": "音频",
-        "audioDescription": "你的麦克风和这台电脑播放的声音。"
-      },
-      "noLayers": "没有记录任何内容：所有层都已关闭。",
-      "turningOn": {
-        "progress": "正在将这台电脑登录到 {org}…",
-        "waitingOnPage": "请在浏览器中打开的页面上批准登录。"
-      },
-      "layerOffByPolicy": "你的组织已关闭",
-      "layerOn": "开启",
-      "layersHint": "{org} 决定录制哪些内容。",
-      "tabs": {
-        "label": "这台电脑",
-        "recording": "录制",
-        "exclusions": "排除项"
-      },
-      "exclusions": {
-        "intro": "Kortix Capture 在这台电脑上从不录制已排除的应用和网站：不截图、不记录文字、不记录操作。",
-        "orgIntro": "对 {org} 的每台设备强制生效：任何设备都不会录制这些内容，成员也无法关闭。每位成员可在自己电脑上的 Kortix 桌面应用中添加自己的排除项。",
-        "kindLabel": "应用或网站",
-        "apps": "应用",
-        "websites": "网站",
-        "searchApps": "搜索应用",
-        "searchOrAddApp": "搜索应用，或按应用 ID 添加",
-        "searchWebsites": "搜索或添加网站",
-        "addDomain": "排除 {domain}",
-        "addApp": "排除 {app}",
-        "categories": "类别",
-        "excluded": "已排除",
-        "recent": "最近录制",
-        "privateBrowsing": "无痕浏览",
-        "privateBrowsingDescription": "所有受支持浏览器中的隐私窗口和无痕窗口。",
-        "setByOrg": "由 {org} 设置",
-        "appCount": "{count, plural, other {# 个应用}}",
-        "siteCount": "{count, plural, other {# 个网站}}",
-        "noExcludedApps": "没有已排除的应用。",
-        "noExcludedSites": "没有已排除的网站。",
-        "noRecentApps": "还没有录制任何应用。",
-        "noRecentSites": "还没有录制任何网站。",
-        "noMatch": "没有匹配项。",
-        "loadFailed": "无法读取排除项。",
-        "tryAgain": "重试",
-        "failed": "无法更改排除项。"
-      },
-      "notice": "来自 {org} 的通知",
-      "otherOrg": "这台电脑目前在为另一个组织记录。在这里开始会将它切换到 {org}。",
-      "signInRequired": {
-        "title": "这台电脑已退出",
-        "hint": "你的组织可能关闭了 Kortix Capture，或有人移除了这台电脑。重新登录即可记录。"
-      },
-      "error": {
-        "title": "Kortix Capture 已停止",
-        "fallback": "记录已停止。请重试，或打开日志。"
-      },
-      "permissions": {
-        "title": "允许 Kortix 记录",
-        "hint": "macOS 对每项权限只询问一次。权限授予 Kortix，Kortix Capture 之后无需再次询问即可记录。",
-        "needed": "尚未允许",
-        "waiting": "等待你操作",
-        "allowed": "已允许",
-        "allow": "允许访问",
-        "settingsHint": "如果系统设置打开，请在列表中开启 Kortix。会自动更新。",
-        "screen": "屏幕录制",
-        "screenDescription": "查看并记录屏幕上的内容",
-        "accessibility": "辅助功能",
-        "accessibilityDescription": "读取你正在使用的应用和窗口",
-        "inputMonitoring": "输入监控",
-        "inputMonitoringDescription": "记录你的点击和按键，仅在开启操作时",
-        "microphone": "麦克风",
-        "microphoneDescription": "记录说话内容，仅在开启音频时"
-      },
-      "actions": {
-        "cancel": "取消",
-        "start": "开始记录",
-        "starting": "正在启动…",
-        "signInAgain": "重新登录",
-        "tryAgain": "重试",
-        "resume": "继续",
-        "pause": "暂停 1 小时",
-        "openTimeline": "打开时间线",
-        "more": "更多操作",
-        "showLogs": "显示日志",
-        "stop": "停止记录",
-        "signOut": "退出 Kortix Capture…"
-      },
-      "signOut": {
-        "title": "退出 Kortix Capture？",
-        "description": "Kortix Capture 会在这台电脑上停止，这台电脑将失去对 {org} 的访问。记录会保留在 {org}。要再次记录，请重新开始记录。",
-        "confirm": "退出"
-      },
-      "toast": {
-        "started": "已开始记录",
-        "stopped": "已停止记录",
-        "paused": "已暂停记录",
-        "resumed": "已继续记录",
-        "signedOut": "已退出 Kortix Capture"
-      },
-      "pausedByOrgHint": "{org} 的管理者暂停了记录。解除暂停后会继续。",
-      "gate": {
-        "title": "在这台电脑上允许 Kortix Capture",
-        "body": "Kortix Capture 会将这台电脑录制到 {org}，但 macOS 尚未允许。在你允许访问之前不会录制任何内容。",
-        "later": "稍后",
-        "done": "Kortix Capture 正在录制。"
-      },
-      "managed": {
-        "title": "{org} 管理此电脑上的 Kortix Capture",
-        "body": "IT 已将 Kortix Capture 安装为 Windows 服务。只要你登录了 Windows，无论 Kortix 是否打开，它都会录制。只有 IT 能停止它。",
-        "pendingMember": "此电脑正在等待你的组织：没有成员使用你登录 Windows 的邮箱。管理员会在设备中批准它。",
-        "pendingApproval": "此电脑正在等待你组织的管理员在设备中批准。在此之前，它不会录制任何内容。",
-        "refused": "你的组织拒绝了此电脑。它不会录制任何内容。请联系你的 IT 团队。",
-        "otherOrg": "IT 已将此电脑注册到另一个组织，而不是 {org}。"
-      }
-    },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "返回 Kortix",
@@ -21032,12 +20910,11 @@
       "nav": {
         "devices": "设备",
         "settings": "组织设置",
-        "timeline": "时间线",
-        "thisComputer": "此电脑"
+        "timeline": "时间线"
       },
       "off": {
         "title": "{name} 的 Kortix Capture 已关闭",
-        "bodyAdmin": "开启后即可录制此组织的电脑。每个人仍需在自己的电脑上开启录制。",
+        "bodyAdmin": "开启后即可录制此组织的电脑。然后在每台电脑上安装 Kortix Capture，或一次性批量部署。",
         "bodyMember": "请此组织的所有者或管理员开启它。",
         "turnOn": "开启 Kortix Capture",
         "failed": "无法开启 Kortix Capture"
@@ -21052,14 +20929,6 @@
       "descriptionReadOnly": "此组织的所有者或管理员可开启或关闭 Kortix Capture。",
       "open": "打开 Kortix Capture",
       "failed": "无法更改 Kortix Capture。"
-    },
-    "thisComputer": {
-      "title": "此电脑",
-      "breadcrumb": "面包屑导航",
-      "browserDescription": "通过 Kortix 桌面应用录制电脑。",
-      "browserTitle": "打开 Kortix 桌面版来录制此电脑",
-      "browserBody": "Kortix Capture 通过桌面应用录制。安装并登录后，打开 Kortix Capture › 此电脑。",
-      "getDesktop": "获取 Kortix 桌面应用"
     },
     "api": {
       "title": "Kortix Capture API",
@@ -21085,7 +20954,7 @@
     },
     "rollout": {
       "title": "部署到电脑",
-      "description": "IT 使用一个注册令牌在多台 Windows 电脑上安装 Kortix Capture。每台电脑以登录 Windows 的人员身份注册。无需任何人手动登录 Kortix。",
+      "description": "IT 使用一个注册令牌在多台电脑上安装 Kortix Capture。每台电脑会自行注册并开始录制。Kortix 会把它关联到登录 Windows 所用邮箱对应的成员；你也可以稍后将任意电脑关联到某人。",
       "tokensTitle": "注册令牌",
       "tokensEmpty": "还没有注册令牌。",
       "guide": "IT 设置指南",
@@ -21127,7 +20996,7 @@
       "revokeFailed": "无法撤销令牌",
       "copy": "复制",
       "waitingTitle": "等待批准",
-      "waitingBody": "这些电脑持有有效的注册令牌。在你将其批准给某位成员之前，它们不会录制任何内容。",
+      "waitingBody": "这些电脑持有有效的注册令牌，正在等待管理员：该令牌要求逐台批准，或管理员已撤销它们。在你批准之前，它们不会录制任何内容。",
       "col": {
         "person": "Windows 用户",
         "computer": "电脑",
@@ -21137,7 +21006,6 @@
       },
       "unnamed": "未命名的电脑",
       "reason": {
-        "no_member": "没有成员使用此邮箱。请将其批准给某位成员，或先邀请此人。",
         "approval_required": "该令牌要求逐台批准电脑，或管理员已撤销这台电脑。"
       },
       "deny": "拒绝",
@@ -21147,11 +21015,18 @@
       "denied": "已拒绝电脑",
       "decideFailed": "无法保存决定",
       "approveTitle": "批准这台电脑",
-      "approveBody": "{computer} 将以你选择的成员身份录制 {person}。一分钟内开始。",
+      "approveBody": "{computer}（{person}）将在一分钟内开始录制。现在将其关联到某位成员，或稍后在设备中关联。",
       "member": "成员",
-      "memberPlaceholder": "选择成员",
       "cancel": "取消",
-      "approved": "已批准。电脑将在一分钟内完成注册。"
+      "approved": "已批准。电脑将在一分钟内完成注册。",
+      "noOne": "不关联任何人",
+      "linkTitle": "将 {name} 关联到某人",
+      "linkBody": "从现在起，这台电脑为此人录制。未关联时录制的内容会转给此人；为之前的人录制的内容仍归其所有。",
+      "linked": "设备已关联",
+      "unlinked": "已取消关联",
+      "linkFailed": "无法更改关联的人",
+      "save": "保存",
+      "domainsPlaceholder": "corp.example"
     }
   }
 }

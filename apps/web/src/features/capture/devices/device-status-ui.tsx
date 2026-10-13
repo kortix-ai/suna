@@ -2,7 +2,7 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useRevokeCaptureDevice } from '@kortix/sdk/react';
-import { DotsThreeIcon, ProhibitIcon } from '@phosphor-icons/react';
+import { DotsThreeIcon, LinkIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import { relativeTime } from '@/lib/relative-time';
 
 import { clockTime } from '../capture-time';
 import type { DeviceStatusView } from './device-status';
+import { LinkDeviceModal } from './rollout';
 
 /** The status dot: green records, orange needs a person, a ring is offline, grey is idle. */
 export function StatusDot({
@@ -94,16 +95,20 @@ export function DeviceActionsMenu({
   accountId,
   device,
   name,
+  canLink = false,
   onRevoked,
 }: {
   accountId: string;
   device: CaptureDevice;
   name: string;
+  /** `capture.manage`: link the device to a person, or unlink it. */
+  canLink?: boolean;
   onRevoked?: () => void;
 }) {
   const t = useTranslations('capture.devices');
   const revoke = useRevokeCaptureDevice(accountId);
   const [confirm, setConfirm] = useState(false);
+  const [linking, setLinking] = useState(false);
   return (
     <>
       <DropdownMenu>
@@ -113,12 +118,26 @@ export function DeviceActionsMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
+          {canLink ? (
+            <DropdownMenuItem onSelect={() => setLinking(true)}>
+              <LinkIcon className="size-3.5 shrink-0" />
+              {device.user_id ? t('relink') : t('link')}
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem variant="destructive" onSelect={() => setConfirm(true)}>
             <ProhibitIcon className="size-3.5 shrink-0" />
             {t('revoke')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {canLink ? (
+        <LinkDeviceModal
+          accountId={accountId}
+          device={linking ? device : null}
+          name={name}
+          onClose={() => setLinking(false)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}

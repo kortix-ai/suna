@@ -19616,7 +19616,9 @@
       "textd4806967bdd6": "Revoked a capture enrollment token",
       "textb3e9170332a7": "Listed computers waiting to enroll",
       "text8258034e2578": "Approved a computer to enroll",
-      "textd2bea71d87f9": "Denied a computer from enrolling"
+      "textd2bea71d87f9": "Denied a computer from enrolling",
+      "text282851365ab1": "Linked a capture device to a person",
+      "text2c380a3fe63f": "Viewed the capture data of a device linked to no one"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20777,9 +20779,6 @@
       "viewLabel": "View",
       "viewAll": "Everyone",
       "viewMine": "My devices",
-      "thisComputer": "This computer",
-      "thisComputerBadge": "This computer",
-      "addDevice": "Add a device",
       "filterLabel": "Filter by status",
       "filter": {
         "all": "All",
@@ -20793,9 +20792,8 @@
       "empty": {
         "allTitle": "No computer records into {name} yet",
         "mineTitle": "You record no computers yet",
-        "body": "Install Kortix desktop, sign in, then turn on Kortix Capture in This computer."
+        "body": "Install Kortix Capture on a computer and sign in with Kortix, or roll it out to many computers with an enrollment token."
       },
-      "getDesktop": "Get the Kortix desktop app",
       "listLabel": "Device list",
       "noMatch": "No device has this status.",
       "col": {
@@ -20817,7 +20815,11 @@
       "pausedUntil": "until {time}",
       "apiLink": "Kortix Capture API",
       "rollout": "Roll out",
-      "managedBadge": "IT rollout"
+      "managedBadge": "IT rollout",
+      "link": "Link to a person…",
+      "relink": "Change linked person…",
+      "unlinked": "Linked to no one",
+      "getCapture": "Get Kortix Capture"
     },
     "settings": {
       "title": "Organization settings",
@@ -20843,7 +20845,25 @@
           "messagingHint": "Messages, WhatsApp, Signal, Telegram and notification banners from them.",
           "banking": "Banking and finance",
           "bankingHint": "Bank and finance apps and about 950 bank and fintech websites."
-        }
+        },
+        "orgIntro": "Mandatory for every device in {org}: no device records these, and members cannot turn them off. Each member adds their own exclusions on their computer, in the Kortix desktop app.",
+        "kindLabel": "Apps or websites",
+        "apps": "Apps",
+        "websites": "Websites",
+        "searchOrAddApp": "Search apps, or add one by its app ID",
+        "searchWebsites": "Search or add a website",
+        "addApp": "Exclude {app}",
+        "addDomain": "Exclude {domain}",
+        "categories": "Categories",
+        "appCount": "{count, plural, one {# app} other {# apps}}",
+        "siteCount": "{count, plural, one {# website} other {# websites}}",
+        "setByOrg": "Set by {org}",
+        "privateBrowsing": "Private browsing",
+        "privateBrowsingDescription": "Private and incognito windows in every supported browser.",
+        "excluded": "Excluded",
+        "noMatch": "Nothing matches.",
+        "noExcludedApps": "No app is excluded.",
+        "noExcludedSites": "No website is excluded."
       },
       "localHours": "On the device",
       "localHoursHint": "How long a computer keeps its recordings after uploading them. 0 keeps them without a limit.",
@@ -20879,148 +20899,6 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "These work, and may change. Turn them on for a trial first."
     },
-    "dialog": {
-      "product": "Kortix Capture",
-      "title": "Record this computer",
-      "status": {
-        "off": "Off",
-        "turningOn": "Starting",
-        "signInRequired": "Signed out",
-        "error": "Stopped with an error",
-        "needsPermission": "Needs permission",
-        "paused": "Paused",
-        "pausedUntil": "Paused until {time}",
-        "pausedByOrg": "Paused by your organization",
-        "locked": "Screen locked",
-        "excluded": "Excluded app in front",
-        "starting": "Starting",
-        "recording": "Recording",
-        "unavailable": "Not available",
-        "captureOff": "Off for your organization",
-        "managed": "Managed by your organization"
-      },
-      "unavailable": "This desktop app has no Kortix Capture. Update Kortix to the newest version.",
-      "orgOff": "Kortix Capture is off for {org}. An owner or admin can turn it on.",
-      "intro": "Records this computer for {org}, so you and your agents can search what you did. You can see it, and so can the owners and admins of {org}.",
-      "layersTitle": "What is recorded",
-      "layers": {
-        "screen": "Screen",
-        "screenDescription": "A screenshot about every 2 seconds, with its text.",
-        "actions": "Actions",
-        "actionsDescription": "Clicks, keys, and typed text, with screenshots.",
-        "audio": "Audio",
-        "audioDescription": "Your microphone and what this computer plays."
-      },
-      "noLayers": "Nothing records: every layer is off.",
-      "turningOn": {
-        "progress": "Signing this computer in to {org}…",
-        "waitingOnPage": "Approve the sign-in on the page that opened in your browser."
-      },
-      "layerOffByPolicy": "Off for your organization",
-      "layerOn": "On",
-      "layersHint": "{org} decides what is recorded.",
-      "tabs": {
-        "label": "This computer",
-        "recording": "Recording",
-        "exclusions": "Exclusions"
-      },
-      "exclusions": {
-        "intro": "Kortix Capture never records excluded apps and websites on this computer: no screenshot, no text, no actions.",
-        "orgIntro": "Mandatory for every device in {org}: no device records these, and members cannot turn them off. Each member adds their own exclusions on their computer, in the Kortix desktop app.",
-        "kindLabel": "Apps or websites",
-        "apps": "Apps",
-        "websites": "Websites",
-        "searchApps": "Search apps",
-        "searchOrAddApp": "Search apps, or add one by its app ID",
-        "searchWebsites": "Search or add a website",
-        "addDomain": "Exclude {domain}",
-        "addApp": "Exclude {app}",
-        "categories": "Categories",
-        "excluded": "Excluded",
-        "recent": "Recently recorded",
-        "privateBrowsing": "Private browsing",
-        "privateBrowsingDescription": "Private and incognito windows in every supported browser.",
-        "setByOrg": "Set by {org}",
-        "appCount": "{count, plural, one {# app} other {# apps}}",
-        "siteCount": "{count, plural, one {# website} other {# websites}}",
-        "noExcludedApps": "No app is excluded.",
-        "noExcludedSites": "No website is excluded.",
-        "noRecentApps": "No app recorded yet.",
-        "noRecentSites": "No website recorded yet.",
-        "noMatch": "Nothing matches.",
-        "loadFailed": "Could not read the exclusions.",
-        "tryAgain": "Try again",
-        "failed": "Could not change the exclusion."
-      },
-      "notice": "Notice from {org}",
-      "otherOrg": "This computer records for another organization now. Starting here moves it to {org}.",
-      "signInRequired": {
-        "title": "This computer was signed out",
-        "hint": "Kortix Capture may be off for your organization, or someone removed this computer. Sign in again to record."
-      },
-      "error": {
-        "title": "Kortix Capture stopped",
-        "fallback": "The recorder stopped. Try again, or open the logs."
-      },
-      "permissions": {
-        "title": "Allow Kortix to record",
-        "hint": "macOS asks once for each. They go to Kortix, so Kortix Capture records without asking again.",
-        "needed": "Not allowed yet",
-        "waiting": "Waiting for you",
-        "allowed": "Allowed",
-        "allow": "Allow access",
-        "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself.",
-        "screen": "Screen Recording",
-        "screenDescription": "See and record what is on the screen",
-        "accessibility": "Accessibility",
-        "accessibilityDescription": "Read the app and window you are working in",
-        "inputMonitoring": "Input Monitoring",
-        "inputMonitoringDescription": "Record your clicks and keys, only while Actions is on",
-        "microphone": "Microphone",
-        "microphoneDescription": "Record what is said, only while Audio is on"
-      },
-      "actions": {
-        "cancel": "Cancel",
-        "start": "Start recording",
-        "starting": "Starting…",
-        "signInAgain": "Sign in again",
-        "tryAgain": "Try again",
-        "resume": "Resume",
-        "pause": "Pause for 1 hour",
-        "openTimeline": "Open timeline",
-        "more": "More actions",
-        "showLogs": "Show logs",
-        "stop": "Stop recording",
-        "signOut": "Sign out of Kortix Capture…"
-      },
-      "signOut": {
-        "title": "Sign out of Kortix Capture?",
-        "description": "Kortix Capture stops on this computer, and this computer loses access to {org}. Recordings stay with {org}. To record again, start recording again.",
-        "confirm": "Sign out"
-      },
-      "toast": {
-        "started": "Recording started",
-        "stopped": "Recording stopped",
-        "paused": "Recording paused",
-        "resumed": "Recording resumed",
-        "signedOut": "Signed out of Kortix Capture"
-      },
-      "pausedByOrgHint": "The people who manage {org} paused recording. It resumes when they lift the pause.",
-      "gate": {
-        "title": "Allow Kortix Capture on this computer",
-        "body": "Kortix Capture records this computer into {org}, but macOS has not allowed it yet. Nothing is recorded until you allow access.",
-        "later": "Later",
-        "done": "Kortix Capture is recording."
-      },
-      "managed": {
-        "title": "{org} manages Kortix Capture on this computer",
-        "body": "IT installed Kortix Capture as a Windows service. It records while you are signed in to Windows, whether Kortix is open or not. Only IT can stop it.",
-        "pendingMember": "This computer waits for your organization: no member has the email you sign in to Windows with. An admin approves it in Devices.",
-        "pendingApproval": "This computer waits for an admin of your organization to approve it in Devices. It records nothing until then.",
-        "refused": "Your organization refused this computer. It records nothing. Ask your IT team.",
-        "otherOrg": "IT enrolled this computer into another organization, not {org}."
-      }
-    },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Back to Kortix",
@@ -21032,12 +20910,11 @@
       "nav": {
         "devices": "Devices",
         "settings": "Organization settings",
-        "timeline": "Timeline",
-        "thisComputer": "This computer"
+        "timeline": "Timeline"
       },
       "off": {
         "title": "Kortix Capture is off for {name}",
-        "bodyAdmin": "Turn it on to record the computers of this organization. Each person still turns on recording on their own computer.",
+        "bodyAdmin": "Turn it on to record the computers of this organization. Then install Kortix Capture on each computer, or roll it out to many at once.",
         "bodyMember": "Ask an owner or admin of this organization to turn it on.",
         "turnOn": "Turn on Kortix Capture",
         "failed": "Could not turn on Kortix Capture"
@@ -21052,14 +20929,6 @@
       "descriptionReadOnly": "An owner or admin of this organization turns Kortix Capture on or off.",
       "open": "Open Kortix Capture",
       "failed": "Could not change Kortix Capture."
-    },
-    "thisComputer": {
-      "title": "This computer",
-      "breadcrumb": "Breadcrumb",
-      "browserDescription": "Record a computer from the Kortix desktop app.",
-      "browserTitle": "Open Kortix desktop to record this computer",
-      "browserBody": "Kortix Capture records from the desktop app. Install it, sign in, then open Kortix Capture › This computer.",
-      "getDesktop": "Get the Kortix desktop app"
     },
     "api": {
       "title": "Kortix Capture API",
@@ -21085,7 +20954,7 @@
     },
     "rollout": {
       "title": "Roll out to computers",
-      "description": "IT installs Kortix Capture on many Windows computers with one enrollment token. Each computer enrolls as the person who signs in to Windows. Nobody signs in to Kortix by hand.",
+      "description": "IT installs Kortix Capture on many computers with one enrollment token. Each computer enrolls on its own and starts recording. Kortix links it to the member whose email the person signs in to Windows with; you can link any computer to a person later.",
       "tokensTitle": "Enrollment tokens",
       "tokensEmpty": "No enrollment token yet.",
       "guide": "IT setup guide",
@@ -21127,7 +20996,7 @@
       "revokeFailed": "Could not revoke the token",
       "copy": "Copy",
       "waitingTitle": "Waiting for approval",
-      "waitingBody": "These computers have a valid enrollment token. They record nothing until you approve them to a member.",
+      "waitingBody": "These computers have a valid enrollment token and wait for an admin: the token approves each computer, or an admin revoked them. They record nothing until you approve them.",
       "col": {
         "person": "Windows person",
         "computer": "Computer",
@@ -21137,7 +21006,6 @@
       },
       "unnamed": "Unnamed computer",
       "reason": {
-        "no_member": "No member has this email. Approve it to a member, or invite the person first.",
         "approval_required": "The token approves each computer, or an admin revoked this one."
       },
       "deny": "Deny",
@@ -21147,11 +21015,18 @@
       "denied": "Computer denied",
       "decideFailed": "Could not save the decision",
       "approveTitle": "Approve this computer",
-      "approveBody": "{computer} records {person} as the member you pick. It starts within a minute.",
+      "approveBody": "{computer} ({person}) starts recording within a minute. Link it to a member now, or later from Devices.",
       "member": "Member",
-      "memberPlaceholder": "Pick a member",
       "cancel": "Cancel",
-      "approved": "Approved. The computer enrolls within a minute."
+      "approved": "Approved. The computer enrolls within a minute.",
+      "noOne": "Linked to no one",
+      "linkTitle": "Link {name} to a person",
+      "linkBody": "From now on the computer records for this person. What it recorded linked to no one moves to them; what it recorded for an earlier person stays theirs.",
+      "linked": "Device linked",
+      "unlinked": "Device unlinked",
+      "linkFailed": "Could not change the linked person",
+      "save": "Save",
+      "domainsPlaceholder": "corp.example"
     }
   }
 }

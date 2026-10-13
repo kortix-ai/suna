@@ -27,10 +27,10 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { CaptureRowSection } from '../desktop/capture-rows';
 import {
   exclusionLists,
   type ExclusionChange,
@@ -46,40 +46,28 @@ const GROUP_ICONS: Record<string, Icon> = {
 };
 
 /**
- * Every Exclusions screen of Kortix Capture: Apps | Websites, the categories,
- * private browsing, what is excluded and (on a device) what was recorded
- * lately. Each row is one checkbox; a row the organization set is locked.
- *
- * - `org`: Organization settings. The mandatory lists every device applies.
- *   Apps and websites are added by id from the search box.
- * - `device`: This computer, in the desktop app. The person's own exclusions,
- *   kept on this computer only, with the organization's locked.
+ * The organization's Exclusions (account settings ▸ Kortix Capture): Apps |
+ * Websites, the categories, private browsing and what is excluded. The
+ * mandatory lists every device applies; apps and websites are added by id from
+ * the search box. Each row is one checkbox.
  */
 export function ExclusionsEditor({
-  mode,
   view,
   org,
   onChange,
-  appIcon,
 }: {
-  mode: 'org' | 'device';
   view: ExclusionsView;
   org: string;
   onChange: (change: ExclusionChange) => void;
-  appIcon?: (bundleId: string) => ReactNode;
 }) {
-  const t = useTranslations('capture.dialog.exclusions');
+  const t = useTranslations('capture.settings.exclusions');
   const tGroup = useTranslations('capture.settings.exclusions.group');
   const [tab, setTab] = useState<ExclusionTab>('apps');
   const [query, setQuery] = useState('');
   const lists = exclusionLists(view, tab, query);
   const apps = tab === 'apps';
   const kind = apps ? 'app' : 'domain';
-  const addable = apps
-    ? mode === 'org'
-      ? normalizeCaptureAppId(query)
-      : null
-    : normalizeCaptureDomain(query);
+  const addable = apps ? normalizeCaptureAppId(query) : normalizeCaptureDomain(query);
   const canAdd = addable && !(apps ? view.apps : view.domains).some((row) => row.id === addable);
   const add = () => {
     if (!canAdd) return;
@@ -89,17 +77,11 @@ export function ExclusionsEditor({
   const setBy = t('setByOrg', { org });
   const known = (id: string): id is CaptureExclusionGroup =>
     (CAPTURE_EXCLUSION_GROUPS as readonly string[]).includes(id);
-  const searchLabel = apps
-    ? mode === 'org'
-      ? t('searchOrAddApp')
-      : t('searchApps')
-    : t('searchWebsites');
+  const searchLabel = apps ? t('searchOrAddApp') : t('searchWebsites');
 
   return (
     <div className="space-y-6">
-      <p className="text-muted-foreground text-xs text-pretty">
-        {mode === 'org' ? t('orgIntro', { org }) : t('intro')}
-      </p>
+      <p className="text-muted-foreground text-xs text-pretty">{t('orgIntro', { org })}</p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Tabs value={tab} onValueChange={(value) => setTab(value as ExclusionTab)}>
           <TabsList aria-label={t('kindLabel')}>
@@ -134,7 +116,7 @@ export function ExclusionsEditor({
       ) : null}
 
       {lists.categories.length > 0 || (!apps && !query.trim()) ? (
-        <CaptureRowSection title={t('categories')}>
+        <RowSection title={t('categories')}>
           {lists.categories.map((group) => {
             const count = apps ? group.apps : group.domains;
             return (
@@ -169,7 +151,7 @@ export function ExclusionsEditor({
               onChange={(on) => onChange({ kind: 'private-browsing', on })}
             />
           ) : null}
-        </CaptureRowSection>
+        </RowSection>
       ) : null}
 
       <ExclusionList
@@ -177,74 +159,63 @@ export function ExclusionsEditor({
         empty={query.trim() ? t('noMatch') : t(apps ? 'noExcludedApps' : 'noExcludedSites')}
         rows={lists.excluded}
         apps={apps}
-        checked
         setBy={setBy}
-        appIcon={appIcon}
         onChange={(row, on) => onChange({ kind, id: row.id, on })}
       />
-      {mode === 'device' ? (
-        <ExclusionList
-          title={t('recent')}
-          empty={query.trim() ? t('noMatch') : t(apps ? 'noRecentApps' : 'noRecentSites')}
-          rows={lists.recent}
-          apps={apps}
-          checked={false}
-          setBy={setBy}
-          appIcon={appIcon}
-          onChange={(row, on) => onChange({ kind, id: row.id, on })}
-        />
-      ) : null}
     </div>
   );
 }
 
+/** A titled section of flat rows. */
+function RowSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1">
+      <div className="flex min-h-8 items-center">
+        <Label>{title}</Label>
+      </div>
+      <ul className="divide-border divide-y">{children}</ul>
+    </section>
+  );
+}
+
+/** What is excluded: every row checked; unchecking one removes it. */
 function ExclusionList({
   title,
   empty,
   rows,
   apps,
-  checked,
   setBy,
-  appIcon,
   onChange,
 }: {
   title: string;
   empty: string;
   rows: ExclusionRow[];
   apps: boolean;
-  checked: boolean;
   setBy: string;
-  appIcon?: (bundleId: string) => ReactNode;
   onChange: (row: ExclusionRow, on: boolean) => void;
 }) {
   return (
-    <CaptureRowSection title={title}>
+    <RowSection title={title}>
       {rows.length === 0 ? (
         <li className="text-muted-foreground py-2.5 text-xs">{empty}</li>
       ) : (
         rows.map((row) => (
           <ExclusionItem
             key={row.id}
-            leading={
-              apps ? (
-                (appIcon?.(row.id) ?? <Tile icon={AppWindowIcon} />)
-              ) : (
-                <Tile icon={GlobeIcon} />
-              )
-            }
+            leading={<Tile icon={apps ? AppWindowIcon : GlobeIcon} />}
             title={row.name}
             description={row.locked ? setBy : apps && row.name !== row.id ? row.id : undefined}
-            checked={checked}
+            checked
             locked={row.locked}
             onChange={(on) => onChange(row, on)}
           />
         ))
       )}
-    </CaptureRowSection>
+    </RowSection>
   );
 }
 
-/** One row: leading tile, title, one muted line, the checkbox. Same grammar as `CaptureRow`. */
+/** One row: leading tile, title, one muted line, the checkbox. */
 function ExclusionItem({
   leading,
   title,

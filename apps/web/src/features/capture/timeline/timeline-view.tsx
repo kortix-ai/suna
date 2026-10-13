@@ -173,8 +173,9 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const area = useCaptureArea(accountId);
   const people = useCaptureDirectory(accountId, area.readsEveryone);
   const person = people.personOf(device.user_id);
-  // Your own device reads as you; another member's is read (and audited) by user_id.
-  const userId = person.isYou ? undefined : device.user_id;
+  // Your own device reads as you; another member's is read (and audited) by user_id;
+  // a device linked to no one by its device_id alone (capture.read_all).
+  const userId = person.isYou ? undefined : (device.user_id ?? undefined);
   const deviceId = device.device_id;
   const name = deviceName(device, tDevices('unnamed'));
   const status = deviceStatus(device);
@@ -658,7 +659,11 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               <span className="flex min-w-0 items-center gap-1.5">
                 <UserAvatar email={person.email ?? ''} size="xs" />
                 <span className="text-foreground truncate">
-                  {person.isYou ? tDevices('you') : (person.email ?? tDevices('member'))}
+                  {person.isYou
+                    ? tDevices('you')
+                    : person.userId === null
+                      ? tDevices('unlinked')
+                      : (person.email ?? tDevices('member'))}
                 </span>
               </span>
               <span aria-hidden>·</span>

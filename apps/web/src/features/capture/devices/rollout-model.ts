@@ -21,7 +21,7 @@ export function enrollmentUrl(backendUrl: string | undefined): string {
 
 /** The silent install IT runs on every Windows computer. */
 export function msiCommand(url: string, token: string): string {
-  return `msiexec /i KortixCapture.msi /qn KORTIX_URL=${url} ENROLLMENT_TOKEN=${token}`;
+  return `msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=${url} ENROLLMENT_TOKEN=${token}`;
 }
 
 /** The token's lifetime choices, in days; null never expires. */

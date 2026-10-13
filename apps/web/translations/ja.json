@@ -19605,7 +19605,9 @@
       "textd4806967bdd6": "Capture の登録トークンを取り消しました",
       "textb3e9170332a7": "登録待ちのコンピューターを一覧表示しました",
       "text8258034e2578": "コンピューターの登録を承認しました",
-      "textd2bea71d87f9": "コンピューターの登録を拒否しました"
+      "textd2bea71d87f9": "コンピューターの登録を拒否しました",
+      "text282851365ab1": "Capture デバイスをユーザーに紐付けました",
+      "text2c380a3fe63f": "誰にも紐付いていないデバイスの Capture データを表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20777,9 +20779,6 @@
       "viewLabel": "表示",
       "viewAll": "全員",
       "viewMine": "自分のデバイス",
-      "thisComputer": "このコンピュータ",
-      "thisComputerBadge": "このコンピュータ",
-      "addDevice": "デバイスを追加",
       "filterLabel": "ステータスで絞り込む",
       "filter": {
         "all": "すべて",
@@ -20793,9 +20792,8 @@
       "empty": {
         "allTitle": "{name} に録画しているコンピュータはまだありません",
         "mineTitle": "録画しているコンピュータはまだありません",
-        "body": "Kortix デスクトップをインストールしてサインインし、「このコンピュータ」で Kortix Capture をオンにします。"
+        "body": "コンピューターに Kortix Capture をインストールして Kortix でサインインするか、登録トークンで多数のコンピューターに展開してください。"
       },
-      "getDesktop": "Kortix デスクトップアプリを入手",
       "listLabel": "デバイス一覧",
       "noMatch": "このステータスのデバイスはありません。",
       "col": {
@@ -20817,7 +20815,11 @@
       "pausedUntil": "{time} まで",
       "apiLink": "Kortix Capture API",
       "rollout": "展開",
-      "managedBadge": "IT 展開"
+      "managedBadge": "IT 展開",
+      "link": "ユーザーに紐付け…",
+      "relink": "紐付けるユーザーを変更…",
+      "unlinked": "誰にも紐付いていません",
+      "getCapture": "Kortix Capture を入手"
     },
     "settings": {
       "title": "組織の設定",
@@ -20843,7 +20845,25 @@
           "messagingHint": "メッセージ、WhatsApp、Signal、Telegram とその通知バナー。",
           "banking": "銀行・金融",
           "bankingHint": "銀行・金融アプリと約 950 の銀行・フィンテックのサイト。"
-        }
+        },
+        "orgIntro": "{org} のすべてのデバイスで必須です。どのデバイスもこれらを記録せず、メンバーはオフにできません。各メンバーは自分のコンピューターの Kortix デスクトップアプリで独自の除外を追加します。",
+        "kindLabel": "アプリまたは Web サイト",
+        "apps": "アプリ",
+        "websites": "Web サイト",
+        "searchOrAddApp": "アプリを検索、またはアプリ ID で追加",
+        "searchWebsites": "Web サイトを検索または追加",
+        "addApp": "{app} を除外",
+        "addDomain": "{domain} を除外",
+        "categories": "カテゴリ",
+        "appCount": "{count, plural, other {# 個のアプリ}}",
+        "siteCount": "{count, plural, other {# 件の Web サイト}}",
+        "setByOrg": "{org} が設定",
+        "privateBrowsing": "プライベートブラウズ",
+        "privateBrowsingDescription": "サポートされているすべてのブラウザのプライベートウィンドウとシークレットウィンドウ。",
+        "excluded": "除外済み",
+        "noMatch": "一致する項目はありません。",
+        "noExcludedApps": "除外しているアプリはありません。",
+        "noExcludedSites": "除外している Web サイトはありません。"
       },
       "localHours": "デバイス上",
       "localHoursHint": "アップロード後、コンピューターが記録を保持する期間。0 の場合は無期限に保持します。",
@@ -20879,148 +20899,6 @@
       "experimentalTitle": "試験運用",
       "experimentalHint": "動作しますが、変更される場合があります。まず試用してください。"
     },
-    "dialog": {
-      "product": "Kortix Capture",
-      "title": "このコンピュータを記録",
-      "status": {
-        "off": "オフ",
-        "turningOn": "起動中",
-        "signInRequired": "サインアウト済み",
-        "error": "エラーで停止",
-        "needsPermission": "権限が必要",
-        "paused": "一時停止中",
-        "pausedUntil": "{time} まで一時停止",
-        "pausedByOrg": "組織が一時停止中",
-        "locked": "画面がロック中",
-        "excluded": "除外アプリが前面",
-        "starting": "起動中",
-        "recording": "記録中",
-        "unavailable": "利用できません",
-        "captureOff": "組織でオフ",
-        "managed": "組織が管理"
-      },
-      "unavailable": "このデスクトップアプリには Kortix Capture が含まれていません。Kortix を最新版に更新してください。",
-      "orgOff": "{org} では Kortix Capture がオフです。オーナーまたは管理者がオンにできます。",
-      "intro": "このコンピューターを {org} 用に記録し、あなたとエージェントが行った作業を検索できるようにします。あなたと {org} のオーナーと管理者が閲覧できます。",
-      "layersTitle": "記録される内容",
-      "layers": {
-        "screen": "画面",
-        "screenDescription": "約 2 秒ごとのスクリーンショットとそのテキスト。",
-        "actions": "操作",
-        "actionsDescription": "クリック、キー、入力したテキストとスクリーンショット。",
-        "audio": "音声",
-        "audioDescription": "マイクと、このコンピューターで再生される音声。"
-      },
-      "noLayers": "何も記録されていません。すべてのレイヤーがオフです。",
-      "turningOn": {
-        "progress": "このコンピュータを{org}にサインインしています…",
-        "waitingOnPage": "ブラウザーで開いたページでサインインを承認してください。"
-      },
-      "layerOffByPolicy": "組織でオフ",
-      "layerOn": "オン",
-      "layersHint": "何を記録するかは {org} が決めます。",
-      "tabs": {
-        "label": "このコンピューター",
-        "recording": "記録",
-        "exclusions": "除外"
-      },
-      "exclusions": {
-        "intro": "除外したアプリと Web サイトは、このコンピューターで Kortix Capture が記録することはありません。スクリーンショット、テキスト、操作のいずれも記録されません。",
-        "orgIntro": "{org} のすべてのデバイスで必須です。どのデバイスもこれらを記録せず、メンバーはオフにできません。各メンバーは自分のコンピューターの Kortix デスクトップアプリで独自の除外を追加します。",
-        "kindLabel": "アプリまたは Web サイト",
-        "apps": "アプリ",
-        "websites": "Web サイト",
-        "searchApps": "アプリを検索",
-        "searchOrAddApp": "アプリを検索、またはアプリ ID で追加",
-        "searchWebsites": "Web サイトを検索または追加",
-        "addDomain": "{domain} を除外",
-        "addApp": "{app} を除外",
-        "categories": "カテゴリ",
-        "excluded": "除外済み",
-        "recent": "最近記録したもの",
-        "privateBrowsing": "プライベートブラウズ",
-        "privateBrowsingDescription": "サポートされているすべてのブラウザのプライベートウィンドウとシークレットウィンドウ。",
-        "setByOrg": "{org} が設定",
-        "appCount": "{count, plural, other {# 個のアプリ}}",
-        "siteCount": "{count, plural, other {# 件の Web サイト}}",
-        "noExcludedApps": "除外しているアプリはありません。",
-        "noExcludedSites": "除外している Web サイトはありません。",
-        "noRecentApps": "まだアプリは記録されていません。",
-        "noRecentSites": "まだ Web サイトは記録されていません。",
-        "noMatch": "一致する項目はありません。",
-        "loadFailed": "除外設定を読み込めませんでした。",
-        "tryAgain": "再試行",
-        "failed": "除外設定を変更できませんでした。"
-      },
-      "notice": "{org} からのお知らせ",
-      "otherOrg": "このコンピュータは現在、別の組織のために記録しています。ここで開始すると{org}に切り替わります。",
-      "signInRequired": {
-        "title": "このコンピューターはサインアウトされました",
-        "hint": "組織で Kortix Capture がオフになっているか、誰かがこのコンピュータを削除した可能性があります。記録するにはもう一度サインインしてください。"
-      },
-      "error": {
-        "title": "Kortix Capture が停止しました",
-        "fallback": "記録が停止しました。もう一度試すか、ログを開いてください。"
-      },
-      "permissions": {
-        "title": "Kortix に記録を許可",
-        "hint": "macOS は各権限を一度だけ確認します。権限は Kortix に付与され、Kortix Capture は再確認なしで記録します。",
-        "needed": "まだ許可されていません",
-        "waiting": "あなたを待っています",
-        "allowed": "許可済み",
-        "allow": "アクセスを許可",
-        "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。自動で更新されます。",
-        "screen": "画面収録",
-        "screenDescription": "画面に表示されているものを見て記録する",
-        "accessibility": "アクセシビリティ",
-        "accessibilityDescription": "作業中のアプリとウインドウを読み取る",
-        "inputMonitoring": "入力監視",
-        "inputMonitoringDescription": "クリックとキー入力を記録する（操作がオンのときのみ）",
-        "microphone": "マイク",
-        "microphoneDescription": "話された内容を記録する（音声がオンのときのみ）"
-      },
-      "actions": {
-        "cancel": "キャンセル",
-        "start": "記録を開始",
-        "starting": "起動中…",
-        "signInAgain": "もう一度サインイン",
-        "tryAgain": "再試行",
-        "resume": "再開",
-        "pause": "1 時間一時停止",
-        "openTimeline": "タイムラインを開く",
-        "more": "その他の操作",
-        "showLogs": "ログを表示",
-        "stop": "記録を停止",
-        "signOut": "Kortix Capture からサインアウト…"
-      },
-      "signOut": {
-        "title": "Kortix Capture からサインアウトしますか?",
-        "description": "このコンピュータで Kortix Capture が停止し、このコンピュータは {org} へのアクセスを失います。記録は {org} に残ります。再び記録するには、もう一度記録を開始してください。",
-        "confirm": "サインアウト"
-      },
-      "toast": {
-        "started": "記録を開始しました",
-        "stopped": "記録を停止しました",
-        "paused": "記録を一時停止しました",
-        "resumed": "記録を再開しました",
-        "signedOut": "Kortix Capture からサインアウトしました"
-      },
-      "pausedByOrgHint": "{org}の管理者が記録を一時停止しました。一時停止が解除されると再開します。",
-      "gate": {
-        "title": "このコンピューターで Kortix Capture を許可",
-        "body": "Kortix Capture はこのコンピューターを {org} に記録しますが、macOS がまだ許可していません。アクセスを許可するまで何も記録されません。",
-        "later": "後で",
-        "done": "Kortix Capture が記録しています。"
-      },
-      "managed": {
-        "title": "{org} がこのコンピューターの Kortix Capture を管理しています",
-        "body": "IT が Kortix Capture を Windows サービスとしてインストールしました。Kortix を開いているかどうかに関係なく、Windows にサインインしている間は記録します。停止できるのは IT だけです。",
-        "pendingMember": "このコンピューターは組織の対応を待っています。Windows のサインインに使うメールのメンバーがいません。管理者がデバイスで承認します。",
-        "pendingApproval": "このコンピューターは、組織の管理者がデバイスで承認するのを待っています。それまでは何も記録しません。",
-        "refused": "組織はこのコンピューターを拒否しました。何も記録しません。IT チームに問い合わせてください。",
-        "otherOrg": "IT はこのコンピューターを {org} ではなく別の組織に登録しました。"
-      }
-    },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Kortix に戻る",
@@ -21032,12 +20910,11 @@
       "nav": {
         "devices": "デバイス",
         "settings": "組織の設定",
-        "timeline": "タイムライン",
-        "thisComputer": "このコンピュータ"
+        "timeline": "タイムライン"
       },
       "off": {
         "title": "{name} の Kortix Capture はオフです",
-        "bodyAdmin": "オンにすると、この組織のコンピュータを録画します。録画のオンは、引き続き各自のコンピュータで行います。",
+        "bodyAdmin": "オンにすると、この組織のコンピューターを記録できます。その後、各コンピューターに Kortix Capture をインストールするか、まとめて展開してください。",
         "bodyMember": "この組織のオーナーまたは管理者にオンにするよう依頼してください。",
         "turnOn": "Kortix Capture をオンにする",
         "failed": "Kortix Capture をオンにできませんでした"
@@ -21052,14 +20929,6 @@
       "descriptionReadOnly": "この組織のオーナーまたは管理者が Kortix Capture をオンまたはオフにします。",
       "open": "Kortix Capture を開く",
       "failed": "Kortix Capture を変更できませんでした。"
-    },
-    "thisComputer": {
-      "title": "このコンピュータ",
-      "breadcrumb": "パンくずリスト",
-      "browserDescription": "Kortix デスクトップアプリからコンピュータを録画します。",
-      "browserTitle": "このコンピュータを録画するには Kortix デスクトップを開いてください",
-      "browserBody": "Kortix Capture はデスクトップアプリから録画します。インストールしてサインインし、Kortix Capture › このコンピュータ を開いてください。",
-      "getDesktop": "Kortix デスクトップアプリを入手"
     },
     "api": {
       "title": "Kortix Capture API",
@@ -21085,7 +20954,7 @@
     },
     "rollout": {
       "title": "コンピューターに展開",
-      "description": "IT は 1 つの登録トークンで多数の Windows コンピューターに Kortix Capture をインストールします。各コンピューターは Windows にサインインした人として登録されます。手動で Kortix にサインインする人はいません。",
+      "description": "IT は 1 つの登録トークンで多数のコンピューターに Kortix Capture をインストールします。各コンピューターは自動で登録され、記録を開始します。Kortix は、Windows のサインインに使われたメールのメンバーに紐付けます。後から任意のコンピューターをユーザーに紐付けることもできます。",
       "tokensTitle": "登録トークン",
       "tokensEmpty": "登録トークンはまだありません。",
       "guide": "IT 向けセットアップガイド",
@@ -21127,7 +20996,7 @@
       "revokeFailed": "トークンを取り消せませんでした",
       "copy": "コピー",
       "waitingTitle": "承認待ち",
-      "waitingBody": "これらのコンピューターは有効な登録トークンを持っています。メンバーに割り当てて承認するまで何も記録しません。",
+      "waitingBody": "これらのコンピューターは有効な登録トークンを持ち、管理者を待っています。トークンがコンピューターごとの承認を求めているか、管理者が取り消しました。承認するまで何も記録しません。",
       "col": {
         "person": "Windows のユーザー",
         "computer": "コンピューター",
@@ -21137,7 +21006,6 @@
       },
       "unnamed": "名前のないコンピューター",
       "reason": {
-        "no_member": "このメールのメンバーはいません。メンバーに割り当てて承認するか、先にその人を招待してください。",
         "approval_required": "トークンがコンピューターごとの承認を求めているか、管理者がこのコンピューターを取り消しました。"
       },
       "deny": "拒否",
@@ -21147,11 +21015,18 @@
       "denied": "コンピューターを拒否しました",
       "decideFailed": "決定を保存できませんでした",
       "approveTitle": "このコンピューターを承認",
-      "approveBody": "{computer} は選択したメンバーとして {person} を記録します。1 分以内に開始します。",
+      "approveBody": "{computer} ({person}) は 1 分以内に記録を開始します。今メンバーに紐付けるか、後でデバイスから紐付けてください。",
       "member": "メンバー",
-      "memberPlaceholder": "メンバーを選択",
       "cancel": "キャンセル",
-      "approved": "承認しました。コンピューターは 1 分以内に登録されます。"
+      "approved": "承認しました。コンピューターは 1 分以内に登録されます。",
+      "noOne": "誰にも紐付けない",
+      "linkTitle": "{name} をユーザーに紐付け",
+      "linkBody": "今後このコンピューターはこのユーザーとして記録します。紐付けなしで記録した内容はこのユーザーに移り、以前のユーザーとして記録した内容はそのユーザーのままです。",
+      "linked": "デバイスを紐付けました",
+      "unlinked": "紐付けを解除しました",
+      "linkFailed": "紐付けを変更できませんでした",
+      "save": "保存",
+      "domainsPlaceholder": "corp.example"
     }
   }
 }

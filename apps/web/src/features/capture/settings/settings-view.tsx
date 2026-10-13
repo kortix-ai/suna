@@ -270,7 +270,6 @@ function PolicyForm({
       <section className="space-y-1">
         <Label>{t('exclusionsTitle')}</Label>
         <ExclusionsEditor
-          mode="org"
           org={org}
           view={fromPolicy(draft.privacy, (id) => ({
             name: tGroup(id),

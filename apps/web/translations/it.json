@@ -19605,7 +19605,9 @@
       "textd4806967bdd6": "Ha revocato un token di registrazione di Capture",
       "textb3e9170332a7": "Ha elencato i computer in attesa di registrazione",
       "text8258034e2578": "Ha approvato la registrazione di un computer",
-      "textd2bea71d87f9": "Ha rifiutato la registrazione di un computer"
+      "textd2bea71d87f9": "Ha rifiutato la registrazione di un computer",
+      "text282851365ab1": "Ha collegato un dispositivo Capture a una persona",
+      "text2c380a3fe63f": "Ha visualizzato i dati Capture di un dispositivo non collegato a nessuno"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20777,9 +20779,6 @@
       "viewLabel": "Vista",
       "viewAll": "Tutti",
       "viewMine": "I miei dispositivi",
-      "thisComputer": "Questo computer",
-      "thisComputerBadge": "Questo computer",
-      "addDevice": "Aggiungi un dispositivo",
       "filterLabel": "Filtra per stato",
       "filter": {
         "all": "Tutti",
@@ -20793,9 +20792,8 @@
       "empty": {
         "allTitle": "Nessun computer registra ancora in {name}",
         "mineTitle": "Non registri ancora nessun computer",
-        "body": "Installa Kortix desktop, accedi, poi attiva Kortix Capture in Questo computer."
+        "body": "Installa Kortix Capture su un computer e accedi con Kortix, oppure distribuiscilo su molti computer con un token di registrazione."
       },
-      "getDesktop": "Scarica l’app desktop di Kortix",
       "listLabel": "Elenco dei dispositivi",
       "noMatch": "Nessun dispositivo ha questo stato.",
       "col": {
@@ -20817,7 +20815,11 @@
       "pausedUntil": "fino alle {time}",
       "apiLink": "API di Kortix Capture",
       "rollout": "Distribuisci",
-      "managedBadge": "Distribuzione IT"
+      "managedBadge": "Distribuzione IT",
+      "link": "Collega a una persona…",
+      "relink": "Cambia la persona collegata…",
+      "unlinked": "Non collegato a nessuno",
+      "getCapture": "Scarica Kortix Capture"
     },
     "settings": {
       "title": "Impostazioni dell’organizzazione",
@@ -20843,7 +20845,25 @@
           "messagingHint": "Messaggi, WhatsApp, Signal, Telegram e le loro notifiche.",
           "banking": "Banca e finanza",
           "bankingHint": "App bancarie e finanziarie e circa 950 siti di banche e fintech."
-        }
+        },
+        "orgIntro": "Obbligatorie per ogni dispositivo di {org}: nessun dispositivo le registra e i membri non possono disattivarle. Ogni membro aggiunge le proprie esclusioni sul proprio computer, nell’app desktop di Kortix.",
+        "kindLabel": "App o siti web",
+        "apps": "App",
+        "websites": "Siti web",
+        "searchOrAddApp": "Cerca app o aggiungine una tramite ID app",
+        "searchWebsites": "Cerca o aggiungi un sito web",
+        "addApp": "Escludi {app}",
+        "addDomain": "Escludi {domain}",
+        "categories": "Categorie",
+        "appCount": "{count, plural, one {# app} other {# app}}",
+        "siteCount": "{count, plural, one {# sito web} other {# siti web}}",
+        "setByOrg": "Impostato da {org}",
+        "privateBrowsing": "Navigazione privata",
+        "privateBrowsingDescription": "Finestre private e in incognito in tutti i browser supportati.",
+        "excluded": "Esclusi",
+        "noMatch": "Nessun risultato.",
+        "noExcludedApps": "Nessuna app è esclusa.",
+        "noExcludedSites": "Nessun sito web è escluso."
       },
       "localHours": "Sul dispositivo",
       "localHoursHint": "Per quanto tempo un computer conserva le registrazioni dopo il caricamento. 0 le conserva senza limite.",
@@ -20879,148 +20899,6 @@
       "experimentalTitle": "Sperimentale",
       "experimentalHint": "Funzionano e possono cambiare. Provale prima."
     },
-    "dialog": {
-      "product": "Kortix Capture",
-      "title": "Registra questo computer",
-      "status": {
-        "off": "Disattivato",
-        "turningOn": "Avvio",
-        "signInRequired": "Disconnesso",
-        "error": "Interrotto per un errore",
-        "needsPermission": "Serve un’autorizzazione",
-        "paused": "In pausa",
-        "pausedUntil": "In pausa fino alle {time}",
-        "pausedByOrg": "In pausa per la tua organizzazione",
-        "locked": "Schermo bloccato",
-        "excluded": "App esclusa in primo piano",
-        "starting": "Avvio",
-        "recording": "In registrazione",
-        "unavailable": "Non disponibile",
-        "captureOff": "Disattivato per la tua organizzazione",
-        "managed": "Gestito dalla tua organizzazione"
-      },
-      "unavailable": "Questa app desktop non include Kortix Capture. Aggiorna Kortix all’ultima versione.",
-      "orgOff": "Kortix Capture è disattivato per {org}. Un proprietario o admin può attivarlo.",
-      "intro": "Registra questo computer per {org}, così tu e i tuoi agenti potete cercare ciò che hai fatto. Tu puoi vederlo, e così i proprietari e gli admin di {org}.",
-      "layersTitle": "Cosa viene registrato",
-      "layers": {
-        "screen": "Schermo",
-        "screenDescription": "Uno screenshot circa ogni 2 secondi, con il suo testo.",
-        "actions": "Azioni",
-        "actionsDescription": "Clic, tasti e testo digitato, con screenshot.",
-        "audio": "Audio",
-        "audioDescription": "Il tuo microfono e ciò che riproduce questo computer."
-      },
-      "noLayers": "Non si registra niente: tutti i livelli sono disattivati.",
-      "turningOn": {
-        "progress": "Accesso di questo computer a {org}…",
-        "waitingOnPage": "Approva l’accesso nella pagina che si è aperta nel browser."
-      },
-      "layerOffByPolicy": "Disattivato per la tua organizzazione",
-      "layerOn": "Attivo",
-      "layersHint": "{org} decide cosa viene registrato.",
-      "tabs": {
-        "label": "Questo computer",
-        "recording": "Registrazione",
-        "exclusions": "Esclusioni"
-      },
-      "exclusions": {
-        "intro": "Kortix Capture non registra mai le app e i siti esclusi su questo computer: nessuno screenshot, nessun testo, nessuna azione.",
-        "orgIntro": "Obbligatorie per ogni dispositivo di {org}: nessun dispositivo le registra e i membri non possono disattivarle. Ogni membro aggiunge le proprie esclusioni sul proprio computer, nell’app desktop di Kortix.",
-        "kindLabel": "App o siti web",
-        "apps": "App",
-        "websites": "Siti web",
-        "searchApps": "Cerca app",
-        "searchOrAddApp": "Cerca app o aggiungine una tramite ID app",
-        "searchWebsites": "Cerca o aggiungi un sito web",
-        "addDomain": "Escludi {domain}",
-        "addApp": "Escludi {app}",
-        "categories": "Categorie",
-        "excluded": "Esclusi",
-        "recent": "Registrati di recente",
-        "privateBrowsing": "Navigazione privata",
-        "privateBrowsingDescription": "Finestre private e in incognito in tutti i browser supportati.",
-        "setByOrg": "Impostato da {org}",
-        "appCount": "{count, plural, one {# app} other {# app}}",
-        "siteCount": "{count, plural, one {# sito web} other {# siti web}}",
-        "noExcludedApps": "Nessuna app è esclusa.",
-        "noExcludedSites": "Nessun sito web è escluso.",
-        "noRecentApps": "Ancora nessuna app registrata.",
-        "noRecentSites": "Ancora nessun sito web registrato.",
-        "noMatch": "Nessun risultato.",
-        "loadFailed": "Impossibile leggere le esclusioni.",
-        "tryAgain": "Riprova",
-        "failed": "Impossibile modificare l’esclusione."
-      },
-      "notice": "Avviso da {org}",
-      "otherOrg": "Questo computer ora registra per un’altra organizzazione. Avviare qui lo sposta su {org}.",
-      "signInRequired": {
-        "title": "Questo computer è stato disconnesso",
-        "hint": "Kortix Capture potrebbe essere disattivato per la tua organizzazione, oppure qualcuno ha rimosso questo computer. Accedi di nuovo per registrare."
-      },
-      "error": {
-        "title": "Kortix Capture si è fermato",
-        "fallback": "La registrazione si è fermata. Riprova o apri i log."
-      },
-      "permissions": {
-        "title": "Consenti a Kortix di registrare",
-        "hint": "macOS chiede ogni autorizzazione una volta. Vanno a Kortix, così Kortix Capture registra senza chiedere di nuovo.",
-        "needed": "Non ancora consentito",
-        "waiting": "In attesa",
-        "allowed": "Consentito",
-        "allow": "Consenti accesso",
-        "settingsHint": "Se si aprono le Impostazioni di Sistema, attiva Kortix nell’elenco. Si aggiorna da solo.",
-        "screen": "Registrazione schermo",
-        "screenDescription": "Vedere e registrare ciò che è sullo schermo",
-        "accessibility": "Accessibilità",
-        "accessibilityDescription": "Leggere l’app e la finestra in cui lavori",
-        "inputMonitoring": "Monitoraggio dell’input",
-        "inputMonitoringDescription": "Registrare clic e tasti, solo con Azioni attivo",
-        "microphone": "Microfono",
-        "microphoneDescription": "Registrare ciò che viene detto, solo con Audio attivo"
-      },
-      "actions": {
-        "cancel": "Annulla",
-        "start": "Avvia registrazione",
-        "starting": "Avvio…",
-        "signInAgain": "Accedi di nuovo",
-        "tryAgain": "Riprova",
-        "resume": "Riprendi",
-        "pause": "Pausa di 1 ora",
-        "openTimeline": "Apri cronologia",
-        "more": "Altre azioni",
-        "showLogs": "Mostra log",
-        "stop": "Interrompi registrazione",
-        "signOut": "Disconnetti da Kortix Capture…"
-      },
-      "signOut": {
-        "title": "Disconnettersi da Kortix Capture?",
-        "description": "Kortix Capture si ferma su questo computer, e questo computer perde l’accesso a {org}. Le registrazioni restano in {org}. Per registrare di nuovo, riavvia la registrazione.",
-        "confirm": "Disconnetti"
-      },
-      "toast": {
-        "started": "Registrazione avviata",
-        "stopped": "Registrazione interrotta",
-        "paused": "Registrazione in pausa",
-        "resumed": "Registrazione ripresa",
-        "signedOut": "Disconnesso da Kortix Capture"
-      },
-      "pausedByOrgHint": "Chi gestisce {org} ha messo in pausa la registrazione. Riprende quando toglie la pausa.",
-      "gate": {
-        "title": "Consenti Kortix Capture su questo computer",
-        "body": "Kortix Capture registra questo computer in {org}, ma macOS non lo ha ancora consentito. Non viene registrato nulla finché non consenti l’accesso.",
-        "later": "Più tardi",
-        "done": "Kortix Capture sta registrando."
-      },
-      "managed": {
-        "title": "{org} gestisce Kortix Capture su questo computer",
-        "body": "L’IT ha installato Kortix Capture come servizio di Windows. Registra mentre hai effettuato l’accesso a Windows, che Kortix sia aperto o no. Solo l’IT può fermarlo.",
-        "pendingMember": "Questo computer attende la tua organizzazione: nessun membro ha l’email con cui accedi a Windows. Un admin lo approva in Dispositivi.",
-        "pendingApproval": "Questo computer attende che un admin della tua organizzazione lo approvi in Dispositivi. Fino ad allora non registra nulla.",
-        "refused": "La tua organizzazione ha rifiutato questo computer. Non registra nulla. Rivolgiti al tuo team IT.",
-        "otherOrg": "L’IT ha registrato questo computer in un’altra organizzazione, non in {org}."
-      }
-    },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Torna a Kortix",
@@ -21032,12 +20910,11 @@
       "nav": {
         "devices": "Dispositivi",
         "settings": "Impostazioni dell’organizzazione",
-        "timeline": "Timeline",
-        "thisComputer": "Questo computer"
+        "timeline": "Timeline"
       },
       "off": {
         "title": "Kortix Capture è disattivato per {name}",
-        "bodyAdmin": "Attivalo per registrare i computer di questa organizzazione. Ogni persona attiva comunque la registrazione sul proprio computer.",
+        "bodyAdmin": "Attivalo per registrare i computer di questa organizzazione. Poi installa Kortix Capture su ogni computer o distribuiscilo su molti insieme.",
         "bodyMember": "Chiedi a un proprietario o admin di questa organizzazione di attivarlo.",
         "turnOn": "Attiva Kortix Capture",
         "failed": "Impossibile attivare Kortix Capture"
@@ -21052,14 +20929,6 @@
       "descriptionReadOnly": "Un proprietario o admin di questa organizzazione attiva o disattiva Kortix Capture.",
       "open": "Apri Kortix Capture",
       "failed": "Impossibile modificare Kortix Capture."
-    },
-    "thisComputer": {
-      "title": "Questo computer",
-      "breadcrumb": "Percorso di navigazione",
-      "browserDescription": "Registra un computer dall’app desktop di Kortix.",
-      "browserTitle": "Apri Kortix desktop per registrare questo computer",
-      "browserBody": "Kortix Capture registra dall’app desktop. Installala, accedi, poi apri Kortix Capture › Questo computer.",
-      "getDesktop": "Scarica l’app desktop di Kortix"
     },
     "api": {
       "title": "API di Kortix Capture",
@@ -21085,7 +20954,7 @@
     },
     "rollout": {
       "title": "Distribuisci sui computer",
-      "description": "L’IT installa Kortix Capture su molti computer Windows con un solo token di registrazione. Ogni computer si registra come la persona che accede a Windows. Nessuno accede a Kortix a mano.",
+      "description": "L’IT installa Kortix Capture su molti computer con un solo token di registrazione. Ogni computer si registra da solo e inizia a registrare. Kortix lo collega al membro con l’email con cui la persona accede a Windows; puoi collegare qualsiasi computer a una persona in seguito.",
       "tokensTitle": "Token di registrazione",
       "tokensEmpty": "Ancora nessun token di registrazione.",
       "guide": "Guida di configurazione per l’IT",
@@ -21127,7 +20996,7 @@
       "revokeFailed": "Impossibile revocare il token",
       "copy": "Copia",
       "waitingTitle": "In attesa di approvazione",
-      "waitingBody": "Questi computer hanno un token di registrazione valido. Non registrano nulla finché non li approvi per un membro.",
+      "waitingBody": "Questi computer hanno un token di registrazione valido e attendono un admin: il token richiede l’approvazione di ogni computer, oppure un admin li ha revocati. Non registrano nulla finché non li approvi.",
       "col": {
         "person": "Persona Windows",
         "computer": "Computer",
@@ -21137,7 +21006,6 @@
       },
       "unnamed": "Computer senza nome",
       "reason": {
-        "no_member": "Nessun membro ha questa email. Approvalo per un membro o invita prima la persona.",
         "approval_required": "Il token richiede l’approvazione di ogni computer, oppure un admin ha revocato questo."
       },
       "deny": "Rifiuta",
@@ -21147,11 +21015,18 @@
       "denied": "Computer rifiutato",
       "decideFailed": "Impossibile salvare la decisione",
       "approveTitle": "Approva questo computer",
-      "approveBody": "{computer} registra {person} come il membro che scegli. Inizia entro un minuto.",
+      "approveBody": "{computer} ({person}) inizia a registrare entro un minuto. Collegalo a un membro ora o più tardi in Dispositivi.",
       "member": "Membro",
-      "memberPlaceholder": "Scegli un membro",
       "cancel": "Annulla",
-      "approved": "Approvato. Il computer si registra entro un minuto."
+      "approved": "Approvato. Il computer si registra entro un minuto.",
+      "noOne": "Non collegato a nessuno",
+      "linkTitle": "Collega {name} a una persona",
+      "linkBody": "Da ora il computer registra per questa persona. Ciò che ha registrato senza collegamento passa a lei; ciò che ha registrato per una persona precedente resta suo.",
+      "linked": "Dispositivo collegato",
+      "unlinked": "Collegamento rimosso",
+      "linkFailed": "Impossibile cambiare la persona collegata",
+      "save": "Salva",
+      "domainsPlaceholder": "corp.example"
     }
   }
 }

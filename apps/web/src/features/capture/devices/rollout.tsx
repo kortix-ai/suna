@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  CaptureDevice,
   CaptureEnrollment,
   CaptureEnrollmentToken,
   CaptureEnrollmentTokenSecret,
@@ -11,6 +12,7 @@ import {
   useCaptureEnrollmentTokens,
   useCreateCaptureEnrollmentToken,
   useDenyCaptureEnrollment,
+  useLinkCaptureDevice,
   useRevokeCaptureEnrollmentToken,
 } from '@kortix/sdk/react';
 import { ArrowSquareOutIcon, CheckIcon, CopyIcon, DesktopIcon } from '@phosphor-icons/react';
@@ -188,7 +190,7 @@ function NewTokenForm({
           <Input
             id={ids.domains}
             value={domains}
-            placeholder="corp.example"
+            placeholder={t('domainsPlaceholder')}
             onChange={(event) => setDomains(event.target.value)}
           />
         </div>
@@ -436,8 +438,8 @@ function WaitingRow({
         </span>
         <span className="text-muted-foreground block text-xs">{row.token_name}</span>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-72 min-w-56 text-xs whitespace-normal text-pretty">
-        {t(`reason.${row.reason ?? 'approval_required'}`)}
+      <TableCell className="text-muted-foreground max-w-72 min-w-56 text-xs text-pretty whitespace-normal">
+        {t('reason.approval_required')}
       </TableCell>
       <TableCell className="text-muted-foreground text-xs tabular-nums">
         {relativeTime(Date.parse(row.last_seen_at), locale)}
@@ -474,7 +476,44 @@ function WaitingRow({
   );
 }
 
-/** Pick the member a waiting computer records. The matched member is preselected. */
+/** The Select value for "linked to no one". */
+const NO_ONE = 'none';
+
+/** A member of the account, or "linked to no one". */
+function MemberSelect({
+  accountId,
+  enabled,
+  value,
+  onChange,
+}: {
+  accountId: string;
+  enabled: boolean;
+  value: string | null;
+  onChange: (userId: string | null) => void;
+}) {
+  const t = useTranslations('capture.rollout');
+  const people = useCaptureDirectory(accountId, enabled);
+  return (
+    <Select
+      value={value ?? NO_ONE}
+      onValueChange={(next) => onChange(next === NO_ONE ? null : next)}
+    >
+      <SelectTrigger aria-label={t('member')} className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_ONE}>{t('noOne')}</SelectItem>
+        {people.members.map((member) => (
+          <SelectItem key={member.user_id} value={member.user_id}>
+            {member.email ?? member.user_id}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Approve a waiting computer, linked to a member or to no one. The matched member is preselected. */
 function ApproveModal({
   accountId,
   row,
@@ -485,12 +524,11 @@ function ApproveModal({
   onClose: () => void;
 }) {
   const t = useTranslations('capture.rollout');
-  const people = useCaptureDirectory(accountId, row !== null);
   const approve = useApproveCaptureEnrollment(accountId);
-  const [picked, setPicked] = useState<string | null>(null);
-  const userId = picked ?? row?.user_id ?? null;
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const userId = picked === undefined ? (row?.user_id ?? null) : picked;
   const close = () => {
-    setPicked(null);
+    setPicked(undefined);
     onClose();
   };
   return (
@@ -508,18 +546,12 @@ function ApproveModal({
           </ModalDescription>
         </ModalHeader>
         <ModalBody>
-          <Select value={userId ?? undefined} onValueChange={setPicked}>
-            <SelectTrigger aria-label={t('member')} className="w-full">
-              <SelectValue placeholder={t('memberPlaceholder')} />
-            </SelectTrigger>
-            <SelectContent>
-              {people.members.map((member) => (
-                <SelectItem key={member.user_id} value={member.user_id}>
-                  {member.email ?? member.user_id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MemberSelect
+            accountId={accountId}
+            enabled={row !== null}
+            value={userId}
+            onChange={setPicked}
+          />
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button variant="ghost" size="sm" onClick={close}>
@@ -527,11 +559,10 @@ function ApproveModal({
           </Button>
           <Button
             size="sm"
-            disabled={!userId || approve.isPending}
+            disabled={approve.isPending}
             aria-busy={approve.isPending}
             onClick={() =>
               row &&
-              userId &&
               approve.mutate(
                 { enrollmentId: row.enrollment_id, userId },
                 {
@@ -546,6 +577,76 @@ function ApproveModal({
           >
             {approve.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
             {t('approve')}
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+/**
+ * Link a device to a Kortix user, or unlink it (`capture.manage`). What it
+ * recorded linked to no one moves to the person; what it recorded for an
+ * earlier person stays theirs.
+ */
+export function LinkDeviceModal({
+  accountId,
+  device,
+  name,
+  onClose,
+}: {
+  accountId: string;
+  device: CaptureDevice | null;
+  name: string;
+  onClose: () => void;
+}) {
+  const t = useTranslations('capture.rollout');
+  const link = useLinkCaptureDevice(accountId);
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const userId = picked === undefined ? (device?.user_id ?? null) : picked;
+  const close = () => {
+    setPicked(undefined);
+    onClose();
+  };
+  return (
+    <Modal open={device !== null} onOpenChange={(open) => (open ? null : close())}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>{t('linkTitle', { name })}</ModalTitle>
+          <ModalDescription>{t('linkBody')}</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <MemberSelect
+            accountId={accountId}
+            enabled={device !== null}
+            value={userId}
+            onChange={setPicked}
+          />
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button variant="ghost" size="sm" onClick={close}>
+            {t('cancel')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={link.isPending || !device || userId === device.user_id}
+            aria-busy={link.isPending}
+            onClick={() =>
+              device &&
+              link.mutate(
+                { deviceId: device.device_id, userId },
+                {
+                  onSuccess: () => {
+                    successToast(userId ? t('linked') : t('unlinked'));
+                    close();
+                  },
+                  onError: (error) => errorToast(errorText(error, t('linkFailed'))),
+                },
+              )
+            }
+          >
+            {link.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+            {t('save')}
           </Button>
         </ModalFooter>
       </ModalContent>

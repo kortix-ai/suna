@@ -169,7 +169,7 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       {area.enabled ? (
         <nav aria-label={t('wordmark')} className="flex flex-wrap items-center gap-0.5">
           {CAPTURE_SECTIONS.map((item) => {
-            const active = section === item || (item === 'devices' && section === 'this-computer');
+            const active = section === item;
             return (
               <Link
                 key={item}
@@ -279,7 +279,6 @@ function AccountSwitcher({ accountId }: { accountId: string }) {
   const area = useCaptureArea(accountId);
   const router = useRouter();
   const section = sectionOf(usePathname());
-  const keep = section === 'this-computer' ? 'devices' : section;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -299,7 +298,7 @@ function AccountSwitcher({ accountId }: { accountId: string }) {
         {area.accounts.map((account) => (
           <DropdownMenuItem
             key={account.account_id}
-            onSelect={() => router.push(captureHref(account.account_id, keep))}
+            onSelect={() => router.push(captureHref(account.account_id, section))}
           >
             <EntityAvatar label={account.name} size="xs" />
             <span className="min-w-0 flex-1 truncate">{account.name}</span>

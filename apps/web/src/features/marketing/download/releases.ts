@@ -49,6 +49,16 @@ export function pickDesktopAsset(assets: ReleaseAsset[], os: DesktopOs): Release
   return matches.find((a) => a.name.toLowerCase().includes('universal')) ?? matches[0];
 }
 
+/**
+ * Kortix Capture, the separate recorder app, ships in the same Release (deploy-prod
+ * `attach-capture`): `KortixCapture-<v>-x64.msi`, `KortixCapture-<v>-universal.pkg`,
+ * `kortix-capture_<v>_amd64.deb`. Never the Kortix app's own installer.
+ */
+export function pickCaptureAsset(assets: ReleaseAsset[], os: DesktopOs): ReleaseAsset | undefined {
+  const pattern = { windows: /^kortixcapture.*\.msi$/, macos: /^kortixcapture.*\.pkg$/, linux: /^kortix-capture.*\.deb$/ }[os];
+  return pattern ? assets.find((a) => pattern.test(a.name.toLowerCase())) : undefined;
+}
+
 /** CLI binaries are named `kortix-<goos>-<arch>`. Windows publishes none. */
 export function pickCliAsset(
   assets: ReleaseAsset[],

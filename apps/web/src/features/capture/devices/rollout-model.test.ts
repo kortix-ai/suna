@@ -17,7 +17,7 @@ describe('IT rollout model', () => {
 
   test('the silent install names the URL and the token', () => {
     expect(msiCommand('https://api.kortix.com', 'kortix_enr_x')).toBe(
-      'msiexec /i KortixCapture.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_x',
+      'msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_x',
     );
   });
 

@@ -19605,7 +19605,9 @@
       "textd4806967bdd6": "Опозвао Capture токен за регистрацију",
       "textb3e9170332a7": "Приказао рачунаре који чекају регистрацију",
       "text8258034e2578": "Одобрио регистрацију рачунара",
-      "textd2bea71d87f9": "Одбио регистрацију рачунара"
+      "textd2bea71d87f9": "Одбио регистрацију рачунара",
+      "text282851365ab1": "Повезао Capture уређај са особом",
+      "text2c380a3fe63f": "Прегледао Capture податке уређаја који није повезан ни са ким"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20777,9 +20779,6 @@
       "viewLabel": "Приказ",
       "viewAll": "Svi",
       "viewMine": "Моји уређаји",
-      "thisComputer": "Овај рачунар",
-      "thisComputerBadge": "Овај рачунар",
-      "addDevice": "Додај уређај",
       "filterLabel": "Филтрирај по статусу",
       "filter": {
         "all": "Сви",
@@ -20793,9 +20792,8 @@
       "empty": {
         "allTitle": "Још ниједан рачунар не снима у {name}",
         "mineTitle": "Још не снимате ниједан рачунар",
-        "body": "Инсталирајте Kortix desktop, пријавите се, па укључите Kortix Capture у одељку Овај рачунар."
+        "body": "Инсталирај Kortix Capture на рачунар и пријави се преко Kortix-а, или га распореди на много рачунара токеном за регистрацију."
       },
-      "getDesktop": "Преузми Kortix desktop апликацију",
       "listLabel": "Листа уређаја",
       "noMatch": "Ниједан уређај нема овај статус.",
       "col": {
@@ -20817,7 +20815,11 @@
       "pausedUntil": "до {time}",
       "apiLink": "Kortix Capture API",
       "rollout": "Распореди",
-      "managedBadge": "ИТ распоређивање"
+      "managedBadge": "ИТ распоређивање",
+      "link": "Повежи са особом…",
+      "relink": "Промени повезану особу…",
+      "unlinked": "Није повезан ни са ким",
+      "getCapture": "Преузми Kortix Capture"
     },
     "settings": {
       "title": "Podešavanja organizacije",
@@ -20843,7 +20845,25 @@
           "messagingHint": "Messages, WhatsApp, Signal, Telegram i njihova obaveštenja.",
           "banking": "Bankarstvo i finansije",
           "bankingHint": "Bankarske i finansijske aplikacije i oko 950 sajtova banaka i fintech kompanija."
-        }
+        },
+        "orgIntro": "Obavezno za svaki uređaj u organizaciji {org}: nijedan uređaj ovo ne snima, a članovi to ne mogu da isključe. Svaki član dodaje svoje izuzetke na svom računaru, u Kortix desktop aplikaciji.",
+        "kindLabel": "Aplikacije ili veb-sajtovi",
+        "apps": "Aplikacije",
+        "websites": "Veb-sajtovi",
+        "searchOrAddApp": "Pretraži aplikacije ili dodaj jednu po ID-ju aplikacije",
+        "searchWebsites": "Pretraži ili dodaj veb-sajt",
+        "addApp": "Izuzmi {app}",
+        "addDomain": "Izuzmi {domain}",
+        "categories": "Kategorije",
+        "appCount": "{count, plural, one {# aplikacija} few {# aplikacije} other {# aplikacija}}",
+        "siteCount": "{count, plural, one {# veb-sajt} few {# veb-sajta} other {# veb-sajtova}}",
+        "setByOrg": "Postavlja {org}",
+        "privateBrowsing": "Privatno pregledanje",
+        "privateBrowsingDescription": "Privatni i anonimni prozori u svim podržanim pregledačima.",
+        "excluded": "Izuzeto",
+        "noMatch": "Nema poklapanja.",
+        "noExcludedApps": "Nijedna aplikacija nije izuzeta.",
+        "noExcludedSites": "Nijedan veb-sajt nije izuzet."
       },
       "localHours": "На уређају",
       "localHoursHint": "Koliko dugo računar čuva snimke nakon otpremanja. 0 ih čuva bez ograničenja.",
@@ -20879,148 +20899,6 @@
       "experimentalTitle": "Експериментално",
       "experimentalHint": "Раде, али се могу променити. Прво их испробајте."
     },
-    "dialog": {
-      "product": "Kortix Capture",
-      "title": "Снимај овај рачунар",
-      "status": {
-        "off": "Искључено",
-        "turningOn": "Покреће се",
-        "signInRequired": "Одјављен",
-        "error": "Zaustavljeno zbog greške",
-        "needsPermission": "Потребна је дозвола",
-        "paused": "Паузирано",
-        "pausedUntil": "Паузирано до {time}",
-        "pausedByOrg": "Паузирала твоја организација",
-        "locked": "Ekran je zaključan",
-        "excluded": "Izuzeta aplikacija je u prvom planu",
-        "starting": "Покреће се",
-        "recording": "Снима",
-        "unavailable": "Није доступно",
-        "captureOff": "Искључено за твоју организацију",
-        "managed": "Управља твоја организација"
-      },
-      "unavailable": "Ова десктоп апликација нема Kortix Capture. Ажурирај Kortix на најновију верзију.",
-      "orgOff": "Kortix Capture je isključen za {org}. Vlasnik ili administrator može da ga uključi.",
-      "intro": "Snima ovaj računar za {org}, da bi ti i tvoji agenti mogli da pretražujete šta si radio. Ti možeš da ga vidiš, kao i vlasnici i administratori organizacije {org}.",
-      "layersTitle": "Шта се снима",
-      "layers": {
-        "screen": "Екран",
-        "screenDescription": "Снимак екрана отприлике на сваке 2 секунде, са текстом.",
-        "actions": "Радње",
-        "actionsDescription": "Кликови, тастери и укуцани текст, са снимцима екрана.",
-        "audio": "Звук",
-        "audioDescription": "Твој микрофон и оно што овај рачунар пушта."
-      },
-      "noLayers": "Ништа се не снима: сви слојеви су искључени.",
-      "turningOn": {
-        "progress": "Пријављујем овај рачунар на {org}…",
-        "waitingOnPage": "Одобри пријаву на страници која се отворила у прегледачу."
-      },
-      "layerOffByPolicy": "Искључено за твоју организацију",
-      "layerOn": "Uključeno",
-      "layersHint": "{org} odlučuje šta se snima.",
-      "tabs": {
-        "label": "Ovaj računar",
-        "recording": "Snimanje",
-        "exclusions": "Izuzeci"
-      },
-      "exclusions": {
-        "intro": "Kortix Capture nikada ne snima izuzete aplikacije i veb-sajtove na ovom računaru: bez snimka ekrana, teksta i radnji.",
-        "orgIntro": "Obavezno za svaki uređaj u organizaciji {org}: nijedan uređaj ovo ne snima, a članovi to ne mogu da isključe. Svaki član dodaje svoje izuzetke na svom računaru, u Kortix desktop aplikaciji.",
-        "kindLabel": "Aplikacije ili veb-sajtovi",
-        "apps": "Aplikacije",
-        "websites": "Veb-sajtovi",
-        "searchApps": "Pretraži aplikacije",
-        "searchOrAddApp": "Pretraži aplikacije ili dodaj jednu po ID-ju aplikacije",
-        "searchWebsites": "Pretraži ili dodaj veb-sajt",
-        "addDomain": "Izuzmi {domain}",
-        "addApp": "Izuzmi {app}",
-        "categories": "Kategorije",
-        "excluded": "Izuzeto",
-        "recent": "Nedavno snimljeno",
-        "privateBrowsing": "Privatno pregledanje",
-        "privateBrowsingDescription": "Privatni i anonimni prozori u svim podržanim pregledačima.",
-        "setByOrg": "Postavlja {org}",
-        "appCount": "{count, plural, one {# aplikacija} few {# aplikacije} other {# aplikacija}}",
-        "siteCount": "{count, plural, one {# veb-sajt} few {# veb-sajta} other {# veb-sajtova}}",
-        "noExcludedApps": "Nijedna aplikacija nije izuzeta.",
-        "noExcludedSites": "Nijedan veb-sajt nije izuzet.",
-        "noRecentApps": "Još nijedna aplikacija nije snimljena.",
-        "noRecentSites": "Još nijedan veb-sajt nije snimljen.",
-        "noMatch": "Nema poklapanja.",
-        "loadFailed": "Izuzeci nisu mogli da se učitaju.",
-        "tryAgain": "Pokušaj ponovo",
-        "failed": "Izuzetak nije mogao da se promeni."
-      },
-      "notice": "Obaveštenje od {org}",
-      "otherOrg": "Овај рачунар сада снима за другу организацију. Почетак овде га пребацује на {org}.",
-      "signInRequired": {
-        "title": "Овај рачунар је одјављен",
-        "hint": "Kortix Capture је можда искључен за твоју организацију, или је неко уклонио овај рачунар. Пријави се поново да би снимао."
-      },
-      "error": {
-        "title": "Kortix Capture се зауставио",
-        "fallback": "Снимање се зауставило. Покушај поново или отвори логове."
-      },
-      "permissions": {
-        "title": "Дозволи Kortix-у да снима",
-        "hint": "macOS свако дозволу тражи једном. Иду ка Kortix-у, па Kortix Capture снима без поновног питања.",
-        "needed": "Још није дозвољено",
-        "waiting": "Чека на тебе",
-        "allowed": "Дозвољено",
-        "allow": "Дозволи приступ",
-        "settingsHint": "Ако се отворе System Settings, укључи Kortix на листи. Ажурира се само.",
-        "screen": "Снимање екрана",
-        "screenDescription": "Види и снимај шта је на екрану",
-        "accessibility": "Приступачност",
-        "accessibilityDescription": "Читај апликацију и прозор у којем радиш",
-        "inputMonitoring": "Праћење уноса",
-        "inputMonitoringDescription": "Снимај кликове и тастере, само када су радње укључене",
-        "microphone": "Микрофон",
-        "microphoneDescription": "Снимај оно што се говори, само када је звук укључен"
-      },
-      "actions": {
-        "cancel": "Откажи",
-        "start": "Почни снимање",
-        "starting": "Покреће се…",
-        "signInAgain": "Пријави се поново",
-        "tryAgain": "Покушај поново",
-        "resume": "Настави",
-        "pause": "Паузирај 1 сат",
-        "openTimeline": "Отвори временску линију",
-        "more": "Још радњи",
-        "showLogs": "Прикажи логове",
-        "stop": "Заустави снимање",
-        "signOut": "Одјави се из Kortix Capture-а…"
-      },
-      "signOut": {
-        "title": "Одјавити се из Kortix Capture-а?",
-        "description": "Kortix Capture се зауставља на овом рачунару, а овај рачунар губи приступ {org}. Снимци остају у {org}. Да би поново снимао, поново покрени снимање.",
-        "confirm": "Одјави се"
-      },
-      "toast": {
-        "started": "Снимање је почело",
-        "stopped": "Снимање је заустављено",
-        "paused": "Снимање је паузирано",
-        "resumed": "Снимање је настављено",
-        "signedOut": "Одјављен из Kortix Capture-а"
-      },
-      "pausedByOrgHint": "Они који управљају са {org} паузирали су снимање. Наставља се када уклоне паузу.",
-      "gate": {
-        "title": "Dozvoli Kortix Capture na ovom računaru",
-        "body": "Kortix Capture snima ovaj računar u {org}, ali macOS to još nije dozvolio. Ništa se ne snima dok ne dozvoliš pristup.",
-        "later": "Kasnije",
-        "done": "Kortix Capture snima."
-      },
-      "managed": {
-        "title": "{org} управља програмом Kortix Capture на овом рачунару",
-        "body": "ИТ је инсталирао Kortix Capture као Windows услугу. Снима док си пријављен у Windows, било да је Kortix отворен или не. Само ИТ може да га заустави.",
-        "pendingMember": "Овај рачунар чека твоју организацију: ниједан члан нема е-пошту којом се пријављујеш у Windows. Администратор га одобрава у Уређајима.",
-        "pendingApproval": "Овај рачунар чека да га администратор твоје организације одобри у Уређајима. До тада не снима ништа.",
-        "refused": "Твоја организација је одбила овај рачунар. Не снима ништа. Обрати се ИТ тиму.",
-        "otherOrg": "ИТ је регистровао овај рачунар у другу организацију, не у {org}."
-      }
-    },
     "area": {
       "wordmark": "Kortix Capture",
       "backToKortix": "Назад на Kortix",
@@ -21032,12 +20910,11 @@
       "nav": {
         "devices": "Уређаји",
         "settings": "Podešavanja organizacije",
-        "timeline": "Временска линија",
-        "thisComputer": "Овај рачунар"
+        "timeline": "Временска линија"
       },
       "off": {
         "title": "Kortix Capture је искључен за {name}",
-        "bodyAdmin": "Укључите га да бисте снимали рачунаре ове организације. Свака особа и даље укључује снимање на свом рачунару.",
+        "bodyAdmin": "Укључи га да би снимао рачунаре ове организације. Затим инсталирај Kortix Capture на сваки рачунар или га распореди на више одједном.",
         "bodyMember": "Zamoli vlasnika ili administratora ove organizacije da ga uključi.",
         "turnOn": "Укључи Kortix Capture",
         "failed": "Укључивање Kortix Capture није успело"
@@ -21052,14 +20929,6 @@
       "descriptionReadOnly": "Vlasnik ili administrator ove organizacije uključuje ili isključuje Kortix Capture.",
       "open": "Otvori Kortix Capture",
       "failed": "Promena za Kortix Capture nije uspela."
-    },
-    "thisComputer": {
-      "title": "Овај рачунар",
-      "breadcrumb": "Путања навигације",
-      "browserDescription": "Снимајте рачунар из Kortix desktop апликације.",
-      "browserTitle": "Отворите Kortix desktop да бисте снимили овај рачунар",
-      "browserBody": "Kortix Capture снима из desktop апликације. Инсталирајте је, пријавите се, па отворите Kortix Capture › Овај рачунар.",
-      "getDesktop": "Преузми Kortix desktop апликацију"
     },
     "api": {
       "title": "Kortix Capture API",
@@ -21085,7 +20954,7 @@
     },
     "rollout": {
       "title": "Распореди на рачунаре",
-      "description": "ИТ инсталира Kortix Capture на много Windows рачунара једним токеном за регистрацију. Сваки рачунар се региструје као особа која се пријави у Windows. Нико се не пријављује у Kortix ручно.",
+      "description": "ИТ инсталира Kortix Capture на много рачунара једним токеном за регистрацију. Сваки рачунар се сам региструје и почиње снимање. Kortix га повезује са чланом чијом се е-поштом особа пријављује у Windows; било који рачунар можеш касније повезати са особом.",
       "tokensTitle": "Токени за регистрацију",
       "tokensEmpty": "Још нема токена за регистрацију.",
       "guide": "Водич за подешавање за ИТ",
@@ -21127,7 +20996,7 @@
       "revokeFailed": "Токен није могао да се опозове",
       "copy": "Копирај",
       "waitingTitle": "Чека одобрење",
-      "waitingBody": "Ови рачунари имају важећи токен за регистрацију. Не снимају ништа док их не одобриш за члана.",
+      "waitingBody": "Ови рачунари имају важећи токен за регистрацију и чекају администратора: токен захтева одобрење сваког рачунара, или их је администратор опозвао. Не снимају ништа док их не одобриш.",
       "col": {
         "person": "Windows особа",
         "computer": "Рачунар",
@@ -21137,7 +21006,6 @@
       },
       "unnamed": "Неименовани рачунар",
       "reason": {
-        "no_member": "Ниједан члан нема ову е-пошту. Одобри га за члана или прво позови особу.",
         "approval_required": "Токен захтева одобрење сваког рачунара, или је администратор опозвао овај."
       },
       "deny": "Одбиј",
@@ -21147,11 +21015,18 @@
       "denied": "Рачунар одбијен",
       "decideFailed": "Одлука није могла да се сачува",
       "approveTitle": "Одобри овај рачунар",
-      "approveBody": "{computer} снима {person} као члана којег изабереш. Почиње у року од минута.",
+      "approveBody": "{computer} ({person}) почиње снимање у року од минута. Повежи га са чланом сада или касније у Уређајима.",
       "member": "Члан",
-      "memberPlaceholder": "Изабери члана",
       "cancel": "Откажи",
-      "approved": "Одобрено. Рачунар се региструје у року од минута."
+      "approved": "Одобрено. Рачунар се региструје у року од минута.",
+      "noOne": "Није повезан ни са ким",
+      "linkTitle": "Повежи {name} са особом",
+      "linkBody": "Од сада рачунар снима за ову особу. Оно што је снимио без везе прелази на њу; оно што је снимио за претходну особу остаје њено.",
+      "linked": "Уређај повезан",
+      "unlinked": "Веза уклоњена",
+      "linkFailed": "Повезана особа није могла да се промени",
+      "save": "Сачувај",
+      "domainsPlaceholder": "corp.example"
     }
   }
 }
