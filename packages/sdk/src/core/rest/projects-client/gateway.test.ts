@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import type {
+  GatewayBudgetRow,
   GatewayLogRow,
   GatewayModelStat,
   GatewayOverview,
@@ -105,6 +106,28 @@ test('getGatewayBudgets hits the budgets collection', async () => {
   const result = await getGatewayBudgets('P1');
   expect(last().url).toContain('/projects/P1/gateway/budgets');
   expect(result.budgets).toEqual([]);
+});
+
+test('getGatewayBudgets returns each budget with the spend of its own period and its reset time', async () => {
+  const budget = {
+    budget_id: 'B1',
+    scope: 'project',
+    subject_user_id: null,
+    limit_usd: 20,
+    period: 'day',
+    action: 'block',
+    spent_usd: 15,
+    period_start: '2026-10-13T00:00:00.000Z',
+    resets_at: '2026-10-14T00:00:00.000Z',
+  } satisfies GatewayBudgetRow;
+  nextResponse = {
+    status: 200,
+    body: { project_spend: { requests: 9, cost: 280 }, budgets: [budget], members: [] },
+  };
+  const [row] = (await getGatewayBudgets('P1')).budgets;
+  expect(row?.spent_usd).toBe(15);
+  expect(row?.period_start).toBe('2026-10-13T00:00:00.000Z');
+  expect(row?.resets_at).toBe('2026-10-14T00:00:00.000Z');
 });
 
 test('setGatewayBudget PUTs the budget input', async () => {

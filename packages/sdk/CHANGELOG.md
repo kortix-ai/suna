@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (gateway budget meters per period)
+- `GatewayBudgetRow` has `spent_usd`, `period_start` and `resets_at`: the
+  spend in the budget's own period (day, week or month, UTC), the number the
+  gateway compares with `limit_usd` before it admits a request, and when that
+  period ends. A member budget counts its member's requests only. Use
+  `spent_usd` for a budget meter, not `project_spend.cost`, which is
+  month-to-date. Optional, absent on an older server. Additive (KRTX-1725).
+
 ### Added (connector credential re-sync)
 - `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
   connector the server re-reads the tools after the write: `sync` is that run
