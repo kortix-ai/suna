@@ -1,26 +1,36 @@
 ---
-title: Chrome extension
+title: Kortix in Chrome
 description: Add the Kortix extension to Chrome so a session can open pages, read them and click, with your logins, while you watch and can stop it.
 ---
 
-The Kortix Chrome extension connects your own browser to Kortix. You add the extension to Chrome and sign in once. After that, any of your sessions can drive that browser, including the sites you are already signed in to. This page is for members who connect a browser, decide what agents may reach, and stop an agent that uses it.
+Kortix in Chrome is a Chrome extension that connects your own browser to Kortix. You add the extension to Chrome and sign in once. After that, any of your sessions can drive that browser, including the sites you are already signed in to. This page is for members who connect a browser, decide what agents may reach, and stop an agent that uses it.
 
 The extension is not a sandbox browser and not [a computer](/docs/connect/computers). The pages open in your real browser, as you. It works in Chrome, Edge, Brave and Arc on a computer. Safari, Firefox, the Kortix desktop app and phones cannot run the extension.
 
-## Add the extension
+## How to install
 
-1. Select **Chrome extension** in the sidebar, or open **Settings → Chrome extension**. In Chrome, Edge, Brave or Arc, the dialog **Add Kortix to Chrome** shows three steps.
-2. **Add the extension.** Select **Add to Chrome**. The Chrome Web Store opens. Add the extension. Chrome then opens a Kortix tab: check the **Kortix server**, then select **Connect to Kortix**.
-3. **Sign in.** The tab goes to the Kortix sign-in page. Select **Allow**. The tab comes back, and you name the browser and choose its access. If you added the extension earlier, select **Connect** in the dialog instead.
-4. **Connected.** The browser appears with an online dot. Select **Done**.
+The Chrome Web Store listing is not public yet. Until it is, load the extension from the Kortix repository:
 
-The extension stays signed in. If you open the dialog in a browser that cannot run the extension, it tells you to open Kortix in Chrome, Edge, Brave or Arc.
+1. Build it: run `bun run build` in `apps/chrome-extension`. The build writes `apps/chrome-extension/dist`.
+2. In Chrome, Edge, Brave or Arc, open `chrome://extensions` and turn on **Developer mode**.
+3. Select **Load unpacked** and choose the `dist` folder.
 
-A browser belongs to you. Each browser you connect appears under **Settings → Chrome extension**, and only your own sessions can use it.
+When the listing is public, **Add to Chrome** replaces these steps.
+
+## Connect the browser
+
+1. Open **Settings → Kortix in Chrome**, or select **Kortix in Chrome** in the sidebar. The dialog **Add Kortix to Chrome** shows three steps.
+2. **Add the extension.** The step turns green when the page finds the extension. If it does not, reload the Kortix page.
+3. **Sign in.** Select **Connect**. Chrome opens a Kortix tab: check the **Kortix server**, then select **Connect to Kortix**. The tab goes to the Kortix sign-in page. Select **Allow**.
+4. **Connected.** The tab comes back, and you name the browser and choose its access. The browser appears with an online dot. Select **Done**.
+
+The extension stays signed in. In a browser that cannot run the extension, the dialog tells you to open Kortix in Chrome, Edge, Brave or Arc, and offers **Copy link**.
+
+A browser belongs to you. Each browser you connect appears under **Settings → Kortix in Chrome**, and only your own sessions can use it. To add a second browser or Chrome profile, select **Add another browser**, then open Kortix in that browser and connect it there.
 
 ## Manage your browsers
 
-**Settings → Chrome extension** lists every browser you connected under **Connected browsers**. Each row shows the name, the browser and operating system, when it was last seen, and how many sessions use it now.
+**Settings → Kortix in Chrome** lists every browser you connected under **Connected browsers**. Each row shows the name, the profile and extension version, whether the browser is online, and how many sessions use it now. Two browsers with the same default name show the profile or a number after it.
 
 | Setting | Values | Effect |
 | --- | --- | --- |
@@ -79,7 +89,7 @@ agent-browser --cdp 9333 snapshot -i
 agent-browser --cdp 9333 click @e3
 ```
 
-Ask the agent in plain words, for example "Use my browser to check the invoices in my billing dashboard." The agent runs `kortix chrome use` itself. If you have no connected browser, the command fails and links to **Settings → Chrome extension**.
+Ask the agent in plain words, for example "Use my browser to check the invoices in my billing dashboard." The agent runs `kortix chrome use` itself. If you have no connected browser, the command fails and links to **Settings → Kortix in Chrome**.
 
 ### Files and dialogs
 
@@ -91,7 +101,7 @@ Ask the agent in plain words, for example "Use my browser to check the invoices 
 
 | Message | Meaning | Fix |
 | --- | --- | --- |
-| `chrome_not_connected` | You have no connected browser. | Connect one in **Settings → Chrome extension**. |
+| `chrome_not_connected` | You have no connected browser. | Connect one in **Settings → Kortix in Chrome**. |
 | `chrome_offline` | The browser is connected but did not answer in the last 75 seconds. Chrome may be closed or asleep. | Open Chrome and check that the extension is signed in. |
 | `chrome_access_off` | **Access** for this browser is **Off**. | Set **Access** to **Without asking** or **Ask first**. |
 | `chrome_denied` | You selected **Deny** or **Stop** for this session. | Run `kortix chrome use --ask` to get a fresh prompt. |

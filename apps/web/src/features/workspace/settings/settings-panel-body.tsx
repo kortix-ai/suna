@@ -31,6 +31,7 @@ import {
 import { useProjectCans, type CanResult } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
+import { isTextEntry } from './text-entry';
 import { hubTarget } from '@/stores/account-panel-store';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
@@ -376,7 +377,8 @@ export function SettingsPanelView({
         animation="none"
         aria-describedby={undefined}
         onEscapeKeyDown={(event) => {
-          if (hasOpenFloatingLayer() || hasOpenNestedDialog()) {
+          // Escape in a text field belongs to the field (cancel a rename), not the dialog.
+          if (hasOpenFloatingLayer() || hasOpenNestedDialog() || isTextEntry(event.target)) {
             event.preventDefault();
           }
         }}

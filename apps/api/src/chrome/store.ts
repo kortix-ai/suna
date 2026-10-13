@@ -1,5 +1,5 @@
 /** Kortix for Chrome rows: connections, grants, attachments. */
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   chromeAttachments,
   chromeConnections,
@@ -33,13 +33,17 @@ export interface ChromeInfo {
   extensionVersion: string | null;
 }
 
-/** The owner's browsers, newest `last_seen_at` first. Revoked rows are not listed. */
+/**
+ * The owner's browsers, oldest connection first, `chrome_id` as the tie-break. The
+ * order never depends on `last_seen_at`: a heartbeat would reorder the list on screen.
+ * Revoked rows are not listed.
+ */
 export async function listChromeConnections(userId: string): Promise<ChromeRow[]> {
   return db
     .select(connectionColumns)
     .from(chromeConnections)
     .where(and(eq(chromeConnections.userId, userId), isNull(chromeConnections.revokedAt)))
-    .orderBy(sql`${chromeConnections.lastSeenAt} desc nulls last`, desc(chromeConnections.createdAt));
+    .orderBy(asc(chromeConnections.createdAt), asc(chromeConnections.chromeId));
 }
 
 export async function getChrome(userId: string, chromeId: string): Promise<ChromeRow | null> {

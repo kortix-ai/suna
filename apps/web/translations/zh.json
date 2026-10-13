@@ -20220,16 +20220,17 @@
     "calendarUpcomingSr": "即将触发"
   },
   "chrome": {
-    "pill": "Chrome 扩展程序",
+    "pill": "Chrome 中的 Kortix",
     "connectTitle": "将 Kortix 添加到 Chrome",
     "connectDescription": "让你的会话使用 Chrome，并沿用你的登录状态。你可以看到它们的操作，并随时停止。",
-    "promoLabel": "Chrome 扩展程序",
+    "promoLabel": "Chrome 中的 Kortix",
     "dismissPromo": "关闭",
     "steps": {
       "install": {
         "title": "添加扩展程序",
         "description": "来自 Chrome Web Store。",
-        "done": "Kortix 已在 Chrome 中。"
+        "done": "Kortix 已在 Chrome 中。",
+        "descriptionUnlisted": "在 Chrome 中加载它。"
       },
       "connect": {
         "title": "登录",
@@ -20238,7 +20239,7 @@
       },
       "done": {
         "title": "已连接",
-        "description": "正在等待你的浏览器。"
+        "description": "你的浏览器会显示在这里。"
       }
     },
     "addToChrome": "添加到 Chrome",
@@ -20246,8 +20247,7 @@
     "connect": "连接",
     "connecting": "正在连接…",
     "done": "完成",
-    "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来连接。",
-    "openStore": "打开 Chrome Web Store",
+    "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来连接。复制链接即可在那里打开。",
     "connectFailed": "无法连接浏览器，请重试。",
     "online": "在线",
     "offline": "离线",
@@ -20270,7 +20270,7 @@
       "always": "无需询问",
       "ask": "每次询问",
       "off": "关闭",
-      "description": "会话何时可以使用此浏览器。"
+      "description": "会话是否先询问你。"
     },
     "scope": {
       "label": "标签页",
@@ -20283,6 +20283,16 @@
       "group": "每个会话在自己的标签页组里工作，页面会发光。",
       "control": "随时可通过页面上的栏接管或停止。",
       "own": "只有你自己的会话可以使用你的浏览器。"
+    },
+    "howToInstall": "如何安装",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制",
+    "copyFailed": "无法复制链接。请重试。",
+    "extensionMissing": "Kortix 未找到扩展程序。请先添加，然后重新加载此页面。",
+    "another": {
+      "title": "另一个浏览器",
+      "waiting": "正在等待新浏览器连接。",
+      "description": "在另一个浏览器或 Chrome 配置文件中打开 Kortix，然后在那里将 Kortix 添加到 Chrome。复制链接即可打开。"
     }
   },
   "computers": {
@@ -20659,8 +20669,8 @@
     "viewFolderAccess": "查看访问权限"
   },
   "appsModal": {
-    "title": "用 Kortix 做更多事，无论你在哪里工作",
-    "name": "应用和扩展",
+    "title": "应用和扩展",
+    "subtitle": "在浏览器、电脑和你的工具中使用 Kortix。",
     "mock": {
       "group": "Kortix · 退回我的订单",
       "button": "开始退货",
@@ -20669,14 +20679,15 @@
       "stop": "停止"
     },
     "chrome": {
-      "name": "Chrome",
+      "name": "Chrome 中的 Kortix",
       "description": "Kortix 在你自己的浏览器里打开页面、点击并填写表单，沿用你的登录状态。每一步你都看得见。",
-      "add": "添加到 Chrome",
-      "installedConnect": "已安装？连接",
       "connect": "连接",
       "connecting": "正在连接…",
       "manage": "管理",
-      "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来添加。"
+      "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来添加。复制链接即可在那里打开。",
+      "group": "浏览器",
+      "manageLabel": "管理 Chrome 中的 Kortix",
+      "summary": "{count, plural, other {# 个浏览器}} · {online} 个在线"
     },
     "computer": {
       "title": "你的电脑",
@@ -20686,9 +20697,11 @@
       "connect": "连接",
       "manage": "管理",
       "desktop": "桌面应用",
-      "desktopDescription": "在你自己的电脑上运行 Kortix。",
+      "desktopDescription": "电脑上的 Kortix 应用。",
       "desktopRunning": "你正在使用它。",
-      "download": "下载"
+      "download": "下载",
+      "manageLabel": "管理这台电脑",
+      "connectLabel": "连接这台电脑"
     },
     "developers": {
       "title": "开发者",
@@ -20698,7 +20711,9 @@
       "copied": "已复制",
       "mcp": "MCP",
       "mcpDescription": "在 Claude、Cursor 或 Codex 中使用 Kortix。",
-      "connect": "连接"
+      "connect": "连接",
+      "connectLabel": "连接 MCP",
+      "copyFailed": "无法复制命令。请重试。"
     }
   }
 }

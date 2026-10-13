@@ -12,6 +12,21 @@ export const KORTIX_EXTENSION_ID =
 
 export const KORTIX_EXTENSION_STORE_URL = `https://chromewebstore.google.com/detail/${KORTIX_EXTENSION_ID}`;
 
+/**
+ * The Web Store listing is public. While `false`, no surface offers "Add to
+ * Chrome": each one shows "Connect" and a "How to install" link to the docs.
+ * Flip it with the listing, nothing else changes.
+ */
+export const CHROME_STORE_LISTED = false;
+
+/** Where "How to install" points: the docs page that explains Load unpacked. */
+export const CHROME_INSTALL_DOCS_PATH = '/docs/connect/chrome';
+
+/** Opens Settings → Kortix in Chrome. The link a person copies to open it in Chrome. */
+export function chromeSettingsLink(origin: string): string {
+  return `${origin}/settings/chrome`;
+}
+
 export interface ExtensionStatus {
   version: string;
   /** The extension holds a Kortix sign-in and a browser id. */

@@ -5,8 +5,8 @@
 export type ChromeCardState = 'connected' | 'unsupported' | 'checking' | 'installed' | 'notInstalled';
 
 export function chromeCardState(input: {
-  /** A connected browser of this person exists. */
-  hasConnectedChrome: boolean;
+  /** THIS browser is connected. Other connected browsers do not count. */
+  thisBrowserConnected: boolean;
   /** `unsupported`: Safari, Firefox, the desktop shell. */
   environment: 'checking' | 'supported' | 'unsupported';
   /** The first ping has not answered yet. */
@@ -14,7 +14,7 @@ export function chromeCardState(input: {
   /** The extension answered a ping, or a browser connected. */
   installed: boolean;
 }): ChromeCardState {
-  if (input.hasConnectedChrome) return 'connected';
+  if (input.thisBrowserConnected) return 'connected';
   if (input.environment === 'unsupported') return 'unsupported';
   if (input.checking) return 'checking';
   return input.installed ? 'installed' : 'notInstalled';

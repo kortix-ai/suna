@@ -5,6 +5,10 @@
  * dialog. Chrome first, then the computer, then the developer surfaces. Each
  * row opens the dialog that already owns the flow (computer, MCP, Settings →
  * Kortix in Chrome); nothing here pairs or connects by itself.
+ *
+ * It is mounted once, in the project sidebar, next to its only triggers: the
+ * workspace menu row, the sidebar row and `?apps=1`. Outside a project there is
+ * no workspace menu and no sidebar, so `?apps=1` there does nothing.
  */
 
 import { useChromeConnections } from '@kortix/sdk/react';
@@ -18,23 +22,24 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
 import {
+  ChromeCopyLink,
+  ChromeInstallActions,
   ChromeOnlineDot,
-  ChromeButtonMark,
   useChromeConnect,
 } from '@/features/chrome/chrome-connect';
 import { BrowserLogoTile } from '@/features/chrome/browser-icon';
 import { ChromeMock } from '@/features/chrome/chrome-mock';
 import { chromeCardState } from '@/features/chrome/chrome-card-state';
-import { KORTIX_EXTENSION_STORE_URL } from '@/features/chrome/extension';
+import { chromeCounts } from '@/features/chrome/chrome-names';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { detectPlatform, isMobilePlatform } from '@/features/marketing/download/detect-os';
 import { useOwnsPairedComputer } from '@/features/tunnel/computer-connect';
+import { errorToast } from '@/components/ui/toast';
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl, isDesktop } from '@/lib/desktop';
@@ -79,18 +84,18 @@ export function AppsModal({
   return (
     <Modal open={open} onOpenChange={setOpen}>
       <ModalContent className="max-h-[90dvh] space-y-0 overflow-y-auto lg:max-w-2xl">
-        <div className="flex flex-col gap-5 p-5 lg:p-8">
+        <div className="flex flex-col gap-6 p-5 lg:p-8">
           <header className="space-y-1.5 pr-10">
             <ModalTitle className="text-xl font-medium text-balance">{t('title')}</ModalTitle>
-            <ModalDescription className="sr-only">{t('name')}</ModalDescription>
+            <ModalDescription className="text-muted-foreground text-sm text-pretty">
+              {t('subtitle')}
+            </ModalDescription>
           </header>
           {open ? (
             <>
-              <ChromeCard onManage={() => setOpen(false)} />
-              <div className="grid gap-5 sm:grid-cols-2">
-                <ComputerCard onOpenComputer={hand(onOpenComputer)} />
-                <DevelopersCard onOpenMcp={hand(onOpenMcp)} />
-              </div>
+              <ChromeSection onManage={() => setOpen(false)} />
+              <ComputerSection onOpenComputer={hand(onOpenComputer)} />
+              <DevelopersSection onOpenMcp={hand(onOpenMcp)} />
             </>
           ) : null}
         </div>
@@ -99,87 +104,85 @@ export function AppsModal({
   );
 }
 
-function ChromeCard({ onManage }: { onManage: () => void }) {
+/** The hero decides from THIS browser first. Other browsers are one line plus Manage. */
+function ChromeSection({ onManage }: { onManage: () => void }) {
   const t = useTranslations('appsModal.chrome');
-  const { environment, checking, installed, signedIn, connected, connect } = useChromeConnect();
+  const state = useChromeConnect();
+  const { environment, checking, installed, signedIn, connected } = state;
   const connections = useChromeConnections();
-  const chrome = connected ?? connections.data?.find((item) => item.online) ?? connections.data?.[0];
-  const state = chromeCardState({
-    hasConnectedChrome: Boolean(chrome),
+  const { count, online } = chromeCounts(connections.data ?? []);
+  const cardState = chromeCardState({
+    thisBrowserConnected: Boolean(connected),
     environment,
     checking,
     installed: installed || signedIn,
   });
+  const manage = (
+    <Button
+      size="sm"
+      variant="secondary"
+      aria-label={t('manageLabel')}
+      onClick={() => {
+        onManage();
+        useSettingsPanelStore.getState().openSettings('chrome');
+      }}
+    >
+      {t('manage')}
+    </Button>
+  );
 
   return (
-    <section className="bg-popover grid overflow-hidden rounded-md border sm:grid-cols-2">
-      <div className="flex flex-col gap-4 p-5">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <BrowserLogoTile brand="chrome" className="size-7" iconClassName="size-4" />
-            <h3 className="text-sm font-medium">{t('name')}</h3>
+    <section aria-labelledby="apps-modal-browser" className="space-y-3">
+      <h3 id="apps-modal-browser" className="text-muted-foreground text-xs font-medium">
+        {t('group')}
+      </h3>
+      <div className="grid items-center gap-4 sm:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <BrowserLogoTile brand="chrome" className="size-7" iconClassName="size-4" />
+              <h4 className="text-base font-medium">{t('name')}</h4>
+            </div>
+            <p className="text-muted-foreground text-sm text-pretty">{t('description')}</p>
           </div>
-          <p className="text-muted-foreground text-sm text-pretty">{t('description')}</p>
-        </div>
-        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2">
-          {state === 'connected' && chrome ? (
-            <>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  onManage();
-                  useSettingsPanelStore.getState().openSettings('chrome');
-                }}
-              >
-                {t('manage')}
-              </Button>
+
+          {cardState === 'connected' && connected ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              {manage}
               <span className="flex min-w-0 items-center gap-1.5 text-xs">
-                <ChromeOnlineDot online={chrome.online} />
-                <span className="truncate">{chrome.name}</span>
+                <ChromeOnlineDot online={connected.online} />
+                <span className="truncate">{connected.name}</span>
+                {count > 1 ? (
+                  <span className="text-muted-foreground shrink-0">· {t('summary', { count, online })}</span>
+                ) : null}
               </span>
-            </>
-          ) : state === 'unsupported' ? (
-            <p className="text-muted-foreground text-xs text-pretty">{t('unsupported')}</p>
-          ) : state === 'installed' ? (
-            <Button size="sm" disabled={connect.isPending} onClick={() => connect.mutate()}>
-              {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              {connect.isPending ? t('connecting') : t('connect')}
-            </Button>
+            </div>
           ) : (
             <>
-              {state === 'checking' ? (
-                <Button size="sm" disabled>
-                  <ChromeButtonMark />
-                  {t('add')}
-                </Button>
+              {cardState === 'unsupported' ? (
+                <div className="space-y-2">
+                  <p className="text-muted-foreground text-xs text-pretty">{t('unsupported')}</p>
+                  <ChromeCopyLink />
+                </div>
               ) : (
-                <Button asChild size="sm">
-                  <a href={KORTIX_EXTENSION_STORE_URL} target="_blank" rel="noreferrer">
-                    <ChromeButtonMark />
-                    {t('add')}
-                  </a>
-                </Button>
+                <ChromeInstallActions state={state} />
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                disabled={connect.isPending}
-                onClick={() => connect.mutate()}
-              >
-                {t('installedConnect')}
-              </Button>
+              {count > 0 ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span className="text-muted-foreground text-xs">{t('summary', { count, online })}</span>
+                  {manage}
+                </div>
+              ) : null}
             </>
           )}
         </div>
+        <ChromeMock />
       </div>
-      <ChromeMock className="rounded-none max-sm:hidden" />
     </section>
   );
 }
 
-function ComputerCard({ onOpenComputer }: { onOpenComputer: () => void }) {
+function ComputerSection({ onOpenComputer }: { onOpenComputer: () => void }) {
   const t = useTranslations('appsModal.computer');
   const { owned } = useOwnsPairedComputer();
   const live = owned.some((machine) => machine.isLive);
@@ -189,7 +192,7 @@ function ComputerCard({ onOpenComputer }: { onOpenComputer: () => void }) {
     platform && !isMobilePlatform(platform) ? desktopDownloadUrl(platform) : desktopDownloadUrl();
 
   return (
-    <Card title={t('title')}>
+    <Group title={t('title')}>
       <AppRow
         icon={LaptopIcon}
         name={t('thisComputer')}
@@ -204,7 +207,12 @@ function ComputerCard({ onOpenComputer }: { onOpenComputer: () => void }) {
           )
         }
         action={
-          <Button size="sm" variant="secondary" onClick={onOpenComputer}>
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label={t(live ? 'manageLabel' : 'connectLabel')}
+            onClick={onOpenComputer}
+          >
             {live ? t('manage') : t('connect')}
           </Button>
         }
@@ -224,23 +232,26 @@ function ComputerCard({ onOpenComputer }: { onOpenComputer: () => void }) {
           )
         }
       />
-    </Card>
+    </Group>
   );
 }
 
-function DevelopersCard({ onOpenMcp }: { onOpenMcp: () => void }) {
+function DevelopersSection({ onOpenMcp }: { onOpenMcp: () => void }) {
   const t = useTranslations('appsModal.developers');
   const command = useDeploymentCliInstallCommand(getEnv().VERSION);
   const { copy, copied } = useCopy({ toast: false });
+  const copyCommand = async () => {
+    if (!(await copy(command))) errorToast(t('copyFailed'));
+  };
 
   return (
-    <Card title={t('title')}>
+    <Group title={t('title')}>
       <AppRow
         icon={TerminalWindowIcon}
         name={t('cli')}
         description={t('cliDescription')}
         action={
-          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => copy(command)}>
+          <Button size="sm" variant="secondary" className="gap-1.5" onClick={copyCommand}>
             {copied ? <SolidCheckIcon className="size-3.5" /> : null}
             {copied ? t('copied') : t('copy')}
           </Button>
@@ -251,20 +262,30 @@ function DevelopersCard({ onOpenMcp }: { onOpenMcp: () => void }) {
         name={t('mcp')}
         description={t('mcpDescription')}
         action={
-          <Button size="sm" variant="secondary" className="gap-1.5" onClick={onOpenMcp}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="gap-1.5"
+            aria-label={t('connectLabel')}
+            onClick={onOpenMcp}
+          >
             {t('connect')}
             <ArrowUpRightIcon className="size-3.5 shrink-0" />
           </Button>
         }
       />
-    </Card>
+    </Group>
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+/** A muted label over plain rows: no card, no border, one rule between rows. */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  const id = useId();
   return (
-    <section className="bg-popover min-w-0 overflow-hidden rounded-md border">
-      <h3 className="px-4 pt-3 pb-1 text-sm font-medium">{title}</h3>
+    <section aria-labelledby={id} className="min-w-0 space-y-1">
+      <h3 id={id} className="text-muted-foreground text-xs font-medium">
+        {title}
+      </h3>
       <ul className="divide-border divide-y">{children}</ul>
     </section>
   );
@@ -282,13 +303,13 @@ function AppRow({
   action: ReactNode;
 }) {
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
+    <li className="flex items-center gap-3 py-3">
       <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-sm">
         <RowIcon className="size-5" />
       </span>
       <div className="min-w-0 flex-1 space-y-0.5">
         <p className="text-sm font-medium">{name}</p>
-        <div className="text-muted-foreground truncate text-xs">{description}</div>
+        <div className="text-muted-foreground line-clamp-2 text-xs text-pretty">{description}</div>
       </div>
       {action}
     </li>

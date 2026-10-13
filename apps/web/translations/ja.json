@@ -20220,16 +20220,17 @@
     "calendarUpcomingSr": "予定"
   },
   "chrome": {
-    "pill": "Chrome 拡張機能",
+    "pill": "Chrome の Kortix",
     "connectTitle": "Kortix を Chrome に追加",
     "connectDescription": "セッションがあなたのログイン状態のまま Chrome を使えるようにします。操作は画面で確認でき、いつでも止められます。",
-    "promoLabel": "Chrome 拡張機能",
+    "promoLabel": "Chrome の Kortix",
     "dismissPromo": "閉じる",
     "steps": {
       "install": {
         "title": "拡張機能を追加",
         "description": "Chrome Web Store から追加します。",
-        "done": "Kortix が Chrome に追加されました。"
+        "done": "Kortix が Chrome に追加されました。",
+        "descriptionUnlisted": "Chrome に読み込みます。"
       },
       "connect": {
         "title": "サインイン",
@@ -20238,7 +20239,7 @@
       },
       "done": {
         "title": "接続済み",
-        "description": "ブラウザーを待っています。"
+        "description": "ブラウザーがここに表示されます。"
       }
     },
     "addToChrome": "Chrome に追加",
@@ -20246,8 +20247,7 @@
     "connect": "接続",
     "connecting": "接続中…",
     "done": "完了",
-    "unsupported": "Chrome、Edge、Brave、Arc のいずれかで Kortix を開いて接続してください。",
-    "openStore": "Chrome Web Store を開く",
+    "unsupported": "Chrome、Edge、Brave、Arc のいずれかで Kortix を開いて接続してください。リンクをコピーして開けます。",
     "connectFailed": "ブラウザーを接続できませんでした。もう一度お試しください。",
     "online": "オンライン",
     "offline": "オフライン",
@@ -20270,7 +20270,7 @@
       "always": "確認なし",
       "ask": "毎回確認する",
       "off": "オフ",
-      "description": "セッションがこのブラウザを使える条件。"
+      "description": "セッションが先に確認するかどうか。"
     },
     "scope": {
       "label": "タブ",
@@ -20283,6 +20283,16 @@
       "group": "セッションごとに専用のタブグループで作業し、ページが光ります。",
       "control": "ページ上のバーからいつでも引き継ぎまたは停止できます。",
       "own": "あなたのブラウザを使えるのは、あなた自身のセッションだけです。"
+    },
+    "howToInstall": "インストール方法",
+    "copyLink": "リンクをコピー",
+    "linkCopied": "リンクをコピーしました",
+    "copyFailed": "リンクをコピーできませんでした。もう一度お試しください。",
+    "extensionMissing": "Kortix が拡張機能を見つけられませんでした。追加してから、このページを再読み込みしてください。",
+    "another": {
+      "title": "別のブラウザー",
+      "waiting": "新しいブラウザーの接続を待っています。",
+      "description": "別のブラウザーまたは Chrome プロファイルで Kortix を開き、そこで Chrome に Kortix を追加してください。リンクをコピーして開けます。"
     }
   },
   "computers": {
@@ -20659,8 +20669,8 @@
     "viewFolderAccess": "アクセスを表示"
   },
   "appsModal": {
-    "title": "Kortix で、どこでもさらに活用",
-    "name": "アプリと拡張機能",
+    "title": "アプリと拡張機能",
+    "subtitle": "ブラウザー、コンピューター、ツールから Kortix を使えます。",
     "mock": {
       "group": "Kortix · 注文を返品する",
       "button": "返品を開始",
@@ -20669,14 +20679,15 @@
       "stop": "停止"
     },
     "chrome": {
-      "name": "Chrome",
+      "name": "Chrome の Kortix",
       "description": "Kortix があなたのブラウザでページを開き、クリックし、フォームに入力します。ログイン状態はそのまま。すべての操作が見えます。",
-      "add": "Chrome に追加",
-      "installedConnect": "インストール済みですか？接続",
       "connect": "接続",
       "connecting": "接続中…",
       "manage": "管理",
-      "unsupported": "追加するには、Chrome、Edge、Brave、Arc で Kortix を開いてください。"
+      "unsupported": "追加するには、Chrome、Edge、Brave、Arc で Kortix を開いてください。リンクをコピーして開けます。",
+      "group": "ブラウザー",
+      "manageLabel": "Chrome の Kortix を管理",
+      "summary": "{count, plural, other {# 台のブラウザー}} · {online} 台オンライン"
     },
     "computer": {
       "title": "あなたのコンピューター",
@@ -20686,9 +20697,11 @@
       "connect": "接続",
       "manage": "管理",
       "desktop": "デスクトップアプリ",
-      "desktopDescription": "あなた自身のマシンで動く Kortix。",
+      "desktopDescription": "コンピューターで使う Kortix アプリ。",
       "desktopRunning": "使用中です。",
-      "download": "ダウンロード"
+      "download": "ダウンロード",
+      "manageLabel": "このコンピューターを管理",
+      "connectLabel": "このコンピューターを接続"
     },
     "developers": {
       "title": "開発者",
@@ -20698,7 +20711,9 @@
       "copied": "コピーしました",
       "mcp": "MCP",
       "mcpDescription": "Claude、Cursor、Codex から Kortix を使えます。",
-      "connect": "接続"
+      "connect": "接続",
+      "connectLabel": "MCP を接続",
+      "copyFailed": "コマンドをコピーできませんでした。もう一度お試しください。"
     }
   }
 }

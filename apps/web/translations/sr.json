@@ -20220,16 +20220,17 @@
     "calendarUpcomingSr": "Предстојеће"
   },
   "chrome": {
-    "pill": "Chrome проширење",
+    "pill": "Kortix у Chrome-у",
     "connectTitle": "Додај Kortix у Chrome",
     "connectDescription": "Дозволи да твоје сесије користе Chrome, са твојим пријавама. Видиш шта раде и можеш да их зауставиш кад год хоћеш.",
-    "promoLabel": "Chrome проширење",
+    "promoLabel": "Kortix у Chrome-у",
     "dismissPromo": "Одбаци",
     "steps": {
       "install": {
         "title": "Додај проширење",
         "description": "Из Chrome Web Store-а.",
-        "done": "Kortix је у Chrome-у."
+        "done": "Kortix је у Chrome-у.",
+        "descriptionUnlisted": "Учитај га у Chrome."
       },
       "connect": {
         "title": "Пријави се",
@@ -20238,7 +20239,7 @@
       },
       "done": {
         "title": "Повезано",
-        "description": "Чека се твој прегледач."
+        "description": "Твој прегледач се појављује овде."
       }
     },
     "addToChrome": "Додај у Chrome",
@@ -20246,8 +20247,7 @@
     "connect": "Повежи",
     "connecting": "Повезивање…",
     "done": "Готово",
-    "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га повежеш.",
-    "openStore": "Отвори Chrome Web Store",
+    "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га повежеш. Копирај везу да га тамо отвориш.",
     "connectFailed": "Повезивање прегледача није успело. Покушајте поново.",
     "online": "На мрежи",
     "offline": "Ван мреже",
@@ -20270,7 +20270,7 @@
       "always": "Без питања",
       "ask": "Питај сваки пут",
       "off": "Искључено",
-      "description": "Када сесија сме да користи овај претраживач."
+      "description": "Да ли те сесија прво пита."
     },
     "scope": {
       "label": "Картице",
@@ -20283,6 +20283,16 @@
       "group": "Свака сесија ради у својој групи картица, са сјајем на страници.",
       "control": "Преузми контролу или Заустави са траке на страници, у било ком тренутку.",
       "own": "Само твоје сесије могу да користе твој претраживач."
+    },
+    "howToInstall": "Како да инсталираш",
+    "copyLink": "Копирај везу",
+    "linkCopied": "Веза је копирана",
+    "copyFailed": "Веза није копирана. Покушај поново.",
+    "extensionMissing": "Kortix није пронашао проширење. Додај га, па поново учитај ову страницу.",
+    "another": {
+      "title": "Други прегледач",
+      "waiting": "Чека се да се нови прегледач повеже.",
+      "description": "Отвори Kortix у другом прегледачу или Chrome профилу, па тамо додај Kortix у Chrome. Копирај везу да га отвориш."
     }
   },
   "computers": {
@@ -20659,8 +20669,8 @@
     "viewFolderAccess": "Прикажи приступ"
   },
   "appsModal": {
-    "title": "Уради више са Kortix-ом, где год радиш",
-    "name": "Апликације и проширења",
+    "title": "Апликације и проширења",
+    "subtitle": "Користи Kortix у свом прегледачу, на свом рачунару и из својих алата.",
     "mock": {
       "group": "Kortix · Врати моју поруџбину",
       "button": "Покрени повраћај",
@@ -20669,14 +20679,15 @@
       "stop": "Заустави"
     },
     "chrome": {
-      "name": "Chrome",
+      "name": "Kortix у Chrome-у",
       "description": "Kortix отвара странице, кликће и попуњава формуларе у твом претраживачу, са твојим пријавама. Видиш сваки корак.",
-      "add": "Додај у Chrome",
-      "installedConnect": "Већ инсталирано? Повежи",
       "connect": "Повежи",
       "connecting": "Повезивање…",
       "manage": "Управљај",
-      "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га додаш."
+      "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га додаш. Копирај везу да га тамо отвориш.",
+      "group": "Прегледач",
+      "manageLabel": "Управљај Kortix-ом у Chrome-у",
+      "summary": "{count, plural, one {# прегледач} few {# прегледача} other {# прегледача}} · {online} на мрежи"
     },
     "computer": {
       "title": "Твој рачунар",
@@ -20686,9 +20697,11 @@
       "connect": "Повежи",
       "manage": "Управљај",
       "desktop": "Апликација за рачунар",
-      "desktopDescription": "Kortix на твом рачунару.",
+      "desktopDescription": "Kortix као апликација на твом рачунару.",
       "desktopRunning": "Користиш је.",
-      "download": "Преузми"
+      "download": "Преузми",
+      "manageLabel": "Управљај овим рачунаром",
+      "connectLabel": "Повежи овај рачунар"
     },
     "developers": {
       "title": "Програмери",
@@ -20698,7 +20711,9 @@
       "copied": "Копирано",
       "mcp": "MCP",
       "mcpDescription": "Користи Kortix из Claude-а, Cursor-а или Codex-а.",
-      "connect": "Повежи"
+      "connect": "Повежи",
+      "connectLabel": "Повежи MCP",
+      "copyFailed": "Команда није копирана. Покушај поново."
     }
   }
 }

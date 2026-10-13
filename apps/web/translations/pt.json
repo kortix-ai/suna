@@ -20220,16 +20220,17 @@
     "calendarUpcomingSr": "Próximo"
   },
   "chrome": {
-    "pill": "Extensão do Chrome",
+    "pill": "Kortix no Chrome",
     "connectTitle": "Adicionar o Kortix ao Chrome",
     "connectDescription": "Deixe suas sessões usarem o Chrome, com seus logins. Você vê o que elas fazem e pode pará-las a qualquer momento.",
-    "promoLabel": "Extensão do Chrome",
+    "promoLabel": "Kortix no Chrome",
     "dismissPromo": "Dispensar",
     "steps": {
       "install": {
         "title": "Adicione a extensão",
         "description": "Pela Chrome Web Store.",
-        "done": "O Kortix está no Chrome."
+        "done": "O Kortix está no Chrome.",
+        "descriptionUnlisted": "Carregue-a no Chrome."
       },
       "connect": {
         "title": "Entrar",
@@ -20238,7 +20239,7 @@
       },
       "done": {
         "title": "Conectado",
-        "description": "Aguardando seu navegador."
+        "description": "Seu navegador aparece aqui."
       }
     },
     "addToChrome": "Adicionar ao Chrome",
@@ -20246,8 +20247,7 @@
     "connect": "Conectar",
     "connecting": "Conectando…",
     "done": "Pronto",
-    "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para conectá-lo.",
-    "openStore": "Abrir a Chrome Web Store",
+    "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para conectá-lo. Copie o link para abri-lo lá.",
     "connectFailed": "Não foi possível conectar o navegador. Tente novamente.",
     "online": "Online",
     "offline": "Offline",
@@ -20270,7 +20270,7 @@
       "always": "Sem perguntar",
       "ask": "Perguntar sempre",
       "off": "Desativado",
-      "description": "Quando uma sessão pode usar este navegador."
+      "description": "Se uma sessão pergunta antes."
     },
     "scope": {
       "label": "Abas",
@@ -20283,6 +20283,16 @@
       "group": "Cada sessão trabalha em seu próprio grupo de guias, com um brilho na página.",
       "control": "Assumir ou Parar pela barra na página, a qualquer momento.",
       "own": "Somente as suas próprias sessões podem usar o seu navegador."
+    },
+    "howToInstall": "Como instalar",
+    "copyLink": "Copiar link",
+    "linkCopied": "Link copiado",
+    "copyFailed": "Não foi possível copiar o link. Tente novamente.",
+    "extensionMissing": "O Kortix não encontrou a extensão. Adicione-a e recarregue esta página.",
+    "another": {
+      "title": "Outro navegador",
+      "waiting": "Aguardando o novo navegador se conectar.",
+      "description": "Abra o Kortix no outro navegador ou perfil do Chrome e adicione lá o Kortix ao Chrome. Copie o link para abri-lo."
     }
   },
   "computers": {
@@ -20659,8 +20669,8 @@
     "viewFolderAccess": "Ver acesso"
   },
   "appsModal": {
-    "title": "Faça mais com o Kortix, onde você trabalha",
-    "name": "Apps e extensões",
+    "title": "Apps e extensões",
+    "subtitle": "Use o Kortix no seu navegador, no seu computador e nas suas ferramentas.",
     "mock": {
       "group": "Kortix · Devolver meu pedido",
       "button": "Iniciar devolução",
@@ -20669,14 +20679,15 @@
       "stop": "Parar"
     },
     "chrome": {
-      "name": "Chrome",
+      "name": "Kortix no Chrome",
       "description": "O Kortix abre páginas, clica e preenche formulários no seu próprio navegador, com os seus logins. Você vê cada passo.",
-      "add": "Adicionar ao Chrome",
-      "installedConnect": "Já instalou? Conectar",
       "connect": "Conectar",
       "connecting": "Conectando…",
       "manage": "Gerenciar",
-      "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para adicioná-la."
+      "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para adicioná-la. Copie o link para abri-lo lá.",
+      "group": "Navegador",
+      "manageLabel": "Gerenciar o Kortix no Chrome",
+      "summary": "{count, plural, one {# navegador} other {# navegadores}} · {online} online"
     },
     "computer": {
       "title": "Seu computador",
@@ -20686,9 +20697,11 @@
       "connect": "Conectar",
       "manage": "Gerenciar",
       "desktop": "App para desktop",
-      "desktopDescription": "O Kortix na sua própria máquina.",
+      "desktopDescription": "O Kortix como app no seu computador.",
       "desktopRunning": "Você está usando.",
-      "download": "Baixar"
+      "download": "Baixar",
+      "manageLabel": "Gerenciar este computador",
+      "connectLabel": "Conectar este computador"
     },
     "developers": {
       "title": "Desenvolvedores",
@@ -20698,7 +20711,9 @@
       "copied": "Copiado",
       "mcp": "MCP",
       "mcpDescription": "Use o Kortix no Claude, Cursor ou Codex.",
-      "connect": "Conectar"
+      "connect": "Conectar",
+      "connectLabel": "Conectar MCP",
+      "copyFailed": "Não foi possível copiar o comando. Tente novamente."
     }
   }
 }
