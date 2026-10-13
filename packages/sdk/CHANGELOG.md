@@ -521,6 +521,10 @@ and `useOpenCodeRuntimeReady`; they compile either way.
 The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- A session stream's `question.asked`, `question.replied` and
+  `question.rejected` events refetch `useSessionsNeedingInput` for the
+  stream's project. Before, a question opened or closed showed in the
+  session lists only at the next 30 s poll (KRTX-1739).
 - `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
   and `throw` of a returned async generator inside its scope. Before, each
   `connector(slug).paginate` page ran outside the scope and used the
