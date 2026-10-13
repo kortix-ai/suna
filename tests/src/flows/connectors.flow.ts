@@ -767,6 +767,8 @@ flow(
       'PUT /v1/projects/:projectId/connections/:connectionId/credential',
       'PUT /v1/projects/:projectId/connections/:connectionId/revoke',
       'POST /v1/projects/:projectId/connections/me',
+      'POST /v1/accounts/tokens',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/accounts',
     ],
   },
   async (ctx) => {
@@ -950,6 +952,45 @@ flow(
         r.status(200).body().has('$.ok', true);
       },
     );
+
+    await ctx.step('the real CLI revokes an active connection, reads persisted revoked status, and accounts omits it', async () => {
+      // The lifecycle MCP fixture deliberately fails discovery and its catalog
+      // stays error. Use a no-auth HTTP connector so accounts is genuinely usable.
+      const revokeSlug = `${slug}-revoke`;
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/connectors/projects/:projectId/connectors', {
+        slug: revokeSlug, provider: 'http', baseUrl: 'https://fixture.example.test', auth: { type: 'none' },
+      }, { params: { projectId: p.id } })).status(200);
+      const created = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/connections', {
+        connector_alias: revokeSlug, owner_type: 'project', label: 'Revoke fixture',
+      }, { params: { projectId: p.id } });
+      created.status(201);
+      const revokeId = created.json<{ connection_id: string }>().connection_id;
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('revoke-cli') });
+      const cli = new CliSandbox('connections-revoke');
+      const env = { KORTIX_TOKEN: pat, KORTIX_PROJECT_ID: p.id, KORTIX_API_URL: ctx.env.apiUrl };
+      const accounts = async () => parseCliJson<{ accounts: Array<{ connection_id: string }> }>(
+        await cli.run(['connectors', 'accounts', revokeSlug, '--json'], { env }),
+        'kortix connectors accounts',
+      ).accounts;
+      try {
+        if (!(await accounts()).some((row) => row.connection_id === revokeId)) throw new Error('active connection missing before revoke');
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const result = parseCliJson<{ ok: boolean }>(
+            await cli.run(['connectors', 'connections', 'revoke', revokeId, '--json'], { env }),
+            'kortix connectors connections revoke',
+          );
+          if (result.ok !== true) throw new Error('revoke was not acknowledged');
+          const listed = parseCliJson<{ connections: Array<{ connection_id: string; status: string }> }>(
+            await cli.run(['connectors', 'connections', 'ls', '--json'], { env }),
+            'kortix connectors connections ls',
+          );
+          if (listed.connections.find((row) => row.connection_id === revokeId)?.status !== 'revoked') throw new Error('connection did not persist revoked status');
+          if ((await accounts()).some((row) => row.connection_id === revokeId)) throw new Error('revoked connection remains a usable account');
+        }
+      } finally {
+        cli.dispose();
+      }
+    });
 
     await ctx.step(
       'reconciling the SAME label after a revoke re-activates that row (a re-connect, not a metadata touch)',
