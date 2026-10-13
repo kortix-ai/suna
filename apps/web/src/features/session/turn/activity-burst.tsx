@@ -23,9 +23,10 @@ import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-tho
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import type { ConversationDensity } from '@/stores/user-preferences-store';
-import { isReasoningPart, type Part } from '@/ui';
+import { isReasoningPart, isToolPart, type Part } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { isAnsweredQuestionPart } from './answered-question-step';
+import { isAnsweredQuestionCall } from './answered-question-step';
 import { StepBody } from './burst-step-body';
 import { burstSummary, burstSummaryLabel } from './burst-summary';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
@@ -74,7 +75,7 @@ export function burstSteps(parts: ReadonlyArray<Part>) {
   // the `ask` family, and two disclosures in one step means one is silently
   // dropped. Split such a group back into individual part rows.
   return merged.flatMap((step) =>
-    step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
+    step.kind === 'group' && step.step.parts.some((p) => isToolPart(p) && isAnsweredQuestionCall(toolCallBlock(p)))
       ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
       : [step],
   );

@@ -1,17 +1,17 @@
-import type { MessageWithParts } from '@/ui';
+import type { ToolPart } from '@/ui';
+import { toolCallBlock, type SessionLogMessage } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { latestRunCallIds, latestRunMessages } from './latest-run';
 
-function msg(role: 'user' | 'assistant', callIds: string[] = []): MessageWithParts {
+function msg(role: 'user' | 'assistant', callIds: string[] = []): SessionLogMessage {
   return {
-    info: { role },
-    parts: callIds.map((callID) => ({
-      type: 'tool',
-      callID,
-      tool: 'read',
-      state: { status: 'completed', input: {} },
-    })),
-  } as unknown as MessageWithParts;
+    role,
+    kind: 'turn',
+    in_context: true,
+    blocks: callIds.map((callID) =>
+      toolCallBlock({ type: 'tool', callID, tool: 'read', state: { status: 'completed', input: {} } } as unknown as ToolPart),
+    ),
+  } as SessionLogMessage;
 }
 
 describe('latestRunMessages', () => {
@@ -32,7 +32,7 @@ describe('latestRunMessages', () => {
 });
 
 describe('latestRunCallIds', () => {
-  test("only the latest run's callIDs are in the set", () => {
+  test("only the latest run's call ids are in the set", () => {
     const m = [msg('user'), msg('assistant', ['a']), msg('user'), msg('assistant', ['b', 'c'])];
     const ids = latestRunCallIds(m);
     expect(ids.has('a')).toBe(false);

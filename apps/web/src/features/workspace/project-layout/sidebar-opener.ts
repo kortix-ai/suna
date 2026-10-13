@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { useOptionalSidebar } from '@/components/ui/sidebar';
+import type { UiTranslator } from '@/i18n/translator';
 import { desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop';
 
 /**
@@ -101,9 +102,16 @@ export function sidebarPanelVisible(sidebar: {
     : sidebar.state === 'expanded' || !!sidebar.peek;
 }
 
-export function sidebarOpenerLabel(sidebar: Parameters<typeof sidebarPanelVisible>[0]): string {
-  if (!sidebarPanelVisible(sidebar)) return 'Open sidebar';
+/**
+ * The opener's label, read from the caller's catalog so it translates with
+ * the viewer's locale instead of rendering hardcoded English.
+ */
+export function sidebarOpenerLabel(
+  sidebar: Parameters<typeof sidebarPanelVisible>[0],
+  tI18nComplete: UiTranslator,
+): string {
+  if (!sidebarPanelVisible(sidebar)) return tI18nComplete.raw('text45609089ee73');
   return !sidebar.isMobile && sidebar.state === 'collapsed' && sidebar.peek
-    ? 'Pin sidebar'
-    : 'Collapse sidebar';
+    ? tI18nComplete.raw('textbc44e1fccb68')
+    : tI18nComplete.raw('textaab31cde23ba');
 }

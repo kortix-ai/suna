@@ -820,6 +820,7 @@ export function SessionChat({
         id: sessionPrefill.id,
         ...(sessionPrefill.files ? { files: sessionPrefill.files } : {}),
         mode: sessionPrefill.mode ?? ('merge' as const),
+        ...(sessionPrefill.submit ? { submit: true } : {}),
       };
     }
     return null;
@@ -3948,6 +3949,7 @@ export function SessionChat({
           open={contextModalOpen}
           onOpenChange={setContextModalOpen}
           messages={messages}
+          source={sessionState ?? DETACHED_SESSION_MESSAGES}
           session={session}
           providers={providers}
           allSessions={allSessions}

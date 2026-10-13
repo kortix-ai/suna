@@ -523,17 +523,24 @@ unknown slug, or one you cannot see, answers `400 app_not_found` with `slugs`.
 that lives 15 minutes. Its `aud` is the id of the App it is for. It carries
 `sub`, `email`, `name`, `picture`, `groups`, `group_ids`, `role`, `account_id`
 and `project_id`. An agent's token carries `kind: "agent"` and no groups or
-role.
+role. A token a person got in one App for an App it uses also carries
+`via_app_id`: the id of the App they signed in to.
 
 | Who | How they get a token |
 |---|---|
 | A person in an App | `GET /_kortix/token?audience=<slug or id>` on the App's origin: the App itself (default) or an App it uses. `kortixToken({ audience })` in `@kortix/sdk`. |
 | A member, a script, an agent session | `kortix apps token <app>` (`--json` adds `expires_at`), or `POST /v1/projects/<project_id>/apps/<app_id>/token`. An agent session gets a token that names its agent. |
 
-Any other audience answers `403 app_not_linked`. A token proves who the person
-is, not what they may do: check `groups` or `role` in every function whose data
-is not for everyone the App admits. A person you remove loses access within one
-token lifetime.
+Any other audience answers `403 app_not_linked`. Everyone an App admits gets a
+token for every App it uses, even when they cannot open the used App
+themselves. Keep a backend App `private`: it stays off their App list and its
+own URL refuses them, and the Apps that use it still work for their readers.
+
+A token proves who the person is, not what they may do: check `groups`,
+`role` or `via_app_id` in every function whose data is not for everyone the
+Apps that use it admit. A backend that serves two Apps can serve each App's
+readers only that App's data with `via_app_id`. A person you remove loses
+access within one token lifetime.
 
 **Bindings.** `/_kortix/apps/<slug>/*` on an App's origin forwards HTTP and
 WebSocket requests to the `http` service of an App it uses.
@@ -545,6 +552,10 @@ import { kortixBinding } from '@kortix/sdk';
 
 const backend = kortixBinding('backend'); // { url: <origin>/_kortix/apps/backend, token: a token fetcher }
 ```
+
+To start the first token request before your bundle loads (an inline `<script>`),
+pass `fetch` to `kortixBinding`. Return the early response on its first call and
+the real `fetch` after. The binding then does not request the token twice.
 
 | The used App or service | Answer |
 |---|---|

@@ -199,7 +199,13 @@ export async function readSessionMessagePage(
   };
 }
 
-function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): void {
+/** Silent unless a developer sets `localStorage['kortix:debug']`. */
+export function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): void {
+  try {
+    if (!globalThis.localStorage?.getItem('kortix:debug')) return;
+  } catch {
+    return;
+  }
   console.debug('[session-sync]', { sessionId, ...event });
 }
 

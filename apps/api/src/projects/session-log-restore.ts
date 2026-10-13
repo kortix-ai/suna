@@ -1,0 +1,123 @@
+/**
+ * The session-log restore (P6.1): `POST .../log/restore`. The daemon of a fresh box
+ * calls it once, before its harness starts, and writes the answer into the harness's
+ * native store (P6.2 pi, P6.3 OpenCode). Wire: `SessionLogRestore` in
+ * `@kortix/api-contract/session-log` (`wire.ts`).
+ *
+ * One transaction under the session's advisory lock, the lock every journal and
+ * capture batch takes (`session-log-ingest.ts`):
+ * - The claim. `session_logs.generation` goes up by 1, and the box journals under the
+ *   new value. A box still posting at an older one gets 409 from the ingest and stops.
+ *   `updated_at` stays: it means "the log's last write", and the v1 reads compare it
+ *   with the mirror (`session-log-read.ts`). A claim writes no content.
+ * - The read. The lock keeps every batch out between the claim and the read, so the
+ *   answer is the whole log at the claimed generation: nothing lands in between.
+ *
+ * `seq_max` is the highest seq each thread holds, tombstones included: a restored box
+ * numbers its next message above it, so it never collides on (session, thread, seq).
+ *
+ * Records are served as stored. A text over 256 kB is its 16 kB preview; `blobs` names
+ * each one, and the daemon reads the full text through the attachments route with its
+ * own credential. The API never holds a session's full texts in memory here.
+ *
+ * A stored log can lack parts of a `SessionLog`: a session record built only from a
+ * first batch without a session patch, or messages whose thread was never upserted.
+ * The answer fills them from the `session_logs` columns and neutral defaults, so it
+ * always parses as a `SessionLog`.
+ */
+import {
+  SESSION_LOG_SCHEMA,
+  type SessionLog,
+  type SessionLogMessage,
+  type SessionLogRestore,
+  type SessionLogRestoreBlob,
+} from '@kortix/api-contract/session-log';
+import { sessionLogBlobs, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { db } from '../shared/db';
+import { referencedTexts } from './session-log-blobs';
+import type { SessionLogScope } from './session-log-ingest';
+
+type Thread = SessionLog['threads'][number];
+
+/** Claim the session and read its log, or null when the session has no stored log (nothing claimed). */
+export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLogRestore | null> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
+    const [log] = await tx
+      .update(sessionLogs)
+      .set({ generation: sql`${sessionLogs.generation} + 1` })
+      .where(
+        and(
+          eq(sessionLogs.sessionId, scope.sessionId),
+          eq(sessionLogs.projectId, scope.projectId),
+          eq(sessionLogs.accountId, scope.accountId),
+        ),
+      )
+      .returning();
+    if (!log) return null;
+    const threads = await tx
+      .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
+      .from(sessionLogThreads)
+      .where(eq(sessionLogThreads.sessionId, scope.sessionId))
+      .orderBy(asc(sessionLogThreads.createdAt), asc(sessionLogThreads.threadId));
+    // `rev` through the drizzle column (`bigint`, mode number): a JSON number.
+    const messages = await tx
+      .select({
+        messageId: sessionLogMessages.messageId,
+        threadId: sessionLogMessages.threadId,
+        seq: sessionLogMessages.seq,
+        rev: sessionLogMessages.rev,
+        deletedAt: sessionLogMessages.deletedAt,
+        record: sessionLogMessages.record,
+      })
+      .from(sessionLogMessages)
+      .where(eq(sessionLogMessages.sessionId, scope.sessionId))
+      .orderBy(asc(sessionLogMessages.seq), asc(sessionLogMessages.messageId));
+    const stored = await tx
+      .select({ objectKey: sessionLogBlobs.objectKey, sha256: sessionLogBlobs.sha256, bytes: sessionLogBlobs.bytes })
+      .from(sessionLogBlobs)
+      .where(and(eq(sessionLogBlobs.sessionId, scope.sessionId), isNull(sessionLogBlobs.deletedAt)));
+
+    const byThread = new Map<string, Thread>(
+      threads.map((t) => [t.threadId, { ...(t.record as unknown as Thread), messages: [] }]),
+    );
+    const objects = new Map(stored.map((b) => [`kortix-attachment://${b.objectKey}`, b]));
+    const revs: Record<string, number> = {};
+    const seqMax: Record<string, number> = {};
+    const blobs: SessionLogRestoreBlob[] = [];
+    for (const m of messages) {
+      revs[m.messageId] = m.rev;
+      seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
+      if (m.deletedAt !== null) continue;
+      const record = m.record as unknown as SessionLogMessage;
+      let thread = byThread.get(m.threadId);
+      if (!thread) {
+        thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record.created_at, messages: [], ext: {} };
+        byThread.set(m.threadId, thread);
+      }
+      thread.messages.push(record);
+      for (const t of referencedTexts(record)) {
+        const object = objects.get(t.ref);
+        if (object) blobs.push({ message_id: m.messageId, block_id: t.block_id, ref: t.ref, bytes: object.bytes, sha256: object.sha256 });
+      }
+    }
+
+    const session = {
+      schema: SESSION_LOG_SCHEMA,
+      v: log.v,
+      title: null,
+      created_at: log.createdAt.toISOString(),
+      restore_grade: log.restoreGrade,
+      ...(log.gradeCounts && { grade_counts: log.gradeCounts }),
+      harness: { current: log.harnessCurrent, history: [] },
+      selection: { agent: null, model: null },
+      todos: [],
+      pending: { questions: [], permissions: [] },
+      ext: {},
+      ...log.record,
+      session_id: scope.sessionId,
+    } as unknown as Omit<SessionLog, 'threads'>;
+    return { generation: log.generation, log: { ...session, threads: [...byThread.values()] }, revs, seq_max: seqMax, blobs } as SessionLogRestore;
+  });
+}
