@@ -213,6 +213,16 @@ describe('missingRequiredSecrets', () => {
     const missing = missingRequiredSecrets(env);
     expect(missing.some((m) => m.hint.includes('TUNNEL_SIGNING_SECRET'))).toBe(true);
   });
+
+  // `env rotate POSTGRES_PASSWORD` is refused (the roles keep the first-start
+  // value), so the missing-secret text must not send the operator there.
+  test('a blank POSTGRES_PASSWORD says to restore the first-start value, not to rotate it', () => {
+    const missing = missingRequiredSecrets(baseEnv({ DAYTONA_API_KEY: 'dtn_live_key', POSTGRES_PASSWORD: '' }));
+    const postgres = missing.find((m) => m.hint.includes('POSTGRES_PASSWORD'));
+    expect(postgres?.label).toContain('restore that value');
+    expect(postgres?.label).toContain('`env rotate` refuses it');
+    expect(postgres?.label).not.toContain('regenerate via `env rotate`');
+  });
 });
 
 describe('shouldPullImages', () => {
@@ -396,6 +406,39 @@ describe('kortix self-host env (CLI)', () => {
       expect(readEnv()[key]).toBe(before);
     });
   }
+
+  // `env set API_KEY_SECRET=<new>` loses every stored credential, the same
+  // loss `env rotate` refuses (KRTX-1719). It warns, and a non-interactive run
+  // changes it only with --yes.
+  test('env set API_KEY_SECRET without --yes is refused, says why, and writes nothing', async () => {
+    await run(['init', '--yes']);
+    const before = readEnv();
+    const { code, stderr } = await run(['env', 'set', 'API_KEY_SECRET=synthetic-new-data-key', 'OPENROUTER_API_KEY=sk-or-test-456']);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/undecryptable/);
+    expect(stderr).toContain('Refusing to change API_KEY_SECRET');
+    expect(stderr).toContain('--yes');
+    const after = readEnv();
+    expect(after.API_KEY_SECRET).toBe(before.API_KEY_SECRET);
+    expect(after.OPENROUTER_API_KEY).toBe(before.OPENROUTER_API_KEY);
+  });
+
+  test('env set API_KEY_SECRET with --yes warns and writes the new value', async () => {
+    await run(['init', '--yes']);
+    const { code, stderr } = await run(['env', 'set', 'API_KEY_SECRET=synthetic-new-data-key', '--yes']);
+    expect(code).toBe(0);
+    expect(stderr).toMatch(/undecryptable/);
+    expect(readEnv().API_KEY_SECRET).toBe('synthetic-new-data-key');
+  });
+
+  test('env set API_KEY_SECRET to its current value needs no confirmation', async () => {
+    await run(['init', '--yes']);
+    const current = readEnv().API_KEY_SECRET;
+    const { code, stderr } = await run(['env', 'set', `API_KEY_SECRET=${current}`]);
+    expect(code).toBe(0);
+    expect(stderr).not.toContain('Refusing');
+    expect(readEnv().API_KEY_SECRET).toBe(current);
+  });
 
   test('env rotate --all-generated rotates every rotatable key and leaves non-rotatable infra keys untouched', async () => {
     await run(['init', '--yes']);
