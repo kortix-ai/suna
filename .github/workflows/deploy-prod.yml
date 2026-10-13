@@ -951,6 +951,7 @@ jobs:
     needs: [version, github-release]
     if: always() && needs.github-release.result == 'success'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
