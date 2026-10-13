@@ -32,6 +32,7 @@ import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES } from '@/harness
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import type { PiRuntime } from '@/harness/pi/runtime'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { startFakeModel, type Step } from './helpers/fake-model'
 
 const FIXTURES = join(import.meta.dir, '../../../../packages/api-contract/src/__tests__/fixtures/session-log')
 const NAMES = ['golden', 'golden21', 'pi', 'opencode', 'opencode-v2', 'claude-code', 'codex'] as const
@@ -41,46 +42,13 @@ const blobs = new Map([[`blob:${createHash('sha256').update(FIXTURE_PNG).digest(
 const MODEL_ID = 'test-model'
 const TOKEN = 'dummy-not-a-real-key'
 
-type Step = { text: string } | { tool: string; args: Record<string, unknown> }
-
-/** An OpenAI-compatible `/chat/completions` that streams the next scripted step and records each request body. */
-function startFakeModel() {
-  let script: Step[] = []
-  let calls = 0
-  const bodies: Array<{ messages: unknown[] }> = []
-  const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
-    `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
-  const server = Bun.serve({
-    port: 0,
-    hostname: '127.0.0.1',
-    async fetch(req) {
-      if (req.method !== 'POST' || !new URL(req.url).pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      bodies.push((await req.json()) as { messages: unknown[] })
-      const step = script.shift() ?? { text: 'OK' }
-      calls += 1
-      let body = chunk({ role: 'assistant', content: '' })
-      if ('tool' in step) {
-        body += chunk({ tool_calls: [{ index: 0, id: `call_${calls}_0`, type: 'function', function: { name: step.tool, arguments: JSON.stringify(step.args) } }] })
-        body += chunk({}, 'tool_calls')
-      } else {
-        body += chunk({ content: step.text })
-        body += chunk({}, 'stop')
-      }
-      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`
-      body += 'data: [DONE]\n\n'
-      return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
-    },
-  })
-  return { url: `http://127.0.0.1:${server.port}/v1/llm`, bodies, script: (steps: Step[]) => void (script = [...steps]), stop: () => server.stop(true) }
-}
-
 let model: ReturnType<typeof startFakeModel>
 let home: string
 const saved: Record<string, string | undefined> = {}
 const services: PiHarnessService[] = []
 const dirs: string[] = []
 beforeAll(() => {
-  model = startFakeModel()
+  model = startFakeModel(MODEL_ID)
 })
 afterAll(() => model.stop())
 beforeEach(() => {
