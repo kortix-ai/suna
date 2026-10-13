@@ -836,8 +836,10 @@ shutdown path (SIGKILL, the OOM killer, a panic) leaves it running on its
 port. The supervisor relaunches the daemon, and before the new lifecycle's
 first spawn `reapOrphanedOpencode` (`open-code/lifecycle.ts`) SIGKILLs the
 process group of every `… serve --port <internal|standby> --hostname
-127.0.0.1` that is not this daemon's child or group, then waits (bind check,
-5 s at most) for both ports. It runs once per lifecycle, so it never sees an
+127.0.0.1` that is not this daemon's child, its group, or a group its child
+leads, then waits (bind check, 5 s at most) for both ports. A `ps` that does
+not answer in 2 s is killed and the check is skipped (fail open), so a stuck
+`/proc` read cannot stall the boot. It runs once per lifecycle, so it never sees an
 OpenCode the current daemon owns. Each kill logs `[opencode] killing an
 OpenCode a previous daemon left on its port` with the group and its
 arguments. pi has no child process and needs none of this. Test:

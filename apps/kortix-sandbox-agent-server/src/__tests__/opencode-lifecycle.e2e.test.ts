@@ -24,7 +24,6 @@
  * passed.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1021,8 +1020,17 @@ describe('onUnplannedRespawn', () => {
 describe('a daemon killed with SIGKILL', () => {
   const LIFECYCLE_MODULE = join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts')
 
-  /** A real daemon process: the production lifecycle spawns the fake OpenCode, then idles. */
-  async function startDaemonProcess(binary: string, primary: number, standby: number): Promise<{ daemonPid: number; opencodePid: number }> {
+  /**
+   * A real daemon process: the production lifecycle spawns the fake OpenCode, then idles. It
+   * also starts an OpenCode on `foreignPort` in its own group, which the SIGKILL orphans
+   * exactly like the real one, so only the port filter can spare it.
+   */
+  async function startDaemonProcess(
+    binary: string,
+    primary: number,
+    standby: number,
+    foreignPort: number,
+  ): Promise<{ daemonPid: number; opencodePid: number; foreignPid: number }> {
     const workspace = join(root, 'workspace')
     mkdirSync(workspace, { recursive: true })
     const script = join(root, 'daemon.ts')
@@ -1035,9 +1043,11 @@ const lifecycle = createOpencodeLifecycle(
   undefined,
   { binaryPathOverride: ${JSON.stringify(binary)}, configPathOverride: ${JSON.stringify(join(root, 'daemon-config.json'))} },
 )
+const { spawn } = await import('node:child_process')
+const foreign = spawn(${JSON.stringify(binary)}, ['serve', '--port', '${foreignPort}', '--hostname', '127.0.0.1'], { stdio: 'ignore', detached: true })
 await lifecycle.start()
 if (!(await waitForOpencodeReady(lifecycle, workspace))) process.exit(2)
-console.log('daemon-ready ' + lifecycle.getPid())
+console.log('daemon-ready ' + lifecycle.getPid() + ' ' + foreign.pid)
 setInterval(() => {}, 1 << 30)
 `,
     )
@@ -1051,8 +1061,8 @@ setInterval(() => {}, 1 << 30)
     const decoder = new TextDecoder()
     for await (const chunk of daemon.stdout) {
       out += decoder.decode(chunk)
-      const ready = out.match(/^daemon-ready (\d+)$/m)
-      if (ready) return { daemonPid: daemon.pid, opencodePid: Number(ready[1]) }
+      const ready = out.match(/^daemon-ready (\d+) (\d+)$/m)
+      if (ready) return { daemonPid: daemon.pid, opencodePid: Number(ready[1]), foreignPid: Number(ready[2]) }
     }
     throw new Error(`daemon exited before OpenCode was ready: ${out.slice(-2_000)}`)
   }
@@ -1061,11 +1071,9 @@ setInterval(() => {}, 1 << 30)
     const binary = join(root, 'opencode')
     writeFakeOpencode(binary)
     const [primary, standby] = reserveOpenCodePortPair()
-    const { daemonPid, opencodePid: orphan } = await startDaemonProcess(binary, primary, standby)
-
-    // An OpenCode this box does not route to (another port) must survive.
+    // An OpenCode on a port outside the pair, orphaned by the same crash, must survive.
     const [foreignPort] = reserveOpenCodePortPair()
-    const foreign = spawn(binary, ['serve', '--port', String(foreignPort), '--hostname', '127.0.0.1'], { stdio: 'ignore', detached: true })
+    const { daemonPid, opencodePid: orphan, foreignPid } = await startDaemonProcess(binary, primary, standby, foreignPort)
     await waitFor(() => sessionAnswers(`http://127.0.0.1:${foreignPort}`))
 
     // The crash: no shutdown path runs, so OpenCode is orphaned and keeps the port.
@@ -1082,13 +1090,37 @@ setInterval(() => {}, 1 << 30)
       expect(processExists(orphan)).toBe(false)
       expect(await sessionAnswers(r.lifecycle.getInternalUrl())).toBe(true)
       expect(requestLog(primary).at(-1)?.split(' ')[0]).toBe(String(pid))
-      expect(processExists(foreign.pid as number)).toBe(true)
+      expect(processExists(foreignPid)).toBe(true)
+      expect(await sessionAnswers(`http://127.0.0.1:${foreignPort}`)).toBe(true)
     } finally {
-      for (const pid of [orphan, foreign.pid as number]) {
+      for (const pid of [orphan, foreignPid]) {
         try {
           process.kill(-pid, 'SIGKILL')
         } catch {}
       }
     }
   }, 60_000)
+
+  test('a ps that never answers delays the first spawn by its timeout, then the boot goes on', async () => {
+    // `ps` blocked on a D-state process's /proc entry must not stall the boot. The stub's
+    // background child keeps stdout open after the stub itself is killed.
+    const stubBin = join(root, 'stub-bin')
+    mkdirSync(stubBin)
+    writeFileSync(join(stubBin, 'ps'), `#!/bin/sh\nsleep 30 &\necho $! > ${ctl}/ps-bg.pid\nexec sleep 30\n`)
+    chmodSync(join(stubBin, 'ps'), 0o755)
+    const savedPath = process.env.PATH
+    process.env.PATH = `${stubBin}:${savedPath}`
+    try {
+      const r = rig()
+      const started = Date.now()
+      await startReady(r)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(existsSync(join(ctl, 'ps-bg.pid'))).toBe(true)
+    } finally {
+      process.env.PATH = savedPath
+      try {
+        process.kill(Number(readFileSync(join(ctl, 'ps-bg.pid'), 'utf8')), 'SIGKILL')
+      } catch {}
+    }
+  }, 40_000)
 })

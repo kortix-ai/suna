@@ -1962,13 +1962,27 @@ export interface OpencodeLifecycleOptions {
  * anyway. The port wait is a bind, the only reliable "free" check.
  */
 async function reapOrphanedOpencode(ports: readonly number[]): Promise<void> {
-  let table: string
+  // A `ps` stuck on a D-state process's /proc entry must not stall the boot: it is killed at
+  // 2 s, and the wait ends at 2.5 s even when something it left still holds its stdout.
+  let table: string | null
   try {
-    table = await new Response(
-      Bun.spawn(['ps', '-ww', '-eo', 'pid=,ppid=,pgid=,args='], { stdout: 'pipe', stderr: 'ignore' }).stdout,
-    ).text()
+    const ps = Bun.spawn(['ps', '-ww', '-eo', 'pid=,ppid=,pgid=,args='], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+      env: process.env,
+      timeout: 2_000,
+      killSignal: 'SIGKILL',
+    })
+    table = await Promise.race([
+      Promise.all([new Response(ps.stdout).text(), ps.exited]).then(([text]) => (ps.signalCode ? null : text)),
+      Bun.sleep(2_500).then(() => null),
+    ])
   } catch (err) {
     logger.warn('[opencode] could not list processes; orphan check skipped', { err: (err as Error).message })
+    return
+  }
+  if (table === null) {
+    logger.warn('[opencode] ps did not answer in time; orphan check skipped')
     return
   }
   const rows = table
@@ -1976,9 +1990,12 @@ async function reapOrphanedOpencode(ports: readonly number[]): Promise<void> {
     .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/))
     .filter((row): row is RegExpMatchArray => row !== null)
   const ownGroup = rows.find((row) => Number(row[1]) === process.pid)?.[3]
+  const parentOf = new Map(rows.map((row) => [row[1], Number(row[2])]))
   const groups = new Map<number, string>()
   for (const [, , ppid, pgid, args] of rows) {
+    // Our child, our group, or a group our child leads (a launcher that forks the server).
     if (Number(ppid) === process.pid || pgid === ownGroup || Number(pgid) <= 1) continue
+    if (parentOf.get(pgid!) === process.pid) continue
     if (ports.some((port) => args!.endsWith(` serve --port ${port} --hostname 127.0.0.1`))) groups.set(Number(pgid), args!)
   }
   if (groups.size === 0) return
