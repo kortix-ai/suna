@@ -960,8 +960,7 @@
       "origin": {
         "overridden": "Overridden for this project",
         "defaultOn": "Default on",
-        "defaultOff": "Default off",
-        "organization": "Whole organization, managed by Kortix"
+        "defaultOff": "Default off"
       },
       "search": "Search features",
       "loadFailed": "Failed to load project",
@@ -994,7 +993,7 @@
         },
         "apps": {
           "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
+          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
         },
         "monitors": {
           "name": "Monitors",
@@ -1034,7 +1033,7 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Shared Files and volume-backed sessions for the whole organization."
+          "description": "Shared Files and volume-backed sessions for this project."
         },
         "stateless_sessions": {
           "name": "Stateless sessions",
@@ -1128,6 +1127,12 @@
       "emptyCanCreate": "Create a key to use the CLI, scripts, or CI as yourself.",
       "emptyNoPermission": "You do not have permission to create API keys in this account.",
       "revokeKey": "Revoke key",
+      "keyCount": "{count, plural, one {# API key} other {# API keys}}",
+      "createdOn": "Created {date}",
+      "keyName": "Key name",
+      "keyPrefix": "Key",
+      "statusLabel": "Status",
+      "lastUsedLabel": "Last used",
       "status": {
         "active": "Active",
         "expired": "Expired",
@@ -10048,6 +10053,7 @@
       "text0e498a7ede47": "Enabled {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Save as PDF",
+      "text926597a39cb3": "Project admins",
       "text9bf06a86c934": "New skill",
       "texta38668224f1a": "Create with a form",
       "textb25ab5d5e2a5": "Skill created",
@@ -13762,6 +13768,7 @@
       "text79c6ba1d813d": "#1 JumpCloud gotcha: Test Connection fails because the test-user email already exists in Kortix — it must be a brand-new address. (And click \"Activate\", not \"Save\", during that step.)",
       "text79c8764339a5": "acted by",
       "text79e4d7b87c05": "A burst queues, it does not drop",
+      "text79eb7fb19229": "No service account tokens",
       "text79ffe7bf8192": "Created project",
       "text7a04f383ef22": "One machine per session · Pre-configured · Nothing runs on your laptop",
       "text7a098b3b9a9d": "Failed to open subscription portal. Please try again.",
@@ -14340,6 +14347,7 @@
       "text8b624587552a": "Failed to mint the token",
       "text8b64afef1a24": "Nothing prepared yet",
       "text8b728638c006": "will lose the bypass. Every action goes through the normal permission checks again.",
+      "text8b7811603173": "Search or paste a session ID",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Uploading",
       "text8b9965f7aaa5": "Add an access policy",
@@ -15260,6 +15268,7 @@
       "texta56145270ce6": "id",
       "texta56281e325c1": "A document with its sources in it.",
       "texta563730f828d": "iconUpdateFailed",
+      "texta56abb72ba43": "Create one for a CI job or a script that must outlive its author.",
       "texta56be319eda4": "Asked the agent to sync the branch",
       "texta57b08a480b8": "Previous",
       "texta57d47538d79": "#releases",
@@ -19589,7 +19598,8 @@
       "text6f52b07880a0": "Snapshot now",
       "text91dc861375bc": "Viewed mobile release policy",
       "texta37dd5ef6ef2": "Customize Sidebar",
-      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows"
+      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
+      "text2313fe21ea84": "Edit {name}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -19670,40 +19680,15 @@
       "reasonOther": "Other",
       "fallBackToTheImage": "Fall back to the image",
       "fallBackToImage": "Fall back to image",
-      "saved": "Volumes saved",
-      "saveFailed": "Could not save Volumes",
-      "title": "Volumes",
-      "description": "One switch for Files, drive mounts, session volumes and boot artifacts, per organization. Off, an organization sees the product without volumes. Changes reach every API process within 30 seconds.",
+      "saved": "Boot modes saved",
+      "saveFailed": "Could not save boot modes",
+      "title": "Boot modes",
+      "description": "How new sessions of a project with Volumes on boot, and the fallbacks they take. Volumes and Stateless sessions are project feature flags, not set here. Changes reach every API process within 30 seconds.",
       "discard": "Discard",
       "save": "Save",
-      "volumesTitle": "Volumes",
-      "volumesDescription": "On: Files is the project drive and the repo browser is Repo, sessions mount their folders and boot on a volume. Off: Files is the repo browser and sessions boot from the image. A session whose files already live on a volume keeps its volume when its organization is turned off.",
-      "everyOrganizationTitle": "On for every organization",
-      "everyOrganizationDetail": "Organizations turned off below stay off.",
-      "everyOrganizationLabel": "Volumes for every organization",
-      "rolloutTitle": "Rollout",
-      "rolloutUnused": "Not used while Volumes is on for every organization.",
-      "rolloutPercentDetail": "{percent}% of the organizations without a setting of their own, picked by a stable hash of the organization id.",
-      "rolloutOffDetail": "Turn Volumes on for a share of the organizations without a setting of their own.",
-      "rolloutPercentLabel": "Rollout percent",
-      "organizationsTitle": "Organizations",
-      "organizationsDescription": "An organization's own setting wins over the switch and the rollout. Its boot mode applies while Volumes is on for it.",
-      "findOrganization": "Find an organization",
-      "noOtherOrganization": "No other organization matches “{search}”. Organizations already listed below are not repeated.",
-      "add": "Add",
-      "columnOrganization": "Organization",
-      "columnVolumes": "Volumes",
-      "columnBootMode": "Boot mode",
-      "columnLastStep": "Last step",
-      "organizationFallbackName": "Organization",
-      "organizationVolumesLabel": "Volumes for {name}",
-      "on": "On",
       "off": "Off",
-      "defaultModeOption": "Default ({mode})",
-      "removeOrganization": "Remove organization",
-      "noOrganizations": "No organization has a setting of its own.",
       "bootModeTitle": "Boot mode",
-      "bootModeDescription": "How new sessions of an organization with Volumes on boot, unless the organization has a mode of its own.",
+      "bootModeDescription": "How new sessions of a project with Volumes on boot. A project with Stateless sessions on boots on a volume.",
       "defaultModeTitle": "Default mode",
       "killSwitchTitle": "Kill switch: boot every new session from the image",
       "killSwitchDetail": "Overrides every mode at once; Files and drives stay as they are. A session whose files already live on a volume keeps its volume.",
@@ -19723,7 +19708,7 @@
       "failedBoots": "failed boots",
       "volumeAttemptsLabel": "Volume attempts",
       "artifactsAttemptsLabel": "Artifacts attempts",
-      "lastStepNote": "(on unless a rule turns the last step off)",
+      "lastStepNote": "(on unless the default mode turns the last step off)",
       "whereModesApplyTitle": "Where modes apply",
       "whereModesApplyDescription": "Providers and deployment switches come from the server's environment. The artifacts volume can be set here; empty uses the environment's.",
       "volumeProviderTitle": "Volume provider: {provider}",
@@ -19739,8 +19724,8 @@
       "artifactsVolumeFromEnvironment": "Sessions in Image + artifacts or Volume mount {source} (from the environment).",
       "artifactsVolumeNone": "None set: artifacts modes boot as if the image were alone.",
       "artifactsVolumeLabel": "Artifacts volume and tag",
-      "ephemeralSandboxesOff": "{variable} is off in this deployment: rules that ask for Volume boot Image + artifacts.",
-      "nothingSaved": "Nothing saved yet: Volumes is off for every organization."
+      "ephemeralSandboxesOff": "{variable} is off in this deployment: Stateless sessions boot Image + artifacts.",
+      "nothingSaved": "Nothing saved yet: projects with Volumes on boot from the image."
     }
   },
   "projectOnboarding": {
@@ -20058,6 +20043,7 @@
     "notFoundDescription": "It was removed, or the link is wrong.",
     "backToConnectors": "Back to connectors",
     "installed": "{name} is installed",
+    "installedSyncFailed": "{name} is installed. Kortix could not load its tools: {error}",
     "newSession": "New session",
     "sections": "{name} sections",
     "noticeNoAccountTitle": "{name} has no account",

@@ -1,5 +1,6 @@
 import { testUiTranslator } from '@/i18n/test-translator';
-import type { MessageWithParts, Turn, TurnCostInfo } from '@/ui';
+import type { TurnCostInfo } from '@/ui';
+import type { SessionLogMessage, SessionLogTurn } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   sessionTurnDurationMs,
@@ -8,16 +9,22 @@ import {
   sessionTurnSpan,
 } from './session-turn-meta-rows';
 
-function userMessage(created?: number): MessageWithParts {
-  return { info: { role: 'user', time: { created } }, parts: [] } as unknown as MessageWithParts;
+const iso = (ms: number | undefined) => (ms === undefined ? '' : new Date(ms).toISOString());
+
+function userMessage(created?: number): SessionLogMessage {
+  return { role: 'user', created_at: iso(created), completed_at: null } as SessionLogMessage;
 }
 
-function assistantMessage(time: { created?: number; completed?: number }): MessageWithParts {
-  return { info: { role: 'assistant', time }, parts: [] } as unknown as MessageWithParts;
+function assistantMessage(time: { created?: number; completed?: number }): SessionLogMessage {
+  return {
+    role: 'assistant',
+    created_at: iso(time.created),
+    completed_at: time.completed === undefined ? null : iso(time.completed),
+  } as SessionLogMessage;
 }
 
-function turn(user: MessageWithParts, assistantMessages: MessageWithParts[] = []): Turn {
-  return { userMessage: user, assistantMessages };
+function turn(user: SessionLogMessage, assistant: SessionLogMessage[] = []): Pick<SessionLogTurn, 'user' | 'assistant'> {
+  return { user, assistant };
 }
 
 const NOW = 1_000_000;
@@ -36,7 +43,7 @@ describe('sessionTurnSpan', () => {
     expect(sessionTurnSpan(t)).toEqual({ startedAt: 1_000, endedAt: 1_700 });
   });
 
-  test('an empty assistantMessages array yields endedAt: null', () => {
+  test('a turn with no reply yields endedAt: null', () => {
     const t = turn(userMessage(1_000), []);
     expect(sessionTurnSpan(t)).toEqual({ startedAt: 1_000, endedAt: null });
   });

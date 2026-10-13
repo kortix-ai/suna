@@ -4,6 +4,8 @@ import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-clie
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { noteSessionStopped } from '../../http/session-stopped';
+import { isSessionLogPage } from '../../session-log/guard';
+import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -965,6 +967,30 @@ export async function getSessionTranscriptSync(
       { showErrors: false, signal: options?.signal },
     ),
   );
+}
+
+/**
+ * One page of one thread of the session's stored log (`kortix.session/2`): the session record,
+ * every thread head, and the thread's newest `limit` messages (default 40, max 500) with
+ * `seq < before_seq`, ascending. `thread` defaults to the root thread. Read from Postgres, so it
+ * answers while the sandbox is stopped; the daemon journals each turn at its end.
+ * Null on a 404: the session has no stored log yet, or no such thread.
+ */
+export async function getSessionLogPage(
+  projectId: string,
+  sessionId: string,
+  query: SessionLogPageQuery = {},
+  options?: { signal?: AbortSignal },
+): Promise<SessionLogPage | null> {
+  let page: unknown;
+  try {
+    page = await loadSessionLogPage!(projectId, sessionId, query, options?.signal);
+  } catch (error) {
+    if ((error as { status?: unknown } | null)?.status === 404) return null;
+    throw error;
+  }
+  if (!isSessionLogPage(page)) throw new Error('The response is not a session log page');
+  return page;
 }
 
 /** 'delivering' — the control plane minted the turn but has not confirmed

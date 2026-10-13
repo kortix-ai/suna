@@ -508,12 +508,15 @@ the release by `resolvePiProjectConfigDir`.
 OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
 only those files is a working config on pi.
 
-- **Boot.** `runPi` starts the choice beside the repository checkout, and
-  `lifecycle.start()` waits for it: the desired release, then the last release
-  this box proved (`current.json`), then the image default (managed skills and
-  the provisioned governance). `/workspace` is read only when the box has no
-  Kortix API, or an API from before config releases graduated answers `403
-  feature_disabled`.
+- **Boot.** `runPi` starts the config choice and the workspace checkout
+  together, and they never wait for each other. `lifecycle.start()` waits for
+  the config only: the desired release (downloaded from the S3 project
+  snapshot, else the API archive), then the last release this box proved
+  (`current.json`), then the image default (managed skills and the
+  provisioned governance). pi is ready before `/workspace` lands; the
+  readiness gate holds turns until it does. `/workspace` is read as config
+  only when the box has no Kortix API, or an API from before config releases
+  graduated answers `403 feature_disabled`: then pi waits for the checkout.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
   into the runtime's env, the skill directories and the `AGENTS.md` root
@@ -531,12 +534,19 @@ only those files is a working config on pi.
   owns the governance, a `/kortix/env` push of `KORTIX_COMPILED_AGENT_CONFIG`
   is dropped. The session notice (`/tmp/kortix/config-release.md`) is part of
   pi's system prompt while a release runs.
-- **Not in a release.** npm pi packages (`harnesses.pi.packages`) and pi's own
-  `<workspace>/.pi/extensions` discovery load when the runtime starts, as
-  before. A change to them reaches a session at its next boot or restart.
+- **Discovery.** pi's own discovery of `.pi/{extensions,skills,prompts}` and
+  `.agents/skills` reads the release root, never `/workspace`
+  (`createPiSession`'s `discoveryRoot`). The image default discovers nothing,
+  and a `./` pi package does not load on it.
+- **Not in a release.** npm pi packages (`harnesses.pi.packages`) load when
+  the runtime starts. A change to them reaches a session at its next boot or
+  restart.
 
-Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
-`pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
+Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `initial-turn-claimed`,
+`config-release-fetched`, `config-release-<disk|snapshot|archive>`,
+`config-release-proven`, `pi-ready`, `initial-prompt-delivered`,
+`initial-turn-accepted`, `runtime-ready`. No workspace step is a boot mark;
+`/kortix/health` reports the checkout as `workspace_provider`.
 
 A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
 `@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
@@ -682,13 +692,15 @@ re-open a removed tool.
 project acquisition, #7221) and `src/services/config-provider/` (the config
 release a boot needs) stay outside `src/harness/`. Each depends only on
 `src/lib/` and knows nothing about any harness or about the other: both read
-the S3 project snapshot through `src/lib/project-snapshot/`. The harness
-composes them. Both `open-code/boot.ts` and `pi/boot.ts` call
-`provideWorkspace(cfg, { bootMark, onSummary })` at the point where the cold
-boot acquires the workspace, then hand the checkout to the config release
-boot. The warm-seed adoption and monitor mode call the same function in `git`
-mode. `contract/boot-state.ts` carries the outcome: `workspaceProvider`
-(reported in `/kortix/health` as `config_provider`, its pre-rename wire name)
+the S3 project snapshot through `src/lib/project-snapshot/`, each into its
+own directory, in parallel. The config provider never reads `/workspace`
+(`obtainRelease`: disk, snapshot, archive). The harness composes them. Both
+`open-code/boot.ts` and `pi/boot.ts` call `provideWorkspace(cfg, { onSummary })`
+at the point where the cold boot acquires the workspace. OpenCode still waits
+for the checkout before its proof, because an OpenCode Instance is built per
+directory; pi does not. The warm-seed adoption and monitor mode call the same
+function in `git` mode. `contract/boot-state.ts` carries the outcome:
+`workspaceProvider` (reported in `/kortix/health` as `workspace_provider`)
 and `deferredHistoryBackfill` (`backfillAfterHydration` for an S3 start).
 
 ## OpenCode instance guard

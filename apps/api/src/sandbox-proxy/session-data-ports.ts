@@ -31,34 +31,12 @@ import { OPENCODE_PORTS } from '../shared/opencode-ports';
  */
 export const SESSION_DATA_PORTS: ReadonlySet<number> = new Set([8000, ...OPENCODE_PORTS]);
 
-/** True when this EFFECTIVE upstream port serves the session's conversation and
- *  must therefore pass the per-session visibility gate. */
+/** True when this EFFECTIVE upstream port serves the session's conversation (the
+ *  daemon and OpenCode ports): stricter path, wake and env rules apply. */
 export function carriesSessionData(upstreamPort: number): boolean {
   return SESSION_DATA_PORTS.has(upstreamPort);
 }
 
-/**
- * The in-box static-file listener (3211).
- *
- * It serves files out of the session's own workspace and has NO authentication
- * of its own — it trusts that whoever reached the port was allowed to. That
- * assumption held while it sat behind `/proxy/3211` inside the box; it does not
- * hold on the public path proxy, which accepts any port a caller names.
- */
-export const STATIC_FILE_PORT = 3211;
-
-/**
- * True when the port must pass the per-SESSION visibility gate, not merely the
- * account-membership check.
- *
- * Deliberately wider than `carriesSessionData`. 3211 needs the session gate for
- * the same reason 8000 does — it reads that session's workspace — but it must
- * NOT join SESSION_DATA_PORTS, because that set also drives
- * `shouldAutoResumeStoppedSandbox`, where membership means "only a non-GET may
- * wake the box". Static file serving is all GETs, so folding 3211 in there
- * would stop a parked box from ever waking for a preview: a real regression,
- * and an unrelated one. Two questions, two predicates.
- */
-export function requiresSessionVisibility(upstreamPort: number): boolean {
-  return carriesSessionData(upstreamPort) || upstreamPort === STATIC_FILE_PORT;
-}
+// Every port passes the per-SESSION visibility gate (forward/access.ts,
+// forward/ws-upstream.ts), not only these: a dev server or the static-file
+// listener (3211) serves that session's workspace just as surely (pentest M-2).

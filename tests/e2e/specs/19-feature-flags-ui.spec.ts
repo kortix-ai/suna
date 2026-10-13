@@ -104,8 +104,6 @@ function flagRow(panel: Locator, page: Page, name: string): Locator {
 
 /** The origin line under a flag (`originLabel` in experimental-tab.tsx). */
 function originLabel(flag: FeatureFlagView): string {
-  // One value for every project of the organization (`volumes`, #9592).
-  if (flag.scope === "organization") return "Whole organization, managed by Kortix";
   // `apps` while on: listed read-only, only a Kortix operator writes it.
   if (flag.operator_only) return "Managed by Kortix";
   if (flag.overridden) return "Overridden for this project";
@@ -222,6 +220,10 @@ test.describe("19 — Feature flags UI", () => {
       // rendered text, not only on the catalog, so a UI that hard-coded a row
       // back in would still fail here.
       await expect(panel.getByText("Agents as Principals")).toHaveCount(0);
+      // Every flag is a project flag (2026-10-13): no row is labelled as set
+      // for the whole organization, and no project flag is operator-locked.
+      await expect(panel.getByText(/whole organization/i)).toHaveCount(0);
+      expect(flags.filter((f) => f.scope !== "project")).toEqual([]);
       for (const flag of flags) {
         const row = flagRow(panel, page, flag.name);
         await expect(row).toHaveCount(1);

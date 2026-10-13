@@ -95,8 +95,8 @@ describe('web ECS migration', () => {
     expect(staging).toContain('name = "kortix-staging-euw2-web"');
     expect(staging).toContain('name = "kortix-staging-euw2-web-env"');
     expect(staging).toContain('domain_name               = "staging-fe-ecs.kortix.com"');
-    expect(staging).toContain('min_capacity     = 1');
-    expect(staging).toContain('max_capacity     = 4');
+    expect(staging).toContain('min_capacity     = 2');
+    expect(staging).toContain('max_capacity     = 12');
     // Deploy Staging owns staging-fe-ecs.kortix.com; Vercel owns staging.kortix.com.
     expect(staging).toContain('name    = "staging-fe-ecs-euw2"');
     expect(staging).not.toMatch(/name\s*=\s*"staging(-fe-ecs)?"/);
@@ -108,6 +108,22 @@ describe('web ECS migration', () => {
     expect(prod).toContain('max_capacity     = 12');
     expect(prod).toContain('use_fargate_spot = false');
     expect(prodVariables).toContain('never manages kortix.com');
+  });
+
+  it('runs staging on the same capacity type and egress topology as prod', () => {
+    // Spot reclaims killed in-flight requests and agent turns during the
+    // v0.13.57 release gate. Staging is the release candidate: no Spot.
+    const api = read('infra/terraform/environments/staging-eu-west-2/main.tf');
+    const prodApi = read('infra/terraform/environments/prod/main.tf');
+    for (const root of [api, prodApi]) {
+      expect(root).not.toMatch(/use_fargate_spot\s*=\s*true/);
+      expect(root).toMatch(/single_nat_gateway\s*=\s*false/);
+    }
+    expect(api.match(/use_fargate_spot\s*=\s*false/g)).toHaveLength(2); // API + gateway
+    const web = read('infra/terraform/environments/staging-web-eu-west-2/main.tf');
+    expect(web).toContain('task_cpu         = 1024');
+    expect(web).toContain('min_capacity     = 2');
+    expect(web).not.toMatch(/use_fargate_spot\s*=\s*true/);
   });
 
   it('deploys staging and production ECS frontends without replacing canonical Vercel hosts', () => {
