@@ -2,6 +2,7 @@ import { readFileSync } from '@/i18n/test-source';
 import type { App } from '@kortix/sdk';
 import { expect, test } from 'bun:test';
 import { resolve } from 'node:path';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { appCan } from './app-shared';
 
 const root = resolve(import.meta.dir, '../..');
@@ -28,9 +29,8 @@ test('one Apps page: no Backends tab, page, palette entry or flag remains in the
   const routes = read('features/workspace/capabilities/shared/capability-tab-routes.ts');
   const menu = read('lib/menu-registry.ts');
   const flags = read('lib/use-project-feature-flags.ts');
-  const actions = read('lib/project-actions.ts');
   for (const source of [tabs, routes, menu, flags]) expect(source).not.toContain("'backends'");
-  expect(actions).not.toContain('PROJECT_BACKEND');
+  expect(Object.keys(PROJECT_ACTIONS).filter((key) => key.includes('BACKEND'))).toEqual([]);
   // The retired routes redirect to the Apps page; an id opens that App.
   const config = readFileSync(resolve(root, '../next.config.ts'), 'utf8');
   expect(config).toContain("['/projects/:id/backends', '/projects/:id/customize/backends']");
