@@ -59,7 +59,7 @@ import { RolloutModal, WaitingComputers } from './rollout';
 /** Kortix Capture's installers, one per OS (/download/capture/<os> → the newest capture-v* Release). */
 const CAPTURE_DOWNLOADS = [
   { os: 'windows', file: '.msi' },
-  { os: 'macos', file: '.pkg' },
+  { os: 'macos', file: '.dmg' },
   { os: 'linux', file: '.deb' },
 ] as const;
 

@@ -15,6 +15,7 @@ let assets = [
   asset('Kortix-Setup-1.0.0.exe'),
   asset('KortixCapture-0.39-x64.msi'),
   asset('KortixCapture-0.39-universal.pkg'),
+  asset('KortixCapture-0.39-universal.dmg'),
   asset('kortix-capture_0.39_amd64.deb'),
 ];
 beforeEach(() => {
@@ -36,7 +37,7 @@ describe('GET /download/capture/<platform>', () => {
   test('302s each OS to its Kortix Capture installer, never the Kortix app', async () => {
     for (const [platform, name] of [
       ['windows', 'KortixCapture-0.39-x64.msi'],
-      ['macos', 'KortixCapture-0.39-universal.pkg'],
+      ['macos', 'KortixCapture-0.39-universal.dmg'],
       ['linux', 'kortix-capture_0.39_amd64.deb'],
     ] as const) {
       const res = await call(platform);
