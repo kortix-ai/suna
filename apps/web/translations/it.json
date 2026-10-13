@@ -19749,7 +19749,8 @@
       "text0ed3010f0be8": "Sicuro e tuo",
       "textc06f548e70ac": "Ristrutturazione AI-native",
       "text245c108762e2": "Il tuo team",
-      "textaabe76f1f4ec": "Clienti"
+      "textaabe76f1f4ec": "Clienti",
+      "textfb04121eb646": "Ogni sessione gira sulla propria macchina isolata. Le credenziali dei connettori non vi entrano mai, e il lavoro della sessione arriva su main tramite una richiesta di modifica."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

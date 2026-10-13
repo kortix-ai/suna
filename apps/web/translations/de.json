@@ -19749,7 +19749,8 @@
       "text0ed3010f0be8": "Sicher und deins",
       "textc06f548e70ac": "KI-native Umstrukturierung",
       "text245c108762e2": "Dein Team",
-      "textaabe76f1f4ec": "Kunden"
+      "textaabe76f1f4ec": "Kunden",
+      "textfb04121eb646": "Jede Session läuft auf ihrer eigenen isolierten Maschine. Connector-Zugangsdaten gelangen nie dorthin, und die Arbeit einer Session erreicht main über einen Change Request."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

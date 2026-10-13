@@ -19749,7 +19749,8 @@
       "text0ed3010f0be8": "Seguro e seu",
       "textc06f548e70ac": "Reestruturação nativa em IA",
       "text245c108762e2": "Sua equipe",
-      "textaabe76f1f4ec": "Clientes"
+      "textaabe76f1f4ec": "Clientes",
+      "textfb04121eb646": "Cada sessão roda na própria máquina isolada. As credenciais dos conectores nunca entram nela, e o trabalho da sessão chega à main por meio de uma solicitação de mudança."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

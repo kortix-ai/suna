@@ -19749,7 +19749,8 @@
       "text0ed3010f0be8": "安全且归您所有",
       "textc06f548e70ac": "AI 原生重组",
       "text245c108762e2": "您的团队",
-      "textaabe76f1f4ec": "客户"
+      "textaabe76f1f4ec": "客户",
+      "textfb04121eb646": "每个会话都在自己独立的隔离机器上运行。连接器凭据从不进入该机器，会话的工作通过变更请求进入 main。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

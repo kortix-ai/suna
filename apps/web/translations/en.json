@@ -19760,7 +19760,8 @@
       "text0ed3010f0be8": "Secure and yours",
       "textc06f548e70ac": "AI-native restructuring",
       "text245c108762e2": "Your team",
-      "textaabe76f1f4ec": "Customers"
+      "textaabe76f1f4ec": "Customers",
+      "textfb04121eb646": "Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

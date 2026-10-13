@@ -82,9 +82,9 @@ export const trust = {
     'is the easy part. Trusting',
     'them with it is the work.',
   ],
-  sub: 'Every session runs on its own isolated machine, with credentials it never sees, and lands nothing without a person approving it.',
+  sub: 'Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request.',
   ctaLabel: 'How Kortix is secured',
-  ctaHref: '/enterprise',
+  ctaHref: '/product#control',
   /** Exactly three. No HIPAA, no ISO — we do not hold them. */
   badges: [
     { id: 'soc2-type-1', line1: 'SOC 2', line2: 'TYPE I', state: '' },

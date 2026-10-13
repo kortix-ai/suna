@@ -388,4 +388,5 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Want us to do it with you?': 'text4b4da16e05a1',
   'memory/': 'textae3f53994b15',
   'skills/': 'textf1e8d760c12c',
+  "Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request.": 'textfb04121eb646',
 };

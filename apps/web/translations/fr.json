@@ -19749,7 +19749,8 @@
       "text0ed3010f0be8": "Sécurisé et à vous",
       "textc06f548e70ac": "Restructuration native IA",
       "text245c108762e2": "Votre équipe",
-      "textaabe76f1f4ec": "Clients"
+      "textaabe76f1f4ec": "Clients",
+      "textfb04121eb646": "Chaque session tourne sur sa propre machine isolée. Les identifiants des connecteurs n’y entrent jamais, et le travail de la session arrive sur main par une demande de modification."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
