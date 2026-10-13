@@ -44,9 +44,14 @@ init only when its old key in `kortix-terraform-state` is gone, or when that
 key's current version carries the tag `statemove=copied`, which the cutover
 copy writes on the exact version it copied and verified by SHA-256. A write to
 the old key after the copy leaves an untagged version, so the apply fails
-instead of planning against a stale state. The cutover runbook (copy, then
-freeze each root group before its first run on the new bucket) is in the PR
-that made this move; the guard is the backstop, not the procedure.
+instead of planning against a stale state. The guard is the backstop, not the
+procedure: before a root group's first run on its regional bucket, copy its
+state and freeze the old key with `scripts/statemove/copy-states.mjs <group>`
+and `scripts/statemove/deny-old-keys.mjs <group>` (groups `dev`, `global`,
+`staging`, `prod`). `dev` and `global` moved on 2026-10-13. `staging` moves
+right before the first staging promotion that carries #9693 merges, `prod`
+right before the release that carries it merges (the **kortix-release**
+skill, Steps 3 and 9).
 
 The old us-west-2 bucket `kortix-terraform-state` and table
 `kortix-terraform-locks` held every state until 2026-10. No root in this

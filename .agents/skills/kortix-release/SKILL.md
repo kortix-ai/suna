@@ -108,7 +108,15 @@ Merge only when **all** of these hold:
 - every review thread is resolved — `staging`'s branch protection sets
   `required_conversation_resolution: true`, so GitHub blocks the merge button
   on an open thread (a CodeQL finding included) until you resolve or reply to it;
-- Step 5's migration cost pass is done for every new migration in the diff.
+- Step 5's migration cost pass is done for every new migration in the diff;
+- **one time, until the per-region Terraform state move finishes:** if
+  `origin/staging` does not yet contain #9693 (the state move) and this
+  promotion does, run right before the merge:
+  `AWS_PROFILE=kortix node infra/terraform/scripts/statemove/copy-states.mjs staging`
+  (every line `OK ... kms=yes tagged`), then
+  `node infra/terraform/scripts/statemove/deny-old-keys.mjs staging`. Without it,
+  Deploy Staging stops at "Check the regional state copy". Delete this bullet
+  once staging's state is in eu-west-2.
 
 **Never merge a staging PR with a pending or failing check "because it'll
 probably pass."** A shard that never starts (bootstrap failure) gives no
@@ -219,6 +227,14 @@ never gets past its own bootstrap gives no signal, so rerun it rather than
 reading it as a pass or a fail.
 
 ### Step 9 — prod
+
+**One time, until the per-region Terraform state move finishes:** if
+`origin/prod` does not yet contain #9693 and this release does, first run
+`AWS_PROFILE=kortix node infra/terraform/scripts/statemove/copy-states.mjs prod`
+(every line `OK ... kms=yes tagged`), then
+`node infra/terraform/scripts/statemove/deny-old-keys.mjs prod`. Without it,
+Deploy Prod stops at "Check the regional state copy". Delete this paragraph
+once prod's state is in eu-west-2.
 
 Merge the release PR:
 
