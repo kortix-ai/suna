@@ -21,6 +21,7 @@ let cans: Record<string, Can> = {};
 const probes: Array<{ target: unknown; actions: readonly string[] }> = [];
 let rows: string[] = [];
 let body: any;
+let previewData: { is_up_to_date: boolean; can_merge: boolean; conflicts: string[] } | undefined;
 const idle = { data: undefined, isLoading: false, isError: false, refetch() {} };
 
 const fakes: Record<string, Record<string, unknown>> = {
@@ -56,7 +57,10 @@ const fakes: Record<string, Record<string, unknown>> = {
     },
   },
   '@/lib/haptics': { haptics: { tap() {}, success() {}, warning() {} } },
-  '@/lib/projects/hooks': { useChangeRequestDiff: () => idle, useChangeRequestMergePreview: () => idle },
+  '@/lib/projects/hooks': {
+    useChangeRequestDiff: () => idle,
+    useChangeRequestMergePreview: () => ({ ...idle, data: previewData }),
+  },
   '@/lib/review/review-detail': {
     changeRequestWebUrl: () => 'https://example.test',
     reviewDetailRows: () => [],
@@ -120,6 +124,7 @@ afterEach(() => {
   act(() => tree?.unmount());
   tree = undefined;
   probes.length = 0;
+  previewData = undefined;
 });
 
 /** The pinned footer's verdict labels, left to right in source order. */
@@ -186,8 +191,26 @@ describe('review sheet verdicts', () => {
     expect(body.actionable).toBe(false);
   });
 
-  test('a connector approval keeps Approve and Deny: the API sends no per-item verdict for it yet', () => {
+  test('a connector approval shows Approve and Deny to the viewer the API lets decide it, whatever leaves they hold', () => {
     renderAs(APPROVAL, MEMBER);
     expect(footer()).toEqual(['Approve', 'Deny']);
+  });
+
+  // The API sends a call's arguments only to a project manager or the person
+  // who launched the session, and refuses anyone else's decision.
+  test('a connector approval the API withholds from this viewer shows no Approve and no Deny', () => {
+    const withheld = { ...APPROVAL, detail: { actions: [{ id: 'exec-1', previewAuthorized: false }] } };
+    renderAs(withheld, MANAGER);
+    expect(footer()).toEqual([]);
+  });
+
+  test('Resolve conflicts takes Merge’s place, so a reviewer who may not merge does not get it', () => {
+    // A change whose merge preview reports conflicts.
+    previewData = { is_up_to_date: false, can_merge: false, conflicts: ['README.md'] };
+    renderAs(CHANGE, allow('project.write', 'project.review.act'));
+    expect(footer()).toEqual(['Request changes']);
+    act(() => tree.unmount());
+    renderAs(CHANGE, MANAGER);
+    expect(footer()).toEqual(['Resolve conflicts', 'Request changes']);
   });
 });

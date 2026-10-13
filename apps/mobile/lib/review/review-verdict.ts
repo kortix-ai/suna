@@ -12,15 +12,12 @@
  *   in-session approval prompt makes. It is never dismissed or sent back.
  * - Native row: `/act` with the verdict and optional feedback.
  *
+ * Which verdicts a viewer may give is `reviewVerdictAllowed` in `@kortix/sdk`
+ * (KRTX-1720), the same rule the web inbox reads.
+ *
  * Pure data: unit-tested under `bun test`.
  */
-import {
-  PROJECT_ACTIONS,
-  reviewItemTarget,
-  type ProjectAction,
-  type ReviewItemKind,
-  type ReviewVerdict,
-} from '@kortix/sdk';
+import { reviewItemTarget, type ReviewItemKind, type ReviewVerdict } from '@kortix/sdk';
 
 export type ReviewVerdictCall =
   | { call: 'act'; reviewItemId: string; verdict: ReviewVerdict; feedback: string | undefined }
@@ -50,56 +47,6 @@ export function planReviewVerdict(
     return null;
   }
   return { call: 'act', reviewItemId: target.reviewItemId, verdict, feedback };
-}
-
-const { PROJECT_WRITE, PROJECT_GITOPS_PUSH, PROJECT_GITOPS_MERGE, PROJECT_REVIEW_ACT } = PROJECT_ACTIONS;
-
-/** The leaves the Review page's controls need, in one `useCans` probe. */
-export const REVIEW_CONTROL_ACTIONS = [
-  PROJECT_WRITE,
-  PROJECT_GITOPS_PUSH,
-  PROJECT_GITOPS_MERGE,
-  PROJECT_REVIEW_ACT,
-] as const;
-
-/** A `useCans` result: only an explicit allow counts, so loading reads "no". */
-type Cans = Partial<Record<string, { allowed: boolean } | undefined>>;
-const holds = (cans: Cans, actions: readonly ProjectAction[]) =>
-  actions.every((action) => cans[action]?.allowed === true);
-
-/**
- * The leaves the route behind `plan` asserts (KRTX-1720). Every change request
- * and native route loads the project for write first. Merge asserts
- * project.gitops.merge. Request changes and `/act` assert project.review.act.
- * Close asserts project.write only; it is a review verdict too, so it shows
- * with review.act, as the other verdicts do. A connector call answers per call
- * (the person who launched the session may approve it), and the API sends no
- * per-item verdict yet: null leaves it to `status === 'needs_you'`.
- */
-function verdictActions(plan: ReviewVerdictCall): readonly ProjectAction[] | null {
-  switch (plan.call) {
-    case 'merge':
-      return [PROJECT_WRITE, PROJECT_GITOPS_MERGE];
-    case 'close':
-    case 'request_changes':
-    case 'act':
-      return [PROJECT_WRITE, PROJECT_REVIEW_ACT];
-    case 'resolve_approval':
-      return null;
-  }
-}
-
-/** Whether to offer `verdict` on item `id` to a viewer whose probe answered `cans`. */
-export function reviewVerdictAllowed(id: string, verdict: ReviewVerdict, cans: Cans): boolean {
-  const plan = planReviewVerdict(id, verdict);
-  if (!plan) return false;
-  const actions = verdictActions(plan);
-  return actions === null || holds(cans, actions);
-}
-
-/** Whether to offer + (open a change request): `POST /change-requests` asserts write + gitops.push. */
-export function canOpenChangeRequest(cans: Cans): boolean {
-  return holds(cans, [PROJECT_WRITE, PROJECT_GITOPS_PUSH]);
 }
 
 const VERDICTS_BY_KIND: Record<ReviewItemKind, ReviewVerdict[]> = {

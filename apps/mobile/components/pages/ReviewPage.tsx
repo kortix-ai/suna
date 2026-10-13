@@ -31,6 +31,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import {
+  REVIEW_CONTROL_ACTIONS,
+  changeRequestControlsFrom,
   reviewSegmentForStatus,
   type ReviewItem,
   type ReviewSegment,
@@ -67,7 +69,6 @@ import {
   type ReviewTone,
 } from '@/lib/review/review-meta';
 import { reviewKeys, useReviewItems } from '@/lib/review/use-review';
-import { REVIEW_CONTROL_ACTIONS, canOpenChangeRequest } from '@/lib/review/review-verdict';
 import { THEME } from '@/lib/utils/theme';
 import { sessionDisplayTitle } from '@/lib/session/session-list';
 import type { PageTab } from '@/stores/tab-store';
@@ -126,7 +127,9 @@ export function ReviewPage({
   const [versionsOpened, setVersionsOpened] = React.useState(false);
   const branchesQuery = useProjectBranches(projectId, versionsOpened);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const canOpenChange = canOpenChangeRequest(useCans({ projectId }, REVIEW_CONTROL_ACTIONS));
+  const canOpenChange = changeRequestControlsFrom(
+    useCans({ projectId }, REVIEW_CONTROL_ACTIONS),
+  ).canOpen;
 
   // Session titles name the thread a connector approval came from.
   const sessionsQuery = useProjectSessions(projectId, { poll: false });

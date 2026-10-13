@@ -29,12 +29,15 @@
  * stays on screen over a long change. The scroll content pads by its height.
  *
  * Each verdict shows only for a viewer who holds the leaves its route asserts
- * (KRTX-1720, `reviewVerdictAllowed`), from one `useCans` probe: Merge needs
- * project.write + project.gitops.merge; Request changes, Close, a decision's
- * answer and every native verdict need project.write + project.review.act. A
- * built-in member gets none of them, and an unresolved probe offers none. A
- * connector call keeps its `needs_you` rule: the API sends no per-item verdict
- * for it yet.
+ * (KRTX-1720, `reviewVerdictAllowed` in `@kortix/sdk`, the rule the web inbox
+ * reads too), from one `useCans` probe: Merge needs project.write +
+ * project.gitops.merge; Request changes, Close, a decision's answer and every
+ * native verdict need project.write + project.review.act. A built-in member
+ * gets none of them, and an unresolved probe offers none. A connector call
+ * shows Approve and Deny to the viewer the API lets decide it (a project
+ * manager or the session's launcher; `previewAuthorized`). Resolve conflicts
+ * takes Merge's place, so only a viewer who may merge gets it; a reviewer who
+ * may not hands the conflicts back with Request changes.
  */
 import * as React from 'react';
 import { View, useWindowDimensions } from 'react-native';
@@ -44,7 +47,12 @@ import {
   BottomSheetScrollView,
   type BottomSheetFooterProps,
 } from '@gorhom/bottom-sheet';
-import type { ReviewItem, ReviewVerdict } from '@kortix/sdk';
+import {
+  REVIEW_CONTROL_ACTIONS,
+  reviewVerdictAllowed,
+  type ReviewItem,
+  type ReviewVerdict,
+} from '@kortix/sdk';
 import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,12 +93,7 @@ import {
   verdictNeedsConfirm,
   verdictNeedsFeedback,
 } from '@/lib/review/review-meta';
-import {
-  REVIEW_CONTROL_ACTIONS,
-  planReviewVerdict,
-  reviewVerdictAllowed,
-  reviewVerdictsFor,
-} from '@/lib/review/review-verdict';
+import { planReviewVerdict, reviewVerdictsFor } from '@/lib/review/review-verdict';
 import { useReviewVerdict } from '@/lib/review/use-review';
 import { openLink } from '@/lib/utils/open-link';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
@@ -245,11 +248,11 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
     }, []);
     // A decision answers from its option rows; its footer holds Dismiss alone.
     // Only the verdicts this viewer may give (KRTX-1720).
-    const allows = (verdict: ReviewVerdict) => !!item && reviewVerdictAllowed(item.id, verdict, cans);
+    const allows = (verdict: ReviewVerdict) => !!item && reviewVerdictAllowed(item, verdict, cans);
     const verdicts = React.useMemo<ReviewVerdict[]>(() => {
       if (!item) return [];
       const offered: ReviewVerdict[] = item.kind === 'decision' ? ['dismiss'] : reviewVerdictsFor(item.kind);
-      return offered.filter((verdict) => reviewVerdictAllowed(item.id, verdict, cans));
+      return offered.filter((verdict) => reviewVerdictAllowed(item, verdict, cans));
     }, [item, cans]);
     const showFooter = !!item && actionable && verdicts.length > 0 && !askingFeedback && !openFile;
 
