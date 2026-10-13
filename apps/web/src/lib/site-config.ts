@@ -117,7 +117,7 @@ export const servicesMenu: NavMenu = {
         },
         {
           name: 'Customer stories',
-          href: '/customers',
+          href: '/services#stories',
           description: 'Companies already running on agents',
           icon: 'buildings',
         },

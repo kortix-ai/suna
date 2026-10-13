@@ -75,7 +75,8 @@ export function StoryCard({ story, large }: { story: Story; large?: boolean }) {
 
 /**
  * The stories grid. `limit` shows the first n (the home page shows three);
- * the first card spans two columns so the grid reads as cases, not tiles.
+ * the first card spans two columns so the grid reads as cases, not tiles. The
+ * last card spans both too when it would otherwise sit alone in its row.
  */
 export function StoriesSection({
   limit,
@@ -89,12 +90,13 @@ export function StoriesSection({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { stories } = getLocalizedStoriesContent(tI18nComplete);
   const items = limit ? stories.items.slice(0, limit) : stories.items;
+  const wide = (i: number) => i === 0 || (items.length % 2 === 0 && i === items.length - 1);
   return (
     <section id="stories" className={SECTION}>
       <SectionHeader eyebrow={stories.eyebrow} title={stories.title} description={stories.sub} as={as} />
       <div className="mt-10 grid gap-4 lg:grid-cols-2">
         {items.map((story, i) => (
-          <Reveal key={story.id} delay={0.04 * i} className={cn(i === 0 && 'lg:col-span-2')}>
+          <Reveal key={story.id} delay={0.04 * i} className={cn(wide(i) && 'lg:col-span-2')}>
             <StoryCard story={story} large={i === 0} />
           </Reveal>
         ))}
