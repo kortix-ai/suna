@@ -11,7 +11,15 @@
  * (`cwd`: the project id is re-keyed to the box's). The restore first removes
  * every session from the store, so the store holds exactly the log. A running
  * OpenCode (a warm seed) needs no stop: it reads sessions from the store per
- * request (`opencode-session-log-restore.test.ts` proves it).
+ * request, also a session it served before the restore
+ * (`opencode-session-log-restore.test.ts` proves both).
+ *
+ * PRECONDITION (the caller's, P6.4). The removal deletes every session in the
+ * store, work the journal has not sent included. Run the restore only when the
+ * native store is missing or behind the log, and never while a turn runs. A
+ * crash between the removal and the last import leaves an empty or partial
+ * store: the caller treats a store without the pinned root, or without
+ * `opencode-session-log.json` after a re-keying restore, as behind.
  *
  * ONE ROOT. The root thread's id is the OpenCode session id, whatever harness
  * minted it (pi's `ses_pi…` is a valid OpenCode id), and the pin names it.
@@ -54,7 +62,9 @@
  *
  * SEQS. The seq file maps every log message to its seq, and each thread issues
  * new seqs above the floor: `seqMax` (the API's, tombstones included) and every
- * seq of the log. `restore` returns, per thread, the hash `openCodeSessionLog`
+ * seq of the log. It is written, with the id map, before the store changes: a
+ * crash after the import leaves the store with its seqs and ids, never one whose
+ * export issues seqs from 1 or sends native ids. `restore` returns, per thread, the hash `openCodeSessionLog`
  * computes for each message of the written store: the journal's next export
  * skips them (C13).
  */
@@ -77,7 +87,7 @@ import {
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
-import { attachmentBytes, visibleMessageIds } from '../shared/session-log-restore'
+import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
 import { OpencodeDb } from './opencode-db'
 import { writeOpenCodeSessionPin } from './runtime-state'
 import { openCodeSessionLog, openCodeSessionLogStatePath, renameRow, writeSeqState, type IdMap, type SeqState } from './session-log'
@@ -96,7 +106,7 @@ export interface OpenCodeRestoreTarget {
   /** The seq file (`opencode-session-log.json`). */
   statePath?: string
   /** The bytes behind an attachment `ref`; null when they cannot be read. Without it, no attachment is restored. */
-  readAttachment?: (ref: string) => Promise<Buffer | null>
+  readAttachment?: BytesReader
 }
 
 type J = Record<string, any>
@@ -476,6 +486,19 @@ export async function restoreOpenCodeSessionLog(input: SessionLog, target: OpenC
   const version = (await run(target, ['--version'])).trim() || 'unknown'
   const files = sessionFiles(log, rows, toNative, target.cwd, version)
 
+  // The seq map (every log seq, each thread's next seq above the floor) and native id → log id
+  // (a part key `<message id>\0<part id>` names the part id). They do not depend on the store, so
+  // they are on disk before the store changes: a crash after the import never leaves a store
+  // whose export issues seqs from 1 or sends native ids.
+  const seqs: SeqState = {}
+  for (const t of log.threads) {
+    const floor = Math.max(seqMax[t.thread_id] ?? 0, ...t.messages.map((m) => m.seq))
+    seqs[t.thread_id] = { next: floor + 1, seqs: Object.fromEntries(t.messages.map((m) => [m.message_id, m.seq])) }
+  }
+  const ids = Object.fromEntries(Object.entries(toNative).map(([key, native]) => [native, key.slice(key.indexOf('\0') + 1)]))
+  const statePath = target.statePath ?? openCodeSessionLogStatePath()
+  writeSeqState(statePath, seqs, ids)
+
   const dir = mkdtempSync(join(tmpdir(), 'kortix-oc-restore-'))
   try {
     clearStore(target.dbPath)
@@ -491,18 +514,11 @@ export async function restoreOpenCodeSessionLog(input: SessionLog, target: OpenC
   writeTodos(target.dbPath, rootId, log.todos)
   writeOpenCodeSessionPin(rootId)
 
-  // The seq map: every log seq, and each thread's next seq above the floor.
-  const seqs: SeqState = {}
-  for (const t of log.threads) {
-    const floor = Math.max(seqMax[t.thread_id] ?? 0, ...t.messages.map((m) => m.seq))
-    seqs[t.thread_id] = { next: floor + 1, seqs: Object.fromEntries(t.messages.map((m) => [m.message_id, m.seq])) }
-  }
-  // Native id → log id: a part key `<message id>\0<part id>` names the part id.
-  const ids = Object.fromEntries(Object.entries(toNative).map(([key, native]) => [native, key.slice(key.indexOf('\0') + 1)]))
   const store = new OpencodeDb(target.dbPath).storeSnapshot()
   if (!store) throw new Error('the restored OpenCode store does not read back')
-  const { log: written, hashes } = openCodeSessionLog({ sessionId: target.sessionId, rootId, store, seqs, ids })
-  writeSeqState(target.statePath ?? openCodeSessionLogStatePath(), seqs, ids)
+  const { log: written, hashes, issued } = openCodeSessionLog({ sessionId: target.sessionId, rootId, store, seqs, ids })
+  // A written row the log has no record for (a layout's `{ text }` message) got its seq above the floor.
+  if (issued) writeSeqState(statePath, seqs, ids)
   const cursors = written.threads.map((t): ExportCursor => ({
     thread_id: t.thread_id,
     last_seq: Math.max(-1, ...t.messages.map((m) => m.seq)),

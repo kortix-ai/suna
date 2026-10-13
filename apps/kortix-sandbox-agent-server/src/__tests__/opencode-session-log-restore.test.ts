@@ -200,6 +200,25 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     const { out } = await nextRequests(b, server, log, prompts('opencode'))
     for (const check of Object.values(out)) expect(check.diffs).toEqual([])
   }, 90_000)
+
+  test('a running OpenCode that already served the root: a restore with a different history for it, then the next request is the new history', async () => {
+    const log = load('opencode')
+    const root = log.threads[0]!
+    const first = structuredClone(log)
+    ;(first.threads[0]!.messages.find((m) => m.seq === 18)!.blocks.find((x) => x.type === 'text') as { text: string }).text = 'FIRST-HISTORY-ANSWER'
+    const b = box(log.session_id)
+    await b.port.restore(first)
+    const server = await b.serve()
+    // OpenCode serves the root once: it has loaded the session, its messages and its event sequence.
+    const [served] = await prompt(server, root.thread_id, 'first question', [{ text: 'FIRST-SERVED-ANSWER' }])
+    expect(JSON.stringify(served)).toContain('FIRST-HISTORY-ANSWER')
+    const result = await b.port.restore(log)
+    expect(result.dropped).toEqual({})
+    expect((await b.port.changes(result.cursors)).messages).toEqual([])
+    const { out, sent } = await nextRequests(b, server, log, prompts('opencode'))
+    for (const [thread, check] of Object.entries(out)) expect(check.diffs, thread).toEqual([])
+    for (const text of ['FIRST-HISTORY-ANSWER', 'first question', 'FIRST-SERVED-ANSWER']) expect(JSON.stringify(sent[root.thread_id])).not.toContain(text)
+  }, 90_000)
 })
 
 describe('converted and partial logs (P3 conversions)', () => {
@@ -228,8 +247,9 @@ describe('converted and partial logs (P3 conversions)', () => {
     expect(out[root!.thread_id]!.diffs).toEqual([])
     // OpenCode sends `{}` for the input the conversion lost (null in the record).
     expect(out[child!.thread_id]!.diffs).toHaveLength(1)
-    expect(out[child!.thread_id]!.diffs[0]).toContain('"input":null')
-    expect(out[child!.thread_id]!.diffs[0]).toContain('"input":{}')
+    const [, expected, actual] = /\n  expected: (.*)\n  actual:   (.*)$/.exec(out[child!.thread_id]!.diffs[0]!)!
+    expect(expected!.split('"input":null')).toHaveLength(2)
+    expect(expected!.replace('"input":null', '"input":{}')).toBe(actual!)
   }, 90_000)
 })
 
@@ -375,6 +395,75 @@ describe('a second restore and the seq floor', () => {
     expect(freshSeqs(changes, result.cursors, child!.thread_id).length).toBeGreaterThan(0)
     expect(Math.min(...freshSeqs(changes, result.cursors, child!.thread_id))).toBeGreaterThan(40)
   }, 90_000)
+})
+
+describe('a crash between the import and the end of the restore', () => {
+  test('the seq and id state is already on disk: the next export keeps the log seqs and ids, and issues above the floor', async () => {
+    const log = load('claude-code') // uuid thread ids: re-keyed, so the state holds ids
+    const floor = Object.fromEntries(log.threads.map((t) => [t.thread_id, 100]))
+    const b = box(log.session_id)
+    // The pin write fails after the import: the restore stops there.
+    mkdirSync(join(b.root, 'state', 'opencode-session-id'), { recursive: true })
+    await expect(b.port.restore(log, floor)).rejects.toThrow()
+    expect(new OpencodeDb(b.dbPath).storeSnapshot()!.sessions.length).toBe(log.threads.length)
+    const state = JSON.parse(readFileSync(b.statePath, 'utf8')) as { threads: Record<string, { next: number }>; ids?: Record<string, string> }
+    expect(Object.keys(state.ids ?? {}).length).toBeGreaterThan(0)
+    for (const t of log.threads) expect(state.threads[t.thread_id]!.next).toBe(101)
+    // A daemon that starts on this store (a fresh port): records carry the log's ids and seqs.
+    const root = b.native(log.threads[0]!.thread_id)
+    expect(root).not.toBe(log.threads[0]!.thread_id)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(b.dbPath), dbPath: b.dbPath, sessionId: log.session_id, rootId: () => root, statePath: b.statePath })
+    const { messages } = await port.changes([])
+    expect(messages.length).toBeGreaterThan(0)
+    const seqOf = new Map(log.threads.flatMap((t) => t.messages.map((m) => [`${t.thread_id}\0${m.message_id}`, m.seq] as const)))
+    for (const { message } of messages) {
+      expect(log.threads.map((t) => t.thread_id)).toContain(message.thread_id)
+      const want = seqOf.get(`${message.thread_id}\0${message.message_id}`)
+      if (want !== undefined) expect(message.seq).toBe(want)
+      else expect(message.seq).toBeGreaterThan(100)
+    }
+  }, 60_000)
+})
+
+/** A one-turn log of another harness: a user message and an assistant reply with `blocks`. */
+function tinyLog(user: SessionLog['threads'][number]['messages'][number]['blocks'], reply: SessionLog['threads'][number]['messages'][number]['blocks']): SessionLog {
+  const at = '2026-10-13T00:00:00.000Z'
+  const producer = { harness: 'pi', harness_version: '1.0.3', adapter_version: '1.0.0' }
+  const base = { schema: 'kortix.session/2', v: 1, thread_id: 'ses_drop', model: null, usage: null, error: null, created_at: at, completed_at: at, producer, status: 'complete', in_context: true, kind: 'turn' } as const
+  return {
+    schema: 'kortix.session/2', v: 1, session_id: 'sess-drop', title: null, created_at: at, restore_grade: 'native',
+    harness: { current: 'pi', history: [] }, selection: { agent: null, model: null }, todos: [], pending: { questions: [], permissions: [] },
+    threads: [{
+      schema: 'kortix.session/2', v: 1, thread_id: 'ses_drop', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: at,
+      messages: [
+        { ...base, message_id: 'msg_d1', seq: 1, role: 'user', finish: null, blocks: [{ type: 'text', id: 'prt_d10', text: 'hello' }, ...user] },
+        { ...base, message_id: 'msg_d2', seq: 2, role: 'assistant', finish: 'stop', blocks: [...reply, { type: 'text', id: 'prt_d29', text: 'done' }] },
+      ],
+    }],
+  } as unknown as SessionLog
+}
+
+describe('what the restore cannot write counts in dropped', () => {
+  const ref = `blob:${sha(FIXTURE_PNG)}`
+  const image = { type: 'attachment', id: 'prt_d11', mime: 'image/png', ref, bytes: FIXTURE_PNG.length, sha256: sha(FIXTURE_PNG) }
+  const cases: Array<[string, SessionLog, (ref: string) => Promise<Buffer | null>, Record<string, number>]> = [
+    // Closure rule C2: a call at rest has a result. A log that breaks it writes an error part and counts the loss.
+    ['a call without a result', tinyLog([], [{ type: 'tool_call', id: 'prt_d20', call_id: 'call_d', name: 'bash', kind: 'shell', input: { command: 'ls' }, status: 'complete' } as never]), async () => null, { tool_result: 1 }],
+    // A text the restore answer could not read in full (`truncated`): its preview goes out.
+    ['a text still stored by reference', tinyLog([{ type: 'text', id: 'prt_d11', text: 'PREVIEW', ref: 'kortix-attachment://p/s/o', bytes: 300_000 } as never], []), async () => null, { text: 1 }],
+    ['an attachment without bytes', tinyLog([image as never], []), async () => null, { attachment: 1 }],
+    ['an attachment whose bytes do not match its sha256', tinyLog([image as never], []), async () => Buffer.from('tampered'), { attachment: 1 }],
+  ]
+  for (const [name, log, read, dropped] of cases) {
+    test(`${name}: ${JSON.stringify(dropped)}`, async () => {
+      const b = box(log.session_id, read)
+      const result = await b.port.restore(log)
+      expect(result.dropped).toEqual(dropped)
+      // The rest is written: the hash guard holds over the whole store.
+      expect((await b.port.changes(result.cursors)).messages).toEqual([])
+      expect(new OpencodeDb(b.dbPath).storeSnapshot()!.messages.length).toBe(2)
+    }, 30_000)
+  }
 })
 
 describe('a pi session restored into OpenCode (a harness switch)', () => {

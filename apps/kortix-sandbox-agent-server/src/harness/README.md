@@ -134,7 +134,10 @@ the boot will run:
    `truncated` (`not_listed`, `unreadable`, `sha256_mismatch`). An adapter's
    `readAttachment` reads attachment bytes the same way: `apiBytesReader(ctx)`
    returns a `kortix-attachment://` object of this session, and the adapter
-   checks it against the block's `sha256` (`attachmentBytes`).
+   checks it against the block's `sha256` (`attachmentBytes`). Attachment reads
+   have their own budget: 60 s for all of them, separate from the texts' 60 s
+   (they run later, in the adapter's `restore`). An attachment not read within
+   it has no bytes.
 3. `port.restore(log, seq_max)` before the runtime starts. pi:
    `restorePiSessionLog` (`pi/session-log-restore.ts`, the mapping is in its
    header) writes the dump the runtime loads: the root's entries with a header,
@@ -151,7 +154,15 @@ the boot will run:
    the mapping is in its header) writes one session file per thread and runs
    `opencode --pure import` on each in the directory OpenCode serves, so the
    sessions join the box's project and keep every id. It first removes every
-   session from `opencode.db`: the store then holds exactly the log. The root
+   session from `opencode.db`: the store then holds exactly the log. That
+   removal deletes work the journal has not sent, so the precondition is the
+   caller's (P6.4): restore only when the native store is missing or behind the
+   log, never while a turn runs. A crash between the removal and the last
+   import leaves an empty or partial store; P6.4 treats a store without the
+   pinned root as behind. The seq map and the id map are written to
+   `opencode-session-log.json` before the removal, so a crash after the import
+   never leaves a store whose export issues seqs from 1 or sends native ids;
+   P6.4 treats a missing state file after a re-keying restore as behind. The root
    thread's id is the OpenCode session id (a pi root `ses_pi…` included) and
    the pin (`opencode-session-id`) names it; sub-agent threads are child
    sessions that their spawning call names. A message `fromV1` built from
@@ -161,7 +172,13 @@ the boot will run:
    part ids) is re-keyed, and `opencode-session-log.json` keeps native id →
    log id (`ids`) beside the seqs, so the export renames it back. New
    messages number above the floor (`seq_max` and every seq of the log). A
-   running OpenCode (a warm seed) needs no stop: it reads sessions per request.
+   running OpenCode (a warm seed) needs no stop: it reads sessions per request,
+   also a session it served before the restore (tested). The warm seed's
+   rotation still names the seed's root (`markSeedBakedSession`, the
+   `opencode-seed-baked-id` marker, `initial-session.ts`), which the restore
+   deletes: P6.4 runs the restore before the boot resolves its root
+   (`maybeCreateInitialOpencodeSession`) and clears the marker, or the boot
+   creates and relays a root the restore then removes.
    It returns the cursors of the written store and `dropped`, as pi does.
 4. `startSessionLogJournal(port, { generation, cursors })`: the export skips
    every restored message by hash (C13).
@@ -177,16 +194,22 @@ Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
 `opencode serve` in an isolated home against a fake model, dummy key): the 7
 golden fixtures, converted and partial logs, an OpenCode session and a pi
 session recorded in the test, a second restore after a journaled turn, the seq
-floor, and a restore into a running OpenCode. Each checks the hash guard
+floor, a restore into a running OpenCode, and a restore that gives a session
+the running OpenCode already served a different history. Each checks the hash guard
 (`changes(cursors)` returns no message and no tombstone) and the next request
 of the root and of each sub-agent (resumed through `task` with its `task_id`)
 against `modelView(log)`. The recorded OpenCode session round-trips: export →
-restore → export is equal.
+restore → export is equal. A crash after the import (the pin write fails)
+leaves the seq and id map on disk: the next export carries the log's seqs and
+ids. Each `dropped` kind has a case: a call without a result
+(`tool_result`), a text still stored by reference (`text`), an attachment
+without bytes or with bytes that fail its `sha256` (`attachment`).
 
 Known limits of the OpenCode restore:
 - `opencode import` runs once per thread (about 1 s each on a laptop): a session with many sub-agents restores in seconds, not milliseconds.
 - An attachment of an OpenCode session has its bytes only in the native store (`ref: blob:<sha256>`, nothing uploads them yet): a fresh box restores it only when `readAttachment` has the bytes. Without them it is left out and counts in `dropped.attachment` when the model would see it next.
 - A layout OpenCode cannot show in its order (an assistant message before the summary, a kept run that is not the contiguous run before the marker) counts in `dropped.layout`.
+- The id map (`ids` in `opencode-session-log.json`) is the only record of a re-keyed id. A lost map renames nothing back: a uuid thread id comes back as `ses_<sha>` (a second thread in the API), and a re-keyed pi part id as `prt_…` (a changed block id). Real Kortix roots (`ses_…`, `ses_pi…`) are never re-keyed; pi part ids are.
 
 Known limits of the pi restore:
 - Images of a pi session cannot be restored in a fresh box: the export keeps their bytes only in the native store (`ref: blob:<sha256>`), and nothing uploads them yet (`apiBytesReader` reads only a `kortix-attachment://` object). They count in `dropped.attachment`. Restore must not be on by default before the journal uploads image bytes.

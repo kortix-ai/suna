@@ -74,7 +74,7 @@ import type { KortixMessage } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
 import { piDumpPath, type PiChildDump, type PiDump } from './runtime'
-import { attachmentBytes, visibleMessageIds } from '../shared/session-log-restore'
+import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
 import { PI_NO_RESULT, piSessionLog, type PiSessionSnapshot } from './session-log'
 
 export interface PiRestoreTarget {
@@ -85,7 +85,7 @@ export interface PiRestoreTarget {
   /** The workspace: the session header's cwd when the log has none from pi. */
   cwd: string
   /** The bytes behind an attachment `ref`; null when they cannot be read. Without it, no image is restored. */
-  readAttachment?: (ref: string) => Promise<Buffer | null>
+  readAttachment?: BytesReader
 }
 
 type J = Record<string, any>

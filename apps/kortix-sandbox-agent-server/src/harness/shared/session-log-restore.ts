@@ -64,7 +64,7 @@ export async function sessionLogFromRestore(answer: SessionLogRestore, readText:
 const READ_ATTEMPTS = 3
 
 /** Reads a stored object of this session through the attachments route; null when it is missing, foreign or unreadable after 3 attempts of `attemptMs` each. */
-export function apiBytesReader(ctx: SandboxRelayContext, { attemptMs = 15_000, retryMs = 200 } = {}): (ref: string, budget?: AbortSignal) => Promise<Buffer | null> {
+export function apiBytesReader(ctx: SandboxRelayContext, { attemptMs = 15_000, retryMs = 200 } = {}): BytesReader {
   const own = `kortix-attachment://${ctx.projectId}/${ctx.sessionId}/`
   return async (ref, budget) => {
     if (!ref.startsWith(own) || ref.slice(own.length).includes('/')) return null
@@ -91,12 +91,16 @@ export function apiTextReader(ctx: SandboxRelayContext, options: { attemptMs?: n
   return async (ref, budget) => (await read(ref, budget))?.toString('utf8') ?? null
 }
 
+export type BytesReader = (ref: string, signal?: AbortSignal) => Promise<Buffer | null>
+
 /**
  * The bytes of every attachment the log names (blocks and tool results), by `ref`, checked
- * against `sha256` (or the digest a `blob:` ref names). Null when `read` has no bytes for it
- * or they do not match. An adapter's restore writes what it gets and counts the rest.
+ * against `sha256` (or the digest a `blob:` ref names). Null when `read` has no bytes for it,
+ * they do not match, or the reads ran past their budget (60 s for all of them, separate from
+ * the texts' budget). An adapter's restore writes what it gets and counts the rest.
  */
-export async function attachmentBytes(log: SessionLog, read: ((ref: string) => Promise<Buffer | null>) | undefined): Promise<Map<string, Buffer | null>> {
+export async function attachmentBytes(log: SessionLog, read: BytesReader | undefined, { budgetMs = 60_000 } = {}): Promise<Map<string, Buffer | null>> {
+  const budget = AbortSignal.timeout(budgetMs)
   const refs = new Map<string, string | undefined>()
   for (const m of log.threads.flatMap((t) => t.messages)) {
     for (const b of m.blocks) {
@@ -106,7 +110,7 @@ export async function attachmentBytes(log: SessionLog, read: ((ref: string) => P
   }
   const out = new Map<string, Buffer | null>()
   for (const [ref, digest] of refs) {
-    const bytes = read ? await read(ref).catch(() => null) : null
+    const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
     const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
     out.set(ref, bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null)
   }

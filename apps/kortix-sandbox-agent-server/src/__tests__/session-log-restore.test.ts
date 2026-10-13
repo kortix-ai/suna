@@ -160,6 +160,20 @@ describe('deadlines (P6.2 review)', () => {
       ['msg_corrupt', 'unreadable'],
     ])
   })
+
+  test('attachment reads have their own budget: past it, every attachment left has no bytes', async () => {
+    const api = hungApi()
+    const log = restoreAnswer().log as SessionLog
+    log.threads[0]!.messages[0]!.blocks.push(
+      { type: 'attachment', id: 'a1', mime: 'image/png', ref: ref(0), bytes: 1 },
+      { type: 'attachment', id: 'a2', mime: 'image/png', ref: ref(1), bytes: 1 },
+      { type: 'attachment', id: 'a3', mime: 'image/png', ref: ref(2), bytes: 1 },
+    )
+    const started = Date.now()
+    const out = await attachmentBytes(log, apiBytesReader(api.ctx, { attemptMs: 10_000, retryMs: 1 }), { budgetMs: 150 })
+    expect(Date.now() - started).toBeLessThan(2_000)
+    expect([...out.values()]).toEqual([null, null, null])
+  })
 })
 
 describe('attachment bytes (P6.3)', () => {
