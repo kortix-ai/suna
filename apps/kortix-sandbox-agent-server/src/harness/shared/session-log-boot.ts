@@ -1,11 +1,13 @@
 /**
  * When the boot restores a session log (P6.4). Both harnesses call `reconcileSessionLog`
  * before their runtime serves a turn and start the journal with what it returns
- * (`startSessionLogJournal(port, boot)`). When the API cannot answer (the manifest or the
- * restore fails after its retries), a box whose `held()` is not null boots on its native store
- * at its persisted generation (a later 409 or 422 is the worst case) and logs one warning. A
- * box without a store throws: the boot fails, and no journal starts without the cursors
- * `restore` returned.
+ * (`startSessionLogJournal(port, boot)`). When the manifest cannot be read after its retries
+ * (no claim has happened yet), a box whose `held()` is not null boots on its native store at
+ * its persisted generation and logs one warning; a box without a store throws. A restore that
+ * fails after its retries always throws: each attempt may have claimed a generation, so a box
+ * that kept its store would post below the claim (409, the journal stops for the boot) and the
+ * next healthy boot would restore over that boot's turns. A throw fails the boot, and no
+ * journal starts without the cursors `restore` returned.
  *
  * - The flag. apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the project flag
  *   `session_log_restore` is on. Off: no manifest read, no restore; the box keeps its native
@@ -26,14 +28,14 @@
  *   write left out and the D3 notice persist in `session-log-restore.json` in the runtime state
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
  *   stored log) or 503 (the operator switch is off) claims nothing and restores nothing. Any
- *   other failure is retried: 3 attempts, each a new claim (then the rule above: a store that
- *   still reads as present after a failed write keeps it; a cleared one fails the boot).
+ *   other failure is retried: 3 attempts, each a new claim; then the boot fails.
  * - D3, a partial restore (the log's grade is `partial`, or the write dropped content, or a
- *   text kept its preview). The agent: a user message `msg_kortix_restore_g<generation>` with
- *   one text block after every seq the API holds, written into the native store with the log,
+ *   text kept its preview). The agent: a user message with one text block
+ *   (`prt_kortix_restore_g<generation>`) after every seq the API holds, under a wire id above
+ *   every id of the thread, written into the native store with the log,
  *   so the next request carries it; its cursor entry is dropped, so the journal sends it as the
  *   store holds it and modelView of the log shows it too. Both exports give a message with that
- *   id prefix `origin: 'notification'` (neither native store keeps an origin). A partial log
+ *   block id prefix `origin: 'notification'` (neither native store keeps an origin). A partial log
  *   that already holds an earlier note gets a new one only when this restore dropped or
  *   truncated something itself. The user: the session patch
  *   `restore_grade: 'partial'` with `grade_counts` and `ext.kortix.data.restore` (generation,
@@ -53,7 +55,9 @@ import {
   type SessionLogMessage,
   type SessionLogRestore,
   type SessionLogSessionPatch,
+  type SessionLogThread,
 } from '@kortix/api-contract/session-log'
+import { mintWireMessageIdAbove, wireIdClock, wireIdClockDelta } from '@kortix/sdk/wire-message-id'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { sandboxRelayContext, type SandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { logger } from '@/lib/log/logger'
@@ -100,24 +104,22 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   const state = readState()
   if (process.env.KORTIX_SESSION_LOG_RESTORE?.trim() !== '1') return kept(state)
   const held = await port.held()
-  // A box with a store boots on it when the API cannot answer; only a box with no store fails.
-  const orNative = async (err: unknown): Promise<SessionLogBoot> => {
-    if (!(await port.held())) throw err
-    logger.warn('[session-log] the API did not answer the reconcile; the box keeps its native store', { err: String(err), generation: state.generation })
-    return kept(state)
-  }
   let manifest: Awaited<ReturnType<typeof readManifest>>
   try {
     manifest = await attempts('manifest', retryMs, () => readManifest(ctx))
   } catch (err) {
-    return orNative(err)
+    // No claim happens before the manifest: a box with a store boots on it; only a box with no store fails.
+    if (!held) throw err
+    logger.warn('[session-log] the manifest did not answer; the box keeps its native store', { err: String(err), generation: state.generation })
+    return kept(state)
   }
   if (!manifest) return kept(state)
   const why = behind(manifest, held, state)
   if (!why) return kept(state)
   logger.info('[session-log] the native store is behind the log; restoring', { why, generation: manifest.generation, persisted: state.generation })
-  // A write that failed part-way (OpenCode cleared its store) reads null again here, and fails the boot.
-  return attempts('restore', retryMs, async () => (await restore(ctx, port)) ?? kept(state)).catch(orNative)
+  // Each attempt claims a generation before it can fail: a box that kept its store after a failed
+  // restore would post below the claim (409) and restore over that boot's turns at the next boot.
+  return attempts('restore', retryMs, async () => (await restore(ctx, port)) ?? kept(state))
 }
 
 async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>): Promise<T> {
@@ -180,35 +182,51 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
     return { generation: answer.generation, cursors: [] }
   }
   let result = await port.restore(log, seq_max, read)
+  let note: SessionLogMessage | null = null
   const notice = partialNotice(log, result.dropped, truncated, answer.generation)
   // One note per loss: a partial log that already holds an earlier note gets none for the old loss.
-  const earlierNote = log.threads.some((t) => t.messages.some((m) => m.message_id.startsWith(RESTORE_NOTE_PREFIX)))
+  const earlierNote = log.threads.some((t) => t.messages.some(isRestoreNote))
   if (notice && (Object.keys(result.dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
     const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]!
-    root.messages.push(noteMessage(root.thread_id, Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq)) + 1, answer.generation, notice.text))
+    note = noteMessage(root, Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq)) + 1, answer.generation, notice.text)
+    root.messages.push(note)
     result = await port.restore(log, seq_max, read)
   }
   const written = new Set(result.cursors.flatMap((c) => Object.keys(c.native_hashes)))
   const unwritten = log.threads.flatMap((t) => t.messages.map((m) => m.message_id)).filter((id) => !written.has(id))
   // The journal sends the note as the store holds it.
-  for (const c of result.cursors) delete c.native_hashes[noteId(answer.generation)]
+  if (note) for (const c of result.cursors) delete c.native_hashes[note.message_id]
   writeState({ version: 1, generation: answer.generation, unwritten, ...(notice && { session: notice.session }) })
   logger.info('[session-log] restored', { generation: answer.generation, threads: result.cursors.length, unwritten: unwritten.length, dropped: result.dropped, truncated: truncated.length })
   return { generation: answer.generation, cursors: result.cursors, ...(notice && { session: notice.session }) }
 }
 
-/** The id prefix of a D3 note: both exports give such a message `origin: 'notification'`. */
-export const RESTORE_NOTE_PREFIX = 'msg_kortix_restore_g'
-const noteId = (generation: number) => `${RESTORE_NOTE_PREFIX}${generation}`
+/**
+ * A D3 note is the message whose text block id starts with this prefix (`prt_kortix_restore_g<generation>`):
+ * both stores keep a part id unchanged, so both exports find it and give it `origin: 'notification'`.
+ */
+export const RESTORE_NOTE_BLOCK_PREFIX = 'prt_kortix_restore_g'
+export const isRestoreNote = (m: { blocks: ReadonlyArray<{ id: string }> }) => m.blocks.some((b) => b.id.startsWith(RESTORE_NOTE_BLOCK_PREFIX))
 
-function noteMessage(threadId: string, seq: number, generation: number, text: string): SessionLogMessage {
+/**
+ * The note's id is a wire id (`mintWireMessageIdAbove`, backdated as a client prompt is) above every
+ * id of the thread, so hosts that order placed messages by id show it after the restored history
+ * and before the next turn.
+ */
+function noteMessage(thread: SessionLogThread, seq: number, generation: number, text: string): SessionLogMessage {
   const at = new Date().toISOString()
+  let floor: bigint | null = null
+  for (const m of thread.messages) {
+    const clock = wireIdClock(m.message_id)
+    if (clock !== null && (floor === null || wireIdClockDelta(clock, floor) > BigInt(0))) floor = clock
+  }
+  const { id } = mintWireMessageIdAbove({ nowMs: Date.now(), newestKnownTime: floor })
   return {
-    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: noteId(generation), thread_id: threadId, seq,
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: id, thread_id: thread.thread_id, seq,
     role: 'user', kind: 'turn', status: 'complete', in_context: true, origin: 'notification',
     model: null, usage: null, finish: null, error: null, created_at: at, completed_at: at,
     producer: { harness: 'kortix', harness_version: 'restore', adapter_version: '1' },
-    blocks: [{ type: 'text', id: `prt_kortix_restore_g${generation}`, text }],
+    blocks: [{ type: 'text', id: `${RESTORE_NOTE_BLOCK_PREFIX}${generation}`, text }],
   }
 }
 

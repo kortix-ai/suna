@@ -18,6 +18,7 @@ import type {
   SessionLogRestore,
 } from '@kortix/api-contract/session-log'
 import type { SessionLogPort } from '@/harness/contract/session-log'
+import { WIRE_MESSAGE_ID } from '@kortix/sdk/wire-message-id'
 import { reconcileSessionLog, sessionLogBootStatePath } from '@/harness/shared/session-log-boot'
 import { resetSessionLogJournalForTests, SessionLogJournal } from '@/harness/shared/session-log-journal'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
@@ -122,7 +123,7 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
   const requests: string[] = []
   const journal: SessionLogJournalRequest[] = []
   const take = (queue: Response[] | undefined, i: number): Response => queue?.[Math.min(i, queue.length - 1)]?.clone() as Response ?? new Response('no route', { status: 500 })
-  const count = { manifest: 0, restore: 0 }
+  const count = { manifest: 0, restore: 0, claimed: 0 }
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
@@ -131,7 +132,12 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
       requests.push(`${request.method} ${url.pathname}`)
       expect(request.headers.get('authorization')).toBe('Bearer session-token')
       if (url.pathname.endsWith('/log/manifest')) return take(routes.manifest, count.manifest++)
-      if (url.pathname.endsWith('/log/restore')) return take(routes.restore, count.restore++)
+      if (url.pathname.endsWith('/log/restore')) {
+        // claimSessionLog commits the claim before the answer leaves the API, whatever the answer is.
+        const answer = take(routes.restore, count.restore++)
+        if (answer.status !== 404 && answer.status !== 503) count.claimed++
+        return answer
+      }
       if (url.pathname.includes('/attachments/')) return routes.attachment?.(url.pathname.split('/').at(-1)!) ?? new Response('gone', { status: 404 })
       if (url.pathname.endsWith('/log/journal')) {
         const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await request.arrayBuffer())))) as SessionLogJournalRequest
@@ -308,14 +314,16 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(api.requests).toEqual(['GET /v1/projects/project-1/sessions/session-1/log/manifest'])
   })
 
-  test('a stale store and a restore that fails 3 times: a store that still reads as present keeps booting on it; nothing is persisted', async () => {
+  test('a stale store and a restore that claims, then fails 3 times: the boot fails (keeping the store would post below the claim); nothing is persisted', async () => {
     const api = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
     const store = fakeStore(['m1', 'm2'])
-    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
-    expect(api.count.restore).toBe(3)
-    // A native write that throws but leaves the store readable (pi's dump is renamed into place) keeps it too.
-    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [restoreAnswer(1, STORED)] })
-    expect(await reconcileSessionLog(fakeStore(['m1', 'm2'], { failures: 99 }).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    await expect(reconcileSessionLog(store.port, RETRY)).rejects.toThrow(/restore failed after 3 attempts/)
+    expect(api.count.claimed).toBe(3)
+    expect(store.restores).toHaveLength(0)
+    // A native write that throws, with the store still readable: the same.
+    const again = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [restoreAnswer(1, STORED)] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2'], { failures: 99 }).port, RETRY)).rejects.toThrow(/the native write failed/)
+    expect(again.count.claimed).toBe(3)
     expect(() => state()).toThrow()
   })
 })
@@ -330,7 +338,9 @@ describe('a partial restore (D3): a note for the agent and a notice for the user
     // The second write carries the note: a user message after every seq the API holds.
     const written = store.restores.at(-1)!.log.threads[0]!.messages
     const note = written.at(-1)!
-    expect(note).toMatchObject({ role: 'user', kind: 'turn', origin: 'notification', in_context: true, seq: 3, thread_id: 'thr_root', message_id: 'msg_kortix_restore_g1' })
+    expect(note).toMatchObject({ role: 'user', kind: 'turn', origin: 'notification', in_context: true, seq: 3, thread_id: 'thr_root' })
+    // A wire id, so hosts that order placed messages by id show it in place.
+    expect(note.message_id).toMatch(WIRE_MESSAGE_ID)
     expect(note.blocks).toEqual([{ type: 'text', id: 'prt_kortix_restore_g1', text: expect.stringContaining('2 attachments') }])
     // Its cursor entry is gone, so the journal's first collection sends the note as the store holds it.
     expect(boot!.cursors[0]!.native_hashes).toEqual({ m1: 'h-m1', m2: 'h-m2' })
@@ -353,20 +363,21 @@ describe('a partial restore (D3): a note for the agent and a notice for the user
   })
 
   test('a partial log that already holds an earlier note: no new note for the old loss, a new one for a new loss', async () => {
-    const earlier = message('msg_kortix_restore_g1', 3, 'Kortix: this session was restored…', { role: 'user', origin: 'notification' })
+    const earlier = message('msg_0a0000000000EarlierNote0001', 3, 'Kortix: this session was restored…', { role: 'user', origin: 'notification' })
+    earlier.blocks = [{ type: 'text', id: 'prt_kortix_restore_g1', text: 'Kortix: this session was restored…' }]
     const partialLog = log([...STORED.threads[0]!.messages, earlier], { restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
-    fakeApi({ manifest: [manifest(1, [...LIVE, ['msg_kortix_restore_g1']])], restore: [restoreAnswer(2, partialLog)] })
+    fakeApi({ manifest: [manifest(1, [...LIVE, ['msg_0a0000000000EarlierNote0001']])], restore: [restoreAnswer(2, partialLog)] })
     const quiet = fakeStore(null)
     const boot = await reconcileSessionLog(quiet.port, RETRY)
     expect(quiet.restores).toHaveLength(1)
     expect(boot!.session?.restore_grade).toBe('partial')
-    expect(Object.keys(boot!.cursors[0]!.native_hashes)).toEqual(['m1', 'm2', 'msg_kortix_restore_g1'])
+    expect(Object.keys(boot!.cursors[0]!.native_hashes)).toEqual(['m1', 'm2', 'msg_0a0000000000EarlierNote0001'])
 
-    fakeApi({ manifest: [manifest(2, [...LIVE, ['msg_kortix_restore_g1']])], restore: [restoreAnswer(3, partialLog)] })
+    fakeApi({ manifest: [manifest(2, [...LIVE, ['msg_0a0000000000EarlierNote0001']])], restore: [restoreAnswer(3, partialLog)] })
     const lossy = fakeStore(null, { drops: { attachment: 1 } })
     await reconcileSessionLog(lossy.port, RETRY)
     expect(lossy.restores).toHaveLength(2)
-    expect(lossy.restores[1]!.log.threads[0]!.messages.at(-1)!.message_id).toBe('msg_kortix_restore_g3')
+    expect(lossy.restores[1]!.log.threads[0]!.messages.at(-1)!.blocks[0]!.id).toBe('prt_kortix_restore_g3')
   })
 
   test('a complete restore of a log graded native adds no note and clears an earlier partial notice', async () => {

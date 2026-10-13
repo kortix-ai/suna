@@ -614,9 +614,9 @@ describe('the boot reconcile on OpenCode (P6.4)', () => {
       expect(boot.session).toMatchObject({ restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
       startSessionLogJournal(b.port, boot)
       expect(await flushSessionLogJournal()).toBe(true)
-      expect(api.journal.flatMap((x) => x.puts.map((p) => p.message.message_id))).toEqual(['msg_kortix_restore_g1'])
+      expect(api.journal.flatMap((x) => x.puts.map((p) => p.message.blocks[0]?.id))).toEqual(['prt_kortix_restore_g1'])
       expect(api.journal[0]!.session).toMatchObject({ restore_grade: 'partial' })
-      expect(api.stored().threads[0]!.messages.at(-1)).toMatchObject({ message_id: 'msg_kortix_restore_g1', role: 'user', origin: 'notification', in_context: true, seq: 15 })
+      expect(api.stored().threads[0]!.messages.at(-1)).toMatchObject({ role: 'user', origin: 'notification', in_context: true, seq: 15, blocks: [{ id: 'prt_kortix_restore_g1' }] })
       const expected = structuredClone(api.stored())
       const g04 = expected.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!
       g04.blocks = g04.blocks.filter((x) => x.type !== 'attachment')

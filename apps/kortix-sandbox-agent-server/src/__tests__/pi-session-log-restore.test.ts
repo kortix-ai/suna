@@ -33,6 +33,7 @@ import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-re
 import { reconcileSessionLog } from '@/harness/shared/session-log-boot'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { fakeSessionLogApi } from './helpers/fake-session-log-api'
+import { WIRE_MESSAGE_ID, mintWireMessageId } from '@kortix/sdk/wire-message-id'
 import type { PiRuntime } from '@/harness/pi/runtime'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { startFakeModel, type Step } from './helpers/fake-model'
@@ -487,6 +488,49 @@ describe('the boot reconcile on pi (P6.4)', () => {
     }
   }, 60_000)
 
+  test('the note sorts in place for display: after the restored history, before the next turn (a pi session with wire ids)', async () => {
+    // The SDK's display order (packages/sdk core/turns/grouping.ts). A computed specifier keeps the
+    // daemon's typecheck off the SDK's DOM-typed modules; bun resolves it at run time.
+    const grouping: string = join(import.meta.dir, '../../../../packages/sdk/src/core/turns/grouping.ts')
+    const { compareMessagesForDisplay } = (await import(grouping)) as { compareMessagesForDisplay: (a: { info: { id: string } }, b: { info: { id: string } }) => number }
+    const sessionId = 'sess-pi-restore-order'
+    const recorded = freshBox(sessionId)
+    const rtA = await recorded.start()
+    await turn(rtA, 'first question', [{ text: 'first answer' }])
+    await turn(rtA, 'second question', [{ tool: 'bash', args: { command: 'echo hi' } }, { text: 'second answer' }])
+    const log = piSessionLog(rtA.sessionLogSnapshot()!).log
+    // As a converted log that lost an image carries it: the restore is partial and adds a note.
+    Object.assign(log, { restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
+    const box = freshBox(sessionId)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime') })
+    try {
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, sessionId), { retryMs: 1 }))!
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+      await turn(rt, 'a later question', [{ text: 'a later answer' }])
+      expect(await flushSessionLogJournal()).toBe(true)
+      const stored = api.stored()
+      const note = stored.threads[0]!.messages.find((m) => m.blocks.some((b) => b.id === 'prt_kortix_restore_g1'))!
+      expect(note.origin).toBe('notification')
+      expect(note.message_id).toMatch(WIRE_MESSAGE_ID)
+      // The web order: the stored log as v1 rows, sorted the way every host sorts a transcript.
+      const rows = toV1(stored).rows.filter((r) => (r.info as { sessionID?: string }).sessionID === stored.threads[0]!.thread_id || stored.threads[0]!.messages.some((m) => m.message_id === r.info.id))
+      const order = [...rows].sort(compareMessagesForDisplay as never).map((r) => String(r.info.id))
+      const bySeq = [...stored.threads[0]!.messages].sort((a, b) => a.seq - b.seq).map((m) => m.message_id)
+      expect(order).toEqual(bySeq.filter((id) => order.includes(id)))
+      const later = stored.threads[0]!.messages.find((m) => m.role === 'user' && m.blocks.some((b) => b.type === 'text' && b.text === 'a later question'))!
+      expect(order.indexOf(note.message_id)).toBeGreaterThan(order.indexOf(log.threads[0]!.messages.at(-1)!.message_id))
+      expect(order.indexOf(note.message_id)).toBeLessThan(order.indexOf(later.message_id))
+      // The next client prompt, minted as the SDK mints it (above the transcript it reads), sorts after the note.
+      const client = mintWireMessageId({ after: [note.message_id] })
+      expect(compareMessagesForDisplay({ info: { id: note.message_id } }, { info: { id: client } })).toBeLessThan(0)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
   test('a partial restore (D3): the agent gets a note in its next request and the log, the user a partial session patch', async () => {
     // golden as stored: its image is a `blob:` the box cannot read, so the restore drops it.
     const log = load('golden')
@@ -502,10 +546,10 @@ describe('the boot reconcile on pi (P6.4)', () => {
       startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
       expect(await flushSessionLogJournal()).toBe(true)
       // The journal sent the note (as pi holds it) and the notice; nothing else.
-      expect(api.journal.flatMap((b) => b.puts.map((p) => p.message.message_id))).toEqual(['msg_kortix_restore_g1'])
+      expect(api.journal.flatMap((b) => b.puts.map((p) => p.message.blocks[0]?.id))).toEqual(['prt_kortix_restore_g1'])
       expect(api.journal[0]!.session).toMatchObject({ restore_grade: 'partial', grade_counts: { attachment: 1 } })
       const note = api.stored().threads[0]!.messages.at(-1)!
-      expect(note).toMatchObject({ message_id: 'msg_kortix_restore_g1', role: 'user', origin: 'notification', in_context: true, seq: 15 })
+      expect(note).toMatchObject({ role: 'user', origin: 'notification', in_context: true, seq: 15, blocks: [{ id: 'prt_kortix_restore_g1' }] })
       // modelView of the stored log, which now holds the note, is the next request, but for the image the box could not read.
       const expected = structuredClone(api.stored())
       const g04 = expected.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!

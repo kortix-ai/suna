@@ -232,25 +232,29 @@ root. No turn runs at either point.
   journals at the claimed generation. A 404 (no stored log) or 503 (operator
   switch off) claims nothing and restores nothing. Any other failure (5xx,
   408, 429, network, a body that does not parse, a write that throws) is
-  retried, 3 attempts, each a new claim. A manifest is retried the same way.
-  After the retries, `held()` decides: a box with a store (a current store, or
-  one a failed write left readable, such as pi's dump renamed into place) boots
-  on it at its persisted generation and logs one warning (a later 409 or 422
-  is the worst case); a box with no store (a brand-new box with a stored log, or
-  an OpenCode store a failed write cleared) fails the boot
+  retried, 3 attempts, each a new claim; then the boot fails
   (`initialRuntimeSessionError`, the proxy answers
-  `initial_runtime_session_failed`) and no journal starts. A brand-new session
-  (no store, the manifest lists no live message or answers 404) boots empty, as
-  before.
+  `initial_runtime_session_failed`) and no journal starts. The claim commits
+  before the answer leaves the API, so a box that kept its store after a failed
+  restore would post below the claimed generation (409: its journal stops for
+  the boot) and the next healthy boot would restore over that boot's turns.
+  The manifest is retried the same way, but no claim happens there: after its
+  retries a box with a store (`held()` not null) boots on it at its persisted
+  generation and logs one warning, and only a box with no store fails the
+  boot. A brand-new session (no store, the manifest lists no live message or
+  answers 404) boots empty, as before.
 - **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
   dropped model-visible content, or a text kept its preview). The agent: a
-  user message `msg_kortix_restore_g<generation>` (one text block naming what
-  is missing) after every seq the API holds,
+  user message with one text block (`prt_kortix_restore_g<generation>`, naming
+  what is missing) after every seq the API holds, under a wire id
+  (`mintWireMessageIdAbove`, backdated as a client prompt is) above every id of
+  the thread, so hosts that order placed messages by id show it after the
+  restored history and before the next turn,
   written into the native store with the log (the adapter writes twice), so
   the next request carries it. Its cursor entry is dropped, so the journal
   sends it as the store holds it: it is in modelView of the log. Neither
-  native store keeps an origin, so both exports give a message with the
-  `msg_kortix_restore_g` id prefix `origin: 'notification'`; the v1 transcript
+  native store keeps an origin, so both exports give a user message with a
+  `prt_kortix_restore_g` block `origin: 'notification'`; the v1 transcript
   has no such notion and shows it as a user message (P5.6 renders the origin).
   A partial log that already holds an earlier note gets a new note only when
   this restore dropped or truncated something itself. The user: the
