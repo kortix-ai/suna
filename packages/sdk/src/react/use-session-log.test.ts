@@ -117,6 +117,24 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(seen.at(-1)).toBe(seen[0]);
   });
 
+  test('with a v2 log a v1 row change re-renders no consumer (the v1 fallback is not computed)', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    let renders = 0;
+    const seen: Array<{ log: ReturnType<typeof useSessionLog>; root: unknown }> = [];
+    render(() => {
+      renders++;
+      seen.push({ log: useSessionLog(session), root: useSessionLogThread(session) });
+      return null;
+    });
+    expect(seen.at(-1)!.log!.source).toBe('v2');
+    const before = renders;
+    // The v1 store gets a new row set for the same runtime session (a v1 frame while v2 is read).
+    act(() => useSyncStore.getState().hydrate(RS, rows.slice(0, -1) as never));
+    expect(renders).toBe(before);
+    expect(seen.at(-1)!.log!.source).toBe('v2');
+  });
+
   test('an optimistic send shows as the thread\'s last message on v1 and on v2, until the log holds it', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<ReturnType<typeof useSessionLogThread>> = [];

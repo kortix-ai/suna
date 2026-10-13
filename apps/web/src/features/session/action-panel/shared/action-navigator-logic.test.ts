@@ -1,4 +1,4 @@
-import type { ToolPart } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import { afterAll, describe, expect, it } from 'bun:test';
 import {
   actionTimeLabel,
@@ -65,8 +65,9 @@ afterAll(() => {
   (globalThis as { document?: unknown }).document = realDocument;
 });
 
-function partAt(ms: number | undefined, key: 'start' | 'end' = 'end'): ToolPart {
-  return { state: { time: ms === undefined ? {} : { [key]: ms } } } as unknown as ToolPart;
+function partAt(ms: number | undefined, key: 'start' | 'end' = 'end'): ToolCallBlock {
+  const at = ms === undefined ? {} : { [key === 'end' ? 'ended_at' : 'started_at']: new Date(ms).toISOString() };
+  return at as unknown as ToolCallBlock;
 }
 
 describe('clampIndex', () => {
