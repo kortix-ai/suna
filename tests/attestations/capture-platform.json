@@ -1,5 +1,5 @@
 {
-  "source_hash": "c7963c188d456653e1ebc166c13914a751d7dcd19ad92502eb85e5e8b50d3a00",
+  "source_hash": "53da0c4916bee051249f15a7d15a2102d332eb7cd0ae7444f0c3372f52c6a0f9",
   "diff_files": [
     ".agents/skills/worktree/SKILL.md",
     ".agents/skills/worktree/references/capture-local-store.md",
@@ -138,11 +138,11 @@
     "packages/db/drizzle/meta/20261013122136_snapshot.json",
     "packages/db/drizzle/meta/20261013173148_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261012220000000_capture.sql",
-    "packages/db/migrations/20261012220000001_capture_permissions.sql",
-    "packages/db/migrations/20261012220000002_capture_displays.sql",
-    "packages/db/migrations/20261013200000000_capture_enrollment.sql",
-    "packages/db/migrations/20261013200000001_capture_device_first.sql",
+    "packages/db/migrations/20261013210000000_capture.sql",
+    "packages/db/migrations/20261013210000001_capture_permissions.sql",
+    "packages/db/migrations/20261013210000002_capture_displays.sql",
+    "packages/db/migrations/20261013210000003_capture_enrollment.sql",
+    "packages/db/migrations/20261013210000004_capture_device_first.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/package.json",
@@ -220,13 +220,13 @@
     "tests/src/flows/capture.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "6cbeb0647a4de23600a9dc6100fa1430c6e9ebe4859bf946cedd4be4602132db",
-  "head": "1585f513a96a9eec3563be365c54d04b16ee5935",
+  "diff_hash": "aa860de2d3145d196b161989c8276948fcbc9e9a5e4fd2dd37b12233ea80ad79",
+  "head": "40ca58c06ed233a43383b4fd6c7ad05becc573ca",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T21:48:59.538Z"
+  "at": "2026-10-13T22:04:32.283Z"
 }
