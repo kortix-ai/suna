@@ -19598,7 +19598,14 @@
       "textba3d3f6932af": "Capture をオンまたはオフにしました",
       "text10a01973feb8": "アカウントの Capture データを表示しました",
       "textab4c24c38193": "Capture をオンにしました",
-      "text6bdc49eed8c9": "Capture をオフにしました"
+      "text6bdc49eed8c9": "Capture をオフにしました",
+      "text5b68b1f32366": "登録トークンでコンピューターを登録しました",
+      "text1ca08fc86d90": "Capture の登録トークンを一覧表示しました",
+      "textf11b95b56214": "Capture の登録トークンを作成しました",
+      "textd4806967bdd6": "Capture の登録トークンを取り消しました",
+      "textb3e9170332a7": "登録待ちのコンピューターを一覧表示しました",
+      "text8258034e2578": "コンピューターの登録を承認しました",
+      "textd2bea71d87f9": "コンピューターの登録を拒否しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20808,7 +20815,9 @@
       "frames": "{seconds, number} 秒ごと · {resolution}",
       "never": "なし",
       "pausedUntil": "{time} まで",
-      "apiLink": "Kortix Capture API"
+      "apiLink": "Kortix Capture API",
+      "rollout": "展開",
+      "managedBadge": "IT 展開"
     },
     "settings": {
       "title": "組織の設定",
@@ -20887,7 +20896,8 @@
         "starting": "起動中",
         "recording": "記録中",
         "unavailable": "利用できません",
-        "captureOff": "組織でオフ"
+        "captureOff": "組織でオフ",
+        "managed": "組織が管理"
       },
       "unavailable": "このデスクトップアプリには Kortix Capture が含まれていません。Kortix を最新版に更新してください。",
       "orgOff": "{org} では Kortix Capture がオフです。オーナーまたは管理者がオンにできます。",
@@ -21001,6 +21011,14 @@
         "body": "Kortix Capture はこのコンピューターを {org} に記録しますが、macOS がまだ許可していません。アクセスを許可するまで何も記録されません。",
         "later": "後で",
         "done": "Kortix Capture が記録しています。"
+      },
+      "managed": {
+        "title": "{org} がこのコンピューターの Kortix Capture を管理しています",
+        "body": "IT が Kortix Capture を Windows サービスとしてインストールしました。Kortix を開いているかどうかに関係なく、Windows にサインインしている間は記録します。停止できるのは IT だけです。",
+        "pendingMember": "このコンピューターは組織の対応を待っています。Windows のサインインに使うメールのメンバーがいません。管理者がデバイスで承認します。",
+        "pendingApproval": "このコンピューターは、組織の管理者がデバイスで承認するのを待っています。それまでは何も記録しません。",
+        "refused": "組織はこのコンピューターを拒否しました。何も記録しません。IT チームに問い合わせてください。",
+        "otherOrg": "IT はこのコンピューターを {org} ではなく別の組織に登録しました。"
       }
     },
     "area": {
@@ -21064,6 +21082,76 @@
       "scopeAll": "あなたは capture.read_all を持っています。API はこの組織の全メンバーのデータを返します。ほかのメンバーの読み取りはすべて監査ログに記録されます。",
       "docs": "API ドキュメント",
       "done": "完了"
+    },
+    "rollout": {
+      "title": "コンピューターに展開",
+      "description": "IT は 1 つの登録トークンで多数の Windows コンピューターに Kortix Capture をインストールします。各コンピューターは Windows にサインインした人として登録されます。手動で Kortix にサインインする人はいません。",
+      "tokensTitle": "登録トークン",
+      "tokensEmpty": "登録トークンはまだありません。",
+      "guide": "IT 向けセットアップガイド",
+      "done": "完了",
+      "newTitle": "新しい登録トークン",
+      "name": "名前",
+      "namePlaceholder": "パイロット用ノート PC",
+      "domains": "メールドメイン",
+      "domainsHint": "Windows のサインインはこのいずれかを使う必要があります。空欄: すべてのメンバー。",
+      "limit": "コンピューター数の上限",
+      "limitHint": "空欄: 上限なし。",
+      "expires": "有効期限",
+      "never": "なし",
+      "days": "{days, plural, other {# 日}}",
+      "approval": "コンピューターごとに承認",
+      "approvalHint": "新しいコンピューターは、その人がメンバーでも管理者の承認を待ちます。",
+      "create": "トークンを作成",
+      "createFailed": "トークンを作成できませんでした",
+      "createdTitle": "{name}: 今すぐトークンをコピーしてください",
+      "createdBody": "Kortix がこのトークンを表示するのは一度だけです。取り消すまで、これを持つ人は誰でもこの組織にコンピューターを登録できます。",
+      "installTitle": "各 Windows コンピューターへのサイレントインストール",
+      "installBody": "管理者として実行するか、Intune またはグループポリシーで配布します。次回の Windows サインイン時にコンピューターが登録され、記録を開始します。本人には通知領域にお知らせが表示されます。",
+      "usage": "{count, plural, other {# 台のコンピューター}}",
+      "usageOf": "{max} 台中 {count} 台",
+      "expired": "期限切れ {time}",
+      "expiresIn": "有効期限 {time}",
+      "noExpiry": "期限なし",
+      "state": {
+        "active": "有効",
+        "revoked": "取り消し済み",
+        "expired": "期限切れ"
+      },
+      "approvalBadge": "個別承認",
+      "anyDomain": "すべてのドメイン",
+      "revoke": "取り消す",
+      "revokeTitle": "{name} を取り消しますか?",
+      "revokeBody": "新しいコンピューターはこのトークンで登録できなくなります。登録済みのコンピューターは記録を続けます。デバイスで取り消してください。",
+      "revoked": "トークンを取り消しました",
+      "revokeFailed": "トークンを取り消せませんでした",
+      "copy": "コピー",
+      "waitingTitle": "承認待ち",
+      "waitingBody": "これらのコンピューターは有効な登録トークンを持っています。メンバーに割り当てて承認するまで何も記録しません。",
+      "col": {
+        "person": "Windows のユーザー",
+        "computer": "コンピューター",
+        "reason": "待機理由",
+        "lastSeen": "最終確認",
+        "actions": "操作"
+      },
+      "unnamed": "名前のないコンピューター",
+      "reason": {
+        "no_member": "このメールのメンバーはいません。メンバーに割り当てて承認するか、先にその人を招待してください。",
+        "approval_required": "トークンがコンピューターごとの承認を求めているか、管理者がこのコンピューターを取り消しました。"
+      },
+      "deny": "拒否",
+      "approve": "承認",
+      "denyTitle": "このコンピューターの {person} を拒否しますか?",
+      "denyBody": "コンピューターは問い合わせをやめ、何も記録しません。すでに記録している場合、そのデバイスは直ちに取り消されます。",
+      "denied": "コンピューターを拒否しました",
+      "decideFailed": "決定を保存できませんでした",
+      "approveTitle": "このコンピューターを承認",
+      "approveBody": "{computer} は選択したメンバーとして {person} を記録します。1 分以内に開始します。",
+      "member": "メンバー",
+      "memberPlaceholder": "メンバーを選択",
+      "cancel": "キャンセル",
+      "approved": "承認しました。コンピューターは 1 分以内に登録されます。"
     }
   }
 }

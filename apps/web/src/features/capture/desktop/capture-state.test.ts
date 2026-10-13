@@ -109,3 +109,20 @@ test('missingGrants: Input Monitoring only with Actions on, allowed by the polic
 test('activeLayers: on here and allowed by the policy', () => {
   expect(activeLayers(recording)).toEqual(['screen']);
 });
+
+describe('capturePhase on a computer IT manages (the Kortix Capture Windows service)', () => {
+  const managed: DesktopCaptureStatus = { ...recording, managed: { enrollment: 'enrolled', reason: null } };
+  test('enrolled: the recorder’s own state, never `off` for want of the person’s switch', () => {
+    expect(phase(managed)).toBe('recording');
+    expect(phase({ ...managed, on: false })).toBe('recording');
+    expect(phase({ ...managed, state: 'paused' })).toBe('paused');
+  });
+  test('waiting for the organization, refused, or recording into another account: `managed`', () => {
+    expect(phase({ ...managed, managed: { enrollment: 'pending', reason: 'no_member' } })).toBe('managed');
+    expect(phase({ ...managed, managed: { enrollment: 'refused', reason: 'enrollment_denied' } })).toBe('managed');
+    expect(phase({ ...managed, accountId: 'another' })).toBe('managed');
+  });
+  test('Capture off for the account still wins', () => {
+    expect(phase(managed, { captureOn: false })).toBe('captureOff');
+  });
+});

@@ -19598,7 +19598,14 @@
       "textba3d3f6932af": "开启或关闭了 Capture",
       "text10a01973feb8": "查看了某个账户的 Capture 数据",
       "textab4c24c38193": "开启了 Capture",
-      "text6bdc49eed8c9": "关闭了 Capture"
+      "text6bdc49eed8c9": "关闭了 Capture",
+      "text5b68b1f32366": "使用注册令牌注册了一台电脑",
+      "text1ca08fc86d90": "列出了 Capture 注册令牌",
+      "textf11b95b56214": "创建了 Capture 注册令牌",
+      "textd4806967bdd6": "撤销了 Capture 注册令牌",
+      "textb3e9170332a7": "列出了等待注册的电脑",
+      "text8258034e2578": "批准了一台电脑的注册",
+      "textd2bea71d87f9": "拒绝了一台电脑的注册"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20808,7 +20815,9 @@
       "frames": "每 {seconds, number} 秒 · {resolution}",
       "never": "从未",
       "pausedUntil": "至 {time}",
-      "apiLink": "Kortix Capture API"
+      "apiLink": "Kortix Capture API",
+      "rollout": "批量部署",
+      "managedBadge": "IT 部署"
     },
     "settings": {
       "title": "组织设置",
@@ -20887,7 +20896,8 @@
         "starting": "正在启动",
         "recording": "正在记录",
         "unavailable": "不可用",
-        "captureOff": "你的组织已关闭"
+        "captureOff": "你的组织已关闭",
+        "managed": "由你的组织管理"
       },
       "unavailable": "此桌面应用不包含 Kortix Capture。请将 Kortix 更新到最新版本。",
       "orgOff": "{org} 的 Kortix Capture 已关闭。所有者或管理员可以开启它。",
@@ -21001,6 +21011,14 @@
         "body": "Kortix Capture 会将这台电脑录制到 {org}，但 macOS 尚未允许。在你允许访问之前不会录制任何内容。",
         "later": "稍后",
         "done": "Kortix Capture 正在录制。"
+      },
+      "managed": {
+        "title": "{org} 管理此电脑上的 Kortix Capture",
+        "body": "IT 已将 Kortix Capture 安装为 Windows 服务。只要你登录了 Windows，无论 Kortix 是否打开，它都会录制。只有 IT 能停止它。",
+        "pendingMember": "此电脑正在等待你的组织：没有成员使用你登录 Windows 的邮箱。管理员会在设备中批准它。",
+        "pendingApproval": "此电脑正在等待你组织的管理员在设备中批准。在此之前，它不会录制任何内容。",
+        "refused": "你的组织拒绝了此电脑。它不会录制任何内容。请联系你的 IT 团队。",
+        "otherOrg": "IT 已将此电脑注册到另一个组织，而不是 {org}。"
       }
     },
     "area": {
@@ -21064,6 +21082,76 @@
       "scopeAll": "你拥有 capture.read_all：API 会返回此组织的所有成员。每次读取其他成员的内容都会记入审计日志。",
       "docs": "API 文档",
       "done": "完成"
+    },
+    "rollout": {
+      "title": "部署到电脑",
+      "description": "IT 使用一个注册令牌在多台 Windows 电脑上安装 Kortix Capture。每台电脑以登录 Windows 的人员身份注册。无需任何人手动登录 Kortix。",
+      "tokensTitle": "注册令牌",
+      "tokensEmpty": "还没有注册令牌。",
+      "guide": "IT 设置指南",
+      "done": "完成",
+      "newTitle": "新建注册令牌",
+      "name": "名称",
+      "namePlaceholder": "试点笔记本",
+      "domains": "邮箱域名",
+      "domainsHint": "Windows 登录必须使用其中之一。留空：任何成员。",
+      "limit": "电脑数量上限",
+      "limitHint": "留空：不限。",
+      "expires": "有效期",
+      "never": "永不",
+      "days": "{days, plural, other {# 天}}",
+      "approval": "逐台批准电脑",
+      "approvalHint": "每台新电脑都要等待管理员批准，即使其人员已是成员。",
+      "create": "创建令牌",
+      "createFailed": "无法创建令牌",
+      "createdTitle": "{name}：请立即复制令牌",
+      "createdBody": "Kortix 只显示此令牌一次。在你撤销之前，持有它的任何人都可以将电脑注册到此组织。",
+      "installTitle": "在每台 Windows 电脑上静默安装",
+      "installBody": "以管理员身份运行，或通过 Intune 或组策略分发。下次登录 Windows 时，电脑会注册并开始录制。该人员会在通知区域看到提示。",
+      "usage": "{count, plural, other {# 台电脑}}",
+      "usageOf": "{count} / {max} 台电脑",
+      "expired": "已于 {time}过期",
+      "expiresIn": "{time}过期",
+      "noExpiry": "永不过期",
+      "state": {
+        "active": "有效",
+        "revoked": "已撤销",
+        "expired": "已过期"
+      },
+      "approvalBadge": "逐台批准",
+      "anyDomain": "任何域名",
+      "revoke": "撤销",
+      "revokeTitle": "撤销 {name}？",
+      "revokeBody": "新电脑将无法再用它注册。已注册的电脑会继续录制；请在设备中撤销它们。",
+      "revoked": "令牌已撤销",
+      "revokeFailed": "无法撤销令牌",
+      "copy": "复制",
+      "waitingTitle": "等待批准",
+      "waitingBody": "这些电脑持有有效的注册令牌。在你将其批准给某位成员之前，它们不会录制任何内容。",
+      "col": {
+        "person": "Windows 用户",
+        "computer": "电脑",
+        "reason": "等待原因",
+        "lastSeen": "最后出现",
+        "actions": "操作"
+      },
+      "unnamed": "未命名的电脑",
+      "reason": {
+        "no_member": "没有成员使用此邮箱。请将其批准给某位成员，或先邀请此人。",
+        "approval_required": "该令牌要求逐台批准电脑，或管理员已撤销这台电脑。"
+      },
+      "deny": "拒绝",
+      "approve": "批准",
+      "denyTitle": "拒绝此电脑上的 {person}？",
+      "denyBody": "这台电脑将不再请求，也不会录制任何内容。若已在录制，其设备会立即被撤销。",
+      "denied": "已拒绝电脑",
+      "decideFailed": "无法保存决定",
+      "approveTitle": "批准这台电脑",
+      "approveBody": "{computer} 将以你选择的成员身份录制 {person}。一分钟内开始。",
+      "member": "成员",
+      "memberPlaceholder": "选择成员",
+      "cancel": "取消",
+      "approved": "已批准。电脑将在一分钟内完成注册。"
     }
   }
 }

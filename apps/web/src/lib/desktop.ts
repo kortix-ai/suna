@@ -437,6 +437,13 @@ export interface DesktopCaptureStatus {
   permissions?:
     | (Record<'screen' | 'accessibility' | 'microphone', boolean> & { inputMonitoring?: boolean })
     | null;
+  /**
+   * Set when IT installed Kortix Capture as a Windows service on this computer:
+   * it records whoever signs in to Windows, the app only shows it. `pending`
+   * waits for the organization (`reason`: `no_member`, `approval_required`);
+   * `refused` names the refusal code (`enrollment_denied`, …).
+   */
+  managed?: { enrollment: 'enrolled' | 'pending' | 'refused'; reason: string | null } | null;
 }
 
 export interface DesktopCaptureSignIn {

@@ -19,7 +19,8 @@ export type CapturePhase =
   | 'locked' // on; the screen is locked, recording resumes on unlock
   | 'excluded' // on; an excluded app, website or private window is in front
   | 'starting' // on, the recorder has not reported yet
-  | 'recording';
+  | 'recording'
+  | 'managed'; // IT manages this computer, and it does not record into this account (yet)
 
 const EXCLUDED_REASONS = new Set([
   'excluded_app',
@@ -75,10 +76,12 @@ export function capturePhase(
   if (!captureOn) return 'captureOff';
   if (turningOn) return 'turningOn';
   const here = !!accountId && view.accountId === accountId;
+  // IT's service records whoever signs in to Windows: no switch, no sign-in here.
+  if (view.managed && (view.managed.enrollment !== 'enrolled' || !here)) return 'managed';
   if (view.signInRequired && here) return 'signInRequired';
   if (failed) return 'error';
   // `stopped`: the service was stopped outside the app; Record starts it again.
-  if (!view.signedIn || !here || !view.on || view.state === 'stopped') return 'off';
+  if (!view.managed && (!view.signedIn || !here || !view.on || view.state === 'stopped')) return 'off';
   if (view.state === 'crashed') return 'error';
   // A lock or an excluded app in front stops recording without anyone pausing it (the engine's reason).
   const stopped = view.state === 'paused' || view.state === 'not_recording';

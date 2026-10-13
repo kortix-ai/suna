@@ -19598,7 +19598,14 @@
       "textba3d3f6932af": "Capture ein- oder ausgeschaltet",
       "text10a01973feb8": "Capture-Daten eines Kontos angesehen",
       "textab4c24c38193": "Capture eingeschaltet",
-      "text6bdc49eed8c9": "Capture ausgeschaltet"
+      "text6bdc49eed8c9": "Capture ausgeschaltet",
+      "text5b68b1f32366": "Hat einen Computer mit einem Registrierungstoken registriert",
+      "text1ca08fc86d90": "Hat die Capture-Registrierungstokens aufgelistet",
+      "textf11b95b56214": "Hat ein Capture-Registrierungstoken erstellt",
+      "textd4806967bdd6": "Hat ein Capture-Registrierungstoken widerrufen",
+      "textb3e9170332a7": "Hat die wartenden Computer aufgelistet",
+      "text8258034e2578": "Hat einen Computer zur Registrierung freigegeben",
+      "textd2bea71d87f9": "Hat die Registrierung eines Computers abgelehnt"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20808,7 +20815,9 @@
       "frames": "Alle {seconds, number} s · {resolution}",
       "never": "Nie",
       "pausedUntil": "bis {time}",
-      "apiLink": "Kortix Capture API"
+      "apiLink": "Kortix Capture API",
+      "rollout": "Ausrollen",
+      "managedBadge": "IT-Rollout"
     },
     "settings": {
       "title": "Organisationseinstellungen",
@@ -20887,7 +20896,8 @@
         "starting": "Startet",
         "recording": "Nimmt auf",
         "unavailable": "Nicht verfügbar",
-        "captureOff": "Für deine Organisation aus"
+        "captureOff": "Für deine Organisation aus",
+        "managed": "Von deiner Organisation verwaltet"
       },
       "unavailable": "Diese Desktop-App enthält kein Kortix Capture. Aktualisiere Kortix auf die neueste Version.",
       "orgOff": "Kortix Capture ist für {org} aus. Ein Owner oder Admin kann es einschalten.",
@@ -21001,6 +21011,14 @@
         "body": "Kortix Capture zeichnet diesen Computer in {org} auf, aber macOS hat es noch nicht erlaubt. Bis du den Zugriff erlaubst, wird nichts aufgezeichnet.",
         "later": "Später",
         "done": "Kortix Capture zeichnet auf."
+      },
+      "managed": {
+        "title": "{org} verwaltet Kortix Capture auf diesem Computer",
+        "body": "Die IT hat Kortix Capture als Windows-Dienst installiert. Er nimmt auf, solange du bei Windows angemeldet bist, ob Kortix geöffnet ist oder nicht. Nur die IT kann ihn beenden.",
+        "pendingMember": "Dieser Computer wartet auf deine Organisation: Kein Mitglied hat die E-Mail, mit der du dich bei Windows anmeldest. Ein Admin gibt ihn unter Geräte frei.",
+        "pendingApproval": "Dieser Computer wartet darauf, dass ein Admin deiner Organisation ihn unter Geräte freigibt. Bis dahin nimmt er nichts auf.",
+        "refused": "Deine Organisation hat diesen Computer abgelehnt. Er nimmt nichts auf. Wende dich an dein IT-Team.",
+        "otherOrg": "Die IT hat diesen Computer in einer anderen Organisation registriert, nicht in {org}."
       }
     },
     "area": {
@@ -21064,6 +21082,76 @@
       "scopeAll": "Du hast capture.read_all: Die API liefert alle Mitglieder dieser Organisation. Jeder Zugriff auf ein anderes Mitglied landet im Audit-Log.",
       "docs": "API-Dokumentation",
       "done": "Fertig"
+    },
+    "rollout": {
+      "title": "Auf Computer ausrollen",
+      "description": "Die IT installiert Kortix Capture mit einem Registrierungstoken auf vielen Windows-Computern. Jeder Computer registriert sich als die Person, die sich bei Windows anmeldet. Niemand meldet sich von Hand bei Kortix an.",
+      "tokensTitle": "Registrierungstokens",
+      "tokensEmpty": "Noch kein Registrierungstoken.",
+      "guide": "Einrichtungsanleitung für die IT",
+      "done": "Fertig",
+      "newTitle": "Neues Registrierungstoken",
+      "name": "Name",
+      "namePlaceholder": "Pilot-Laptops",
+      "domains": "E-Mail-Domains",
+      "domainsHint": "Die Windows-Anmeldung muss eine davon nutzen. Leer: jedes Mitglied.",
+      "limit": "Computer-Limit",
+      "limitHint": "Leer: kein Limit.",
+      "expires": "Läuft ab",
+      "never": "Nie",
+      "days": "{days, plural, one {# Tag} other {# Tage}}",
+      "approval": "Jeden Computer freigeben",
+      "approvalHint": "Jeder neue Computer wartet auf einen Admin, auch wenn seine Person Mitglied ist.",
+      "create": "Token erstellen",
+      "createFailed": "Das Token konnte nicht erstellt werden",
+      "createdTitle": "{name}: Kopiere das Token jetzt",
+      "createdBody": "Kortix zeigt dieses Token nur einmal. Wer es hat, kann Computer in diese Organisation registrieren, bis du es widerrufst.",
+      "installTitle": "Stille Installation auf jedem Windows-Computer",
+      "installBody": "Führe es als Administrator aus oder verteile es mit Intune oder einer Gruppenrichtlinie. Bei der nächsten Windows-Anmeldung registriert sich der Computer und beginnt mit der Aufnahme. Die Person sieht einen Hinweis im Infobereich.",
+      "usage": "{count, plural, one {# Computer} other {# Computer}}",
+      "usageOf": "{count} von {max} Computern",
+      "expired": "Abgelaufen {time}",
+      "expiresIn": "Läuft ab {time}",
+      "noExpiry": "Läuft nie ab",
+      "state": {
+        "active": "Aktiv",
+        "revoked": "Widerrufen",
+        "expired": "Abgelaufen"
+      },
+      "approvalBadge": "Einzeln freigeben",
+      "anyDomain": "Jede Domain",
+      "revoke": "Widerrufen",
+      "revokeTitle": "{name} widerrufen?",
+      "revokeBody": "Neue Computer können sich damit nicht mehr registrieren. Bereits registrierte Computer nehmen weiter auf; widerrufe sie unter Geräte.",
+      "revoked": "Token widerrufen",
+      "revokeFailed": "Das Token konnte nicht widerrufen werden",
+      "copy": "Kopieren",
+      "waitingTitle": "Warten auf Freigabe",
+      "waitingBody": "Diese Computer haben ein gültiges Registrierungstoken. Sie nehmen nichts auf, bis du sie einem Mitglied zuordnest.",
+      "col": {
+        "person": "Windows-Person",
+        "computer": "Computer",
+        "reason": "Warum er wartet",
+        "lastSeen": "Zuletzt gesehen",
+        "actions": "Aktionen"
+      },
+      "unnamed": "Unbenannter Computer",
+      "reason": {
+        "no_member": "Kein Mitglied hat diese E-Mail. Ordne ihn einem Mitglied zu oder lade die Person zuerst ein.",
+        "approval_required": "Das Token verlangt eine Freigabe für jeden Computer, oder ein Admin hat diesen widerrufen."
+      },
+      "deny": "Ablehnen",
+      "approve": "Freigeben",
+      "denyTitle": "{person} auf diesem Computer ablehnen?",
+      "denyBody": "Der Computer fragt nicht mehr und nimmt nichts auf. Nimmt er bereits auf, wird sein Gerät sofort widerrufen.",
+      "denied": "Computer abgelehnt",
+      "decideFailed": "Die Entscheidung konnte nicht gespeichert werden",
+      "approveTitle": "Diesen Computer freigeben",
+      "approveBody": "{computer} nimmt {person} als das gewählte Mitglied auf. Die Aufnahme beginnt innerhalb einer Minute.",
+      "member": "Mitglied",
+      "memberPlaceholder": "Mitglied wählen",
+      "cancel": "Abbrechen",
+      "approved": "Freigegeben. Der Computer registriert sich innerhalb einer Minute."
     }
   }
 }

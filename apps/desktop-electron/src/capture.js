@@ -337,6 +337,40 @@ function serviceAction({ desktopOn, signedIn, signInRequired, service, explicit 
   return null;
 }
 
+/* ─── A computer IT manages ────────────────────────────────────────────── */
+
+/**
+ * IT's install (the KortixCapture MSI): a Windows service runs as SYSTEM and
+ * starts the engine in every signed-in session, enrolled with the
+ * organization's token. On such a computer this app never installs its own
+ * service or signs in: it shows what IT's engine records. `sc query` works for
+ * any user; the registry policy key is readable by administrators only.
+ */
+function managedEnginePath(env = process.env) {
+  return path.win32.join(env.ProgramFiles || 'C:\\Program Files', 'Kortix', 'Capture', 'kortix-capture.exe');
+}
+
+/** IT's engine when this computer is managed, else null. `run(program, args)` answers the exit code. */
+function managedInstall({ platform = process.platform, env = process.env, exists = fs.existsSync, run }) {
+  if (platform !== 'win32') return null;
+  const file = managedEnginePath(env);
+  if (!exists(file)) return null;
+  return run('sc', ['query', 'KortixCapture']) === 0 ? file : null;
+}
+
+/** IT's engine reads the person's default library: none of this app's library or config. */
+function managedEnv(base = process.env) {
+  const { KORTIX_CAPTURE_DIR: _dir, KORTIX_CONFIG: _config, ...env } = base;
+  return env;
+}
+
+/** `{ enrollment, reason }` from the engine's `sync status` (`managed`); waiting until it reports one. */
+function managedEnrollment(sync) {
+  const managed = sync?.managed;
+  const enrollment = ['enrolled', 'pending', 'refused'].includes(managed?.enrollment) ? managed.enrollment : 'pending';
+  return { enrollment, reason: typeof managed?.reason === 'string' ? managed.reason : null };
+}
+
 /* ─── Status ───────────────────────────────────────────────────────────── */
 
 const PERMISSION_KEYS = ['screen', 'accessibility', 'microphone', 'input_monitoring'];
@@ -366,7 +400,7 @@ function policyOf(sync) {
  * The `capture_status` answer, from the engine's `status`, `sync status` and
  * `permissions` JSON plus this app's choices and its children.
  */
-function captureStatusFrom({ available, error, desktop, status, sync, permissions, children, serviceStopped = false }) {
+function captureStatusFrom({ available, error, desktop, status, sync, permissions, children, serviceStopped = false, managed = false }) {
   if (!available) return { available: false, error: error || 'Kortix Capture is not part of this build.' };
   const kortix = sync?.kortix || {};
   const signedIn = kortix.signed_in === true;
@@ -374,7 +408,9 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
   const policy = policyOf(sync);
   const recorder = children?.recorder || {};
   let state;
-  if (signInRequired) state = 'signInRequired';
+  // IT's Windows service owns the recorder: its state is the engine's, with no switch or service of this app.
+  if (managed) state = !signedIn ? 'signedOut' : !status?.recorder_running ? 'starting' : status.state || 'starting';
+  else if (signInRequired) state = 'signInRequired';
   else if (!signedIn) state = 'signedOut';
   else if (!desktop.on) state = 'off';
   else if (serviceStopped) state = 'stopped';
@@ -385,7 +421,8 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
   else state = status.state || 'starting';
   return {
     available: true,
-    on: desktop.on,
+    on: managed || desktop.on,
+    ...(managed ? { managed: managedEnrollment(sync) } : {}),
     signedIn,
     signInRequired,
     accountId: accountFromPrefix(kortix.prefix),
@@ -548,6 +585,8 @@ const PERMISSION_PANES = {
 
 module.exports = {
   backendFromRuntimeConfig,
+  managedEnv,
+  managedInstall,
   bundleIdOf,
   removeLegacyService,
   sha8,

@@ -2,7 +2,7 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
-import { CodeIcon, DesktopIcon, LaptopIcon, PlusIcon } from '@phosphor-icons/react';
+import { BuildingsIcon, CodeIcon, DesktopIcon, LaptopIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { Fragment, useMemo, useState } from 'react';
 
@@ -43,6 +43,7 @@ import {
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
 import { deviceStatus, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, StatusLabel } from './device-status-ui';
+import { RolloutModal, WaitingComputers } from './rollout';
 
 type Scope = 'account' | 'mine';
 type Filter = 'all' | 'recording' | 'paused' | 'permission' | 'offline';
@@ -94,6 +95,7 @@ export function DevicesView({ accountId }: { accountId: string }) {
   );
   const onDesktop = isDesktop();
   const [apiOpen, setApiOpen] = useState(false);
+  const [rolloutOpen, setRolloutOpen] = useState(false);
 
   return (
     <CapturePage
@@ -112,6 +114,18 @@ export function DevicesView({ accountId }: { accountId: string }) {
             <CodeIcon className="size-3.5 shrink-0" />
             {t('apiLink')}
           </Button>
+          {/* IT installs Capture on many computers at once with an enrollment token. */}
+          {area.canManage ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setRolloutOpen(true)}
+            >
+              <BuildingsIcon className="size-3.5 shrink-0" />
+              {t('rollout')}
+            </Button>
+          ) : null}
           {/* One way to add a computer: in the desktop app, record this one; in a browser, get the app. */}
           <Button asChild size="sm" className="gap-1.5">
             {onDesktop ? (
@@ -154,6 +168,8 @@ export function DevicesView({ accountId }: { accountId: string }) {
           ) : null}
         </div>
       ) : null}
+
+      {area.canManage ? <WaitingComputers accountId={accountId} /> : null}
 
       {query.isLoading ? (
         <div className="space-y-2" aria-busy>
@@ -205,6 +221,9 @@ export function DevicesView({ accountId }: { accountId: string }) {
         accountId={accountId}
         own={!area.readsEveryone}
       />
+      {area.canManage ? (
+        <RolloutModal open={rolloutOpen} onOpenChange={setRolloutOpen} accountId={accountId} />
+      ) : null}
     </CapturePage>
   );
 }
@@ -336,6 +355,11 @@ function DeviceRow({
           {isThisComputer ? (
             <Badge variant="outline" size="xs">
               {t('thisComputerBadge')}
+            </Badge>
+          ) : null}
+          {device.enrollment_token_id ? (
+            <Badge variant="outline" size="xs">
+              {t('managedBadge')}
             </Badge>
           ) : null}
         </Link>

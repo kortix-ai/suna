@@ -40,7 +40,9 @@ From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.
 ## Record on your computer
 
 Each member turns recording on for their own computer. Capture never starts on
-a computer by itself.
+a computer by itself, except where IT installed it for the organization: see
+[Capture IT rollout](/docs/capture-rollout). On such a computer the desktop
+app shows **Managed by your organization** and has no switch.
 
 1. Install the Kortix desktop app, or the standalone `kortix-capture` engine.
 2. In the desktop app, open **Capture → This computer** and turn recording on.
@@ -133,6 +135,8 @@ or, where the route takes it, `scope=account` for every member (audited as
 |---|---|
 | `GET /` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` |
 | `PATCH /` `{ "enabled": true }` | the same; needs `capture.manage` |
+| `GET enrollment-tokens` · `POST enrollment-tokens` · `DELETE enrollment-tokens/<token_id>` | the IT rollout tokens; needs `capture.manage` (see [Capture IT rollout](/docs/capture-rollout)) |
+| `GET enrollments?status=pending` · `POST enrollments/<id>/approve` `{ "user_id" }` · `POST enrollments/<id>/deny` | computers that wait for a decision; needs `capture.manage` |
 | `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence |
 | `DELETE devices/<device_id>` | revokes the device: its token stops working at once |
 | `GET devices/<device_id>/assets/<name>` | a signed URL of one action screenshot (5 minutes) |

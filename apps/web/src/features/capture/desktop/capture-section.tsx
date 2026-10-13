@@ -2,6 +2,7 @@
 
 import { CAPTURE_LAYERS } from '@kortix/sdk';
 import {
+  BuildingsIcon,
   CursorClickIcon,
   DotsThreeIcon,
   MicrophoneIcon,
@@ -59,6 +60,7 @@ const TONES: Partial<Record<CapturePhase, StatusTone>> = {
   signInRequired: 'warning',
   paused: 'warning',
   error: 'destructive',
+  managed: 'warning',
 };
 
 /**
@@ -173,20 +175,23 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
           </Link>
         </Button>
       ) : null}
-      <PrimaryAction
-        phase={phase}
-        pausedByOrg={Boolean(view.policy?.paused)}
-        busy={actions.pause.isPending || actions.resume.isPending}
-        onStart={turnOn}
-        onPause={() =>
-          actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })
-        }
-        onResume={() =>
-          actions.resume.mutate(undefined, { onSuccess: () => successToast(t('toast.resumed')) })
-        }
-      />
-      {view.signedIn || view.signInRequired ? (
+      {view.managed ? null : (
+        <PrimaryAction
+          phase={phase}
+          pausedByOrg={Boolean(view.policy?.paused)}
+          busy={actions.pause.isPending || actions.resume.isPending}
+          onStart={turnOn}
+          onPause={() =>
+            actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })
+          }
+          onResume={() =>
+            actions.resume.mutate(undefined, { onSuccess: () => successToast(t('toast.resumed')) })
+          }
+        />
+      )}
+      {view.signedIn || view.signInRequired || view.managed ? (
         <MoreMenu
+          managed={Boolean(view.managed)}
           canStop={on}
           onStop={() =>
             actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })
@@ -205,6 +210,25 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
           <TabsTrigger value="exclusions">{t('tabs.exclusions')}</TabsTrigger>
         </TabsList>
         <TabsContent value="recording" className="space-y-6 pt-4">
+          {view.managed ? (
+            <InfoBanner
+              tone={phase === 'managed' ? 'warning' : 'neutral'}
+              icon={BuildingsIcon}
+              title={t('managed.title', { org: org.name })}
+            >
+              {view.managed.enrollment === 'pending'
+                ? t(
+                    view.managed.reason === 'approval_required'
+                      ? 'managed.pendingApproval'
+                      : 'managed.pendingMember',
+                  )
+                : view.managed.enrollment === 'refused'
+                  ? t('managed.refused')
+                  : view.accountId !== accountId
+                    ? t('managed.otherOrg', { org: org.name })
+                    : t('managed.body')}
+            </InfoBanner>
+          ) : null}
           {phase === 'signInRequired' ? (
             <InfoBanner tone="warning" icon={WarningIcon} title={t('signInRequired.title')}>
               {t('signInRequired.hint')}
@@ -230,7 +254,7 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
             </p>
           ) : on && recording.length === 0 ? (
             <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
-          ) : !on ? (
+          ) : !on && !view.managed ? (
             <p className="text-muted-foreground text-sm text-pretty">
               {phase === 'off' && view.signedIn && view.accountId !== accountId
                 ? t('otherOrg', { org: org.name })
@@ -419,10 +443,13 @@ function PrimaryAction({
 }
 
 function MoreMenu({
+  managed,
   canStop,
   onStop,
   onSignOut,
 }: {
+  /** IT manages this computer: only the logs; stopping and signing out are IT's. */
+  managed: boolean;
   canStop: boolean;
   onStop: () => void;
   onSignOut: () => void;
@@ -443,13 +470,17 @@ function MoreMenu({
         >
           {t('actions.showLogs')}
         </DropdownMenuItem>
-        {canStop ? (
+        {canStop && !managed ? (
           <DropdownMenuItem onSelect={onStop}>{t('actions.stop')}</DropdownMenuItem>
         ) : null}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={onSignOut}>
-          {t('actions.signOut')}
-        </DropdownMenuItem>
+        {managed ? null : (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={onSignOut}>
+              {t('actions.signOut')}
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

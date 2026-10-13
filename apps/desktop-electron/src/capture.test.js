@@ -424,3 +424,48 @@ test('Capture shares no module with the computer agent', () => {
     expect(source).not.toMatch(/require\(['"]\.\/computer(-tray)?['"]\)|agent-tunnel\/src/);
   }
 });
+
+describe('a computer IT manages (the Kortix Capture Windows service)', () => {
+  const env = { ProgramFiles: 'C:\\Program Files' };
+  const engine = 'C:\\Program Files\\Kortix\\Capture\\kortix-capture.exe';
+
+  test('managed only on Windows, with IT’s engine on disk and the KortixCapture service installed', () => {
+    const calls = [];
+    const run = (program, args) => {
+      calls.push([program, ...args].join(' '));
+      return 0;
+    };
+    expect(capture.managedInstall({ platform: 'win32', env, exists: (file) => file === engine, run })).toBe(engine);
+    expect(calls).toEqual(['sc query KortixCapture']);
+    expect(capture.managedInstall({ platform: 'win32', env, exists: () => true, run: () => 1060 })).toBeNull();
+    expect(capture.managedInstall({ platform: 'win32', env, exists: () => false, run })).toBeNull();
+    expect(capture.managedInstall({ platform: 'darwin', env, exists: () => true, run })).toBeNull();
+  });
+
+  test('the engine’s library runs without this app’s library or config', () => {
+    const out = capture.managedEnv({ KORTIX_CAPTURE_DIR: 'x', KORTIX_CONFIG: 'y', PATH: 'p' });
+    expect(out).toEqual({ PATH: 'p' });
+  });
+
+  test('status: always on, no switch; the enrollment comes from the engine', () => {
+    const sync = { kortix: { signed_in: true, prefix: `orgs/${UUID}`, device_id: 'd1' }, managed: { enrollment: 'enrolled' } };
+    const status = { state: 'recording', recorder_running: true };
+    const view = capture.captureStatusFrom({ available: true, managed: true, desktop: { on: false }, status, sync, permissions: null, children: { recorder: { running: true } } });
+    expect(view).toMatchObject({ available: true, on: true, signedIn: true, accountId: UUID, state: 'recording', managed: { enrollment: 'enrolled', reason: null } });
+    const waiting = capture.captureStatusFrom({
+      available: true,
+      managed: true,
+      desktop: { on: false },
+      status: { state: 'not_recording' },
+      sync: { kortix: { signed_in: false }, managed: { enrollment: 'pending', reason: 'no_member' } },
+      permissions: null,
+      children: {},
+    });
+    expect(waiting.managed).toEqual({ enrollment: 'pending', reason: 'no_member' });
+    // An engine that reports no enrollment yet: still managed, and waiting.
+    const unknown = capture.captureStatusFrom({ available: true, managed: true, desktop: { on: false }, status: null, sync: null, permissions: null, children: {} });
+    expect(unknown.managed).toEqual({ enrollment: 'pending', reason: null });
+    // Unmanaged installs carry no `managed` field.
+    expect('managed' in capture.captureStatusFrom({ available: true, desktop: { on: true }, status, sync: { kortix: {} }, permissions: null, children: {} })).toBe(false);
+  });
+});

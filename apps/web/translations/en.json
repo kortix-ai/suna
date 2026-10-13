@@ -19609,7 +19609,14 @@
       "textba3d3f6932af": "Turned Capture on or off",
       "text10a01973feb8": "Viewed the capture data of an account",
       "textab4c24c38193": "Turned Capture on",
-      "text6bdc49eed8c9": "Turned Capture off"
+      "text6bdc49eed8c9": "Turned Capture off",
+      "text5b68b1f32366": "Enrolled a computer with an enrollment token",
+      "text1ca08fc86d90": "Listed capture enrollment tokens",
+      "textf11b95b56214": "Created a capture enrollment token",
+      "textd4806967bdd6": "Revoked a capture enrollment token",
+      "textb3e9170332a7": "Listed computers waiting to enroll",
+      "text8258034e2578": "Approved a computer to enroll",
+      "textd2bea71d87f9": "Denied a computer from enrolling"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20808,7 +20815,9 @@
       "frames": "Every {seconds, number} s · {resolution}",
       "never": "Never",
       "pausedUntil": "until {time}",
-      "apiLink": "Kortix Capture API"
+      "apiLink": "Kortix Capture API",
+      "rollout": "Roll out",
+      "managedBadge": "IT rollout"
     },
     "settings": {
       "title": "Organization settings",
@@ -20887,7 +20896,8 @@
         "starting": "Starting",
         "recording": "Recording",
         "unavailable": "Not available",
-        "captureOff": "Off for your organization"
+        "captureOff": "Off for your organization",
+        "managed": "Managed by your organization"
       },
       "unavailable": "This desktop app has no Kortix Capture. Update Kortix to the newest version.",
       "orgOff": "Kortix Capture is off for {org}. An owner or admin can turn it on.",
@@ -21001,6 +21011,14 @@
         "body": "Kortix Capture records this computer into {org}, but macOS has not allowed it yet. Nothing is recorded until you allow access.",
         "later": "Later",
         "done": "Kortix Capture is recording."
+      },
+      "managed": {
+        "title": "{org} manages Kortix Capture on this computer",
+        "body": "IT installed Kortix Capture as a Windows service. It records while you are signed in to Windows, whether Kortix is open or not. Only IT can stop it.",
+        "pendingMember": "This computer waits for your organization: no member has the email you sign in to Windows with. An admin approves it in Devices.",
+        "pendingApproval": "This computer waits for an admin of your organization to approve it in Devices. It records nothing until then.",
+        "refused": "Your organization refused this computer. It records nothing. Ask your IT team.",
+        "otherOrg": "IT enrolled this computer into another organization, not {org}."
       }
     },
     "area": {
@@ -21064,6 +21082,76 @@
       "scopeAll": "You have capture.read_all: the API returns every member of this organization. Every read of another member goes into the audit log.",
       "docs": "API docs",
       "done": "Done"
+    },
+    "rollout": {
+      "title": "Roll out to computers",
+      "description": "IT installs Kortix Capture on many Windows computers with one enrollment token. Each computer enrolls as the person who signs in to Windows. Nobody signs in to Kortix by hand.",
+      "tokensTitle": "Enrollment tokens",
+      "tokensEmpty": "No enrollment token yet.",
+      "guide": "IT setup guide",
+      "done": "Done",
+      "newTitle": "New enrollment token",
+      "name": "Name",
+      "namePlaceholder": "Pilot laptops",
+      "domains": "Email domains",
+      "domainsHint": "The Windows sign-in must use one. Empty: any member.",
+      "limit": "Computer limit",
+      "limitHint": "Empty: no limit.",
+      "expires": "Expires",
+      "never": "Never",
+      "days": "{days, plural, one {# day} other {# days}}",
+      "approval": "Approve each computer",
+      "approvalHint": "Every new computer waits for an admin, also when its person is a member.",
+      "create": "Create token",
+      "createFailed": "Could not create the token",
+      "createdTitle": "{name}: copy the token now",
+      "createdBody": "Kortix shows this token once. Anyone who has it can enroll computers into this organization until you revoke it.",
+      "installTitle": "Silent install on each Windows computer",
+      "installBody": "Run it as an administrator, or deploy it with Intune or Group Policy. At the next Windows sign-in, the computer enrolls and starts recording. The person sees a notice in the notification area.",
+      "usage": "{count, plural, one {# computer} other {# computers}}",
+      "usageOf": "{count} of {max} computers",
+      "expired": "Expired {time}",
+      "expiresIn": "Expires {time}",
+      "noExpiry": "Never expires",
+      "state": {
+        "active": "Active",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "approvalBadge": "Approve each",
+      "anyDomain": "Any domain",
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke {name}?",
+      "revokeBody": "New computers can no longer enroll with it. Computers it enrolled keep recording; revoke them in Devices.",
+      "revoked": "Token revoked",
+      "revokeFailed": "Could not revoke the token",
+      "copy": "Copy",
+      "waitingTitle": "Waiting for approval",
+      "waitingBody": "These computers have a valid enrollment token. They record nothing until you approve them to a member.",
+      "col": {
+        "person": "Windows person",
+        "computer": "Computer",
+        "reason": "Why it waits",
+        "lastSeen": "Last seen",
+        "actions": "Actions"
+      },
+      "unnamed": "Unnamed computer",
+      "reason": {
+        "no_member": "No member has this email. Approve it to a member, or invite the person first.",
+        "approval_required": "The token approves each computer, or an admin revoked this one."
+      },
+      "deny": "Deny",
+      "approve": "Approve",
+      "denyTitle": "Deny {person} on this computer?",
+      "denyBody": "The computer stops asking and records nothing. If it already records, its device is revoked at once.",
+      "denied": "Computer denied",
+      "decideFailed": "Could not save the decision",
+      "approveTitle": "Approve this computer",
+      "approveBody": "{computer} records {person} as the member you pick. It starts within a minute.",
+      "member": "Member",
+      "memberPlaceholder": "Pick a member",
+      "cancel": "Cancel",
+      "approved": "Approved. The computer enrolls within a minute."
     }
   }
 }

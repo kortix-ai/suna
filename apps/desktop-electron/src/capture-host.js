@@ -33,11 +33,24 @@ function setupCapture(deps) {
 
   /* ─── Engine and library ─────────────────────────────────────────────── */
 
+  /**
+   * IT's engine when IT manages this computer (capture.js `managedInstall`),
+   * else null. Then this app only shows what that engine records: no service,
+   * no sign-in, no switch of its own. Read once per launch.
+   */
+  let managed;
+  const managedEngine = () =>
+    (managed ??= capture.managedInstall({
+      run: (program, args) => spawnSync(program, args, { stdio: 'ignore', windowsHide: true, timeout: 5_000 }).status ?? 1,
+    }));
+  const enginePath = () => managedEngine() || paths.capture;
+  const MANAGED = 'Your organization manages Kortix Capture on this computer.';
+
   /** @type {Promise<{ ok: boolean, version?: string, error?: string }> | null} */
   let availability = null;
   function engineAvailable() {
-    availability ??= fs.existsSync(paths.capture)
-      ? capture.runEngine(paths.capture, ['version'], { timeoutMs: 10_000 }).then((r) =>
+    availability ??= fs.existsSync(enginePath())
+      ? capture.runEngine(enginePath(), ['version'], { timeoutMs: 10_000 }).then((r) =>
           r.code === 0
             ? { ok: true, version: r.stdout.trim() }
             : { ok: false, error: `The Capture engine does not run on this computer: ${capture.lastError(r.stderr, `exit ${r.code}`)}` },
@@ -77,6 +90,12 @@ function setupCapture(deps) {
     const appOrigin = new URL(deps.appUrl()).origin;
     if (ctx?.appOrigin === appOrigin) return ctx;
     const backendUrl = await backendFor(appOrigin);
+    if (managedEngine()) {
+      // IT's engine records into the person's default library, whatever instance this window shows.
+      const library = path.join(process.env.APPDATA || path.join(app.getPath('home'), 'AppData', 'Roaming'), 'ai.kortix.capture');
+      ctx = { appOrigin, backendUrl, library, issuer: capture.issuerFromBackend(backendUrl), env: capture.managedEnv(process.env) };
+      return ctx;
+    }
     // Another instance: its own library, sign-in and service. The other
     // instance's service keeps running; it does not belong to this window.
     const library = capture.libraryDir(userData, new URL(backendUrl).origin);
@@ -88,8 +107,8 @@ function setupCapture(deps) {
     return ctx;
   }
 
-  const engine = async (args, timeoutMs) => capture.runEngine(paths.capture, args, { env: (await context()).env, timeoutMs });
-  const engineJson = async (args) => capture.engineJson(paths.capture, args, { env: (await context()).env });
+  const engine = async (args, timeoutMs) => capture.runEngine(enginePath(), args, { env: (await context()).env, timeoutMs });
+  const engineJson = async (args) => capture.engineJson(enginePath(), args, { env: (await context()).env });
 
   /** One service verb, run by the engine's CLI: `status`, `install` (also resume and repair: `start`), `pause` (`stop`), `uninstall`. */
   async function service(verb) {
@@ -142,6 +161,10 @@ function setupCapture(deps) {
     const engineState = await engineAvailable();
     if (!engineState.ok) return capture.captureStatusFrom({ available: false, error: engineState.error });
     const { library } = await context();
+    if (managedEngine()) {
+      const [status, sync] = await Promise.all([engineJson(['status']).catch(() => null), engineJson(['sync', 'status']).catch(() => null)]);
+      return capture.captureStatusFrom({ available: true, managed: true, desktop: { on: true }, status, sync, permissions: null, children: {} });
+    }
     const desktop = capture.readDesktop(library);
     const [status, sync, permissions, current] = await Promise.all([
       engineJson(['status']).catch(() => null),
@@ -331,7 +354,11 @@ function setupCapture(deps) {
     if (response === 0) await set({ on: false });
   }
 
+  /** What a person may not do on a computer IT manages: IT installed, enrolled and keeps the recorder running. */
+  const MANAGED_REFUSED = new Set(['capture_sign_in_start', 'capture_sign_in_finish', 'capture_set', 'capture_pause', 'capture_resume', 'capture_sign_out']);
+
   async function invoke(cmd, args = {}) {
+    if (managedEngine() && MANAGED_REFUSED.has(cmd)) throw new Error(MANAGED);
     switch (cmd) {
       case 'capture_status':
         return current();
@@ -393,7 +420,8 @@ function setupCapture(deps) {
     invoke,
     /** This build ships the engine (the app menu shows Capture only then). */
     /** Capture's tray items (capture-tray.js); empty until Capture is set up here. */
-    trayItems: (front = null) => capture.captureTrayItems(view, trayActions, front),
+    // On a managed computer IT's engine shows its own notification-area icon.
+    trayItems: (front = null) => (view.managed ? [] : capture.captureTrayItems(view, trayActions, front)),
     /** The app in front, read when the menu bar item opens. */
     frontmost,
     /** Whether the service keeps recording after the app quits. */

@@ -19598,7 +19598,14 @@
       "textba3d3f6932af": "A activé ou désactivé Capture",
       "text10a01973feb8": "A consulté les données Capture d’un compte",
       "textab4c24c38193": "A activé Capture",
-      "text6bdc49eed8c9": "A désactivé Capture"
+      "text6bdc49eed8c9": "A désactivé Capture",
+      "text5b68b1f32366": "A inscrit un ordinateur avec un jeton d’inscription",
+      "text1ca08fc86d90": "A listé les jetons d’inscription Capture",
+      "textf11b95b56214": "A créé un jeton d’inscription Capture",
+      "textd4806967bdd6": "A révoqué un jeton d’inscription Capture",
+      "textb3e9170332a7": "A listé les ordinateurs en attente d’inscription",
+      "text8258034e2578": "A approuvé l’inscription d’un ordinateur",
+      "textd2bea71d87f9": "A refusé l’inscription d’un ordinateur"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20808,7 +20815,9 @@
       "frames": "Toutes les {seconds, number} s · {resolution}",
       "never": "Jamais",
       "pausedUntil": "jusqu’à {time}",
-      "apiLink": "API Kortix Capture"
+      "apiLink": "API Kortix Capture",
+      "rollout": "Déployer",
+      "managedBadge": "Déploiement IT"
     },
     "settings": {
       "title": "Paramètres de l’organisation",
@@ -20887,7 +20896,8 @@
         "starting": "Démarrage",
         "recording": "Enregistrement",
         "unavailable": "Indisponible",
-        "captureOff": "Désactivé pour votre organisation"
+        "captureOff": "Désactivé pour votre organisation",
+        "managed": "Géré par votre organisation"
       },
       "unavailable": "Cette app de bureau n’inclut pas Kortix Capture. Mettez Kortix à jour vers la dernière version.",
       "orgOff": "Kortix Capture est désactivé pour {org}. Un propriétaire ou admin peut l’activer.",
@@ -21001,6 +21011,14 @@
         "body": "Kortix Capture enregistre cet ordinateur dans {org}, mais macOS ne l’a pas encore autorisé. Rien n’est enregistré tant que vous n’autorisez pas l’accès.",
         "later": "Plus tard",
         "done": "Kortix Capture enregistre."
+      },
+      "managed": {
+        "title": "{org} gère Kortix Capture sur cet ordinateur",
+        "body": "L’IT a installé Kortix Capture comme service Windows. Il enregistre tant que votre session Windows est ouverte, que Kortix soit ouvert ou non. Seule l’IT peut l’arrêter.",
+        "pendingMember": "Cet ordinateur attend votre organisation : aucun membre n’a l’e-mail de votre session Windows. Un admin l’approuve dans Appareils.",
+        "pendingApproval": "Cet ordinateur attend qu’un admin de votre organisation l’approuve dans Appareils. Il n’enregistre rien d’ici là.",
+        "refused": "Votre organisation a refusé cet ordinateur. Il n’enregistre rien. Contactez votre équipe IT.",
+        "otherOrg": "L’IT a inscrit cet ordinateur dans une autre organisation que {org}."
       }
     },
     "area": {
@@ -21064,6 +21082,76 @@
       "scopeAll": "Vous avez capture.read_all : l’API renvoie tous les membres de cette organisation. Chaque lecture d’un autre membre est inscrite au journal d’audit.",
       "docs": "Documentation de l’API",
       "done": "Terminé"
+    },
+    "rollout": {
+      "title": "Déployer sur les ordinateurs",
+      "description": "L’IT installe Kortix Capture sur de nombreux ordinateurs Windows avec un seul jeton d’inscription. Chaque ordinateur s’inscrit au nom de la personne qui ouvre la session Windows. Personne ne se connecte à Kortix à la main.",
+      "tokensTitle": "Jetons d’inscription",
+      "tokensEmpty": "Aucun jeton d’inscription pour l’instant.",
+      "guide": "Guide de configuration pour l’IT",
+      "done": "Terminé",
+      "newTitle": "Nouveau jeton d’inscription",
+      "name": "Nom",
+      "namePlaceholder": "Portables pilotes",
+      "domains": "Domaines e-mail",
+      "domainsHint": "La session Windows doit en utiliser un. Vide : tout membre.",
+      "limit": "Limite d’ordinateurs",
+      "limitHint": "Vide : aucune limite.",
+      "expires": "Expire",
+      "never": "Jamais",
+      "days": "{days, plural, one {# jour} other {# jours}}",
+      "approval": "Approuver chaque ordinateur",
+      "approvalHint": "Chaque nouvel ordinateur attend un admin, même si sa personne est membre.",
+      "create": "Créer le jeton",
+      "createFailed": "Impossible de créer le jeton",
+      "createdTitle": "{name} : copiez le jeton maintenant",
+      "createdBody": "Kortix n’affiche ce jeton qu’une fois. Quiconque le possède peut inscrire des ordinateurs dans cette organisation jusqu’à ce que vous le révoquiez.",
+      "installTitle": "Installation silencieuse sur chaque ordinateur Windows",
+      "installBody": "Exécutez-la en tant qu’administrateur ou déployez-la avec Intune ou une stratégie de groupe. À la prochaine ouverture de session Windows, l’ordinateur s’inscrit et commence l’enregistrement. La personne voit un avis dans la zone de notification.",
+      "usage": "{count, plural, one {# ordinateur} other {# ordinateurs}}",
+      "usageOf": "{count} sur {max} ordinateurs",
+      "expired": "Expiré {time}",
+      "expiresIn": "Expire {time}",
+      "noExpiry": "N’expire jamais",
+      "state": {
+        "active": "Actif",
+        "revoked": "Révoqué",
+        "expired": "Expiré"
+      },
+      "approvalBadge": "Approbation individuelle",
+      "anyDomain": "Tout domaine",
+      "revoke": "Révoquer",
+      "revokeTitle": "Révoquer {name} ?",
+      "revokeBody": "Les nouveaux ordinateurs ne peuvent plus s’inscrire avec ce jeton. Ceux qu’il a inscrits continuent d’enregistrer ; révoquez-les dans Appareils.",
+      "revoked": "Jeton révoqué",
+      "revokeFailed": "Impossible de révoquer le jeton",
+      "copy": "Copier",
+      "waitingTitle": "En attente d’approbation",
+      "waitingBody": "Ces ordinateurs ont un jeton d’inscription valide. Ils n’enregistrent rien tant que vous ne les approuvez pas pour un membre.",
+      "col": {
+        "person": "Personne Windows",
+        "computer": "Ordinateur",
+        "reason": "Pourquoi il attend",
+        "lastSeen": "Vu pour la dernière fois",
+        "actions": "Actions"
+      },
+      "unnamed": "Ordinateur sans nom",
+      "reason": {
+        "no_member": "Aucun membre n’a cet e-mail. Approuvez-le pour un membre ou invitez d’abord la personne.",
+        "approval_required": "Le jeton exige l’approbation de chaque ordinateur, ou un admin a révoqué celui-ci."
+      },
+      "deny": "Refuser",
+      "approve": "Approuver",
+      "denyTitle": "Refuser {person} sur cet ordinateur ?",
+      "denyBody": "L’ordinateur cesse de demander et n’enregistre rien. S’il enregistre déjà, son appareil est révoqué immédiatement.",
+      "denied": "Ordinateur refusé",
+      "decideFailed": "Impossible d’enregistrer la décision",
+      "approveTitle": "Approuver cet ordinateur",
+      "approveBody": "{computer} enregistre {person} au nom du membre choisi. L’enregistrement commence en moins d’une minute.",
+      "member": "Membre",
+      "memberPlaceholder": "Choisir un membre",
+      "cancel": "Annuler",
+      "approved": "Approuvé. L’ordinateur s’inscrit en moins d’une minute."
     }
   }
 }
