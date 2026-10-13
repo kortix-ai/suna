@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ApiKeyRow } from '@/components/iam/api-key-rows';
-import { apiKeyMetaParts } from './tokens-tab';
+import { apiKeyMetaParts, localizedRelativeTime } from './tokens-tab';
 
 const NOW = Date.parse('2026-08-18T12:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -84,6 +84,20 @@ describe('apiKeyMetaParts', () => {
   });
 });
 
+describe('localizedRelativeTime', () => {
+  test('a 1-day expiry renders as its countdown, not as "this minute"', () => {
+    expect(localizedRelativeTime(new Date(NOW + DAY).toISOString(), 'en', NOW)).toBe('in 1d');
+    expect(localizedRelativeTime(new Date(NOW + 23 * 3_600_000).toISOString(), 'en', NOW)).toBe('in 23h');
+    expect(localizedRelativeTime(new Date(NOW + 5 * 60_000).toISOString(), 'en', NOW)).toBe('in 5m');
+  });
+
+  test('the past rendering keeps the pane\'s own voice', () => {
+    expect(localizedRelativeTime(new Date(NOW - 30_000).toISOString(), 'en', NOW)).toBe('this minute');
+    expect(localizedRelativeTime(new Date(NOW - 5 * 60_000).toISOString(), 'en', NOW)).toBe('5m ago');
+    expect(localizedRelativeTime(new Date(NOW - 2 * DAY).toISOString(), 'en', NOW)).toBe('2d ago');
+  });
+});
+
 describe('the pane reads only the caller’s own keys', () => {
   const source = readFileSync(join(import.meta.dir, 'tokens-tab.tsx'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -104,5 +118,28 @@ describe('the pane reads only the caller’s own keys', () => {
   test('the pane never reaches for the service-account API — that list is the account’s', () => {
     expect(source).not.toContain('listServiceAccountsApi');
     expect(source).not.toContain('createServiceAccountApi');
+  });
+});
+
+describe('the pane’s clock advances with fresh data', () => {
+  const source = readFileSync(join(import.meta.dir, 'tokens-tab.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  // A stamp that lands AFTER the pane mounted — a key used while the settings
+  // dialog is open — must not be aged against the mount-time clock: the past
+  // direction would flip and the row would read "Last used in 2m" for
+  // something that happened two minutes ago. So the clock must be derived
+  // from the tokens query's own fetch time (it advances with every refetch),
+  // with the mount capture only covering the first paint.
+  test('renderedAt is the query’s fetch time once data has landed', () => {
+    expect(source).toContain('useState(() => Date.now())');
+    expect(source).toContain('tokensQuery.dataUpdatedAt || mountAt');
+    expect(source).not.toContain('setRenderedAt');
+  });
+
+  test('the row formatting still ages against the captured clock, not a fresh Date.now()', () => {
+    expect(source).toContain('localizedRelativeTime(input, locale, renderedAt)');
+    expect(source).toContain('apiKeyMetaParts(row, renderedAt,');
   });
 });
