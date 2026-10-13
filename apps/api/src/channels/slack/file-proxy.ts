@@ -30,7 +30,6 @@ export type FileProxyError = { ok: false; error: string; status: FileProxyStatus
  * the fetch never got an answer) and a short body excerpt. */
 interface DownloadFailure {
   ok: false;
-  status: FileProxyStatus;
   upstreamStatus: number | null;
   summary: string;
 }
@@ -81,7 +80,7 @@ async function fetchSlackFile(url: string, token: string): Promise<{ ok: true; r
     }
     break;
   }
-  return { ok: false, status: 502, upstreamStatus: last?.upstreamStatus ?? null, summary: last?.summary ?? 'upstream unreachable' };
+  return { ok: false, upstreamStatus: last?.upstreamStatus ?? null, summary: last?.summary ?? 'upstream unreachable' };
 }
 
 /**
