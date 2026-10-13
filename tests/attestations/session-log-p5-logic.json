@@ -1,6 +1,7 @@
 {
-  "source_hash": "3a3570ddb714a16cbbc7503a7cdaef0f0510d2ce1be219aabcd78f3b0b76dbc9",
+  "source_hash": "ab941e74abe9eae617980bf909a5219d27933e46fcd91e98f70eca31ace392d5",
   "diff_files": [
+    "apps/web/content/docs/sdk/reference.mdx",
     "apps/web/src/app/[locale]/(system)/debug/session-fixture/fixture-turn.tsx",
     "apps/web/src/app/[locale]/(system)/debug/subagent-failure/page.tsx",
     "apps/web/src/app/[locale]/(system)/debug/tools/page.tsx",
@@ -34,6 +35,7 @@
     "apps/web/src/features/session/session-context-metrics.ts",
     "apps/web/src/features/session/session-context-modal.tsx",
     "apps/web/src/features/session/session-context-sub-sessions.test.ts",
+    "apps/web/src/features/session/session-context-sub-sessions.test.tsx",
     "apps/web/src/features/session/session-context-sub-sessions.tsx",
     "apps/web/src/features/session/session-layout.tsx",
     "apps/web/src/features/session/tool/shared/call-liveness.test.tsx",
@@ -57,9 +59,13 @@
     "apps/web/src/features/session/turn/answered-question-step.tsx",
     "apps/web/src/features/session/turn/burst-step-body.tsx",
     "apps/web/src/features/session/use-session-panel-state.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/README.md",
     "packages/sdk/src/core/session-log/tool-call.test.ts",
     "packages/sdk/src/core/session-log/tool-call.ts",
+    "packages/sdk/src/core/session-log/turns/index.ts",
+    "packages/sdk/src/core/session-log/turns/metrics.test.ts",
+    "packages/sdk/src/core/session-log/turns/metrics.ts",
+    "packages/sdk/src/core/session-log/turns/turn.ts",
     "packages/sdk/src/core/session-log/v1-view.test.ts",
     "packages/sdk/src/core/session-log/v1-view.ts",
     "packages/sdk/src/core/turns/segments/group-steps.ts",
@@ -67,17 +73,18 @@
     "packages/sdk/src/core/turns/segments/session-activity-groups.ts",
     "packages/sdk/src/core/turns/segments/step-label.ts",
     "packages/sdk/src/core/turns/tools/tool-meta.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json",
     "packages/sdk/src/react/use-session-log.test.ts",
     "packages/sdk/src/react/use-session-log.ts"
   ],
-  "diff_hash": "82d00dde901f67616545f80a9f05b9540722a754d979df5da69eba6d1ca5119a",
-  "head": "21c615eac3ce939c0301cb04d9ac238f9b992c92",
+  "diff_hash": "428b0e8e91090188dbb5c8b686e0f7e8025394473562c1c90462850a00d1591f",
+  "head": "af62e3ef09ba31e551d348a2a0b5be8666e86ea4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass",
-    "browser": "pass"
+    "db-suites": "pass"
   },
-  "at": "2026-10-12T19:43:37.163Z"
+  "at": "2026-10-13T12:37:33.748Z"
 }
