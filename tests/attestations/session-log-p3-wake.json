@@ -1,16 +1,18 @@
 {
-  "source_hash": "18da49d5f54c1dcb7c647f486b3910c22723d5fbf253c7af1f7ac265e5fe977c",
+  "source_hash": "db0b45ce3ea8851d3c69e6dba3d4a6ae8801fc30211eeabc79cb73d0dbd2ece1",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-log-capture.test.ts",
-    "apps/api/src/projects/session-log-ingest.ts"
+    "apps/api/src/projects/session-log-ingest.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts"
   ],
-  "diff_hash": "6b474d546e5cd3d9e2f1645d9f906a8e7871a9071cbb727b3c6c2313d3fd3e52",
-  "head": "8e51216b7c87774e859f6c7d7302e471c657207a",
+  "diff_hash": "7422162069381daa0033c27ea4e44fdb4f0cd838a4a4f4f4c6b0cb43c4da14f2",
+  "head": "54929a19cb92afd41cf452aba21120b716432cd8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T16:08:31.724Z"
+  "at": "2026-10-13T17:04:07.230Z"
 }
