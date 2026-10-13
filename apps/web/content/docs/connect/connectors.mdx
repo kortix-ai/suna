@@ -494,7 +494,7 @@ An `error` reason starts with the code in the table. Text after the first `:` is
 | `connector_not_connected` | 403 | No usable account, or `--account` named one that does not exist. | Open `connect_url`, or retry with a name from `available_accounts`. |
 | `account_required` | 403 | Several accounts are reachable, none is named, none is pinned. | Pass `--account`, or pin a default. |
 | `credential_not_shared` | 403 | The connector's project secret is not shared with the person this call acts for. | Ask the secret's owner to share it. |
-| `credential_undecryptable` | 403 | Kortix cannot decrypt the connector's stored credential: the server's encryption key changed, or the stored value is damaged. `message` names the connector. | Reconnect the account, or enter the credential again. |
+| `credential_undecryptable` | 403 | Kortix cannot decrypt the connector's stored credential, or the project secret it uses: the server's encryption key changed, or the stored value is damaged. `message` names the connector or the secret. | Reconnect the account, or enter the credential or the secret again. |
 | `connector_disabled` | 403 | The connector is declared with `enabled: false`. | Enable it. |
 | `policy_block` | 403 | A **Block** rule matched. Final. | Do not retry. Change the policy. |
 | `connector_not_found` | 404 | No connector with this slug. | Run `kortix connectors ls`. |
