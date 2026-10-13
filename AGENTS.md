@@ -245,6 +245,18 @@ in before any non-trivial change. **Do not create a branch by reflex.**
    private `git worktree add` in your scratchpad.
 4. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
    and investigating. Do not park feature work there.
+5. **Run `pnpm test` only from a worktree that has `.kortix-worktree.json`.** The
+   runner reads its ports from that marker. A bare `git worktree add` has none,
+   so its test stack takes the primary ports and talks to another session's
+   `pnpm dev` (2026-10-13: 156 flows failed with that stack's 503s).
+6. **Never kill a process you did not start.** Many sessions share this machine.
+   Kill by PID from your own process tree, or by a pattern that contains your
+   own worktree or scratchpad path. Never by a bare pattern such as
+   `pkill -f "bun test"`, and never in a loop. Need CPU? Lower your own
+   concurrency (`KE2E_API_WORKERS`, `KORTIX_DB_SUITE_WORKERS`) or ask the user.
+   2026-10-13: a guard loop that SIGTERMed every other session's `pnpm test`,
+   `tsc` and `vitest` every 20 s made 259 kills, and every suite on the machine
+   died with exit 143 and no failing test.
 
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
 stale-reference sweep, and the change that caused them all belong on the same
