@@ -70,13 +70,10 @@ module "network" {
 }
 
 # ── TLS cert (ACM, DNS-validated via Cloudflare) ───────────────────────────────
-# A *.kortix.com wildcard cert already exists in us-east-2 (created by
-# ../prod-us-east-2-shadow's module.certificate) and its validation CNAME is
-# already in the zone, so a second request for the identical domain in this
-# same region+account validates against that existing record without this
-# root creating a new one (manage_validation_records = false — same reason
-# ../prod-us-east-2-shadow/main.tf sets it). Covers both the primary API
-# hostname and the gateway hostname with one cert, so no separate
+# The *.kortix.com validation CNAME was already in the zone when this root was
+# created, so this request validates against that existing record without this
+# root creating one (manage_validation_records = false). Covers both the
+# primary API hostname and the gateway hostname with one cert, so no separate
 # gateway_certificate_arn plumbing is needed.
 module "certificate" {
   count                     = var.enable_https ? 1 : 0

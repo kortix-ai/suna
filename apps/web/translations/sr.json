@@ -578,11 +578,13 @@
       "dangerZone": "Опасна зона",
       "deleteAccount": "Избриши налог",
       "deletionUnavailable": "Брисање налога није доступно у овом окружењу. Обратите се подршци да затворите налог.",
+      "deletionStatusCheckFailed": "Није могуће потврдити да ли је брисање налога доступно.",
       "scheduledForDeletionOn": "Брисање је заказано за {date}.",
       "scheduledForDeletion": "Заказано за брисање.",
       "cancelBeforeDeletion": "Можете отказати било када пре тога.",
       "deletionDescription": "Ово брише све агенте, сесије, тајне и претплате повезане са вашим налогом. Радња се не може опозвати.",
       "unavailable": "Недоступно",
+      "retry": "Покушајте поново",
       "keepMyAccount": "Задржи мој налог",
       "deleteDialogTitle": "Желите ли да избришете налог?",
       "immediateWarning": "Ово одмах брише ваш налог. Нема периода за отказивање и радња се не може опозвати.",
@@ -7915,7 +7917,11 @@
       "line267JsxTextCheckpointHistory": "Историја верзија",
       "line285JsxTextCopyPath": "Копирај путању",
       "line396JsxTextThisFolderIsEmpty": "Овај фолдер је празан",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Све што ваши агенти сачувају и сва средства додата овом пројекту ће се приказати овде."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Све што ваши агенти сачувају и сва средства додата овом пројекту ће се приказати овде.",
+      "loadMoreItems": "Учитај још ставки",
+      "loadMoreFailed": "Учитавање још ставки није успело. Покушајте поново.",
+      "partialSortNote": "Приказано је {value0} ставки. Сортирање важи када се учитају све ставке.",
+      "showingFirstItems": "Приказано је првих {value0} ставки"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Кликните двапут да бисте уредили путању",
@@ -8007,7 +8013,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Тражи датотеке...",
       "line124JsxTextTypeToSearchFiles": "Укуцајте за претрагу датотека...",
-      "line136JsxTextNoFilesFound": "Ниједна датотека није пронађена"
+      "line136JsxTextNoFilesFound": "Ниједна датотека није пронађена",
+      "searchContents": "Претражи садржај",
+      "firstMatches": "Приказано је првих {value0} подударања",
+      "searchContentsPlaceholder": "Претражи садржај датотека...",
+      "typeToSearchContents": "Укуцајте за претрагу садржаја датотека...",
+      "noMatchingLines": "Нема одговарајућих редова"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Датотека или фасцикла са тим именом већ постоји",
@@ -9542,6 +9553,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Е-порука није послата. Покушај поново за око сат времена.",
       "authRequestRateLimit": "Превише захтева. Покушај поново за неколико минута.",
+      "text0b6a47661327": "Непознат власник",
       "text1a9030082a20": "Креирај вештину",
       "text25ab55af92b1": "Отпремање прилога је започето",
       "text38e64d6a8162": "Комитује SKILL.md на подразумевани грану пројекта. Није потребан модел ни ћаскање.",
@@ -9550,6 +9562,7 @@
       "text426699d5a8c0": "{count, plural, one {# знак} few {# знака} other {# знакова}}",
       "text40078a553439": "Блок прилога је отпремљен",
       "text4c7f8000aabd": "Отпремање прилога је завршено",
+      "text8782b778c202": "Избрисати {value0}",
       "text91420d2587c2": "Отпремање прилога је уклоњено",
       "text3aab5b3be2b9": "Опис прилога за време извршавања је разрешен",
       "text0005b85debac": "Пакет звука који се репродукује за догађаје сесије.",
@@ -11619,7 +11632,7 @@
       "text3e11e93e0f42": "Одобрите или одбијте радњу на чекању да бисте наставили.",
       "text3e18e2dab6f2": "Преговори",
       "text3e26769ed36a": "Власници и администратори су менаџери на сваком пројекту.",
-      "text3e29ac703c2f": "Чланови морају да се пријаве преко вашег провајдера идентитета — опција за лозинку нестаје чим ово укључите, а после тога ради само ваш провајдер идентитета.",
+      "text3e29ac703c2f": "Чланови морају да се пријаве преко вашег провајдера идентитета. Када ово укључите, сваки члан са овог домена који се пријавио на други начин биће одјављен, што може да обухвати и вас.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Истакнута тржишта излистана",
       "text3e3d7edf97ee": "Приступ репозиторијумима",
@@ -20188,9 +20201,8 @@
     "calendarNextWeek": "Следећа недеља",
     "calendarPreviousMonth": "Претходни месец",
     "calendarNextMonth": "Следећи месец",
-    "calendarAllWeek": "Цела недеља",
-    "calendarAllDay": "Цео дан",
-    "calendarEvery": "сваких {period}",
+    "calendarMore": "+{count} još",
+    "calendarMoreOn": "Još {count, plural, one {# podsetnik} few {# podsetnika} other {# podsetnika}} za {date}",
     "calendarSession": "Сесија",
     "calendarEmptyWeek": "Ове недеље ништа се не покреће",
     "calendarEmptyDay": "Овог дана ништа се не покреће",

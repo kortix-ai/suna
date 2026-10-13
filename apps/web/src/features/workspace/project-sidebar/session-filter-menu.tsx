@@ -65,6 +65,7 @@ import {
   type SessionGroupMode,
   type SessionOrderMode,
 } from './session-grouping';
+import { CountBadge } from '@/components/ui/count-badge';
 
 /**
  * The Cursor-style nested `⋯` menu behind the sidebar's Sessions header and
@@ -521,9 +522,7 @@ export function SessionFilterMenu({
                     onSelect={(event) => event.preventDefault()}
                   >
                     <span className="min-w-0 flex-1 truncate">{statusLabels[option.value]}</span>
-                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                      {option.count}
-                    </span>
+                    <CountBadge count={option.count} className="ml-auto" />
                   </DropdownMenuCheckboxItem>
                 ))}
               </DropdownMenuSubContent>
@@ -548,9 +547,7 @@ export function SessionFilterMenu({
                     >
                       <OptionIcon className="size-4" />
                       <span className="min-w-0 flex-1 truncate">{sourceLabels[option.value]}</span>
-                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                        {option.count}
-                      </span>
+                      <CountBadge count={option.count} className="ml-auto" />
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -574,9 +571,7 @@ export function SessionFilterMenu({
                   >
                     <TagIcon className="size-4" />
                     <span className="min-w-0 flex-1 truncate">{option.value}</span>
-                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                      {option.count}
-                    </span>
+                    <CountBadge count={option.count} className="ml-auto" />
                   </DropdownMenuCheckboxItem>
                 ))}
               </DropdownMenuSubContent>
@@ -609,9 +604,7 @@ export function SessionFilterMenu({
                         email={option.email ?? ''}
                       />
                       <span className="min-w-0 flex-1 truncate">{label}</span>
-                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                        {option.count}
-                      </span>
+                      <CountBadge count={option.count} className="ml-auto" />
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -637,9 +630,7 @@ export function SessionFilterMenu({
                     >
                       <OptionIcon className="size-4" />
                       <span className="min-w-0 flex-1 truncate">{accessLabels[option.value]}</span>
-                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                        {option.count}
-                      </span>
+                      <CountBadge count={option.count} className="ml-auto" />
                     </DropdownMenuCheckboxItem>
                   );
                 })}

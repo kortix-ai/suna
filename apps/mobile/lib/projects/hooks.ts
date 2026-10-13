@@ -1137,15 +1137,27 @@ const retryUnlessDenied = (count: number, err: any) => {
   return count < 3;
 };
 
+/** Entries per folder page. A folder with more shows "Load more items". */
+export const PROJECT_DIRECTORY_PAGE_SIZE = 500;
+
 /**
- * One folder level at a ref (`path` '' is the root). The recursive list stops
- * at 1,000 files, and a tree built from it lost every folder after file 1,000
- * (KRTX-1723).
+ * One folder level at a ref (`path` '' is the root), in pages of
+ * `PROJECT_DIRECTORY_PAGE_SIZE`. The recursive list stops at 1,000 files, and
+ * a tree built from it lost every folder after file 1,000 (KRTX-1723). The
+ * cursor pins the commit the first page read.
  */
 export function useProjectDirectory(projectId: string | null, ref: string, path: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: projectKeys.projectDirectory(projectId, ref, path),
-    queryFn: () => listProjectDirectory(projectId!, { ref, path: path || undefined }),
+    queryFn: ({ pageParam }) =>
+      listProjectDirectory(projectId!, {
+        ref,
+        path: path || undefined,
+        cursor: pageParam,
+        limit: PROJECT_DIRECTORY_PAGE_SIZE,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !!projectId && !!ref,
     staleTime: 20_000,
     retry: retryUnlessDenied,

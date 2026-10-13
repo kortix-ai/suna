@@ -578,11 +578,13 @@
       "dangerZone": "Zona pericolosa",
       "deleteAccount": "Elimina account",
       "deletionUnavailable": "L'eliminazione dell'account non è disponibile in questa distribuzione. Contatta l'assistenza per chiudere il tuo account.",
+      "deletionStatusCheckFailed": "Impossibile confermare se l'eliminazione dell'account è disponibile.",
       "scheduledForDeletionOn": "Cancellazione prevista per {date}.",
       "scheduledForDeletion": "Prevista per l'eliminazione.",
       "cancelBeforeDeletion": "Puoi annullare in qualsiasi momento prima di allora.",
       "deletionDescription": "Questa azione elimina tutti gli agenti, le sessioni, i segreti e gli abbonamenti associati al tuo account. Non può essere annullata.",
       "unavailable": "Non disponibile",
+      "retry": "Riprova",
       "keepMyAccount": "Mantieni il mio account",
       "deleteDialogTitle": "Eliminare il tuo account?",
       "immediateWarning": "Questo elimina immediatamente il tuo account. Non esiste un periodo di grazia e non c'è modo di annullarlo.",
@@ -7915,7 +7917,11 @@
       "line267JsxTextCheckpointHistory": "Cronologia delle versioni",
       "line285JsxTextCopyPath": "Copia percorso",
       "line396JsxTextThisFolderIsEmpty": "Questa cartella è vuota",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tutto ciò che i tuoi agenti salvano e i file di questo progetto appariranno qui."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tutto ciò che i tuoi agenti salvano e i file di questo progetto appariranno qui.",
+      "loadMoreItems": "Carica altri elementi",
+      "loadMoreFailed": "Impossibile caricare altri elementi. Riprova.",
+      "partialSortNote": "Vengono mostrati {value0} elementi. L’ordinamento si applica quando tutti gli elementi sono caricati.",
+      "showingFirstItems": "Vengono mostrati i primi {value0} elementi"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Fai doppio clic per modificare il percorso",
@@ -8007,7 +8013,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Cerca file...",
       "line124JsxTextTypeToSearchFiles": "Digita per cercare file...",
-      "line136JsxTextNoFilesFound": "Nessun file trovato"
+      "line136JsxTextNoFilesFound": "Nessun file trovato",
+      "searchContents": "Cerca nei contenuti",
+      "firstMatches": "Vengono mostrate le prime {value0} corrispondenze",
+      "searchContentsPlaceholder": "Cerca nel contenuto dei file...",
+      "typeToSearchContents": "Digita per cercare nel contenuto dei file...",
+      "noMatchingLines": "Nessuna riga corrispondente"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Esiste già un file o una cartella con questo nome",
@@ -9542,6 +9553,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",
       "authRequestRateLimit": "Troppe richieste. Riprova tra qualche minuto.",
+      "text0b6a47661327": "Proprietario sconosciuto",
       "text1a9030082a20": "Crea competenza",
       "text25ab55af92b1": "Caricamento allegato avviato",
       "text38e64d6a8162": "Esegue il commit di un SKILL.md sul branch predefinito del progetto. Nessun modello o chat necessari.",
@@ -9550,6 +9562,7 @@
       "text426699d5a8c0": "{count, plural, one {# carattere} other {# caratteri}}",
       "text40078a553439": "Blocco dell’allegato caricato",
       "text4c7f8000aabd": "Caricamento allegato completato",
+      "text8782b778c202": "Elimina {value0}",
       "text91420d2587c2": "Caricamento allegato rimosso",
       "text3aab5b3be2b9": "Descrittore dell’allegato di runtime risolto",
       "text0005b85debac": "Pacchetto audio riprodotto per gli eventi della sessione.",
@@ -11619,7 +11632,7 @@
       "text3e11e93e0f42": "Approva o nega l'azione in sospeso per continuare.",
       "text3e18e2dab6f2": "Negoziazione",
       "text3e26769ed36a": "I proprietari e gli amministratori sono Manager in ogni progetto.",
-      "text3e29ac703c2f": "I membri devono accedere con il tuo identity provider — l'opzione password scompare appena lo attivi e da quel momento funziona solo l'identity provider.",
+      "text3e29ac703c2f": "I membri devono accedere con il tuo identity provider. Attivandolo, ogni membro di questo dominio che ha effettuato l'accesso in un altro modo viene disconnesso, e questo può includere anche te.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Marketplace in evidenza elencati",
       "text3e3d7edf97ee": "Accesso ai repository",
@@ -20188,9 +20201,8 @@
     "calendarNextWeek": "Settimana successiva",
     "calendarPreviousMonth": "Mese precedente",
     "calendarNextMonth": "Mese successivo",
-    "calendarAllWeek": "Tutta la settimana",
-    "calendarAllDay": "Tutto il giorno",
-    "calendarEvery": "ogni {period}",
+    "calendarMore": "+{count} altri",
+    "calendarMoreOn": "{count, plural, one {# altro promemoria} other {altri # promemoria}} il {date}",
     "calendarSession": "Sessione",
     "calendarEmptyWeek": "Nessuna attivazione questa settimana",
     "calendarEmptyDay": "Nessuna attivazione in questo giorno",

@@ -344,6 +344,40 @@ export async function acceptAccountInvite(inviteId: string) {
   );
 }
 
+/** Where an accepted invite lands: a project, or the account joined. */
+export type AccountInviteLanding =
+  | { kind: 'project'; projectId: string; accountId: string }
+  | { kind: 'account'; accountId: string };
+
+/**
+ * Where an accepted invite lands (KRTX-1731): the first project the accept
+ * granted; else the first project the invite names (an admin invite, whose
+ * grants the API skips, or an invite accepted before); else the account
+ * joined. Every host reads this one rule and maps it to its own route.
+ */
+export function accountInviteLanding(
+  accepted: { account_id: string; bootstrap_grants_applied?: ReadonlyArray<{ project_id: string }> },
+  invite?: { projects?: ReadonlyArray<{ project_id: string }> } | null,
+): AccountInviteLanding {
+  const project = accepted.bootstrap_grants_applied?.[0] ?? invite?.projects?.[0];
+  return project
+    ? { kind: 'project', projectId: project.project_id, accountId: accepted.account_id }
+    : { kind: 'account', accountId: accepted.account_id };
+}
+
+/**
+ * `acceptAccountInvite`, then `accountInviteLanding`. Pass the invite the
+ * host already read (`describeAccountInvite` or `listMyAccountInvites`) so an
+ * accept that grants nothing still lands in the project the invite names.
+ */
+export async function acceptAccountInviteAndLand(
+  inviteId: string,
+  invite?: { projects?: ReadonlyArray<{ project_id: string }> } | null,
+) {
+  const accepted = await acceptAccountInvite(inviteId);
+  return { accepted, landing: accountInviteLanding(accepted, invite) };
+}
+
 export async function declineAccountInvite(inviteId: string) {
   return unwrap(await backendApi.post<{ ok: boolean }>(`/account-invites/${inviteId}/decline`, {}));
 }

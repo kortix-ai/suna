@@ -2,7 +2,7 @@
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,7 @@ import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 
 import { filterAgents } from './agent-filter';
+import { useSlashFocus } from '@/hooks/utils';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -98,6 +99,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef);
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -187,6 +190,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
+            ref={searchRef}
             placeholder={tI18nComplete.raw('text212fd04a1d20')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}

@@ -10,12 +10,17 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useNavRowMeta, type NavRowMeta } from '@/features/workspace/project-sidebar/nav-row-meta';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useTranslations } from '@/i18n/use-translations';
 import { spring } from '@/lib/springs';
+import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { cn } from '@/lib/utils';
 import {
+  SIDEBAR_NAV_METADATA_KEY,
+  resolveSidebarNav,
+  sidebarNavKey,
   useSidebarNavStore,
   type SidebarNavEntry,
   type SidebarNavItemId,
@@ -37,17 +42,18 @@ import {
 /**
  * "Customize sidebar": the nav rows in two groups, "Sidebar" and "More". Where a row sits is the setting: drag it across the line to
  * move it under More, drag it back to show it. Changes apply as they are
- * made; there is no save step. Opened from the sidebar's More menu, the
- * workspace menu and the command palette through `openCustomizeSidebar()`.
+ * made; there is no save step. Opened from the sidebar's More menu and
+ * the command palette through `openCustomizeSidebar()`.
  */
 export function CustomizeSidebarModal({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
   const open = useSidebarNavStore((s) => s.customizeOpen);
   const setOpen = useSidebarNavStore((s) => s.setCustomizeOpen);
   const reset = useSidebarNavStore((s) => s.reset);
+  const onOpenChange = useSidebarNavAccountSync(open, setOpen);
 
   return (
-    <Modal open={open} onOpenChange={setOpen}>
+    <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="sm:max-w-md">
         <ModalHeader>
           <ModalTitle>{t('customizeSidebar')}</ModalTitle>
@@ -63,6 +69,56 @@ export function CustomizeSidebarModal({ projectId }: { projectId: string }) {
         </ModalFooter>
       </ModalContent>
     </Modal>
+  );
+}
+
+function saveSidebarNav(items: SidebarNavEntry[]) {
+  updateProfileMetadata({ [SIDEBAR_NAV_METADATA_KEY]: items }).catch((error) => {
+    console.warn('[sidebar] Could not save the sidebar layout to the account:', error);
+  });
+}
+
+/**
+ * Keeps the layout on the account, so it survives sign-out (which sweeps
+ * localStorage) and follows the person to the desktop app. The account copy
+ * is applied when the user loads; an edit is saved once, when the modal
+ * closes. Only an explicit close writes: the sign-out sweep also resets the
+ * store, and a store subscription would save that reset over the layout.
+ */
+function useSidebarNavAccountSync(open: boolean, setOpen: (open: boolean) => void) {
+  const { user } = useAuth();
+  const userId = user?.id;
+  const remote: unknown = user?.user_metadata?.[SIDEBAR_NAV_METADATA_KEY];
+  const remoteKey = JSON.stringify(remote ?? null);
+  const openedWith = useRef<string | null>(null);
+
+  useEffect(() => {
+    // An open modal holds edits the account does not have yet.
+    if (!userId || useSidebarNavStore.getState().customizeOpen) return;
+    const { items, push } = resolveSidebarNav(
+      JSON.parse(remoteKey),
+      useSidebarNavStore.getState().items,
+    );
+    useSidebarNavStore.getState().setItems(items);
+    if (push) saveSidebarNav(items);
+  }, [userId, remoteKey]);
+
+  // The modal opens through the store (`openCustomizeSidebar`), so the
+  // snapshot follows `open`, not `onOpenChange`.
+  useEffect(() => {
+    if (open) openedWith.current = sidebarNavKey(useSidebarNavStore.getState().items);
+  }, [open]);
+
+  return useCallback(
+    (next: boolean) => {
+      const { items } = useSidebarNavStore.getState();
+      if (!next && openedWith.current !== null && openedWith.current !== sidebarNavKey(items)) {
+        saveSidebarNav(items);
+      }
+      if (!next) openedWith.current = null;
+      setOpen(next);
+    },
+    [setOpen],
   );
 }
 

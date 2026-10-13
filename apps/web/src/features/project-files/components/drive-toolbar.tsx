@@ -297,6 +297,11 @@ export interface DriveViewMenuProps {
   showSearch?: boolean;
   /** Offer the dotfile visibility toggle (list is pre-filtered by the hook). */
   showHiddenToggle?: boolean;
+  /**
+   * Turn the sort picker off. A partly loaded folder keeps the server's name
+   * order until its last page loads (KRTX-1723).
+   */
+  sortDisabled?: boolean;
 }
 
 /**
@@ -312,6 +317,7 @@ export function DriveViewMenu({
   isDownloading,
   showSearch = false,
   showHiddenToggle = false,
+  sortDisabled = false,
 }: DriveViewMenuProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -365,7 +371,7 @@ export function DriveViewMenu({
         </DropdownMenuSub>
 
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger disabled={sortDisabled}>
             <span className="min-w-0 flex-1">{tI18nComplete.raw('textc9129025bd3f')}</span>
             <span className="text-muted-foreground/70">{SORT_LABEL[sortBy]}</span>
           </DropdownMenuSubTrigger>

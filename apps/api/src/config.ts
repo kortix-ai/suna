@@ -286,6 +286,13 @@ const envSchema = z.object({
   // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
   SESSION_LOG_INGEST_ENABLED: optBoolTrue,
+  // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
+  // On by default. Off answers 503 and claims nothing: the box boots without a restore.
+  SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
+  // Operator switch for the retention purge of session content (P2.8, decision D6): session
+  // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
+  // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
+  SESSION_LOG_PURGE_ENABLED: optBoolTrue,
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -1219,6 +1226,8 @@ export const config = {
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
+  SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
+  SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,

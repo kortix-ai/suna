@@ -1308,20 +1308,20 @@ flow(
       r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
-    // A warm session whose box is coming up or up bills compute from creation
-    // (warmPoolGrantMs), so it must STAY in the visible list and sidebar — a
-    // billed session its owner cannot see, open or stop is the KRTX-1068
-    // dogfood report. The marker only hides a warm row that is no longer
-    // active (reaped, failed, completed).
-    await ctx.step('an unused warm session that is provisioning or running stays in the visible list', async () => {
+    // A warm session stays hidden from the visible list for as long as it
+    // carries the marker, however live its box — the sidebar must not paint an
+    // untitled "New session" row the user never started (2026-10-12 product
+    // call, revisiting KRTX-1068). The manager `project` scope keeps the live
+    // warm row listed so the billed box is seen and stopped there.
+    await ctx.step('an unused warm session stays hidden from the visible list', async () => {
       const visible = await owner.get('/v1/projects/:projectId/sessions', {
         params: { projectId: p.id },
         query: { scope: 'visible' },
       });
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
-      if (!visibleIds.includes(warmSessionId)) {
-        throw new Error('A warm session whose box bills compute is hidden from the visible session list');
+      if (visibleIds.includes(warmSessionId)) {
+        throw new Error('An unused warm session is listed in the visible session list');
       }
     });
 
@@ -1338,11 +1338,18 @@ flow(
     });
 
     await ctx.step('using the session drops the marker', async () => {
-      const r = await owner.post(
+      // A claim needs a placed box. On Platinum the sandbox row gets its
+      // region a few seconds after /warm, and until then the claim is 409.
+      const claim = () => owner.post(
         '/v1/projects/:projectId/sessions/warm/claim',
         { session_id: warmSessionId },
         { params: { projectId: p.id } },
       );
+      let r = await claim();
+      for (let attempt = 0; r.statusCode === 409 && attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        r = await claim();
+      }
       r.status(200).body().has('$.session_id', warmSessionId);
       if ((r.json<any>().metadata ?? {}).warm !== undefined) {
         throw new Error('The warm marker survived first use');
@@ -1390,19 +1397,30 @@ flow(
     // must drop the marker (listing the row) and stamp last_activity_at (so
     // the just-started session sorts as the newest, not at its create time).
     await ctx.step('adopting via POST /start drops the marker and stamps activity', async () => {
-      const start = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/start',
-        {},
-        { params: { projectId: p.id, sessionId: replacementId } },
-      );
-      start.status(200);
-
-      const visible = await owner.get('/v1/projects/:projectId/sessions', {
-        params: { projectId: p.id },
-        query: { scope: 'visible' },
-      });
-      visible.status(200);
-      const row = sessionRows(visible).find((s: any) => s.session_id === replacementId);
+      // Adoption needs a placed box, like the claim above. Until the Platinum
+      // sandbox row has its region, /start answers 200 `stage: provisioning`
+      // with `sandbox: null` and keeps the marker (session-runtime.ts, the
+      // warmSessionPlacement 'pending' branch). The browser re-polls /start;
+      // so does this step, until the listed row has lost the marker.
+      const startAndRead = async () => {
+        const start = await owner.post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          { params: { projectId: p.id, sessionId: replacementId } },
+        );
+        start.status(200);
+        const visible = await owner.get('/v1/projects/:projectId/sessions', {
+          params: { projectId: p.id },
+          query: { scope: 'visible' },
+        });
+        visible.status(200);
+        return sessionRows(visible).find((s: any) => s.session_id === replacementId);
+      };
+      let row = await startAndRead();
+      for (let attempt = 0; row && (row.metadata ?? {}).warm !== undefined && attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        row = await startAndRead();
+      }
       if (!row) {
         throw new Error('An adopted warm session is still hidden from the visible session list');
       }

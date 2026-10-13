@@ -14,7 +14,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from '@/components/site-link';
-import { type FormEvent, useCallback, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -159,6 +159,7 @@ import {
   sameSharedWith,
   sharedWithFrom,
 } from './secret-audience';
+import { useSlashFocus } from '@/hooks/utils';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -299,6 +300,9 @@ export function SecretsView({ projectId }: { projectId: string }) {
 
   /** The list resolved. Neither header control means anything before it does. */
   const showContent = !secretsQuery.isLoading && !secretsQuery.isError;
+  // The search only renders over a non-empty list; focus it once it does.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef, showContent && allRows.length > 0);
 
   return (
     <CapabilityPageShell
@@ -320,6 +324,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               <Search />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
+              ref={searchRef}
               placeholder={tI18nComplete.raw('textb5814f05b923')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}

@@ -1,8 +1,11 @@
 import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 
+import deMessages from '../../../../translations/de.json';
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  bulkDeleteConfirmLabel,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -12,6 +15,17 @@ import {
   summarizeBulkDelete,
   toggleSelection,
 } from './project-sessions-helpers';
+
+// A second, non-English catalog: these helpers must render their labels
+// through the keys the caller's locale resolves, not through hardcoded
+// English. Asserting the German copy pins both the key lookup and the routing
+// of the translator — an English translator cannot tell a hardcoded literal
+// from a catalog hit, because both read the same.
+const deUiTranslator = createTranslator({
+  locale: 'de',
+  messages: deMessages,
+  namespace: 'hardcodedUi.i18nComplete',
+});
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
@@ -44,18 +58,31 @@ describe('session inventory identity and access labels', () => {
     expect(
       sessionOwnerLabel(
         makeSession({ owner_type: 'user', owner_name: 'Ari', owner_email: 'ari@kortix.ai' }),
+        testUiTranslator,
       ),
     ).toBe('Ari');
     expect(
       sessionOwnerLabel(
         makeSession({ owner_type: 'service_account', owner_name: 'backend-debugger' }),
+        testUiTranslator,
       ),
     ).toBe('backend-debugger');
     expect(
       sessionOwnerLabel(
         makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+        testUiTranslator,
       ),
     ).toBe('Unknown owner');
+  });
+
+  test('resolves "You" and "Unknown owner" through the catalog, in the caller\'s locale', () => {
+    expect(sessionOwnerLabel(makeSession({ is_owner: true }), deUiTranslator)).toBe('Du');
+    expect(
+      sessionOwnerLabel(
+        makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+        deUiTranslator,
+      ),
+    ).toBe('Unbekannter Eigentümer');
   });
 
   test('distinguishes permission from a missing or archived runtime', () => {
@@ -85,6 +112,27 @@ describe('session inventory identity and access labels', () => {
 });
 
 describe('sessionDetailFields', () => {
+  test('labels Source, Trigger, Last activity, Created and Owner through the catalog, in the caller\'s locale', () => {
+    const cron = makeSession({
+      is_owner: true,
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'nightly-audit' },
+    });
+    const fields = sessionDetailFields(cron, FORMATTED, deUiTranslator);
+    const labels = fields.map((field) => field.label);
+
+    expect(labels).toContain('Quelle');
+    expect(labels).toContain('Trigger');
+    expect(labels).toContain('Letzte Aktivität');
+    expect(labels).toContain('Erstellt');
+    expect(labels).toContain('Eigentümer');
+    expect(labels).not.toContain('Source');
+    expect(labels).not.toContain('Last activity');
+    expect(labels).not.toContain('Created');
+    expect(labels).not.toContain('Owner');
+    // The Owner field's VALUE routes through the same translator.
+    expect(fields.find((field) => field.label === 'Eigentümer')?.value).toBe('Du');
+  });
+
   test('never emits a placeholder formatted like real data', () => {
     const bare = makeSession({
       // Typed non-nullable, but the API returns empty strings before the
@@ -214,6 +262,14 @@ describe('sessionDetailFields', () => {
       label: 'Conversations',
       value: '2 · 1 archived',
     });
+  });
+});
+
+describe('bulkDeleteConfirmLabel', () => {
+  test('reads the Delete {value0} message through the translator, in the caller\'s locale', () => {
+    expect(bulkDeleteConfirmLabel(5, testUiTranslator)).toBe('Delete 5');
+    expect(bulkDeleteConfirmLabel(5, deUiTranslator)).toBe('5 löschen');
+    expect(bulkDeleteConfirmLabel(1, deUiTranslator)).toBe('1 löschen');
   });
 });
 
