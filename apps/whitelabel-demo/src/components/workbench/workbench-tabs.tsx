@@ -21,6 +21,7 @@ import { SessionScope } from '@/components/workbench/session-scope';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { sendFailureTitle } from '@/lib/send-failure';
 import { cn } from '@/lib/utils';
+import type { SessionLogMessage } from '@kortix/sdk';
 import { type UseSessionResult, useSessionLogThread } from '@kortix/sdk/react';
 import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -164,11 +165,14 @@ function Thread({ session: c }: { session: UseSessionResult }) {
   );
 }
 
+/** One array for a thread with no messages, so the scroll effect does not run on every render. */
+const NO_MESSAGES: SessionLogMessage[] = [];
+
 function MessageList({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // The session log's root thread: the API's kortix.session/2 records, or the
   // `fromV1` view of the runtime's rows while the session reads v1.
-  const messages = useSessionLogThread(c)?.messages ?? [];
+  const messages = useSessionLogThread(c)?.messages ?? NO_MESSAGES;
 
   useEffect(() => {
     const el = scrollRef.current;

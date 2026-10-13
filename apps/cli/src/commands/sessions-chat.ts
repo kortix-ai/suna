@@ -559,8 +559,9 @@ running session.
 The messages come from the session log (kortix.session/2) the server stores
 at the end of every turn, so a stopped session is never woken up just to be
 read. A running session adds the messages of the turn it runs now, read live
-from its sandbox. A session with no stored log yet is read from its v1
-transcript: live while it runs, else the copy the server saved. The source is
+from its sandbox. A session with no stored log yet, or a credential the log
+does not answer (a session-bound token, as inside a sandbox), is read from the
+v1 transcript: live while the session runs, else the copy the server saved. The source is
 noted on stderr when the session is not read live.
 
   --limit, -n <N>   How many recent messages to show, per thread (default 10).
@@ -568,7 +569,9 @@ noted on stderr when the session is not read live.
                     record with "schema": "kortix.session/2", "source" ("log",
                     or "v1" for a session with no stored log, converted), and
                     "threads" (root and sub-agents), each with its newest
-                    messages and "has_more".
+                    messages and "has_more". A running turn's messages
+                    the log does not hold yet carry "provisional": true
+                    (their seq is not stored yet).
   --schema v1       Deprecated: emit the old JSON (role / text / parts per
                     root message) from the v1 transcript. Goes in the next
                     release.
@@ -700,10 +703,8 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   if (stored) {
     let threads = stored.threads;
     if (live) {
-      const liveRecords = sessionLogOfV1Rows(session.session_id, live.runtimeSessionId, live.messages).threads[0]?.messages ?? [];
-      threads = threads.map((thread) =>
-        thread.parent_thread_id === null ? appendLiveTail(thread, live.runtimeSessionId, liveRecords, limit).thread : thread,
-      );
+      const liveThread = sessionLogOfV1Rows(session.session_id, live.runtimeSessionId, live.messages).threads[0];
+      if (liveThread) threads = withLiveTurn(threads, liveThread, limit);
     } else {
       process.stderr.write(`${C.dim}Stored session log — ${why}.${C.reset}\n`);
     }
@@ -788,7 +789,8 @@ export interface StoredSessionLog {
 /**
  * Every thread of the session's stored log, each with its newest `limit`
  * messages, oldest first. A thread pages back by `before_seq` in windows of at
- * most `pageMax` (the route's limit). Null when the session has no stored log.
+ * most `pageMax` (the route's limit). Null when the session has no stored log,
+ * and when the route refuses the credential (403: a session-bound token).
  */
 export async function readStoredSessionLog(
   log: (query?: SessionLogPageQuery) => Promise<SessionLogPage | null>,
@@ -811,7 +813,14 @@ export async function readStoredSessionLog(
     } while (page.has_more && messages.length < limit && before !== undefined);
     return { page, messages, has_more: page.has_more };
   };
-  const root = await readThread();
+  let root: Awaited<ReturnType<typeof readThread>>;
+  try {
+    root = await readThread();
+  } catch (error) {
+    // The route refuses a session-bound token (the sandbox's KORTIX_TOKEN) with 403: read v1 then, as without a stored log.
+    if ((error as { status?: unknown } | null)?.status === 403) return null;
+    throw error;
+  }
   if (!root) return null;
   const threads = await Promise.all(
     root.page.threads.map(async (head) => {
@@ -823,25 +832,39 @@ export async function readStoredSessionLog(
 }
 
 /**
- * A running session's root thread with the turn it runs now: the stored log is
- * journaled at each turn end, so the live messages it does not hold yet (newer
- * than its last) follow it, with the seqs that follow. Only for the runtime
- * session the thread stores; the newest `limit` messages are kept.
+ * A running session's threads with the turn it runs now. The stored log is
+ * journaled at each turn end, so the root thread takes the live messages it
+ * does not hold yet (newer than its last), marked `provisional: true`: their
+ * seq is not stored yet. A tail keeps the seqs `fromV1` gives the live read
+ * when those agree with the stored ones, else it goes above the newest stored
+ * seq. A deleted message's seq is not served, so a provisional seq can differ
+ * from the one the journal stores. An empty or missing root thread is the live
+ * read. Only for the runtime session the root thread stores; each thread keeps
+ * its newest `limit` messages, and `has_more` says when older ones exist.
  */
-export function appendLiveTail<T extends SessionLogThread>(
-  thread: T,
-  runtimeSessionId: string,
-  live: readonly SessionLogMessage[],
-  limit: number,
-): { thread: T; added: number } {
-  if (thread.thread_id !== runtimeSessionId) return { thread, added: 0 };
-  const held = new Set(thread.messages.map((message) => message.message_id));
-  const last = thread.messages[thread.messages.length - 1];
-  const tail = live.filter((message) => !held.has(message.message_id) && (!last || message.created_at > last.created_at));
-  if (tail.length === 0) return { thread, added: 0 };
-  const next = (last?.seq ?? -1) + 1;
-  const messages = [...thread.messages, ...tail.map((message, i) => ({ ...message, thread_id: thread.thread_id, seq: next + i }))];
-  return { thread: { ...thread, messages: messages.slice(-limit) }, added: tail.length };
+export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit: number): LogThread[] {
+  const provisional = (message: SessionLogMessage) => ({ ...message, thread_id: live.thread_id, provisional: true });
+  const fit = (thread: SessionLogThread, messages: SessionLogMessage[], older: boolean): LogThread => ({
+    ...thread,
+    messages: messages.slice(-limit),
+    has_more: older || messages.length > limit,
+  });
+  const at = threads.findIndex((thread) => thread.parent_thread_id === null);
+  const root = threads[at];
+  if (!root) return live.messages.length ? [fit(live, live.messages.map(provisional), false), ...threads] : threads;
+  if (root.thread_id !== live.thread_id) return threads;
+  const stored = new Map(root.messages.map((message) => [message.message_id, message.seq]));
+  const last = root.messages[root.messages.length - 1];
+  const tail = live.messages.filter((message) => !stored.has(message.message_id) && (!last || message.created_at > last.created_at));
+  if (tail.length === 0) return threads;
+  const max = Math.max(0, ...root.messages.map((message) => message.seq));
+  const agree =
+    live.messages.every((message) => (stored.get(message.message_id) ?? message.seq) === message.seq) &&
+    tail.every((message) => message.seq > max);
+  const numbered = tail.map((message, i) => ({ ...provisional(message), seq: agree ? message.seq : max + 1 + i }));
+  const next = [...threads];
+  next[at] = fit(root, [...root.messages, ...numbered], root.has_more);
+  return next;
 }
 
 /** The mirror's largest window; the route answers 400 above it. */

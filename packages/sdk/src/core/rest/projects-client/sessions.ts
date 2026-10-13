@@ -5,7 +5,7 @@ import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
-import type { SessionLogPage, SessionLogPageQuery } from '../../session-log/source';
+import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -982,17 +982,13 @@ export async function getSessionLogPage(
   query: SessionLogPageQuery = {},
   options?: { signal?: AbortSignal },
 ): Promise<SessionLogPage | null> {
-  const search = new URLSearchParams();
-  if (query.thread !== undefined) search.set('thread', query.thread);
-  if (query.before_seq !== undefined) search.set('before_seq', String(query.before_seq));
-  if (query.limit !== undefined) search.set('limit', String(query.limit));
-  const qs = search.toString();
-  const response = await backendApi.get<unknown>(
-    `/projects/${projectId}/sessions/${sessionId}/log${qs ? `?${qs}` : ''}`,
-    { showErrors: false, signal: options?.signal },
-  );
-  if (response.error?.status === 404) return null;
-  const page = unwrap(response);
+  let page: unknown;
+  try {
+    page = await loadSessionLogPage!(projectId, sessionId, query, options?.signal);
+  } catch (error) {
+    if ((error as { status?: unknown } | null)?.status === 404) return null;
+    throw error;
+  }
   if (!isSessionLogPage(page)) throw new Error('The response is not a session log page');
   return page;
 }

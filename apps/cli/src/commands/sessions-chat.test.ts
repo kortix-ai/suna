@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type AssistantMessage, type MessageWithParts, type SessionLogMessage, type SessionLogPage, type SessionLogPageQuery, type ToolCallBlock, sessionLogOfV1Rows } from '@kortix/sdk';
-import { appendLiveTail, printLogMessage, printMessage, readStoredSessionLog } from './sessions-chat.ts';
+import { printLogMessage, printMessage, readStoredSessionLog, withLiveTurn } from './sessions-chat.ts';
 
 /** `printMessage` writes straight to stdout; swap the writer for the test. */
 function render(msg: MessageWithParts): string {
@@ -193,19 +193,60 @@ describe('readStoredSessionLog — every thread of the stored log, newest `limit
   });
 });
 
-describe('appendLiveTail — a running session shows the turn the log does not hold yet', () => {
-  const thread = { ...head('ses_root', null), messages: [record('m1', 4), record('m2', 5, { role: 'assistant' })], has_more: false };
+describe('withLiveTurn — a running session shows the turn the log does not hold yet', () => {
+  const root = (messages: SessionLogMessage[], has_more = false) => ({ ...head('ses_root', null), messages, has_more });
+  const child = { ...head('ses_child', 'ses_root'), messages: [record('c0', 1, { thread_id: 'ses_child' })], has_more: false };
+  /** The live read as `sessionLogOfV1Rows` gives it: one thread, seqs by position from 1. */
+  const live = (...ids: string[]) => ({ ...head('ses_root', null), messages: ids.map((id, i) => record(id, i + 1, { role: i % 2 ? 'assistant' : 'user' })) });
+  const shape = (threads: Array<{ thread_id: string; messages: SessionLogMessage[]; has_more: boolean }>) =>
+    threads.map((t) => [t.thread_id, t.messages.map((m) => [m.message_id, m.seq, (m as { provisional?: boolean }).provisional ?? false]), t.has_more]);
 
-  test('appends the live messages the stored thread lacks, newer than its last, with the seq that follows', () => {
-    const live = [record('m2', 2, { role: 'assistant' }), record('m3', 6), record('m4', 7, { role: 'assistant', status: 'streaming' })];
-    const { thread: merged, added } = appendLiveTail(thread, 'ses_root', live, 10);
-    expect(added).toBe(2);
-    expect(merged.messages.map((m) => [m.message_id, m.seq])).toEqual([['m1', 4], ['m2', 5], ['m3', 6], ['m4', 7]]);
+  test("the live seqs agree with the stored ones: the tail keeps fromV1's seqs, marked provisional", () => {
+    const threads = withLiveTurn([root([record('m1', 1), record('m2', 2)]), child], live('m1', 'm2', 'm3', 'm4'), 10);
+    expect(shape(threads)).toEqual([
+      ['ses_root', [['m1', 1, false], ['m2', 2, false], ['m3', 3, true], ['m4', 4, true]], false],
+      ['ses_child', [['c0', 1, false]], false],
+    ]);
   });
 
-  test('keeps the newest `limit`, and ignores a live read of another runtime session', () => {
-    const live = [record('m3', 6), record('m4', 7)];
-    expect(appendLiveTail(thread, 'ses_root', live, 3).thread.messages.map((m) => m.message_id)).toEqual(['m2', 'm3', 'm4']);
-    expect(appendLiveTail(thread, 'ses_other', live, 10)).toEqual({ thread, added: 0 });
+  test('a live window that does not start at the thread start numbers the tail above the newest stored seq', () => {
+    // The stored thread holds seqs 5 and 6; the live window's positions (1, 2, 3) disagree.
+    const window = { ...head('ses_root', null), messages: ['m5', 'm6', 'm7'].map((id, i) => ({ ...record(id, i + 5), seq: i + 1 })) };
+    const threads = withLiveTurn([root([record('m5', 5), record('m6', 6)], true)], window, 10);
+    expect(shape(threads)).toEqual([['ses_root', [['m5', 5, false], ['m6', 6, false], ['m7', 7, true]], true]]);
+  });
+
+  test('a tombstoned last message (seq 3, not served): the tail goes above the newest stored seq, provisional', () => {
+    const threads = withLiveTurn([root([record('m1', 1), record('m2', 2)])], live('m1', 'm2', 'm4'), 10);
+    expect(shape(threads)).toEqual([['ses_root', [['m1', 1, false], ['m2', 2, false], ['m4', 3, true]], false]]);
+  });
+
+  test('an empty stored root thread takes the live read with its fromV1 seqs', () => {
+    expect(shape(withLiveTurn([root([])], live('m1', 'm2'), 10))).toEqual([['ses_root', [['m1', 1, true], ['m2', 2, true]], false]]);
+  });
+
+  test('no stored root thread: the live thread comes first', () => {
+    expect(shape(withLiveTurn([], live('m1', 'm2'), 10))).toEqual([['ses_root', [['m1', 1, true], ['m2', 2, true]], false]]);
+  });
+
+  test('keeps the newest `limit` messages and says older ones exist', () => {
+    const threads = withLiveTurn([root([record('m1', 1), record('m2', 2)])], live('m1', 'm2', 'm3'), 2);
+    expect(shape(threads)).toEqual([['ses_root', [['m2', 2, false], ['m3', 3, true]], true]]);
+    expect(shape(withLiveTurn([], live('m1', 'm2', 'm3'), 2))).toEqual([['ses_root', [['m2', 2, true], ['m3', 3, true]], true]]);
+  });
+
+  test('a live read of another runtime session changes nothing; nothing new changes nothing', () => {
+    const threads = [root([record('m1', 1)])];
+    expect(withLiveTurn(threads, { ...live('x1', 'x2'), thread_id: 'ses_other' }, 10)).toBe(threads);
+    expect(withLiveTurn(threads, live('m1'), 10)).toBe(threads);
+  });
+});
+
+describe('readStoredSessionLog — a credential the log route refuses', () => {
+  test('a 403 (a session-bound token, as inside a sandbox) reads as no stored log; another error rejects', async () => {
+    const refused = Object.assign(new Error('The session sandbox credential cannot read the session log'), { status: 403 });
+    expect(await readStoredSessionLog(async () => { throw refused; }, 10)).toBeNull();
+    const broken = Object.assign(new Error('boom'), { status: 500 });
+    await expect(readStoredSessionLog(async () => { throw broken; }, 10)).rejects.toThrow('boom');
   });
 });
