@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../shared/db';
-import { budgetSpend } from '../../llm-gateway/budgets';
+import { budgetSpends } from '../../llm-gateway/budgets';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -327,31 +327,33 @@ export function registerGatewaySpendRoutes(): void {
           ),
         );
 
+      // The gate's own measure of each budget, in one statement (KRTX-1725).
+      const spends = await budgetSpends(projectId, budgets, now);
+
+      // A member budget's member can have no spend this month, so no row in
+      // `members`: resolve the budget subjects' emails too.
       const emails = await lookupEmailsByUserIds(
-        memberRows.map((r) => r.userId).filter((v): v is string => !!v),
+        [...memberRows.map((r) => r.userId), ...budgets.map((b) => b.subjectUserId)].filter(
+          (v): v is string => !!v,
+        ),
       );
 
       return c.json({
         // Month-to-date, whatever the budgets' periods. A meter reads its own
         // budget's `spent_usd`.
         project_spend: { requests: projectAgg?.requests ?? 0, cost: projectAgg?.cost ?? 0 },
-        budgets: await Promise.all(
-          budgets.map(async (b) => {
-            // The gate's own measure of this budget (KRTX-1725).
-            const spend = await budgetSpend(projectId, b, now);
-            return {
-              budget_id: b.budgetId,
-              scope: b.scope,
-              subject_user_id: b.subjectUserId,
-              limit_usd: Number(b.limitUsd),
-              period: b.period,
-              action: b.action,
-              spent_usd: spend.spentUsd,
-              period_start: spend.periodStart.toISOString(),
-              resets_at: spend.resetsAt.toISOString(),
-            };
-          }),
-        ),
+        budgets: budgets.map((b, i) => ({
+          budget_id: b.budgetId,
+          scope: b.scope,
+          subject_user_id: b.subjectUserId,
+          subject_email: b.subjectUserId ? (emails.get(b.subjectUserId) ?? null) : null,
+          limit_usd: Number(b.limitUsd),
+          period: b.period,
+          action: b.action,
+          spent_usd: spends[i]!.spentUsd,
+          period_start: spends[i]!.periodStart.toISOString(),
+          resets_at: spends[i]!.resetsAt.toISOString(),
+        })),
         members: memberRows.map((r) => ({
           user_id: r.userId,
           email: r.userId ? (emails.get(r.userId) ?? null) : null,

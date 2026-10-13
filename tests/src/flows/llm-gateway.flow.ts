@@ -578,6 +578,7 @@ flow('GW-BUDGET-1', {
     budget_id: string;
     scope: 'project' | 'member';
     subject_user_id: string | null;
+    subject_email: string | null;
     limit_usd: number;
     period: Period;
     spent_usd: number;
@@ -585,7 +586,8 @@ flow('GW-BUDGET-1', {
     resets_at: string;
   }
   const team = await ctx.fixtures.team();
-  const memberId = (await team.addMember('member')).userId!;
+  const member = await team.addMember('member');
+  const memberId = member.userId!;
   const project = await team.project();
   const params = { projectId: project.id };
   const path = '/v1/projects/:projectId/gateway/budgets';
@@ -639,14 +641,23 @@ flow('GW-BUDGET-1', {
     }
   });
   let memberBudgetId = '';
-  await ctx.step('a member budget reads its own period, next to the project budget', async () => {
+  await ctx.step('a member budget reads its own period and names its member, who has no spend this month, next to the project budget', async () => {
     (await owner.put(path, {
       scope: 'member', subject_user_id: memberId, limit_usd: 5, period: 'day', action: 'block',
     }, { params })).status(200);
-    const budgets = (await read()).budgets;
-    const own = budgets.find((b) => b.scope === 'member' && b.subject_user_id === memberId);
+    const body = await read();
+    const own = body.budgets.find((b) => b.scope === 'member' && b.subject_user_id === memberId);
     expectPeriod(own, 'day', 5);
-    expectPeriod(budgets.find((b) => b.scope === 'project'), 'month', 50);
+    // The month-to-date `members` list has no row for a member who spent
+    // nothing, so only the budget's `subject_email` can name them.
+    if (own!.subject_email?.toLowerCase() !== member.email?.toLowerCase()) {
+      throw new Error(`member budget subject_email ${own!.subject_email}, expected ${member.email}`);
+    }
+    const projectBudget = body.budgets.find((b) => b.scope === 'project');
+    expectPeriod(projectBudget, 'month', 50);
+    if (projectBudget!.subject_email !== null) {
+      throw new Error(`project budget subject_email ${projectBudget!.subject_email}, expected null`);
+    }
     memberBudgetId = own!.budget_id;
   });
   await ctx.step('removing the member budget removes its row and keeps the project budget', async () => {

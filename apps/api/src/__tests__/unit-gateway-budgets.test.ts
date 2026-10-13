@@ -17,7 +17,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
  */
 
 // One FIFO queue per (projectId, subjectUserId, period) key, in the exact
-// call order budgetSpend issues them in checkBudget's budget loop — avoids
+// call order budgetSpends issues them in checkBudget's budget loop — avoids
 // needing to introspect drizzle's `where` condition object, since the mock
 // below never inspects it.
 let spendQueue: number[] = [];
@@ -40,11 +40,13 @@ mock.module('../shared/db', () => ({
         where: async () => {
           if (table === gatewayBudgets) return budgetRows;
           if (table === gatewayRequestLogs) {
-            if (fields?.cost) {
-              spendExpressions.push(new PgDialect().sqlToQuery(fields.cost as SQL).sql);
+            // The gate measures one budget per statement: one selected field.
+            const [key, expression] = Object.entries(fields ?? {})[0] ?? ['cost', undefined];
+            if (expression) {
+              spendExpressions.push(new PgDialect().sqlToQuery(expression as SQL).sql);
             }
             const cost = spendQueue.length ? spendQueue.shift()! : 0;
-            return [{ cost }];
+            return [{ [key]: cost }];
           }
           throw new Error('unexpected table in mocked db.select().from()');
         },
@@ -222,7 +224,7 @@ describe('checkBudget', () => {
   describe('in-flight admission reservation (BILLING-CORRECTNESS: concurrent check-then-act race)', () => {
     // Every concurrent checkBudget call under test reads the SAME `spent`
     // value from gatewayRequestLogs (nothing has settled yet — that's the
-    // whole bug) but each call still gets its own budgetSpend query, so we
+    // whole bug) but each call still gets its own budgetSpends query, so we
     // queue that constant value once per call.
     test('N concurrent admissions against a nearly-full block budget are bounded, not all admitted', async () => {
       budgetRows = [

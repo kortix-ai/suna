@@ -1,8 +1,8 @@
-import { and, eq, gte } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import { db } from '../shared/db';
-import { totalSpendSql } from '../shared/llm-spend';
+import { totalSpendWhereSql } from '../shared/llm-spend';
 
 export type Period = 'day' | 'week' | 'month';
 
@@ -57,32 +57,52 @@ export interface BudgetSpend {
 }
 
 /**
- * A budget's spend in its current period: the number `checkBudget` compares
- * with the limit. GET /gateway/budgets reports this same number, so the meter
- * and the gate cannot disagree (KRTX-1725). A member budget counts the
- * requests of its member only.
+ * Each budget's spend in its current period, in input order: the number
+ * `checkBudget` compares with the limit. GET /gateway/budgets reports these
+ * same numbers, so the meter and the gate cannot disagree (KRTX-1725). A
+ * member budget counts the requests of its member only.
+ *
+ * One statement for any number of budgets: one filtered sum per budget over
+ * one scan of the project's rows since the earliest period start. A statement
+ * per budget, all in parallel, held every connection of the request pool that
+ * the gate's own check waits on.
+ * ponytail: one FILTER per budget per row; group by actor_user_id if a project
+ * ever carries hundreds of member budgets.
  */
-export async function budgetSpend(
+export async function budgetSpends(
   projectId: string,
-  budget: { scope: string; subjectUserId: string | null; period: string },
+  budgets: ReadonlyArray<{ scope: string; subjectUserId: string | null; period: string }>,
   now: Date = new Date(),
-): Promise<BudgetSpend> {
-  const period = budget.period as Period;
-  const periodStart = startOfBudgetPeriod(period, now);
-  const conds = [eq(gatewayRequestLogs.projectId, projectId), gte(gatewayRequestLogs.createdAt, periodStart)];
-  if (budget.scope === 'member' && budget.subjectUserId) {
-    conds.push(eq(gatewayRequestLogs.actorUserId, budget.subjectUserId));
-  }
+): Promise<BudgetSpend[]> {
+  if (budgets.length === 0) return [];
+  const windows = budgets.map((budget) => {
+    const period = budget.period as Period;
+    const periodStart = startOfBudgetPeriod(period, now);
+    const inPeriod = gte(gatewayRequestLogs.createdAt, periodStart);
+    return {
+      periodStart,
+      resetsAt: budgetPeriodResetsAt(period, now),
+      rows:
+        budget.scope === 'member' && budget.subjectUserId
+          ? sql`${inPeriod} and ${eq(gatewayRequestLogs.actorUserId, budget.subjectUserId)}`
+          : inPeriod,
+    };
+  });
+  const from = new Date(Math.min(...windows.map((w) => w.periodStart.getTime())));
   const [agg] = await db
     // TOTAL spend, not the Kortix-billed slice. A gateway budget caps what a
     // project spends on inference; measuring it with `final_cost` alone made
     // every budget on a BYOK project permanently inert, because BYOK routes
     // resolve to `billingMode: 'none'` with `markup: 0` and bill 0 no matter
     // how many tokens they burn. See shared/llm-spend.ts.
-    .select({ cost: totalSpendSql })
+    .select(Object.fromEntries(windows.map((w, i) => [`b${i}`, totalSpendWhereSql(w.rows)])))
     .from(gatewayRequestLogs)
-    .where(and(...conds));
-  return { spentUsd: agg?.cost ?? 0, periodStart, resetsAt: budgetPeriodResetsAt(period, now) };
+    .where(and(eq(gatewayRequestLogs.projectId, projectId), gte(gatewayRequestLogs.createdAt, from)));
+  return windows.map((w, i) => ({
+    spentUsd: agg?.[`b${i}`] ?? 0,
+    periodStart: w.periodStart,
+    resetsAt: w.resetsAt,
+  }));
 }
 
 // ─── In-flight admission reservation for 'block' budgets ───────────────────
@@ -195,7 +215,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
   for (const b of budgets) {
     if (b.scope === 'member' && b.subjectUserId !== principal.userId) continue;
     const subject = b.scope === 'member' ? b.subjectUserId : null;
-    const { spentUsd: spent } = await budgetSpend(principal.projectId, b, now);
+    const spent = (await budgetSpends(principal.projectId, [b], now))[0]?.spentUsd ?? 0;
     const limit = Number(b.limitUsd);
     const threshold = spent >= limit ? 100 : spent >= limit * 0.8 ? 80 : null;
     if (threshold && b.budgetId) {

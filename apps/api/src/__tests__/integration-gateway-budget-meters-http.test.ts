@@ -25,6 +25,9 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 const OWNER = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
+// A member with no spend at all, so no entry in the month-to-date `members`.
+const QUIET = crypto.randomUUID();
+const QUIET_EMAIL = `quiet-${QUIET.slice(0, 8)}@example.test`;
 const DAY_MS = 86_400_000;
 
 // The UTC periods, computed here without the product helpers.
@@ -63,6 +66,8 @@ const budgetIds = new Map<string, { scope: 'project' | 'member'; period: Period 
 interface WireBudget {
   budget_id: string;
   scope: 'project' | 'member';
+  subject_user_id: string | null;
+  subject_email?: string | null;
   period: Period;
   limit_usd: number;
   spent_usd: number;
@@ -77,6 +82,9 @@ beforeAll(async () => {
 
   project = await seedProject('budget-meters');
   unrelated = await seedProject('budget-meters-other', { accountId: project.account_id });
+  await db.execute(sql`
+    insert into auth.users (id, email, instance_id, aud, role)
+    values (${QUIET}::uuid, ${QUIET_EMAIL}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`);
   await insertIntoView(db, accountMembers, [
     { userId: OWNER, accountId: project.account_id, accountRole: 'owner', isSuperAdmin: false },
     { userId: MEMBER, accountId: project.account_id, accountRole: 'member', isSuperAdmin: false },
@@ -140,7 +148,38 @@ afterAll(async () => {
   await db.delete(gatewayRequestLogs).where(inArray(gatewayRequestLogs.projectId, ids));
   await db.delete(gatewayBudgets).where(eq(gatewayBudgets.projectId, project.project_id));
   await removeSeeded([project, unrelated]);
+  await db.execute(sql`delete from auth.users where id = ${QUIET}::uuid`);
 });
+
+/** Add member budgets for one test, then remove them, so the other tests see the seeded set. */
+async function withMemberBudgets<T>(
+  subjects: string[],
+  work: () => Promise<T>,
+): Promise<T> {
+  const added = await db
+    .insert(gatewayBudgets)
+    .values(
+      subjects.map((subjectUserId) => ({
+        projectId: project.project_id,
+        scope: 'member' as const,
+        subjectUserId,
+        limitUsd: '10',
+        period: 'week' as const,
+        action: 'block' as const,
+      })),
+    )
+    .returning({ budgetId: gatewayBudgets.budgetId });
+  try {
+    return await work();
+  } finally {
+    await db.delete(gatewayBudgets).where(inArray(gatewayBudgets.budgetId, added.map((row) => row.budgetId)));
+  }
+}
+
+/** The number of database statements one request ran: `db;desc="n=…"` in `Server-Timing` (lib/server-timing.ts). */
+function dbStatements(res: Response): number {
+  return Number(/(?:^|,)\s*db;[^,]*desc="n=(\d+)"/.exec(res.headers.get('server-timing') ?? '')?.[1]);
+}
 
 async function readBudgets(): Promise<WireBudget[]> {
   const res = await app.request(`/v1/projects/${project.project_id}/gateway/budgets`, {
@@ -202,5 +241,38 @@ describe('GET /gateway/budgets: spend per budget period', () => {
     };
     expect(body.project_spend.cost).toBe(spentSince(MONTH_START));
     expect(body.members.find((m) => m.user_id === OTHER)?.cost).toBe(32);
+  });
+
+  test('a member budget names its member, also when the member has no spend this month', async () => {
+    await withMemberBudgets([QUIET], async () => {
+      const res = await app.request(`/v1/projects/${project.project_id}/gateway/budgets`, {
+        headers: { Authorization: `Bearer ${ownerSecret}` },
+      });
+      const body = (await res.json()) as { budgets: WireBudget[]; members: Array<{ user_id: string }> };
+      // The month-to-date list has no row for this member: only the budget can name them.
+      expect(body.members.some((m) => m.user_id === QUIET)).toBe(false);
+      const quiet = body.budgets.find((b) => b.subject_user_id === QUIET);
+      expect(quiet?.subject_email).toBe(QUIET_EMAIL);
+      expect(quiet?.spent_usd).toBe(0);
+      expect(body.budgets.find((b) => b.scope === 'project')?.subject_email).toBeNull();
+    });
+  });
+
+  test('the spend of every budget is one statement: four more member budgets add no database statement', async () => {
+    const read = () =>
+      app.request(`/v1/projects/${project.project_id}/gateway/budgets`, {
+        headers: { Authorization: `Bearer ${ownerSecret}` },
+      });
+    await read(); // fills the auth and access caches
+    const seeded = dbStatements(await read());
+    expect(seeded).toBeGreaterThan(0);
+    const extra = Array.from({ length: 4 }, () => crypto.randomUUID());
+    await withMemberBudgets(extra, async () => {
+      const res = await read();
+      expect(((await res.json()) as { budgets: WireBudget[] }).budgets).toHaveLength(budgetIds.size + extra.length);
+      // One statement per budget, all at once, held every connection of the
+      // API's 6-connection pool that the gate's budget check also waits on.
+      expect(dbStatements(res)).toBe(seeded);
+    });
   });
 });
