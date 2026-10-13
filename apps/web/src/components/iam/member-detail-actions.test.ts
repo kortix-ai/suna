@@ -39,10 +39,10 @@ describe('member-detail actions are reachable', () => {
 describe('member-detail uses the shared access primitives', () => {
   test('the panel chrome is AccessDetailShell, not a hand-rolled header', () => {
     expect(source).toContain('AccessDetailShell');
-    // Back goes to the members LIST in the same pane — a callback, not a
-    // route change, so the hub's left rail stays put.
-    expect(flat).toContain("raw('text3d6fe3e703f6')");
-    expect(flat).toContain('onClick: onBack');
+    // No in-pane back link: the hub breadcrumb (`accountHubCrumbs`) names
+    // Members as a link above the member. Removing still returns to the list.
+    expect(flat).not.toContain("raw('text3d6fe3e703f6')");
+    expect(flat).toContain('onBack();');
   });
 
   test('both lists are AccessList/AccessRow', () => {

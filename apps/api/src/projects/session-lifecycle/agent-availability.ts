@@ -71,6 +71,19 @@ export function resolveDeliverableAgent(
   return { agent: null, dropped: true };
 }
 
+/**
+ * The agent a prompt runs under: the prompt's own pick, else the session's
+ * `agent_name`. Authorization already falls back to the session's agent
+ * (`resolveAndAuthorizeAgent`); delivery must use the same name, or the turn
+ * runs on the runtime default while the member was authorized for another.
+ */
+export function promptAgent(
+  requested: string | null | undefined,
+  sessionAgent: string | null | undefined,
+): string | null {
+  return requested?.trim() || sessionAgent?.trim() || null;
+}
+
 /** Names out of the runtime's `GET /agent` body, tolerant of shape drift. */
 export function parseRuntimeAgentNames(body: unknown): string[] | null {
   const list = Array.isArray(body)

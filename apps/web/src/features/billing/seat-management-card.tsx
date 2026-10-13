@@ -1,6 +1,7 @@
 'use client';
 
 import type { AccountState } from '@kortix/sdk';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { useTranslations } from '@/i18n/use-translations';
 
 /**
@@ -25,23 +26,26 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
 
   const monthlyTotal = seats.price_per_seat_usd * seats.count;
 
+  // The settings row shape (Linear): what the seats are on the left, the
+  // monthly total on the right, in the same group chrome as the portal row.
   return (
-    <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-foreground text-sm font-medium">
-          {tI18nComplete.raw('text42ef2c24bd7a')}
+    <SettingsRowGroup>
+      <SettingsRow
+        label={tI18nComplete.raw('text42ef2c24bd7a')}
+        description={
+          <span className="tabular-nums">
+            {seats.count} {seats.count === 1 ? 'seat' : 'seats'} · ${seats.price_per_seat_usd}{' '}
+            {tI18nComplete.raw('text6a65480c06db')}
+          </span>
+        }
+      >
+        <p className="text-foreground text-sm font-medium tabular-nums">
+          ${monthlyTotal}
+          <span className="text-muted-foreground ml-1 text-xs font-normal">
+            {tI18nComplete.raw('textdcc954337afd')}
+          </span>
         </p>
-        <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
-          {seats.count} {seats.count === 1 ? 'seat' : 'seats'} · ${seats.price_per_seat_usd}{' '}
-          {tI18nComplete.raw('text6a65480c06db')}
-        </p>
-      </div>
-      <p className="shrink-0 text-right text-sm font-semibold tabular-nums">
-        ${monthlyTotal}
-        <span className="text-muted-foreground ml-1 text-xs font-normal">
-          {tI18nComplete.raw('textdcc954337afd')}
-        </span>
-      </p>
-    </div>
+      </SettingsRow>
+    </SettingsRowGroup>
   );
 }

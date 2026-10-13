@@ -32,7 +32,16 @@ import type { SettingsTab } from './settings-tabs';
  * renders nothing — which is why `tab-content-width.test.ts` pins that every
  * pane's id actually resolves.
  */
-export function SettingsTabHeader({ tab, action }: { tab: string; action?: React.ReactNode }) {
+export function SettingsTabHeader({
+  tab,
+  action,
+  hideDescription = false,
+}: {
+  tab: string;
+  action?: React.ReactNode;
+  /** Title only: a pane whose list explains itself (Personal access keys). */
+  hideDescription?: boolean;
+}) {
   const contextItem = useSettingsRailItem(tab as SettingsTab);
   const tSettingsRail = useTranslations('settings.rail');
   const item =
@@ -54,7 +63,7 @@ export function SettingsTabHeader({ tab, action }: { tab: string; action?: React
   return (
     <SettingsSectionHeader
       title={item.label}
-      description={item.description}
+      description={hideDescription ? undefined : item.description}
       action={
         docs || action ? (
           <div className="flex min-w-0 items-center gap-2">

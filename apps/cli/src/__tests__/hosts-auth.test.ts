@@ -283,8 +283,8 @@ describe('kortix hosts logout', () => {
   test('clears the active host token (default)', async () => {
     const code = await runHosts(['logout']);
     expect(code).toBe(0);
-    // Built-in-less custom host is removed entirely; its record is gone.
-    expect(getHost('test')).toBeNull();
+    // Logout preserves the custom host registration.
+    expect(getHost('test')?.token).toBe('');
     expect(stripAnsi(stdout)).toContain('Logged out of test');
   });
 
@@ -304,7 +304,7 @@ describe('kortix hosts logout', () => {
 
     const code = await runHosts(['logout', 'cloud']);
     expect(code).toBe(0);
-    // `cloud` is a built-in — it resets to an empty-token placeholder.
+    // The named host keeps its registration with an empty token.
     expect(getHost('cloud')?.token).toBe('');
     // The active host is untouched.
     expect(getHost('test')?.token).toBe('tok_test');
@@ -313,7 +313,7 @@ describe('kortix hosts logout', () => {
   test('the top-level `logout` alias delegates identically', async () => {
     const code = await runLogout([]);
     expect(code).toBe(0);
-    expect(getHost('test')).toBeNull();
+    expect(getHost('test')?.token).toBe('');
   });
 });
 

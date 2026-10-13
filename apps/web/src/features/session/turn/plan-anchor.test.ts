@@ -1,25 +1,29 @@
 import { describe, expect, test } from 'bun:test';
 import type { PlanSurfaceState } from './plan-anchor';
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
 import { chatPlanAnchorId, planAnchorMessageId, planBelongsToChat } from './plan-anchor';
 
-type Msg = Parameters<typeof planAnchorMessageId>[0][number];
-
-function user(id: string): Msg {
-  return { info: { id, role: 'user' }, parts: [] } as unknown as Msg;
+// v1 rows, read as the transcript reads them: the `fromV1` view, grouped into turns.
+type Row = { info: { id: string; role: string; time: { created: number } }; parts: object[] };
+let clock = 0;
+function user(id: string): Row {
+  return { info: { id, role: 'user', time: { created: ++clock } }, parts: [] };
 }
 
-function assistant(id: string, tools: string[] = []): Msg {
+function assistant(id: string, tools: string[] = []): Row {
   return {
-    info: { id, role: 'assistant' },
+    info: { id, role: 'assistant', time: { created: ++clock } },
     parts: tools.map((tool, i) => ({
       id: `${id}_p${i}`,
       type: 'tool',
       tool,
       callID: `call_${id}_${i}`,
-      state: { status: 'completed' },
+      state: { status: 'completed', input: {}, output: '', title: '', metadata: {}, time: { start: clock, end: clock } },
     })),
-  } as unknown as Msg;
+  };
 }
+
+const turnsOf = (rows: Row[]) => sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!);
 
 describe('planAnchorMessageId', () => {
   test('anchors the plan to the user message whose turn wrote the todos', () => {
@@ -32,7 +36,7 @@ describe('planAnchorMessageId', () => {
 
     // The reported bug: this returned 'u2' (the newest turn), so the plan card
     // migrated onto a message that never touched the plan.
-    expect(planAnchorMessageId(messages)).toBe('u1');
+    expect(planAnchorMessageId(turnsOf(messages))).toBe('u1');
   });
 
   test('a later turn that never writes todos does not steal the plan', () => {
@@ -45,7 +49,7 @@ describe('planAnchorMessageId', () => {
       assistant('a3', ['read', 'grep']),
     ];
 
-    expect(planAnchorMessageId(messages)).toBe('u1');
+    expect(planAnchorMessageId(turnsOf(messages))).toBe('u1');
   });
 
   test('a re-plan moves the anchor to the turn that re-planned', () => {
@@ -58,12 +62,12 @@ describe('planAnchorMessageId', () => {
       assistant('a3', ['todowrite']),
     ];
 
-    expect(planAnchorMessageId(messages)).toBe('u3');
+    expect(planAnchorMessageId(turnsOf(messages))).toBe('u3');
   });
 
   test('accepts both tool spellings', () => {
-    expect(planAnchorMessageId([user('u1'), assistant('a1', ['todo_write'])])).toBe('u1');
-    expect(planAnchorMessageId([user('u1'), assistant('a1', ['todowrite'])])).toBe('u1');
+    expect(planAnchorMessageId(turnsOf([user('u1'), assistant('a1', ['todo_write'])]))).toBe('u1');
+    expect(planAnchorMessageId(turnsOf([user('u1'), assistant('a1', ['todowrite'])]))).toBe('u1');
   });
 
   test('todos written while the turn is still streaming anchor to that turn', () => {
@@ -74,7 +78,7 @@ describe('planAnchorMessageId', () => {
       assistant('a2', ['todowrite']),
     ];
 
-    expect(planAnchorMessageId(messages)).toBe('u2');
+    expect(planAnchorMessageId(turnsOf(messages))).toBe('u2');
   });
 
   test('falls back to the last user message when no turn wrote todos', () => {
@@ -84,19 +88,24 @@ describe('planAnchorMessageId', () => {
     // dropping it entirely.
     const messages = [user('u1'), assistant('a1', ['bash']), user('u2'), assistant('a2', ['read'])];
 
-    expect(planAnchorMessageId(messages)).toBe('u2');
+    expect(planAnchorMessageId(turnsOf(messages))).toBe('u2');
   });
 
-  test('returns null when there is no user message at all', () => {
-    expect(planAnchorMessageId([])).toBeNull();
-    expect(planAnchorMessageId([assistant('a1', ['todowrite'])])).toBeNull();
+  test('returns null when there is no message at all', () => {
+    expect(planAnchorMessageId(turnsOf([]))).toBeNull();
+  });
+
+  test('a reply with no prompt loaded heads its own turn, which owns the plan', () => {
+    // The block turn layer (`sessionLogTurns`) gives such a reply a turn, so
+    // the plan stays reachable; v1 had no turn to anchor it to.
+    expect(planAnchorMessageId(turnsOf([assistant('a1', ['todowrite'])]))).toBe('a1');
   });
 
   test('ignores todo parts that precede any user message', () => {
     const messages = [assistant('a0', ['todowrite']), user('u1'), assistant('a1', ['bash'])];
 
     // No user message owned that write, so the fallback (last user) applies.
-    expect(planAnchorMessageId(messages)).toBe('u1');
+    expect(planAnchorMessageId(turnsOf(messages))).toBe('u1');
   });
 });
 
@@ -157,25 +166,23 @@ describe('chatPlanAnchorId', () => {
   test('the panel owns the plan: no turn claims it', () => {
     // Null matches no message id, so every `ownsPlan` downstream is false and
     // the user bubble's column cap relaxes back to `max-w-[80%]` with it.
-    expect(chatPlanAnchorId(messages, false)).toBeNull();
+    expect(chatPlanAnchorId(turnsOf(messages), false)).toBeNull();
   });
 
   test('the chat owns the plan: the same anchor as before the panel existed', () => {
-    expect(chatPlanAnchorId(messages, true)).toBe('u1');
-    expect(chatPlanAnchorId(messages, true)).toBe(planAnchorMessageId(messages));
+    expect(chatPlanAnchorId(turnsOf(messages), true)).toBe('u1');
+    expect(chatPlanAnchorId(turnsOf(messages), true)).toBe(planAnchorMessageId(turnsOf(messages)));
   });
 
   test('no transcript yet is null either way', () => {
     expect(chatPlanAnchorId(null, true)).toBeNull();
     expect(chatPlanAnchorId(undefined, true)).toBeNull();
-    expect(chatPlanAnchorId([], true)).toBeNull();
+    expect(chatPlanAnchorId(turnsOf([]), true)).toBeNull();
   });
 
   test('the scan is skipped entirely when the panel owns the plan', () => {
-    // The gate wraps the walk rather than sitting beside it: on a long session
-    // `planAnchorMessageId` inspects every part of every message, and that is
-    // work with no consumer while the panel is drawing.
+    // The gate wraps the lookup rather than sitting beside it.
     const huge = Array.from({ length: 500 }, (_, i) => user(`u${i}`));
-    expect(chatPlanAnchorId(huge, false)).toBeNull();
+    expect(chatPlanAnchorId(turnsOf(huge), false)).toBeNull();
   });
 });

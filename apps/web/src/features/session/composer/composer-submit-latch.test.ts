@@ -366,6 +366,16 @@ describe('the composer submits through the latch', () => {
     );
   });
 
+  test('the dispatch ref is fresh before a prefill submit in the same commit', () => {
+    // The prefill effect submits in the commit that delivers the prefill. A
+    // passive refresh runs after it there, so that submit sent the previous
+    // render's agent, model and effort. A layout effect runs first.
+    const wiring = between('const dispatchSubmissionRef = useRef', 'const submitLatchRef = useRef');
+    expect(wiring.replace(/\s+/g, ' ')).toContain(
+      'useLayoutEffect(() => { dispatchSubmissionRef.current = dispatchSubmission; });',
+    );
+  });
+
   test('a stashed dispatch reports whether the host took the draft', () => {
     // Every refusal before the host is a bare `return;`, which `dispatchLatched`
     // reads as "give the stash back". Only three exits count as taken.

@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { COST_MARKUP } from '../../turns';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage, type SessionLogThread } from '../types';
+import { sessionLogOfV1Rows } from '../v1-view';
 import { sessionLogThreadMetrics, sessionLogTurns } from './index';
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
@@ -96,5 +97,23 @@ describe('sessionLogThreadMetrics', () => {
     const m = sessionLogThreadMetrics(t);
     expect(m.tokens).toEqual({ input: 4, output: 6, reasoning: 0, cacheRead: 0, cacheWrite: 0 });
     expect(m.messages).toEqual({ all: 2, user: 0, assistant: 2 });
+  });
+});
+
+describe('sessionLogThreadMetrics on a thread converted from v1', () => {
+  test('every reply\'s usage is priced (the context modal\'s totals), not only the replies with a step part', () => {
+    const rows = [
+      { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [{ id: 'prt_q', sessionID: 'ses', messageID: 'msg_u', type: 'text', text: 'go' }] },
+      {
+        info: { id: 'msg_a', sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: { created: 2, completed: 3 }, providerID: 'anthropic', modelID: 'm', cost: 0, tokens: { input: 1_000_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } },
+        parts: [],
+      },
+    ];
+    const view = sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!;
+    const m = sessionLogThreadMetrics(view, { pricing: lookup });
+    expect(m.tokens.input).toBe(1_000_000);
+    expect(m.cost).toBeCloseTo(1 * COST_MARKUP, 9);
+    // The transcript's turn row keeps v1's `getTurnCost` rule: it prices parts, and this reply has none.
+    expect(sessionLogTurns(view, { pricing: lookup })[0]!.cost).toBeNull();
   });
 });

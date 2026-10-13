@@ -200,7 +200,7 @@ export interface TunnelServerConfig {
   ) => Promise<boolean>;
   /**
    * Called before handling HTTP requests to relay routes (/connections, /rpc).
-   * Return false to deny. If not provided, routes are open.
+   * Return false to deny. If not provided, every request is denied (403).
    */
   onAuthorizeHTTP?: (req: Request) => Promise<boolean>;
 }

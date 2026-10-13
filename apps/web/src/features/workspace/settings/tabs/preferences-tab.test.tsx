@@ -58,6 +58,39 @@ describe('PreferencesTabView', () => {
     expect(out).toContain('Ctrl+K');
   });
 
+  test('the desktop app gets a Quick Entry shortcut control; the web does not', () => {
+    const quickEntry = (shortcut: string | null, inUse = false) =>
+      renderToStaticMarkup(
+        <PreferencesTabView
+          copy={englishCopy}
+          quickEntry={{
+            copy: {
+              title: englishMessages.settings.preferences.quickEntryTitle,
+              description: englishMessages.settings.preferences.quickEntryDescription,
+              off: englishMessages.settings.preferences.quickEntryOff,
+              inUse: englishMessages.settings.preferences.quickEntryInUse,
+            },
+            state: {
+              shortcut,
+              inUse,
+              choices: [
+                { value: 'CommandOrControl+Shift+Space', label: 'Command + Shift + Space' },
+                { value: 'Alt+Space', label: 'Option + Space' },
+              ],
+            },
+            onChange: () => {},
+          }}
+        />,
+      );
+    expect(html()).not.toContain('preferences-quick-entry');
+    const on = quickEntry('Alt+Space');
+    expect(on).toContain('aria-label="Quick Entry"');
+    expect(on).toContain('Option + Space');
+    expect(on).not.toContain(englishMessages.settings.preferences.quickEntryInUse);
+    expect(quickEntry(null)).toContain('>Off<');
+    expect(quickEntry('Alt+Space', true)).toContain(englishMessages.settings.preferences.quickEntryInUse);
+  });
+
   test('lists the shortcut that opens this very panel', () => {
     // Mod+, had no keycap anywhere in the app after the sidebar Settings row
     // was removed — the handler worked and nothing said so. This list is the
