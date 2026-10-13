@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { ROLES } from '@/features/marketing/solutions/registry';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
 // The blog is not listed here: it is its own app (kortix-ai/marketing), served
@@ -52,25 +51,17 @@ export const STATIC_PUBLIC_ROUTES = [
   '/',
   '/a1o',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
   '/careers',
   '/changelog',
-  '/channels',
-  '/company-as-code',
   '/contact',
-  '/developers',
+  '/customers',
   '/docs',
   '/download',
-  '/enterprise',
-  '/connectors',
   '/legal',
   '/marketplace',
   '/pricing',
-  '/security',
-  '/self-hosted',
-  '/solutions',
+  '/product',
+  '/services',
   '/support',
   '/use-cases',
 ] as const;
@@ -117,15 +108,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'developers',
-    title: 'Developers: CLI, SDK and API for AI agents',
-    description:
-      'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
-    htmlPath: '/developers',
-    markdownPath: '/markdown/developers.md',
-  },
-  {
-    kind: 'marketing',
     slug: 'careers',
     title: 'Careers',
     description:
@@ -157,14 +139,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'enterprise',
-    title: 'Enterprise AI agents: SSO, SCIM, audit, your VPC',
-    description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
-    htmlPath: '/enterprise',
-    markdownPath: '/markdown/enterprise.md',
-  },
-  {
-    kind: 'marketing',
     slug: 'pricing',
     title: 'Pricing',
     description: 'Current plans and included features.',
@@ -179,113 +153,34 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.',
     htmlPath: '/support',
   },
-  // The product pages. Each one's layout.tsx reads its title/description back
-  // through `marketingMetadata(htmlPath)`, so this record is the single place
-  // the copy lives. Adding a record here is only half the change: the slug also
-  // needs an entry in `MARKETING_SOURCES` in
-  // apps/web/scripts/build-content-timestamps.mjs, or the record ships without
-  // a `lastModified` and public-content.test.ts fails.
+  // The three pages the nav is built on. Each layout.tsx reads its metadata
+  // back through `marketingMetadata(htmlPath)`, so this record is the single
+  // place the copy lives. Each slug also needs an entry in `MARKETING_SOURCES`
+  // in apps/web/scripts/build-content-timestamps.mjs.
   {
     kind: 'marketing',
-    slug: 'agent-computer',
-    title: 'Agent Computer: a cloud computer per session',
+    slug: 'product',
+    title: 'The AI Operating System for AI-native companies',
     description:
-      'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.',
-    htmlPath: '/agent-computer',
-    markdownPath: '/markdown/agent-computer.md',
+      'Agents that do real work, each on its own cloud computer, in your tools, from one repo you own. Any model, your keys, our cloud or yours.',
+    htmlPath: '/product',
   },
   {
     kind: 'marketing',
-    slug: 'agents-and-skills',
-    title: 'AI agents and skills as files in git',
+    slug: 'services',
+    title: 'Services: we make your company AI-native',
     description:
-      'A Kortix agent is a markdown persona with a deny-by-default reach into connectors, secrets and skills. A skill is the markdown that encodes how your company does one job. Both are files in your repo, versioned and reviewed.',
-    htmlPath: '/agents-and-skills',
-    markdownPath: '/markdown/agents-and-skills.md',
+      'A Deployment Strategist and a Forward Deployed Engineer join your company, map the work and put agents to work on Kortix. $20k per month.',
+    htmlPath: '/services',
   },
   {
     kind: 'marketing',
-    slug: 'automations',
-    title: 'AI agent automations on cron and webhooks',
+    slug: 'customers',
+    title: 'Customer stories: companies running on agents',
     description:
-      'Cron schedules and signed webhooks start Kortix sessions with nobody present. Each trigger names the agent it runs as, carries a prompt template, and lands its work through a change request a person approves.',
-    htmlPath: '/automations',
-    markdownPath: '/markdown/automations.md',
+      'How a credit fund, a fiber contractor, a homebuilder and Kortix itself run real work on agents, with a person in every loop.',
+    htmlPath: '/customers',
   },
-  {
-    kind: 'marketing',
-    slug: 'channels',
-    title: 'AI agents in Slack and Microsoft Teams',
-    description:
-      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.',
-    htmlPath: '/channels',
-    markdownPath: '/markdown/channels.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'company-as-code',
-    title: 'Company as Code: your company in one git repo',
-    description:
-      'A Kortix project is a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.',
-    htmlPath: '/company-as-code',
-    markdownPath: '/markdown/company-as-code.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'connectors',
-    title: 'Connectors: 3,000+ apps for AI agents',
-    description:
-      'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
-    htmlPath: '/connectors',
-    markdownPath: '/markdown/connectors.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'security',
-    // ACCURACY: do NOT write "credentials the model never sees" or "microVM
-    // isolation per session" here. A granted runtime secret is a real env value
-    // inside the session, readable by any command the agent runs,
-    // and the default sandbox provider
-    // is not a microVM. The narrower claims below are the true ones.
-    title: 'AI agent security: isolation, permissions, audit',
-    description:
-      'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.',
-    htmlPath: '/security',
-    markdownPath: '/markdown/security.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'self-hosted',
-    title: 'Self-hosted AI agents on your infrastructure',
-    description:
-      'Run the same Kortix on your own box. One Docker Compose stack, the same images the managed cloud runs, your database and your files on disk you control. kortix self-host start, then kortix hosts use selfhost.',
-    htmlPath: '/self-hosted',
-    markdownPath: '/markdown/self-hosted.md',
-  },
-  // The Solutions section: one hub plus one page per role. The role records are
-  // derived from the role registry so the page copy and the SEO record cannot
-  // drift apart — `marketingMetadata()` throws for a path with no record, so a
-  // role added to the registry without a record here would 500 its own page.
-  // Each slug also needs an entry in `MARKETING_SOURCES` in
-  // apps/web/scripts/build-content-timestamps.mjs, or the record ships without
-  // a `lastModified` and public-content.test.ts fails.
-  {
-    kind: 'marketing',
-    slug: 'solutions',
-    title: 'AI agents for every team',
-    description:
-      'One platform, eight teams with completely different work. What sales, marketing, product, engineering, finance, people, IT and data science can each hand off — and what comes back.',
-    htmlPath: '/solutions',
-    markdownPath: '/markdown/solutions.md',
-  },
-  ...ROLES.map((role) => ({
-    kind: 'marketing' as const,
-    slug: `solutions/${role.slug}`,
-    title: role.seoTitle,
-    description: role.seoDescription,
-    htmlPath: `/solutions/${role.slug}`,
-    markdownPath: `/markdown/solutions/${role.slug}.md`,
-  })),
 ];
 
 // Stamps each marketing record with a `lastModified` timestamp sourced from

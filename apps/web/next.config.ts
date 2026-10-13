@@ -549,6 +549,33 @@ const nextConfig = (): NextConfig => ({
         destination: '/presentations/platform',
         permanent: false,
       },
+      // The site is three pages now: Product, Services, Company. The eleven
+      // product pages and the Solutions section folded into `/product` and
+      // `/customers`; each old URL lands on the section that replaced it, with
+      // or without a locale prefix.
+      ...(
+        [
+          ['/agent-computer', '/product#agents'],
+          ['/agents-and-skills', '/product#agents'],
+          ['/company-as-code', '/product#agents'],
+          ['/connectors', '/product#connect'],
+          ['/channels', '/product#connect'],
+          ['/automations', '/product#automate'],
+          ['/security', '/product#control'],
+          ['/self-hosted', '/product#control'],
+          ['/enterprise', '/product#control'],
+          ['/developers', '/product#developers'],
+          ['/solutions', '/customers'],
+          ['/solutions/:role', '/customers'],
+        ] as const
+      ).flatMap(([from, to]) => [
+        { source: from, destination: to, permanent: true },
+        {
+          source: `/:locale(${locales.join('|')})${from}`,
+          destination: `/:locale${to}`,
+          permanent: true,
+        },
+      ]),
       // The canonical self-host doc is content/docs/host/index.mdx, served at
       // /docs/host. These two aliases previously pointed at
       // /docs/guides/self-hosting, a path that has never existed, so both

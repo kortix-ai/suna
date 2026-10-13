@@ -10,6 +10,15 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-13
+
+### D14 The site is Product, Services, Company; the audience is AI-native companies
+- **Decision:** The marketing site has three core pages: Product (`/product`, the AI Operating System on one page), Services (`/services`, the forward deployed team) and Company (`/about`, `/customers`, `/careers`, `/changelog`). The home hero names the audience: "The AI Operating System for AI-native companies". The Services offer is public, with its price: $20k per month for one Deployment Strategist and one Forward Deployed Engineer. Its goal is "autonomous operations: 80% agents, 20% people", written as the goal of the engagement, never as a property of the product today. The eleven product and Solutions pages fold into `/product` and `/customers` and redirect there.
+- **Why:** The founder decided on 2026-10-13 to simplify the positioning and the sales path: one product (the AI Operating System) and one service (the restructuring team), modelled on the conversion path of finished-work agent products. Nine product pages in one menu read as a feature list. The service price is an offer a buyer needs to self-qualify, not a product cost, so it is the one stated exception to "no price in product copy".
+- **Where:** `apps/web/src/lib/site-config.ts` (the three menus), `apps/web/src/features/marketing/{product,services,stories}/content.ts`, `apps/web/src/features/marketing/landing/content.ts` (hero), `apps/web/next.config.ts` (redirects).
+- **Supersedes:** none. D10 stands: the category is "AI Operating System" and the tagline stays "The open-source AI Operating System" in titles, README and CLI. "for AI-native companies" is the home hero line. "Autonomous" stays banned as a product claim (positioning.md section 1); it is allowed only as the stated goal of the Services engagement.
+- **Source:** branch `site-simplify` (2026-10-13).
+
 ## 2026-10-09
 
 ### D13 A backend is an App of kind `convex`

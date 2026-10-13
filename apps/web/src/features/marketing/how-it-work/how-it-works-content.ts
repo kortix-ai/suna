@@ -48,13 +48,15 @@
  */
 
 export const SECTION = {
-  eyebrow: 'The Kortix stack',
-  title: 'Every layer an AI workforce needs — in one platform you own.',
+  eyebrow: 'The AI Operating System',
+  title: 'Six layers. One operating system. All of it yours.',
   // Short on purpose: the section pins to the viewport, so every line here is
   // height taken away from the card that has to fit under it — and the stack
   // itself now names every layer, which is what the long enumeration did.
   description:
-    'Most tools hand you one layer and rent you the rest. Kortix is all six — they read in order, and the sixth commits the work back into the first.',
+    'Most AI tools hand you one layer and rent you the rest. Kortix is the whole stack an AI-native company runs on, and the last layer commits the work back into the first.',
+  cta: 'See the product',
+  ctaHref: '/product',
 } as const;
 
 export type Layer = {
@@ -156,7 +158,7 @@ export const LAYERS: Layer[] = [
     description:
       'Start, watch and steer every agent in the organization — from the web app, from Slack, from your terminal, or from nobody at all. Then the work commits back into the repo you started from.',
     bullets: [
-      'Web, Slack, mobile, CLI and API all start the same session',
+      'Web, Slack, Microsoft Teams, CLI and API all start the same session',
       'Cron schedules and signed webhooks start sessions with no one asking',
       'Session work lands on main as a change request you read as a diff first',
     ],

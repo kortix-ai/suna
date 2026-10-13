@@ -1,7 +1,5 @@
 import type { MetadataRoute } from 'next';
 
-import { ROLES } from '@/features/marketing/solutions/registry';
-
 import { locales } from '@/i18n/config';
 import {
   absoluteUrl,
@@ -22,22 +20,11 @@ type SitemapEntry = MetadataRoute.Sitemap[number];
 export const LOCALIZED_ROUTES = [
   '/',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
   '/careers',
-  '/channels',
-  '/company-as-code',
-  '/connectors',
   '/contact',
-  '/developers',
   '/download',
-  '/enterprise',
   '/legal',
   '/pricing',
-  '/security',
-  '/self-hosted',
-  '/solutions',
   '/support',
 ] as const;
 
@@ -72,7 +59,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // Keep the explicit locale routes that middleware actually serves. English
   // uses the unprefixed URL; every alternate stays on the same non-www origin.
-  for (const pathname of [...LOCALIZED_ROUTES, ...ROLES.map((role) => `/solutions/${role.slug}`)]) {
+  for (const pathname of LOCALIZED_ROUTES) {
     const languages = Object.fromEntries(
       locales.map((locale) => [
         locale,

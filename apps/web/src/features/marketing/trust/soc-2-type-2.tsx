@@ -32,7 +32,7 @@ const Soc2Type2 = (props: Props) => {
           r="148.438"
           fill="url(#paint3_linear_4003_599)"
           stroke="url(#paint4_linear_4003_599)"
-          stroke-width="3.125"
+          strokeWidth="3.125"
         />
         <mask
           id="mask0_4003_599"
@@ -217,7 +217,7 @@ const Soc2Type2 = (props: Props) => {
           x2="316.016"
           y2="252.561"
           stroke="url(#paint10_linear_4003_599)"
-          stroke-width="1.5625"
+          strokeWidth="1.5625"
         />
         <path
           d="M119.559 272.717V268.183H146.576V272.717H135.684V303.092H130.434V272.717H119.559ZM149.853 268.183H155.836L164.955 284.052H165.33L174.45 268.183H180.433L167.768 289.387V303.092H162.518V289.387L149.853 268.183ZM185.406 303.092V268.183H197.849C200.565 268.183 202.815 268.677 204.599 269.666C206.383 270.654 207.718 272.007 208.604 273.722C209.491 275.427 209.934 277.347 209.934 279.484C209.934 281.632 209.485 283.563 208.587 285.279C207.701 286.984 206.36 288.336 204.565 289.336C202.781 290.325 200.536 290.819 197.832 290.819H189.275V286.353H197.354C199.07 286.353 200.462 286.058 201.531 285.467C202.599 284.865 203.383 284.046 203.883 283.012C204.383 281.978 204.633 280.802 204.633 279.484C204.633 278.166 204.383 276.995 203.883 275.972C203.383 274.95 202.593 274.149 201.513 273.569C200.445 272.99 199.036 272.7 197.286 272.7H190.673V303.092H185.406ZM216.109 303.092V268.183H237.995V272.717H221.376V283.353H236.853V287.87H221.376V298.558H238.2V303.092H216.109ZM257.256 303.092V299.274L269.069 287.035C270.33 285.705 271.37 284.541 272.188 283.541C273.018 282.529 273.637 281.569 274.046 280.66C274.455 279.751 274.66 278.785 274.66 277.762C274.66 276.603 274.387 275.603 273.842 274.762C273.296 273.91 272.552 273.257 271.609 272.802C270.665 272.336 269.603 272.103 268.421 272.103C267.171 272.103 266.08 272.359 265.148 272.87C264.217 273.382 263.501 274.103 263.001 275.035C262.501 275.967 262.251 277.058 262.251 278.308H257.222C257.222 276.183 257.711 274.325 258.688 272.734C259.665 271.143 261.006 269.91 262.711 269.035C264.415 268.149 266.353 267.705 268.523 267.705C270.717 267.705 272.648 268.143 274.319 269.018C276.001 269.882 277.313 271.063 278.256 272.563C279.2 274.052 279.671 275.734 279.671 277.609C279.671 278.904 279.427 280.171 278.938 281.41C278.461 282.649 277.626 284.029 276.433 285.552C275.239 287.063 273.58 288.899 271.455 291.058L264.518 298.319V298.575H280.234V303.092H257.256Z"
@@ -232,9 +232,9 @@ const Soc2Type2 = (props: Props) => {
           width="246.071"
           height="326.067"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_599" />
         </filter>
@@ -245,9 +245,9 @@ const Soc2Type2 = (props: Props) => {
           width="246.071"
           height="326.067"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_599" />
         </filter>
@@ -258,9 +258,9 @@ const Soc2Type2 = (props: Props) => {
           width="250.197"
           height="344.506"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_599" />
         </filter>
@@ -271,9 +271,9 @@ const Soc2Type2 = (props: Props) => {
           width="456.833"
           height="445.987"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="46.875" result="effect1_foregroundBlur_4003_599" />
         </filter>
@@ -284,9 +284,9 @@ const Soc2Type2 = (props: Props) => {
           width="246.071"
           height="326.067"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_599" />
         </filter>
@@ -307,7 +307,7 @@ const Soc2Type2 = (props: Props) => {
           gradientUnits="userSpaceOnUse"
         >
           <stop stopColor="currentColor" stopOpacity="0.2" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.02" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.02" />
         </linearGradient>
         <linearGradient
           id="paint1_linear_4003_599"
@@ -318,7 +318,7 @@ const Soc2Type2 = (props: Props) => {
           gradientUnits="userSpaceOnUse"
         >
           <stop stopColor="currentColor" stopOpacity="0" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.2" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.2" />
         </linearGradient>
         <linearGradient
           id="paint2_linear_4003_599"
@@ -363,7 +363,7 @@ const Soc2Type2 = (props: Props) => {
         >
           <stop stopColor="currentColor" stopOpacity="0" />
           <stop offset="0.5" stopColor="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
         <linearGradient
           id="paint6_linear_4003_599"
@@ -373,8 +373,8 @@ const Soc2Type2 = (props: Props) => {
           y2="233.723"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint7_linear_4003_599"
@@ -384,8 +384,8 @@ const Soc2Type2 = (props: Props) => {
           y2="234.562"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint8_linear_4003_599"
@@ -395,8 +395,8 @@ const Soc2Type2 = (props: Props) => {
           y2="234.562"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint9_linear_4003_599"
@@ -406,8 +406,8 @@ const Soc2Type2 = (props: Props) => {
           y2="234.592"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint10_linear_4003_599"
@@ -417,9 +417,9 @@ const Soc2Type2 = (props: Props) => {
           y2="253.842"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" stop-opacity="0" />
-          <stop offset="0.5" stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+          <stop stopColor="currentColor" stopOpacity="0" />
+          <stop offset="0.5" stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
         <clipPath id="clip0_4003_599">
           <rect width="400" height="400" fill="currentColor" />

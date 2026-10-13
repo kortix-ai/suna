@@ -92,7 +92,7 @@ const BLUR_MAX_SLOTS = 2;
 const FADE_EDGE = 3;
 const FADE_SPAN = 0.9;
 /** Total scroll length of the pinned track. Pinned travel is this minus 100vh. */
-const TRACK_VH = 380;
+const TRACK_VH = 300;
 
 const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 

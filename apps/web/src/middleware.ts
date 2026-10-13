@@ -35,25 +35,17 @@ const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 const MARKETING_ROUTES = [
   '/',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
   '/careers',
-  '/channels',
   '/changelog',
-  '/company-as-code',
-  '/connectors',
   '/contact',
+  '/customers',
   '/design-system',
-  '/developers',
   '/download',
-  '/enterprise',
   '/legal',
   '/marketplace',
   '/pricing',
-  '/security',
-  '/self-hosted',
-  '/solutions',
+  '/product',
+  '/services',
   '/support',
   '/use-cases',
 ];
@@ -66,22 +58,14 @@ const MARKETING_ROUTES = [
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
   '/launch',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
-  '/channels',
-  '/self-hosted',
-  '/company-as-code',
   '/careers',
   '/changelog',
   '/contact',
-  '/developers',
-  '/enterprise',
   '/pricing',
+  '/product',
+  '/services',
+  '/customers',
   '/use-cases',
-  '/solutions',
-  '/connectors',
-  '/security',
 ];
 
 // Routes that don't require authentication
@@ -104,12 +88,6 @@ const PUBLIC_ROUTES = [
   '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
-  '/agent-computer', // Agent computer marketing page should be public
-  '/agents-and-skills', // marketing page should be public
-  '/automations', // marketing page should be public
-  '/channels', // marketing page should be public
-  '/self-hosted', // marketing page should be public
-  '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
@@ -123,14 +101,12 @@ const PUBLIC_ROUTES = [
 
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
-  '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
-  '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
+  '/product', // The AI Operating System, on one page
+  '/services', // The forward deployed team offer
+  '/customers', // Customer stories
   '/use-cases', // Use cases page should be public
-  '/solutions', // Solutions / persona landing pages should be public
-  '/connectors', // Connector directory + per-tool pages should be public
-  '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated

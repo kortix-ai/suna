@@ -64,7 +64,14 @@ const CONTENT_MEASURE = 'mx-auto w-full max-w-7xl px-6';
 
 /** The links a drawer row expands to; empty for a row that simply navigates. */
 function drawerSubLinks(item: NavLink): NavSubLink[] {
-  if ('menu' in item) return item.menu.columns.flatMap((column) => column.links);
+  if ('menu' in item) {
+    const { feature, columns } = item.menu;
+    const links = columns.flatMap((column) => column.links);
+    // The feature card's page may also be one of the links; list it once.
+    return feature && !links.some((link) => link.href === feature.href)
+      ? [{ href: feature.href, name: feature.title }, ...links]
+      : links;
+  }
   return typeof item.href === 'string' ? [] : item.href;
 }
 

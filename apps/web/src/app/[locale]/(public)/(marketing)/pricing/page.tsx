@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 
 const START_URL = '/auth';
-const DEMO_URL = '/enterprise';
+const DEMO_URL = '/contact';
 
 // Keyed by MARKETING plan id (display-only — see pricing-plans.ts). Never an
 // API tier key.

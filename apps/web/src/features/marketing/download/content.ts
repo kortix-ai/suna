@@ -2,8 +2,7 @@
  * `/download` copy.
  *
  * Plain English lives here, not in `apps/web/translations/*.json`, so copy can
- * iterate before paying the 8-locale parity gate. Same precedent as
- * `features/marketing/self-hosted/content.ts`.
+ * iterate before paying the 8-locale parity gate.
  *
  * ACCURACY GATE — every string below is checked against the live GitHub release
  * (v0.11.0, 2026-07-28), not against docs:

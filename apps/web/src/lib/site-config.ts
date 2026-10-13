@@ -18,11 +18,20 @@ export type NavMenuColumn = {
 };
 
 /**
- * A menu is its links and nothing else. Both menus previously carried a promo
- * strip along the bottom; it added a row of chrome to every hover without
- * adding a destination, so the shape no longer has one.
+ * The card on the left of a menu panel: the one page the menu is about. The
+ * links beside it are sections of that story, so a menu reads as "this, and
+ * these parts of it" instead of a flat list of pages.
  */
+export type NavMenuFeature = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+};
+
 export type NavMenu = {
+  feature?: NavMenuFeature;
   columns: NavMenuColumn[];
 };
 
@@ -33,158 +42,124 @@ export type NavLink =
 
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
+/**
+ * Three menus, one intent each: what we sell (the product), what we do for you
+ * (the service), who we are (the company). Each links to one page and at most
+ * four parts of it. The nine product pages that used to sit here are folded
+ * into `/product`; their old URLs redirect to its sections (`next.config.ts`).
+ */
 export const productMenu: NavMenu = {
+  feature: {
+    eyebrow: 'Product',
+    title: 'The AI Operating System',
+    description:
+      'Agents that do real work for your company, on their own computers, from one repo you own.',
+    href: '/product',
+    cta: 'See the product',
+  },
   columns: [
     {
-      title: 'Platform',
+      title: 'The AI Operating System',
       links: [
         {
-          name: 'Agent Computer',
-          href: '/agent-computer',
-          description: 'An isolated cloud computer for every session',
-          icon: 'desktop',
+          name: 'Agents',
+          href: '/product#agents',
+          description: 'Skills, memory and their own cloud computer',
+          icon: 'users',
         },
         {
-          name: 'Company as Code',
-          href: '/company-as-code',
-          description: 'Agents, skills and memory as git files you own',
-          icon: 'git-branch',
-        },
-        {
-          name: 'Self-hosted',
-          href: '/self-hosted',
-          // ACCURACY: never "air-gapped" — `self-host start` pulls images from
-          // docker.io, so a fully disconnected install is not shipped.
-          description: 'Your own VPC or your own on-prem network',
-          icon: 'hard-drives',
-        },
-        {
-          name: 'Security',
-          href: '/security',
-          description: 'Isolation, credentials, permissions and audit',
-          icon: 'shield',
-        },
-        {
-          name: 'Enterprise',
-          href: '/enterprise',
-          description: 'SSO, RBAC, audit trails and approval gates',
-          icon: 'buildings',
-        },
-      ],
-    },
-    {
-      title: 'Capabilities',
-      links: [
-        {
-          name: 'Connectors',
-          href: '/connectors',
-          description: '3,000+ apps through one scoped token',
+          name: 'Connect everything',
+          href: '/product#connect',
+          description: '3,000+ apps, Slack and Microsoft Teams',
           icon: 'plugs',
         },
         {
-          name: 'Automations',
-          href: '/automations',
-          description: 'Cron schedules and signed webhooks',
+          name: 'Runs on its own',
+          href: '/product#automate',
+          description: 'Schedules and webhooks, a person in the loop',
           icon: 'clock',
         },
         {
-          name: 'Channels',
-          href: '/channels',
-          description: 'Slack threads that start real sessions',
-          icon: 'chats',
-        },
-        {
-          name: 'Agents & Skills',
-          href: '/agents-and-skills',
-          description: 'A workforce that compounds what it learns',
-          icon: 'users',
+          name: 'Secure and yours',
+          href: '/product#control',
+          description: 'Permissions, audit, any model, any cloud',
+          icon: 'shield',
         },
       ],
     },
   ],
 };
 
-/**
- * The role axis. Eight `/solutions/<role>` pages, split into the two columns the
- * renderer supports (a third column would render into a two-column grid).
- *
- * The labels and hrefs are hand-written here rather than derived from
- * `features/marketing/solutions/registry`, because this module is imported by
- * the client navbar — importing the registry would ship every word of all eight
- * role pages in the client bundle. Keep the names in step with the `name` field
- * on each role, and with the home-page use-case cards, which sit on the same
- * axis: "Data Science", not "Data"; "People", not "HR" or "Recruiting".
- */
-export const solutionsMenu: NavMenu = {
+export const servicesMenu: NavMenu = {
+  feature: {
+    eyebrow: 'Services',
+    title: 'We make your company AI-native',
+    description:
+      'A strategist and a forward deployed engineer, inside your company, building on Kortix. $20k per month.',
+    href: '/services',
+    cta: 'See the service',
+  },
   columns: [
     {
-      title: 'Product & engineering',
+      title: 'Services',
       links: [
         {
-          name: 'Engineering',
-          href: '/solutions/engineering',
-          description: 'Reproduce it, patch it, open the change request',
+          name: 'How it works',
+          href: '/services#how',
+          description: 'Map the work, unify the data, deploy agents',
+          icon: 'git-branch',
         },
         {
-          name: 'Product',
-          href: '/solutions/product',
-          description: 'Feedback synthesised into specs, with the evidence',
+          name: 'Your team',
+          href: '/services#team',
+          description: 'One strategist, one engineer, full time',
+          icon: 'users',
         },
         {
-          name: 'Data Science',
-          href: '/solutions/data-science',
-          description: 'A real machine, a real query, an analysis you can re-run',
+          name: 'Customer stories',
+          href: '/services#stories',
+          description: 'Companies already running on agents',
+          icon: 'buildings',
         },
         {
-          name: 'IT',
-          href: '/solutions/it',
-          description: 'Runbooks that execute, and a platform you can review',
-        },
-      ],
-    },
-    {
-      title: 'Business & operations',
-      links: [
-        {
-          name: 'Sales',
-          href: '/solutions/sales',
-          description: 'Research, drafts and CRM hygiene, held for approval',
-        },
-        {
-          name: 'Marketing',
-          href: '/solutions/marketing',
-          description: 'Production work that sounds like you',
-        },
-        {
-          name: 'Finance',
-          href: '/solutions/finance',
-          description: 'The close, the reconciliation and the variance note',
-        },
-        {
-          name: 'People',
-          href: '/solutions/people',
-          description: 'Scheduling, kits and onboarding — never the decision',
+          name: 'Book a call',
+          href: '/contact',
+          description: 'Talk to us about your company',
+          icon: 'chats',
         },
       ],
     },
   ],
 };
 
-/**
- * One column, no descriptions — five short destinations read faster as a list
- * than as a grid of explained cards, and a narrow panel stops the menu from
- * spanning half the viewport for five links.
- */
 export const companyMenu: NavMenu = {
+  feature: {
+    eyebrow: 'Company',
+    title: 'Kortix runs on Kortix',
+    description:
+      'Our own sales, support and engineering run on the AI Operating System we sell.',
+    href: '/about',
+    cta: 'About us',
+  },
   columns: [
     {
       title: 'Company',
       links: [
-        { name: 'About', href: '/about' },
-        { name: 'Careers', href: '/careers' },
-        { name: 'Blog', href: '/blog' },
-        { name: 'X', href: 'https://x.com/kortix', external: true },
-        { name: 'LinkedIn', href: 'https://linkedin.com/company/kortix', external: true },
+        {
+          name: 'Customers',
+          href: '/customers',
+          description: 'How companies run on agents',
+          icon: 'users',
+        },
+        { name: 'Careers', href: '/careers', description: 'Belgrade and San Francisco', icon: 'buildings' },
+        { name: 'Changelog', href: '/changelog', description: 'What we shipped', icon: 'clock' },
+        {
+          name: 'GitHub',
+          href: 'https://github.com/kortix-ai/suna',
+          description: 'Open source. Read it, fork it, audit it.',
+          icon: 'git-branch',
+          external: true,
+        },
       ],
     },
   ],
@@ -195,9 +170,7 @@ export const siteConfig = {
   nav: {
     links: [
       { id: 1, name: 'Product', menu: productMenu },
-      // Solutions is deliberately NOT in the top bar. Eight role pages is a
-      // wide menu beside Product and Company; the roles live in the footer,
-      // and the home-page use-case cards are the in-page entry point.
+      { id: 2, name: 'Services', menu: servicesMenu },
       { id: 3, name: 'Company', menu: companyMenu },
       { id: 4, name: 'Pricing', href: '/pricing' },
       { id: 6, name: 'Docs', href: '/docs' },

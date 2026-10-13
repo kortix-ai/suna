@@ -210,7 +210,7 @@ test('a tap on the row of the page already committed closes the drawer at once',
 test('an off-site drawer row closes the drawer at once', async () => {
   await openDrawer();
   const row = container!.querySelector<HTMLAnchorElement>(
-    '.bg-background.fixed.inset-0 a[href="https://x.com/kortix"]',
+    '.bg-background.fixed.inset-0 a[href="https://github.com/kortix-ai/suna"]',
   );
   expect(row).not.toBeNull();
   await act(async () => {

@@ -3,10 +3,38 @@
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Claude } from '@/features/icon/icons/claude';
 import { OpenAI } from '@/features/icon/icons/open-ai';
-import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
 import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
+import { Button } from '@/components/ui/marketing/button';
+import Link from '@/components/site-link';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useTranslations } from '@/i18n/use-translations';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { ArrowRightIcon } from '@phosphor-icons/react';
 import { type ReactNode } from 'react';
+
+/**
+ * The product, as it looks today: one screenshot per theme, captured from the
+ * running app with synthetic data (`public/media/product/`). It replaces the
+ * old tabbed showcase of recordings. Re-capture it when the app changes.
+ */
+function HeroShot({ alt }: { alt: string }) {
+  return (
+    <div className="border-border bg-card overflow-hidden rounded-xl border shadow-sm">
+      {/* eslint-disable-next-line @next/next/no-img-element -- static marketing asset, two themes */}
+      <img
+        src="/media/product/hero-light.webp"
+        alt={alt}
+        className="block w-full dark:hidden"
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element -- static marketing asset, two themes */}
+      <img
+        src="/media/product/hero-dark.webp"
+        alt={alt}
+        className="hidden w-full dark:block"
+      />
+    </div>
+  );
+}
 
 /** `heroEyebrow.rivals[].icon` selects a logo by name at runtime, so it can't be
  *  statically resolved to a single import — this explicit map is the smallest set
@@ -48,6 +76,7 @@ export function RivalEyebrow({
 const Hero = () => {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { hero, heroEyebrow } = getLocalizedLandingContent(tI18nComplete);
+  const openDemo = useRequestDemo();
 
   /* The measure and the gutter belong on the same element, which is the rule the
      navbar already follows (`mx-auto w-full max-w-7xl px-6`). Splitting them —
@@ -106,7 +135,22 @@ const Hero = () => {
             <p className="kx-hero-text text-muted-foreground mx-auto max-w-xl text-center text-base leading-relaxed text-pretty [--kx-enter:150ms] sm:text-lg">
               {hero.sub}
             </p>
-
+            <div className="kx-hero-text flex w-full flex-col items-stretch gap-3 [--kx-enter:220ms] sm:w-auto sm:flex-row sm:items-center">
+              <Button size="lg" className="active:scale-[0.97] sm:min-w-36" asChild>
+                <Link href="/auth" onClick={trackCtaSignup}>
+                  {hero.ctaPrimary}
+                  <ArrowRightIcon className="size-4 shrink-0" />
+                </Link>
+              </Button>
+              <Button
+                size="lg"
+                variant="secondary"
+                className="active:scale-[0.97] sm:min-w-36"
+                onClick={() => openDemo()}
+              >
+                {hero.ctaSecondary}
+              </Button>
+            </div>
 
           </div>
         </div>
@@ -115,7 +159,7 @@ const Hero = () => {
           id="demo"
           className="kx-hero-frame relative z-10 mx-auto mt-10 max-w-7xl scroll-mt-24 px-6 [--kx-enter:290ms] sm:mt-12 lg:mt-8"
         >
-          <HeroSurfaces />
+          <HeroShot alt={hero.shot.label} />
         </div>
 
         {/* 490ms + the 620ms text ramp lands this at 1110ms — the exact moment

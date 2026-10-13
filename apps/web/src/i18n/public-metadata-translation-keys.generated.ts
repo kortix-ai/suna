@@ -94,4 +94,10 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   "AI agents for sales teams": 'text09e71792c6c3',
   "AI agents for marketing teams": 'textaaab3a59b808',
   "AI agents for finance teams": 'text8f480bae8d16',
+  "A Deployment Strategist and a Forward Deployed Engineer join your company, map the work and put agents to work on Kortix. $20k per month.": 'text7494a952f071',
+  "Agents that do real work, each on its own cloud computer, in your tools, from one repo you own. Any model, your keys, our cloud or yours.": 'text4ce4d9524016',
+  "Customer stories: companies running on agents": 'text79dac922e5b8',
+  "How a credit fund, a fiber contractor, a homebuilder and Kortix itself run real work on agents, with a person in every loop.": 'text48768c91b943',
+  "Services: we make your company AI-native": 'text4c11cf73c39c',
+  'The AI Operating System for AI-native companies': 'textea7e60e0d340',
 };

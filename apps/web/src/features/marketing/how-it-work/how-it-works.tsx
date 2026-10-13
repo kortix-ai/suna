@@ -1,11 +1,13 @@
 'use client';
 
+import Link from '@/components/site-link';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { useMediaQuery } from '@/hooks/utils/use-media-query';
-import { cn } from '@/lib/utils';
-import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
+import { ArrowRightIcon } from '@phosphor-icons/react';
+import { m, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { LAYERS, getLocalizedHowItWorksContent, type Layer } from './how-it-works-content';
 import { StepComputer } from './step/step-computer';
@@ -76,14 +78,14 @@ function StepPane({ layer, index }: { layer: Layer; index: number }): ReactNode 
         <span className="text-muted-foreground">{layer.description}</span>
       </p>
 
-      {/* <ul className="text-muted-foreground grid shrink-0 grid-cols-3 gap-5 text-[12.5px] leading-relaxed">
+      <ul className="text-muted-foreground grid shrink-0 grid-cols-3 gap-5 text-sm leading-relaxed">
         {layer.bullets.map((bullet) => (
           <li key={bullet} className="flex gap-2">
             <KortixAsterisk index={index} parentClass="mt-0 size-4" />
             <span>{bullet}</span>
           </li>
         ))}
-      </ul> */}
+      </ul>
 
       <div
         className={cn(
@@ -207,8 +209,8 @@ export function HowItWorks(): ReactNode {
   }, []);
 
   return (
-    <section id="platform-stack" ref={sectionRef} className="relative space-y-24 md:space-y-30">
-      <div className="mx-auto w-full max-w-7xl px-6 pt-[4.75rem] [@media(max-height:860px)]:pt-[4.5rem]">
+    <section id="platform-stack" ref={sectionRef} className="relative py-24 md:py-30">
+      <div className="mx-auto w-full max-w-7xl px-6">
         <div className="flex flex-col gap-4 select-none">
           <span
             className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
@@ -227,65 +229,76 @@ export function HowItWorks(): ReactNode {
         <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
           {SECTION.description}
         </p>
+        <Link
+          href={SECTION.ctaHref}
+          className="text-foreground mt-6 inline-flex items-center gap-1.5 text-sm font-medium"
+        >
+          {SECTION.cta}
+          <ArrowRightIcon className="size-3.5" aria-hidden />
+        </Link>
       </div>
 
-      <div className="mx-auto mt-8 w-full max-w-7xl px-6 pb-16">
-        {pinned ? (
-          <div className="grid grid-cols-[14rem_minmax(0,1fr)] items-start gap-10 xl:grid-cols-[16rem_minmax(0,1fr)]">
-            <nav aria-label={SECTION.eyebrow} className="sticky top-30 flex flex-col gap-1 pt-1">
-              {localizedLayers.map((layer, index) => {
-                const isActive = index === active;
-                return (
-                  <button
-                    key={layer.id}
-                    type="button"
-                    data-stack-layer={layer.id}
-                    data-active={isActive ? 'true' : 'false'}
-                    onClick={() => seek(index)}
-                    className="group relative flex cursor-pointer items-baseline gap-3 py-2 pl-4 text-left"
-                  >
-                    {isActive && (
-                      <m.span
-                        layoutId="stack-rail-indicator"
-                        transition={RAIL_SPRING}
-                        className="bg-foreground absolute top-1/2 left-0 -mt-2.5 h-5 w-0.5 rounded-full"
-                      />
-                    )}
-                    <span
-                      className={cn(
-                        'text-base font-medium tracking-tight transition-colors duration-200',
-                        isActive
-                          ? 'text-foreground'
-                          : 'text-muted-foreground/40 group-hover:text-muted-foreground',
-                      )}
+      {/* One big card holds the whole stack, so the six layers read as one
+          system rather than six sections. */}
+      <div className="mx-auto mt-10 w-full max-w-7xl px-6">
+        <div className="border-border bg-card rounded-xl border p-6 sm:p-10 xl:p-14">
+          {pinned ? (
+            <div className="grid grid-cols-[14rem_minmax(0,1fr)] items-start gap-10 xl:grid-cols-[16rem_minmax(0,1fr)]">
+              <nav aria-label={SECTION.eyebrow} className="sticky top-30 flex flex-col gap-1 pt-1">
+                {localizedLayers.map((layer, index) => {
+                  const isActive = index === active;
+                  return (
+                    <button
+                      key={layer.id}
+                      type="button"
+                      data-stack-layer={layer.id}
+                      data-active={isActive ? 'true' : 'false'}
+                      onClick={() => seek(index)}
+                      className="group relative flex cursor-pointer items-baseline gap-3 py-2 pl-4 text-left"
                     >
-                      {layer.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </nav>
+                      {isActive && (
+                        <m.span
+                          layoutId="stack-rail-indicator"
+                          transition={RAIL_SPRING}
+                          className="bg-foreground absolute top-1/2 left-0 -mt-2.5 h-5 w-0.5 rounded-full"
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          'text-base font-medium tracking-tight transition-colors duration-200',
+                          isActive
+                            ? 'text-foreground'
+                            : 'text-muted-foreground/40 group-hover:text-muted-foreground',
+                        )}
+                      >
+                        {layer.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
 
-            <div className="flex min-w-0 flex-col gap-24 xl:gap-30">
+              <div className="flex min-w-0 flex-col gap-24 xl:gap-30">
+                {localizedLayers.map((layer, index) => (
+                  <div
+                    key={layer.id}
+                    id={`stack-pane-${layer.id}`}
+                    data-stack-pane={layer.id}
+                    className="scroll-mt-30"
+                  >
+                    <StepPane layer={layer} index={index} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
               {localizedLayers.map((layer, index) => (
-                <div
-                  key={layer.id}
-                  id={`stack-pane-${layer.id}`}
-                  data-stack-pane={layer.id}
-                  className="scroll-mt-30"
-                >
-                  <StepPane layer={layer} index={index} />
-                </div>
+                <MobileCard key={layer.id} layer={layer} index={index} />
               ))}
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-5">
-            {localizedLayers.map((layer, index) => (
-              <MobileCard key={layer.id} layer={layer} index={index} />
-            ))}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </section>
   );

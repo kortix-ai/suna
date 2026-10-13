@@ -43,7 +43,7 @@ const MOBILE_SHOTS = [
  * than a crop. Height-bound shows every phone whole, which also matches the
  * desktop card — that poster is shown complete too.
  *
- * Borders, never shadows. The `MobileSurface` treatment in `hero-surfaces.tsx`
+ * Borders, never shadows. The old home-hero mobile treatment
  * frames these same shots with `shadow-md`; that part is deliberately not
  * carried over.
  */

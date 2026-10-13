@@ -21,10 +21,11 @@ import type { UiTranslator } from '@/i18n/translator';
  * selector is dev-only and renders nothing in production.
  */
 export const hero = {
-  title: 'The open-source AI Operating System',
-  sub: 'Your agents, their skills, your company memory and every connector in one git repo you own. Any model, your keys, self-hosted or managed cloud.',
+  title: 'The AI Operating System for AI‑native companies',
+  sub: 'Agents that do real work across every team: on their own computers, in your tools, from one repo you own.',
   ctaPrimary: 'Get started',
-  ctaSecondary: 'Request demo',
+  ctaSecondary: 'Book a demo',
+  shot: { label: 'Kortix: an agent session with its plan, outputs and context' },
   trust: 'Open source · Any model, your keys · Self-host, VPC, or on-prem',
 } as const;
 
@@ -52,7 +53,7 @@ export const cta = {
   sub: 'Start with one job and grow from there.',
   trust: 'Open source · SSO, RBAC & on-prem · Any model, your keys · No lock-in',
   ctaPrimary: 'Get started',
-  ctaSecondary: 'Request demo',
+  ctaSecondary: 'Book a demo',
 } as const;
 
 /**
@@ -81,9 +82,9 @@ export const trust = {
     'is the easy part. Trusting',
     'them with it is the work.',
   ],
-  sub: 'Every session runs on its own isolated machine, with credentials it never sees, and lands nothing without a person approving it.',
+  sub: 'Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request.',
   ctaLabel: 'How Kortix is secured',
-  ctaHref: '/enterprise',
+  ctaHref: '/product#control',
   /** Exactly three. No HIPAA, no ISO — we do not hold them. */
   badges: [
     { id: 'soc2-type-1', line1: 'SOC 2', line2: 'TYPE I', state: '' },
@@ -215,8 +216,7 @@ export type UseCase = {
  *
  * ==========================================================================
  * ACCURACY GATE — this copy is bold, which is exactly where marketing starts
- * describing a product we do not ship. It mirrors the gate in
- * features/marketing/solutions/types.ts. Keep the two in step.
+ * describing a product we do not ship.
  * ==========================================================================
  *  - MERGE IS DEFAULT-DENY. Work lands as a CHANGE REQUEST. Never "pushes to
  *    main", never "the agent deploys", never "only a human can merge".
@@ -251,8 +251,6 @@ export const useCases = {
   cards: [
     {
       id: 'sales',
-      href: '/solutions/sales',
-      /** `role` and `href` match `solutions/roles/*.ts` exactly — one vocabulary. */
       role: 'Sales',
       tag: 'Sales',
       headline: 'Builds the outbound campaign and runs it.',
@@ -275,7 +273,6 @@ export const useCases = {
     },
     {
       id: 'engineering',
-      href: '/solutions/engineering',
       role: 'Engineering',
       tag: 'Engineering',
       headline: 'Reads the logs, ships the fix.',
@@ -296,7 +293,6 @@ export const useCases = {
     },
     {
       id: 'marketing',
-      href: '/solutions/marketing',
       role: 'Marketing',
       tag: 'Marketing',
       headline: 'Runs the SEO program week after week.',
@@ -320,7 +316,6 @@ export const useCases = {
     },
     {
       id: 'finance',
-      href: '/solutions/finance',
       role: 'Finance',
       tag: 'Finance',
       headline: 'Does the books, not just the summary.',
@@ -343,7 +338,6 @@ export const useCases = {
     },
     {
       id: 'people',
-      href: '/solutions/people',
       role: 'People',
       tag: 'People',
       headline: 'Sources the pipeline, not just the inbox.',
@@ -366,7 +360,6 @@ export const useCases = {
     },
     {
       id: 'product',
-      href: '/solutions/product',
       role: 'Product',
       tag: 'Product',
       headline: 'Turns what customers say into what ships.',
@@ -385,7 +378,6 @@ export const useCases = {
     },
     {
       id: 'data-science',
-      href: '/solutions/data-science',
       role: 'Data Science',
       tag: 'Data Science',
       headline: 'Has Monday’s numbers before Monday.',
@@ -406,9 +398,52 @@ export const useCases = {
   ] satisfies readonly UseCase[],
 } as const;
 
+/**
+ * The home page's middle, in the order a buyer asks: does it work for a
+ * team (shared), who runs on it (stories, from
+ * `stories/content.ts`), and can someone do it with us (services).
+ */
+
+export const shared = {
+  eyebrow: 'Multiplayer',
+  title: 'Built for the whole company, not one person.',
+  sub: 'An assistant helps one person. Kortix is shared: what one team builds, every team can use.',
+  items: [
+    {
+      id: 'agents',
+      title: 'Share agents',
+      body: 'Give an agent to one person, a team or the whole company, with the permissions to match.',
+      chips: ['One person', 'A team', 'The company'],
+    },
+    {
+      id: 'connections',
+      title: 'Share connections',
+      body: 'Connect a tool once. Decide who and which agents may use it, and what each call may do.',
+      chips: ['Allow', 'Ask', 'Block'],
+    },
+    {
+      id: 'context',
+      title: 'Share context',
+      body: 'Skills and memory live in one repo, so every agent works from what the company knows.',
+      chips: ['skills/', 'memory/', 'kortix.yaml'],
+    },
+  ],
+} as const;
+
+export const servicesTeaser = {
+  eyebrow: 'Services',
+  title: 'Want us to do it with you?',
+  sub: 'A Deployment Strategist and a Forward Deployed Engineer join your company, map the work and put agents to work on Kortix. The goal: 80% agents, 20% people.',
+  price: '$20k',
+  per: 'per month',
+  roles: ['Deployment Strategist', 'Forward Deployed Engineer'],
+  cta: 'See the service',
+  ctaHref: '/services',
+} as const;
+
 export function getLocalizedLandingContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { hero, heroEyebrow, cta, trust, useCases },
+    { hero, heroEyebrow, cta, trust, useCases, shared, servicesTeaser },
     tI18nComplete,
     AGENTS_LANDING_TRANSLATION_KEYS,
   );
