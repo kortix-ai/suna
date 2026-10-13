@@ -1,20 +1,19 @@
 {
-  "source_hash": "337b018d765cd604e91104cc13420b9d6d24544e2e59d93ee4e2b6e00e3772fc",
+  "source_hash": "a8ea81790b6e5d6e5c7a72ec60e4acbddd00ba48fc2cbd73a70da3aff720232e",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-13T191857Z-flatten-no-upstream-failure-carry-the-upstream-status-and-bo.md",
     "apps/api/src/__tests__/unit-slack-file-proxy.test.ts",
     "apps/api/src/channels/slack/file-proxy.ts",
-    "apps/api/src/projects/routes/channel-slack.ts",
-    "tests/src/flows/apps-tokens.flow.ts"
+    "apps/api/src/projects/routes/channel-slack.ts"
   ],
-  "diff_hash": "d25794a775cab533f7efde4aa6caf0fc0f556bb232444923ba8ed25b0eb51385",
-  "head": "cd56f22c824d5c99b5e4b285d3504a936de2528a",
+  "diff_hash": "1a72c1bf1596647ef2e87fc341af894f4117dd7fd03452107883d2671ed49aaf",
+  "head": "a670c85735344874da79a77b9e12c51982e66841",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T20:48:01.824Z"
+  "at": "2026-10-13T21:14:40.881Z"
 }
