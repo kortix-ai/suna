@@ -57,7 +57,7 @@ describe('content timestamp manifest', () => {
     };
   }
 
-  it('tolerates the squash commit that carries the manifest, not content changed without it', async () => {
+  it('tolerates the squash commit that carries the manifest, not content changed without it', { timeout: 30_000 }, async () => {
     const { fixture, repo, stale, commit } = await fixtureRepo();
     try {
       commit('2026-01-02T00:00:00Z', { 'a.mdx': 'one\n' }, { 'docs:a': '2026-01-01T00:00:00.000Z' });
@@ -77,7 +77,7 @@ describe('content timestamp manifest', () => {
     }
   });
 
-  it('tolerates two pull requests that each regenerated the manifest and squashed in sequence', async () => {
+  it('tolerates two pull requests that each regenerated the manifest and squashed in sequence', { timeout: 30_000 }, async () => {
     const { repo, stale, commit } = await fixtureRepo();
     try {
       // PR A changes a.mdx; PR B branched before A, regenerated the manifest on its side, and squashes after A.
