@@ -78,7 +78,7 @@ import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-d
 import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges, startSessionLogJournal } from '../shared/session-log-journal'
 import type { BytesReader } from '../shared/session-log-restore'
-import { reconcileSessionLog } from '../shared/session-log-boot'
+import { reconcileSessionLog, RESTORE_NOTE_PREFIX } from '../shared/session-log-boot'
 import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
 import { isOffloadPlaceholder, opencodeDbPath } from './attachment-offload'
 import { OpencodeDb, type MessageRow, type StoreSnapshot } from './opencode-db'
@@ -242,6 +242,7 @@ export function openCodeSessionLog(input: {
       }
       m.seq = state.seqs[m.message_id]!
       m.producer = producer
+      if (m.message_id.startsWith(RESTORE_NOTE_PREFIX)) m.origin = 'notification'
       for (const b of m.blocks) {
         const r = b.type === 'attachment' ? attachments.get(b.id) : undefined
         if (b.type === 'attachment' && r) Object.assign(b, { ref: r.ref, bytes: r.bytes, sha256: r.sha256 })

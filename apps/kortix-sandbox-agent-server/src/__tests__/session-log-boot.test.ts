@@ -286,10 +286,37 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(state().generation).toBe(2)
   })
 
-  test('a manifest that cannot be read after 3 attempts fails the boot', async () => {
-    const api = fakeApi({ manifest: [new Response('down', { status: 502 })] })
+  test('no native store and a manifest that cannot be read after 3 attempts: the boot fails', async () => {
+    const api = fakeApi({ manifest: [new Response('down', { status: 500 })] })
     await expect(reconcileSessionLog(fakeStore(null).port, RETRY)).rejects.toThrow(/manifest/)
     expect(api.count.manifest).toBe(3)
+  })
+
+  test('a current store and a manifest that cannot be read (500, then a body that does not parse): the box boots on its native store', async () => {
+    for (const answer of [new Response('down', { status: 500 }), Response.json({ generation: 'x' })]) {
+      const api = fakeApi({ manifest: [answer] })
+      const store = fakeStore(['m1', 'm2'])
+      expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
+      expect(api.count.manifest).toBe(3)
+      expect(store.restores).toHaveLength(0)
+    }
+  })
+
+  test('a brand-new session (no store, the manifest 404s): the box boots empty, as before', async () => {
+    const api = fakeApi({ manifest: [new Response('{}', { status: 404 })] })
+    expect(await reconcileSessionLog(fakeStore(null).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.requests).toEqual(['GET /v1/projects/project-1/sessions/session-1/log/manifest'])
+  })
+
+  test('a stale store and a restore that fails 3 times: a store that still reads as present keeps booting on it; nothing is persisted', async () => {
+    const api = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    const store = fakeStore(['m1', 'm2'])
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.count.restore).toBe(3)
+    // A native write that throws but leaves the store readable (pi's dump is renamed into place) keeps it too.
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [restoreAnswer(1, STORED)] })
+    expect(await reconcileSessionLog(fakeStore(['m1', 'm2'], { failures: 99 }).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(() => state()).toThrow()
   })
 })
 
@@ -325,7 +352,24 @@ describe('a partial restore (D3): a note for the agent and a notice for the user
     expect((boot!.session?.ext?.kortix?.data as { restore: { truncated: number } }).restore.truncated).toBe(1)
   })
 
-  test('a complete restore adds no note and clears an earlier partial notice', async () => {
+  test('a partial log that already holds an earlier note: no new note for the old loss, a new one for a new loss', async () => {
+    const earlier = message('msg_kortix_restore_g1', 3, 'Kortix: this session was restored…', { role: 'user', origin: 'notification' })
+    const partialLog = log([...STORED.threads[0]!.messages, earlier], { restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
+    fakeApi({ manifest: [manifest(1, [...LIVE, ['msg_kortix_restore_g1']])], restore: [restoreAnswer(2, partialLog)] })
+    const quiet = fakeStore(null)
+    const boot = await reconcileSessionLog(quiet.port, RETRY)
+    expect(quiet.restores).toHaveLength(1)
+    expect(boot!.session?.restore_grade).toBe('partial')
+    expect(Object.keys(boot!.cursors[0]!.native_hashes)).toEqual(['m1', 'm2', 'msg_kortix_restore_g1'])
+
+    fakeApi({ manifest: [manifest(2, [...LIVE, ['msg_kortix_restore_g1']])], restore: [restoreAnswer(3, partialLog)] })
+    const lossy = fakeStore(null, { drops: { attachment: 1 } })
+    await reconcileSessionLog(lossy.port, RETRY)
+    expect(lossy.restores).toHaveLength(2)
+    expect(lossy.restores[1]!.log.threads[0]!.messages.at(-1)!.message_id).toBe('msg_kortix_restore_g3')
+  })
+
+  test('a complete restore of a log graded native adds no note and clears an earlier partial notice', async () => {
     fakeApi({ manifest: [manifest(0, LIVE)], restore: [restoreAnswer(1, STORED)] })
     expect((await reconcileSessionLog(fakeStore(null, { drops: { text: 1 } }).port, RETRY))?.session?.restore_grade).toBe('partial')
     fakeApi({ manifest: [manifest(1, LIVE)], restore: [restoreAnswer(2, STORED)] })

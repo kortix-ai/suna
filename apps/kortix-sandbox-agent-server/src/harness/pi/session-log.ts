@@ -80,6 +80,7 @@ import {
 import type { KortixMessage, KortixPart } from '@kortix/api-contract/transcript'
 import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges } from '../shared/session-log-journal'
+import { RESTORE_NOTE_PREFIX } from '../shared/session-log-boot'
 import type { BytesReader } from '../shared/session-log-restore'
 import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore'
 import { assistantMessageError } from './turn-events'
@@ -273,6 +274,7 @@ function deriveThread(input: {
       const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', iso(msg.timestamp))
       if (msg.role === 'system') m.kind = 'context'
       if (msg.role === 'custom') m.origin = 'automation'
+      if (id.startsWith(RESTORE_NOTE_PREFIX)) m.origin = 'notification'
       if (input.child && msg.role === 'user' && !out.some((x) => x.message.role === 'user')) m.origin = 'subagent'
       m.model = v1Model(row)
       if (typeof row?.info.agent === 'string') m.agent = row.info.agent

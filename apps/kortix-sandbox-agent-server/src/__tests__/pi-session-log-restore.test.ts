@@ -505,7 +505,7 @@ describe('the boot reconcile on pi (P6.4)', () => {
       expect(api.journal.flatMap((b) => b.puts.map((p) => p.message.message_id))).toEqual(['msg_kortix_restore_g1'])
       expect(api.journal[0]!.session).toMatchObject({ restore_grade: 'partial', grade_counts: { attachment: 1 } })
       const note = api.stored().threads[0]!.messages.at(-1)!
-      expect(note).toMatchObject({ message_id: 'msg_kortix_restore_g1', role: 'user', in_context: true, seq: 15 })
+      expect(note).toMatchObject({ message_id: 'msg_kortix_restore_g1', role: 'user', origin: 'notification', in_context: true, seq: 15 })
       // modelView of the stored log, which now holds the note, is the next request, but for the image the box could not read.
       const expected = structuredClone(api.stored())
       const g04 = expected.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!

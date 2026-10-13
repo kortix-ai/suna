@@ -231,21 +231,35 @@ root. No turn runs at either point.
   a crash before it reads as behind at the next boot, and a daemon restart
   journals at the claimed generation. A 404 (no stored log) or 503 (operator
   switch off) claims nothing and restores nothing. Any other failure (5xx,
-  408, 429, network, a write that throws) is retried, 3 attempts, each a new
-  claim; then the boot fails (`initialRuntimeSessionError`, the proxy answers
-  `initial_runtime_session_failed`) and no journal starts. A manifest that
-  cannot be read after 3 attempts fails the boot the same way.
+  408, 429, network, a body that does not parse, a write that throws) is
+  retried, 3 attempts, each a new claim. A manifest is retried the same way.
+  After the retries, `held()` decides: a box with a store (a current store, or
+  one a failed write left readable, such as pi's dump renamed into place) boots
+  on it at its persisted generation and logs one warning (a later 409 or 422
+  is the worst case); a box with no store (a brand-new box with a stored log, or
+  an OpenCode store a failed write cleared) fails the boot
+  (`initialRuntimeSessionError`, the proxy answers
+  `initial_runtime_session_failed`) and no journal starts. A brand-new session
+  (no store, the manifest lists no live message or answers 404) boots empty, as
+  before.
 - **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
   dropped model-visible content, or a text kept its preview). The agent: a
-  user message `msg_kortix_restore_g<generation>` (`origin: 'notification'`,
-  one text block naming what is missing) after every seq the API holds,
+  user message `msg_kortix_restore_g<generation>` (one text block naming what
+  is missing) after every seq the API holds,
   written into the native store with the log (the adapter writes twice), so
   the next request carries it. Its cursor entry is dropped, so the journal
-  sends it as the store holds it: it is in modelView of the log. The user: the
+  sends it as the store holds it: it is in modelView of the log. Neither
+  native store keeps an origin, so both exports give a message with the
+  `msg_kortix_restore_g` id prefix `origin: 'notification'`; the v1 transcript
+  has no such notion and shows it as a user message (P5.6 renders the origin).
+  A partial log that already holds an earlier note gets a new note only when
+  this restore dropped or truncated something itself. The user: the
   session patch `restore_grade: 'partial'`, `grade_counts`, and
   `ext.kortix.data.restore` (`generation`, `dropped` by kind, `truncated`
-  texts). The journal sets it on every session patch it sends, at every boot,
-  until a complete restore clears it. P5.6 shows it.
+  texts). The journal sets it on every session patch it sends, at every boot.
+  The stored log then keeps `restore_grade: 'partial'`, so every later restore
+  of the session is partial too (no new note unless it loses more); only a
+  restore of a log graded otherwise clears the notice. P5.6 shows it.
 - **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
   all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
   1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the flag
@@ -257,6 +271,17 @@ they are fixed): pi images and OpenCode attachment bytes live only in the
 native store (`ref: blob:<sha256>`) until the journal uploads them, so a fresh
 box drops them (`dropped.attachment`, a partial restore); the restore memory
 above has no cap.
+
+Known limits of the boot reconcile:
+- Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
+  after a restore reads as behind (the persisted generation falls to 0, or the
+  seq map is gone), and the next boot restores over any work the journal had
+  not sent. In practice the state file, pi's dump and `opencode.db` share the
+  box's home volume, so they are lost together.
+- Two boxes for one session (a stale box that wakes after a provider
+  replacement): the waking box reads the newer generation as behind, restores,
+  claims a newer generation and fences the box that was active (its journal
+  gets 409). The box that booted last owns the session.
 
 Proved in `pi-session-log-restore.test.ts` (real runtime, fake model, isolated
 home, dummy key): for the 7 golden fixtures and a pi session recorded in the
