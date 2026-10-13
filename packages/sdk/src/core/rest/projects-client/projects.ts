@@ -145,8 +145,9 @@ export interface FeatureFlagView {
    */
   operator_only?: boolean;
   /**
-   * `organization`: one value for every project of the organization (`volumes`).
-   * Changing it needs `account.write`. Absent on servers older than this field.
+   * Always `project`: every flag is set per project. A server from
+   * 2026-10-12 sent `organization` for `volumes` and `stateless_sessions`.
+   * Absent on servers older than this field.
    */
   scope?: 'project' | 'organization';
 }
