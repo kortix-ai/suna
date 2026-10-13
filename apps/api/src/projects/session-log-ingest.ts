@@ -51,10 +51,11 @@
  *   `native`, and `grade_counts` goes from the column and the record. A capture row gives
  *   way only where the journal claims it: the same message id (the put replaces it), the
  *   same `(thread_id, seq)` (a tombstone at seq `-rev`), or a thread where a pi reply has a
- *   `pi:` id (a dump from before P2.5: every capture row of that thread is tombstoned). Both
- *   apply in every batch. At generation 0, the first journal write also takes every other
- *   live capture row out of context (`in_context: false`, column and record): it stays
- *   visible, and the model view is the native store's. Capture rows are never deleted.
+ *   `pi:` id (a dump from before P2.5: every capture row of that thread is tombstoned, at
+ *   generation 0 only). These rules apply in every batch. At generation 0, the first
+ *   journal write also takes every other live capture row out of context (`in_context:
+ *   false`, column and record): it stays visible, and the model view is the native
+ *   store's. Capture rows are never deleted.
  * - Re-puts. A put whose content hash equals the stored row's (a restarted daemon re-sends
  *   every message) is acknowledged and changes nothing, unless the row is a tombstone, a
  *   capture row, or of another generation.
@@ -201,7 +202,8 @@ async function applyBatch(
             ),
           );
       }
-      if (!capture) await hideConvertedPiThreads(tx, scope.sessionId, batch.puts);
+      // Generation 0 only: a restore (P6.2) writes `pi:` replies itself, into a store built from this log.
+      if (!capture && batch.generation === 0) await hideConvertedPiThreads(tx, scope.sessionId, batch.puts);
       await dropProvisionalRows(tx, scope.sessionId, batch.puts);
       for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
       if (!capture) await markDurableTurns(tx, scope.sessionId, batch.puts);
@@ -339,7 +341,8 @@ async function dropProvisionalRows(tx: Tx, sessionId: string, puts: readonly Ses
  * (`harness/pi/session-log.ts` in kortixd). Its capture rows carry the v1 ids, so they would
  * stay next to the native ones. A journal reply with a `pi:` id tombstones every live capture
  * row of its thread at seq `-rev`. A P2.5+ dump gives every reply a Kortix id; only its
- * system and custom messages have `pi:` ids, so they do not count.
+ * system and custom messages have `pi:` ids, so they do not count. Generation 0 only: a
+ * restored store (P6.2) holds this log and writes `pi:` replies of its own (a layout compaction).
  */
 async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
   const threads = [...new Set(puts.flatMap(({ message: m }) => (m.role === 'assistant' && m.message_id.startsWith('pi:') ? [m.thread_id] : [])))];

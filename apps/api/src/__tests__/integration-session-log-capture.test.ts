@@ -636,6 +636,18 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     expect((await captureRows(session)).every((r) => r.inContext && r.deletedAt === null)).toBe(true);
   });
 
+  test('after a restore claim, a `pi:` reply (a restore writes them, e.g. a layout compaction) tombstones nothing', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    await claimSessionLog(scope(session));
+    const restored = nativeExport('pi', [...history(), plain(5)]);
+    const reply = { ...restored.puts.at(-1)!.message, message_id: 'pi:layout1', seq: 6 };
+    expect(reply.role).toBe('assistant');
+    expect((await ingestSessionLogJournal(scope(session), { ...restored, generation: 1, puts: [{ rev: REV, message: reply }] })).status).toBe(200);
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003', 'pi:layout1']);
+    expect((await captureRows(session)).every((r) => r.inContext && r.deletedAt === null)).toBe(true);
+  });
+
   test('an identical re-put (a restarted daemon) is acknowledged and leaves the row; a changed put updates it; a capture row is always replaced', async () => {
     const session = await seedSession(project, OWNER);
     await capture(session, range(0, 2));
