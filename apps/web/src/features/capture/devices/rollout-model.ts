@@ -38,3 +38,8 @@ export function parseLimit(text: string): number | null {
 export function personLabel(enrollment: { principal_name: string | null; account_name: string | null }): string {
   return enrollment.principal_name || enrollment.account_name || '';
 }
+
+/** A token's expiry as a calendar date (`12 Nov 2026`): a future instant, which `relativeTime` does not format. */
+export function expiryDate(iso: string, locale: string): string {
+  return new Date(iso).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}

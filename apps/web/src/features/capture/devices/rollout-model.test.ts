@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { enrollmentUrl, msiCommand, parseDomains, parseLimit, personLabel } from './rollout-model';
+import { enrollmentUrl, expiryDate, msiCommand, parseDomains, parseLimit, personLabel } from './rollout-model';
 
 describe('IT rollout model', () => {
   test('domains: any separator, a leading @, any case, no duplicates', () => {
@@ -31,5 +31,10 @@ describe('IT rollout model', () => {
   test('a waiting computer names its UPN, else its login name', () => {
     expect(personLabel({ principal_name: 'a@corp.example', account_name: 'CORP\\a' })).toBe('a@corp.example');
     expect(personLabel({ principal_name: null, account_name: 'CORP\\a' })).toBe('CORP\\a');
+  });
+
+  test('an expiry is a calendar date, never "just now"', () => {
+    expect(expiryDate('2026-11-12T13:28:02.000Z', 'en-GB')).toBe('12 Nov 2026');
+    expect(expiryDate('2026-11-12T13:28:02.000Z', 'de')).toBe('12. Nov. 2026');
   });
 });

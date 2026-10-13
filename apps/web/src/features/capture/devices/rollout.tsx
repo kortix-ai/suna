@@ -60,6 +60,7 @@ import { useCaptureDirectory } from '../area/use-capture-area';
 import {
   enrollmentUrl,
   EXPIRY_DAYS,
+  expiryDate,
   msiCommand,
   parseDomains,
   parseLimit,
@@ -280,7 +281,7 @@ function TokenRow({ accountId, token }: { accountId: string; token: CaptureEnrol
       : t('usageOf', { count: token.device_count, max: token.max_devices });
   const expiry = token.expires_at
     ? t(token.state === 'expired' ? 'expired' : 'expiresIn', {
-        time: relativeTime(Date.parse(token.expires_at), locale),
+        time: expiryDate(token.expires_at, locale),
       })
     : t('noExpiry');
   return (
@@ -435,7 +436,7 @@ function WaitingRow({
         </span>
         <span className="text-muted-foreground block text-xs">{row.token_name}</span>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-64 text-xs text-pretty">
+      <TableCell className="text-muted-foreground max-w-72 min-w-56 text-xs whitespace-normal text-pretty">
         {t(`reason.${row.reason ?? 'approval_required'}`)}
       </TableCell>
       <TableCell className="text-muted-foreground text-xs tabular-nums">

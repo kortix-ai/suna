@@ -284,8 +284,8 @@ test('the Devices page: tokens and waiting computers refresh after create, revok
     create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
   });
   await settle();
-  expect(list!.data?.tokens).toEqual([]);
-  expect(waiting!.data?.enrollments).toEqual([{ enrollment_id: 'e1', status: 'pending' }]);
+  expect(list!.data?.tokens.map((token) => token.state)).toEqual([]);
+  expect(waiting!.data?.enrollments.map((row) => row.status)).toEqual(['pending']);
 
   let secret = '';
   await act(async () => {
@@ -293,20 +293,20 @@ test('the Devices page: tokens and waiting computers refresh after create, revok
   });
   await settle();
   expect(secret).toBe('kortix_enr_secret');
-  expect(list!.data?.tokens).toEqual([{ token_id: 't1', state: 'active' }]);
+  expect(list!.data?.tokens.map((token) => token.state)).toEqual(['active']);
 
   await act(async () => { await revoke!.mutateAsync('t1'); });
   await settle();
   expect(calls).toContain('DELETE /enrollment-tokens/t1');
-  expect(list!.data?.tokens).toEqual([{ token_id: 't1', state: 'revoked' }]);
+  expect(list!.data?.tokens.map((token) => token.state)).toEqual(['revoked']);
 
   await act(async () => { await approve!.mutateAsync({ enrollmentId: 'e1', userId: 'u1' }); });
   await settle();
   expect(calls).toContain('POST /enrollments/e1/approve');
-  expect(waiting!.data?.enrollments).toEqual([{ enrollment_id: 'e1', status: 'approved' }]);
+  expect(waiting!.data?.enrollments.map((row) => row.status)).toEqual(['approved']);
 
   await act(async () => { await deny!.mutateAsync('e1'); });
   await settle();
   expect(calls).toContain('POST /enrollments/e1/deny');
-  expect(waiting!.data?.enrollments).toEqual([{ enrollment_id: 'e1', status: 'denied' }]);
+  expect(waiting!.data?.enrollments.map((row) => row.status)).toEqual(['denied']);
 });

@@ -149,17 +149,23 @@ export {
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export {
   useApproveCaptureDevice,
+  useApproveCaptureEnrollment,
   useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDeviceGrant,
   useCaptureDevices,
+  useCaptureEnrollments,
+  useCaptureEnrollmentTokens,
   useCapturePolicy,
   useCaptureSearch,
   useCaptureTimeline,
   useCaptureTimelineItems,
   useCaptureWorkspace,
+  useCreateCaptureEnrollmentToken,
   useDenyCaptureDevice,
+  useDenyCaptureEnrollment,
   useRevokeCaptureDevice,
+  useRevokeCaptureEnrollmentToken,
   useSetCaptureEnabled,
   useSetCapturePolicy,
 } from './use-capture';
