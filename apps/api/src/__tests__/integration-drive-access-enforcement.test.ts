@@ -78,7 +78,6 @@ const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
 const { retryPendingRevocations } = await import('../workers/drive-worker');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
-const { setVolumesForOrg } = await import('../platform/services/boot-mode-setting');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -159,12 +158,8 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'drive-enforcement',
     repoUrl: 'https://example.test/drive-enforcement.git',
-    metadata: { experimental: { drives: true } },
+    metadata: { experimental: { volumes: true } },
   });
-  // The drive routes read the policy fresh from the database (volumesEnabledForFresh),
-  // so the seed must live in the platform_settings row, not only in the cache:
-  // an in-memory seed is discarded by the first fresh read (no row ⇒ Volumes off ⇒ 403).
-  await setVolumesForOrg(ACCOUNT, true);
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({
     serviceAccountId: RESEARCHER,
@@ -193,7 +188,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await setVolumesForOrg(ACCOUNT, null);
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));

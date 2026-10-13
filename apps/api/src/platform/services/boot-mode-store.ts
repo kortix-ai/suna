@@ -1,9 +1,6 @@
 /**
  * Storage and lookups for session boot modes (boot-mode.ts holds the rules).
- *
- * The policy is ONE `kortix.platform_settings` row, read through the shared
- * 30 s cache so the provisioning path never waits on it. A missing row is the
- * env-driven behavior from before the console existed.
+ * A new box's mode follows its project's Volumes and Stateless sessions flags.
  */
 import { config } from '../../config';
 import { projects, projectSessions } from '@kortix/db';
@@ -16,24 +13,15 @@ import {
   type BootModeDecision,
   type SessionBootRecord,
 } from './boot-mode';
-import { bootModePolicy } from './boot-mode-setting';
 
-export {
-  BOOT_MODE_SETTING_KEY,
-  bootModePolicy,
-  refreshBootModePolicy,
-  saveBootModePolicy,
-  volumesEnabledFor,
-  volumesFor,
-  __setBootModePolicyForTests,
-} from './boot-mode-setting';
+export { BOOT_MODE_SETTING_KEY, bootArtifactsSpec } from './boot-mode-setting';
 
 /** project_sessions.metadata key holding the session's SessionBootRecord. */
 export const SESSION_BOOT_KEY = 'bootMode';
 
 /**
  * KORTIX_EPHEMERAL_SANDBOXES=off: no new volume boxes. An operator emergency
- * override, not the product switch (that is Volumes, Admin → Volumes).
+ * override, not the product switch (that is the project's Stateless sessions flag).
  */
 export function envVolumeOff(): boolean {
   const raw = (config.KORTIX_EPHEMERAL_SANDBOXES ?? '').trim().toLowerCase();
@@ -42,24 +30,26 @@ export function envVolumeOff(): boolean {
 
 /** The mode a new box of this project's session asks for on `provider`. */
 export async function resolveProjectBootMode(input: {
-  accountId?: string | null;
   projectId: string;
   provider: string;
+  /** The project's metadata when the caller already holds it; read otherwise. */
   projectMetadata?: unknown;
 }): Promise<BootModeDecision> {
   const volumeProvider = input.provider === 'platinum' && isPlatinumConfigured();
-  let accountId = input.accountId ?? null;
-  if (volumeProvider && !accountId) {
+  let metadata = input.projectMetadata;
+  if (volumeProvider && metadata === undefined) {
     const [row] = await db
-      .select({ accountId: projects.accountId })
+      .select({ metadata: projects.metadata })
       .from(projects)
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
-    accountId = row?.accountId ?? null;
+    metadata = row?.metadata ?? null;
   }
-  return resolveBootMode(bootModePolicy().policy, {
-    accountId: accountId ?? '',
+  const { resolveFeatureFlag } = await import('../../feature-flags/registry');
+  return resolveBootMode({
     volumeProvider,
+    volumes: resolveFeatureFlag(metadata, 'volumes'),
+    stateless: resolveFeatureFlag(metadata, 'stateless_sessions'),
     envVolumeOff: envVolumeOff(),
   });
 }
@@ -123,36 +113,4 @@ export async function writeSessionBoot(
     .update(projectSessions)
     .set({ metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${patch}::jsonb` })
     .where(eq(projectSessions.sessionId, sessionId));
-}
-
-export interface BootModeStats {
-  since: string;
-  modes: Array<{ mode: string; requested: number; booted: number }>;
-  fallbacks: Array<{ from: string; to: string; reason: string; count: number; sample: string | null }>;
-}
-
-/** Sessions booted per mode and fallbacks taken, over the last `hours`. */
-export async function bootModeStats(hours = 24): Promise<BootModeStats> {
-  const since = new Date(Date.now() - hours * 3_600_000).toISOString();
-  const modes = (await db.execute(sql`
-    WITH s AS (
-      SELECT metadata->'bootMode' AS bm FROM kortix.project_sessions
-       WHERE metadata ? 'bootMode' AND metadata->'bootMode'->>'updatedAt' > ${since}
-    ), m AS (SELECT unnest(ARRAY['standard','artifacts','volume']) AS mode)
-    SELECT m.mode,
-           (SELECT count(*) FROM s WHERE s.bm->>'requested' = m.mode)::int AS requested,
-           (SELECT count(*) FROM s WHERE s.bm->>'mode' = m.mode AND s.bm->>'bootedAt' > ${since})::int AS booted
-      FROM m
-  `)) as unknown;
-  const fallbacks = (await db.execute(sql`
-    SELECT e->>'from' AS "from", e->>'to' AS "to", e->>'reason' AS reason,
-           count(*)::int AS count, max(e->>'detail') AS sample
-      FROM kortix.project_sessions ps,
-           jsonb_array_elements(coalesce(ps.metadata->'bootMode'->'fallbacks', '[]'::jsonb)) e
-     WHERE ps.metadata ? 'bootMode' AND e->>'at' > ${since}
-     GROUP BY 1, 2, 3
-     ORDER BY 4 DESC
-  `)) as unknown;
-  const rows = <T>(r: unknown): T[] => ((r as { rows?: T[] })?.rows ?? (r as T[])) ?? [];
-  return { since, modes: [...rows<BootModeStats['modes'][number]>(modes)], fallbacks: [...rows<BootModeStats['fallbacks'][number]>(fallbacks)] };
 }

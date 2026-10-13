@@ -561,7 +561,7 @@ const envSchema = z.object({
   KORTIX_DRIVES_SESSION_MOUNT: optStr,
   KORTIX_DRIVES_SYNC: optStr,
   // `off` keeps every new session box on stop/resume (an operator override
-  // under the Volumes switch).
+  // under the project Stateless sessions flag).
   KORTIX_EPHEMERAL_SANDBOXES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir

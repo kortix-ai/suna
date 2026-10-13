@@ -844,7 +844,6 @@ async function resolveBootModeFor(
   if (!bootStore || forProvider !== 'platinum') return;
   try {
     let decision = await bootStore.resolveProjectBootMode({
-      accountId: opts.accountId,
       projectId: opts.projectId,
       provider: forProvider,
       projectMetadata: opts.projectMetadata,
@@ -860,13 +859,7 @@ async function resolveBootModeFor(
     state.bootStandardFallback = decision.standardFallback;
     state.bootMode = ctx.persistentMachine
       ? decision.mode
-      : modeAfterFailures(
-          decision.mode,
-          failures,
-          bootStore.bootModePolicy().policy,
-          decision.standardFallback,
-          state.bootVolumeLocked,
-        );
+      : modeAfterFailures(decision.mode, failures, decision.standardFallback, state.bootVolumeLocked);
     state.bootRecord = {
       requested: decision.mode,
       source: decision.source,
@@ -983,7 +976,7 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
         ? null
         : await import('./boot-artifacts').then((m) =>
             bootStore
-              ? m.bootArtifactsMount(bootStore.bootModePolicy().policy.artifacts ?? config.KORTIX_BOOT_ARTIFACTS)
+              ? m.bootArtifactsMount(bootStore.bootArtifactsSpec())
               : m.bootArtifactsMount(),
           );
     state.bootArtifactsResolved = true;
@@ -1177,9 +1170,8 @@ async function fallBackBootMode(
   ) {
     return false;
   }
-  const policy = bootStore.bootModePolicy().policy;
   const failures = { ...bootRecordNow.failures, [bootMode]: (bootRecordNow.failures[bootMode] ?? 0) + 1 };
-  const next = modeAfterFailures(bootMode, failures, policy, state.bootStandardFallback, state.bootVolumeLocked);
+  const next = modeAfterFailures(bootMode, failures, state.bootStandardFallback, state.bootVolumeLocked);
   const at = new Date().toISOString();
   const stepped = next !== bootMode;
   const dropStateVolume = stepped && bootMode === 'volume' && !state.bootVolumeLocked;
@@ -1195,7 +1187,7 @@ async function fallBackBootMode(
   await bootStore
     .writeSessionBoot(sandbox.sandboxId, state.bootRecord, { dropStateVolume })
     .catch((err) => logger.warn(`[session-sandbox] ${sandbox.sandboxId}: boot record not written:`, { error: err instanceof Error ? err.message : String(err) }));
-  if (!stepped && !attemptsLeft(bootMode, failures, policy)) return false;
+  if (!stepped && !attemptsLeft(bootMode, failures)) return false;
   logger.warn(`[session-sandbox] ${sandbox.sandboxId}: ${bootMode} boot failed (${failures[bootMode]}x)` +
       (stepped ? `, falling back to ${next}` : ', trying again') +
       `: ${bgMessage.slice(0, 160)}`);

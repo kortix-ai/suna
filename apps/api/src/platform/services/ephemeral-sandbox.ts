@@ -1,5 +1,5 @@
 /**
- * Ephemeral session sandboxes (boot mode `volume` under the Volumes switch, Platinum only).
+ * Ephemeral session sandboxes (boot mode `volume`: the project's Stateless sessions flag, Platinum only).
  *
  * A session's box is disposable. What the session needs to continue lives on
  * one Platinum volume per session, mounted at SESSION_STATE_MOUNT; the image's
@@ -51,7 +51,7 @@ export const SESSION_STATE_DIRS: ReadonlyArray<readonly [string, string]> = [
 
 /**
  * Operator emergency override: KORTIX_EPHEMERAL_SANDBOXES=off keeps every
- * session on stop/resume. The product switch is Volumes (Admin → Volumes).
+ * session on stop/resume. The product switch is the project's Stateless sessions flag.
  */
 export function ephemeralSandboxesKillSwitchOff(): boolean {
   const raw = (config.KORTIX_EPHEMERAL_SANDBOXES ?? '').trim().toLowerCase();
@@ -60,7 +60,7 @@ export function ephemeralSandboxesKillSwitchOff(): boolean {
 
 /**
  * Is a NEW box of this project's sessions ephemeral? The session boot mode
- * decides (boot-mode.ts: `volume`), and only for an organization with Volumes on.
+ * decides (boot-mode.ts: `volume`): the project's Stateless sessions flag, with Volumes on.
  */
 export async function ephemeralSandboxesEnabled(projectId: string, provider: string): Promise<boolean> {
   if (provider !== 'platinum' || !isPlatinumConfigured() || ephemeralSandboxesKillSwitchOff()) return false;

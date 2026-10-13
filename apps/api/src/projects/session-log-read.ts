@@ -195,7 +195,7 @@ export async function readLogTranscriptWindow(input: {
     .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))
     .where(eq(sessionLogs.sessionId, input.sessionId))
     .limit(1);
-  if (!log || !resolveFeatureFlag(log.metadata, 'session_log', log.accountId)) return null;
+  if (!log || !resolveFeatureFlag(log.metadata, 'session_log')) return null;
   const lastWriteMs = Math.max(new Date(log.updatedAt).getTime(), log.lastWriteMs ?? 0);
   if (log.mirrorMs !== null && log.mirrorMs - lastWriteMs > STALE_LOG_MS) {
     if (!warnedStale.has(input.sessionId)) {
