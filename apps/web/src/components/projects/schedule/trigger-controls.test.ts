@@ -1,4 +1,7 @@
-import * as SDK from '@kortix/sdk';
+import {
+  TRIGGER_CONTROL_ACTIONS as SDK_TRIGGER_CONTROL_ACTIONS,
+  triggerControlsFrom as sdkTriggerControlsFrom,
+} from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,8 +11,8 @@ import { TRIGGER_CONTROL_ACTIONS, triggerControlsFrom } from './trigger-controls
 // covers member, update-only, manager and an unresolved probe). Web reads them
 // through this module, so mobile and web cannot drift.
 test('the web hook reads the SDK trigger controls', () => {
-  expect(TRIGGER_CONTROL_ACTIONS).toBe(SDK.TRIGGER_CONTROL_ACTIONS);
-  expect(triggerControlsFrom).toBe(SDK.triggerControlsFrom);
+  expect(TRIGGER_CONTROL_ACTIONS).toBe(SDK_TRIGGER_CONTROL_ACTIONS);
+  expect(triggerControlsFrom).toBe(sdkTriggerControlsFrom);
 });
 
 describe('both trigger entry points read the same controls', () => {

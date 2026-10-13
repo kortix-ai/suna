@@ -6,11 +6,10 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountOverviewTab, AccountOverviewView } from '@/features/billing/account-overview';
-import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { ClaimPerSeatCard } from '@/features/billing/claim-per-seat-card';
-import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PlanCard } from '@/features/billing/plan-card';
 import { SeatManagementCard } from '@/features/billing/seat-management-card';
+import { TopupControls } from '@/features/billing/topup-controls';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   accountStateKeys,
@@ -220,18 +219,10 @@ export function BillingTab({
               coming in the credit tab content only, not in the plan row").
               The settings overlay's Credits pane mounts these same two
               components itself — buying credits belongs beside the balance it
-              changes, not on a pane about a subscription. */}
-          {showWallet && canPurchaseCredits && (
-            <div className="bg-popover rounded-md border">
-              <section className="space-y-3 px-4 py-4">
-                <h3 className="text-foreground text-sm font-medium">{t('addCredits')}</h3>
-                <CreditTopupSection />
-              </section>
-              <div className="border-t px-4 py-4">
-                <AutoTopupCard fetchSettings showSaveButton />
-              </div>
-            </div>
-          )}
+              changes, not on a pane about a subscription. `TopupControls`
+              renders them only when the plan may buy credits and this person
+              may change billing (KRTX-1720). */}
+          {showWallet ? <TopupControls state={accountState} heading={t('addCredits')} /> : null}
 
           {/* The Stripe billing portal doesn't exist without billing enabled
               (self-host with KORTIX_BILLING_INTERNAL_ENABLED=false) — hide the
