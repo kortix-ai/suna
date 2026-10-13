@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Message, Part } from '../runtime/runtime-types';
-import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, type SessionLogState } from './store';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, selectSessionLogThread, type SessionLogState } from './store';
 import type { SessionLog } from './types';
 import { fromV1, toV1, type V1Transcript } from './v1';
-import { sessionLogOfV1Rows, sessionLogRowsFor, type V1MessageRow } from './v1-view';
+import { sessionLogOfV1Rows, sessionLogRowsFor, sessionLogThreadWithV1Rows, type V1MessageRow } from './v1-view';
 
 const CONTRACT_FIXTURES = join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log');
 const fixtures: Array<[string, SessionLog]> = readdirSync(CONTRACT_FIXTURES)
@@ -142,6 +142,58 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
   });
 });
 
+describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks (an optimistic send)', () => {
+  const optimistic = (id: string, created: number, text: string): V1MessageRow => ({
+    info: { id, sessionID: ROOT, role: 'user', time: { created }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,
+    parts: [{ id: `${id}-p`, sessionID: ROOT, messageID: id, type: 'text', text } as unknown as Part],
+  });
+
+  test('a row the log holds or tombstoned stays out; an optimistic send is appended as a fromV1 user message', () => {
+    let state = stateOf(v1Golden);
+    const v2 = v1Golden.threads[0]!.messages;
+    const deleted = v2[1]!.message_id;
+    state = applySessionLogEvent(state, ev('log.message', { message_id: deleted, rev: Number.MAX_SAFE_INTEGER }));
+    const thread = selectSessionLogThread(state)!;
+    const last = Date.parse(v2.at(-1)!.created_at);
+    const v1Rows = [optimistic(v2[0]!.message_id, last, 'stale copy'), optimistic(deleted, last, 'deleted'), optimistic('msg_optimistic', last + 1_000, 'just sent')];
+    const merged = sessionLogThreadWithV1Rows(state, thread, v1Rows);
+    expect(merged.messages.slice(0, -1)).toEqual(thread.messages);
+    expect(merged.messages.at(-1)).toMatchObject({
+      message_id: 'msg_optimistic', thread_id: ROOT, role: 'user', kind: 'turn', status: 'complete', in_context: true,
+      seq: thread.messages.at(-1)!.seq + 1, created_at: new Date(last + 1_000).toISOString(), blocks: [{ type: 'text', id: 'msg_optimistic-p', text: 'just sent' }],
+    });
+    expect({ ...merged, messages: [] }).toEqual({ ...thread, messages: [] });
+  });
+
+  test('a stub whose echo id the log holds (a re-minted prompt) stays out, in the thread and in the v1 rows', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    const echo = thread.messages[0]!.message_id;
+    const stub = optimistic('msg_stub', 1, 'sent');
+    const echoOf = (id: string) => (id === 'msg_stub' ? echo : undefined);
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub], echoOf)).toBe(thread);
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub]).messages.at(-1)!.message_id).toBe('msg_stub');
+    const rows = sessionLogRowsFor({ kses_1: state }, ROOT, [stub], echoOf);
+    expect(rows.map((r) => r.info.id)).not.toContain('msg_stub');
+    expect(sessionLogRowsFor({ kses_1: state }, ROOT, [stub]).map((r) => r.info.id)).toContain('msg_stub');
+  });
+
+  test('identity: the same inputs give the same thread; no extra row gives the thread itself; a changed row renews only its message', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    expect(sessionLogThreadWithV1Rows(state, thread, [])).toBe(thread);
+    expect(sessionLogThreadWithV1Rows(state, thread, [optimistic(thread.messages[0]!.message_id, 1, 'held')])).toBe(thread);
+    const v1Rows = [optimistic('msg_o1', 1, 'one'), optimistic('msg_o2', 2, 'two')];
+    const first = sessionLogThreadWithV1Rows(state, thread, v1Rows);
+    expect(sessionLogThreadWithV1Rows(state, thread, v1Rows)).toBe(first);
+    const second = sessionLogThreadWithV1Rows(state, thread, [v1Rows[0]!, optimistic('msg_o2', 2, 'two, edited')]);
+    expect(second).not.toBe(first);
+    expect(second.messages.at(-2)).toBe(first.messages.at(-2)!);
+    expect(second.messages.at(-1)).not.toBe(first.messages.at(-1)!);
+    expect(second.messages.at(-1)!.blocks).toEqual([{ type: 'text', id: 'msg_o2-p', text: 'two, edited' }]);
+  });
+});
+
 describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store rows (v2 not negotiated)', () => {
   const v1 = toV1(v1Golden);
   const RS = v1.root_id!;
@@ -163,6 +215,15 @@ describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store
     expect(sessionLogOfV1Rows('kses_v1', RS, rows)).toEqual(expected(rows));
     expect(sessionLogOfV1Rows('kses_v1', RS, [...rows].reverse())).toEqual(expected(rows));
     expect(sessionLogOfV1Rows('kses_v1', RS, [])).toEqual(expected([]));
+  });
+
+  test('an optimistic send (a v1 row the store appended) is the last message: a complete user turn with its text', () => {
+    const sent: V1MessageRow = {
+      info: { id: 'msg_zzopt', sessionID: RS, role: 'user', time: { created: T + 5_000 }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,
+      parts: [{ id: 'prt_zzopt', sessionID: RS, messageID: 'msg_zzopt', type: 'text', text: 'next question' } as unknown as Part],
+    };
+    const view = sessionLogOfV1Rows('kses_v1', RS, [...rows, sent]).threads[0]!;
+    expect(view.messages.at(-1)).toMatchObject({ message_id: 'msg_zzopt', role: 'user', kind: 'turn', status: 'complete', in_context: true, blocks: [{ type: 'text', id: 'prt_zzopt', text: 'next question' }] });
   });
 
   test('an open call stays open: the live turn is streaming, not closed by the closure rule', () => {

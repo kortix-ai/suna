@@ -6,7 +6,7 @@ import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-
 import { useSyncStore } from '../browser/stores/sync-store';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
-import { isV1Thread, sessionLogOfV1Rows } from '../core/session-log/v1-view';
+import { isV1Thread, sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
 import {
   fetchFirstSessionLogPage,
   loadSessionLogPage,
@@ -19,6 +19,7 @@ import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { selectSessionLog, selectSessionLogThread } from '../core/session-log/store';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { useFeatureFlag } from './use-feature-flag';
+import { selectSessionRows } from './session-transcript-subscription';
 import { useSessionMessages, type SessionMessagesSource } from './use-session-messages';
 
 const sourced = new WeakMap<SessionLog, SessionLog & { source: 'v1' | 'v2' }>();
@@ -65,8 +66,10 @@ export function useSessionLog(session: SessionMessagesSource): (SessionLog & { s
 /**
  * One thread of {@link useSessionLog}, with its messages: the root thread when `threadId` is
  * omitted, a sub-agent's thread by its id. On v1 a thread id is a runtime session id, and the
- * thread is the `fromV1` view of that runtime session's rows. `null` when the thread is
- * unknown (v2), or the store holds no row of that runtime session (v1).
+ * thread is the `fromV1` view of that runtime session's rows. On v2 the v1 store rows the log
+ * does not hold yet (an optimistic send) follow the thread's messages as `fromV1` messages,
+ * until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
+ * the store holds no row of that runtime session (v1).
  */
 export function useSessionLogThread(
   session: SessionMessagesSource,
@@ -74,7 +77,10 @@ export function useSessionLogThread(
 ): SessionLogThread | null {
   const v2 = useSyncStore((state) => {
     const log = state.sessionLogs[session.sessionId];
-    return log ? selectSessionLogThread(log, threadId) : undefined;
+    if (!log) return undefined;
+    const thread = selectSessionLogThread(log, threadId);
+    // The v1 rows the log lacks (an optimistic send) show until the log's put replaces them.
+    return thread && sessionLogThreadWithV1Rows(log, thread, selectSessionRows(state, thread.thread_id), (id) => state.optimisticEchoOf(thread.thread_id, id));
   });
   const v1 = useV1SessionLog(session, threadId);
   return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
