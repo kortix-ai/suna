@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils';
 import { fileIconFor, getFilename, getFileType, getTypeLabel } from '@/lib/utils/file-utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { memo } from 'react';
 import { normalizeActivityToolName } from '../session-activity-groups';
 import { ChainStepTrigger } from './chain-step-trigger';
@@ -74,7 +75,7 @@ export function isFileChipPart(part: Part): boolean {
  * interesting.
  */
 function chipPath(part: ToolPart): string | undefined {
-  const input = partStreamingInput(part);
+  const input = partStreamingInput(toolCallBlock(part));
   for (const key of PATH_KEYS) {
     const value = input[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
@@ -95,7 +96,7 @@ function chipPath(part: ToolPart): string | undefined {
  */
 function isDirectoryTarget(part: ToolPart, path: string): boolean {
   if (path.endsWith('/')) return true;
-  return parseReadOutput(partOutput(part))?.type === 'directory';
+  return parseReadOutput(partOutput(toolCallBlock(part)))?.type === 'directory';
 }
 
 function isInFlight(part: ToolPart): boolean {

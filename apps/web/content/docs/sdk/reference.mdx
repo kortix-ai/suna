@@ -162,6 +162,8 @@ Gate a control in your UI with `can` or `canBatch` on the action the route check
 
 `listMine()` lists pending invites addressed to your email. `describe(inviteId)`, `accept(inviteId)` and `decline(inviteId)` act on one invite. They need no account membership.
 
+`acceptAndLand(inviteId, invite?)` accepts and returns `{ accepted, landing }`. `landing` is where to open: `{ kind: 'project', projectId, accountId }` for the first project the invite granted, or `{ kind: 'account', accountId }` for a workspace invite. Pass the invite you already read (from `listMine()` or `describe()`): an accept that grants nothing, such as an admin invite, then lands in the first project the invite names. `accountInviteLanding(accepted, invite?)` is the same rule without the request, for an invite accepted earlier.
+
 ### `kortix.billing`
 
 | Method | What it does |
@@ -233,10 +235,10 @@ These methods read the project repository. To read and write files in a running 
 
 | Method | What it does |
 | --- | --- |
-| `files.listDirectory({ ref?, path? })` | One folder level: `{ entries, truncated }`. Use it to build a file tree. |
+| `files.listDirectory({ ref?, path?, cursor?, limit? })` | One folder level: `{ entries, truncated, next_cursor }`. Use it to build a file tree. Without `cursor` or `limit`, one response carries up to 5,000 entries. With either, the response is a page of `limit` entries (default 500, at most 2,000). Pass `next_cursor` as `cursor` for the next page while it is a string: stop when it is `null` or absent (an API older than paging omits it). Every page reads the commit the first page read. |
 | `files.list(options?)` | Every file under a path, recursively, cut at 1,000. A cut response carries `X-Kortix-Truncated: 1`. |
 | `files.read(path, ref?)` · `files.history(path, { ref?, limit?, skip? })` | A file at a ref · its commits. |
-| `files.search(query, { content?, ref?, limit? })` | Search file names, or contents with `content: true`. |
+| `files.search(query, { content?, ref?, limit? })` | Search file names, or contents with `content: true`. A content match carries `line_number` and `line_text`. |
 | `files.archive(options?)` · `files.archiveRequest(options?)` | Download a tarball · the same as a request your host streams to disk. |
 | `git.commits()` · `git.commit(sha)` · `git.commitDiff(sha)` | The log · one commit · its diff. |
 | `git.branches()` · `git.versionDiff(…)` | Branches · the diff between two refs. |
@@ -245,6 +247,17 @@ These methods read the project repository. To read and write files in a running 
 | `changeRequests.list()` · `.get(crId)` · `.diff(crId)` · `.mergePreview(crId)` | Read change requests. |
 | `changeRequests.open(input)` · `.update(crId, input)` · `.merge(crId, input?)` · `.close(crId, input?)` · `.reopen(crId, input?)` | Change request lifecycle. |
 | `changeRequests.requestChanges(crId, input)` | Record feedback and, optionally, send it to the session that made the change. |
+
+Read a large folder page by page:
+
+```ts
+let cursor: string | undefined;
+do {
+  const page = await p.files.listDirectory({ path: 'src', limit: 500, cursor });
+  render(page.entries);
+  cursor = page.next_cursor ?? undefined; // null or absent ends the loop
+} while (cursor);
+```
 
 Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`, `/change-requests`. See [Git](/docs/git).
 
@@ -391,7 +404,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 | Files and previews | `files.list` · `.read` · `.readBlob` · `.status` · `.findFiles` · `.findText` · `.upload` · `.write` · `.create` · `.copy` · `.remove` · `.mkdir` · `.rename`, `previews()`, `previewUrl(port, path?)`, `proxyUrl(url)`, `sandboxPortUrl(port)`, `attachments.upload` · `.read` |
 | Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
 | Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |
-| Sharing and people | `setSharing(intent)`, `publicShares.list` · `.create` · `.revoke`, `participants()`, `watch()`, `setWatch(watching)`, `presence({ tab_id, active, alerts? }, { keepalive? })` |
+| Sharing and people | `setSharing(intent)`, `publicShares.list` · `.create` · `.revoke`, `participants()`, `watch()`, `setWatch(watching)`, `presence({ tab_id, active, alerts? }, { keepalive? })` (answers `awake_until` and `awake_cap_at`) |
 | Git and reminders | `commit(input?)`, `reminders.list` · `.create` · `.update` · `.remove` |
 
 ## Framework-free modules
@@ -459,7 +472,7 @@ Pure functions that turn session messages into renderable parts. Use them to bui
 | `step` | `id`, `phase: 'start' \| 'finish'`, `snapshot?`, `reason?`, `cost?`, `tokens?` |
 | `unknown` | `raw`: a part type this SDK version does not know. It never throws. |
 
-`ToolView` fields: `name`, `kind` (from `toolKind`), `title`, `status` (`pending`, `running`, `done`, `error`), `input`, `output`, `error`, `outputParsed` (the parsed JSON output, for output up to 256 KiB), `outputText`, `files`, `diff`, `diagnostics`, `answers`, `childSessionId`. A tool that reports `success: false` inside a completed state has `status: 'error'`. `toToolView(part)` builds a `ToolView` from one tool part. Read these fields, not a harness's own metadata: the same card then renders every harness.
+`ToolView` fields: `name`, `kind` (from `toolKind`), `title`, `status` (`pending`, `running`, `done`, `error`), `input`, `output`, `error`, `outputParsed` (the parsed JSON output, for output up to 256 KiB), `outputText`, `files`, `diff`, `diagnostics`, `answers`, `childSessionId`. A tool that reports `success: false` inside a completed state has `status: 'error'`. `toToolView(part)` builds a `ToolView` from one tool part or one session-log `ToolCallBlock`. Read these fields, not a harness's own metadata: the same card then renders every harness.
 
 `classifyTurn(message)` returns `{ parts, error?, isEmpty }` for one assistant message. `isEmpty` is `true` when the turn has no error and no visible part.
 
@@ -526,11 +539,59 @@ The root exports the types of the Kortix session log, the harness-neutral record
 | `SessionLogTodo` | One todo item. |
 | `RestoreGrade` · `GradeCounts` | How faithfully the record restores (`native`, `converted` or `partial`) · what is missing. |
 
+A text over 256 kB is stored by reference. This applies to a `TextBlock` and to a `text` item of a tool result (`ToolResultContent`). Its `text` holds the first 16 kB, `bytes` holds the UTF-8 length of the full text, and `ref` is `kortix-attachment://<project_id>/<session_id>/<attachment_id>`. `kortix.session(projectId, sessionId).attachments.read(attachmentId)` returns the full text as a `Blob` (`text/plain; charset=utf-8`), also while the sandbox is stopped. The v1 transcript reads return the full text.
+
 ```ts
 import type { SessionLog, SessionLogBlock } from '@kortix/sdk';
 
 function toolCalls(log: SessionLog): SessionLogBlock[] {
   return log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).filter((b) => b.type === 'tool_call');
+}
+```
+
+### Tool calls from v1 parts (transitional)
+
+Two functions bridge a host that renders `ToolCallBlock`s while its rows are still v1 (`useSessionMessages`). Both are transitional.
+
+| Name | What it does | Removed |
+| --- | --- | --- |
+| `toolCallBlock(part)` | The `ToolCallBlock` of a v1 tool part: the block `fromV1` builds for it. An open call stays open (`pending` or `running`, no `result`). A call that streams its input has the text so far as its `input`. The same part object returns the same block. | In the SDK major that removes the v1 rows. |
+| `toolCallMetadata(call)` | The harness's display metadata of a tool call: the whole `state.metadata` of the v1 part it came from, such as bash `command`, read `loaded`, task `sessionId` or edit `filediff`. A record a harness wrote natively carries only `exit` (from `result.exit_code`). One shared empty object when there is none. | When the session-log schema carries display metadata. |
+
+`toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and `shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part, and return the same answer for both.
+
+```ts
+import { getChildSessionId, toolCallBlock, toolCallMetadata } from '@kortix/sdk';
+
+const call = toolCallBlock(part); // part: a v1 tool part from useSessionMessages
+const child = getChildSessionId(call); // a running task's child session
+const command = toolCallMetadata(call).command; // bash
+```
+
+### Block turns
+
+The turn model over session-log blocks: what a transcript renders a thread from. Each name replaces a v1 helper over `MessageWithParts` (see [Turns, status and helpers](#turns-status-and-helpers)); the v1 helpers stay until the next major.
+
+| Name | What it does | Replaces |
+| --- | --- | --- |
+| `sessionLogTurns(thread, options?)` | One `SessionLogTurn` per user message: `id`, `user`, `assistant` (the replies, by `reply_to` then order), `partial` (the prompt is not loaded), `blocks` (every reply block), and the derived fields `status` (`pending`, else the last reply's status), `error` (`code`, `message`, `details`, `raw`), `cost` (the replies' usage priced with the platform markup), `compaction` (`block`, `hasContent`, `inFlight`), `threads` (the sub-threads it spawned), `plan` (owns the plan card), `shell` (shell mode's bash call), `response` (the last text block), `attachments`, `live`, `queued`, `retrying`. Options: `busy`, `liveMessageId`, `held` (the prompts the inbox holds, in queue order), `threads`, `pricing`. A turn keeps its identity while its messages and derived fields do. A message out of context keeps its turn. | `groupMessagesIntoTurns`, `collectTurnParts`, `getTurnError`, `getTurnErrorDetails`, `getTurnErrorRawText`, `getTurnCost`, `compactionTurnInfo`, `getShellModePart`, `findLastTextPart`, `isAttachment`, `getWorkingState`, `resolveWorkingTurn`, `hasRetryingAssistantTurn`, `getChildSessionId` |
+| `sessionLogTurnSegments(blocks, options?)` | The segments of a turn: `burst` (a run of non-text blocks), `text`, `standalone` (a `show` or sub-agent call, or a call named in `standaloneCallIds`), `show-group` (adjacent `show` calls). | `segmentTurn`, `groupShowSegments` |
+| `splitSessionLogTurnWork(segments, { working })` | The settled-turn fold: `work`, `hoisted` (the `show` deliverables), `final` (the last text). `null` while the turn works or has no work. | `splitTurnWork` |
+| `sessionLogBurstSteps(blocks)` | The rows of a burst: `thought` (a run of reasoning; `running` only while its message streams), `block`, `group` (same-family calls, with `family`, `label`, `status`). An answered question is its own row. | `mergeBurstSteps`, `stepLabel` |
+| `sessionLogCallStatus(call, live)` | The status a call renders with: `pending`, `running`, `complete`, `error`, or `interrupted`. An open call, or one the closure rule closed (`result.synthetic`, or `result.error.code` `'interrupted'`), is `running` (started) or `pending` on a live turn and `interrupted` on any other. | new |
+| `sessionLogActivityText(turn, childMessages?)` | The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's messages. | `getTurnStatus` |
+| `sessionLogPromptMessage(prompt, threadId)` | The user message of a queued inbox prompt (`SessionPrompt`) the thread has not placed: id `message_id`, else `queued-<prompt_id>`. Append it after the thread's messages and name it in `held`. | the host's synthetic row |
+
+A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`.
+
+```ts
+import { sessionLogTurns, sessionLogTurnSegments, sessionLogCallStatus } from '@kortix/sdk';
+
+const turns = sessionLogTurns(thread, { busy, liveMessageId: working.turnId, held: heldIds, threads: log.threads });
+for (const turn of turns) {
+  for (const segment of sessionLogTurnSegments(turn.blocks)) {
+    if (segment.kind === 'standalone') render(segment.block, sessionLogCallStatus(segment.block, turn.live));
+  }
 }
 ```
 

@@ -11,9 +11,9 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function RemovedConnectorTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const output = partOutput(part);
+  const output = partOutput(call);
 
   return (
     <BasicTool
@@ -43,7 +43,7 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
         {output ? (
           <ToolOutputFallback
             output={output}
-            isStreaming={partStatus(part) === 'running'}
+            isStreaming={partStatus(call) === 'running'}
             toolName="legacy-integration"
           />
         ) : null}

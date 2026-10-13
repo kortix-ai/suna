@@ -1,5 +1,6 @@
 'use client';
 
+import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -8,10 +9,10 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { Close } from '@/features/icon/icons/close';
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
@@ -34,10 +35,8 @@ import { hubTarget } from '@/stores/account-panel-store';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowLeftIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isRailItemActive, railGroups } from './rail';
 import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from './rail-copy-context';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
@@ -211,6 +210,7 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // useSettingsNav() consumer — when membersTab changes, e.g. a deep link
   // opening straight to Invite.
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
+  const paneRequested = useSettingsPanelStore((s) => s.paneRequested);
   const settingsNav = useMemo(
     () => buildSettingsPanelSettingsNav({ open, tab, membersTab }),
     [open, tab, membersTab],
@@ -305,6 +305,7 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         organizations={memberships.accounts}
         organizationCopy={organizationCopy}
         chrome={chrome}
+        startOnPane={paneRequested}
         modalTitle={
           project ? tSettingsRail('projectTitle', { projectName: project.name }) : chrome.settings
         }
@@ -342,6 +343,8 @@ export interface SettingsPanelViewProps {
   organizationCopy: AccountMembershipsCopy;
   chrome: SettingsRailChromeCopy;
   modalTitle: string;
+  /** Mobile: open on the current tab's pane, not on the section list. */
+  startOnPane?: boolean;
 }
 
 export function SettingsPanelView({
@@ -359,6 +362,7 @@ export function SettingsPanelView({
   organizationCopy,
   chrome,
   modalTitle,
+  startOnPane,
 }: SettingsPanelViewProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -400,6 +404,7 @@ export function SettingsPanelView({
           organizations={organizations}
           organizationCopy={organizationCopy}
           chrome={chrome}
+          startOnPane={startOnPane}
         />
       </ModalContent>
     </Modal>
@@ -447,6 +452,7 @@ export function SettingsPanelShell({
   organizations = [],
   organizationCopy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
   chrome,
+  startOnPane = false,
 }: SettingsPanelShellProps) {
   // A heading over a lone group labels nothing — it is the only group, and the
   // dialog's own title already says Settings. It comes back the moment a
@@ -454,6 +460,22 @@ export function SettingsPanelShell({
   // under the same rail — which is the only case where the label does work.
   const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
+  // Mobile only: the list screen, or the pane screen. A caller that opened
+  // settings on a named tab lands on that pane.
+  const [mobilePane, setMobilePane] = useState(startOnPane);
+  const railProps = { groups, showGroupLabels, organizations, organizationCopy, chrome };
+  const closeButton = (
+    <ModalClose asChild>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="kx-settings-mobile-close text-muted-foreground hit-area-2 shrink-0"
+        aria-label={chrome.close}
+      >
+        <Close className="text-foreground size-4 stroke-1" />
+      </Button>
+    </ModalClose>
+  );
 
   return (
     /* `activationMode="manual"`: Radix defaults to "automatic", which SELECTS
@@ -475,155 +497,65 @@ export function SettingsPanelShell({
         style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
         {isMobile ? (
-          <nav
-            aria-label={chrome.settings}
-            className="kx-titlebar-row kx-titlebar-band-height kx-settings-mobile-titlebar border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
-            data-sidebar-collapsed=""
-          >
-            <FadedScrollArea
-              orientation="horizontal"
-              fadeColor="from-background"
-              className="kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2"
-            >
-              <TabsList orientation="horizontal" className="kx-settings-mobile-tabs w-fit">
-                {allItems.map((item) => (
-                  <TabsTrigger
-                    key={item.tab}
-                    value={item.tab}
-                    className="w-auto shrink-0 gap-2.5 px-3 whitespace-nowrap"
-                  >
-                    <RailTriggerBody item={item} horizontal />
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {organizations.length > 0
-                ? organizations.map((account) => (
-                    <ModalClose asChild key={account.account_id}>
-                      <HubLink
-                        to={hubTarget(account.account_id)}
-                        className="kx-settings-mobile-org-link text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
-                      >
-                        {account.name?.trim() || organizationCopy.fallbackAccountName}
-                        <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-                      </HubLink>
-                    </ModalClose>
-                  ))
-                : null}
-            </FadedScrollArea>
-            <div className="flex shrink-0 items-center px-3">
-              <ModalClose asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="kx-settings-mobile-close text-muted-foreground hit-area-2 shrink-0"
-                  aria-label={chrome.close}
-                >
-                  <Close className="text-foreground size-4 stroke-1" />
-                </Button>
-              </ModalClose>
+          /* Mobile is two screens, like a phone's Settings app: this list,
+             then the picked pane with a back pill (in <main> below). The old
+             tab strip clipped every label past the third at phone width. */
+          mobilePane ? null : (
+            <div className="flex min-h-0 flex-1 flex-col bg-inherit">
+              <header
+                className="kx-titlebar-row kx-titlebar-band-height kx-settings-mobile-titlebar flex h-11 shrink-0 items-center justify-between border-b px-2"
+                data-sidebar-collapsed=""
+              >
+                <span className="px-2 text-sm font-medium">{chrome.settings}</span>
+                {closeButton}
+              </header>
+              <RailNav {...railProps} className="pt-2" onPick={() => setMobilePane(true)} />
             </div>
-          </nav>
+          )
         ) : (
           /* The settings sidebar, as `/accounts/[id]` draws it
            (`accounts/hub/account-settings-sidebar.tsx`): one column — the
            `Back to app` row on top, then the rows. Same background as the
-           content — the hairline is the only seam. Rows take the `xs` button
-           footprint (28px, 13px type, `rounded-sm`), in that sidebar's
-           `ROW_CLASS` dialect keyed on the Radix `data-state` the trigger
-           carries instead of `data-active`. */
+           content — the hairline is the only seam. */
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
             <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 shrink-0 items-center justify-start px-2">
               <ModalClose asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground gap-1 text-xs"
-                >
-                  <ArrowLeftIcon className="size-4 shrink-0" />
-                  {chrome.backToApp}
+                <Button variant="ghost" size="xs" className={backPillClass()}>
+                  <BackPillBody label={chrome.backToApp} />
                 </Button>
               </ModalClose>
             </div>
-
-            <nav
-              aria-label={chrome.settings}
-              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {groups.map((group) => (
-                <div key={group.label}>
-                  {showGroupLabels ? (
-                    <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                      {group.label}
-                    </div>
-                  ) : null}
-                  <TabsList orientation="vertical" className="w-full">
-                    {group.items.map((item) => (
-                      <TabsTrigger
-                        key={item.tab}
-                        value={item.tab}
-                        size="md"
-                        className={cn(
-                          'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
-                          'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
-                          'data-[state=active]:bg-active data-[state=active]:font-medium',
-                          '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
-                        )}
-                      >
-                        <RailTriggerBody item={item} />
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </div>
-              ))}
-
-              {organizations.length > 0 ? (
-                /* The organizations the person belongs to. Each row LEAVES the
-                 overlay for that organization's own settings page — members,
-                 billing, roles, audit all live there — so it is a link that
-                 closes the dialog, not a tab. Same row footprint as the tabs
-                 above so the rail reads as one list with two kinds of row. */
-                <div>
-                  <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                    {organizationCopy.title}
-                  </div>
-                  <ul className="flex flex-col gap-0.5">
-                    {organizations.map((account) => (
-                      <li key={account.account_id}>
-                        <ModalClose asChild>
-                          <HubLink
-                            to={hubTarget(account.account_id)}
-                            className={cn(
-                              'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
-                              'text-foreground hover:bg-hover transition-colors',
-                            )}
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate">
-                                {account.name?.trim() || organizationCopy.fallbackAccountName}
-                              </span>
-                              {accountRoleLabel(account.account_role, organizationCopy) ? (
-                                <span className="text-muted-foreground block truncate text-xs">
-                                  {accountRoleLabel(account.account_role, organizationCopy)}
-                                </span>
-                              ) : null}
-                            </span>
-                            <ArrowUpRightIcon
-                              aria-hidden
-                              className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
-                            />
-                          </HubLink>
-                        </ModalClose>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </nav>
+            <RailNav {...railProps} />
           </aside>
         )}
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-inherit">
-          {isMobile ? null : (
+        <main
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-inherit',
+            isMobile && !mobilePane && 'hidden',
+          )}
+        >
+          {isMobile ? (
+            mobilePane && (
+              <header
+                className="kx-titlebar-row kx-titlebar-band-height kx-settings-mobile-titlebar flex h-11 shrink-0 items-center gap-1 border-b px-2"
+                data-sidebar-collapsed=""
+              >
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className={backPillClass()}
+                  onClick={() => setMobilePane(false)}
+                >
+                  <BackPillBody label={chrome.settings} />
+                </Button>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  {activeItem?.label}
+                </span>
+                {closeButton}
+              </header>
+            )
+          ) : (
             /* The 44px `Settings / <pane>` bar the account shell puts over its
              content (`account-settings-shell.tsx`). Neither crumb is a link:
              Settings is where you are, and the pane is picked in the rail. */
@@ -748,6 +680,109 @@ function SettingsTabPane({
     <div className="p-6">
       <SettingsSectionHeader title={item.label} />
     </div>
+  );
+}
+
+/**
+ * The rail's rows: the settings groups, then the organizations. The desktop
+ * sidebar and the mobile home screen draw the same list.
+ */
+function RailNav({
+  groups,
+  showGroupLabels,
+  organizations,
+  organizationCopy,
+  chrome,
+  onPick,
+  className,
+}: {
+  groups: readonly RailGroup[];
+  showGroupLabels: boolean;
+  organizations: readonly AccountMembership[];
+  organizationCopy: AccountMembershipsCopy;
+  chrome: SettingsRailChromeCopy;
+  onPick?: () => void;
+  className?: string;
+}) {
+  return (
+    <nav
+      aria-label={chrome.settings}
+      className={cn(
+        'flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
+        className,
+      )}
+    >
+      {groups.map((group) => (
+        <div key={group.label}>
+          {showGroupLabels ? (
+            <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+              {group.label}
+            </div>
+          ) : null}
+          <TabsList orientation="vertical" className="w-full">
+            {group.items.map((item) => (
+              <TabsTrigger
+                key={item.tab}
+                value={item.tab}
+                size="md"
+                // Runs on every tap, so mobile opens the pane even for the row
+                // already selected (Radix fires no value change for it).
+                onClick={onPick}
+                className={cn(
+                  // The project sidebar's nav-row type: medium label,
+                  // icon in the label colour (bold from IconProvider).
+                  // Rows rest at 75%; the active one is full ink.
+                  'gap-2 px-2.5 py-1 font-medium transition-none has-[>svg]:px-2.5',
+                  'data-[state=inactive]:text-sidebar-foreground/75 hover:bg-hover data-[state=inactive]:hover:text-sidebar-foreground',
+                  'data-[state=active]:bg-active data-[state=active]:text-sidebar-foreground',
+                )}
+              >
+                <RailTriggerBody item={item} />
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+      ))}
+
+      {organizations.length > 0 ? (
+        /* The organizations the person belongs to. Each row LEAVES the
+         overlay for that organization's own settings page — members,
+         billing, roles, audit all live there — so it is a link that
+         closes the dialog, not a tab. Same row footprint as the tabs
+         above so the rail reads as one list with two kinds of row. */
+        <div>
+          <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+            {organizationCopy.title}
+          </div>
+          <ul className="flex flex-col gap-0.5">
+            {organizations.map((account) => (
+              <li key={account.account_id}>
+                <ModalClose asChild>
+                  <HubLink
+                    to={hubTarget(account.account_id)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2.5 pt-1 pb-1.5 text-sm font-medium',
+                      'text-sidebar-foreground/75 hover:bg-hover hover:text-sidebar-foreground transition-colors',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        {account.name?.trim() || organizationCopy.fallbackAccountName}
+                      </span>
+                      {accountRoleLabel(account.account_role, organizationCopy) ? (
+                        <span className="text-muted-foreground block truncate text-xs font-normal">
+                          {accountRoleLabel(account.account_role, organizationCopy)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </HubLink>
+                </ModalClose>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </nav>
   );
 }
 

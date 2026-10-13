@@ -49,11 +49,11 @@ export function writeStat(content: string): { additions: number; deletions: numb
   return { additions: lines, deletions: 0 };
 }
 
-export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function WriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const filePath = inputPath(input) || inputPath(streamingInput);
   // Two `split()` calls — one on the path, one on the basename — allocating two
@@ -61,7 +61,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const filename = useMemo(() => getFilename(filePath) || '', [filePath]);
   const content = (input.content as string) || (streamingInput.content as string) || '';
   const ext = useMemo(() => filename.split('.').pop() || '', [filename]);
-  const output = partOutput(part);
+  const output = partOutput(call);
   // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it.
   // A written file's output is not small, and this ran on every render of the row.
   const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);
@@ -69,7 +69,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
   // full-string `includes`, and — when the output carries `<file_diagnostics>` —
   // a global regex, a full split and a per-line regex on top.
-  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
+  const diagnostics = useMemo(() => getToolDiagnostics(call, filePath), [call, filePath]);
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 

@@ -691,16 +691,11 @@ flow(
       if (!(await pending(admin)).some((i) => i.invite_id === inviteId)) throw new Error('admin cannot see the pending invite');
       (await ctx.client.as(admin).patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, { params: { ...params, userId: admin.userId! } }))
         .status(200).body().has('$.account_role', 'member');
-      // Each API process caches a caller's role for up to 15 s, and the demotion
-      // clears only the process that took it. Read until 8 lists in a row are
-      // empty, so every process behind the load balancer sees a member before
-      // the next step tries the admin-only writes.
-      const deadline = Date.now() + 30_000;
-      for (let streak = 0; streak < 8; ) {
-        const leaked = (await pending(admin)).length;
-        if (leaked !== 0 && Date.now() > deadline) throw new Error('pending invites leaked to a demoted member');
-        streak = leaked === 0 ? streak + 1 : 0;
-        if (streak < 8) await new Promise((resolve) => setTimeout(resolve, leaked === 0 ? 100 : 1_000));
+      // The demotion busts the caller's cached role on every API process over
+      // LISTEN/NOTIFY (iam/cache-invalidation.ts), so no process behind the load
+      // balancer may still serve the admin view. Every read must be empty.
+      for (let read = 0; read < 8; read++) {
+        if ((await pending(admin)).length !== 0) throw new Error(`read ${read + 1}: pending invites leaked to a demoted member`);
       }
     });
     await ctx.step('a plain member cannot resend the invite or promote themselves → 403; the invite is unchanged', async () => {

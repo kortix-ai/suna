@@ -13,17 +13,17 @@ import { AgentSpawnTool } from '@/features/session/tool/tools/agent-spawn-tool';
 import { AgentStopTool } from '@/features/session/tool/tools/agent-stop-tool';
 import { TaskDoneTool } from '@/features/session/tool/tools/task-done-tool';
 
-export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentTaskUpdateTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const input = partInput(part);
+  const input = partInput(call);
   const action = (input.action as string) || '';
   switch (action) {
     case 'start':
-      return <AgentSpawnTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
+      return <AgentSpawnTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
     case 'message':
-      return <AgentMessageTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
+      return <AgentMessageTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
     case 'cancel':
-      return <AgentStopTool part={part} forceOpen={forceOpen} />;
+      return <AgentStopTool call={call} forceOpen={forceOpen} />;
     case 'approve': {
       const taskId = (input.id as string) || '';
       return (
@@ -39,7 +39,7 @@ export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps)
       );
     }
     default:
-      return <AgentMessageTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
+      return <AgentMessageTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
   }
 }
 ToolRegistry.register('agent-task-update', AgentTaskUpdateTool);

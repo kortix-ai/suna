@@ -100,7 +100,10 @@ describe('Volumes: one switch per organization', () => {
     expect(resolveVolumes(policy, ORG_OTHER)).toEqual({ enabled: true, source: 'global' });
     expect(resolveBootMode(policy, target(ORG_ON))).toEqual({ mode: 'artifacts', source: 'org', standardFallback: false });
     expect(resolveBootMode({ ...policy, killSwitch: true }, target(ORG_OTHER)).source).toBe('kill_switch');
-    expect(resolveBootMode(policy, target(ORG_OTHER, { envVolumeOff: true })).mode).toBe('artifacts');
+    // A stored `default: volume` never makes an organization stateless.
+    expect(resolveBootMode(policy, target(ORG_OTHER))).toEqual({ mode: 'standard', source: 'default', standardFallback: true });
+    const statelessOrg = { ...policy, orgs: { [ORG_OTHER]: { mode: 'volume' as const, standardFallback: true } } };
+    expect(resolveBootMode(statelessOrg, target(ORG_OTHER, { envVolumeOff: true })).mode).toBe('artifacts');
 
     // Rollout: stable per org, partitions by percent while the global switch is off.
     const bucket = rolloutBucket(ORG_OTHER);

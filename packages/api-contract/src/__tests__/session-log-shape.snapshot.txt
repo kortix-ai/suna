@@ -402,6 +402,8 @@ ToolResultContentSchema = union(
   | {
     type: literal("text")
     text: string
+    ref: string | absent
+    bytes: number(int)(min0) | absent
   }
   | {
     type: literal("attachment")

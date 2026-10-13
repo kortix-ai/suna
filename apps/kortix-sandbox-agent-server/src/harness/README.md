@@ -182,12 +182,24 @@ reacts to a non-streaming assistant message). A live put is published:
 - on each `message.part.updated` of a part the message did not have: a new
   text, reasoning, tool or step block. The put is built in the bus listener,
   before the next v1 frame, so a block is on the stream before its first delta
-  and its text holds exactly the deltas published before it.
+  and its text holds exactly the deltas published before it;
+- on each `message.part.updated` of a tool part that changes its
+  `state.status` or the key set of its `state.metadata` (the keys with a
+  defined value: what the wire carries) (P4.7): a call that
+  starts running, a task that names its child (`sessionId`), a bash call that
+  names its `command`. A value change alone (bash rewrites `metadata.output`
+  per stdout chunk, a pending call's `raw` grows) publishes nothing: a put
+  rebuilds the whole message.
 
-The record is `fromV1` of the frames so far (the API's own mapping), reopened
-where `fromV1` closes a turn at rest: an open reply is `streaming` with
-`completed_at` and `finish` null, and an open call keeps its v1 status
-(`pending` or `running`) without a closure result. The adapter's `live` names
+The record is `liveMessageFromV1` of the frames so far (`@kortix/api-contract`
+`live.ts`, the same function the API relay runs for an older daemon):
+`fromV1` with `live: true`. An open reply is `streaming`, and so is a reply
+with an open call (pi completes a reply before its calls run). An open call
+keeps its v1 status (`pending` or `running`) without a result; a pending call
+whose input streams carries the text so far (`raw`) as its `input`. The v1
+residual of each block stays in its `ext`, so a running call keeps its display
+metadata (task `sessionId`, bash `command`; the SDK's `toolCallMetadata` reads
+it) and `toV1` gives back the frames. The adapter's `live` names
 the fields the frames do not carry, so a live put carries the `message_id`,
 `thread_id`, `seq` and `created_at` of the turn end's record:
 - OpenCode stores a message before it publishes it, in the order it creates
@@ -213,9 +225,12 @@ publishes the journal-form tombstone `{ message_id, rev }` on the v2 bus; on
 `message.part.removed` it publishes a fresh put without the part.
 
 Limits:
-- A tool's result and a block's changes after it first appears (a reasoning
-  block's end, a call's output) reach the v2 stream with the next live put of
-  that message or at the turn end, not on their own.
+- A block's changes after it first appears (a reasoning block's end, a
+  running call's growing output, a pending call's growing `raw`) reach the v2
+  stream with the next live put of that message or at the turn end, not on
+  their own. A call's status change (its result included) and a new metadata
+  key get their own put. Unlike the v1 stream, a pending call's input preview
+  does not grow on v2 until the call runs (a P5 follow-up).
 - A daemon that crashes mid-turn never sends the turn end's put: a client
   keeps a `streaming` put until the next epoch's `kortix.resync` or its reread
   of the saved session log (P4.5).
@@ -457,7 +472,7 @@ Three sources, in pi's own scopes:
 |---|---|---|
 | system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
 | project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained, minified ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files minus the code that file inlined, type declarations, source maps and the root README/CHANGELOG — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
-| repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
+| repo-local | `<workspace>/.pi/extensions/*.ts`, or a `./` path in `harnesses.pi.packages` (a file is one extension, anywhere in the repo) | the repo itself: a `./` path resolves against the config release root while a release runs, else the working tree (`packageRoot`); a release that changes a file in its folder restarts the runtime (`pi/config-release.ts` `startOnlyFiles`) |
 
 A project entry for the same package overrides the system one. Nothing installs
 at boot. pi installs a missing package on load (13.2 s for two packages,

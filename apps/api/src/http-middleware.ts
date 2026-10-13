@@ -13,6 +13,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import {
+  dbPoolWaitSuspected,
   requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
@@ -245,6 +246,10 @@ app.use('*', async (c, next) => {
       ...getDiagnosticFields(),
       ...requestClientLogFields((name) => c.req.header(name)),
       ...(serverTiming ? { server_timing: serverTiming } : {}),
+      // Derives from the same breakdown: when the db stage's per-statement wall
+      // reads as connection-queue wait (KRTX-1571), name it on the line so a
+      // saturation episode is one grep instead of a post-hoc reconstruction.
+      ...(serverTiming && dbPoolWaitSuspected(serverTiming) ? { db_pool_wait_suspected: true } : {}),
       // Only on failed proxy requests: identify the failing hop without logging
       // request bodies, response bodies, or any sandbox identity.
       ...(status >= 500 && path.startsWith('/v1/p/')

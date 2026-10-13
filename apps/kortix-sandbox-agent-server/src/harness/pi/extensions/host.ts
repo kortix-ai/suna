@@ -172,6 +172,8 @@ export interface PiSessionInput {
   agentDir: string
   projectConfigDir?: string | null
   projectPackages: readonly PackageSource[]
+  /** Where a `./` entry of `projectPackages` resolves: the release root while a release runs, else `cwd`. */
+  packageRoot?: string
   /** The unpacked node_modules fallback (`<root>/node_modules/<name>`) for npm entries in `projectPackages`, or null. */
   projectBundleRoot: string | null
   /** Pre-built project packages (prebuilt.ts): their folders for skills/prompts, and their npm names. */
@@ -297,7 +299,7 @@ export function resolveProjectPackages(
 
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
-  const project = resolveProjectPackages(input.projectPackages, { cwd: input.cwd, bundleRoot: input.projectBundleRoot })
+  const project = resolveProjectPackages(input.projectPackages, { cwd: input.packageRoot ?? input.cwd, bundleRoot: input.projectBundleRoot })
   const projectSettings = input.projectConfigDir ? readSettings(join(input.projectConfigDir, 'settings.json')) : {}
   // The repository supplies pi-native settings as-is; explicit agent packages
   // from the manifest remain additive and are already installed by the API.

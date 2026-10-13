@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -35,7 +36,7 @@ const render = (p: ToolPart, open = false) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-        <SkillTool part={p} defaultOpen={open} />
+        <SkillTool call={toolCallBlock(p)} defaultOpen={open} />
       </NextIntlClientProvider>
     </QueryClientProvider>,
   );
@@ -119,7 +120,7 @@ describe('SkillTool', () => {
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <ToolSurfaceContext.Provider value="panel">
-            <SkillTool part={part({ name: 'webapp', dir: DIR }, OUTPUT)} defaultOpen />
+            <SkillTool call={toolCallBlock(part({ name: 'webapp', dir: DIR }, OUTPUT))} defaultOpen />
           </ToolSurfaceContext.Provider>
         </NextIntlClientProvider>
       </QueryClientProvider>,

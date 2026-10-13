@@ -57,6 +57,7 @@ import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } fro
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
+import { isPartialListing, LoadMoreRow } from './load-more-row';
 
 /** System directories always pinned at the top of the listing. */
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -145,13 +146,9 @@ export function DriveExplorer({
 
   source.useFileEventInvalidation();
 
-  const {
-    data: files,
-    isLoading,
-    isFetching,
-    error,
-    refetch: refetchFiles,
-  } = source.useFileList(currentPath);
+  const listing = source.useFileList(currentPath);
+  const { data: files, isLoading, isFetching, error, refetch: refetchFiles } = listing;
+  const partial = isPartialListing(listing);
 
   // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
   // own, so keep polling. A parked box never reaches here: `parked` switches
@@ -204,6 +201,7 @@ export function DriveExplorer({
 
   const isRootPath = currentPath === '/' || currentPath === '.' || currentPath === '';
   const normalizedCurrentPath = isRootPath ? '' : currentPath.replace(/\/$/, '');
+  const filesAllowedHere = capabilities.filesAllowedAt?.(currentPath) ?? true;
 
   // Auto-focus folder input
   useEffect(() => {
@@ -293,14 +291,17 @@ export function DriveExplorer({
       return sortOrder === 'desc' ? -cmp : cmp;
     };
 
+    // A partial folder keeps the server's name order: a sorted subset would
+    // put a later page's rows above the ones shown (KRTX-1723).
+    const sorted = (nodes: FileNode[]) => (partial ? nodes : nodes.sort(sortFn));
     const allDirs = files.filter((f) => f.type === 'directory');
     const elevatedDirs = allDirs
       .filter((f) => ELEVATED_DIRS.has(f.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const dirs = allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)).sort(sortFn);
-    const fileItems = files.filter((f) => f.type === 'file').sort(sortFn);
+    const dirs = sorted(allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)));
+    const fileItems = sorted(files.filter((f) => f.type === 'file'));
     return { elevatedDirs, dirs, fileItems };
-  }, [files, sortBy, sortOrder]);
+  }, [files, sortBy, sortOrder, partial]);
 
   // ── Handlers ──────────────────────────────────────────────────
 
@@ -736,7 +737,7 @@ export function DriveExplorer({
 
   const handlePageDrop = useCallback(
     async (e: React.DragEvent) => {
-      if (!canWrite) return;
+      if (!canWrite || !filesAllowedHere) return;
       e.preventDefault();
       e.stopPropagation();
       dragPageCounter.current = 0;
@@ -745,13 +746,14 @@ export function DriveExplorer({
       if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
       await handleUploadFiles(e.dataTransfer.files);
     },
-    [canWrite, handleUploadFiles],
+    [canWrite, filesAllowedHere, handleUploadFiles],
   );
 
   const isEmpty =
     !isLoading &&
     !error &&
     Boolean(files) &&
+    !listing.hasNextPage &&
     elevatedDirs.length === 0 &&
     dirs.length === 0 &&
     fileItems.length === 0;
@@ -769,8 +771,10 @@ export function DriveExplorer({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <DriveNewMenu
             compact={embedded}
-            onUpload={canWrite ? handleUpload : undefined}
-            onNewFile={canWrite ? () => setIsCreatingFile(true) : undefined}
+            onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
+            onNewFile={
+              canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setIsCreatingFile(true) : undefined
+            }
             onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
           />
           <DriveViewMenu
@@ -786,6 +790,7 @@ export function DriveExplorer({
               downloadDir(dirPath, dirName);
             }}
             isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+            sortDisabled={partial}
           />
         </div>
       </div>
@@ -1040,6 +1045,7 @@ export function DriveExplorer({
                   elevatedDirs={elevatedDirs}
                   dirs={dirs}
                   files={fileItems}
+                  sortDisabled={partial}
                   onNavigateToDir={handleNavigateToDir}
                   onOpenFile={handleOpenFile}
                   onPreviewFile={handlePreviewFile}
@@ -1059,6 +1065,7 @@ export function DriveExplorer({
                   readOnly={!canWrite}
                 />
               )}
+              <LoadMoreRow listing={listing} />
             </>
           )}
         </div>
@@ -1067,7 +1074,7 @@ export function DriveExplorer({
       </ListingRegion>
 
       {/* Drag & drop overlay */}
-      {canWrite && isDragOverPage && (
+      {canWrite && filesAllowedHere && isDragOverPage && (
         <div className="bg-background/80 border-primary/50 pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-2xl">

@@ -34,6 +34,7 @@ import {
 import { sessionAttachmentStore } from './session-attachments';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
+import { writeSessionLogFromMirror } from '../session-log-capture';
 import {
   MIRROR_CAPTURE_LIMIT,
   capturedMessageIndex,
@@ -412,7 +413,10 @@ async function captureSessionTranscript(
         return { captured: rows.length, head_complete: headComplete };
       });
     };
-    return fullHistory ? await retryTranscriptCapture(capture) : await capture();
+    const result = fullHistory ? await retryTranscriptCapture(capture) : await capture();
+    // P2.7: a box without a journal also gets its v2 log, from the mirror just written. Never throws.
+    if (result) await writeSessionLogFromMirror(sessionId);
+    return result;
   } catch (err) {
     console.warn(
       `[transcript-mirror] capture failed for session ${sessionId}:`,
