@@ -101,6 +101,32 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(last.byId).toBe(last.log!.threads[0]!);
   });
 
+  test('throttleMs paces the v1 rows the thread reads, as useSessionMessages paces them', async () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<string | undefined> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session, undefined, { throttleMs: 200 })?.messages.at(-1)?.message_id);
+      return null;
+    });
+    expect(seen.at(-1)).toBe(rows.at(-1)!.info.id);
+    const send = (id: string) => {
+      const info = { id, sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+      useSyncStore.getState().optimisticAdd(RS, info as never, [{ id: `prt_${id}`, sessionID: RS, messageID: id, type: 'text', text: id } as never]);
+    };
+    // The first change after a quiet interval shows at once; the next one waits for the window.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+      send('msg_zzzpaced1');
+    });
+    expect(seen.at(-1)).toBe('msg_zzzpaced1');
+    act(() => send('msg_zzzpaced2'));
+    expect(seen.at(-1)).toBe('msg_zzzpaced1');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    expect(seen.at(-1)).toBe('msg_zzzpaced2');
+  });
+
   test('identity: a re-render with no store change returns the same log, thread and messages', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<ReturnType<typeof useSessionLog>> = [];

@@ -1,6 +1,5 @@
 import { shouldShowToolPart } from '@/ui';
-import type { SessionLogMessage, ToolCallBlock } from '@kortix/sdk';
-import { openCall } from '../../tool/shared/call-liveness';
+import { sessionLogOpenCall, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { shouldShowToolPartInActionsPanel } from '../../tool/tool-renderers';
 
 /**
@@ -10,9 +9,9 @@ import { shouldShowToolPartInActionsPanel } from '../../tool/tool-renderers';
  *
  * The calls come from `useSessionLogThread` (`session-panel-provider.tsx`),
  * which serves the `fromV1` live view while v2 is off and the API's page on v2.
- * Each call is read through `openCall`, so a call the page closed at rest (the
- * closure rule) counts as the open call the live view holds, and the panel's
- * running/pending reads agree on both paths.
+ * Each call is read through `sessionLogOpenCall`, so a call the page closed at
+ * rest (the closure rule) counts as the open call the live view holds, and the
+ * panel's running/pending reads agree on both paths.
  *
  * Advanced-only. Applies `shouldShowToolPartInActionsPanel` on top of the
  * universal filter, which deliberately drops `read`, `skill`, and the
@@ -48,7 +47,7 @@ export function collectAllToolCalls(messages: SessionLogMessage[] | undefined): 
   for (const msg of messages) {
     for (const block of msg.blocks) {
       if (block.type !== 'tool_call') continue;
-      const call = openCall(block);
+      const call = sessionLogOpenCall(block);
       if (shouldShowToolPart(call)) calls.push(call);
     }
   }
