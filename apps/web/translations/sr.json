@@ -389,6 +389,10 @@
       "keyboardTitle": "Пречице на тастатури",
       "keyboardDescription": "Тастер за измену картица и све пречице у апликацији.",
       "modifierKey": "Тастер модификатора",
+      "quickEntryTitle": "Quick Entry",
+      "quickEntryDescription": "Пречица која отвара траку за упит из било које апликације.",
+      "quickEntryOff": "Искључено",
+      "quickEntryInUse": "Друга апликација користи ову пречицу, па она не отвара траку. Изаберите другу.",
       "shortcuts": {
         "newTab": "Нова картица",
         "closeActiveTab": "Затвори активну картицу",
