@@ -2,6 +2,7 @@ import '@/features/session/tool/tools/register';
 import { ToolPartRenderer } from './tool-part-renderer';
 import { ToolRegistry } from './shared/registry';
 import type { ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -14,7 +15,7 @@ const part = (tool: string) => ({
 function render(tool: string) {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      <ToolPartRenderer part={part(tool)} sessionId="child" defaultOpen />
+      <ToolPartRenderer call={toolCallBlock(part(tool))} sessionId="child" defaultOpen />
     </NextIntlClientProvider>,
   );
 }

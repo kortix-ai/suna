@@ -6,6 +6,7 @@ import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { getChildSessionError, getRetryInfo, getRetryMessage } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -65,7 +66,7 @@ export function SubAgentActivity({
         {parts.map((tp) => (
           <ToolPartRenderer
             key={tp.callID}
-            part={tp}
+            call={toolCallBlock(tp)}
             sessionId={childSessionId}
             disableNavigation
           />

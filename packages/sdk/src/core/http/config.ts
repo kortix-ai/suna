@@ -65,6 +65,16 @@ export interface KortixPlatformConfig {
   clientVersion?: string;
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;
+  /**
+   * The API refused a request with a 403 the person can fix:
+   * `sso_required` (sign in again through the account's identity provider) or
+   * `account_mfa_required` (complete multi-factor authentication). Called for every
+   * response of the REST client (`backendApi`), including `showErrors: false`
+   * calls; the runtime proxy and the event stream do not call it. A browser also gets the
+   * `kortix:sso-required` / `kortix:mfa-required` window event; a host without
+   * DOM events (React Native) uses this instead. No-op by default.
+   */
+  onAccessRemedy?: (code: 'sso_required' | 'account_mfa_required') => void;
   /** Default sandbox id for local/single-sandbox hosts (was `getEnv().SANDBOX_ID`). */
   sandboxId?: string | null;
   /** Whether billing gates are active (was `isBillingEnabled()`). */

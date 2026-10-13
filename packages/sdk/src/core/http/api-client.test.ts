@@ -750,6 +750,84 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
       restoreFetch();
     }
   });
+
+  // React Native has no `window.dispatchEvent`: `onAccessRemedy` is its only
+  // signal. It fires for every request, like the window event, so a call made
+  // with `showErrors: false` still reaches it. No window is stubbed here.
+  test('the coded SSO denial calls onAccessRemedy, also with showErrors: false', async () => {
+    const remedies: string[] = [];
+    const errors: unknown[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+      onError: (error) => errors.push(error),
+    });
+    const restoreFetch = stubFetch403({
+      error: true,
+      message: 'Your organization requires single sign-on.',
+      code: 'sso_required',
+    });
+    try {
+      const res = await backendApi.get('/accounts/abc', { showErrors: false });
+      expect(res.success).toBe(false);
+      expect(res.error).toMatchObject({ status: 403, code: 'sso_required' });
+      expect(remedies).toEqual(['sso_required']);
+      expect(errors).toHaveLength(0);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test('the coded MFA denial calls onAccessRemedy with its code', async () => {
+    const remedies: string[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+    });
+    const restoreFetch = stubFetch403({ error: 'mfa needed', code: 'account_mfa_required' });
+    try {
+      await backendApi.get('/accounts/abc/iam/groups');
+      expect(remedies).toEqual(['account_mfa_required']);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test('an ordinary 403 calls no onAccessRemedy', async () => {
+    const remedies: string[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+    });
+    const restoreFetch = stubFetch403({ error: 'forbidden', code: 'forbidden' });
+    try {
+      await backendApi.get('/accounts/abc/iam/groups');
+      expect(remedies).toEqual([]);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test('a throwing onAccessRemedy still returns the error response', async () => {
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: () => {
+        throw new Error('host bug');
+      },
+    });
+    const restoreFetch = stubFetch403({ error: true, code: 'sso_required' });
+    try {
+      const res = await backendApi.get('/accounts/abc');
+      expect(res.success).toBe(false);
+      expect(res.error).toMatchObject({ status: 403, code: 'sso_required' });
+    } finally {
+      restoreFetch();
+    }
+  });
 });
 
 // Regression for Better Stack frontend pattern `1f3c4d96…`

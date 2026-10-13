@@ -180,6 +180,34 @@ describe('ProfileTabView', () => {
 });
 
 /**
+ * KRTX-2177: the Delete-account gate must fail closed. A failed status check
+ * is not an answer: the row may not claim support (the old derivation read
+ * "not loading" as "supported" and armed the destructive dialog on any
+ * error), and it may not borrow the unavailable copy either — that copy
+ * asserts a definitive fact about the deployment, which a failed fetch
+ * cannot know (the same rule the MFA rows pinned in the file header). The
+ * errored row states the check failed and offers Retry.
+ */
+describe('ProfileTabView — a failed deletion-status check', () => {
+  test('renders no destructive trigger and offers Retry', () => {
+    const out = renderToStaticMarkup(<ProfileTabView isDeletionStatusError />);
+    // The trigger, not the row label: the label `>Delete account</div>` is
+    // always present; the destructive affordance serializes as a button.
+    expect(out).not.toContain('>Delete account</button>');
+    expect(out).not.toContain('profile-delete-confirm');
+    expect(out).toContain('>Retry<');
+    expect(out).toContain('confirm whether account deletion is available');
+  });
+
+  test('a definitive unsupported deployment still renders the muted unavailable text', () => {
+    const out = renderToStaticMarkup(<ProfileTabView accountDeletionSupported={false} />);
+    expect(out).toContain('>Unavailable<');
+    expect(out).toContain('available on this deployment');
+    expect(out).not.toContain('>Delete account</button>');
+  });
+});
+
+/**
  * Two-factor authentication is not on this pane any more — it is the Security
  * tab (`security-tab.tsx`, pinned by `security-tab.test.tsx`). Asserted absent
  * so the section cannot quietly grow back here as a second copy.

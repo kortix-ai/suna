@@ -5,6 +5,24 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session readiness)
+- `session.ensureReady({ session })` takes the session's row when the caller
+  already read it. A `running` row that names its sandbox and
+  `runtime_session_id` is adopted without `POST /start`; any other row, or a row
+  of another session, falls through to `/start` as before. The Kortix CLI
+  passes it, so a one-shot `kortix sessions chat -p` on a running session saves
+  the 1.2–2.4 s `/start` round trip. Additive.
+
+### Added (SSO and MFA remedies)
+- `configureKortix({ onAccessRemedy })` / `createKortix({ onAccessRemedy })`:
+  called with `'sso_required'` or `'account_mfa_required'` when the API answers
+  403 with that code, for every REST client (`backendApi`) response, including
+  `showErrors: false` calls. The runtime proxy and the event stream do not call it.
+  A host without DOM events (React Native) cannot receive the
+  `kortix:sso-required` / `kortix:mfa-required` window events; this is its
+  signal. A throw from the hook is caught. The window events are unchanged.
+  Additive (KRTX-1716).
+
 ### Added (account invites)
 - `acceptAccountInviteAndLand(inviteId, invite?)` (`accountInvites.acceptAndLand`)
   accepts an invite and returns `{ accepted, landing }`. `accountInviteLanding`
