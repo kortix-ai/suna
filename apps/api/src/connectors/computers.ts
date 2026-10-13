@@ -360,6 +360,8 @@ export async function attachComputerConnection(
       .set({
         tunnelId: input.tunnelId,
         status: 'active',
+        // An active account was not revoked: offboarding's reason no longer holds.
+        metadata: sql`${connectorConnections.metadata} - 'revokedReason'`,
         ...(hasDefault ? {} : { isDefault: true }),
         updatedAt: new Date(),
       })

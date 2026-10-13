@@ -131,8 +131,10 @@ describe('SCIM deprovision releases the seat', () => {
     expect(offboardBody()).toContain('onMemberRemoved(accountId, userId)');
   });
 
-  test('it is awaited, so the seat release cannot race the SCIM reply', () => {
-    expect(offboardBody()).toContain('await onMemberRemoved(');
+  test('SCIM awaits it, so the seat release cannot race the SCIM reply', () => {
+    // Removal and leave do not wait: Stripe can outlast the request deadline.
+    // `integration-offboard-member.test.ts` holds the sync open to prove both.
+    expect(offboardBody()).toContain("if (reason === 'deprovisioned') await seatSync;");
   });
 
   test('the seat release happens after the member row is gone', () => {

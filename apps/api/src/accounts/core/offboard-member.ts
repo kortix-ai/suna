@@ -12,6 +12,7 @@
  * 3. What keeps acting on their identity: computer accounts that reach their
  *    machines, and reminders they set. One audit event records the counts.
  * 4. The paid seat, after the identity row: the sync counts the members left.
+ *    Only SCIM waits for it.
  * 5. Their personal drives pass to an owner.
  */
 import { accountGroupMembers, accountMemberships } from '@kortix/db';
@@ -98,14 +99,18 @@ export async function offboardMember(
 
   await endWhatTheyLeftRunning(writer, accountId, userId, reason);
 
-  // Revoke the member's YOLO token and lower the Stripe seat count. Awaited so
-  // the release cannot race the reply. No seat reconciler exists: a failure
-  // leaves the seat count wrong until the next member change.
-  await onMemberRemoved(accountId, userId).catch((err) =>
+  // Revoke the member's YOLO token and lower the Stripe seat count. No seat
+  // reconciler exists: a failure leaves the seat count wrong until the next
+  // member change.
+  const seatSync = onMemberRemoved(accountId, userId).catch((err) =>
     logger.error('[billing] seat sync FAILED after member removed', { accountId, userId, error: errorMessage(err) }),
   );
   // Their personal drives in this account pass to an owner.
   await import('../../drives/service').then(({ releaseMemberDrives }) => releaseMemberDrives(accountId, userId));
+  // SCIM answers after the seat is released. Removal and leave answer a person
+  // within the 25 s request deadline (middleware/request-deadline.ts), and the
+  // Stripe client sets no shorter timeout, so they do not wait for Stripe.
+  if (reason === 'deprovisioned') await seatSync;
 
   return { tokenRevocationError };
 }
