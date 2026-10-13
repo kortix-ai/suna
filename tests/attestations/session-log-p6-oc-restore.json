@@ -1,0 +1,25 @@
+{
+  "source_hash": "82872e006e6a5dd391b6c81c914cf14d1b8fbe723f2896b4410f3a646a8ef22e",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/fake-model.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/opencode-box.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log-restore.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log-restore.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-restore.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/README.md",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/session-log-restore.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/session-log-restore.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-restore.ts"
+  ],
+  "diff_hash": "acc6f2c26dd6b6b1ac135eec64ca1d3ce640f56be9972c61d054b15a992cb93b",
+  "head": "e7bf7c67b01dce5deb4bf097e4a0284cf5492c57",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T15:27:00.941Z"
+}
