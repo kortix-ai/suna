@@ -1,5 +1,5 @@
 {
-  "source_hash": "13298f1888d35e5b296b4d5c6eea4b4717f39e3b69d2bf8bed77bc1aa7ca1bb4",
+  "source_hash": "b6f6c2a445cf0df4538bb60c0d40ac31965839042cc59db5d44748af5f590334",
   "diff_files": [
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/assets/quick-entry.html",
@@ -44,14 +44,13 @@
     "apps/web/translations/zh.json",
     "tests/e2e/specs/27-desktop-parity.spec.ts"
   ],
-  "diff_hash": "ea92598aaee43c1cc3449ab9a35c9753b1fb94cbc9a2dec19db6dc6703bb7cd8",
-  "head": "b0e70f764aa9c116dbfd4f982e7ff224e27d86f5",
+  "diff_hash": "62f96868c9ba3e78adf580ec4b9e612d7d3666408d42963a3b67fdc0eb02d011",
+  "head": "5d5080fd2f07809ecb782458f831b3a2e5b9a28f",
   "passed": true,
   "lanes": {
-    "browser": "pass",
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T16:20:35.750Z"
+  "at": "2026-10-13T17:03:11.884Z"
 }
