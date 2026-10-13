@@ -1,0 +1,24 @@
+{
+  "source_hash": "10ebedd8183955eeb05ffd4d639846d9d9734498171e52fa9d2020552b3d9c4e",
+  "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
+    "tests/README.md",
+    "tests/bin/package-quality.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/src/core/test-scope.ts",
+    "tests/unit/attestation-diff.test.ts",
+    "tests/unit/test-runner-contract.test.ts",
+    "tests/unit/test-scope.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "f92f69de3b24a3967d1d5beb34755fbcdd58908ec5f78e8499e6256d4856ee5b",
+  "head": "6a5469d5f5648be3444e0e09e8409e570b94af6c",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T15:46:53.682Z"
+}
