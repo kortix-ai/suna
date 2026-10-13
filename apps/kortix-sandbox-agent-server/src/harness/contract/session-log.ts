@@ -44,6 +44,18 @@ export interface SessionLogChanges {
   session?: SessionLogSessionPatch
 }
 
+/** What `restore` wrote. */
+export interface SessionLogRestoreResult {
+  /** One per thread written, holding the native hash of every message the next export derives from the store. */
+  cursors: ExportCursor[]
+  /**
+   * Model-visible content of the log that the native store cannot hold, as counts by kind
+   * (for example `attachment`: an image with no bytes). Empty when the next request equals
+   * `modelView(log)`. The boot decides on a notice from it (decision D3).
+   */
+  dropped: Record<string, number>
+}
+
 export interface SessionLogPort {
   /** What this adapter renders, natively and by lowering (C12, F9). */
   readonly capabilities: AdapterCapabilities
@@ -51,9 +63,12 @@ export interface SessionLogPort {
   changes(cursors: readonly ExportCursor[]): Promise<SessionLogChanges>
   /**
    * Write `log` into the native store before the harness starts. Returns one
-   * cursor per thread, holding the native hash of every message written.
+   * cursor per thread, holding the native hash of every message written, and
+   * what it could not write. `seqMax` is the highest seq the API holds per
+   * thread, tombstones included (the restore answer's `seq_max`): the harness
+   * numbers every new message above it.
    */
-  restore(log: SessionLog): Promise<ExportCursor[]>
+  restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult>
   /** A digest of the whole native store, for the boot reconcile. */
   fingerprint(): Promise<string>
   /**

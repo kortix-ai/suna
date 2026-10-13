@@ -90,7 +90,7 @@ const MAX_CLIENTS_BY_URL = 256;
  * remaining string-match fallback.
  */
 export class RuntimeNotReadyError extends Error {
-	constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+	constructor(message = '[kortix-runtime] Server URL not ready — sandbox is still loading') {
 		super(message);
 		this.name = 'RuntimeNotReadyError';
 	}
@@ -130,7 +130,7 @@ export function getClient(): RuntimeClient {
  */
 export function getClientForUrl(url: string): RuntimeClient {
 	if (!url) {
-		throw new Error('[opencode-sdk] getClientForUrl called without a url');
+		throw new Error('[kortix-runtime] getClientForUrl called without a url');
 	}
 	const existing = clientsByUrl.get(url);
 	if (existing) {
@@ -142,7 +142,7 @@ export function getClientForUrl(url: string): RuntimeClient {
 
 	if (!isConfigured()) {
 		throw new Error(
-			'[opencode-sdk] No auth token provider configured — call configureKortix()/createKortix() before talking to a sandbox runtime.',
+			'[kortix-runtime] No auth token provider configured — call configureKortix()/createKortix() before talking to a sandbox runtime.',
 		);
 	}
 
@@ -204,7 +204,7 @@ const publicClientsByUrl = new Map<string, RuntimeClient>();
  */
 export function getPublicClientForUrl(url: string): RuntimeClient {
 	if (!url) {
-		throw new Error('[opencode-sdk] getPublicClientForUrl called without a url');
+		throw new Error('[kortix-runtime] getPublicClientForUrl called without a url');
 	}
 	const existing = publicClientsByUrl.get(url);
 	if (existing) return existing;
@@ -270,7 +270,7 @@ export interface SystemReloadResult {
 export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
 	const url = getActiveRuntimeUrl();
 	if (!url) {
-		throw new ApiError('[opencode-sdk] Server URL not ready — sandbox is still loading', {
+		throw new ApiError('[kortix-runtime] Server URL not ready — sandbox is still loading', {
 			code: 'RUNTIME_UNAVAILABLE',
 		});
 	}

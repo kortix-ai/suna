@@ -27,6 +27,7 @@ import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructur
 import { ToolPartRenderer, TurnLiveContext } from '@/features/session/tool/tool-renderers';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import type { MessageWithParts, ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 
 const PARENT_SESSION = 'ses_krtx1746_parent';
 const CHILD_SESSION = 'ses_ee95c107bffe49S04KWqZ5tjcc';
@@ -150,7 +151,7 @@ function Row({ label, part }: { label: string; part: ToolPart }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-2">
       <p className="text-muted-foreground mb-1 text-xs font-medium">{label}</p>
-      <ToolPartRenderer part={part} sessionId={PARENT_SESSION} defaultOpen />
+      <ToolPartRenderer call={toolCallBlock(part)} sessionId={PARENT_SESSION} defaultOpen />
     </div>
   );
 }

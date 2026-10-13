@@ -37,8 +37,9 @@ const DISPLAY_ONLY = [
   // directly above and for the same reason: it RENDERS the wallet and decides
   // nothing with it. Its one `balance < 0` paints the figure red and appends
   // the word "owed" — a display branch, not an entitlement one. The pane's
-  // only gate, `canOfferTopup()`, reads `subscription.can_purchase_credits`
-  // and `can_manage_billing`; it never looks at the number. Listed here rather
+  // only gate, `canOfferTopup()` from `@kortix/sdk`, reads
+  // `subscription.can_purchase_credits` and `can_manage_billing`; it never
+  // looks at the number. Listed here rather
   // than dodged by renaming the variable: an exemption you can read beats a
   // tripwire quietly routed around.
   join('features', 'workspace', 'settings', 'tabs', 'credits-tab.tsx'),
@@ -157,5 +158,37 @@ describe('the wallet-floor bypass stays deleted', () => {
       source.indexOf("return 'no_subscription';"),
     );
     expect(fallback).not.toMatch(/billing_model\s*===\s*'per_seat'[\s\S]{0,40}return 'active'/);
+  });
+});
+
+describe('a purchase control renders only behind the shared top-up gate', () => {
+  // KRTX-1720: the out-of-credits modal rendered Add credits and Auto top-up
+  // for a member (403 on Buy), and for everyone while the account state was
+  // still loading. `TopupControls` is the one place they render, behind
+  // `canOfferTopup` from the SDK, which says no until the state has loaded.
+  const GATE = join('features', 'billing', 'topup-controls.tsx');
+  const PURCHASE_CONTROL = /<(CreditTopupSection|AutoTopupCard)\b/;
+  const sources = FILES.filter((file) => !/\.test\.tsx?$/.test(file.rel));
+
+  test('Add credits and Auto top-up render in the gate component and nowhere else', () => {
+    const renderers = sources
+      .filter((file) => PURCHASE_CONTROL.test(file.source))
+      .map((file) => file.rel);
+    expect(renderers).toEqual([GATE]);
+  });
+
+  test('the gate asks the SDK, and renders nothing it does not allow', () => {
+    const raw = readFileSync(join(WEB_SRC, GATE), 'utf8');
+    expect(raw).toMatch(/import \{[^}]*\bcanOfferTopup\b[^}]*\} from '@kortix\/sdk'/);
+    expect(executableSource(raw)).toContain('if (!canOfferTopup(state))');
+  });
+
+  test('no surface reads can_manage_billing itself, or keeps its own canOfferTopup', () => {
+    const offenders = sources
+      .filter((file) => /can_manage_billing|function canOfferTopup/.test(file.source))
+      .map((file) => file.rel);
+    // Answer through `canManageBilling` / `canOfferTopup` from `@kortix/sdk`:
+    // `!== false` on the raw field read a loading state as "owner".
+    expect(offenders).toEqual([]);
   });
 });

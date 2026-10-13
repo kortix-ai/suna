@@ -6,7 +6,7 @@ import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefu
 import type { SandboxRecord } from '../backend';
 import { DEFAULT_AGENT_SENTINEL, jsonProxyError } from '../pre-prompt-env-sync';
 import { stripInBoxProxyPrefix } from '../runtime-request';
-import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
+import { carriesSessionData } from '../session-data-ports';
 
 // Who may reach a sandbox through the proxy: the caller's access kind, the
 // account/session ownership gates, the platform-only control paths that are
@@ -99,13 +99,12 @@ export async function refuseSessionOrControlAccess(input: {
   origin: string;
 }): Promise<Response | null> {
   const { access, record, sandboxId, userId, callerSessionId, boundCredentialSessionId, upstreamPort, remainingPath, queryString, origin } = input;
-  // The daemon port serves the session's OpenCode conversation + owner-synced
-  // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
+  // Every port serves this session: the daemon its conversation + owner-synced
+  // secrets, a dev server or 3211 its workspace. Gate on SESSION visibility (mirrors loadVisibleSession on the
   // REST side), not just account membership — closes the window where a member
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,

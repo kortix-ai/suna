@@ -8,7 +8,7 @@ import {
   routeSandboxIngress,
 } from '../backend';
 import { canonicalProxyPath } from '../proxy-path';
-import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
+import { carriesSessionData } from '../session-data-ports';
 import { resumeAndReloadSandbox, shouldWakeStoppedSandboxForWsAttach } from './wake';
 
 // === WebSocket upstream resolution =============================================
@@ -64,7 +64,6 @@ export async function resolvePreviewWsUpstream(opts: {
   // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
   // side, one function further down the file.
   if (
-    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,

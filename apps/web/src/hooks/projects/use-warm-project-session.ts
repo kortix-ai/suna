@@ -46,8 +46,7 @@ import {
  * every line of compatibility matching the alternative needs.
  *
  * `metadata.warm` hides the row from the `visible` session list until its first
- * prompt lands — unless the box is live, in which case it bills and stays
- * listed (`apps/api/src/projects/lib/session-inventory.ts`).
+ * prompt lands (`apps/api/src/projects/lib/session-inventory.ts`).
  *
  * COST. Gated by the `warm_sessions` project flag; the server enforces it (403
  * `feature_disabled`) and `enabled` is only the client short-circuit.

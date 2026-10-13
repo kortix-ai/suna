@@ -136,7 +136,11 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const admin = await systemRoleActions('admin', 'account');
     const member = await systemRoleActions('member', 'account');
     // +2 owner and admin: Kortix Capture's capture.read_all and capture.manage (20261012220000001).
-    expect([owner.length, admin.length, member.length]).toEqual([31, 28, 7]);
+    expect([owner.length, admin.length, member.length]).toEqual([31, 28, 5]);
+    // A plain member does not read the whole directory (20261013172952181):
+    // they see the people and groups they share access with.
+    expect(member).not.toContain('member.read');
+    expect(member).not.toContain('group.read');
     expect(member.filter((a) => !admin.includes(a))).toEqual([]);
     expect(admin.filter((a) => !owner.includes(a))).toEqual([]);
     // The four owner-only powers, named.

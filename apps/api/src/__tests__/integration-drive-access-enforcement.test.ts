@@ -78,7 +78,6 @@ const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
 const { retryPendingRevocations } = await import('../workers/drive-worker');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
-const { setVolumesForOrg } = await import('../platform/services/boot-mode-setting');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -159,12 +158,9 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'drive-enforcement',
     repoUrl: 'https://example.test/drive-enforcement.git',
-    metadata: { experimental: { drives: true } },
+    // Files follows the project's own Volumes flag.
+    metadata: { experimental: { volumes: true } },
   });
-  // The drive routes read the policy fresh from the database (volumesEnabledForFresh),
-  // so the seed must live in the platform_settings row, not only in the cache:
-  // an in-memory seed is discarded by the first fresh read (no row ⇒ Volumes off ⇒ 403).
-  await setVolumesForOrg(ACCOUNT, true);
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({
     serviceAccountId: RESEARCHER,
@@ -193,7 +189,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await setVolumesForOrg(ACCOUNT, null);
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
@@ -310,5 +305,40 @@ describe('a resumed sandbox whose guest kept mounts Platinum ended', () => {
     }
     expect((await recordedMounts(RESUMED)).length).toBe(attached.length);
     expect(await pending(RESUMED)).toBe(false);
+  });
+});
+
+describe('Volumes turned off for the project', () => {
+  test('hides Files and refuses writes, but a file a session already wrote still reads', async () => {
+    const setVolumes = (on: boolean) =>
+      db.update(projects).set({ metadata: { experimental: { volumes: on } } }).where(eq(projects.projectId, PROJECT));
+    // A read by drive id answers the same with Volumes on and off. (Storage is
+    // not configured in this suite, so that answer is its own 503.)
+    const readFolder = async () => {
+      const res = await asOwner(`/v1/drives/${driveId}/files?path=${encodeURIComponent('/Company')}`);
+      return { status: res.status, code: ((await res.json()) as { code?: string }).code };
+    };
+    const readWithVolumesOn = await readFolder();
+    expect(readWithVolumesOn.code).not.toBe('feature_disabled');
+    await setVolumes(false);
+    try {
+      const files = await asOwner(`/v1/drives?projectId=${PROJECT}`);
+      expect(files.status).toBe(403);
+      expect(((await files.json()) as { code: string }).code).toBe('feature_disabled');
+
+      const write = await asOwner(`/v1/drives/${driveId}/files/content?path=${encodeURIComponent('/Company/new.txt')}`, {
+        method: 'PUT',
+        body: 'x',
+      });
+      expect(write.status).toBe(403);
+      expect(((await write.json()) as { code: string; message: string })).toMatchObject({
+        code: 'feature_disabled',
+        message: 'Files is not enabled for this project. Turn on Volumes in Settings → Feature flags.',
+      });
+
+      expect(await readFolder()).toEqual(readWithVolumesOn);
+    } finally {
+      await setVolumes(true);
+    }
   });
 });

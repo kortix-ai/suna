@@ -138,6 +138,7 @@
     },
     "signOutFailed": "Unable to sign out. Check your connection and try again.",
     "signingOut": "Signing out…",
+    "ssoRequired": "Your organization requires single sign-on. Continue with SSO instead.",
     "mfa": {
       "title": "Verify it’s you",
       "enterCode": "Enter the 6-digit code from your authenticator app.",

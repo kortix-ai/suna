@@ -257,7 +257,7 @@ More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#cust
 
 ### Read the session log
 
-`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?, options?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. `options.throttleMs` paces the v1 rows as `useSessionMessages` paces them (a transcript reads a streaming turn at most once per window). Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
 
 ```tsx
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
@@ -269,6 +269,8 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
   return <ol>{root.messages.map((m) => <li key={m.message_id}>{m.role}: {m.blocks.length} blocks</li>)}</ol>;
 }
 ```
+
+On v2, `useSessionLogThread` appends the v1 rows the log does not hold yet (an optimistic send) after the thread's messages, converted with `fromV1`, until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
 
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
@@ -327,7 +329,7 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 
 Rules that apply to several hooks:
 
-- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `project.gitops.push`, never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
+- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
 - The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs/work/sessions#notifications).
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`. The next read then comes from the new runtime.
 

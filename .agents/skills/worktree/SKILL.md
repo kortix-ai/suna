@@ -1,6 +1,6 @@
 ---
 name: worktree
-description: "How to do feature work in this repo with git worktrees via `pnpm worktree`. Each worktree gets its own branch, its own block of app ports, its own node_modules, and by default shares the primary checkout's standard local Supabase DB for fast setup; pass `--db` only when a separate Supabase project/data plane is needed. Load WHENEVER starting a feature, bugfix, refactor, experiment, or any change you'll want to run/test in isolation; whenever the user mentions worktrees, isolated/parallel dev instances, running multiple branches at once, or 'spin up a worktree'; and whenever you need the exact non-interactive `pnpm worktree` commands and flags. Enforces: one canonical branch per objective, one worktree per branch — join the existing worktree instead of creating another."
+description: "How to do feature work in this repo with git worktrees via `pnpm worktree`. Each worktree gets its own branch, its own block of app ports, its own node_modules, and by default shares the primary checkout's standard local Supabase DB for fast setup; pass `--db` for its own database (a copy of the primary inside the same Postgres) when the work needs migrations or destructive data changes. Load WHENEVER starting a feature, bugfix, refactor, experiment, or any change you'll want to run/test in isolation; whenever the user mentions worktrees, isolated/parallel dev instances, running multiple branches at once, or 'spin up a worktree'; and whenever you need the exact non-interactive `pnpm worktree` commands and flags. Enforces: one canonical branch per objective, one worktree per branch — join the existing worktree instead of creating another."
 ---
 
 # Worktrees (`pnpm worktree`)
@@ -10,8 +10,11 @@ checkout provisions a collision-free app stack on its own branch: unique ports
 for web/api/gateway, its own `node_modules` + pnpm store, and a tunnel for cloud
 sandbox callbacks. By default the worktree uses the primary checkout's standard
 local Supabase DB (`kortix-local` on 54321/54322) so setup is fast and auth/data
-state is shared. Pass `--db` only when the work needs a separate Supabase
-project, schema, auth users, storage, or destructive data changes. The CLI lives
+state is shared. Pass `--db` when the work needs its own schema or data
+(migrations, destructive data changes): it copies the primary into its own
+database `kortix_wt_<n>` in the same Postgres (~5 s, no extra containers).
+Pass `--full-supabase` only when the work needs its own auth or storage
+config: that runs a whole Supabase project (8 containers, ~0.75 GB RAM). The CLI lives
 at `scripts/worktree/cli.ts`, run via the root `package.json` script
 `pnpm worktree`.
 
@@ -34,7 +37,7 @@ is neither the worktree's own (`.kortix-worktree.json`) nor `<branch>/…`
 
 **Create a new worktree only when the work is genuinely a new thing.** Use
 shared-DB mode for ordinary UI/API work; opt into `--db` when database isolation
-is materially required.
+is materially required, and into `--full-supabase` only for auth/storage config.
 
 **Pack more into the branch, not less.** Follow-up fixes, rename cleanups, and
 stale-reference sweeps belong on the same branch as the change that caused them,
@@ -62,8 +65,8 @@ pnpm worktree create --name <feat> --yes --no-start
 
 - `--name <feat>` names the worktree (letters/numbers/dashes; lowercased).
 - `--yes` auto-installs any missing toolchain deps and skips prompts.
-- Uses the shared primary Supabase DB by default. Add `--db` only for work that
-  needs a separate database/data plane.
+- Uses the shared primary Supabase DB by default. Add `--db` for work that
+  needs its own database (migrations, destructive data work).
 - **`--no-start` is mandatory for agents** — without it, `create` ends by
   booting the dev servers **in the foreground and blocks until Ctrl+C**, which
   will hang your turn. `--no-start` provisions everything and returns.
@@ -82,15 +85,28 @@ git -C "$WT" add -A && git -C "$WT" commit -m "..."
 When the branch is merged/pushed and you're done: `pnpm worktree nuke <feat>`.
 In shared-DB mode this leaves the primary Supabase DB running and untouched.
 
-## Prerequisite for `--db`: the base branch must carry database migrations
+## How `--db` works (branch database)
 
-Current migrations live in `packages/db/migrations` and are applied with
-node-pg-migrate (`pnpm --filter @kortix/db migrate`; see
-`packages/db/MIGRATIONS.md`). The worktree runner still has an open bug from the
-cutover where it calls the old `db:migrate` script and emits Drizzle-era error
-text; if worktree schema setup fails there, track/fix
-https://github.com/kortix-ai/suna/issues/3630 rather than treating the old command
-as authoritative.
+- `create` copies the primary's `auth`, `basejump`, `kortix*` and `public`
+  schemas into `kortix_wt_<n>` (`-` becomes `_`) inside the primary Postgres.
+  Audit-event rows are skipped. Then it applies this branch's
+  `packages/db/migrations` with `pnpm --filter @kortix/db migrate:local`.
+  `start` applies newly pending migrations again.
+- GoTrue, Kong, Storage and Studio stay shared. Sign in with the same users as
+  the primary. The API's `DATABASE_URL` points at `kortix_wt_<n>`, so accounts,
+  projects and sessions created in the worktree exist only there.
+- A trigger on the primary's `auth.users` pushes every user insert, update and
+  delete into each branch database (`kortix_wt.branches`, dblink). `create` and
+  `start` also reconcile the full user list. A failed push never fails sign-up;
+  it logs `kortix_wt: … failed` in the primary's Postgres log
+  (`docker logs supabase_db_kortix-local`), and the next `start` repairs it.
+- Each branch database has its own work queue, so the shared-DB tunnel
+  crosstalk warning does not apply.
+- `nuke` drops the database. `create <n> --db` on an old `--full-supabase`
+  worktree moves it to a branch database and deletes its Supabase containers
+  and volumes (TTY confirm unless `--yes`).
+- Inspect it: `psql postgresql://postgres:postgres@127.0.0.1:54322/kortix_wt_<n>`,
+  or switch the database in Studio (`http://localhost:54323`).
 
 ## All commands (non-interactive)
 
@@ -108,8 +124,9 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | --- | --- | --- |
 | `--name <n>` / positional `<n>` | — (required) | Worktree name → branch name + slot identity. |
 | `--branch <b>` | `<n>` | Branch to use. A local branch is checked out; a branch that exists only as `origin/<b>` (run `git fetch` first) is checked out tracking it; otherwise it is created from `--from`. |
-| `--from <ref>` | `main` | Base ref for a newly created branch. `main` means a freshly fetched `origin/main`, never the primary checkout's local `main`, which is often hundreds of commits behind. The new branch has no upstream, so push it with `git push -u origin <branch>`. Must carry current `packages/db/migrations` (see above). |
-| `--db` / `--with-db` / `--isolated-db` | off | Opt into the old full isolated Supabase project (`kortix-wt-<n>`) with its own containers/volumes/migrations. |
+| `--from <ref>` | `dev` | Base ref for a newly created branch. `dev` means a freshly fetched `origin/dev`, never the primary checkout's local `dev`, which is often hundreds of commits behind. The new branch has no upstream, so push it with `git push -u origin <branch>`. Must carry current `packages/db/migrations` (see above). |
+| `--db` / `--with-db` / `--isolated-db` | off | Own database `kortix_wt_<n>` inside the primary Supabase: a copy of the primary, migrated to this branch. See "How `--db` works". |
+| `--full-supabase` | off | A whole separate Supabase project (`kortix-wt-<n>`) with its own containers/volumes/migrations. Only for auth/storage config work. |
 | `--no-db` / `--shared-db` | on | Explicitly use the default shared primary Supabase DB. |
 | `--no-start` | off | **Provision only, don't boot servers.** Use this for agent/CI runs. |
 | `--yes` | off | Auto-install missing deps; non-interactive. |
@@ -119,11 +136,13 @@ What it does, in order: toolchain preflight → allocate the lowest free slot
 (probing app ports, skipping any in use) → `git worktree add` (new branch from
 `--from`, or checkout existing `--branch`) → `pnpm install` into the worktree's
 own store → build runtime artifacts → (unless `--no-start`) boot the stack
-against the shared primary Supabase DB. With `--db`, it also renders an isolated
-Supabase project, starts it, applies database migrations, verifies the `kortix`
-schema exists, and starts that Supabase stack. Re-running `create` for an
-existing name resumes it idempotently; a worktree's DB mode is fixed until you
-`nuke` and recreate it.
+against the shared primary Supabase DB. With `--db`, it also copies the primary
+into `kortix_wt_<n>`, applies the branch's migrations, verifies the `kortix`
+schema exists, and syncs `auth.users`. With `--full-supabase`, it renders an
+isolated Supabase project, starts it, applies migrations, and starts that
+Supabase stack. Re-running `create` for an existing name resumes it
+idempotently. A worktree's DB mode is fixed until you `nuke` and recreate it;
+the one exception is `--db` on a `--full-supabase` worktree (see above).
 
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
@@ -133,8 +152,10 @@ pnpm worktree start <n> [--stripe] [--no-tunnel]
 
 In shared-DB mode, ensures the primary local Supabase is reachable, checks that
 the `kortix` schema exists, then runs **api + web in the foreground and blocks
-until Ctrl+C**. In isolated-DB mode, starts that worktree's Supabase, applies
-pending migrations, then boots the app stack. Clean shutdown stops the worktree
+until Ctrl+C**. In `--db` mode, applies the branch's pending migrations to
+`kortix_wt_<n>` and reconciles `auth.users` first (and re-copies the primary if
+the database is missing). In `--full-supabase` mode, starts that worktree's
+Supabase, applies pending migrations, then boots the app stack. Clean shutdown stops the worktree
 app servers, force-kills stragglers, and marks the worktree stopped. Requires
 Docker running when Supabase needs to be reached or started.
 
@@ -188,8 +209,9 @@ interactive menu (`pnpm worktree` → nuke) uses the same picker.
 
 Stops servers, removes the git worktree, **deletes the branch**, drops the slot,
 and frees the app ports. In shared-DB mode it does **not** stop or delete the
-primary Supabase DB. In isolated-DB mode it also stops Supabase and removes that
-worktree project's Docker containers/volumes/network. By default the branch is
+primary Supabase DB. In `--db` mode it drops `kortix_wt_<n>`. In
+`--full-supabase` mode it also stops Supabase and removes that worktree
+project's Docker containers/volumes/network. By default the branch is
 deleted with `git branch -d` (safe — refuses if unmerged); `--force` uses
 `git worktree remove --force` **and** `git branch -D` (drops unmerged commits).
 Only `nuke` after the work is merged or pushed.
@@ -255,7 +277,7 @@ not the registry field, so it cannot go stale the way a recorded status can. If
 footer. `list` never writes the registry — `doctor` owns drift repair.
 
 Constants live in the footer instead of in every row: the shared Supabase
-db/studio ports, the counts, and — when any worktree runs `--db` — a note that
+db/studio ports, the counts, and — when any worktree runs `--full-supabase` — a note that
 DB modes are mixed.
 
 A filter matching exactly one worktree expands into full clickable URLs:
@@ -302,8 +324,8 @@ lacks: run MinIO and point the API at it with
 | --- | --- | --- |
 | web | 3000 | **13000 + N·100** |
 | api | 8008 | **13008 + N·100** |
-| Supabase API / DB / Studio / Inbucket | local default | shared default: 54321 / 54322 / 54323 / 54324; with `--db`: 13321 / 13322 / 13323 / 13324 (+N·100) |
-| Supabase project | `kortix-local` | shared default: `kortix-local`; with `--db`: `kortix-wt-<n>` (own containers/volumes/network) |
+| Supabase API / DB / Studio / Inbucket | local default | shared default and `--db`: 54321 / 54322 / 54323 / 54324; with `--full-supabase`: 13321 / 13322 / 13323 / 13324 (+N·100) |
+| Supabase project | `kortix-local` | shared default: `kortix-local`; with `--db`: `kortix-local`, database `kortix_wt_<n>`; with `--full-supabase`: `kortix-wt-<n>` (own containers/volumes/network) |
 | branch | your current branch | dedicated `<n>` (or `--branch`) |
 | deps | repo `node_modules` | own `node_modules` + pnpm store |
 

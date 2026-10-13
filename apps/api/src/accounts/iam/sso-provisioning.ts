@@ -5,6 +5,7 @@
 // SSO config keys off.
 
 import { config } from '../../config';
+import { assertSafeEgressUrl, UnsafeEgressError } from '../../shared/ssrf-guard';
 
 export interface SamlMetadataInput {
   /** Raw IdP federation metadata XML (Entra: "App Federation Metadata XML"). */
@@ -26,7 +27,7 @@ export type ProvisionResult =
  * Build the Supabase GoTrue `attribute_mapping` that surfaces the IdP's group
  * claim into the JWT. Supabase DROPS every non-standard SAML attribute unless it
  * is named here, so WITHOUT this the group claim never reaches
- * `user_metadata.custom_claims.<name>` and SSO group→role sync silently no-ops —
+ * the SSO identity's `custom_claims.<name>` and SSO group→role sync silently no-ops —
  * login still works (GoTrue maps email by default, even with a mapping present),
  * which is exactly why the bug hid. We deliberately omit an `email` key:
  * hardcoding one attribute name would break IdPs that emit email under a
@@ -63,6 +64,16 @@ export async function registerSupabaseSamlProvider(
   }
   if (input.domains.length === 0) {
     return { ok: false, error: 'At least one email domain is required', status: 400 };
+  }
+  // GoTrue fetches this URL from inside the deployment (and again when the
+  // metadata goes stale), so it must be a public https address.
+  if (url) {
+    try {
+      await assertSafeEgressUrl(url);
+    } catch (err) {
+      if (err instanceof UnsafeEgressError) return { ok: false, error: `metadata_url refused: ${err.message}`, status: 400 };
+      throw err;
+    }
   }
 
   const body: Record<string, unknown> = {

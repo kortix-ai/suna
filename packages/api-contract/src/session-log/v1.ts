@@ -30,7 +30,10 @@
  *   by the closure rule with the text the harness shows. An errored assistant row is out of
  *   context (`failed_attempt`), except an aborted one with a model-visible block (`aborted`,
  *   in context, as OpenCode sends it). `live: true` reads a live view instead (a client's v1
- *   store): those rows are `streaming` and their open calls stay open.
+ *   store): those rows are `streaming` and their open calls stay open, and an in-context reply
+ *   with an open call is `streaming` whatever its own end (pi completes a reply before its
+ *   calls run; an abort lands before its calls close): rule C2 exempts only a streaming
+ *   message. A failed attempt is out of context and keeps `error`.
  * - Errors. `error.code` is the daemon's `TurnErrorCode` (`info.error.code`) when the row has
  *   one, else the v1 error class name. `finish` takes the v2 values only; another v1 finish
  *   ('content-filter', 'other') maps to null and stays in ext.
@@ -452,7 +455,7 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
   const aborted = err?.name === 'MessageAbortedError';
   const completedAt = src && isObj(src.time) ? iso(src.time.completed) : null;
   const open = c.live ? 'streaming' : 'interrupted';
-  const status: SessionLogMessage['status'] = !src ? (marker ? open : 'complete') : err ? (aborted ? 'aborted' : 'error') : completedAt ? 'complete' : open;
+  const settled: SessionLogMessage['status'] = !src ? (marker ? open : 'complete') : err ? (aborted ? 'aborted' : 'error') : completedAt ? 'complete' : open;
   const createdAt = iso(isObj(info.time) ? info.time.created : undefined) ?? '';
   const summary = sum ? (Array.isArray(sum.parts) ? sum.parts : []).flatMap((p) => (isObj(p) && p.type === 'text' && typeof p.text === 'string' ? [p.text] : [])).join('') : null;
   const lost: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
@@ -461,7 +464,11 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
   const blocks = parts.map((p, i) => blockOf(p, ids[i]!, marker, summary, c, lost));
   // An aborted reply stays in context only with something the model sees: an empty one would replay as an empty turn.
   const visible = blocks.some((b) => b.type === 'text' || b.type === 'attachment' || b.type === 'tool_call' || (b.type === 'harness' && b.model_visible));
-  const inContext = !superseded && role !== 'system' && (marker ? status === 'complete' : !err || (aborted && visible));
+  const inContext = !superseded && role !== 'system' && (marker ? settled === 'complete' : !err || (aborted && visible));
+  // A live in-context reply with an open call still streams (pi completes a reply before its calls run; an abort lands before
+  // its calls close): rule C2 exempts only a streaming message. A failed attempt is out of context and keeps its error.
+  // At rest the closure rule closed the call.
+  const status = c.live && inContext && settled !== 'streaming' && blocks.some((b) => b.type === 'tool_call' && (b.status === 'pending' || b.status === 'running')) ? 'streaming' : settled;
   // A compaction whose summary never arrived (or never finished) has no reason: nobody stopped it, nothing failed.
   const hidden = superseded ? 'superseded' : inContext || !err ? undefined : aborted ? 'aborted' : 'failed_attempt';
   if (marker && isObj(marker) && str(marker.tail_start_id) === undefined) lost.cut_point++;

@@ -159,6 +159,12 @@ variable "use_fargate_spot" {
   default     = false
 }
 
+variable "force_new_deployment" {
+  description = "Force a new deployment on apply. Required on the apply that changes the capacity-provider strategy."
+  type        = bool
+  default     = false
+}
+
 variable "fargate_base_on_demand" {
   description = <<-EOT
     Number of tasks pinned to on-demand FARGATE when use_fargate_spot = true.

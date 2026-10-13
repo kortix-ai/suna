@@ -138,6 +138,7 @@
     "browseAsGuest": "Sfoglia come ospite",
     "signOutFailed": "Impossibile uscire. Controlla la connessione e riprova.",
     "signingOut": "Uscita in corso…",
+    "ssoRequired": "La tua organizzazione richiede il single sign-on. Continua invece con SSO.",
     "mfa": {
       "title": "Verifica la tua identità",
       "enterCode": "Inserisci il codice a 6 cifre della tua app di autenticazione.",

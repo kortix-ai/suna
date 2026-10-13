@@ -3,6 +3,13 @@ import type { SlotCreds } from './supabase';
 
 export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = 'local-flow-runner-internal-service-key';
 
+function appDotenvKeys(app: 'API' | 'WEB'): Record<string, string> {
+  return Object.fromEntries(['', '_DEV', '_STAGING'].flatMap(suffix => {
+    const key = process.env[`SUNA_${app}_DOTENV_PRIVATE_KEY${suffix}`];
+    return key ? [[`DOTENV_PRIVATE_KEY${suffix}`, key]] : [];
+  }));
+}
+
 export interface ApiLaunchOpts {
   /** Public origin cloud sandboxes call back to (the cloudflared tunnel URL). */
   kortixUrl?: string;
@@ -22,6 +29,8 @@ export interface ApiLaunchOpts {
 export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
   const billing = opts.billing ?? !!opts.stripeWebhookSecret;
   return {
+    INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
+    ...appDotenvKeys('API'),
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
     KORTIX_APPS_LOCAL: 'true',
@@ -87,6 +96,7 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
 // (optional tracing) passes through from the parent shell if set.
 export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
   return {
+    INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
     PORT: String(ports.gateway),
     KORTIX_API_URL: `http://localhost:${ports.api}`,
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
@@ -96,6 +106,8 @@ export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
 
 export function webLaunchEnv(ports: Ports, c: SlotCreds, opts: { billing?: boolean } = {}): Record<string, string> {
   return {
+    INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
+    ...appDotenvKeys('WEB'),
     WEB_PORT: String(ports.web),
     KORTIX_API_PROXY_TARGET: `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,

@@ -1,9 +1,16 @@
 import { notifyPermissionRequest, notifyQuestion } from '../../platform/ui';
+import { qk } from '../query-keys';
 import type { HandlerContext } from './handler-context';
 import { asStringOrUndefined } from './helpers';
 import type { RuntimeEvent } from './types';
 export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext) {
   const { addPermission, removePermission, addQuestion, removeQuestion, getSessionTitle } = ctx;
+  // The session lists read Needs you from GET needs-input (KRTX-1739). A
+  // question opens or closes now: refetch it, not at the next 30 s poll. The
+  // API closes the stored question before it returns the answer.
+  if (event.type.startsWith('question.') && ctx.projectId) {
+    ctx.queryClient.invalidateQueries({ queryKey: qk.project.needsInput(ctx.projectId) });
+  }
   switch (event.type) {
     case 'permission.asked': {
       const props = event.properties;

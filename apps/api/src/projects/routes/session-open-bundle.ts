@@ -152,7 +152,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
     const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
-    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log', loaded.row.accountId);
+    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log');
     const userId = c.get('userId') as string;
 
     // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the

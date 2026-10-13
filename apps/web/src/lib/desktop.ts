@@ -405,6 +405,59 @@ export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>
 export const desktopComputerRequestGrants = (input: { restartAgent?: boolean } = {}) =>
   desktopAction<DesktopComputerGrants>('computer_grants_request', input);
 
+/* ─── Quick Entry (desktop app) ───────────────────────────────────────────
+   The desktop app's global shortcut opens a prompt bar over any app. Enter
+   hands the text to this page, which starts a session with it
+   (`components/desktop/desktop-quick-entry.tsx`). Both return null in a
+   browser and on a desktop build that predates Quick Entry. */
+
+/**
+ * The prompt typed in the Quick Entry bar, once. Null when there is none.
+ * `sessionId` (with its `projectId`) is set when the person picked one of the
+ * recent sessions in the bar; without it the prompt starts a new session.
+ */
+export const takeDesktopQuickEntryPrompt = () =>
+  desktopCommand<{
+    text: string;
+    /** Screenshots and files from the bar. */
+    files?: { name: string; type: string; bytes: Uint8Array }[];
+    projectId?: string;
+    sessionId?: string;
+  }>('quick_entry_take');
+
+/**
+ * The project a new Quick Entry session starts in, and the person's recent
+ * sessions there (newest first, at most 5), for the bar's picker. `status` is
+ * the sidebar's `SessionDisplayStatus`; `lastActiveAt` is an ISO time.
+ */
+export const setDesktopQuickEntryTarget = (
+  target: {
+    projectId: string;
+    name: string | null;
+    sessions: { id: string; title: string; status: string; lastActiveAt: string }[];
+    /** A new session's agent, as project home resolves it. */
+    composer: { agents: { id: string; label: string }[]; agent: string | null } | null;
+  } | null,
+) => desktopCommand<null>('quick_entry_set_target', { target });
+
+/**
+ * The Quick Entry shortcut, for Settings ▸ Preferences. `shortcut` is an
+ * Electron accelerator from `choices`, or null when Quick Entry is off.
+ * `inUse`: another app holds it, so it does not open the bar.
+ */
+export interface DesktopQuickEntryShortcut {
+  shortcut: string | null;
+  inUse: boolean;
+  choices: { value: string; label: string }[];
+}
+
+export const getDesktopQuickEntryShortcut = () =>
+  desktopCommand<DesktopQuickEntryShortcut>('quick_entry_shortcut');
+
+/** Save and register a shortcut (null = off), as File ▸ Quick Entry Shortcut does. */
+export const setDesktopQuickEntryShortcut = (shortcut: string | null) =>
+  desktopCommand<DesktopQuickEntryShortcut>('quick_entry_set_shortcut', { shortcut });
+
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and
  * `data-desktop-platform` on <html> so CSS can react before first paint —

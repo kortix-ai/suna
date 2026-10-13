@@ -25,7 +25,7 @@ import '@/features/session/tool/tools/register';
 
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
-import { compactionTurnInfo } from '@/features/session/turn/compaction-state';
+import { compactionTurnInfo } from '@kortix/sdk';
 import { TurnViewport } from '@/features/session/turn/turn-viewport';
 import { SESSION_FIXTURE } from '@kortix/shared/session-fixture';
 

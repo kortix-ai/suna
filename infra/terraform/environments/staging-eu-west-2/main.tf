@@ -70,7 +70,7 @@ module "network" {
   name               = local.name
   cidr               = "10.24.0.0/16" # distinct from staging (10.20), dev-use2 (10.14), prod (10.20 eu-west-2 — different region, no collision)
   az_count           = 2
-  single_nat_gateway = true # staging: one NAT to save cost
+  single_nat_gateway = false # a NAT per AZ, like prod: one NAT is one egress failure domain
   tags               = local.tags
 }
 
@@ -175,15 +175,22 @@ module "api" {
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # The us-west-2 staging stack's sizing (the release gate's own concurrent
-  # load drove these numbers). Identical instance class, different region.
+  # Same capacity type, health check, insights and scaling policy as prod: no
+  # Spot. Spot reclaims killed in-flight requests and agent turns during the
+  # v0.13.57 release gate (GOLD-1, RUN-7, CFG-11/12). Two numbers differ from
+  # prod on purpose: the task count (`api_task_count`, bounded by the staging
+  # database's 120 connections) and 2 vCPU per task, sized for the release
+  # gate's concurrent load.
   task_cpu                   = 2048
   task_memory                = 4096
   desired_count              = var.api_task_count
   min_capacity               = var.api_task_count
   max_capacity               = 8
-  use_fargate_spot           = true
-  fargate_base_on_demand     = 1
+  use_fargate_spot           = false
+  force_new_deployment       = true
+  container_insights         = true
+  cpu_target                 = 55
+  memory_target              = 65
   requests_per_target_target = 600
   tags                       = local.tags
 }
@@ -209,13 +216,16 @@ module "gateway" {
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
+  # Prod's gateway shape: on-demand (the LLM path), HA floor of 3. The gateway
+  # holds no database connections, so prod's counts fit staging too.
   task_cpu                   = 1024
   task_memory                = 2048
-  desired_count              = 2
-  min_capacity               = 2
-  max_capacity               = 8
-  use_fargate_spot           = true
-  fargate_base_on_demand     = 1
+  desired_count              = 3
+  min_capacity               = 3
+  max_capacity               = 20
+  use_fargate_spot           = false
+  force_new_deployment       = true
+  container_insights         = true
   deregistration_delay       = 300
   stop_timeout               = 120
   requests_per_target_target = 120

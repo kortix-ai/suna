@@ -1,41 +1,33 @@
-import { type MessageWithParts, type ToolPart, isToolPart, shouldShowToolPart } from '@/ui';
+import { shouldShowToolPart } from '@/ui';
+import { sessionLogOpenCall, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { shouldShowToolPartInActionsPanel } from '../../tool/tool-renderers';
 
 /**
- * Flatten a session's messages into the ordered list of tool calls worth
- * showing — the same set the chat transcript renders. This replaces the old
- * `adaptMessagesToToolCalls` adapter: no conversion to a legacy shape, just
- * the native `ToolPart`s in call order.
+ * Flatten a thread's messages into the ordered list of tool calls worth
+ * showing — the same set the chat transcript renders. Every message counts,
+ * in or out of context: an errored reply's calls show as they do in the chat.
+ *
+ * The calls come from `useSessionLogThread` (`session-panel-provider.tsx`),
+ * which serves the `fromV1` live view while v2 is off and the API's page on v2.
+ * Each call is read through `sessionLogOpenCall`, so a call the page closed at
+ * rest (the closure rule) counts as the open call the live view holds, and the
+ * panel's running/pending reads agree on both paths.
  *
  * Advanced-only. Applies `shouldShowToolPartInActionsPanel` on top of the
  * universal filter, which deliberately drops `read`, `skill`, and the
  * memory-lookup tools — correct for the one-at-a-time actions stepper, but
- * wrong for Easy mode. See `collectAllToolParts` below: do NOT merge these
+ * wrong for Easy mode. See `collectAllToolCalls` below: do NOT merge these
  * two functions back into one, or Easy mode's "Read N files" progress line
  * and its Context card silently go dark again.
  */
-export function collectToolParts(messages: MessageWithParts[] | undefined): ToolPart[] {
-  if (!messages) return [];
-  const parts: ToolPart[] = [];
-  for (const msg of messages) {
-    if (!msg.parts) continue;
-    for (const part of msg.parts) {
-      if (
-        isToolPart(part) &&
-        shouldShowToolPart(part as ToolPart) &&
-        shouldShowToolPartInActionsPanel(part as ToolPart)
-      ) {
-        parts.push(part as ToolPart);
-      }
-    }
-  }
-  return parts;
+export function collectToolCalls(messages: SessionLogMessage[] | undefined): ToolCallBlock[] {
+  return collectAllToolCalls(messages).filter(shouldShowToolPartInActionsPanel);
 }
 
 /**
- * Same traversal as `collectToolParts`, but for Easy mode, which needs the
- * parts the Advanced actions-panel filter throws away:
- *   - `read` parts, so Progress can narrate "Read N files" and the Context
+ * Same traversal as `collectToolCalls`, but for Easy mode, which needs the
+ * calls the Advanced actions-panel filter throws away:
+ *   - `read` calls, so Progress can narrate "Read N files" and the Context
  *     card can show "Files read (N)" (see narration.ts's `explore` family).
  *   - the `skill` tool, so narration.ts's `skills` family has anything to
  *     narrate.
@@ -44,21 +36,20 @@ export function collectToolParts(messages: MessageWithParts[] | undefined): Tool
  * `shouldShowToolPartInActionsPanel` exists specifically to hide those from
  * the Advanced one-at-a-time stepper — applying it here would silently break
  * two of Easy mode's three cards. This function applies only the universal
- * rules (`isToolPart` and the global
- * `shouldShowToolPart` hidden-part filter); engine noise Easy mode still
- * wants to drop (e.g. context-engine bookkeeping) is filtered later, by
- * `familyForTool(tool) === 'hidden'` in group-steps.ts.
+ * rules (a `tool_call` block and the global `shouldShowToolPart` hidden-part
+ * filter); engine noise Easy mode still wants to drop (e.g. context-engine
+ * bookkeeping) is filtered later, by `familyForTool(tool) === 'hidden'` in
+ * group-steps.ts.
  */
-export function collectAllToolParts(messages: MessageWithParts[] | undefined): ToolPart[] {
+export function collectAllToolCalls(messages: SessionLogMessage[] | undefined): ToolCallBlock[] {
   if (!messages) return [];
-  const parts: ToolPart[] = [];
+  const calls: ToolCallBlock[] = [];
   for (const msg of messages) {
-    if (!msg.parts) continue;
-    for (const part of msg.parts) {
-      if (isToolPart(part) && shouldShowToolPart(part as ToolPart)) {
-        parts.push(part as ToolPart);
-      }
+    for (const block of msg.blocks) {
+      if (block.type !== 'tool_call') continue;
+      const call = sessionLogOpenCall(block);
+      if (shouldShowToolPart(call)) calls.push(call);
     }
   }
-  return parts;
+  return calls;
 }

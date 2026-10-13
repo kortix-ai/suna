@@ -36,6 +36,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './workers/proje
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
+import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
@@ -253,6 +254,8 @@ async function startSingletonWorkers() {
   startNotificationWorker();
   // Retention purge of session content: rows after the D6 windows, files 7 days later.
   startSessionLogPurgeWorker();
+  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
+  startSessionLogBackfillWorker();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -281,6 +284,7 @@ async function stopSingletonWorkers() {
   await stopAccountDeletionSchedule();
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
+  stopSessionLogBackfillWorker();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
