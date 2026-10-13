@@ -1,0 +1,18 @@
+{
+  "source_hash": "91b23848b520338ab66b51771901275e36c21f4203ce2767f8aeb0450f9e99f3",
+  "diff_files": [
+    "apps/cli/src/__tests__/hosts-auth.test.ts",
+    "apps/cli/src/__tests__/logout-host.blackbox.test.ts",
+    "apps/cli/src/api/auth.ts",
+    "packages/shared/src/host-config/config.ts"
+  ],
+  "diff_hash": "a1b806d06178f40f6fada0fea0118857b5dbadba0dfc163a5311c9038e0c149b",
+  "head": "72c50f6d53a31432c8ed9a48fd62254e1b621080",
+  "passed": false,
+  "lanes": {
+    "packages": "fail",
+    "core": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-13T16:36:00.671Z"
+}
