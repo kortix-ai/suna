@@ -47,6 +47,11 @@ let oversightGate: Promise<void> | null = null;
 // The project IAM verdict (`project.read`) the preview gate asks after account membership.
 let projectReadAllowed = true;
 let projectReadAsks: Array<{ userId: string; action: string; objId: string }> = [];
+// Actions the caller's role carries besides `project.read`. The trigger-session
+// manager override asks ONE of them, so the mock must answer per action: the
+// defect under regression is WHICH action the gate asks, and a mock that
+// answers every action alike would hide a members.manage/trigger.update swap.
+let heldActions = new Set<string>();
 
 // `canAccessSandboxSession` awaits two of its reads without a `.limit()`.
 async function unlimitedRows(table: unknown): Promise<unknown[]> {
@@ -101,7 +106,11 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async (actor: { userId: string }, action: string, obj: { id: string }) => {
     projectReadAsks.push({ userId: actor.userId, action, objId: obj.id });
-    return { allowed: projectReadAllowed, reason: projectReadAllowed ? 'role' : 'no_project_membership' };
+    if (action === 'project.read') {
+      return { allowed: projectReadAllowed, reason: projectReadAllowed ? 'role' : 'no_project_membership' };
+    }
+    const allowed = heldActions.has(action);
+    return { allowed, reason: allowed ? 'role' : 'project_role_insufficient' };
   },
 }));
 
@@ -172,6 +181,7 @@ beforeEach(() => {
   oversightGate = null;
   projectReadAllowed = true;
   projectReadAsks = [];
+  heldActions = new Set();
   clearPreviewOwnershipCache();
 });
 
@@ -466,6 +476,73 @@ describe('canAccessSandboxSession — one read per caller key', () => {
     projectSessionFailure = null;
     expect(await access('sess-flight-3', 'user-owner')).toBe(true);
     expect(projectSessionReads).toBe(2);
+  });
+});
+
+// The trigger-session manager override must ask the SAME action the canonical
+// session-visibility engine asks (`sessionManagerStanding`,
+// projects/lib/session-visibility.ts): `project.trigger.update`, with the
+// owner ruling (2026-09-03) that administering people (`project.members.manage`)
+// must not unlock session content. A custom project role carrying
+// members.manage but not trigger.update is denied on REST (404 via
+// loadVisibleSession) yet used to pass this proxy gate and reach the
+// session's daemon-port traffic — the divergence this file pins shut.
+describe('canAccessSandboxSession — the trigger-session manager override asks the canonical action', () => {
+  const access = (sessionId: string, userId: string) =>
+    canAccessSandboxSession({
+      sessionId,
+      projectId: 'proj-1',
+      accountId: 'acct-1',
+      userId,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    });
+
+  /** A private session a trigger run created: owned by the agent's service account. */
+  const triggerSessionOf = (ownerId: string) => ({
+    visibility: 'private',
+    createdBy: ownerId,
+    origin: 'user',
+    metadata: { source: 'trigger:git', trigger_kind: 'git', trigger_slug: 'nightly' },
+    initiatorType: 'trigger',
+  });
+
+  test('a members.manage-only role is refused a private trigger-run session', async () => {
+    projectSessionRow = triggerSessionOf('sa-agent-owner');
+    heldActions = new Set(['project.members.manage']);
+
+    expect(await access('sess-trig-deny', 'user-people-manager')).toBe(false);
+
+    const refusal = takeSessionAccessRefusal({
+      sessionId: 'sess-trig-deny',
+      userId: 'user-people-manager',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    });
+    expect(refusal?.isTriggerSession).toBe(true);
+    expect(refusal?.canManageProject).toBe(false);
+    expect(refusal?.managerReason).toBe('project_role_insufficient');
+  });
+
+  test('a trigger.update holder passes the same session', async () => {
+    projectSessionRow = triggerSessionOf('sa-agent-owner');
+    heldActions = new Set(['project.trigger.update']);
+
+    expect(await access('sess-trig-allow', 'user-trigger-manager')).toBe(true);
+    // The override asked exactly the canonical action, once, for this project.
+    expect(projectReadAsks).toEqual([
+      { userId: 'user-trigger-manager', action: 'project.trigger.update', objId: 'proj-1' },
+    ]);
+  });
+
+  test('a member with neither action is refused and the gate still asks the canonical action', async () => {
+    projectSessionRow = triggerSessionOf('sa-agent-owner');
+    heldActions = new Set();
+
+    expect(await access('sess-trig-none', 'user-plain-member')).toBe(false);
+    expect(projectReadAsks).toEqual([
+      { userId: 'user-plain-member', action: 'project.trigger.update', objId: 'proj-1' },
+    ]);
   });
 });
 
