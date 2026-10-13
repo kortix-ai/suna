@@ -371,6 +371,8 @@ What a verdict does depends on the item:
 
 An item an agent submitted takes every verdict: `approve`, `reject`, `changes`, `answer` and `dismiss`.
 
+The Review page shows a verdict only to a role that holds its permission. Merging a change (**Ship it**, or **Merge** on mobile) needs `project.gitops.merge`. Every other verdict needs `project.review.act`. A built-in member holds neither, so it sees the inbox without verdicts. On mobile, the **+** that opens a change request needs `project.gitops.push`.
+
 | Command | Does |
 | --- | --- |
 | `kortix review ls [--segment <s>] [--kind <k>]` | Lists items. Segments: `needs_you`, `waiting`, `done`. Kinds: `change`, `approval`, `output`, `decision`, `batch`. |
