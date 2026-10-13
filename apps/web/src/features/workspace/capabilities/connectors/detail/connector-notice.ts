@@ -94,6 +94,35 @@ export function noticeTarget<
   );
 }
 
+/**
+ * The banner's fix button: what it says and what it runs. `add` opens
+ * "Add account"; `sign_in` finishes `account`'s sign-in; `reconnect` opens
+ * `account`'s credential entry, or its provider window when managed. `null`
+ * means no fix button (Retry, when the notice offers it, is separate).
+ */
+export function noticeButton<T>(
+  notice: ConnectorNotice,
+  target: T | 'add' | null,
+  managed: boolean,
+): {
+  /** Which button: its words. `add_account` is the page's Add account control. */
+  kind: 'add_account' | 'sign_in' | 'set_credential' | 'connect' | 'reconnect';
+  run: 'add' | 'sign_in' | 'reconnect';
+  account: T | null;
+} | null {
+  if (notice.kind === 'none') return null;
+  if (notice.kind === 'sign_in') {
+    if (target === 'add') return { kind: 'sign_in', run: 'add', account: null };
+    return target ? { kind: 'sign_in', run: 'sign_in', account: target } : null;
+  }
+  if (notice.action === 'add_account') return { kind: 'add_account', run: 'add', account: null };
+  if (notice.action === 'retry' || !target) return null;
+  if (target === 'add') {
+    return { kind: managed ? 'connect' : 'set_credential', run: 'add', account: null };
+  }
+  return { kind: managed ? 'reconnect' : 'set_credential', run: 'reconnect', account: target };
+}
+
 /** A failure line split for the log row: `MCP tools/list failed: HTTP 401` → `401` + `MCP tools/list failed`. */
 export function splitNoticeReason(reason: string): { code: string | null; detail: string } {
   const match = /[:\s]*\bHTTP (\d{3})\b/.exec(reason);

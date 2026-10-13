@@ -35,7 +35,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 
 import { isManagedConnectorProvider } from '../provider-label';
 import { ConnectorAccounts } from './connector-accounts';
-import { connectorNotice, noticeTarget, splitNoticeReason } from './connector-notice';
+import { connectorNotice, noticeButton, noticeTarget, splitNoticeReason } from './connector-notice';
 import { connectHandoff, connectorPageState } from './connector-page-state';
 import { ConnectorSettings } from './connector-settings';
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
@@ -367,11 +367,11 @@ function ConnectorPageBody({
   // The banner's button fixes one of the caller's own accounts. With none it
   // opens "Add account" ("Only you" preselected), never the project's shared
   // account: a shared account is signed in from its own row.
-  const target = noticeTarget(accounts);
-  const fixNotice = (signInFlow: boolean) => {
-    if (target === 'add') requestAdd();
-    else if (target && signInFlow) signIn.mutate(target);
-    else if (target) reconnectAccount(target);
+  const fix = noticeButton(notice, noticeTarget(accounts), isManagedProvider);
+  const runFix = () => {
+    if (fix?.run === 'add') requestAdd();
+    else if (fix?.run === 'sign_in' && fix.account) signIn.mutate(fix.account);
+    else if (fix?.account) reconnectAccount(fix.account);
   };
   // Connect on an account row: the same sign-in the notice runs. A managed
   // account reconnects through its provider window.
@@ -523,38 +523,29 @@ function ConnectorPageBody({
                     {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 ) : null}
-                {notice.kind === 'sign_in' ? (
-                  target ? (
-                    <Button
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => fixNotice(true)}
-                      disabled={signIn.isPending}
-                    >
-                      {signIn.isPending ? (
-                        <SessionDotMatrix size={14} className="shrink-0" />
-                      ) : null}
-                      {t('noticeSignInAction')}
-                    </Button>
-                  ) : null
-                ) : notice.action === 'add_account' ? (
+                {fix?.kind === 'add_account' ? (
                   addAccountControl
-                ) : notice.action !== 'retry' && target ? (
-                  // Fix it here: credential entry for a direct account, the
-                  // provider window for a managed one, or "Add account" for
-                  // a caller with no account of their own.
+                ) : fix?.kind === 'sign_in' ? (
                   <Button
                     size="sm"
                     className="gap-1.5"
-                    onClick={() => fixNotice(false)}
-                    disabled={connectPending}
+                    onClick={runFix}
+                    disabled={signIn.isPending}
                   >
+                    {signIn.isPending ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+                    {t('noticeSignInAction')}
+                  </Button>
+                ) : fix ? (
+                  // Fix it here: credential entry for a direct account, the
+                  // provider window for a managed one, or "Add account" for
+                  // a caller with no account of their own.
+                  <Button size="sm" className="gap-1.5" onClick={runFix} disabled={connectPending}>
                     {connectPending ? <Loading className="size-4 shrink-0" /> : null}
-                    {!isManagedProvider
-                      ? tI18nComplete.raw('text3d6627454174')
-                      : target === 'add'
-                        ? t('connectAccount')
-                        : tI18nComplete.raw('textbf8a9eab9e7e')}
+                    {fix.kind === 'connect'
+                      ? t('connectAccount')
+                      : fix.kind === 'reconnect'
+                        ? tI18nComplete.raw('textbf8a9eab9e7e')
+                        : tI18nComplete.raw('text3d6627454174')}
                   </Button>
                 ) : null}
               </NoticeRow>

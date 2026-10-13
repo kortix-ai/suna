@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectorNotice, noticeTarget, splitNoticeReason } from './connector-notice';
+import { connectorNotice, noticeButton, noticeTarget, splitNoticeReason } from './connector-notice';
 
 const base = {
   provider: 'mcp' as const,
@@ -141,5 +141,86 @@ describe('noticeTarget: the account the banner button fixes', () => {
     const work = { ...mine, authorized: true };
     const personal = { ...mine, authorized: true };
     expect(noticeTarget([work, personal])).toBeNull();
+  });
+});
+
+describe('noticeButton: what the banner button says and runs', () => {
+  const mine = { connection_id: 'mine-1' };
+  const signIn = { kind: 'sign_in' } as const;
+  const setCredential = { kind: 'needs_credential', action: 'set_credential' } as const;
+  const reconnect = { kind: 'needs_credential', action: 'open_accounts' } as const;
+
+  test('no notice, no button', () => {
+    expect(noticeButton({ kind: 'none' }, 'add', false)).toBeNull();
+  });
+
+  test('sign-in with no account of your own opens Add account', () => {
+    expect(noticeButton(signIn, 'add', false)).toEqual({
+      kind: 'sign_in',
+      run: 'add',
+      account: null,
+    });
+  });
+
+  test('sign-in on your own account signs that account in', () => {
+    expect(noticeButton(signIn, mine, false)).toEqual({
+      kind: 'sign_in',
+      run: 'sign_in',
+      account: mine,
+    });
+  });
+
+  test('sign-in with several signed-in accounts of your own has no button', () => {
+    expect(noticeButton(signIn, null, false)).toBeNull();
+  });
+
+  test('no account yet: the Add account control', () => {
+    expect(noticeButton({ kind: 'no_account', action: 'add_account' }, 'add', false)).toEqual({
+      kind: 'add_account',
+      run: 'add',
+      account: null,
+    });
+    expect(
+      noticeButton({ kind: 'error', reason: null, action: 'add_account' }, mine, false),
+    ).toEqual({ kind: 'add_account', run: 'add', account: null });
+  });
+
+  test('a credential to set with no account of your own opens Add account', () => {
+    expect(noticeButton(setCredential, 'add', false)).toEqual({
+      kind: 'set_credential',
+      run: 'add',
+      account: null,
+    });
+  });
+
+  test('a credential to set on your own account opens its credential entry', () => {
+    expect(noticeButton(setCredential, mine, false)).toEqual({
+      kind: 'set_credential',
+      run: 'reconnect',
+      account: mine,
+    });
+  });
+
+  test('a managed provider says Connect with no account, Reconnect on yours', () => {
+    expect(noticeButton(reconnect, 'add', true)).toEqual({
+      kind: 'connect',
+      run: 'add',
+      account: null,
+    });
+    expect(noticeButton(reconnect, mine, true)).toEqual({
+      kind: 'reconnect',
+      run: 'reconnect',
+      account: mine,
+    });
+  });
+
+  test('a failure only Retry fixes has no fix button', () => {
+    expect(
+      noticeButton({ kind: 'error', reason: 'HTTP 500', action: 'retry' }, 'add', false),
+    ).toBeNull();
+  });
+
+  test('no single account of yours to fix: no button', () => {
+    expect(noticeButton(setCredential, null, false)).toBeNull();
   });
 });
