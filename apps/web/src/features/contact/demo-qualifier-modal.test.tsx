@@ -15,14 +15,26 @@ mock.module('@calcom/embed-react', () => ({
   getCalApi: async () => () => {},
 }));
 mock.module('@/components/ui/modal', () => ({
-  Modal: passthrough, ModalBody: passthrough, ModalClose: passthrough,
-  ModalContent: passthrough, ModalDescription: passthrough, ModalFooter: passthrough,
-  ModalHeader: passthrough, ModalTitle: passthrough,
+  Modal: passthrough,
+  ModalBody: passthrough,
+  ModalClose: passthrough,
+  ModalContent: passthrough,
+  ModalDescription: passthrough,
+  ModalFooter: passthrough,
+  ModalHeader: passthrough,
+  ModalTitle: passthrough,
 }));
 mock.module('@/components/ui/select', () => ({
-  Select: (props: { value?: string; onValueChange: (value: string) => void; children: React.ReactNode }) =>
+  Select: (props: {
+    value?: string;
+    onValueChange: (value: string) => void;
+    children: React.ReactNode;
+  }) =>
     createElement('select', { value: props.value, onChange: props.onValueChange }, props.children),
-  SelectContent: passthrough, SelectItem: passthrough, SelectTrigger: passthrough, SelectValue: () => null,
+  SelectContent: passthrough,
+  SelectItem: passthrough,
+  SelectTrigger: passthrough,
+  SelectValue: () => null,
 }));
 mock.module('@/components/ui/toast', () => ({ errorToast }));
 
@@ -40,14 +52,24 @@ afterEach(async () => {
 async function form(size: string) {
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
-    renderer = create(<DemoQualifierModal open onOpenChange={() => {}} calLink="synthetic/demo"
-      calNamespace="synthetic" defaultName="Demo visitor" defaultEmail="agent@kortix.ai" />);
+    renderer = create(
+      <DemoQualifierModal
+        open
+        onOpenChange={() => {}}
+        calLink="synthetic/demo"
+        calNamespace="synthetic"
+        defaultName="Demo visitor"
+        defaultEmail="agent@kortix.ai"
+      />,
+    );
   });
   if (!renderer) throw new Error('Modal did not render');
   view = renderer;
   const root = renderer.root;
   await act(async () => {
-    root.findByProps({ id: 'dq-company' }).props.onChange({ target: { value: 'Synthetic company' } });
+    root
+      .findByProps({ id: 'dq-company' })
+      .props.onChange({ target: { value: 'Synthetic company' } });
     root.findByType('select').props.onChange(size);
   });
   return renderer;
@@ -58,20 +80,28 @@ for (const size of ['1-10', '11-50']) {
     test(`${size}: HTTP ${status} keeps the form and permits retry`, async () => {
       globalThis.fetch = mock(async () => new Response(null, { status }));
       const renderer = await form(size);
-      await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+      await act(async () =>
+        renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
+      );
       expect(renderer.root.findAllByType('form')).toHaveLength(1);
       expect(errorToast).toHaveBeenCalledTimes(1);
       expect(renderer.root.findByProps({ type: 'submit' }).props.disabled).toBe(false);
       expect(renderer.root.findByProps({ id: 'dq-company' }).props.value).toBe('Synthetic company');
       globalThis.fetch = mock(async () => new Response(null, { status: 201 }));
-      await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+      await act(async () =>
+        renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
+      );
       expect(renderer.root.findAllByType('form')).toHaveLength(0);
-      expect(renderer.root.findAllByProps({ 'data-cal': true })).toHaveLength(size === '11-50' ? 1 : 0);
+      expect(renderer.root.findAllByProps({ 'data-cal': true })).toHaveLength(
+        size === '11-50' ? 1 : 0,
+      );
       expect(errorToast).toHaveBeenCalledTimes(1);
     });
   }
   test(`${size}: a network failure keeps the form`, async () => {
-    globalThis.fetch = mock(async () => { throw new TypeError('Network unavailable'); });
+    globalThis.fetch = mock(async () => {
+      throw new TypeError('Network unavailable');
+    });
     const renderer = await form(size);
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
     expect(renderer.root.findAllByType('form')).toHaveLength(1);
@@ -82,9 +112,13 @@ for (const size of ['1-10', '11-50']) {
     test(`${size}: HTTP ${status} advances without an error toast`, async () => {
       globalThis.fetch = mock(async () => new Response(null, { status }));
       const renderer = await form(size);
-      await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+      await act(async () =>
+        renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
+      );
       expect(renderer.root.findAllByType('form')).toHaveLength(0);
-      expect(renderer.root.findAllByProps({ 'data-cal': true })).toHaveLength(size === '11-50' ? 1 : 0);
+      expect(renderer.root.findAllByProps({ 'data-cal': true })).toHaveLength(
+        size === '11-50' ? 1 : 0,
+      );
       expect(errorToast).not.toHaveBeenCalled();
     });
   }
