@@ -56,6 +56,8 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let seen: Seen[] = [];
 
 function sessionRow(sessionId = SESSION) {
+  // A running row names its own box, exactly as `/start` does below.
+  const external = sessionId === SESSION_PI ? EXTERNAL_PI : EXTERNAL;
   return {
     session_id: sessionId,
     account_id: ACCOUNT,
@@ -64,7 +66,7 @@ function sessionRow(sessionId = SESSION) {
     base_ref: 'main',
     sandbox_provider: 'daytona',
     sandbox_id: 'sandbox-row-id',
-    sandbox_url: `http://127.0.0.1/v1/p/${EXTERNAL}/8000`,
+    sandbox_url: `http://127.0.0.1/v1/p/${external}/8000`,
     opencode_session_id: 'ses_oc',
     name: 'Parity',
     custom_name: null,

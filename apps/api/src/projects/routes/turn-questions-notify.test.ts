@@ -64,6 +64,7 @@ mock.module('../../shared/db', () => ({
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({ row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID }),
+  loadVisibleSession: async () => ({}),
 }));
 
 mock.module('../lib/pending-questions', () => ({

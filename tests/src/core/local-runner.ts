@@ -14,6 +14,7 @@ import {
   resolveLocalTopology,
 } from './local-stack';
 import { assertTargetSmokeHealth, resolveTargetSmokeConfig } from './target-smoke';
+import { LANE_GROUPS, resolveScope, scopePlan } from './test-scope';
 
 export interface LocalTestLane {
   name: string;
@@ -551,20 +552,36 @@ function dockerAvailable(): boolean {
 }
 
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
-  const plan = buildLocalTestPlan(args);
+  let plan = buildLocalTestPlan(args);
   // Sanctioned environment skips: verify-attestation.mjs records them, never
   // counts a skip as a pass, and `--strict` (a push to main) rejects them.
   const skipped = new Map<string, string>();
+  if (plan.mode === 'core') {
+    // Diff-scoped core run (core/test-scope.ts): unaffected lanes are recorded
+    // as skipped-unaffected, and groups that already passed on this diff are kept.
+    const { scope, freshLanes, files } = resolveScope(root);
+    const scoped = scopePlan(plan, scope, freshLanes);
+    plan = scoped.plan;
+    for (const name of scoped.unaffected) skipped.set(name, 'skipped-unaffected');
+    console.log(
+      scope.full
+        ? `[test] scope=full (${scope.reason})`
+        : `[test] scope=${scope.packages.join(',') || 'none'} (${files?.length ?? 0} changed files)`,
+    );
+    for (const group of scoped.reused)
+      console.log(`[test] REUSE ${group}: already pass for this diff (delete the attestation to rerun)`);
+    for (const name of scoped.unaffected) console.log(`[test] SKIP ${name} (unaffected by this diff)`);
+  }
   if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
-    if (!dockerAvailable()) {
+    if (plan.lanes.some((lane) => DOCKER_LANES.has(lane.name)) && !dockerAvailable()) {
       // No Docker (a factory sandbox): the DB lanes cannot run.
-      for (const lane of plan.lanes)
-        if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
-    }
-    if (skipped.size > 0) {
-      plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));
-      plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.has(l.name)));
-      for (const [name, value] of skipped) console.log(`[test] SKIP ${name} (${value}, not a pass)`);
+      for (const lane of plan.lanes) {
+        if (!DOCKER_LANES.has(lane.name)) continue;
+        skipped.set(lane.name, 'skipped-no-db');
+        console.log(`[test] SKIP ${lane.name} (skipped-no-db, not a pass)`);
+      }
+      plan.lanes = plan.lanes.filter((l) => !DOCKER_LANES.has(l.name));
+      plan.stages = plan.stages.map((stage) => stage.filter((l) => !DOCKER_LANES.has(l.name)));
       if (plan.lanes.length === 0) return 1;
     }
   }
@@ -657,19 +674,15 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   if (ATTESTED_MODES.has(plan.mode) && !partial) {
     // Attestation lanes group the runner lanes. A group is written only when
     // every member ran (or was skipped) in this run, or when one failed.
-    const GROUPS: Record<string, string[]> = {
-      core: ['sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
-      packages: ['package-quality'],
-      'db-suites': ['api-cli-flows', 'db-suites'],
-      browser: ['browser'],
-    };
+    // A group whose lanes all ran or were skipped is `pass` when any of them
+    // ran, else its skip value (a scoped run may skip the SDK inside `core`).
     const lanes: Record<string, string> = {};
-    for (const [group, members] of Object.entries(GROUPS)) {
+    for (const [group, members] of Object.entries(LANE_GROUPS)) {
       const ran = results.filter((r) => members.includes(r.name));
       const skipValues = members.map((m) => skipped.get(m)).filter((v) => v !== undefined);
       if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
       else if (ran.length + skipValues.length === members.length) {
-        lanes[group] = skipValues[0] ?? 'pass';
+        lanes[group] = ran.length > 0 ? 'pass' : (skipValues[0] ?? 'pass');
       }
     }
     Bun.spawnSync(

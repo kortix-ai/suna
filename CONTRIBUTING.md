@@ -33,8 +33,9 @@ rare case you want CI before the merge, add the `test` or `preview` label (one r
 1. **Branch.** One canonical branch per objective, in its own worktree.
 2. **Commit.** Conventional subjects (`fix(api): …`, `feat(web): …`). The hooks must pass.
    Never use `--no-verify`.
-3. **Test in your box.** Run the narrowest relevant test, then `pnpm test`. Run the changed
-   behaviour on the worktree's local stack (`pnpm worktree start <slug>`).
+3. **Test in your box.** Run the tests that cover the change, narrowest first. A diff that no
+   test reads (docs, a skill, a script) needs no run. Run the changed behaviour on the
+   worktree's local stack (`pnpm worktree start <slug>`).
 4. **Record a demo video** of the change with agent-browser, on the local stack.
 5. **Open the PR against `main`** with every section of `.github/pull_request_template.md`
    filled, and attach the video:

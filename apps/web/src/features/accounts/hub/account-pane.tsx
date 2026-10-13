@@ -31,6 +31,7 @@ const WIDTH_CLASS: Record<AccountPaneWidth, string> = {
   default: 'max-w-2xl',
   wide: 'max-w-3xl',
   full: 'max-w-6xl',
+  fluid: 'max-w-none',
 };
 
 export interface AccountPaneProps {
@@ -72,12 +73,26 @@ export function AccountPane({
           </Button>
         </div>
       ) : null}
-      <div className={cn('px-4 pb-12 sm:px-12', back ? 'md:pt-12' : 'pt-12')}>
-        <div className={cn('mx-auto w-full space-y-10', WIDTH_CLASS[width])}>
+      <div
+        className={cn(
+          'px-4 pb-12',
+          // Fluid panes run edge to edge with Linear's gutter (~34px).
+          width === 'fluid' ? 'sm:px-9' : 'sm:px-12',
+          back ? 'md:pt-12' : 'pt-12',
+        )}
+      >
+        {/* A fluid pane is a working table: its toolbar sits close under the title. */}
+        <div
+          className={cn(
+            'mx-auto w-full',
+            width === 'fluid' ? 'space-y-5' : 'space-y-10',
+            WIDTH_CLASS[width],
+          )}
+        >
           {title ? (
             <header className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0 space-y-1">
-                <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
+                <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance">{title}</h1>
                 {description ? (
                   <p className="text-muted-foreground text-sm text-pretty">{description}</p>
                 ) : null}
@@ -93,25 +108,55 @@ export function AccountPane({
 }
 
 /**
- * The pane's loading shape: the title block (when the route does not know its
- * title yet) and four panel-height rows. Used by the route `loading.tsx`
- * boundaries and by the hub while its account query is in flight, so the
- * hand-over paints in place.
+ * The pane's loading shape, drawn like the Settings pane the hub opens on:
+ * the title block (when the route does not know its title yet), then
+ * sections of a muted label over a bordered card whose rows hold a title and
+ * a description on the left and a control on the right. Same borders and
+ * gaps as the loaded cards, so the hand-over paints in place.
  */
 export function AccountPaneSkeleton({ withTitle = false }: { withTitle?: boolean }) {
   return (
-    <div className="space-y-10">
+    <div className="space-y-10" aria-hidden>
       {withTitle ? (
         <div className="space-y-2">
           <Skeleton className="h-7 w-40 rounded-md" />
           <Skeleton className="h-4 w-64 rounded-md" />
         </div>
       ) : null}
-      <div className="space-y-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 w-full rounded-md" />
-        ))}
-      </div>
+      {SKELETON_SECTIONS.map((rows, s) => (
+        <section key={s} className="space-y-3">
+          <div className="space-y-1.5">
+            <Skeleton className="h-3.5 w-20 rounded-sm" />
+            {s > 0 ? <Skeleton className="h-3 w-56 rounded-sm" /> : null}
+          </div>
+          <div className="divide-y rounded-lg border">
+            {rows.map((row, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-4">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className={cn('h-3.5 rounded-sm', row.title)} />
+                  <Skeleton className={cn('h-3 rounded-sm', row.body)} />
+                </div>
+                <Skeleton className={cn('shrink-0 rounded-md', row.control)} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
+
+/** Two sections like General and Security: a field row, then toggle and
+ *  input rows, with title widths that vary like real copy. */
+const SKELETON_SECTIONS: Array<Array<{ title: string; body: string; control: string }>> = [
+  [
+    { title: 'w-28', body: 'w-72', control: 'h-8 w-16' },
+    { title: 'w-32', body: 'w-24', control: 'h-8 w-14' },
+  ],
+  [
+    { title: 'w-52', body: 'w-80', control: 'h-5 w-9 rounded-full' },
+    { title: 'w-44', body: 'w-64', control: 'h-8 w-24' },
+    { title: 'w-28', body: 'w-72', control: 'h-8 w-24' },
+    { title: 'w-48', body: 'w-80', control: 'h-5 w-9 rounded-full' },
+  ],
+];

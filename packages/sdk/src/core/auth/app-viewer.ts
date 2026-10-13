@@ -248,6 +248,9 @@ export interface KortixBinding {
  *   headers: { authorization: `Bearer ${await api.token()}` },
  * });
  * ```
+ *
+ * To start the first token fetch earlier (an inline script), return that early
+ * response from the `fetch` option on the first call and the real `fetch` after.
  */
 export function kortixBinding(slug: string, options: KortixBindingOptions = {}): KortixBinding {
   const origin = options.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;

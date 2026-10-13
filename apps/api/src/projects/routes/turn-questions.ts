@@ -66,6 +66,7 @@ export function registerTurnQuestionsRoutes(): void {
       // The session this credential is BOUND to, when it is a sandbox token.
       // Null for a human caller.
       let callerSandboxSessionId: string | null = null;
+      let humanLoaded: Awaited<ReturnType<typeof loadProjectForUser>> = null;
 
       if (isSessionSandboxCredential(c)) {
         const accountId = (c as any).get('accountId') as string | undefined;
@@ -96,8 +97,8 @@ export function registerTurnQuestionsRoutes(): void {
         // A question card finalizes and re-posts a LIVE turn, so it is a
         // mutation of that session — 'read' is too weak. The sibling turn-stream
         // route already requires more than read for the same reason.
-        const loaded = await loadProjectForUser(c, projectId, 'session');
-        if (!loaded) return c.json({ error: 'Not found' }, 404);
+        humanLoaded = await loadProjectForUser(c, projectId, 'session');
+        if (!humanLoaded) return c.json({ error: 'Not found' }, 404);
       }
 
       let body: Partial<TurnQuestionRelayBody>;
@@ -121,6 +122,14 @@ export function registerTurnQuestionsRoutes(): void {
         !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
       ) {
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      }
+      // A member's token acts only on a session it may see, as the GET/DELETE
+      // siblings require: project scope alone let any member post to a private one.
+      if (
+        humanLoaded &&
+        !(await loadVisibleSession(humanLoaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))
+      ) {
+        return c.json({ error: 'Not found' }, 404);
       }
 
       const [turnQuestionSession] = await db

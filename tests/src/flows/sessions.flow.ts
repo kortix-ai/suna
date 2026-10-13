@@ -1309,20 +1309,20 @@ flow(
       r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
-    // A warm session whose box is coming up or up bills compute from creation
-    // (warmPoolGrantMs), so it must STAY in the visible list and sidebar — a
-    // billed session its owner cannot see, open or stop is the KRTX-1068
-    // dogfood report. The marker only hides a warm row that is no longer
-    // active (reaped, failed, completed).
-    await ctx.step('an unused warm session that is provisioning or running stays in the visible list', async () => {
+    // A warm session stays hidden from the visible list for as long as it
+    // carries the marker, however live its box — the sidebar must not paint an
+    // untitled "New session" row the user never started (2026-10-12 product
+    // call, revisiting KRTX-1068). The manager `project` scope keeps the live
+    // warm row listed so the billed box is seen and stopped there.
+    await ctx.step('an unused warm session stays hidden from the visible list', async () => {
       const visible = await owner.get('/v1/projects/:projectId/sessions', {
         params: { projectId: p.id },
         query: { scope: 'visible' },
       });
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
-      if (!visibleIds.includes(warmSessionId)) {
-        throw new Error('A warm session whose box bills compute is hidden from the visible session list');
+      if (visibleIds.includes(warmSessionId)) {
+        throw new Error('An unused warm session is listed in the visible session list');
       }
     });
 
@@ -1418,7 +1418,10 @@ flow(
         return sessionRows(visible).find((s: any) => s.session_id === replacementId);
       };
       let row = await startAndRead();
-      for (let attempt = 0; row && (row.metadata ?? {}).warm !== undefined && attempt < 60; attempt++) {
+      // Since #9695 a warm session is hidden from the visible list until the
+      // marker drops, so a provisioning adoption first reads as no row at all:
+      // keep polling while the row is hidden too.
+      for (let attempt = 0; (!row || (row.metadata ?? {}).warm !== undefined) && attempt < 60; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 2_000));
         row = await startAndRead();
       }

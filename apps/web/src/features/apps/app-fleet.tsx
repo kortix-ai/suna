@@ -282,26 +282,3 @@ function VolumeSnapshots({
   );
 }
 
-/** The App's services and their URLs: one chip each, the access level in its hint. */
-export function AppServices({ app }: { app: App }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const services = (app.services ?? []).filter((service) => service.name !== 'http');
-  if (services.length === 0) return null;
-  const accessLabel = (access: string) =>
-    access === 'public' ? tI18nComplete.raw('text591935b15b1c') : access === 'admins' ? tI18nComplete.raw('textce1d48e5a23f') : tI18nComplete.raw('textbfc580646bea');
-  return (
-    <span className="hidden shrink-0 items-center gap-1 md:flex">
-      {services.map((service) => (
-        <Hint key={service.name} label={`${accessLabel(service.access)} · :${service.internal_port}`}>
-          {service.url ? (
-            <a href={service.url} target="_blank" rel="noreferrer">
-              <Badge variant="outline" size="sm" className="cursor-pointer font-mono">{service.name}</Badge>
-            </a>
-          ) : (
-            <Badge variant="outline" size="sm" className="font-mono">{service.name}</Badge>
-          )}
-        </Hint>
-      ))}
-    </span>
-  );
-}

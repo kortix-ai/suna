@@ -54,15 +54,14 @@ Done when the commit exists and the hooks passed.
 
 ### 3. Verify in your box
 
-Run the narrowest relevant test first, then `pnpm test` (the **testing** skill). Then run
+Run the tests that cover the change, narrowest first (the **testing** skill). A diff that
+no test reads (docs, a skill, a standalone script) needs no run. Then run
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
-`pnpm test` writes `tests/attestations/<branch>.json` and deletes every other file
-there: commit `tests/attestations/` (`git add -A tests/attestations`). If a merge of
-`origin/main` conflicts on the legacy `tests/test-attestation.json`, delete it. The pre-push hook and the
-merge gate run `pnpm test:verify` against the pushed head and reject a stale or red
-attestation. Never push with `--no-verify`.
+No hook or merge gate requires a test run on a PR into `dev`. A green `pnpm test` writes
+`tests/attestations/<branch>.json`; committing it is optional. If a merge of `origin/dev`
+conflicts on the legacy `tests/test-attestation.json`, delete it.
 
 Done when the commands you will list under "How was this tested?" passed, with output
 captured.

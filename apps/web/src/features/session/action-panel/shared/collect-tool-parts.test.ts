@@ -1,82 +1,77 @@
-import type { MessageWithParts, ToolPart } from '@/ui';
+import type { ToolPart } from '@/ui';
+import { toolCallBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, it } from 'bun:test';
-import { collectAllToolParts, collectToolParts } from './collect-tool-parts';
+import { collectAllToolCalls, collectToolCalls } from './collect-tool-parts';
 
-function part(
+function call(
   tool: string,
   status: 'pending' | 'running' | 'completed' | 'error' = 'completed',
-): ToolPart {
-  return {
+): ToolCallBlock {
+  return toolCallBlock({
     type: 'tool',
     tool,
     callID: `c-${tool}-${Math.random()}`,
-    state: { status, input: {} },
-  } as unknown as ToolPart;
+    state: { status, input: {}, ...(status === 'running' && { time: { start: 1 } }) },
+  } as unknown as ToolPart);
 }
 
-function messages(parts: ToolPart[]): MessageWithParts[] {
-  return [
-    {
-      info: {} as MessageWithParts['info'],
-      parts,
-    },
-  ];
+function messages(blocks: ToolCallBlock[], extra: Partial<SessionLogMessage> = {}): SessionLogMessage[] {
+  return [{ role: 'assistant', kind: 'turn', in_context: true, blocks, ...extra } as SessionLogMessage];
 }
 
-describe('collectAllToolParts (Easy mode)', () => {
-  it('retains read parts — Advanced hides them, Easy mode narrates "Read N files"', () => {
-    const parts = collectAllToolParts(messages([part('read'), part('read'), part('read')]));
-    expect(parts).toHaveLength(3);
-    expect(parts.every((p) => p.tool === 'read')).toBe(true);
+/** What the API's v2 page serves for a call that never finished: the closure rule. */
+const closed = (c: ToolCallBlock): ToolCallBlock => ({
+  ...c,
+  status: 'error',
+  result: { content: [], is_error: true, synthetic: true, error: { code: 'interrupted', message: '' } },
+});
+
+describe('collectAllToolCalls (Easy mode)', () => {
+  it('retains read calls — Advanced hides them, Easy mode narrates "Read N files"', () => {
+    const calls = collectAllToolCalls(messages([call('read'), call('read'), call('read')]));
+    expect(calls).toHaveLength(3);
+    expect(calls.every((c) => c.name === 'read')).toBe(true);
   });
 
-  it('retains a skill part — Advanced hides it in favor of the side sheet', () => {
-    const parts = collectAllToolParts(messages([part('skill')]));
-    expect(parts).toHaveLength(1);
-    expect(parts[0].tool).toBe('skill');
+  it('retains a skill call — Advanced hides it in favor of the side sheet', () => {
+    const calls = collectAllToolCalls(messages([call('skill')]));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].name).toBe('skill');
   });
 
   it('still excludes todoread — a universal rule, not an actions-panel-only one', () => {
-    const parts = collectAllToolParts(messages([part('read'), part('todoread')]));
-    expect(parts).toHaveLength(1);
-    expect(parts[0].tool).toBe('read');
+    const calls = collectAllToolCalls(messages([call('read'), call('todoread')]));
+    expect(calls.map((c) => c.name)).toEqual(['read']);
   });
 
-  it('returns [] for undefined messages', () => {
-    expect(collectAllToolParts(undefined)).toEqual([]);
-  });
-});
-
-describe('collectToolParts (Advanced) is unchanged', () => {
-  it('still excludes read — Advanced mode must not regress', () => {
-    const parts = collectToolParts(messages([part('read'), part('bash')]));
-    expect(parts).toHaveLength(1);
-    expect(parts[0].tool).toBe('bash');
+  it('reads only tool_call blocks, from every message in or out of context', () => {
+    const c = call('bash');
+    const log: SessionLogMessage[] = [
+      { role: 'user', kind: 'turn', in_context: true, blocks: [{ type: 'text', id: 't', text: 'hi' }] } as SessionLogMessage,
+      ...messages([c], { in_context: false, hidden_reason: 'failed_attempt' }),
+    ];
+    expect(collectAllToolCalls(log)).toEqual([c]);
+    expect(collectAllToolCalls(undefined)).toEqual([]);
   });
 
-  it('still excludes skill', () => {
-    const parts = collectToolParts(messages([part('skill'), part('bash')]));
-    expect(parts).toHaveLength(1);
-    expect(parts[0].tool).toBe('bash');
-  });
-
-  it('still excludes todoread', () => {
-    const parts = collectToolParts(messages([part('bash'), part('todoread')]));
-    expect(parts).toHaveLength(1);
-    expect(parts[0].tool).toBe('bash');
-  });
-
-  it('returns [] for undefined messages', () => {
-    expect(collectToolParts(undefined)).toEqual([]);
+  it('reads a call the page closed at rest as the open call the live view holds', () => {
+    const running = call('bash', 'running');
+    const [seen] = collectAllToolCalls(messages([closed(running)]));
+    expect(seen.status).toBe('running');
+    expect(seen.result).toBeUndefined();
+    // A real error stays an error.
+    expect(collectAllToolCalls(messages([call('bash', 'error')]))[0].status).toBe('error');
   });
 });
 
-describe('collectAllToolParts vs collectToolParts genuinely differ', () => {
-  it('the same read+skill+bash input produces different results per collector', () => {
-    const input = messages([part('read'), part('skill'), part('bash')]);
-    const all = collectAllToolParts(input);
-    const advanced = collectToolParts(input);
-    expect(all.map((p) => p.tool)).toEqual(['read', 'skill', 'bash']);
-    expect(advanced.map((p) => p.tool)).toEqual(['bash']);
+describe('collectToolCalls (Advanced)', () => {
+  it('drops read and skill calls, keeps the rest in order', () => {
+    const calls = collectToolCalls(messages([call('read'), call('bash'), call('skill'), call('write')]));
+    expect(calls.map((c) => c.name)).toEqual(['bash', 'write']);
+  });
+
+  it('drops the memory lookup tools', () => {
+    const calls = collectToolCalls(messages([call('memory_search'), call('bash')]));
+    expect(calls.map((c) => c.name)).toEqual(['bash']);
   });
 });

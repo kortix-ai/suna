@@ -100,7 +100,8 @@ function callerHeaders(input: RequestInfo | URL, init: RequestInit): Record<stri
 
 /**
  * The caller's headers plus the platform policy. A caller's own
- * `Authorization` or `X-Kortix-Client-Version` wins. Admin bypass and act-as
+ * `Authorization` (or the configured `credentialHeader`) or
+ * `X-Kortix-Client-Version` wins. Admin bypass and act-as
  * replace the caller's value, so a call site cannot drop them; the admin
  * console is never impersonated (see `shouldAttachImpersonation`).
  */
@@ -112,7 +113,10 @@ function withPlatformHeaders(url: string, base: Record<string, string>, token: s
   }
   if (adminBypassEnabled) setHeader(headers, 'x-kortix-admin-bypass', '1');
   for (const [name, value] of Object.entries(impersonationHeaders(url))) setHeader(headers, name, value);
-  if (!hasHeader(headers, 'authorization')) setHeader(headers, 'Authorization', `Bearer ${token}`);
+  const credentialHeader = platformConfig().credentialHeader?.trim();
+  if (credentialHeader) {
+    if (!hasHeader(headers, credentialHeader)) setHeader(headers, credentialHeader, token);
+  } else if (!hasHeader(headers, 'authorization')) setHeader(headers, 'Authorization', `Bearer ${token}`);
   return headers;
 }
 

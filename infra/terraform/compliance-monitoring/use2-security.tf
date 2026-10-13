@@ -454,6 +454,23 @@ resource "aws_flow_log" "use2_dev" {
   tags                 = local.tags
 }
 
+# Drata test 233 (CIS 5.4): the default security group allows no traffic.
+# Nothing attaches it; every ECS service carries its own group.
+resource "aws_default_security_group" "use2_dev" {
+  provider = aws.use2
+  vpc_id   = data.aws_vpc.use2_dev.id
+
+  ingress = []
+  egress  = []
+
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-dev-use2-default"
+  }
+}
+
 resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
   provider            = aws.use2
   for_each            = local.use2_albs

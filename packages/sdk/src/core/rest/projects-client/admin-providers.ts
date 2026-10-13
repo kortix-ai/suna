@@ -96,21 +96,25 @@ export function setAdminProviderFallback<T = unknown>(enabled: boolean): Promise
     .then((response) => unwrap(response));
 }
 
-// ── Volumes (the master switch) and session boot modes ───────────────────────
+// ── Session boot modes ───────────────────────────────────────────────────────
+// Volumes and Stateless sessions are project feature flags, not part of this policy.
 export type AdminBootMode = 'standard' | 'artifacts' | 'volume';
 export interface AdminBootModeRule {
   mode: AdminBootMode;
   standardFallback: boolean;
 }
+/** @deprecated Volumes is a project feature flag. The server sends it empty and ignores it. */
 export interface AdminVolumesPolicy {
   enabled: boolean;
   percent: number;
   orgs: Record<string, boolean>;
 }
 export interface AdminBootModePolicy {
+  /** @deprecated Always off and empty; the server ignores it. Volumes is a project feature flag. */
   volumes: AdminVolumesPolicy;
   killSwitch: boolean;
   default: AdminBootModeRule;
+  /** @deprecated Always empty; the server ignores it. Stateless sessions is a project feature flag. */
   orgs: Record<string, AdminBootModeRule>;
   fallback: { volumeAttempts: number; artifactsAttempts: number };
   artifacts: string | null;
@@ -118,6 +122,7 @@ export interface AdminBootModePolicy {
 export interface AdminBootModes {
   stored: boolean;
   policy: AdminBootModePolicy;
+  /** @deprecated Always empty: no per-organization boot settings exist. */
   orgs: Array<{ accountId: string; name: string | null; volumes: boolean | null; rule: AdminBootModeRule | null }>;
   env: { bootArtifacts: string | null; volumeOff: boolean; driveSync: boolean };
   providers: { allowed: string[]; default: string; volumeProvider: string; volumeProviderConfigured: boolean };
