@@ -993,7 +993,7 @@
         },
         "apps": {
           "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
+          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
         },
         "monitors": {
           "name": "Monitors",
@@ -14347,6 +14347,7 @@
       "text8b624587552a": "Failed to mint the token",
       "text8b64afef1a24": "Nothing prepared yet",
       "text8b728638c006": "will lose the bypass. Every action goes through the normal permission checks again.",
+      "text8b7811603173": "Search or paste a session ID",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Uploading",
       "text8b9965f7aaa5": "Add an access policy",
