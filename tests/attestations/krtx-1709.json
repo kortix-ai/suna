@@ -1,17 +1,17 @@
 {
-  "source_hash": "9a980f15e85983df38b964424f69f588597217f5fca48fe026b666290e6ab4a7",
+  "source_hash": "df7cb1f82b766ffaef37c07c8d369e9f2f11ba79a592332332b5d119bff60376",
   "diff_files": [
     "apps/web/src/features/session/turn/message-author.ts",
     "apps/web/src/features/session/turn/message-time-label.tsx",
     "apps/web/src/features/session/turn/queued-prompt-bubbles.tsx"
   ],
   "diff_hash": "83d617939745c88bda265b639b57a82f26136ab1b6d19f76a40928a6374cd913",
-  "head": "19aefa639ae6bb6f4fe36ae70948298df3216d6f",
-  "passed": false,
+  "head": "a3ac0ea5c9ed0c674a34c84156f4b0f950cb966b",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T15:36:58.310Z"
+  "at": "2026-10-13T20:02:43.356Z"
 }
