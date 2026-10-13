@@ -3,6 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { ViewerNotice } from './viewer-notice';
 import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
@@ -83,26 +84,17 @@ function RendererFallback() {
   );
 }
 
-/** Shared "file does not exist" UI shown when a file cannot be loaded. */
-function FileNotFoundState({ filePath }: { filePath: string }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
-        <FileX className="text-muted-foreground/40 h-6 w-6" />
-      </div>
-      <p className="text-muted-foreground text-sm font-medium">
-        {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line195JsxTextFileNotFound')}
-      </p>
-      <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">{filePath}</p>
-      <p className="text-muted-foreground/40 max-w-xs text-xs">
-        {tHardcodedUi.raw(
-          'featuresFilesComponentsFileContentRenderer.line201JsxTextThisFileDoesNotExistOrMayHave',
-        )}
-      </p>
-    </div>
-  );
-}
+/** The two icon tiles the notices sit on — the failed look and the missing look. */
+const notFoundMedia = (
+  <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
+    <FileX className="text-muted-foreground/40 h-6 w-6" />
+  </div>
+);
+const errorMedia = (
+  <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
+    <FileWarning className="text-destructive/50 h-6 w-6" />
+  </div>
+);
 
 // ---------------------------------------------------------------------------
 // FileContentRenderer — the shared file content rendering component
@@ -229,6 +221,20 @@ export function FileContentRenderer({
     'featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges',
   );
 
+  // The not-found notice is reachable from two disjoint paths — a not-found
+  // ERROR from a source that failed, and a query that settled with nothing
+  // from one that didn't. One element, two mounts.
+  const notFoundNotice = (
+    <ViewerNotice
+      media={notFoundMedia}
+      title={tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line195JsxTextFileNotFound')}
+      path={filePath}
+      detail={tHardcodedUi.raw(
+        'featuresFilesComponentsFileContentRenderer.line201JsxTextThisFileDoesNotExistOrMayHave',
+      )}
+    />
+  );
+
   return (
     <div className={cn('flex h-full flex-col', className)}>
       <FileHeader {...{ showHeader, Breadcrumbs, filePath, readOnly, hasUnsavedChanges, saveFlash, fileDiagErrorCount, fileDiagWarningCount, fileContent, isSaving, handleSave, latestContentRef, discardLabel, handleDiscard, isHtmlFile, isHtmlPreview, setIsHtmlPreview, isJsonFile, isJsonTreeView, setIsJsonTreeView, hasPreviewToggle, isMarkdownPreview, setIsMarkdownPreview, headerActions, handleDownload, blobUrl, rawBlob, tI18nHardcoded, tHardcodedUi }} />
@@ -238,23 +244,19 @@ export function FileContentRenderer({
       <div className={cn('flex-1', readOnly ? 'overflow-auto' : 'overflow-hidden')}>
         <ClientErrorBoundary
           fallback={() => (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
-                <FileWarning className="text-destructive/50 h-6 w-6" />
-              </div>
-              <p className="text-muted-foreground text-sm font-medium">
-                {tI18nHardcoded.raw(
-                  'autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800',
-                )}
-              </p>
-              <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
-                {filePath}
-              </p>
-              <Button variant="outline" size="sm" onClick={handleDownload}>
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
-              </Button>
-            </div>
+            <ViewerNotice
+              media={errorMedia}
+              title={tI18nHardcoded.raw(
+                'autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800',
+              )}
+              path={filePath}
+              action={
+                <Button variant="outline" size="sm" onClick={handleDownload}>
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
+                </Button>
+              }
+            />
           )}
         >
           {/* Loading */}
@@ -269,18 +271,12 @@ export function FileContentRenderer({
               Takes precedence over errorFallback: a waking box is not an
               error, so no surface gets to render it as one. */}
           {contentError && !showLoadingState && isSandboxWaking && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <Loading className="text-muted-foreground/40 h-4 w-4" />
-              <p className="text-muted-foreground text-sm font-medium">
-                {tI18nHardcoded.raw('i18nComplete.text5e3de76869f3')}
-              </p>
-              <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
-                {filePath}
-              </p>
-              <p className="text-muted-foreground/40 max-w-xs text-xs">
-                {tI18nHardcoded.raw('i18nComplete.textd4707c58c4a4')}
-              </p>
-            </div>
+            <ViewerNotice
+              media={<Loading className="text-muted-foreground/40 h-4 w-4" />}
+              title={tI18nHardcoded.raw('i18nComplete.text5e3de76869f3')}
+              path={filePath}
+              detail={tI18nHardcoded.raw('i18nComplete.textd4707c58c4a4')}
+            />
           )}
 
           {/* Error */}
@@ -290,22 +286,16 @@ export function FileContentRenderer({
             (errorFallback ? (
               errorFallback(contentError, filePath)
             ) : isNotFound ? (
-              <FileNotFoundState filePath={filePath} />
+              notFoundNotice
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
-                  <FileWarning className="text-destructive/50 h-6 w-6" />
-                </div>
-                <p className="text-muted-foreground text-sm font-medium">
-                  {tHardcodedUi.raw(
-                    'featuresFilesComponentsFileContentRenderer.line692JsxTextFailedToLoadFile',
-                  )}
-                </p>
-                <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
-                  {filePath}
-                </p>
-                <p className="text-muted-foreground/60 max-w-sm text-xs">{contentError}</p>
-              </div>
+              <ViewerNotice
+                media={errorMedia}
+                title={tHardcodedUi.raw(
+                  'featuresFilesComponentsFileContentRenderer.line692JsxTextFailedToLoadFile',
+                )}
+                path={filePath}
+                detail={contentError}
+              />
             ))}
 
           {/* Image content (non-HEIC) */}
@@ -481,20 +471,22 @@ export function FileContentRenderer({
             !imageDataUrl &&
             !isHeicImage &&
             !['pdf', 'docx', 'pptx', 'xlsx', 'sqlite', 'video', 'audio'].includes(fileCategory) && (
-              <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
-                  <FileWarning className="text-muted-foreground/30 h-6 w-6" />
-                </div>
-                <p className="text-muted-foreground/50 text-sm">
-                  {tHardcodedUi.raw(
-                    'featuresFilesComponentsFileContentRenderer.line844JsxTextBinaryFile',
-                  )}
-                </p>
-                <Button variant="outline" size="sm" className="" onClick={handleDownload}>
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
-                  {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
-                </Button>
-              </div>
+              <ViewerNotice
+                media={
+                  <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
+                    <FileWarning className="text-muted-foreground/30 h-6 w-6" />
+                  </div>
+                }
+                title={tHardcodedUi.raw(
+                  'featuresFilesComponentsFileContentRenderer.line844JsxTextBinaryFile',
+                )}
+                action={
+                  <Button variant="outline" size="sm" onClick={handleDownload}>
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                    {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
+                  </Button>
+                }
+              />
             )}
 
           {/* Text / code content */}
@@ -573,9 +565,7 @@ export function FileContentRenderer({
             )}
 
           {/* File not found fallback — catches cases where loading settled but no content/error */}
-          {!showLoadingState && !contentError && isNotFound && (
-            <FileNotFoundState filePath={filePath} />
-          )}
+          {!showLoadingState && !contentError && isNotFound && notFoundNotice}
         </ClientErrorBoundary>
       </div>
     </div>
