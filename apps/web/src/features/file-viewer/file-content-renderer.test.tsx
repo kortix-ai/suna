@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { FileSourceProvider, type FileSource } from './file-source';
+import { FileSourceProvider, type FileContentResult, type FileSource } from './file-source';
 import { FileContentRenderer } from './file-content-renderer';
 
 const source: FileSource = {
@@ -14,6 +14,79 @@ const source: FileSource = {
 function view(path: string, targetLine?: number) {
   return renderToStaticMarkup(<FileSourceProvider value={source}><FileContentRenderer filePath={path} targetLine={targetLine} /></FileSourceProvider>);
 }
+
+/** The same harness with a specific source — for the states the default text source can't reach. */
+function viewWith(src: FileSource, path: string, targetLine?: number) {
+  return renderToStaticMarkup(<FileSourceProvider value={src}><FileContentRenderer filePath={path} targetLine={targetLine} /></FileSourceProvider>);
+}
+
+function sourceWith(content: Partial<FileContentResult> = {}): FileSource {
+  return {
+    ...source,
+    useFileContent: () => ({ data: undefined, isLoading: false, error: null, refetch: async () => undefined, ...content }),
+  };
+}
+
+// KRTX-1772 characterization: the viewer notices. Every fallback state a
+// file can sit in, rendered and asserted on its i18n strings — the category
+// dispatch may be restructured, these states may not change shape.
+describe('file viewer notices', () => {
+  test('a waking sandbox shows the pending notice, not an error', () => {
+    const html = viewWith(sourceWith({ error: new Error('sandbox not ready') }), '/workspace/a.md');
+    expect(html).toContain('Waking up the workspace…');
+    expect(html).toContain('The sandbox is starting. This file will load automatically.');
+    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('Failed to load file');
+  });
+
+  test('a plain failure shows the error skeleton with the message', () => {
+    const html = viewWith(sourceWith({ error: new Error('boom') }), '/workspace/a.md');
+    expect(html).toContain('Failed to load file');
+    expect(html).toContain('boom');
+  });
+
+  test('a missing file shows the not-found notice — by error, by empty resolution, and for an unloaded blob category', () => {
+    const byError = viewWith(sourceWith({ error: new Error('404 no such file') }), '/workspace/a.md');
+    expect(byError).toContain('File not found');
+    expect(byError).toContain('This file does not exist or may have been deleted.');
+    expect(viewWith(sourceWith(), '/workspace/a.md')).toContain('File not found');
+    expect(viewWith(source, '/workspace/a.docx')).toContain('File not found');
+  });
+
+  test('a binary payload with no renderer shows the binary fallback and a download', () => {
+    const html = viewWith(sourceWith({ data: { type: 'binary', content: '' } }), '/workspace/a.unknown');
+    expect(html).toContain('Binary file');
+    expect(html).toContain('Download');
+  });
+});
+
+// KRTX-1772 characterization: one first paint per category that the shared
+// dispatch had no rendered case for. The lazy renderers all show the same
+// spinner fallback on first paint; audio is not lazy and paints its element.
+describe('file content renderer category first paints', () => {
+  const blobSource: FileSource = {
+    ...source,
+    useBinaryBlob: () => ({ blobUrl: 'blob:mock', blob: new Blob(['bytes']), isLoading: false, error: null }),
+  };
+
+  test('blob categories show their lazy renderer once the blob lands', () => {
+    const lazy = ['/workspace/a.docx', '/workspace/a.zip', '/workspace/a.mp4', '/workspace/a.pptx'].map(
+      (path) => viewWith(blobSource, path),
+    );
+    expect(lazy.map((html) => html.includes('animate-spinner-orbit'))).toEqual([true, true, true, true]);
+  });
+
+  test('audio paints its element directly, no lazy chunk', () => {
+    expect(viewWith(blobSource, '/workspace/a.mp3')).toContain('<audio');
+  });
+
+  test('xlsx, sqlite and a real base64 image spin on their lazy chunk', () => {
+    expect(viewWith(source, '/workspace/a.xlsx')).toContain('animate-spinner-orbit');
+    expect(viewWith(source, '/workspace/a.sqlite')).toContain('animate-spinner-orbit');
+    const image = sourceWith({ data: { type: 'binary', content: 'aGk=', encoding: 'base64', mimeType: 'image/png' } });
+    expect(viewWith(image, '/workspace/a.png')).toContain('animate-spinner-orbit');
+  });
+});
 
 describe('file content renderer dispatch', () => {
   test('JSON exposes the tree toggle and starts in source mode', () => {

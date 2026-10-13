@@ -60,6 +60,28 @@ describe('DetailLayer a11y (W6)', () => {
   });
 });
 
+// KRTX-1772 characterization: the mobile drawer branch of DetailLayer. Static
+// markup cannot render vaul's portal — the drawer body itself is invisible to
+// this renderer — so what the branch answers for here is the routing: on
+// mobile a detail must go to the drawer and NEITHER desktop shell (the fixed
+// card, the fullscreen takeover) may paint.
+describe('DetailLayer mobile drawer', () => {
+  test('a mobile detail routes to the drawer, never to a desktop shell', () => {
+    const html = renderToStaticMarkup(
+      <DetailLayer
+        detail={{ key: 'k', title: 'Retry policy', body: <div>detail-body</div> }}
+        onBack={() => {}}
+        isMobile
+      >
+        <div>home</div>
+      </DetailLayer>,
+    );
+    expect(html).toContain('home');
+    expect(html).not.toContain('inset-y-3 right-3');
+    expect(html).not.toContain('z-100');
+  });
+});
+
 /** A minimal `PersistentLayer` — the terminal is the only real one. */
 function terminalLayer(over: Partial<PersistentLayer> = {}): PersistentLayer {
   return {
