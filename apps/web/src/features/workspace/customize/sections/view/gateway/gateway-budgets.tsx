@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 /**
  * Budget — the spend cap for this project's gateway.
  *
@@ -29,6 +29,18 @@ import { useTranslations } from '@/i18n/use-translations';
  *    when capped, Edit cap / Remove or Set cap.
  *  - `BudgetDialog` is unchanged in shape and already IS the plain form the
  *    brief asks for: an amount, a period, block-or-warn. Both scopes use it.
+ *
+ * ## Every meter reads its own budget's period
+ *
+ * A meter, its percentage and its alert read the budget's `spent_usd`: the
+ * spend in that budget's day, week or month, the number the gateway compares
+ * with the limit. They used to read month-to-date spend, so a $20/day budget
+ * with $15 today and $280 this month read 1400% under "Budget exceeded" while
+ * the gateway still admitted requests (KRTX-1725). An older API sends no
+ * `spent_usd`: see `periodSpend`.
+ *
+ * Every member cap has a row and a named alert, also when its member spent
+ * nothing this month: the budget carries `subject_email`.
  *
  * ## No per-GROUP cap
  *
@@ -79,7 +91,53 @@ const ACTIONS: { value: 'block' | 'warn'; label: string }[] = [
   { value: 'block', label: 'Block' },
   { value: 'warn', label: 'Warn only' },
 ];
+// "per day", "per week", "per month".
+const PER_PERIOD_KEY = {
+  day: 'text489b7ab47238',
+  week: 'textcdca8801db76',
+  month: 'text88b1d1a67e34',
+} as const;
 
+interface PeriodSpend {
+  /** Spend in the budget's own period. */
+  spent: number;
+  /** `spent` as a percentage of the limit. */
+  pct: number;
+}
+
+/**
+ * A budget's spend this period, or null when it is unknown. An API older than
+ * KRTX-1725 sends no `spent_usd`: month-to-date spend is the same number for a
+ * monthly budget, and a daily or weekly budget gets no meter instead of a
+ * false 0%.
+ */
+function periodSpend(
+  budget: GatewayBudgetRow,
+  projectMonthCost: number,
+  members: GatewayMemberSpend[],
+): PeriodSpend | null {
+  let spent = budget.spent_usd;
+  if (spent === undefined && budget.period === 'month') {
+    spent =
+      budget.scope === 'project'
+        ? projectMonthCost
+        : (members.find((m) => m.user_id === budget.subject_user_id)?.cost ?? 0);
+  }
+  if (spent === undefined) return null;
+  return { spent, pct: budget.limit_usd > 0 ? (spent / budget.limit_usd) * 100 : 0 };
+}
+
+/** The reset time in the viewer's time zone, with the zone named: a period ends at 00:00 UTC. */
+function fmtReset(iso: string | undefined, locale: string): string | null {
+  if (!iso) return null;
+  return new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(new Date(iso));
+}
 
 // Calm by default, red only when over the cap. The 80% "approaching" warning
 // is carried by the InfoBanner, not by painting the bar amber.
@@ -130,6 +188,7 @@ export function GatewayBudgetSection({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayCosts');
+  const locale = useLocale();
   const { data } = useGatewayBudgets(projectId);
   const setBudget = useSetGatewayBudget(projectId);
   const delBudget = useDeleteGatewayBudget(projectId);
@@ -137,8 +196,23 @@ export function GatewayBudgetSection({
 
   const budgets = data?.budgets ?? [];
   const members = data?.members ?? [];
-  const projectSpend = data?.project_spend?.cost ?? 0;
+  // `members` lists spend this month only. A member cap gets a row without it,
+  // so it can be read, edited and removed.
+  const rows: GatewayMemberSpend[] = [
+    ...members,
+    ...budgets
+      .filter((b) => b.scope === 'member' && !members.some((m) => m.user_id === b.subject_user_id))
+      .map((b) => ({
+        user_id: b.subject_user_id,
+        email: b.subject_email ?? null,
+        requests: 0,
+        cost: 0,
+        tokens: 0,
+      })),
+  ];
+  const spendOf = (b: GatewayBudgetRow) => periodSpend(b, data?.project_spend.cost ?? 0, members);
   const projectBudget = budgets.find((b) => b.scope === 'project') ?? null;
+  const projectSpend = projectBudget ? spendOf(projectBudget) : null;
   const memberBudget = (uid: string | null): GatewayBudgetRow | null =>
     budgets.find((b) => b.scope === 'member' && b.subject_user_id === uid) ?? null;
 
@@ -149,26 +223,22 @@ export function GatewayBudgetSection({
         errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text8a345d23f9f6')),
     });
 
-  const alerts: { label: string; pct: number }[] = [];
-  if (
-    projectBudget &&
-    projectBudget.limit_usd > 0 &&
-    projectSpend / projectBudget.limit_usd >= 0.8
-  ) {
-    alerts.push({
-      label: tI18nComplete.raw('text985959785319'),
-      pct: (projectSpend / projectBudget.limit_usd) * 100,
-    });
-  }
-  for (const m of members) {
-    const b = memberBudget(m.user_id);
-    if (b && b.limit_usd > 0 && m.cost / b.limit_usd >= 0.8) {
-      alerts.push({ label: m.email ?? 'A member', pct: (m.cost / b.limit_usd) * 100 });
-    }
-  }
-  alerts.sort((a, b) => b.pct - a.pct);
+  // A member budget alerts even when its member has no spend this month: a
+  // week can start in the previous month.
+  const alerts = budgets
+    .flatMap((b) => {
+      const spend = spendOf(b);
+      if (!spend || spend.pct < 80) return [];
+      const label =
+        b.scope === 'project'
+          ? tI18nComplete.raw('text985959785319')
+          : (rows.find((m) => m.user_id === b.subject_user_id)?.email ??
+            tI18nComplete.raw('text239ee7bae236'));
+      return [{ budget: b, label, pct: spend.pct }];
+    })
+    .sort((a, b) => b.pct - a.pct);
   const exceeded = alerts.some((a) => a.pct >= 100);
-
+  const projectReset = fmtReset(projectBudget?.resets_at, locale);
 
   return (
     <CostSection
@@ -197,14 +267,18 @@ export function GatewayBudgetSection({
             exceeded ? tI18nComplete.raw('text7689a34422be') : tI18nComplete.raw('text05126477f420')
           }
         >
-          {alerts.map((a) => (
-            <div key={a.label} className="tabular-nums">
-              {a.label} —{' '}
-              {a.pct >= 100
-                ? tI18nComplete.raw('text2743ed9c1ab8')
-                : tI18nComplete('texteb5de9e6bbb3', { value0: Math.round(a.pct) })}
-            </div>
-          ))}
+          {alerts.map((a) => {
+            const reset = fmtReset(a.budget.resets_at, locale);
+            return (
+              <div key={a.budget.budget_id} className="tabular-nums">
+                {a.label} —{' '}
+                {a.pct >= 100
+                  ? tI18nComplete.raw('text2743ed9c1ab8')
+                  : tI18nComplete('texteb5de9e6bbb3', { value0: Math.round(a.pct) })}
+                {reset ? ` · ${tI18nComplete('text2b8fcd81df9b', { value0: reset })}` : null}
+              </div>
+            );
+          })}
         </InfoBanner>
       )}
 
@@ -217,10 +291,12 @@ export function GatewayBudgetSection({
           {projectBudget ? (
             <span className="text-muted-foreground text-right tabular-nums">
               <span className="text-foreground">
-                {t(BUDGET_LINE[projectBudget.period] ?? 'budgetThisMonth', {
-                  spent: fmtUsd(projectSpend),
-                  limit: fmtUsd(projectBudget.limit_usd),
-                })}
+                {projectSpend
+                  ? t(BUDGET_LINE[projectBudget.period] ?? 'budgetThisMonth', {
+                      spent: fmtUsd(projectSpend.spent),
+                      limit: fmtUsd(projectBudget.limit_usd),
+                    })
+                  : `${fmtUsd(projectBudget.limit_usd)} ${tI18nComplete.raw(PER_PERIOD_KEY[projectBudget.period])}`}
               </span>{' '}
               · {projectBudget.action === 'block' ? t('blocksAtLimit') : t('warnsAtLimit')}
             </span>
@@ -228,10 +304,19 @@ export function GatewayBudgetSection({
             <span className="text-muted-foreground">{t('noCapUnlimited')}</span>
           )}
         </div>
-        <Meter spent={projectSpend} limit={projectBudget?.limit_usd ?? 0} />
+        {/* No meter for a cap whose period spend is unknown: an empty bar would
+            read as 0%. */}
+        {(!projectBudget || projectSpend) && (
+          <Meter spent={projectSpend?.spent ?? 0} limit={projectBudget?.limit_usd ?? 0} />
+        )}
+        {projectReset && (
+          <p className="text-muted-foreground text-xs tabular-nums">
+            {tI18nComplete('text2b8fcd81df9b', { value0: projectReset })}
+          </p>
+        )}
       </div>
 
-      {members.length > 0 && (
+      {rows.length > 0 && (
         <>
           <div className="text-muted-foreground flex items-baseline justify-between gap-3 pt-3 text-xs">
             <span>{t('memberCaps')}</span>
@@ -241,19 +326,23 @@ export function GatewayBudgetSection({
             className="border-border bg-surface flex flex-col rounded-md border px-4 pb-1"
             data-gateway-member-caps=""
           >
-            {members.map((m) => (
-              <MemberRow
-                key={m.user_id ?? 'unknown'}
-                member={m}
-                budget={memberBudget(m.user_id)}
-                canWrite={canWrite}
-                onSetCap={() =>
-                  m.user_id &&
-                  setEditing({ scope: 'member', subjectUserId: m.user_id, email: m.email })
-                }
-                onRemove={remove}
-              />
-            ))}
+            {rows.map((m) => {
+              const budget = memberBudget(m.user_id);
+              return (
+                <MemberRow
+                  key={m.user_id ?? 'unknown'}
+                  member={m}
+                  budget={budget}
+                  spend={budget ? spendOf(budget) : null}
+                  canWrite={canWrite}
+                  onSetCap={() =>
+                    m.user_id &&
+                    setEditing({ scope: 'member', subjectUserId: m.user_id, email: m.email })
+                  }
+                  onRemove={remove}
+                />
+              );
+            })}
           </div>
         </>
       )}
@@ -295,24 +384,28 @@ export function GatewayBudgetSection({
  * One member's spend and cap, on one row. A member with a cap gets a real
  * meter and "N% of $cap"; without one, the row says so instead of charting the
  * member against the biggest spender, which looks like a limit and is not one.
+ * With a cap, the figure is the spend in the cap's period; without one, it is
+ * this month's spend. A cap whose spend is unknown (`spend` null) shows its
+ * limit only.
  */
 export function MemberRow({
   member,
   budget,
+  spend = null,
   canWrite,
   onSetCap,
   onRemove,
 }: {
   member: GatewayMemberSpend;
   budget: GatewayBudgetRow | null;
+  spend?: PeriodSpend | null;
   canWrite: boolean;
   onSetCap: () => void;
   onRemove: (id: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayCosts');
-  const label = member.email ?? 'Unknown member';
-  const pct = budget && budget.limit_usd > 0 ? (member.cost / budget.limit_usd) * 100 : 0;
+  const label = member.email ?? tI18nComplete.raw('text29824c5acaf8');
   return (
     <div
       className="border-border flex min-h-12 items-center gap-3 border-b py-1.5 last:border-b-0"
@@ -321,14 +414,22 @@ export function MemberRow({
       <UserAvatar email={member.email ?? ''} size="sm" />
       <span className="text-foreground min-w-0 flex-1 truncate text-xs">{label}</span>
       <span className="text-foreground w-20 shrink-0 text-right text-xs tabular-nums">
-        {fmtUsd(member.cost)}
+        {fmtUsd(budget && spend ? spend.spent : member.cost)}
       </span>
       {budget ? (
         <div className="hidden w-48 shrink-0 items-center gap-3 sm:flex">
-          <Meter spent={member.cost} limit={budget.limit_usd} className="flex-1" />
-          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            {t('ofLimit', { pct: Math.round(pct), limit: fmtUsd(budget.limit_usd) })}
-          </span>
+          {spend ? (
+            <>
+              <Meter spent={spend.spent} limit={budget.limit_usd} className="flex-1" />
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {t('ofLimit', { pct: Math.round(spend.pct), limit: fmtUsd(budget.limit_usd) })}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground flex-1 text-right text-xs tabular-nums">
+              {fmtUsd(budget.limit_usd)} {tI18nComplete.raw(PER_PERIOD_KEY[budget.period])}
+            </span>
+          )}
         </div>
       ) : (
         <span className="text-muted-foreground w-18 shrink-0 text-xs">{t('noCap')}</span>

@@ -101,12 +101,44 @@ describe('Costs — member caps', () => {
 
   test('a capped member shows a meter, the share of the cap, Edit cap and Remove', () => {
     const out = renderToStaticMarkup(
-      <MemberRow member={member} budget={budget} canWrite onSetCap={() => {}} onRemove={() => {}} />,
+      <MemberRow
+        member={member}
+        budget={budget}
+        spend={{ spent: 14.4, pct: 72 }}
+        canWrite
+        onSetCap={() => {}}
+        onRemove={() => {}}
+      />,
     );
     expect(out).toContain('role="meter"');
     expect(out).toContain('72% of $20.00');
     expect(out).toContain('Edit cap');
     expect(out).toContain('Remove');
+  });
+
+  test("a capped member reads the cap's own period spend, not this month's", () => {
+    const daily = { ...budget, period: 'day' } as typeof budget;
+    const out = renderToStaticMarkup(
+      <MemberRow
+        member={member}
+        budget={daily}
+        spend={{ spent: 5, pct: 25 }}
+        canWrite
+        onSetCap={() => {}}
+        onRemove={() => {}}
+      />,
+    );
+    expect(out).toContain('$5.00');
+    expect(out).toContain('25% of $20.00');
+    expect(out).not.toContain('$14.40');
+  });
+
+  test('a cap whose period spend is unknown shows its limit and no meter', () => {
+    const out = renderToStaticMarkup(
+      <MemberRow member={member} budget={budget} canWrite onSetCap={() => {}} onRemove={() => {}} />,
+    );
+    expect(out).toContain('$20.00');
+    expect(out).not.toContain('role="meter"');
   });
 
   test('an uncapped member says No cap and offers Set cap', () => {

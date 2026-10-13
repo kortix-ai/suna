@@ -101,12 +101,12 @@ describe('selectSessionRows: the v1 hooks read the session log through toV1', ()
     expect(selectSessionRows(store(), ROOT)).toBe(rows);
   });
 
-  test('a thread without the kortix.transcript.v1 ext (pi): the v1 store rows', () => {
+  test('a thread without the kortix.transcript.v1 ext (pi): toV1 of it, as for a fromV1 thread', () => {
     const native = page();
     for (const t of native.threads) delete t.ext;
     store().applySessionLogPage(SESSION, native);
     const rows = selectSessionRows(store(), ROOT);
-    expect(rows).toEqual([]);
+    expect(rows.map((r) => r.info.id)).toEqual(v1().map((r) => r.info.id));
   });
 
   test('with a session log holding the thread: toV1 of it, the same array until something changes', () => {

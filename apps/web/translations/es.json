@@ -1228,6 +1228,10 @@
         "session_log": {
           "name": "Registro de sesión v2",
           "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
+        },
+        "session_log_restore": {
+          "name": "Restauración del registro de sesión",
+          "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
         }
       }
     },
@@ -1794,6 +1798,14 @@
       "pending": "Reiniciando…",
       "ownerOnly": "Solo el propietario de la sesión o un administrador del proyecto puede reiniciar esta sesión."
     }
+  },
+  "sessionDelete": {
+    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurar la sesión durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada sesión durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "restoring": "Restaurando la sesión…",
+    "undo": "Deshacer",
+    "restored": "Sesión restaurada",
+    "restoreFailed": "No se pudo restaurar la sesión"
   },
   "modelSelector": {
     "search": "Buscar modelos",
@@ -6893,8 +6905,6 @@
       "line120JsxTextFailedToLoadSessions": "No se pudieron cargar las sesiones",
       "line132JsxTextNoSessionsYet": "Aún no hay sesiones.",
       "line189JsxTextDeleteSession": "¿Eliminar sesión?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Esto destruirá permanentemente la rama y el sandbox de",
-      "line193JsxTextThisActionCannotBeUndone": ". Esta acción no se puede deshacer.",
       "line312JsxAttrAriaLabelSessionActions": "Acciones de sesión"
     },
     "componentsProjectsProjectSidebar": {
@@ -10769,6 +10779,7 @@
       "text2380f018cc45": "Buscar modelos…",
       "text23922935b1f8": "Conexión guardada",
       "text2395784386a5": "Elegir quién puede abrirla",
+      "text239ee7bae236": "Un miembro",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "Las sesiones llaman a la puerta de enlace dentro de tu propia pila, mediante tu propio dominio o túnel. Kortix no tiene ninguna credencial en ese recorrido ni visibilidad sobre él.",
       "text23b0caa9d34a": "Miembro eliminado",
@@ -12042,6 +12053,7 @@
       "text48845bff334a": "Descartar",
       "text4891f0add1ec": "Grupo desvinculado del proyecto",
       "text489314dd2a13": "Este enlace no se puede abrir.",
+      "text489b7ab47238": "por día",
       "text48b2c90ba0f7": "T1 26",
       "text48b8f318d5d6": "gobernanza: qué puede tocar cada agente",
       "text48bb9aa078f3": "Este conector gestiona la autenticación mediante su conexión de plataforma.",
@@ -14248,6 +14260,7 @@
       "text888f1dba5133": "El cómputo de sandbox se factura actualmente al",
       "text889485d2bdde": "Explicaciones diarias de la plataforma y sus funciones.",
       "text88a550e0f44e": "Se ejecuta en",
+      "text88b1d1a67e34": "por mes",
       "text88b1dfafbd5f": "Facturado por",
       "text88c2105adecf": "Responde a la pregunta anterior para continuar.",
       "text88c45d9e526c": "Colores",
@@ -15519,7 +15532,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "El ensamblaje, no el criterio.",
       "textac318011a661": "Cargar solicitudes anteriores",
-      "textac371f652a2d": "Esto destruye permanentemente la rama y el sandbox de cada sesión. No se puede deshacer.",
       "textac4059cfd550": "Cada cambio está versionado, es revisable y reversible",
       "textac454bda92f9": "Creando proyecto…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15787,7 +15799,6 @@
       "textb400f4160d8e": "Cargando el resumen de costes",
       "textb40f3be54b3e": "Elige una sesión",
       "textb4214ac48923": "Acceso de solo lectura",
-      "textb427c3dec904": "por",
       "textb439f94567ff": "Suscripción activada",
       "textb4415e2f9e92": "Vuelve a intentar la solicitud de auditoría de la sesión.",
       "textb4518309c8a3": "y cualquier otra sesión que inicies, cada una en su propia máquina",
@@ -16701,6 +16712,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "nombre del atributo",
       "textcdbf6975e8a3": "Objetivo",
+      "textcdca8801db76": "por semana",
       "textcdcdff6eb6db": "las herramientas que escribiste tú mismo",
       "textcdd3dd706df5": "Panel para crear tu propia aplicación con la opción Non-gallery seleccionada",
       "textcdd43080fef2": "Comparado aquí:",
@@ -19490,6 +19502,7 @@
       "texte7cd9e292007": "Indica qué debe hacer el agente.",
       "textb67ba8d96c42": "Ponle un nombre a este activador.",
       "text2b8e1487be3b": "Elige qué sesión usar.",
+      "text2b8fcd81df9b": "Se restablece el {value0}",
       "text473d5c3c6169": "Indica por qué agrupar las ejecuciones, para que cada conversación tenga su propia sesión.",
       "text8f4597a69c3c": "Cada condición necesita un campo y un valor.",
       "text01bed311e7d0": "Todas las aplicaciones",
