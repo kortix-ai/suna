@@ -1,8 +1,12 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from './exec';
+import type { Ports } from './ports';
+import { slotDbUrl } from './supabase';
 
-export async function runMigrate(worktreePath: string, url: string): Promise<number> {
+/** `db`: a database URL, or a slot's ports (its own Supabase's `postgres` database). */
+export async function runMigrate(worktreePath: string, db: string | Pick<Ports, 'sbDb'>): Promise<number> {
+  const url = typeof db === 'string' ? db : slotDbUrl(db);
   // Provision the Supabase-platform objects the baseline assumes. On a fresh
   // Supabase-local the roles + auth already exist (the script is non-clobbering),
   // but Basejump does NOT — Supabase doesn't ship it and the old supabase/

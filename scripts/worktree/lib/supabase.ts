@@ -68,9 +68,9 @@ export function slotDbUrl(ports: Pick<Ports, 'sbDb'>): string {
   return `postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres`;
 }
 
-export function hasKortixSchema(dbUrl: string): boolean {
+export function hasKortixSchema(db: string | Pick<Ports, 'sbDb'>): boolean {
   const sql = "select 1 from information_schema.tables where table_schema='kortix' limit 1";
-  return sh(['psql', dbUrl, '-XtAc', sql]).stdout.trim() === '1';
+  return sh(['psql', typeof db === 'string' ? db : slotDbUrl(db), '-XtAc', sql]).stdout.trim() === '1';
 }
 
 export function supa(name: string, args: string[], opts: { stream?: boolean } = {}): ShResult | Promise<number> {

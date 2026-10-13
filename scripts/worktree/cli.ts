@@ -23,7 +23,7 @@ import {
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
-  ensurePrimarySupabase, primaryCredsFromStatus, primarySupabaseStatusEnv, SHARED_SUPABASE_PORTS, supabaseBin, slotDbUrl,
+  ensurePrimarySupabase, primaryCredsFromStatus, primarySupabaseStatusEnv, SHARED_SUPABASE_PORTS, supabaseBin,
   branchDbName, primaryDb, branchDbExists, createBranchDb, syncBranchUsers, dropBranchDb, withDatabase,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
   listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
@@ -504,8 +504,8 @@ async function cmdCreate(a: Args) {
     if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
 
     step('Building schema (prereqs + pnpm migrate)');
-    if (await runMigrate(wtPath, slotDbUrl(entry.ports)) !== 0) die(`migrate failed — fix and re-run \`pnpm worktree create --name ${name}\``);
-    if (!hasKortixSchema(slotDbUrl(entry.ports))) die(`schema not built — \`pnpm migrate\` produced no kortix schema on branch "${branch}".\n  Check packages/db/migrations/*.sql exist on this branch and the Supabase prereqs applied (psql + Basejump).`);
+    if (await runMigrate(wtPath, entry.ports) !== 0) die(`migrate failed — fix and re-run \`pnpm worktree create --name ${name}\``);
+    if (!hasKortixSchema(entry.ports)) die(`schema not built — \`pnpm migrate\` produced no kortix schema on branch "${branch}".\n  Check packages/db/migrations/*.sql exist on this branch and the Supabase prereqs applied (psql + Basejump).`);
 
     step(`Starting isolated Supabase on api ${entry.ports.sbApi}`);
     if (await startSupabaseFullStack(name, entry.ports) !== 0) die('supabase start failed');
@@ -574,8 +574,8 @@ async function cmdStart(a: Args) {
     step(`Starting Postgres for "${name}"`);
     if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
     step('Applying pending migrations (pnpm migrate)');
-    if (await runMigrate(e.path, slotDbUrl(e.ports)) !== 0) die('migrate failed');
-    if (!hasKortixSchema(slotDbUrl(e.ports))) die(`schema not built for "${name}"`);
+    if (await runMigrate(e.path, e.ports) !== 0) die('migrate failed');
+    if (!hasKortixSchema(e.ports)) die(`schema not built for "${name}"`);
     if (!sh([supabaseBin(), '--workdir', supaWorkdir(name), 'status']).ok) {
       step(`Starting Supabase for "${name}"`);
       if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
