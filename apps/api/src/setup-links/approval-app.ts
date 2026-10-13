@@ -33,6 +33,7 @@ import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { mayResolveApproval } from '../projects/lib/approval-authority';
+import { actorOf } from '../middleware/actor';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
@@ -150,6 +151,7 @@ approvalLinksApp.openapi(createRoute({
     callerAuthType:
       ((c as unknown as { get(key: string): unknown }).get('authType') as string | undefined) ??
       null,
+    callerCredentialKind: (await actorOf(c, loaded.row.accountId)).credential.kind,
     callerSessionId: callerKortixSessionId(c),
   });
   if (!verdict.allowed) {

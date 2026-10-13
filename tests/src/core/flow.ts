@@ -220,11 +220,13 @@ export function harnessFlow(
   id: string,
   meta: FlowMeta,
   fn: (ctx: FlowContext, harness: Harness) => Promise<void>,
+  /** Meta that applies to the `-pi` twin only (e.g. a pi-only quarantine). */
+  piMeta: Partial<FlowMeta> = {},
 ): void {
   flow(id, meta, (ctx) => fn(ctx, "opencode"));
   flow(
     `${id}-pi`,
-    { ...meta, specId: id, tags: [...(meta.tags ?? []), "harness-pi"] },
+    { ...meta, ...piMeta, specId: id, tags: [...(meta.tags ?? []), "harness-pi"] },
     (ctx) => fn(ctx, "pi"),
   );
 }

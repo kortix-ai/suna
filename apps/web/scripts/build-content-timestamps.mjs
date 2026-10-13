@@ -23,12 +23,11 @@
 // commit is rebased or cherry-picked, which would mislead recency-aware
 // retrievers.
 //
-// A squash merge stamps a new committer date on the commit that carries the
-// content and the manifest the PR regenerated, and the manifest cannot know the
-// date of the commit it ships in. `staleContentTimestamps` therefore excuses an
-// entry whose content's last commit also touched the manifest: the commit that
-// carried the content also carried a regenerated manifest. Content changed
-// without the manifest still fails.
+// The committed manifest is only the fallback for builds that cannot read full
+// git history (a shallow clone). A date in it cannot be verified from the tree:
+// a squash merge stamps a new committer date on the commit that carries it.
+// `invalidContentTimestamps` therefore checks what the tree decides: the entry
+// keys equal the content sources on disk, and every value is an ISO instant.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -102,9 +101,9 @@ function gitAvailable() {
   }
 }
 
-function lastCommit(format, pathRelativeToRepo, rev = 'HEAD') {
+function lastCommit(format, pathRelativeToRepo) {
   try {
-    return execFileSync('git', ['log', '-1', `--format=${format}`, rev, '--', pathRelativeToRepo], {
+    return execFileSync('git', ['log', '-1', `--format=${format}`, 'HEAD', '--', pathRelativeToRepo], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
     }).trim();
@@ -178,20 +177,23 @@ function collectContentTimestampManifest() {
   return manifest;
 }
 
-// Keys of `committed` that differ from a fresh generation, minus the entries
-// whose content's last commit also touched the manifest (see the header). Empty without usable git history.
-function staleContentTimestamps(committed) {
-  if (!gitAvailable()) return [];
-  const manifestRel = relative(REPO_ROOT, MANIFEST_PATH).replaceAll('\\', '/');
+// Keys of `committed` that disagree with the content sources on disk: a source
+// without an entry, an entry without a source, or a value that is not an ISO
+// instant. Reads the tree only, so the result is the same on every branch.
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+function invalidContentTimestamps(committed) {
   const sources = contentSources();
-  const stale = [];
-  for (const key of new Set([...Object.keys(sources), ...Object.keys(committed)])) {
-    const iso = sources[key] ? (lastCommitIso(sources[key]) ?? undefined) : undefined;
-    if (iso === committed[key]) continue;
-    const contentCommit = iso && key in committed ? lastCommit('%H', sources[key]) : '';
-    if (!contentCommit || lastCommit('%H', manifestRel, contentCommit) !== contentCommit) stale.push(key);
+  const expected = Object.entries(sources)
+    .filter(([, rel]) => existsSync(join(REPO_ROOT, rel)))
+    .map(([key]) => key);
+  const invalid = [];
+  for (const key of new Set([...expected, ...Object.keys(committed)])) {
+    const value = committed[key];
+    const valid = expected.includes(key) && typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+    if (!valid) invalid.push(key);
   }
-  return stale.sort();
+  return invalid.sort();
 }
 
 function createContentTimestampManifest() {
@@ -234,4 +236,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
 }
 
-export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps, staleContentTimestamps };
+export { createContentTimestampManifest, invalidContentTimestamps, MANIFEST_PATH, refreshContentTimestamps };

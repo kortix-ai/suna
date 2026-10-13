@@ -6,9 +6,11 @@
  *   - re-resolving a resolved one 409s, an invalid decision 400s,
  *   - deny flips it to `denied`,
  *   - and the per-session /audit trail surfaces the action + who approved it.
- * Reuses the local DB's owner (a manager on every project) as the caller.
+ * Seeds its own account + project + owner: the db-suites lane hands every file
+ * a bare migrated template with no ambient rows, and a suite that borrowed the
+ * local dev DB's owner silently no-opped there.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import {
   accountMembers,
   auditEvents,
@@ -17,6 +19,7 @@ import {
   projectSessions,
   projects,
   sessionLifecycleCommands,
+  sessionSandboxes,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { getCreditAccount } from '../billing/repositories/credit-accounts';
@@ -26,11 +29,36 @@ import { deleteFromView, insertIntoView } from './helpers/compat-views';
 /** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
 const setDemoEnterprise = (accountId: string, enabled: boolean) =>
   applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
-import { config } from '../config';
-import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
+import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
+
+// Synthetic Supabase sessions for the two browser humans. This lane has no
+// reachable GoTrue (SUPABASE_URL points at a dead port on purpose), and five
+// repo test files replace the same module — the subjects here are the
+// approval-authority rules, not JWT verification.
+const HUMAN_SESSION = 'approvals-human-session';
+const READER_SESSION = 'approvals-reader-session';
+mock.module('../shared/jwt-verify', () => ({
+  verifySupabaseJwt: async (token: string) => {
+    if (token === HUMAN_SESSION) {
+      return { ok: true, userId: humanUserId, email: 'approvals-human@example.test', payload: {} };
+    }
+    if (token === READER_SESSION) {
+      return {
+        ok: true,
+        userId: readOnlyUserId,
+        email: 'approvals-reader@example.test',
+        payload: {},
+      };
+    }
+    return { ok: false, reason: 'invalid-signature' as const };
+  },
+  decodeSupabaseJwtPayload: () => null,
+}));
+
+const { app } = await import('../index');
 
 const minted: string[] = [];
 const execIds: string[] = [];
@@ -38,10 +66,11 @@ const SESSION = crypto.randomUUID();
 const CHAIN_SESSION = crypto.randomUUID();
 const CHAIN_PROJECT = crypto.randomUUID();
 let ctx: { projectId: string; accountId: string; userId: string } | null = null;
+let seeded: SeededProject | null = null;
 let secret = '';
-let humanToken = '';
+let humanToken = HUMAN_SESSION;
 let humanUserId = '';
-let readOnlyToken = '';
+let readOnlyToken = READER_SESSION;
 let readOnlyUserId = '';
 let priorDemoEnterprise = false;
 
@@ -56,15 +85,18 @@ beforeAll(async () => {
   await db.execute(
     sql`alter table kortix.credit_accounts add column if not exists demo_enterprise boolean not null default false`,
   );
-  const rows = (await db.execute(sql`
-    select p.project_id, p.account_id, m.user_id
-    from kortix.projects p
-    join kortix.account_members m on m.account_id = p.account_id and m.account_role = 'owner'
-    where p.status = 'active'
-    limit 1`)) as unknown as Array<{ project_id: string; account_id: string; user_id: string }>;
-  const r = rows[0];
-  if (!r) return;
-  ctx = { projectId: r.project_id, accountId: r.account_id, userId: r.user_id };
+  const rows = await seedProject('approvals');
+  seeded = rows;
+  // The PAT holder: a real user id with the OWNER role. No Supabase user is
+  // needed — PAT authentication resolves the user from the token row itself,
+  // which is exactly the CLI path under test here.
+  const ownerUserId = crypto.randomUUID();
+  ctx = { projectId: rows.project_id, accountId: rows.account_id, userId: ownerUserId };
+  await insertIntoView(db, accountMembers, {
+    accountId: ctx.accountId,
+    userId: ownerUserId,
+    accountRole: 'owner',
+  });
   const t = await createAccountToken({
     accountId: ctx.accountId,
     userId: ctx.userId,
@@ -72,37 +104,15 @@ beforeAll(async () => {
   });
   minted.push(t.tokenId);
   secret = t.secretKey;
-  const email = `approvals-${crypto.randomUUID()}@example.test`;
-  const password = `Approval-${crypto.randomUUID()}-aA1!`;
-  const created = await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: config.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, password, email_confirm: true }),
-  });
-  expect(created.status).toBe(200);
-  const createdBody = (await created.json()) as { id?: string; user?: { id?: string } };
-  humanUserId = createdBody.user?.id ?? createdBody.id ?? '';
-  expect(humanUserId).not.toBe('');
+  // The browser human: a second owner with a synthetic Supabase session (the
+  // jwt-verify mock below answers for it — this lane has no reachable GoTrue,
+  // and five repo test files replace the same module).
+  humanUserId = crypto.randomUUID();
   await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: humanUserId,
     accountRole: 'owner',
   });
-  const signedIn = await fetch(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: {
-      apikey: config.SUPABASE_SERVICE_ROLE_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, password }),
-  });
-  expect(signedIn.status).toBe(200);
-  humanToken = ((await signedIn.json()) as { access_token?: string }).access_token ?? '';
-  expect(humanToken).not.toBe('');
   await db.insert(projectSessions).values({
     sessionId: SESSION,
     accountId: ctx.accountId,
@@ -111,50 +121,19 @@ beforeAll(async () => {
     createdBy: humanUserId,
     visibility: 'private',
   });
-  const readOnlyEmail = `approvals-reader-${crypto.randomUUID()}@example.test`;
-  const readOnlyPassword = `Approval-Reader-${crypto.randomUUID()}-aA1!`;
-  const readOnlyCreated = await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: config.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email: readOnlyEmail,
-      password: readOnlyPassword,
-      email_confirm: true,
-    }),
-  });
-  expect(readOnlyCreated.status).toBe(200);
-  const readOnlyCreatedBody = (await readOnlyCreated.json()) as {
-    id?: string;
-    user?: { id?: string };
-  };
-  readOnlyUserId = readOnlyCreatedBody.user?.id ?? readOnlyCreatedBody.id ?? '';
-  expect(readOnlyUserId).not.toBe('');
+  const readOnlyUserIdCandidate = crypto.randomUUID();
   await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
-    userId: readOnlyUserId,
+    userId: readOnlyUserIdCandidate,
     accountRole: 'member',
   });
   await insertIntoView(db, projectMembers, {
     accountId: ctx.accountId,
     projectId: ctx.projectId,
-    userId: readOnlyUserId,
+    userId: readOnlyUserIdCandidate,
     projectRole: 'member',
   });
-  const readOnlySignedIn = await fetch(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: {
-      apikey: config.SUPABASE_SERVICE_ROLE_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email: readOnlyEmail, password: readOnlyPassword }),
-  });
-  expect(readOnlySignedIn.status).toBe(200);
-  readOnlyToken = ((await readOnlySignedIn.json()) as { access_token?: string }).access_token ?? '';
-  expect(readOnlyToken).not.toBe('');
+  readOnlyUserId = readOnlyUserIdCandidate;
   // The full-trail assertions below need the auditAccess entitlement; flip the
   // enterprise demo on for the suite (restored in afterAll). The unentitled
   // contract has its own dedicated test that toggles it off.
@@ -177,19 +156,21 @@ afterAll(async () => {
   await db.delete(projects).where(eq(projects.projectId, CHAIN_PROJECT));
   for (const id of minted)
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
+  if (ctx) {
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${ctx.userId}`,
+    );
+  }
+  if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
+  if (seeded) await removeSeeded([seeded]);
   if (ctx && humanUserId) {
     await deleteFromView(
       db,
       accountMembers,
       sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
     );
-    await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${humanUserId}`, {
-      method: 'DELETE',
-      headers: {
-        apikey: config.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
   }
   if (ctx && readOnlyUserId) {
     await deleteFromView(
@@ -202,15 +183,7 @@ afterAll(async () => {
       accountMembers,
       sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
     );
-    await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${readOnlyUserId}`, {
-      method: 'DELETE',
-      headers: {
-        apikey: config.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
   }
-  if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
 }, 30_000);
 
 async function seedPending(
@@ -480,14 +453,68 @@ describe('approvals inbox + resolution', () => {
     expect(text).not.toContain('continue without it');
   });
 
-  test('a PAT cannot approve even when it belongs to an account owner', async () => {
+  test('a personal PAT approves like its owner — the CLI resolve path (KRTX-1921)', async () => {
     if (!ctx) return;
     const execId = await seedPending();
     const response = await patPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
       decision: 'approve',
     });
+    expect(response.status).toBe(200);
+    const [after] = await db
+      .select()
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
+    // The decision lands exactly as it would from the dashboard: the gate
+    // opens, the resolver is the token's user, the agent is resumed.
+    expect(after.status).toBe('ok');
+    expect(after.approvedBy).toBe(ctx.userId);
+    expect(after.resolvedAt).toBeTruthy();
+    const [callback] = await db
+      .select()
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, `approval-resume:${execId}`));
+    expect(callback?.commandType).toBe('continue_session');
+  });
+
+  test('a session-bound PAT (an agent connector token) still cannot approve', async () => {
+    if (!ctx) return;
+    const sandboxId = crypto.randomUUID();
+    await db.insert(sessionSandboxes).values({
+      sandboxId,
+      sessionId: SESSION,
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      status: 'active',
+    });
+    const agentToken = await createAccountToken({
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      projectId: ctx.projectId,
+      name: 'approvals-test-agent-connector',
+      sessionId: SESSION,
+    });
+    minted.push(agentToken.tokenId);
+    const execId = await seedPending();
+    const response = await app.request(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${agentToken.secretKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ decision: 'approve' }),
+    });
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'APPROVAL_REQUIRES_HUMAN' });
+    // The self-approval refusal, not the generic sign-in wall: the token is
+    // bound to the very session whose call it tries to approve.
+    expect(await response.json()).toMatchObject({
+      error: 'An agent cannot resolve its own approval — a human must approve or deny this',
+    });
+    const [after] = await db
+      .select()
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
+    expect(after.status).toBe('pending_approval');
+    await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sandboxId));
   });
 
   test('the shared approval link requires a human account and returns complete parameters', async () => {
@@ -502,11 +529,19 @@ describe('approvals inbox + resolution', () => {
     const anonymous = await app.request(`/v1/approval-links/${token}`);
     expect(anonymous.status).toBe(401);
 
-    const automated = await app.request(`/v1/approval-links/${token}`, {
+    // The owner's personal PAT is the same human their browser session is —
+    // the link read follows the resolve rule (KRTX-1921), so it sees the
+    // complete parameters too.
+    const patCaller = await app.request(`/v1/approval-links/${token}`, {
       headers: { Authorization: `Bearer ${secret}` },
     });
-    expect(automated.status).toBe(403);
-    expect(await automated.json()).toMatchObject({ code: 'APPROVAL_REQUIRES_HUMAN' });
+    expect(patCaller.status).toBe(200);
+    expect(await patCaller.json()).toMatchObject({
+      execution_id: execId,
+      pending: true,
+      review_complete: true,
+      args_preview: { repo: 'kortix-ai/suna' },
+    });
 
     const human = await authGet(`/v1/approval-links/${token}`);
     expect(human.status).toBe(200);
@@ -567,16 +602,21 @@ describe('approvals inbox + resolution', () => {
       args_preview_authorized: false,
     });
 
-    const automated = await patGet(path);
-    expect(automated.status).toBe(200);
-    const automatedBody = (await automated.json()) as {
+    // The owner's personal PAT resolves, so it may see the same parameters
+    // the owner's browser session sees — read follows resolve (KRTX-1921).
+    const patOwner = await patGet(path);
+    expect(patOwner.status).toBe(200);
+    const patOwnerBody = (await patOwner.json()) as {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
-    const automatedItem = automatedBody.review_items.find(
+    const patOwnerItem = patOwnerBody.review_items.find(
       (item) => item.review_item_id === `call:${execId}`,
     );
-    expect(automatedItem?.detail).not.toHaveProperty('args_preview');
-    expect(automatedItem?.detail).toMatchObject({ args_preview_authorized: false });
+    expect(patOwnerItem?.detail).toMatchObject({
+      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview_complete: true,
+      args_preview_authorized: true,
+    });
   });
 
   test('a TRUNCATED parameter preview is approvable — the elision is visible', async () => {

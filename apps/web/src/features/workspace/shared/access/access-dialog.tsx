@@ -293,6 +293,45 @@ export function diffAccessDraft(current: AccessDialogCurrent, next: AccessDraft)
   };
 }
 
+/**
+ * The writers an account-scope edit runs. Injected so the write plan is
+ * assertable without React — the same seam `diffAccessDraft` uses for the
+ * diff.
+ */
+export interface AccountEditWriters {
+  /** Revoke the principal's existing custom-role assignment, if any. */
+  revokeCustomRole: () => Promise<unknown>;
+  /** Move the built-in baseline on the account member row. */
+  setBuiltinRole: (role: AccountRole) => Promise<unknown>;
+  /** Bind the custom role: ONE assignment row carrying the expiry. */
+  assignCustomRole: (roleId: string, expiresIso: string | undefined) => Promise<unknown>;
+}
+
+/**
+ * The account-edit write plan, isolated from React so it can be asserted
+ * directly. Order matters: the old custom row is revoked before the new one
+ * lands (delete-then-create, like the project path), and the built-in
+ * baseline moves only when the role itself changed — an expiry-only edit
+ * re-assigns the custom row and leaves the member row alone.
+ */
+export async function writeAccountEdit(
+  diff: AccessDraftDiff,
+  current: AccessDialogCurrent,
+  role: RoleValue,
+  expiresIso: string | undefined,
+  writers: AccountEditWriters,
+): Promise<void> {
+  // An expiry-only edit must reach the assignment writer too: the expiry is
+  // written on the custom role's assignment row, not on the member row.
+  if (!diff.roleChanged && !diff.expiryChanged) return;
+  if (current.role.kind === 'custom') await writers.revokeCustomRole();
+  if (diff.roleChanged) {
+    await writers.setBuiltinRole((baselineBuiltinRole('account', role) ?? 'member') as AccountRole);
+  }
+  const roleId = role.kind === 'custom' ? role.roleId : null;
+  if (roleId) await writers.assignCustomRole(roleId, expiresIso);
+}
+
 export interface AccessDialogCopy {
   title: string;
   description: string;
@@ -889,17 +928,14 @@ function PrincipalAccessDialog({
         {
           principalId: principal.id,
           kind: 'other',
-          run: async () => {
-            if (!diff.roleChanged) return;
-            if (current.role.kind === 'custom') {
-              await revokeCustomRole('member', principal.id, null, current.assignmentId);
-            }
-            const next = (baselineBuiltinRole('account', role) ?? 'member') as AccountRole;
-            await updateAccountMemberRole(accountId, principal.id, next);
-            if (roleId) {
-              await assignCustomRole('member', principal.id, roleId, null, expiresIso);
-            }
-          },
+          run: () =>
+            writeAccountEdit(diff, current, role, expiresIso, {
+              revokeCustomRole: () =>
+                revokeCustomRole('member', principal.id, null, current.assignmentId),
+              setBuiltinRole: (next) => updateAccountMemberRole(accountId, principal.id, next),
+              assignCustomRole: (customRoleId, customExpiresIso) =>
+                assignCustomRole('member', principal.id, customRoleId, null, customExpiresIso),
+            }),
         },
       ];
     }

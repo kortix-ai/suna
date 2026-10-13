@@ -15,6 +15,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
+import { actorOf } from '../../middleware/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -128,6 +129,10 @@ export function registerReviewItemsRoutes(): void {
             )
         : [];
       const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
+      // The resolved actor carries the credential kind, so a personal PAT (the
+      // person's own CLI token) counts as the human it belongs to — same rule
+      // as the resolve endpoint itself.
+      const actor = await actorOf(c, loaded.row.accountId);
       const previewExecutionIds = new Set(
         pendingExecutions
           .filter((execution) => {
@@ -141,6 +146,7 @@ export function registerReviewItemsRoutes(): void {
                 session?.createdBy ?? (execution.sessionId ? null : execution.actingUserId),
               callerUserId: loaded.userId,
               callerAuthType: (c.get('authType') as string | undefined) ?? null,
+              callerCredentialKind: actor.credential.kind,
               callerSessionId: callerKortixSessionId(c),
             }).allowed;
           })
