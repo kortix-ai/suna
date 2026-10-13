@@ -6,7 +6,7 @@
  * block-native cases.
  */
 import type { Part, ToolPart } from '../../runtime/runtime-types';
-import { toToolView } from '../../turns/classify';
+import { classifyTurn, toToolView, type ClassifiedTurn } from '../../turns/classify';
 import { isReasoningPart, isToolPart } from '../../turns/parts';
 import { burstSummary, type BurstSummary } from '../../turns/segments/burst-summary';
 import { mergeBurstSteps, reasoningIsRunning, type BurstStep } from '../../turns/segments/merge-steps';
@@ -175,4 +175,17 @@ export function sessionLogAnsweredQuestionCall(call: ToolCallBlock, answers: str
     ...part,
     state: { ...state, status: 'completed', ...(input !== undefined && { input }), metadata: { ...(state.metadata ?? {}), answers } },
   } as ToolPart);
+}
+
+/**
+ * `classifyTurn` of one session-log message: its blocks as `ClassifiedPart`s, through the v1 rows
+ * `toV1` gives the message (exact for a converted record, the builder's rows for a native one),
+ * and its error normalized with the gateway's own sentence. A compaction is one message: the
+ * marker's parts, then the summary's. Transitional, as `toolCallBlock`: it goes with
+ * `ClassifiedPart` (P8.4).
+ */
+export function classifySessionLogMessage(message: SessionLogMessage): ClassifiedTurn {
+  const rows = v1RowsOf(message).map((row) => classifyTurn(row));
+  const error = rows.find((row) => row.error)?.error;
+  return { parts: rows.flatMap((row) => row.parts), error, isEmpty: rows.every((row) => row.isEmpty) && !error };
 }

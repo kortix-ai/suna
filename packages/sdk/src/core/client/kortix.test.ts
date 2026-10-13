@@ -737,6 +737,12 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
   expect(last().url).toContain('/billing/tier-configurations');
 });
 
+test('session(...).log reads one page of the stored session log', async () => {
+  // The stub answers no page shape, so the read rejects after the request.
+  await expect(kortix.session('PID123', 'SID456').log({ thread: 'ses_c', limit: 5 })).rejects.toThrow('not a session log page');
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/log?thread=ses_c&limit=5');
+});
+
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
   expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');

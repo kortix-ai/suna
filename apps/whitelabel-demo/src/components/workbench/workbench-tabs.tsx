@@ -21,7 +21,7 @@ import { SessionScope } from '@/components/workbench/session-scope';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { sendFailureTitle } from '@/lib/send-failure';
 import { cn } from '@/lib/utils';
-import type { UseSessionResult } from '@kortix/sdk/react';
+import { type UseSessionResult, useSessionLogThread } from '@kortix/sdk/react';
 import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
@@ -166,11 +166,14 @@ function Thread({ session: c }: { session: UseSessionResult }) {
 
 function MessageList({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The session log's root thread: the API's kortix.session/2 records, or the
+  // `fromV1` view of the runtime's rows while the session reads v1.
+  const messages = useSessionLogThread(c)?.messages ?? [];
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [c.messages, c.isBusy, c.hasPending]);
+  }, [messages, c.isBusy, c.hasPending]);
 
   return (
     <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
@@ -180,7 +183,7 @@ function MessageList({ session: c }: { session: UseSessionResult }) {
             <Loading className="size-4" /> Loading conversation…
           </div>
         )}
-        {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
+        {!c.isLoading && messages.length === 0 && !c.hasPending && !c.pending && (
           <div className="grid place-items-center py-16 text-center">
             <Sparkles className="size-6 text-muted-foreground" />
             <p className="mt-3 text-sm text-muted-foreground">
@@ -189,8 +192,8 @@ function MessageList({ session: c }: { session: UseSessionResult }) {
           </div>
         )}
 
-        {c.messages.map((m) => (
-          <MessageView key={m.info.id} message={m} />
+        {messages.map((m) => (
+          <MessageView key={m.message_id} message={m} />
         ))}
 
         {c.pending && (
