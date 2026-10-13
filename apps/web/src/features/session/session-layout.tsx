@@ -68,7 +68,7 @@ export const SessionLayout = memo(function SessionLayout({
   const { isSidePanelOpen, isExpanded, panelSplit, panelAspect, shouldShowPanel } =
     useSessionPanelSplitState();
 
-  const { messages, isSessionBusy, isEasy, effectiveView, auditPendingCount, togglePanelMode } =
+  const { isSessionBusy, isEasy, effectiveView, auditPendingCount, togglePanelMode } =
     useSessionPanelView({ sessionId, projectId, projectSessionId, transient, booting });
   useSessionPanelSessionSync({ sessionId, projectSessionId, transient });
   const panels = useSessionPanelLayout({
@@ -104,7 +104,6 @@ export const SessionLayout = memo(function SessionLayout({
     projectId,
     projectSessionId,
     ...panels,
-    messages,
     isSessionBusy,
     effectiveView,
     auditPendingCount,
@@ -306,18 +305,13 @@ const withPanelProvider = (
     sessionId,
     projectId,
     projectSessionId,
-    messages,
     isSessionBusy,
-  }: Pick<
-    SessionPanelProps,
-    'sessionId' | 'projectId' | 'projectSessionId' | 'messages' | 'isSessionBusy'
-  >,
+  }: Pick<SessionPanelProps, 'sessionId' | 'projectId' | 'projectSessionId' | 'isSessionBusy'>,
   node: React.ReactNode,
 ) => (
   <ProviderPoolDraftBoundary identity={`${projectId}/${projectSessionId ?? sessionId}`}>
     <SessionPanelProvider
       sessionId={sessionId}
-      messages={messages}
       isSessionBusy={isSessionBusy}
       projectId={projectId}
       projectSessionId={projectSessionId}
