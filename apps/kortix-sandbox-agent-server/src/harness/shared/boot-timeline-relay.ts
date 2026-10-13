@@ -9,8 +9,8 @@ import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
  *
  * WHY: `GET /kortix/health` already exposes `bootState.timeline` (see
  * routes/health.ts's `boot_timeline` field), but nothing on the server ever
- * stores it — so the 11-15s of in-guest boot latency (repo-materialized,
- * opencode-session-created, ...) is unattributable after the fact, unlike the
+ * stores it — so the in-guest boot latency (config-release-fetched,
+ * pi-ready, opencode-session-created, ...) is unattributable after the fact, unlike the
  * HOST side which IS persisted (kortix.provider_events.marks, written by
  * apps/api/src/platform/services/provider-events.ts's recordProviderEvent).
  * This module closes that gap by POSTing the same timeline server-side.

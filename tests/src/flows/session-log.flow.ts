@@ -305,23 +305,27 @@ flow(
         }
       });
 
-      await ctx.step("inside a sandbox (the session-bound KORTIX_TOKEN, which GET …/log refuses with 403) the real CLI exits 0 and reads the v1 transcript as kortix.session/2, source v1", async () => {
+      await ctx.step("inside a sandbox (the session-bound KORTIX_TOKEN) GET …/log → 200 with the owner's body, and the real CLI exits 0 and prints the stored log, source log", async () => {
+        const page = (await owner.get(LOG, { params, query: { limit: 500 } })).status(200).json<{ threads: Array<{ thread_id: string }>; thread_id: string; messages: Array<{ message_id: string }> }>();
+        const boxPage = (await box.get(LOG, { params, query: { limit: 500 } })).status(200).json();
+        if (JSON.stringify(boxPage) !== JSON.stringify(page)) throw new Error("the session-bound token read another body than the owner");
         const cli = new CliSandbox("slog-box");
         try {
           const run = await cli.run(["sessions", "log", sessionId, "--json", "--limit", "500"], { env: { KORTIX_TOKEN: secret, KORTIX_PROJECT_ID: project.id } });
           throwIfCliInfraFailure(run, "kortix sessions log (session-bound token)");
           if (run.exitCode !== 0) throw new Error(`kortix sessions log exited ${run.exitCode}: ${run.all}`);
-          const out = JSON.parse(run.stdout) as { schema: string; source: string; threads: Array<{ thread_id: string; messages: unknown[] }> };
-          if (out.schema !== "kortix.session/2" || out.source !== "v1") throw new Error(`schema ${out.schema}, source ${out.source}`);
-          if (out.threads.length !== 1 || out.threads[0]!.thread_id !== root || out.threads[0]!.messages.length === 0) throw new Error(`threads: ${run.stdout.slice(0, 300)}`);
-          if (!run.stderr.includes("Saved transcript")) throw new Error(`log did not name its source: ${run.stderr}`);
+          const out = JSON.parse(run.stdout) as { schema: string; source: string; threads: Array<{ thread_id: string; messages: Array<{ message_id: string }> }> };
+          if (out.schema !== "kortix.session/2" || out.source !== "log") throw new Error(`schema ${out.schema}, source ${out.source}`);
+          if (out.threads.map((t) => t.thread_id).join() !== page.threads.map((t) => t.thread_id).join()) throw new Error(`threads ${out.threads.map((t) => t.thread_id)} vs ${page.threads.map((t) => t.thread_id)}`);
+          const rootOut = out.threads.find((t) => t.thread_id === page.thread_id)!;
+          if (rootOut.messages.map((m) => m.message_id).join() !== page.messages.map((m) => m.message_id).join()) throw new Error("root thread differs from GET …/log");
+          if (!run.stderr.includes("Stored session log")) throw new Error(`log did not name its source: ${run.stderr}`);
         } finally {
           cli.dispose();
         }
       });
 
-      await ctx.step("the session sandbox credential cannot read the log → 403; a bad before_seq → 400; an unknown thread → 404", async () => {
-        (await box.get(LOG, { params })).status(403);
+      await ctx.step("a bad before_seq → 400; an unknown thread → 404", async () => {
         (await owner.get(LOG, { params, query: { before_seq: "x" } })).status(400);
         (await owner.get(LOG, { params, query: { thread: "ses_not_a_thread" } })).status(404);
       });

@@ -191,7 +191,6 @@ export function AccountHubContent() {
   // falsy, so it is safe to call before the account query resolves.
   const {
     canReadMembers,
-    canReadGroups,
     canReadRoles,
     canReadPolicies,
     canReadAudit,
@@ -210,7 +209,7 @@ export function AccountHubContent() {
   // Shared with the settings shell's breadcrumb — same key, one request.
   const accountQuery = useAccountDetail(accountId);
 
-  const membersQuery = useAccountMembers(accountId, canReadMembers);
+  const membersQuery = useAccountMembers(accountId);
 
   // Enterprise identity (SSO + SCIM) is gated on the account's plan. The cards
   // render only when the tier carries the entitlement — mirrors the server-side
@@ -425,6 +424,7 @@ export function AccountHubContent() {
                 canManageRoles={canManageRoles}
                 canReadRoles={canReadRoles}
                 canReadPolicies={canReadPolicies}
+                canReadMembers={canReadMembers}
                 onSelectMember={(id) => navigate('members', { member: id })}
                 onInvite={() => openInvite(account)}
               />
@@ -444,6 +444,7 @@ export function AccountHubContent() {
                 accountName={account.name}
                 currentUserId={user.id}
                 canUpdateRole={canUpdateMember}
+                canReadMembers={canReadMembers}
                 onSelectMember={(id) => navigate('members', { member: id })}
                 selectedGroupId={selectedAccessGroupId}
                 onSelectGroup={(id) => navigate('groups', { group: id })}
@@ -1045,6 +1046,7 @@ function MembersCard({
   canManageRoles,
   canReadRoles,
   canReadPolicies,
+  canReadMembers,
   onSelectMember,
   onInvite,
 }: {
@@ -1071,6 +1073,9 @@ function MembersCard({
   canReadRoles: boolean;
   /** `policy.read` — the leaf `GET .../iam/policies` asserts. */
   canReadPolicies: boolean;
+  /** `member.read` — another member's access panel reads `.../iam/members/:id/*`,
+   *  which asserts it. Without it, "View access" is offered on the own row only. */
+  canReadMembers: boolean;
   /** Opens one member's `MemberAccessPanel` in this same pane
    *  (`?tab=members&member=<id>`) — no route change, the rail stays. */
   onSelectMember: (userId: string) => void;
@@ -1480,11 +1485,13 @@ function MembersCard({
                         }),
                     });
                   }
-                  kebab.push({
-                    label: tI18nComplete.raw('textf5462009cf42'),
-                    icon: <KeyRound className="size-3.5" />,
-                    onSelect: () => onSelectMember(member.user_id),
-                  });
+                  if (canReadMembers || isSelf) {
+                    kebab.push({
+                      label: tI18nComplete.raw('textf5462009cf42'),
+                      icon: <KeyRound className="size-3.5" />,
+                      onSelect: () => onSelectMember(member.user_id),
+                    });
+                  }
                   if (canRemove && !isSelf) {
                     kebab.push({
                       label: tI18nComplete.raw('text6bfa319e3d20'),

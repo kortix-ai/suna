@@ -48,6 +48,7 @@ function deps(invalidated: string[]): DesiredReleaseDeps {
     ledger: new MemoryConfigReleaseLedger(),
     build: async () => RELEASE,
     resolveBase: async () => TIP,
+    readBase: async () => TIP,
     loadRoster: async () => ROSTER,
     invalidate: (projectId) => invalidated.push(projectId),
   };
@@ -91,5 +92,25 @@ describe('resolveDesiredRelease decides when to refresh the mirror', () => {
       deps(calls),
     );
     expect(calls).toEqual([PROJECT.projectId]);
+  });
+
+  test('a boot whose tip the mirror already holds is answered without a forced fetch', async () => {
+    const calls: string[] = [];
+    const desired = await resolveDesiredRelease(
+      { project: PROJECT, baseRef: 'main', sessionAgent: null, repositoryAccess: true, bootTip: TIP },
+      deps(calls),
+    );
+    expect(calls).toEqual([]);
+    expect(desired.baseSha).toBe(TIP);
+  });
+
+  test('a boot tip the mirror does not hold refreshes: the hint never chooses the release', async () => {
+    const calls: string[] = [];
+    const desired = await resolveDesiredRelease(
+      { project: PROJECT, baseRef: 'main', sessionAgent: null, repositoryAccess: true, bootTip: 'd'.repeat(40) },
+      deps(calls),
+    );
+    expect(calls).toEqual([PROJECT.projectId]);
+    expect(desired.baseSha).toBe(TIP);
   });
 });
