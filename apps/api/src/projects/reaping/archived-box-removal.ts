@@ -123,9 +123,16 @@ export async function attemptArchivedBoxRemoval(
   now = new Date(),
 ): Promise<'removed' | 'failed' | 'skipped'> {
   if (!isAllowedProvider(row.provider)) return 'skipped';
-  const provider = getProvider(row.provider as SandboxProviderName);
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
   const attempts = Number(metadata.providerRemovalAttempts ?? 0) || 0;
+  let provider: ReturnType<typeof getProvider>;
+  try {
+    // Throws synchronously for a provider this deployment cannot construct.
+    provider = getProvider(row.provider as SandboxProviderName);
+  } catch (error) {
+    await markRemovalFailed(row.sandboxId, attempts + 1, error, now).catch(() => undefined);
+    return 'failed';
+  }
   try {
     await provider.remove(row.externalId);
     await markRemoved(row.sandboxId, now);

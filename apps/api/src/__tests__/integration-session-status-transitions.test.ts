@@ -32,20 +32,25 @@ let providerStarts = 0;
 let onProviderStart: () => Promise<void> = async () => {};
 /** Compute meters (re)opened: one per runtime that became active. */
 let computeReopens = 0;
+/** `getProvider` throws synchronously for a provider the deployment cannot build. */
+let providerUnbuildable = false;
 mock.module('../platform/providers', () => ({
   ...realProviders,
-  getProvider: () => ({
-    start: async () => {
-      providerStarts += 1;
-      await onProviderStart();
-    },
-    stop: async () => {
-      providerStops += 1;
-      await onProviderStop();
-    },
-    remove: async () => onProviderRemove(),
-    getStatus: async () => providerStatus,
-  }),
+  getProvider: () => {
+    if (providerUnbuildable) throw new Error('DAYTONA_API_KEY is not set');
+    return {
+      start: async () => {
+        providerStarts += 1;
+        await onProviderStart();
+      },
+      stop: async () => {
+        providerStops += 1;
+        await onProviderStop();
+      },
+      remove: async () => onProviderRemove(),
+      getStatus: async () => providerStatus,
+    };
+  },
 }));
 // The delete clears the session's stored attachments in object storage, which
 // this lane does not run. The database half of the delete is the subject.
@@ -1206,6 +1211,24 @@ describe('restore (restoreSession)', () => {
     } finally {
       console.warn = warn;
       onProviderRemove = async () => {};
+    }
+  });
+
+  test('a provider this deployment cannot build refuses the restore with 409, never a throw', async () => {
+    providerUnbuildable = true;
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      // The delete's own attempt records the failure instead of rejecting.
+      const f = await deletedFixture();
+      expect((await read(f)).sandbox.metadata.providerRemovalAttempts).toBe(1);
+      expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+      const { session, sandbox } = await read(f);
+      expect(sandbox.metadata.providerRemovalAttempts).toBe(2);
+      expect(typeof session.metadata.deletedAt).toBe('string');
+    } finally {
+      providerUnbuildable = false;
+      console.warn = warn;
     }
   });
 
