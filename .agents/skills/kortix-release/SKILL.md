@@ -91,6 +91,13 @@ gh pr create --repo kortix-ai/suna --base staging --head "promote/dev-$SHA10" \
 If no green run exists, `dev` is red: fix `dev` first (the red run's commit
 comment names the failing lanes and suspects). Do not promote a red SHA.
 
+The promotion is conflict-free only while `origin/staging` is an ancestor of
+`dev`. Check it before you push: `git merge-base --is-ancestor origin/staging
+origin/dev`. A hotfix merged straight into `staging` breaks that. Merge
+`origin/staging` back into `dev` through a PR the same day the hotfix lands,
+then promote a green SHA after that merge. A conflicting promotion PR runs no
+workflow at all: GitHub builds no merge ref (2026-10-13, #9701).
+
 ### Step 3 — the staging PR is the gate
 
 The PR into `staging` runs `Tests`, `CI`, CodeQL (`Analyze
