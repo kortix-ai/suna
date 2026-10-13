@@ -324,17 +324,20 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   });
 
   // A warm box bills compute from creation (sandbox-deadline-policy.ts
-  // warmPoolGrantMs) until the reaper or the user stops it. A billed session
-  // the list hides is money its owner cannot see, open or stop, so a warm row
-  // that is still provisioning or running lists in the `visible` scope like
-  // any other session. The marker keeps hiding the row once nothing bills —
-  // stopped, failed, completed.
-  test('a warm session that is up and billing lists in the visible scope', () => {
-    expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual(['billed-warm']);
+  // warmPoolGrantMs) until the reaper or the user stops it. Even so the row
+  // stays hidden from the `visible` scope for as long as it carries the
+  // marker: a warm row listed as an untitled "New session" that spins for the
+  // whole grant is the worst of both worlds — a phantom row the user never
+  // started, on the one list they read constantly. The money stays visible
+  // where lifecycle work happens: the manager `project` scope keeps a live
+  // warm row listed (see the manager test below), and open/stop/delete by id
+  // never consulted the marker.
+  test('a warm session that is up and billing stays hidden from the sidebar', () => {
+    expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual([]);
   });
 
-  test('a warm session still provisioning lists too — its box is about to bill', () => {
-    expect(visible([row('warming-up', { status: 'provisioning', metadata: { warm: true } })])).toEqual(['warming-up']);
+  test('a warm session still provisioning stays hidden too', () => {
+    expect(visible([row('warming-up', { status: 'provisioning', metadata: { warm: true } })])).toEqual([]);
   });
 
   test('a warm session that failed before its box came up stays hidden', () => {
@@ -343,6 +346,24 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
 
   test('a used session lists like any other — the first prompt drops the marker', () => {
     expect(visible([row('used-warm', { metadata: {} })])).toEqual(['used-warm']);
+  });
+
+  // The money-visibility half of KRTX-1068 lives here now: the manager
+  // inventory keeps a live billed warm row listed so its owner can see and
+  // stop it, even though the sidebar hides it.
+  test('manager project scope keeps a live billed warm row listed', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('billed-warm', { metadata: { warm: true } })],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['billed-warm']);
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
