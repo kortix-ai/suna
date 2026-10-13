@@ -7,7 +7,8 @@
 #   on  <version>   activate a non-dismissible CRITICAL banner ("new version
 #                   rolling out, may be briefly unavailable") at the START of the
 #                   rollout, so every user sees it for the whole window.
-#   off             clear it (level none) — only called AFTER the rollout is green.
+#   off             clear it (level none) — called when the run ends, whatever its
+#                   result (success, failure or cancel).
 #
 # It writes the same dual database + Vercel Edge Config state the admin console
 # uses, via `PUT /api/maintenance` on the web app.
@@ -48,10 +49,19 @@ put() {
   local body
   body="$(jq -n --arg l "$1" --arg t "$2" --arg m "$3" \
     '{level:$l, title:$t, message:$m, startTime:null, endTime:null}')"
-  curl -fsS --max-time 15 -X PUT "$ENDPOINT" \
-    -H "Authorization: Bearer ${MAINTENANCE_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "$body" >/dev/null
+  local attempt
+  for attempt in 1 2 3 4; do
+    if curl -fsS --max-time 15 -X PUT "$ENDPOINT" \
+      -H "Authorization: Bearer ${MAINTENANCE_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "$body" >/dev/null; then
+      return 0
+    fi
+    echo "::warning::Banner PUT attempt ${attempt}/4 failed." >&2
+    [[ "$attempt" -lt 4 ]] && sleep $((attempt * 5))
+  done
+  echo "::error::Maintenance banner PUT failed after 4 attempts. The banner may be stale: check ${ENDPOINT}." >&2
+  return 1
 }
 
 case "$CMD" in
@@ -73,8 +83,20 @@ case "$CMD" in
     echo "Rollout critical banner activated${version:+ for $version}."
     ;;
   off)
-    level="$(get_field '.level')"
-    title="$(get_field '.title')"
+    # Read the state with retries. An unreachable endpoint is not "not ours":
+    # log it loudly so a stale banner is visible in the run.
+    state=""
+    for attempt in 1 2 3 4; do
+      state="$(curl -fsS --max-time 15 "$ENDPOINT" 2>/dev/null || true)"
+      [[ -n "$state" ]] && break
+      sleep $((attempt * 5))
+    done
+    if [[ -z "$state" ]]; then
+      echo "::error::Maintenance endpoint ${ENDPOINT} unreachable after 4 attempts. The rollout banner may be stale." >&2
+      exit 1
+    fi
+    level="$(jq -r '.level // empty' <<<"$state" 2>/dev/null || true)"
+    title="$(jq -r '.title // empty' <<<"$state" 2>/dev/null || true)"
     if [[ "$level" == "critical" && "$title" == "$ROLLOUT_TITLE" ]]; then
       put "none" "" ""
       echo "Rollout banner cleared."

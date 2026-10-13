@@ -238,25 +238,23 @@ export async function forwardToSandbox(
   const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
   // R2 (the turn-latency spec (PR #7840) §3): the first attempt's provider-ingress
   // resolve — this box's network address — has no data dependency on the
-  // config/catalog convergence gates below, so it starts alongside them
-  // instead of queuing behind both. Populated just below, inside the
+  // catalog convergence gate below, so it starts alongside it instead of
+  // queuing behind it. Populated just below, inside the
   // turn-start branch; consumed by the retry loop's attempt 0.
   let prefetchedIngress: ReturnType<typeof resolveSandboxIngress> | null = null;
 
-  // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
+  // ── Turn-start runtime repair: the model this turn asks for ──────────────
   // THE one funnel: the HTTP proxy and the server-side prompt queue both
   // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
-  // 4097) as well as 8000. The env-sync gate below is now the same predicate
-  // minus `/summarize`, so the two can no longer disagree about one request.
+  // 4097) as well as 8000. The env-sync gate below is the same predicate minus
+  // `/summarize`, so the two can no longer disagree about one request.
   //
   // The position is load-bearing. This runs BEFORE `claimPromptDelivery` and
-  // before the first upstream fetch, so an OpenCode swap here cannot lose a
-  // claimed or delivered prompt, and it cannot burn an Idempotency-Key. It
-  // never ends a running turn: the convergence refuses mid-turn.
+  // before the first upstream fetch, so a catalog repair here cannot lose a
+  // claimed or delivered prompt, and it cannot burn an Idempotency-Key.
   //
-  // A box already on the project's current config costs nothing — see
-  // `convergeBeforeTurnStart`, which answers from two memos with no network
-  // call at all in that case.
+  // Config does not converge here: a box that is behind converges after its
+  // turn ends (`convergeConfigIfBehind`), and the prompt never waits for it.
   if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
     const converged = await convergeTurnStartRuntime({
       record,

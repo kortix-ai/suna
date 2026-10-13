@@ -48,7 +48,7 @@ resource isolation.
 ## Run tests
 
 ```bash
-pnpm test                       # Local REST/CLI flows + SDK + runner units + coverage
+pnpm test                       # Diff-scoped: what the branch's diff can affect
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
@@ -61,6 +61,15 @@ pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
+
+Plain `pnpm test` is diff-scoped (`tests/src/core/test-scope.ts`, rules in
+`tests/README.md` "Diff-scoped default run"). It runs the changed packages,
+their dependents and relative importers, the flows and DB suites only when the
+scope reaches the API, CLI, gateway or DB package, and the SDK lane only when
+it reaches `packages/sdk`. A root config, `scripts/` or runner change runs
+everything. It reuses lane groups that already passed on the same diff, so a
+rerun after a flake runs only the red groups. `CI=1 pnpm test` runs everything
+and reuses nothing.
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
@@ -81,7 +90,7 @@ One file per branch keeps PRs from conflicting on it; deleting a merged PR's
 file is conflict-free because no branch edits it again. Format:
 `{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
 `diff_files` is the files the PR itself changed (`git diff origin/dev...HEAD`,
-minus every attestation file) and `diff_hash` their sha256; both are recomputed from
+working tree included when written, minus every attestation file) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
 stays green after a merge of `origin/dev` that touches other files, and goes
 stale only when a file the PR changed is edited after the run. `source_hash`
@@ -99,10 +108,11 @@ reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
 several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
 rev (`--branch`, else the checked-out branch), else the legacy file. It
 recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`. One skip exists, not a pass: `db-suites`
-`skipped-no-db` (no Docker). The `packages` lane has no skip — it runs on a
+every other lane must be `pass`. Two skips exist, neither a pass, both
+for `db-suites`: `skipped-no-db` (no Docker) and `skipped-unaffected` (the
+diff-scoped run found nothing the flows or DB suites read). The `packages` lane has no skip — it runs on a
 laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
-the skip. No in-sandbox
+either skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except
@@ -131,18 +141,21 @@ in `references/api-latency-baseline.md`.
 
 ## Your machine is the pre-merge gate
 
-A pull request into `main` runs **no** GitHub Actions job by itself. Every test
-for a change runs in the developer's own box before the merge. CI runs on a
-schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
-them) and on release pull requests into `staging`
-and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
-runs the lanes once (~20 min), `preview` deploys once (~7 min) with no tests. A push
-re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
-fails when a workflow other than the label-gated `tests.yml` and
-`deploy-preview.yml` triggers on a pull request into `main`: put a new check on
-`push: main` or on the release pull requests.
+A pull request into `dev` runs **no** GitHub Actions job by itself. Every test
+for a change runs in the developer's own box before the merge. After the merge,
+every push to `dev` runs all ten `Tests` lanes (queued: one run, at most one
+waiting). That run is the check before staging: a promotion takes only a `dev`
+SHA with a green run, and a red run comments the failing lanes and suspect
+commits once per new set of failing lanes. `CI` and `CodeQL` run weekly on
+`dev` and on release pull requests into `staging` and `prod`. In the rare case
+you want CI before a `dev` merge, add a label: `test` runs the lanes once
+(~20 min), `preview` deploys once (~7 min) with no tests. A push re-runs
+neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts` fails
+when a workflow other than the label-gated `tests.yml` and `deploy-preview.yml`
+triggers on a pull request into `dev`: put a new check on `push: dev` or on the
+release pull requests.
 
-Before a `main` merge, run the narrowest relevant command first, then
+Before a `dev` merge, run the narrowest relevant command first, then
 `pnpm test`. Add the local equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
@@ -167,6 +180,32 @@ revert the culprit PR.
 The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
+
+## Quarantine a browser test
+
+A `@quarantine` tag removes one test from the blocking release gate. It does
+not remove the test. The nightly lane runs it.
+
+1. **When.** Quarantine a test only when its root cause is outside our code:
+   a real third-party service (Composio toolkit, Google or GitHub OAuth pages),
+   a real model reply, or a real cloud sandbox boot. A race, a stale locator, a
+   shared fixture, or a product bug is never a reason. Fix those.
+2. **Scope.** Tag the one test that depends on the third party. Our own UI
+   contract (dialogs, requests, validation) stays in an untagged test with a
+   stubbed or no-auth backend. `test.describe.serial` shares a fixture across
+   tests, so split the fixture before you tag only part of a file.
+3. **Write the reason.** Put a comment above the tag: what is external, the
+   run id that showed it, and the condition for removing the tag.
+4. **Watcher.** `.github/workflows/tests-browser-nightly.yml` runs
+   `@quarantine` against deployed staging every night at 04:20 UTC. It fails
+   when a quarantined test is red or when no quarantined test ran, and it
+   comments on the commit. It lists each test with its green-night streak.
+5. **Owner.** The author who tagged the test owns it. A red nightly run is a
+   ticket for that owner, not a release blocker.
+6. **Un-quarantine.** When the nightly comment reports a test green for 7
+   nights in a row, remove its tag in the next pull request. The blocking gate
+   then runs it. A quarantined test with a streak under 7 and no open reason
+   is a defect: fix or delete it.
 
 ## Run CI lanes natively on GitHub-hosted runners
 

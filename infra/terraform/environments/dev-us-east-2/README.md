@@ -52,8 +52,8 @@ What stays in us-west-2:
 
 | Resource | Why | Delete after |
 |---|---|---|
-| `kortix-dev-audit-archive` and its KMS key `82a0423e-27d6-4887-9ad6-f242d529bb50` | Object Lock (GOVERNANCE) holds the copied objects. Outside Terraform state. | 2027-07-06 (lock expiry) |
-| Terraform state (`kortix-terraform-state`, `kortix-terraform-locks`) | This root's state still lives there. | the per-region state move |
+| `kortix-dev-audit-archive` and its KMS key `82a0423e-27d6-4887-9ad6-f242d529bb50` | Deleted on 2026-10-12 with the GOVERNANCE bypass, after the copy in `kortix-dev-use2-audit-archive` was re-verified. The key is scheduled for deletion. | done |
+| Terraform state (`kortix-terraform-state`, `kortix-terraform-locks`) | Moved to `kortix-terraform-state-us-east-2-935064898258` (`backend.tf`). | done |
 
 ### Phase 4 — decommission (done 2026-10-12)
 

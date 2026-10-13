@@ -9,15 +9,18 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
+import { asToolPart } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 import { isEmptyShowPart, isNoGroupActivityTool } from './session-activity-groups';
 import { type StepFamily, familyForTool, narrateFailedStep, narrateStep } from './narration';
 
-export interface Step {
-  /** Stable across re-renders: the callID of the step's first part. */
+/** A step of v1 tool parts, or of session-log tool call blocks: `parts` holds what `groupSteps` was given. */
+export interface Step<P extends ToolPart | ToolCallBlock = ToolPart> {
+  /** Stable across re-renders: the call id of the step's first part. */
   id: string;
   family: StepFamily;
   label: string;
-  parts: ToolPart[];
+  parts: P[];
   status: 'running' | 'error' | 'done';
   durationMs?: number;
 }
@@ -46,7 +49,8 @@ function durationOf(parts: ToolPart[]): number | undefined {
   return end - start;
 }
 
-function finalize(family: StepFamily, parts: ToolPart[]): Step {
+function finalize<P extends ToolPart | ToolCallBlock>(family: StepFamily, given: P[]): Step<P> {
+  const parts = given.map(asToolPart);
   const status = statusOf(parts);
   return {
     id: parts[0].callID,
@@ -54,7 +58,7 @@ function finalize(family: StepFamily, parts: ToolPart[]): Step {
     // A failed step must never wear success wording — "Wrote budget.csv" for a
     // write that errored is the panel lying (W7).
     label: status === 'error' ? narrateFailedStep(family, parts) : narrateStep(family, parts),
-    parts,
+    parts: given,
     status,
     // A duration must never sit next to a live spinner — a running step may
     // still carry stale/partial `time` data from a prior run of the same
@@ -64,10 +68,11 @@ function finalize(family: StepFamily, parts: ToolPart[]): Step {
   };
 }
 
-export function groupSteps(parts: ToolPart[]): Step[] {
-  const steps: Step[] = [];
+/** Reads session-log tool call blocks the same way as their v1 parts; each step holds the objects it was given. */
+export function groupSteps<P extends ToolPart | ToolCallBlock = ToolPart>(given: P[]): Step<P>[] {
+  const steps: Step<P>[] = [];
   let family: StepFamily | null = null;
-  let buffer: ToolPart[] = [];
+  let buffer: P[] = [];
 
   const flush = () => {
     if (family && buffer.length) steps.push(finalize(family, buffer));
@@ -75,7 +80,8 @@ export function groupSteps(parts: ToolPart[]): Step[] {
     buffer = [];
   };
 
-  for (const part of parts) {
+  for (const item of given) {
+    const part = asToolPart(item);
     const f = familyForTool(part.tool);
     if (f === 'hidden') continue; // dropped, and must not split a run
 
@@ -87,7 +93,7 @@ export function groupSteps(parts: ToolPart[]): Step[] {
     // show / show_user each stand alone.
     if (isNoGroupActivityTool(part.tool)) {
       flush();
-      steps.push(finalize(f, [part]));
+      steps.push(finalize(f, [item]));
       continue;
     }
 
@@ -95,7 +101,7 @@ export function groupSteps(parts: ToolPart[]): Step[] {
       flush();
       family = f;
     }
-    buffer.push(part);
+    buffer.push(item);
   }
   flush();
 

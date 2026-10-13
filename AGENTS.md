@@ -237,8 +237,11 @@ in before any non-trivial change. **Do not create a branch by reflex.**
 2. **Start a new canonical branch** only when the work is genuinely a new thing.
    Give it its own worktree: `pnpm worktree create --name <slug> --yes
    --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
-   only when the work needs migrations, destructive data work, schema drift, or
-   independent auth/storage state. See the **worktree** skill.
+   when the work needs migrations, destructive data work, or schema drift: it
+   copies the primary local database into the worktree's own database
+   (`kortix_wt_<slug>`, ~5 s, no extra containers). `--full-supabase` (a whole
+   Supabase stack, ~0.75 GB RAM) is only for independent auth/storage config.
+   See the **worktree** skill.
 3. **Never switch a worktree you did not create.** It belongs to one session and
    its canonical branch. The pre-commit hook refuses a commit on any other branch
    there (`scripts/check-worktree-branch.sh`). A throwaway probe branch goes in a
@@ -271,21 +274,22 @@ local test suite, and agent-browser against the local web app. A pull request
 into `dev` runs **no** GitHub Actions job and is mergeable the moment it opens.
 Nothing runs automatically before the merge. A person can ask for CI on one PR,
 in the rare case they want it, by adding a label: `test` runs the `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
-Never add a label by default or from automation. CI otherwise runs in two places:
+Never add a label by default or from automation. CI otherwise runs here:
 
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `dev` | nothing, unless a person adds `test` (~20 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `dev` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
-| Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
-| Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
+| Push to `dev` (after the merge) | every `Tests` lane (queued: one run, at most one waiting), plus the cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no merge; a red run blocks the next promotion |
+| Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily too. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
+| Pull request into `staging` (release candidate) | full CI: `Tests` (reuses the green `dev` run of its head SHA), `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
 **Tests are attested, not run by CI.** `pnpm test` writes
 `tests/attestations/<branch>.json` on a green run (`/` and every char outside
 `[A-Za-z0-9._-]` become `-`; a detached HEAD writes `detached-<short-sha>.json`):
 `diff_files` + `diff_hash` (the files the PR itself changed —
-`git diff origin/dev...HEAD` — and their sha256, minus every attestation file),
+`git diff origin/dev...HEAD`, uncommitted edits included at write time — and
+their sha256, minus every attestation file),
 `source_hash` (full-tree fallback for a direct dev push), `head`, `passed`,
 per-lane results, `at`. The same write deletes every other file in
 `tests/attestations/` and the legacy `tests/test-attestation.json`. Commit
@@ -305,9 +309,13 @@ The attestation stays green after a merge of `origin/dev` that touches other
 files; it goes stale only when a file the PR itself changed is edited after the
 run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
 Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db`. That is the only skip, and it is not a pass: on `dev` the DB
-is gated after the merge (path-gated `DB Migrations`) and by the staging
-promote. The `packages` lane runs everywhere, including a Kortix factory
+`skipped-no-db`; a diff the flows and DB suites cannot read records
+`skipped-unaffected`. Neither skip is a pass: on `dev` the DB
+is gated after the merge (path-gated `DB Migrations`, every `Tests` lane) and
+by the staging promote. Plain `pnpm test` is diff-scoped: it runs the changed
+packages and their dependents, and reuses lane groups that already passed on
+the same diff (`tests/README.md`, "Diff-scoped default run"). `CI=1 pnpm test`
+runs everything. The `packages` lane runs everywhere, including a Kortix factory
 sandbox — it has no skip and must attest `pass`.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
@@ -350,13 +358,15 @@ sandbox — it has no skip and must attest `pass`.
    `/health` response alone is not deployment proof. The run comments "Live on
    dev" on the merged pull request, and "Not live on dev yet" names the
    surface that failed. The surfaces and their checks are in
-   `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
-   attestation (`pnpm test:verify`) was the gate, and the scheduled daily
-   `Tests` run on `dev` is the backstop. A red scheduled run comments the
-   failing lanes and every commit since the last green run. The author whose
+   `.github/workflows/deploy-dev.yml`. The merge push runs every `Tests`
+   lane on `dev` (queued, about one run per 25 min). The attestation
+   (`pnpm test:verify`) was the pre-merge gate; the `dev` run is the check
+   before staging. A red run comments the failing lanes and every commit since
+   the last green run, once per new set of failing lanes. The author whose
    commit broke `dev` fixes forward. If `dev` is still red 1 hour after the
    comment, anyone may revert the culprit PR. A red run never blocks a merge or
-   a deploy.
+   a deploy, but it blocks the next promotion: `staging` takes only a `dev`
+   SHA with a green run.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -569,12 +579,17 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The lanes run daily on `dev` (`schedule`), on a pull request into `staging`,
-  once when a person adds the `test` label to a pull request, and on manual
-  dispatch. A push to `dev` does not run them (Actions minutes, 2026-10-03). A
-  scheduled run blocks nothing: a red run comments the failing lanes on the
-  `dev` HEAD commit. A pull request into `prod` runs
-  `tests-release.yml` against deployed staging instead.
+- The lanes run on every push to `dev` (since 2026-10-12; runs queue, so a
+  burst of merges costs one extra run), daily on `dev`, on a pull request into
+  `staging`, once when a person adds the `test` label to a pull request, and on
+  manual dispatch. A pull request into `staging` skips the lanes when its head
+  SHA already has a green run on `dev` (`reuse dev verdict`). A red run on
+  `dev` comments the failing lanes and suspect commits on the commit, once per
+  new set of failing lanes. A pull request into `prod` runs `tests-release.yml`
+  against deployed staging instead; Promote to Production dispatches it. A
+  failed release-gate or staging-PR run reruns its failed jobs once by itself
+  (`rerun-failed-once.yml`) and names them on the PR: a job that passes on the
+  rerun is a flake to fix or quarantine.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
   into `dev`, and pins both label gates to the label-added event.
@@ -618,9 +633,9 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   incomplete development can live here while it is being shaken out.
 - **`staging` = release-candidate branch.** Nothing should land on staging unless
   it is intended to be production-ready. Human/code changes enter staging by PR:
-  the default path is promoting `dev`'s CURRENT HEAD (do not wait for a green
-  dev push run first — the staging PR's own checks are the gate), or a
-  targeted branch -> `staging` for a selective hotfix candidate. Staging
+  the default path is promoting the newest `dev` SHA with a green `Tests` run
+  (every push to `dev` runs the suite), or a targeted branch -> `staging` for
+  a selective hotfix candidate. Staging
   deploys to `staging.kortix.com` / `staging-api.kortix.com` and must use the
   staging data plane, not dev or prod. The full promote-and-gate flow, the
   fix-forward loop, and the prod release steps live in the **kortix-release**

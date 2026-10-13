@@ -6,24 +6,34 @@ name: Tests
 # skips package quality (`--no-packages`) because `packages` runs it.
 #
 # It runs when ANY of these holds:
-#   1. a daily `schedule` on `dev`        — safety-net trunk signal
-#   2. a pull request into `staging`       — the release candidate
-#   3. someone adds the `test` label       — one explicit run on that PR
-#   4. a `workflow_dispatch`               — manual
+#   1. a push to `dev`                     — every merge is a release candidate
+#   2. a daily `schedule` on `dev`         — drift with no merge (deps, clock)
+#   3. a pull request into `staging`       — reuses (1) when the tree matches
+#   4. someone adds the `test` label       — one explicit run on that PR
+#   5. a `workflow_dispatch`               — manual
 #
-# Nothing else runs it. A pull request into `dev` runs no lane unless a person
-# adds `test`; that runs the suite ONCE, at the head SHA of that moment. A later
-# push does not re-run it: re-add the label. The developer's box is the
-# pre-merge gate (`pnpm test`). No run blocks a merge into `dev`.
+# A pull request into `dev` runs no lane unless a person adds `test`; that runs
+# the suite ONCE, at the head SHA of that moment. No run blocks a merge into
+# `dev`: the developer's box is the pre-merge gate (`pnpm test`).
 #
-# A push to `dev` does NOT run it (since 2026-10-03: Actions minutes). The
-# per-merge gate is the local attestation plus the pre-push hook. The schedule
-# only catches drift the attestation missed.
+# A push to `dev` runs the suite since 2026-10-12. Until then only a daily run
+# tested `dev`, and half of all release delay (49 of 96 hours over v0.13.45 to
+# v0.13.56) was a break merged to `dev` that no check saw before the staging
+# pull request. Runs on `dev` queue: one runs, at most one waits, and a newer
+# push replaces the waiting one. Every run therefore tests the newest `dev`
+# HEAD at its start, and the newest green run names the SHA to promote.
 #
-# `trunk-report` comments on the HEAD commit when a scheduled run is red.
-# A superseded (cancelled) run reports nothing. A green run runs no extra job.
+# `reuse` lets a promotion skip the lanes: a pull request into `staging` whose
+# head SHA already has a green run on `dev`, and whose merge result differs from
+# that head only in VERSION, already passed this exact suite.
+#
+# `trunk-report` comments on the commit when a run on `dev` is red and its
+# failing lanes differ from the previous run's. A superseded (cancelled) run
+# reports nothing.
 
 on:
+  push:
+    branches: [dev]
   pull_request:
     branches: [dev, staging]
     types: [opened, reopened, synchronize, ready_for_review, labeled]
@@ -33,8 +43,9 @@ on:
   workflow_dispatch:
 
 # A pull request cancels its superseded run: only its newest commit matters.
-# A scheduled or manual run on `dev` QUEUES instead, so it always ends with a
-# verdict.
+# A push, scheduled or manual run on `dev` QUEUES instead, so it always ends
+# with a verdict. GitHub keeps one pending run per group, so a burst of merges
+# costs one extra run, not one per merge.
 #
 # A labelled run has its own group: a later push (whose lanes skip) must not
 # cancel the run a person asked for. Only re-adding the label supersedes it.
@@ -46,14 +57,53 @@ permissions:
   contents: read
 
 jobs:
+  reuse:
+    name: reuse dev verdict
+    # A promotion pushes a `dev` SHA unchanged to `promote/dev-<sha10>`, so the
+    # lanes below would test a SHA that a run on `dev` already tested: the
+    # lanes check out the head SHA, not the merge result. Only a pull request
+    # into `staging` asks; a pull request into `dev` runs no job unless a
+    # person adds `test`.
+    if: github.event_name == 'pull_request' && github.base_ref == 'staging' && github.event.action != 'labeled'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      reuse: ${{ steps.find.outputs.reuse }}
+    steps:
+      - name: Find a green run on dev for this head SHA
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          # A failed lookup means "run the lanes", never "skip them".
+          run="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&head_sha=$HEAD_SHA&status=success&per_page=20" \
+            --jq '[.workflow_runs[] | select(.event == "push" or .event == "schedule")][0].html_url // empty' || true)"
+          if [ -z "$run" ]; then
+            echo "No green run on \`dev\` tested \`$HEAD_SHA\`. The lanes run." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Reused $run: it ran every lane on \`$HEAD_SHA\` on \`dev\` and passed." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "reuse=true" >> "$GITHUB_OUTPUT"
+
   lane:
     name: ${{ matrix.lane }} lane
-    # A release pull request runs on every update except a label change. Into
-    # `dev`, only the act of adding `test` runs it.
+    needs: reuse
+    # A release pull request runs on every update except a label change, unless
+    # `reuse` found a green run on `dev` for its head SHA. Into `dev`, only the
+    # act of adding `test` runs it. `!cancelled()`: `reuse` is skipped on every
+    # event except a pull request into `staging`, and a skipped need would
+    # otherwise skip the lanes too.
     if: >-
+      !cancelled() && needs.reuse.outputs.reuse != 'true' && (
       github.event_name != 'pull_request'
       || (github.base_ref == 'staging' && github.event.action != 'labeled')
-      || (github.event.action == 'labeled' && github.event.label.name == 'test')
+      || (github.event.action == 'labeled' && github.event.label.name == 'test'))
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # 40, not 20 and not 60. On free 4 vCPU runners the lanes run ~3x their
     # Blacksmith time: core 15.4 min, browser-1 17.7 min (run 37812339796),
@@ -76,8 +126,11 @@ jobs:
           # there (browser-1 17.7 min vs 6.1), a 180 s journey timed out, and
           # one runner died mid-lane (run 37812339796). Half the tests per
           # runner and one worker keep each test near its old CPU budget.
-          # `--browser-shard` is Playwright's native `--shard`, which splits by
-          # test count, not by duration.
+          # `--browser-shard=N/M` splits whole spec files by measured duration
+          # (tests/src/core/browser-shard.ts; refresh the table with
+          # tests/bin/refresh-shard-durations.ts). Since 2026-10-12: Playwright's
+          # own `--shard` split by test count, and browser-4 took 21-29 min while
+          # browser-8 took 7-10.
           - lane: browser-1
             mode: browser
             args: --browser-only --browser-shard=1/8
@@ -121,7 +174,7 @@ jobs:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
       - name: Install workspace dependencies
         run: |
           corepack enable pnpm
@@ -270,7 +323,7 @@ jobs:
     # so `failure()` would miss it. `cancelled()` is true only when the whole
     # run is cancelled: a manual cancel, or a queued run that a newer
     # one replaced before it started.
-    if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'
+    if: (github.event_name == 'push' || github.event_name == 'schedule') && !cancelled() && needs.lane.result != 'success'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
@@ -287,15 +340,29 @@ jobs:
         run: |
           set -euo pipefail
 
+          lanes_of() {
+            gh api "repos/$REPO/actions/runs/$1/jobs" --paginate \
+              --jq '.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name' \
+              | sort | paste -sd, - | sed 's/,/, /g'
+          }
           # `|| true`: a failed lookup must not swallow the comment below.
-          failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
-            --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name] | join(", ")' || true)"
+          failed="$(lanes_of "$RUN_ID" || true)"
+
+          # Every merge to `dev` starts a run, so a red `dev` would comment on
+          # every run until it is fixed. Comment only when the failing lanes
+          # change: the first red run, or a second break on top of the first.
+          previous="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&status=completed&per_page=10" \
+            --jq "[.workflow_runs[] | select(.id != $RUN_ID) | select(.event == \"push\" or .event == \"schedule\") | select(.conclusion == \"success\" or .conclusion == \"failure\")][0] | \"\\(.id) \\(.conclusion)\"" || true)"
+          prev_failed=""
+          if [ "${previous#* }" = "failure" ]; then
+            prev_failed="$(lanes_of "${previous%% *}" || true)"
+          fi
 
           # Merges land faster than the suite and queued runs supersede each
           # other, so the red commit is often not the culprit. Name every
-          # commit since the last green scheduled run: those are the suspects.
-          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&event=schedule&status=success&per_page=1" \
-            --jq '.workflow_runs[0].head_sha // empty' || true)"
+          # commit since the last green run on `dev`: those are the suspects.
+          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&status=success&per_page=10" \
+            --jq '[.workflow_runs[] | select(.event == "push" or .event == "schedule")][0].head_sha // empty' || true)"
           suspects=""
           if [ -n "$green" ]; then
             suspects="$(gh api "repos/$REPO/compare/${green}...${SHA}" \
@@ -305,12 +372,18 @@ jobs:
           {
             echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
-            echo "Full local suite (\`core\`, \`browser-1..4\`, \`packages\`)."
+            echo "Full local suite (\`core\`, \`browser-1..8\`, \`packages\`)."
             if [ -n "$failed" ]; then
               echo
               echo "Failing lanes: \`$failed\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$failed" ] && [ "$failed" = "$prev_failed" ]; then
+            echo "Same failing lanes as the previous run on dev; no new comment." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::error::dev is still red at $SHA (lanes: $failed)"
+            exit 1
+          fi
 
           # Built line by line: every line of this script must stay indented
           # inside the YAML block scalar, so no embedded multi-line literal.
@@ -329,22 +402,15 @@ jobs:
             fi
             echo "The author whose commit broke it fixes forward. If \`dev\` is still"
             echo "red 1 hour after this comment, anyone may revert the culprit PR."
+            echo "A red \`dev\` blocks the next promotion: \`staging\` takes the newest"
+            echo "\`dev\` SHA with a green run (the **kortix-release** skill)."
             echo
-            echo "This is the scheduled trunk suite (\`tests.yml\`). It did not"
-            echo "block the merge — \`dev\` is the dev trunk. Reproduce locally with"
-            echo "\`pnpm test -- --full\`, or one lane at a time:"
+            echo "Reproduce locally with \`pnpm test -- --full\`, or one lane at a time:"
             echo
             echo '```'
             echo "pnpm test                                        # core"
             echo "pnpm test -- --packages-only                     # packages"
-            echo "pnpm test -- --browser-only --browser-shard=1/8  # browser-1"
-            echo "pnpm test -- --browser-only --browser-shard=2/8  # browser-2"
-            echo "pnpm test -- --browser-only --browser-shard=3/8  # browser-3"
-            echo "pnpm test -- --browser-only --browser-shard=4/8  # browser-4"
-            echo "pnpm test -- --browser-only --browser-shard=5/8  # browser-5"
-            echo "pnpm test -- --browser-only --browser-shard=6/8  # browser-6"
-            echo "pnpm test -- --browser-only --browser-shard=7/8  # browser-7"
-            echo "pnpm test -- --browser-only --browser-shard=8/8  # browser-8"
+            echo "pnpm test -- --browser-only --browser-shard=1/8  # browser-1 (CI only on a Mac)"
             echo '```'
           } > /tmp/trunk-verdict.md
 

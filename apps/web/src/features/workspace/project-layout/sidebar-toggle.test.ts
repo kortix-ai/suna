@@ -63,7 +63,7 @@ describe('SidebarToggle', () => {
   // Four of the six copies wrapped the button in `Hint`; two shipped a bare
   // aria-label. Both, now, on every surface.
   test('the control is labelled for pointer and for assistive tech', () => {
-    expect(code).toContain('const label = sidebarOpenerLabel(sidebar);');
+    expect(code).toContain('const label = sidebarOpenerLabel(sidebar, tI18nComplete);');
     expect(code).toContain('<Hint label={label}');
     expect(code).toContain('aria-label={label}');
   });

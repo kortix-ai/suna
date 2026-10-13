@@ -119,18 +119,24 @@ export async function handleErrorResponse<T>(
   // Two coded 403s a person can act on. MFA: a step-up on this page. SSO only:
   // the account requires sign-in through its IdP, so the host signs out and
   // offers single sign-on.
-  const remedyEvent =
-    response.status !== 403
-      ? null
-      : data?.code === 'account_mfa_required'
-        ? 'kortix:mfa-required'
-        : data?.code === 'sso_required'
-          ? 'kortix:sso-required'
-          : null;
-  if (remedyEvent && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+  const remedyCode: 'account_mfa_required' | 'sso_required' | null =
+    response.status === 403 &&
+    (data?.code === 'account_mfa_required' || data?.code === 'sso_required')
+      ? data.code
+      : null;
+  if (remedyCode) {
     try {
-      window.dispatchEvent(new CustomEvent(remedyEvent));
+      platformConfig().onAccessRemedy?.(remedyCode);
     } catch {}
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(
+            remedyCode === 'account_mfa_required' ? 'kortix:mfa-required' : 'kortix:sso-required',
+          ),
+        );
+      } catch {}
+    }
   }
   if (response.status === 431) {
     error = new RequestTooLargeError(431, {

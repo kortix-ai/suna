@@ -1,4 +1,4 @@
-import type { SessionHandle } from '@kortix/sdk';
+import type { ProjectSession as KortixProjectSession, SessionHandle } from '@kortix/sdk';
 
 import type { Auth } from './api/auth.ts';
 import type { ApiClient } from './api/client.ts';
@@ -169,7 +169,11 @@ export async function resolveSessionRuntime(
   const handle = kortixFromAuth(auth).session(projectId, session.session_id);
   let ready: Awaited<ReturnType<SessionHandle['ensureReady']>>;
   try {
-    ready = await withKortixScope(auth, () => handle.ensureReady());
+    // A row read as `running` names its runtime: adopt it instead of paying a
+    // `/start` round trip (1.2–2.4 s on dev) before every command. A row that
+    // was restarted above is stale, so it goes through `/start`.
+    const known = session.status === 'running' ? { session: session as unknown as KortixProjectSession } : {};
+    ready = await withKortixScope(auth, () => handle.ensureReady(known));
   } catch (err) {
     throw new SessionRuntimeError('ensure-ready', (err as Error).message, err);
   }

@@ -57,6 +57,7 @@ import { randomUUID } from 'node:crypto';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
 import { sleep } from '../core/poll';
+import { withTransientGitRetry } from './git-transient';
 
 export interface Db {
   query<R = any>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
@@ -499,11 +500,14 @@ export async function git(
   const { promisify } = await import('node:util');
   const exec = promisify(execFile);
   try {
-    const result = await exec('git', args, {
-      cwd: opts.cwd,
-      timeout: 60_000,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env ?? {}) },
-    });
+    const run = () =>
+      exec('git', args, {
+        cwd: opts.cwd,
+        timeout: 60_000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env ?? {}) },
+      });
+    // A command expected to be rejected is never repeated: the rejection is the answer.
+    const result = opts.expectFailure ? await run() : await withTransientGitRetry(args, run);
     if (opts.expectFailure) throw new Error(`git ${args[0]}: expected a rejection, got success`);
     return result.stdout + result.stderr;
   } catch (error: any) {

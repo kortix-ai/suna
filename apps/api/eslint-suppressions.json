@@ -2841,7 +2841,7 @@
       "count": 9
     },
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/sandbox-proxy/forward/upstream.ts": {
