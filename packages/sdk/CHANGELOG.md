@@ -16,6 +16,31 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instant the session can be restored, 30 days after the delete. Absent on an
   API that predates restore. Additive.
 
+### Added (permissions)
+- `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine
+  answers about, the same strings as the API's catalog
+  (`apps/api/src/iam/actions.ts`; a test fails when they differ). Pass them to
+  `useCan` / `useCans` instead of spelling a leaf by hand (KRTX-1720).
+- `TRIGGER_CONTROL_ACTIONS`, `triggerControlsFrom(cans)` and `TriggerControls`:
+  the trigger controls a viewer gets, from the leaves each trigger route
+  asserts: create, update and delete need `project.write` and their trigger
+  leaf, fire needs `project.trigger.fire`. An unresolved probe gives no
+  control. Web and mobile both read them.
+- `REVIEW_CONTROL_ACTIONS`, `changeRequestControlsFrom(cans)` and
+  `ChangeRequestControls`: open a change request needs `project.write` +
+  `project.gitops.push`, merge needs `project.write` + `project.gitops.merge`,
+  close and reopen need `project.write`.
+- `reviewVerdictAllowed(item, verdict, cans)`: whether to offer a verdict on a
+  review item. Approving a change request merges it (`canMerge`); every other
+  change request and native verdict needs `project.write` +
+  `project.review.act`. A connector call offers approve and reject only, to
+  the viewer the API lets decide it (`previewAuthorized` is not `false`). Web
+  and mobile both read it.
+- `canManageBilling(state)` and `canOfferTopup(state)`: whether the caller may
+  change billing, and whether to offer buying credits or auto top-up (the plan
+  may buy credits AND the caller may change billing). Both return `false` while
+  the account state is unknown. Additive.
+
 ### Added (connector credential re-sync)
 - `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
   connector the server re-reads the tools after the write: `sync` is that run

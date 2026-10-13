@@ -270,7 +270,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
     });
   const openEdit = (client: OAuthClient) =>
     sheet.open({
-      title: `Edit ${client.name}`,
+      title: tI18nComplete('text2313fe21ea84', { name: client.name }),
       description: tI18nComplete.raw('texte59a1d133be1'),
       body: (
         <OAuthAppSheetForm

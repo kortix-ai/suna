@@ -7,6 +7,8 @@ import type {
   UsageQueryOptions,
 } from './billing';
 import {
+  canManageBilling,
+  canOfferTopup,
   cancelScheduledChange,
   cancelSubscription,
   configureAutoTopup,
@@ -359,4 +361,46 @@ test('requestTopUp POSTs to the account top-up-requests route and returns how ma
 test('requestTopUp rejects with the 429 status and code when the member already asked', async () => {
   nextResponse = { status: 429, body: { error: 'You already asked', code: 'already_requested' } };
   await expect(requestTopUp('acc_1')).rejects.toMatchObject({ status: 429 });
+});
+
+// ── canManageBilling / canOfferTopup ─────────────────────────────────────────
+// KRTX-1720: a member at $0 was offered Buy credits and auto top-up, which the
+// API answers 403. Every surface that renders a purchase control asks these
+// two, and both say no while the account state is still loading.
+
+/** Only the fields these gates read. */
+function purchaseState(canPurchaseCredits: boolean, canManage?: boolean): AccountState {
+  return {
+    subscription: { can_purchase_credits: canPurchaseCredits },
+    ...(canManage === undefined ? {} : { can_manage_billing: canManage }),
+  } as unknown as AccountState;
+}
+
+test('canManageBilling follows can_manage_billing, and says no while the state is unknown', () => {
+  expect(canManageBilling(purchaseState(true, true))).toBe(true);
+  expect(canManageBilling(purchaseState(true, false))).toBe(false);
+  expect(canManageBilling(undefined)).toBe(false);
+  expect(canManageBilling(null)).toBe(false);
+});
+
+test('canManageBilling keeps an owner on an API that does not send the field', () => {
+  // The field is additive on the wire and its own comment says absent means
+  // allowed. Every current API response carries it (billing/routes/account-state.ts).
+  expect(canManageBilling(purchaseState(true))).toBe(true);
+});
+
+test('canOfferTopup needs the plan entitlement AND the billing permission', () => {
+  expect(canOfferTopup(purchaseState(true, true))).toBe(true);
+  // Entitled plan, wrong person: the purchase would answer 403.
+  expect(canOfferTopup(purchaseState(true, false))).toBe(false);
+  // Right person, a plan that cannot buy credits.
+  expect(canOfferTopup(purchaseState(false, true))).toBe(false);
+  expect(canOfferTopup(purchaseState(true))).toBe(true);
+});
+
+test('canOfferTopup offers nothing while the account state loads, or without a subscription block', () => {
+  expect(canOfferTopup(undefined)).toBe(false);
+  expect(canOfferTopup(null)).toBe(false);
+  expect(canOfferTopup({} as AccountState)).toBe(false);
+  expect(canOfferTopup(getDefaultAccountState())).toBe(false);
 });

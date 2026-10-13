@@ -19602,7 +19602,8 @@
       "text6f52b07880a0": "Snapshot now",
       "text91dc861375bc": "Viewed mobile release policy",
       "texta37dd5ef6ef2": "Customize Sidebar",
-      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows"
+      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
+      "text2313fe21ea84": "Edit {name}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
