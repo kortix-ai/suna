@@ -1,20 +1,11 @@
-import {
-  TRIGGER_CONTROL_ACTIONS as SDK_TRIGGER_CONTROL_ACTIONS,
-  triggerControlsFrom as sdkTriggerControlsFrom,
-} from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TRIGGER_CONTROL_ACTIONS, triggerControlsFrom } from './trigger-controls';
 
 // KRTX-1720: the leaves and the mapping are the SDK's (`iam-actions.test.ts`
-// covers member, update-only, manager and an unresolved probe). Web reads them
-// through this module, so mobile and web cannot drift.
-test('the web hook reads the SDK trigger controls', () => {
-  expect(TRIGGER_CONTROL_ACTIONS).toBe(SDK_TRIGGER_CONTROL_ACTIONS);
-  expect(triggerControlsFrom).toBe(sdkTriggerControlsFrom);
-});
-
+// covers member, update-only, manager and an unresolved probe), read through
+// `useTriggerControls`. `../trigger-activation-menu.test.tsx` renders the
+// pause-all gear per role.
 describe('both trigger entry points read the same controls', () => {
   const read = (path: string) => readFileSync(join(import.meta.dir, path), 'utf8');
   test('the Triggers page and the Agent page call useTriggerControls, and no trigger leaf by hand', () => {

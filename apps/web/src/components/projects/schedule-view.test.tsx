@@ -108,19 +108,7 @@ describe('ScheduleView page chrome', () => {
     expect(shellChildren).not.toContain('Pause all triggers');
   });
 
-  // The gear and the switch behind it gate on the leaves the route asserts:
-  // `PATCH /projects/:id/triggers/activation` loads the project for write and
-  // requires `project.trigger.update`, which is the trigger controls'
-  // `canUpdate` (KRTX-1720). It used to read `effective_project_role ===
-  // 'manager'`, a role label that a custom role holding exactly that leaf could
-  // never satisfy.
-  test('the gear gates on the leaves the activation route asserts', () => {
-    expect(menu).toContain('useTriggerControls(projectId).canUpdate');
-    expect(menu).toContain('if (!canManage) return null;');
-    expect(menu).not.toContain("effective_project_role === 'manager'");
-    // Deliberately NOT the create gate the list's own button uses — a widening.
-    expect(menu).not.toContain('PROJECT_TRIGGER_CREATE');
-  });
+  // Who sees the gear is rendered per role in `trigger-activation-menu.test.tsx`.
 
   // The paused STATE is not the paused CONTROL: a project that runs nothing on
   // its own stays announced at the top of the list.

@@ -185,8 +185,10 @@ export function TriggerPauseSwitch({
  * key `ScheduleView` queries below. React Query dedupes both calls into one
  * request and one cache write, so this switch and `ScheduleView`'s paused
  * banner can never disagree or double-fetch.
+ *
+ * Exported for `trigger-activation-menu.test.tsx`, which renders it per role.
  */
-function TriggerActivationMenu({ projectId }: { projectId: string }) {
+export function TriggerActivationMenu({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const queryKey = qk.project.triggers(projectId);

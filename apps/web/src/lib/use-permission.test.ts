@@ -72,14 +72,12 @@ describe('no UI gate branches on a role label', () => {
     });
   }
 
-  // The Triggers page's pause-all gear reads `canUpdate` from the shared
-  // trigger controls (KRTX-1720): project.write + project.trigger.update, the
-  // leaves its route asserts, mapped once in `@kortix/sdk` for web and mobile.
-  test('components/projects/schedule-view.tsx gates pause-all on the trigger controls, not a role label', () => {
+  // The Triggers page's pause-all gear reads the shared trigger controls
+  // (KRTX-1720). `components/projects/trigger-activation-menu.test.tsx` renders
+  // it per role; this guard only keeps the role label out.
+  test('components/projects/schedule-view.tsx gates pause-all on no role label', () => {
     const code = stripComments(read('components/projects/schedule-view.tsx'));
-    expect(code).toContain('useTriggerControls(projectId).canUpdate');
     expect(code).not.toContain("effective_project_role === 'manager'");
-    expect(read('components/projects/schedule/trigger-controls.ts')).toMatch(/useProjectCans\(/);
   });
 
   test('the manager literal is gone from the CODE of every one of them', () => {

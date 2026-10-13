@@ -17,7 +17,7 @@
 import { useProjectCans } from '@/lib/use-project-can';
 import { TRIGGER_CONTROL_ACTIONS, type TriggerControls, triggerControlsFrom } from '@kortix/sdk';
 
-export { TRIGGER_CONTROL_ACTIONS, type TriggerControls, triggerControlsFrom };
+export type { TriggerControls };
 
 export function useTriggerControls(projectId: string): TriggerControls {
   return triggerControlsFrom(useProjectCans(projectId, TRIGGER_CONTROL_ACTIONS));
