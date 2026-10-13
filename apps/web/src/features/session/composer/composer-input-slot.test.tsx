@@ -56,9 +56,9 @@ describe('COMPOSER_INPUT_SLOT_CLASS', () => {
     const html = render(
       <SessionApprovalNotice
         rows={approvalNoticeRows([pending], {})}
-        expanded={null}
+        current={null}
         busy={{}}
-        onToggle={() => undefined}
+        onSelect={() => undefined}
         onDecide={() => undefined}
       />,
     );

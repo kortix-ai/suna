@@ -867,6 +867,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             <PlanRingAvatar
               imageUrl={profile.avatarUrl}
               fallbackText={profile.displayName}
+              email={profile.email}
               planName={planName}
               size={BAR_CONTROL_HEIGHT}
               gapColor={chrome}

@@ -93,6 +93,7 @@ function ringFor(tier: PlanTier, isDark: boolean): Ring {
 export interface PlanRingAvatarProps {
   imageUrl?: string | null;
   fallbackText?: string;
+  email?: string | null;
   planName?: string;
   /** Outer size in points, a multiple of 4. */
   size: number;
@@ -100,12 +101,12 @@ export interface PlanRingAvatarProps {
   gapColor: string;
 }
 
-export function PlanRingAvatar({ imageUrl, fallbackText, planName, size, gapColor }: PlanRingAvatarProps) {
+export function PlanRingAvatar({ imageUrl, fallbackText, email, planName, size, gapColor }: PlanRingAvatarProps) {
   const { colorScheme } = useColorScheme();
   const tier = planTier(planName);
 
   // ProfilePicture takes Tailwind units (4pt each).
-  if (!tier) return <ProfilePicture imageUrl={imageUrl} size={size / 4} fallbackText={fallbackText} />;
+  if (!tier) return <ProfilePicture imageUrl={imageUrl} size={size / 4} fallbackText={fallbackText} email={email} />;
 
   const photo = size - 2 * (RING_WIDTH + RING_GAP);
   const ring = ringFor(tier, colorScheme === 'dark');
@@ -123,7 +124,7 @@ export function PlanRingAvatar({ imageUrl, fallbackText, planName, size, gapColo
           padding: RING_GAP,
           backgroundColor: gapColor,
         }}>
-        <ProfilePicture imageUrl={imageUrl} size={photo / 4} fallbackText={fallbackText} />
+        <ProfilePicture imageUrl={imageUrl} size={photo / 4} fallbackText={fallbackText} email={email} />
       </View>
     </LinearGradient>
   );

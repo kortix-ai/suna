@@ -85,6 +85,7 @@ function deps(over: Partial<LegacyBootstrapDeps>, calls: Calls): LegacyBootstrap
       };
     },
     patchMetadata: async () => {},
+    claimRun: async () => true,
     audit: async () => {},
     log: () => {},
     ...over,

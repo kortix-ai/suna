@@ -1,4 +1,6 @@
 import { projectWorking } from '../../session/working';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogMessage } from '../../session-log/types';
+import { sessionLogTurns } from '../../session-log/turns';
 import { describe, expect, test } from 'bun:test';
 import {
   freshSendHint,
@@ -514,5 +516,36 @@ describe('a bubble reads as queued only while the agent has not reached it', () 
       confirmedActive: true,
       inboxPrompt: { state: 'failed', reason: null },
     })).toBe(false);
+  });
+});
+
+describe('freshSendHint and fallbackBusyRowAfterTurnId read block turns (sessionLogTurns) too', () => {
+  const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
+  let seq = 0;
+  const msg = (id: string, role: 'user' | 'assistant', replyTo?: string): SessionLogMessage => ({
+    ...V, message_id: id, thread_id: 't', seq: ++seq, role, kind: 'turn', status: 'complete', in_context: true, model: null,
+    usage: null, finish: null, error: null, created_at: '', completed_at: null, producer: { harness: 'pi', harness_version: '1', adapter_version: '1' },
+    ...(replyTo && { reply_to: replyTo }), blocks: [{ type: 'text', id: `${id}-t`, text: id }],
+  });
+  const blockTurns = (...messages: SessionLogMessage[]) =>
+    sessionLogTurns({ ...V, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages });
+
+  test('the same answers as on v1 turns', () => {
+    const turns = blockTurns(msg('old', 'user'), msg('a1', 'assistant', 'old'), msg('new', 'user'));
+    expect(freshSendHint(turns, (id) => id === 'new')).toBe('new');
+    expect(freshSendHint(turns, (id) => id === 'old')).toBeNull();
+    const queue = blockTurns(msg('running', 'user'), msg('a2', 'assistant', 'running'), msg('queued-a', 'user'), msg('queued-b', 'user'));
+    expect(fallbackBusyRowAfterTurnId({
+      turns: queue,
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(['queued-a', 'queued-b']),
+      deliveringPromptIds: new Set(),
+    })).toBe('running');
+    expect(fallbackBusyRowAfterTurnId({
+      turns: queue,
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(['queued-a', 'queued-b']),
+      deliveringPromptIds: new Set(['queued-b']),
+    })).toBe('queued-b');
   });
 });

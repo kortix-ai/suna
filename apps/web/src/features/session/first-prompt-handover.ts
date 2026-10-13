@@ -1,3 +1,4 @@
+import type { SessionLogBlock, SessionLogTurn } from '@kortix/sdk';
 import { splitPastedContent } from '@kortix/shared';
 
 import { parseFileReferences } from './message-parsing';
@@ -16,48 +17,53 @@ import { parseFileReferences } from './message-parsing';
  *
  * So the preview is released when the transcript carries the text AND at
  * least as many attachments as the preview promised. Attachments arrive two
- * ways and both count: a model-native file as a `file` part, a materialized
- * one as a `<file …>` reference the API folded into a text part.
+ * ways and both count: a model-native file as an attachment block (or a
+ * harness `file` block, a text/plain or directory mention), a materialized
+ * one as a `<file …>` reference the API folded into a text block.
  *
  * Bounded: an ANSWERED turn releases unconditionally. Nothing more is streaming
  * then, and a file that never showed is never going to — holding on would pin
  * a stale bubble over a finished turn.
  */
-interface PartLike {
-  type: string;
-  text?: string;
-  synthetic?: boolean;
+/**
+ * The text of a block that was a v1 text part: a text block, or an ignored
+ * text part (a harness `text` block, its data the v1 part).
+ */
+function textOf(block: SessionLogBlock): { text?: string; synthetic?: boolean } | undefined {
+  if (block.type === 'text') return block;
+  if (block.type === 'harness' && block.kind === 'text') return block.data as { text?: string; synthetic?: boolean };
+  return undefined;
 }
 
-interface TurnLike {
-  userMessage: { parts: readonly PartLike[] };
-  assistantMessages: readonly unknown[];
-}
-
-function messageAttachmentCount(parts: readonly PartLike[]): number {
+function messageAttachmentCount(blocks: readonly SessionLogBlock[]): number {
   let count = 0;
-  for (const part of parts) {
-    if (part.type === 'file') count += 1;
+  for (const block of blocks) {
+    if (block.type === 'attachment' || (block.type === 'harness' && block.kind === 'file')) count += 1;
     // A `<file>` inside a paste is paste text, not an attachment.
-    else if (part.type === 'text' && part.text)
-      count += parseFileReferences(splitPastedContent(part.text).text).files.length;
+    else {
+      const text = textOf(block)?.text;
+      if (typeof text === 'string' && text)
+        count += parseFileReferences(splitPastedContent(text).text).files.length;
+    }
   }
   return count;
 }
 
 export function transcriptCarriesFirstPrompt(
-  turns: readonly TurnLike[],
+  turns: readonly Pick<SessionLogTurn, 'user' | 'assistant'>[],
   expectedAttachments: number,
 ): boolean {
   return turns.some((turn) => {
-    const parts = turn.userMessage.parts;
-    const hasText = parts.some(
-      (part) => part.type === 'text' && !!part.text?.trim() && !part.synthetic,
-    );
+    const blocks = turn.user.blocks;
+    // Ignored text counts, as it did for the v1 part: only `synthetic` text is not the prompt's.
+    const hasText = blocks.some((block) => {
+      const part = textOf(block);
+      return typeof part?.text === 'string' && !!part.text.trim() && !part.synthetic;
+    });
     if (!hasText) return false;
     if (expectedAttachments <= 0) return true;
-    if (turn.assistantMessages.length > 0) return true;
-    return messageAttachmentCount(parts) >= expectedAttachments;
+    if (turn.assistant.length > 0) return true;
+    return messageAttachmentCount(blocks) >= expectedAttachments;
   });
 }
 

@@ -2,8 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountOverviewTab, AccountOverviewView } from '@/features/billing/account-overview';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
@@ -155,40 +155,36 @@ export function BillingTab({
         <AccountOverviewView state={accountState} />
       ) : null}
       {showTeamCheckout ? (
-        <section className="space-y-4">
-          <div className="space-y-1">
-            <Label>{t('teamTitle')}</Label>
-            <p className="text-muted-foreground text-xs">{t('teamDescription')}</p>
-          </div>
-          <div className="bg-popover rounded-md border px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Button
-                size="sm"
-                onClick={() =>
-                  openUpgradeDialog({
-                    reason: 'subscription_required',
-                    accountId: billingAccountId,
-                  })
-                }
-                className="shrink-0"
-              >
-                {t('subscribe')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground gap-1.5"
-                onClick={handleManageSubscription}
-                disabled={createPortalSessionMutation.isPending}
-              >
-                {createPortalSessionMutation.isPending ? (
-                  <Loading className="size-4 shrink-0" />
-                ) : null}
-                {t('manageBilling')}
-              </Button>
-            </div>
-          </div>
-        </section>
+        // Linear's settings shape: one row, the label and its rule on the
+        // left, the actions on the right. No section heading over a box that
+        // only holds two buttons.
+        <SettingsRowGroup>
+          <SettingsRow label={t('teamTitle')} description={t('teamDescription')}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground gap-1.5"
+              onClick={handleManageSubscription}
+              disabled={createPortalSessionMutation.isPending}
+            >
+              {createPortalSessionMutation.isPending ? (
+                <Loading className="size-4 shrink-0" />
+              ) : null}
+              {t('manageBilling')}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() =>
+                openUpgradeDialog({
+                  reason: 'subscription_required',
+                  accountId: billingAccountId,
+                })
+              }
+            >
+              {t('subscribe')}
+            </Button>
+          </SettingsRow>
+        </SettingsRowGroup>
       ) : (
         <>
           {/* The out-of-credits warning is a WALLET message and stays with
@@ -237,62 +233,68 @@ export function BillingTab({
               (self-host with KORTIX_BILLING_INTERNAL_ENABLED=false) — hide the
               button rather than let it 404/error on click. */}
           {isBillingEnabled() ? (
-            <section className="space-y-4">
-              <Label>{t('billingPortal')}</Label>
-              <div className="bg-popover rounded-md border px-4 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-muted-foreground min-w-0 text-xs">{t('portalDescription')}</p>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {subscriptionCancelling ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0 gap-1.5"
-                        onClick={() => reactivateSubscriptionMutation.mutate()}
-                        disabled={reactivateSubscriptionMutation.isPending}
-                      >
-                        {reactivateSubscriptionMutation.isPending ? (
-                          <Loading className="size-4 shrink-0" />
-                        ) : null}
-                        {t('reactivateSubscription')}
-                      </Button>
-                    ) : hasActiveSubscription ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0"
-                        onClick={() => setConfirmingCancel(true)}
-                        disabled={!canCancelSubscription}
-                      >
-                        {t('cancelSubscription')}
-                      </Button>
-                    ) : null}
+            <section>
+              {/* One row, Linear's shape: what the portal is on the left,
+                  every subscription action on the right. The commitment hint
+                  joins the description instead of a third line in a box. */}
+              <SettingsRowGroup>
+                <SettingsRow
+                  label={t('billingPortal')}
+                  description={
+                    <>
+                      {t('portalDescription')}
+                      {hasActiveSubscription && !canCancelSubscription && commitmentEnd ? (
+                        <span className="mt-1 block">
+                          {t('commitmentCancelHint', {
+                            date: commitmentEnd.toLocaleDateString(locale, {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            }),
+                          })}
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                >
+                  {subscriptionCancelling ? (
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="shrink-0 gap-1.5"
-                      onClick={handleManageSubscription}
-                      disabled={createPortalSessionMutation.isPending}
+                      variant="ghost"
+                      className="gap-1.5"
+                      onClick={() => reactivateSubscriptionMutation.mutate()}
+                      disabled={reactivateSubscriptionMutation.isPending}
                     >
-                      {createPortalSessionMutation.isPending ? (
+                      {reactivateSubscriptionMutation.isPending ? (
                         <Loading className="size-4 shrink-0" />
                       ) : null}
-                      {t('manageBilling')}
+                      {t('reactivateSubscription')}
                     </Button>
-                  </div>
-                </div>
-                {hasActiveSubscription && !canCancelSubscription && commitmentEnd ? (
-                  <p className="text-muted-foreground mt-3 text-xs">
-                    {t('commitmentCancelHint', {
-                      date: commitmentEnd.toLocaleDateString(locale, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      }),
-                    })}
-                  </p>
-                ) : null}
-              </div>
+                  ) : hasActiveSubscription ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => setConfirmingCancel(true)}
+                      disabled={!canCancelSubscription}
+                    >
+                      {t('cancelSubscription')}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={handleManageSubscription}
+                    disabled={createPortalSessionMutation.isPending}
+                  >
+                    {createPortalSessionMutation.isPending ? (
+                      <Loading className="size-4 shrink-0" />
+                    ) : null}
+                    {t('manageBilling')}
+                  </Button>
+                </SettingsRow>
+              </SettingsRowGroup>
               {hasActiveSubscription ? (
                 <ConfirmDialog
                   open={confirmingCancel}

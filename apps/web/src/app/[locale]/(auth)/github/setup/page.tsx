@@ -266,7 +266,8 @@ function GitHubSetup() {
 function peekGitHubSetupReturn(): string | null {
   try {
     const value = window.localStorage.getItem('kortix:github_setup_return');
-    if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+    // `\` reads as `/` and tab/CR/LF are dropped, so either could leave the origin.
+    if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
     return value;
   } catch {
     return null;

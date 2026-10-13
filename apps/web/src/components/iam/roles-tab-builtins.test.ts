@@ -28,3 +28,18 @@ describe('roles tab built-in list', () => {
     expect(source).not.toContain('DropdownMenuSub');
   });
 });
+
+// Jay, 2026-10-13: without the `rbac` entitlement the Roles pane is the one
+// Enterprise state, not a read-only list with a banner and a disabled button.
+// Role tags carry no lock glyph, and View capabilities is an inline button.
+describe('roles tab enterprise gate and row tags', () => {
+  test('an account without rbac sees EnterpriseUpsell only', () => {
+    expect(source).toContain('if (!rbacEnabled) return <EnterpriseUpsell feature="roles" />;');
+    expect(source).not.toContain('InfoBanner');
+  });
+
+  test('no lock glyph in a role tag; View capabilities is an inline action', () => {
+    expect(source).not.toContain('LockIcon');
+    expect(source).toMatch(/actions=\{\s*<Button variant="ghost"[^>]*onClick=\{onView\}/);
+  });
+});

@@ -55,8 +55,9 @@ describe('MessageSenderAbove', () => {
         <p>hello</p>
       </MessageSenderAbove>,
     );
-    expect(markup).toContain('rounded-sm');
-    expect(markup).not.toContain('rounded-full');
+    // Avatar v2: a person is a circle, never a square tile.
+    expect(markup).toContain('rounded-full');
+    expect(markup).not.toContain('rounded-sm');
     // Above: the avatar comes first, then the message, in a right-aligned column.
     expect(markup.indexOf('data-slot="avatar"')).toBeLessThan(markup.indexOf('hello'));
     expect(markup).toContain('flex-col items-end');
@@ -84,7 +85,7 @@ describe('SessionParticipantStack', () => {
   test('two people: two avatars, no count, and a label for the stack', () => {
     const markup = stack(view());
     expect(avatars(markup)).toBe(2);
-    expect(markup).not.toContain('rounded-full');
+    expect(markup).not.toContain('rounded-sm');
     expect(markup).not.toContain('data-slot="avatar-group-count"');
     // A hover card only: no button, nothing to click.
     expect(markup).not.toContain('<button');
