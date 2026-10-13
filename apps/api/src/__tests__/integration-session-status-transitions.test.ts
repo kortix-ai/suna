@@ -1252,4 +1252,100 @@ describe('restore (restoreSession)', () => {
     );
     expect(queued).toHaveLength(0);
   });
+
+  // A delete during provider.create, a provider the deployment does not allow,
+  // and a delete from before the removal lane all archive a row that names its
+  // box with no removal stamp. The row is the box's only record.
+  test('an archived row that names a box with no confirmed removal: the restore removes the box first', async () => {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sessionMetadata: { deletedAt: new Date().toISOString(), deletedBy: 'user-1' },
+      sandboxStatus: 'archived',
+    });
+    let removes = 0;
+    providerStatus = 'stopped';
+    onProviderRemove = async () => {
+      removes += 1;
+      throw new Error('sandbox is transitioning');
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+      expect(removes).toBe(1);
+      let state = await read(f);
+      expect(typeof state.session.metadata.deletedAt).toBe('string');
+      expect(state.sandbox.status).toBe('archived');
+      expect(state.sandbox.external_id).toBe(f.externalId);
+
+      onProviderRemove = async () => {
+        removes += 1;
+      };
+      expect(await runRestore(f)).toEqual({ ok: true });
+      expect(removes).toBe(2);
+      state = await read(f);
+      expect(state.sandbox.external_id).toBeNull();
+      expect(state.sandbox.metadata.ephemeralRetiredExternalId).toBe(f.externalId);
+    } finally {
+      console.warn = warn;
+      onProviderRemove = async () => {};
+    }
+  });
+
+  async function deletedDuringCreate(): Promise<{ f: Fixture; deletedAt: number }> {
+    const f = await fixture({
+      sessionStatus: 'provisioning',
+      sandboxStatus: 'provisioning',
+      sandboxMetadata: { initStatus: 'provisioning' },
+      withoutExternalId: true,
+    });
+    await deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    return { f, deletedAt: Date.parse((await read(f)).session.metadata.deletedAt as string) };
+  }
+
+  test('a delete during the first provisioning holds the restore until the interrupted create lands', async () => {
+    const { f } = await deletedDuringCreate();
+    expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+    let state = await read(f);
+    expect(typeof state.session.metadata.deletedAt).toBe('string');
+    expect(state.sandbox.status).toBe('archived');
+
+    // What settleSandboxStoppedDuringCreate writes when provider.create returns.
+    await transitionSandbox('archive', f.sandboxId, { columns: { externalId: f.externalId } });
+    onProviderRemove = async () => {};
+    expect(await runRestore(f)).toEqual({ ok: true });
+    state = await read(f);
+    expect(state.sandbox.external_id).toBeNull();
+    expect(state.sandbox.metadata.ephemeralRetiredExternalId).toBe(f.externalId);
+    expect(state.sandbox.metadata).not.toHaveProperty('deletedDuringCreateAt');
+  });
+
+  test('a create that never lands holds the restore for the provisioning stale window only', async () => {
+    const { f, deletedAt } = await deletedDuringCreate();
+    expect(await runRestore(f, new Date(deletedAt + 10 * 60_000 - 1))).toMatchObject({
+      status: 409,
+      code: 'session_sandbox_removal_pending',
+    });
+    expect(await runRestore(f, new Date(deletedAt + 10 * 60_000))).toEqual({ ok: true });
+    const { sandbox } = await read(f);
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata.ephemeralRetiredExternalId).toBe('');
+  });
+
+  test('a deleted row with no box and no create in flight restores at once', async () => {
+    const f = await fixture({ sessionStatus: 'failed', sandboxStatus: 'error', withoutExternalId: true });
+    await deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    expect(await runRestore(f)).toEqual({ ok: true });
+    expect((await read(f)).sandbox.status).toBe('stopped');
+  });
 });

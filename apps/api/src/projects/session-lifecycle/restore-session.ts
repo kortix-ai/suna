@@ -11,22 +11,34 @@
  *  - the archived sandbox row becomes a retired row with no external id
  *    (`isRetiredEphemeralRow`), so the next open (a `/start` or a prompt)
  *    claims it and boots a fresh box from the session branch. The row is the
- *    only record of the old box's removal, so it gives up that box only once
- *    the provider confirmed it removed;
+ *    only record of the old box, so it gives up that box only once the
+ *    provider confirmed it removed (`providerRemovedAt`), and it is held while
+ *    the first provisioning the delete interrupted can still land a box on it;
  *  - an ephemeral session's state volume, which the delete queued for
  *    deletion, leaves the queue.
  *
  * Public links and connector tokens the delete revoked stay revoked.
  */
 import { platinumVolumeDeletions, projectSessions, sessionContentPurges, sessionSandboxes } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { EPHEMERAL_RETIRED_KEY, ownSessionStateVolume } from '../../platform/services/ephemeral-sandbox';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
-import { PROVIDER_REMOVAL_PENDING_KEY, attemptArchivedBoxRemoval } from '../reaping/archived-box-removal';
+import {
+  PROVIDER_REMOVAL_PENDING_KEY,
+  PROVIDER_REMOVED_KEY,
+  attemptArchivedBoxRemoval,
+} from '../reaping/archived-box-removal';
 import { SESSION_DELETE_ROWS_DAYS, sessionRestoreUntil } from '../session-log-purge';
-import { transitionSandbox, transitionSession } from './status-transitions';
+import { STALE_PENDING_PROVISIONING_MS } from '../session-open/stopped-wake-result';
+import { type SessionSandboxRow, transitionSandbox, transitionSession } from './status-transitions';
+
+/**
+ * `deleteSession` stamps it on a row it archives during the first
+ * provisioning: provider.create may still return a box onto that row.
+ */
+export const DELETED_DURING_CREATE_KEY = 'deletedDuringCreateAt';
 
 export type RestoreSessionResult =
   | { ok: true }
@@ -38,6 +50,7 @@ const REMOVAL_KEYS = [
   'providerRemovalAttempts',
   'providerRemovalRetryAfterAt',
   'providerRemovalError',
+  DELETED_DURING_CREATE_KEY,
 ] as const;
 
 const NOT_DELETED = {
@@ -59,11 +72,33 @@ const REMOVAL_PENDING = {
 } as const;
 
 /** The restore lost a race to a write that moved one of its rows. */
-class RestoreLost extends Error {}
+class RestoreLost extends Error {
+  constructor(readonly refusal: Exclude<RestoreSessionResult, { ok: true }>) {
+    super(refusal.error);
+  }
+}
 
 const noPurgeMarker = sql`not exists (select 1 from ${sessionContentPurges} where ${sessionContentPurges.sessionId} = ${qualifiedColumn(projectSessions.sessionId)})`;
-const removalPending = (metadata: unknown) =>
-  (metadata as Record<string, unknown> | null)?.[PROVIDER_REMOVAL_PENDING_KEY] != null;
+
+/** True while the archived row still names, or may still get, a box the provider has not removed. */
+async function archivedBoxRemains(sandbox: SessionSandboxRow, now: Date): Promise<boolean> {
+  const metadata = (sandbox.metadata ?? {}) as Record<string, unknown>;
+  if (!sandbox.externalId) {
+    const interruptedAt = Date.parse(String(metadata[DELETED_DURING_CREATE_KEY] ?? ''));
+    return Number.isFinite(interruptedAt) && now.getTime() - interruptedAt < STALE_PENDING_PROVISIONING_MS;
+  }
+  if (metadata[PROVIDER_REMOVED_KEY] != null) return false;
+  // The delete's own attempt usually confirmed the removal already. A row with
+  // no stamp (a delete during provider.create, or from before the removal
+  // lane) gets its first attempt here.
+  const removal = await attemptArchivedBoxRemoval({
+    sandboxId: sandbox.sandboxId,
+    externalId: sandbox.externalId,
+    provider: sandbox.provider,
+    metadata: sandbox.metadata,
+  });
+  return removal !== 'removed';
+}
 
 export async function restoreSession(input: {
   projectId: string;
@@ -99,17 +134,7 @@ export async function restoreSession(input: {
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sessionId, sessionId))
     .limit(1);
-  if (sandbox?.status === 'archived' && sandbox.externalId && removalPending(sandbox.metadata)) {
-    // The delete's own attempt usually confirmed the removal already. One
-    // more try here; the maintenance lane keeps retrying a refusal.
-    const removal = await attemptArchivedBoxRemoval({
-      sandboxId: sandbox.sandboxId,
-      externalId: sandbox.externalId,
-      provider: sandbox.provider,
-      metadata: sandbox.metadata,
-    });
-    if (removal !== 'removed') return REMOVAL_PENDING;
-  }
+  if (sandbox?.status === 'archived' && (await archivedBoxRemains(sandbox, now))) return REMOVAL_PENDING;
 
   try {
     await db.transaction(async (tx) => {
@@ -127,7 +152,7 @@ export async function restoreSession(input: {
         },
         tx,
       );
-      if (!restored) throw new RestoreLost();
+      if (!restored) throw new RestoreLost(NOT_DELETED);
 
       if (sandbox?.status === 'archived') {
         const retired = await transitionSandbox(
@@ -142,20 +167,28 @@ export async function restoreSession(input: {
               strip: REMOVAL_KEYS,
               merge: { [EPHEMERAL_RETIRED_KEY]: sandbox.externalId ?? '', sessionRestoredAt: now.toISOString() },
             },
-            guard: sql`not (coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) ? ${PROVIDER_REMOVAL_PENDING_KEY})`,
+            // The row still names the box the checks above saw, and that box
+            // is confirmed removed.
+            guard: sandbox.externalId
+              ? and(
+                  eq(sessionSandboxes.externalId, sandbox.externalId),
+                  sql`${sessionSandboxes.metadata} ? ${PROVIDER_REMOVED_KEY}`,
+                )
+              : isNull(sessionSandboxes.externalId),
           },
           tx,
         );
-        if (!retired) throw new RestoreLost();
+        if (!retired) throw new RestoreLost(REMOVAL_PENDING);
       }
 
       const volume = ownSessionStateVolume(sessionId, session.metadata);
       if (volume) await tx.delete(platinumVolumeDeletions).where(eq(platinumVolumeDeletions.volumeName, volume));
     });
   } catch (error) {
-    // Both writes lock the session row first, so the race a restore can lose
-    // is a concurrent restore that already lifted the tombstone.
-    if (error instanceof RestoreLost) return NOT_DELETED;
+    // The session write loses only to a concurrent restore that already lifted
+    // the tombstone. The sandbox write loses to a box that landed on the row,
+    // or a removal record that changed, since the checks above.
+    if (error instanceof RestoreLost) return error.refusal;
     throw error;
   }
   return { ok: true };

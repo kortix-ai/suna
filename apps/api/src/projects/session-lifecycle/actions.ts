@@ -50,6 +50,7 @@ import { inspectSandboxRuntime } from '../runtime-inspection';
 import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { claimInPlaceRestart } from './runtime-restart-claim';
+import { DELETED_DURING_CREATE_KEY } from './restore-session';
 import { transitionSandbox, transitionSession } from './status-transitions';
 import {
   DELETED_SESSION_CLEARED_KEYS,
@@ -139,6 +140,10 @@ export async function deleteSession(input: {
         ? {}
         : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
       ...(removable ? { [PROVIDER_REMOVAL_PENDING_KEY]: deletedAt.toISOString() } : {}),
+      // provider.create may still return a box onto this row: a restore waits for it.
+      ...(sandbox.status === 'provisioning' && !sandbox.externalId
+        ? { [DELETED_DURING_CREATE_KEY]: deletedAt.toISOString() }
+        : {}),
     };
     const archived = await transitionSandbox('archive', sandbox.sandboxId, {
       metadata: { strip: DELETED_SESSION_CLEARED_KEYS, merge: archivePatch },

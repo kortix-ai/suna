@@ -22,6 +22,8 @@ import { db } from '../../shared/db';
 import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 
 export const PROVIDER_REMOVAL_PENDING_KEY = 'providerRemovalPendingAt';
+/** Set only when the provider confirmed the archived row's box is gone. */
+export const PROVIDER_REMOVED_KEY = 'providerRemovedAt';
 
 /**
  * Lifecycle fences a deleted session must not keep. A detached restart, wake or
@@ -76,7 +78,7 @@ async function markRemoved(sandboxId: string, now: Date): Promise<void> {
         'providerRemovalAttempts',
         'providerRemovalRetryAfterAt',
         'providerRemovalError',
-      ])}) || ${JSON.stringify({ providerRemovedAt: now.toISOString() })}::jsonb`,
+      ])}) || ${JSON.stringify({ [PROVIDER_REMOVED_KEY]: now.toISOString() })}::jsonb`,
       updatedAt: now,
     })
     .where(
