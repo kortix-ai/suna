@@ -272,13 +272,14 @@ describe('queries return the rows they name', () => {
       expect(`${item.label} ${item.keywords ?? ''}`.toLowerCase()).toContain('account');
     }
     const result = hits('account');
-    // Every hit owns the word: the switcher, the nine "Account · X" sections,
+    // Every hit owns the word: the switcher, the "Account · X" sections,
     // "your account", "connected accounts".
     expect(result.sort()).toEqual([
       'nav:account-access-projects',
       'nav:account-audit',
       'nav:account-billing',
       'nav:account-branding',
+      'nav:account-capture',
       'nav:account-general',
       'nav:account-git',
       'nav:account-groups',
