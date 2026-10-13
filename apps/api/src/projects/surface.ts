@@ -82,6 +82,9 @@ export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 // The transcript mirror's rewind marker (consumed by ../sandbox-proxy).
 export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';
 
+// Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
+export { clearOpenQuestions } from './lib/pending-questions';
+
 // The stored transcript (the session log behind the `session_log` flag, else
 // the mirror), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';

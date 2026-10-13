@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { clearOpenQuestions } from '../lib/pending-questions';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
@@ -47,6 +48,13 @@ async function markDelivered(row: SessionLifecycleCommandRow, payload: QueuedCon
   if (wireMessageId) await markCommandForwarded(row, row.sessionId!, wireMessageId, noReply ? { noReply } : undefined);
   else await markCommandSucceeded(row, { status: 'delivered' }, row.sessionId);
   tl.mark('marked');
+  // The session moved on: a question asked before this prompt was sent waits
+  // on nobody (KRTX-1739). One asked after it belongs to the turn this starts.
+  await clearOpenQuestions(row.sessionId!, { askedBefore: row.createdAt }).catch((err) =>
+    logger.warn('[session-lifecycle] open questions not closed after a delivered prompt', {
+      session_id: row.sessionId, command_id: row.commandId, error: err instanceof Error ? err.message : String(err),
+    }),
+  );
   if (typeof payload.triggerSlug === 'string') {
     await markTriggerRuntimeDelivered({ projectId: row.projectId, slug: payload.triggerSlug, when: new Date() }).catch(() => {});
   }
