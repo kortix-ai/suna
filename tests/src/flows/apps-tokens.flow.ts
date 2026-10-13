@@ -353,9 +353,11 @@ flow(
     const hosts = { app: "", backend: "" };
     let cookie = "";
 
+    // The gate at the App's own hostname: an unsigned `x-kortix-app-host`
+    // claim is never trusted for a local App (#9749), the Host names it.
     const gate = async (host: string, pathAndQuery: string, withCookie = true) => {
       const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
-        headers: { accept: "application/json", "x-kortix-app-host": host, ...(withCookie && cookie ? { cookie } : {}) },
+        headers: { accept: "application/json", host: `${host}:${new URL(apiOrigin).port}`, ...(withCookie && cookie ? { cookie } : {}) },
         redirect: "manual",
       });
       const text = await response.text();
