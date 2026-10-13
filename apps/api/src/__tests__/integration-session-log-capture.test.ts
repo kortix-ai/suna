@@ -36,9 +36,11 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { captureSessionTranscriptMirror } = await import('../projects/lib/session-transcript-capture');
+const { backfillSessionTranscriptMirrorOnWake, captureSessionTranscriptMirror, resetTranscriptBackfillMemoForTests } = await import('../projects/lib/session-transcript-capture');
+const { claimSessionLog } = await import('../projects/session-log-restore');
 const { setTranscriptRewindMarker } = await import('../projects/lib/session-transcript-mirror');
 const { ingestSessionLogJournal, sessionLogContentHash, SESSION_LOG_CAPTURE_REV_LIMIT } = await import('../projects/session-log-ingest');
+const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 
 const OWNER = crypto.randomUUID();
 const ROOT = 'ses_capturelogroot0000000001';
@@ -485,5 +487,111 @@ describe('a cursor on a tombstoned message', () => {
     } finally {
       await setFlag(false);
     }
+  });
+});
+
+describe('a converted log on a box that wakes with a journal (P3.3)', () => {
+  const toolInput = (rows: Array<{ id: string; record: Record<string, unknown> }>) =>
+    (rows.find((r) => r.id === 'msg_000001')?.record.blocks as Array<{ type: string; input?: unknown }>).find((b) => b.type === 'tool_call')?.input;
+  /** A root history with one bash call. */
+  const history = (): Msg[] => {
+    const call = plain(1);
+    call.parts.push({
+      id: 'prt_1_bash', sessionID: ROOT, messageID: 'msg_000001', type: 'tool', callID: 'call_1', tool: 'bash',
+      state: { status: 'completed', input: { command: 'ls', description: 'List files' }, output: 'a.txt', title: 'ls', metadata: { exit: 0, output: 'a.txt', description: 'List files' }, time: { start: 1, end: 2 } },
+    });
+    return [plain(0), call, plain(2), plain(3)];
+  };
+  /** A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without `input`), then the converter. */
+  const convertStripped = async (session: string, extra: Msg[] = []) => {
+    await capture(session, [...history(), ...extra]);
+    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
+    expect((await writeSessionLogFromMirror(session)).outcome).toBe('written');
+    const log = await logRow(session);
+    expect({ grade: log?.restoreGrade, counts: log?.gradeCounts }).toEqual({ grade: 'partial', counts: { tool_input: 1, cut_point: 0, attachment: 0 } });
+    expect(toolInput(await liveRows(session))).toBeNull();
+  };
+  /** What the box's daemon exports at boot: its native store, never stripped, `restore_grade: 'native'` without `grade_counts`. */
+  const nativeExport = (harness: 'opencode' | 'pi', rows: Msg[]): SessionLogJournalRequest => {
+    const log = fromV1({ session_id: 'ignored', root_id: ROOT, rows: rows.map((m) => ({ runtime_session_id: ROOT, info: m.info, parts: m.parts })) as unknown as V1Row[] }, { harness });
+    const { grade_counts: _counts, ...session } = { ...journalOf(log).session!, restore_grade: 'native' as const, harness: { current: harness, history: [] } };
+    const batch = journalOf(log);
+    for (const put of batch.puts) put.message.producer = { harness, harness_version: '1', adapter_version: '1' };
+    return { ...batch, session };
+  };
+  const readLog = async (session: string) => {
+    const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/log?limit=500`, { headers: { Authorization: `Bearer ${ownerToken}` } });
+    expect(res.status).toBe(200);
+    return (await res.json()) as { session: Record<string, unknown>; messages: Array<{ message_id: string; producer: { harness: string } }> };
+  };
+  /** The log is native: grade, no grade_counts anywhere, no converted row left live, exactly `ids` live. */
+  const expectNative = async (session: string, ids: string[]) => {
+    const row = await logRow(session);
+    expect({ grade: row?.restoreGrade, counts: row?.gradeCounts ?? null }).toEqual({ grade: 'native', counts: null });
+    const page = await readLog(session);
+    expect(page.session.restore_grade).toBe('native');
+    expect(page.session).not.toHaveProperty('grade_counts');
+    expect(page.messages.map((m) => m.message_id).sort()).toEqual([...ids].sort());
+    expect(page.messages.filter((m) => m.producer.harness === 'kortix-v1-import')).toEqual([]);
+    expect((await liveRows(session)).map((r) => r.id).sort()).toEqual([...ids].sort());
+  };
+
+  test('OpenCode: the boot export replaces every converted row under the same ids, tombstones the rows the store lacks, grade native, tool input back', async () => {
+    const session = await seedSession(project, OWNER);
+    // The mirror holds two messages the box no longer has (a box that lost them).
+    await convertStripped(session, [plain(4), plain(5)]);
+
+    const batch = nativeExport('opencode', history());
+    expect((await ingestSessionLogJournal(scope(session), batch)).status).toBe(200);
+
+    await expectNative(session, ['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003']);
+    const rows = await logRows(session);
+    expect(toolInput(rows)).toEqual({ command: 'ls', description: 'List files' });
+    // Same ids, same seqs: every native row took over its converted row.
+    expect(rows.filter((r) => r.deletedAt === null).map((r) => [r.id, r.seq])).toEqual(batch.puts.map((p) => [p.message.message_id, p.message.seq]));
+    // The two rows the store lacks are tombstones, never deleted.
+    expect(rows.filter((r) => r.deletedAt !== null).map((r) => r.id)).toEqual(['msg_000004', 'msg_000005']);
+  });
+
+  test('pi with a dump from before P2.5: native ids and seqs differ from the converted ones; no converted row survives, no seq conflict', async () => {
+    const session = await seedSession(project, OWNER);
+    await db.insert(sessionRuntimeProjections).values({
+      sessionId: session, projectId: project.project_id, accountId: project.account_id, externalId: session,
+      harness: 'pi', projectionEtag: 'etag', projection: {}, source: 'push', capturedAt: new Date(),
+    });
+    await convertStripped(session);
+
+    // The export of a dump without `messageIds`: `pi:<entry id>`, seq = the entry position (gaps; 2 and 4 collide with converted seqs).
+    const batch = nativeExport('pi', history());
+    for (const [i, put] of batch.puts.entries()) {
+      const id = `pi:e${i}`;
+      put.message = { ...put.message, message_id: id, seq: 2 * (i + 1), blocks: put.message.blocks.map((b, j) => ({ ...b, id: `${id}-n${j}` })) };
+    }
+    expect((await ingestSessionLogJournal(scope(session), batch)).status).toBe(200);
+
+    await expectNative(session, ['pi:e0', 'pi:e1', 'pi:e2', 'pi:e3']);
+    expect(toolInput((await liveRows(session)).map((r) => ({ ...r, id: r.id === 'pi:e1' ? 'msg_000001' : r.id })))).toEqual({ command: 'ls', description: 'List files' });
+  });
+
+  test('a later journal batch, or a first batch after a restore claim, tombstones nothing', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    // A restored box journals under the claimed generation: its native store was written from this log.
+    await claimSessionLog(scope(session));
+    const restored = nativeExport('opencode', [...history(), plain(4)]);
+    expect((await ingestSessionLogJournal(scope(session), { ...restored, generation: 1, puts: restored.puts.slice(-1) })).status).toBe(200);
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003', 'msg_000004']);
+  });
+
+  test('a box that keeps an old daemon: the wake backfill reads the stripped calls again and the converter writes them to the log', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    resetTranscriptBackfillMemoForTests();
+    await backfillSessionTranscriptMirrorOnWake(session, {
+      readMessages: async () => ({ opencodeSessionId: ROOT, payload: history(), headComplete: true, complete: true, children: [] }),
+    });
+    expect(toolInput(await liveRows(session))).toEqual({ command: 'ls', description: 'List files' });
+    expect((await logRow(session))?.restoreGrade).toBe('converted');
+    expect((await logRow(session))?.journalSeenAt).toBeNull();
   });
 });

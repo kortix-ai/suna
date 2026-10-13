@@ -46,6 +46,14 @@
  *   moves the row to seq `-rev`, so the seqs `fromV1` gives the messages after a
  *   rewind stay free. The capture never sets `log_durable_at`: that column means
  *   "acknowledged by the daemon's journal".
+ * - The upgrade (P3.3). A converted log (capture or backfill rows, grade `converted` or
+ *   `partial`) becomes native at the journal's first write: `restore_grade` goes to
+ *   `native`, `grade_counts` goes from the column and the record, and at generation 0
+ *   every live capture row is tombstoned at rev `SESSION_LOG_CAPTURE_REV_LIMIT - 1`
+ *   before the batch applies. The first journal of a box exports its whole native store
+ *   (no restore gave it cursors), so the export puts back each message it holds; a later
+ *   batch of that export revives its rows (a journal rev is higher). A tombstoned capture
+ *   row keeps its seq and stays provisional: a journal put on that seq deletes it.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -58,7 +66,7 @@ import {
   type SessionLogPut,
 } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
@@ -244,20 +252,34 @@ async function upsertSession(
     return null;
   }
   const firstJournal = !capture && writes && !row.journalSeenAt;
-  if (!patch && batch.generation === row.generation && !firstJournal) return null;
+  // The journal exports the native store: its first write makes the log native (P3.3).
+  const update = firstJournal ? { restore_grade: 'native' as const, ...patch } : patch;
+  if (!update && batch.generation === row.generation) return null;
+  // A grade without `grade_counts` has none: a converted log's counts must not outlive it.
+  const record = update?.restore_grade !== undefined ? sql`(${sessionLogs.record} - 'grade_counts')` : sql`${sessionLogs.record}`;
   await tx
     .update(sessionLogs)
     .set({
       generation: batch.generation,
       ...(firstJournal && { journalSeenAt: sql`now()` }),
-      ...(patch && { record: capture ? (patch as Record<string, unknown>) : sql`${sessionLogs.record} || ${JSON.stringify(patch)}::jsonb` }),
-      ...(patch?.v !== undefined && { v: patch.v }),
-      ...(patch?.harness?.current !== undefined && { harnessCurrent: patch.harness.current }),
-      ...(patch?.restore_grade !== undefined && { restoreGrade: patch.restore_grade }),
-      ...(patch?.grade_counts !== undefined && { gradeCounts: patch.grade_counts }),
+      ...(update && { record: capture ? (update as Record<string, unknown>) : sql`${record} || ${JSON.stringify(update)}::jsonb` }),
+      ...(update?.v !== undefined && { v: update.v }),
+      ...(update?.harness?.current !== undefined && { harnessCurrent: update.harness.current }),
+      ...(update?.restore_grade !== undefined && { restoreGrade: update.restore_grade, gradeCounts: update.grade_counts ?? null }),
       updatedAt: sql`now()`,
     })
     .where(eq(sessionLogs.sessionId, scope.sessionId));
+  // P3.3: a box that wakes on a journal daemon exports its whole native store at generation 0
+  // (no restore claimed the session). Every capture or backfill row goes: the export puts its
+  // own back under the same ids (OpenCode, pi since P2.5), and a row it does not hold (pi's
+  // `pi:<entry>` ids for a dump from before P2.5, a message the box lost) would stay next to
+  // the native ones. A restored box (generation > 0) holds this log: its rows stay.
+  if (firstJournal && batch.generation === 0) {
+    await tx
+      .update(sessionLogMessages)
+      .set({ deletedAt: sql`now()`, rev: SESSION_LOG_CAPTURE_REV_LIMIT - 1, updatedAt: sql`now()` })
+      .where(and(eq(sessionLogMessages.sessionId, scope.sessionId), lt(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT - 1), isNull(sessionLogMessages.deletedAt)));
+  }
   return null;
 }
 
