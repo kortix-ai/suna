@@ -85,7 +85,8 @@ Browser runs use two Playwright workers, locally and in each CI shard.
 A green `pnpm test` writes `tests/attestations/<branch>.json` (`/` and every char
 outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
 `detached-<short-sha>.json`) and deletes every other file in `tests/attestations/`
-plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
+plus the legacy `tests/test-attestation.json`. Committing it is optional; a
+factory PR commits it because the company merge gate (G11) reads it.
 One file per branch keeps PRs from conflicting on it; deleting a merged PR's
 file is conflict-free because no branch edits it again. Format:
 `{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
@@ -114,13 +115,15 @@ diff-scoped run found nothing the flows or DB suites read). The `packages` lane 
 laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
 either skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
-records the skip and the merge gate holds DB PRs.
-The `.githooks/pre-push` hook enforces this on every branch push except
-`scratch/*`. Never push with `--no-verify`.
+records the skip and the factory merge gate holds DB PRs.
+No hook or `dev` merge gate requires an attestation. You choose the tests a
+change needs.
 
-Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
-`pnpm test -- --full` for testing infrastructure, broad refactors, and release
-work.
+Run the narrowest relevant command first. Run the diff-scoped `pnpm test` when
+the change reaches shared code, the API, the SDK, a migration, or the runtime.
+A diff that no test reads (docs, a skill, a standalone script) needs no run.
+Run `pnpm test -- --full` for testing infrastructure, broad refactors, and
+release work.
 
 ## Prove the result
 
@@ -155,12 +158,12 @@ when a workflow other than the label-gated `tests.yml` and `deploy-preview.yml`
 triggers on a pull request into `dev`: put a new check on `push: dev` or on the
 release pull requests.
 
-Before a `dev` merge, run the narrowest relevant command first, then
-`pnpm test`. Add the local equivalent of every CI job your change touches:
+Before a `dev` merge, run the narrowest relevant command first. Add the local
+equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| anything | `pnpm test:verify` (merge gate); `Tests` lanes on `staging`/`prod` PRs | `pnpm test` (core) and `pnpm test -- --packages-only` |
+| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on every `dev` push and on `staging`/`prod` PRs | `pnpm test` (diff-scoped) |
 | browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
 | `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |

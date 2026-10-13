@@ -161,13 +161,13 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 
 | Read | CLI | API |
 | --- | --- | --- |
-| Recent messages | `kortix sessions log [<id>] [--limit N]` | `GET .../sessions/<session_id>/transcript` |
+| Recent messages | `kortix sessions log [<id>] [--limit N] [--json]` | `GET .../sessions/<session_id>/log` |
 | One session's fields | `kortix sessions info <id>` | `GET .../sessions/<session_id>` |
 | What every agent does now | `kortix sessions status [--all]` | — |
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the saved transcript of a stopped session. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `"provisional": true`. Inside a sandbox, where the session token cannot read the stored log, `source` is `v1`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 
