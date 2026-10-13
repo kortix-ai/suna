@@ -176,7 +176,11 @@ test('complete capture persists all pages, retries, serializes writes, and keeps
     if (project) await removeSeeded([project]);
     await db.end();
   }
-}, 20_000);
+  // Since P2.7 every capture also writes the v2 session log. This test changes
+  // all 620 messages on 4 of its 9 captures: 2.7 s without the log write, 7.6 s
+  // with it on a laptop, and over 20 s on a CI runner. A real turn writes only
+  // the changed messages.
+}, 60_000);
 
 test('a turn writes only what changed, and a shorter read deletes nothing', async () => {
   const db = new PgClient({ connectionString: localTestDatabaseUrl() });
