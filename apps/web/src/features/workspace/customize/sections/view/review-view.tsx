@@ -4,8 +4,6 @@ import { ProjectFilesProvider } from '@/features/project-files';
 import { ReviewCenterConnected } from '@/features/review-center/review-center-connected';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { type CanResult, useProjectCans } from '@/lib/use-project-can';
 import { useProjectName } from '@kortix/sdk/react';
 
 /**
@@ -26,36 +24,10 @@ export function ReviewPage({ projectId }: { projectId: string }) {
   );
 }
 
-/** The leaves the inbox's verdicts assert, in one batched probe. */
-const REVIEW_CENTER_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
-  PROJECT_ACTIONS.PROJECT_WRITE,
-  PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
-] as const;
-
-/**
- * Which verdicts the viewer gets. Acting on a review item (approve, reject,
- * request changes, the bulk act) asserts `project.review.act`. "Ship it" on a
- * change request merges it, and the merge route asserts `project.write` and
- * `project.gitops.merge` instead (KRTX-1720). Only an explicit allow counts, so
- * an unresolved probe offers nothing.
- */
-export function reviewCenterGates(cans: Partial<Record<string, Pick<CanResult, 'allowed'>>>): {
-  canAct: boolean;
-  canMerge: boolean;
-} {
-  const allowed = (action: string) => cans[action]?.allowed === true;
-  return {
-    canAct: allowed(PROJECT_ACTIONS.PROJECT_REVIEW_ACT),
-    canMerge:
-      allowed(PROJECT_ACTIONS.PROJECT_WRITE) && allowed(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE),
-  };
-}
-
 /**
  * The Review Center inbox — the per-project human-in-the-loop inbox wired
- * to live data. On for every project; acting is gated on `project.review.act`,
- * a change request's merge on `project.write` + `project.gitops.merge`.
+ * to live data. On for every project. Each verdict shows only for a viewer
+ * who holds the leaves its route asserts (`ReviewCenterConnected`, KRTX-1720).
  */
 export function ReviewView({ projectId }: { projectId: string }) {
   // One source for the project name — see `useProjectName`'s doc comment.
@@ -64,17 +36,11 @@ export function ReviewView({ projectId }: { projectId: string }) {
   // that panel is open), so this is a cache hit, not a second `getProject`
   // request for data the parent already holds.
   const projectName = useProjectName(projectId) ?? '';
-  // A read-only role (review.read only) still SEES the inbox:
-  // ReviewCenterConnected withholds the act handlers. Fails safe: false until
-  // the probe resolves.
-  const { canAct, canMerge } = reviewCenterGates(
-    useProjectCans(projectId, REVIEW_CENTER_ACTIONS),
-  );
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
       <ProjectFilesProvider value={{ projectId, ref: '', defaultBranch: '' }}>
-        <ReviewCenterConnected projectName={projectName} canAct={canAct} canMerge={canMerge} />
+        <ReviewCenterConnected projectName={projectName} />
       </ProjectFilesProvider>
     </div>
   );

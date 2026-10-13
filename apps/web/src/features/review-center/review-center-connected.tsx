@@ -23,11 +23,14 @@ import {
   useMergeChangeRequest,
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
+import { useProjectCans } from '@/lib/use-project-can';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type ReviewVerdict,
   listProjectSessions,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+  REVIEW_CONTROL_ACTIONS,
+  reviewVerdictAllowed,
 } from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -54,23 +57,15 @@ const PREFETCH_LIMIT = 8;
  *  display time, not motion. */
 const CONFLICT_TOAST_MS = 10_000;
 
-export function ReviewCenterConnected({
-  projectName,
-  canAct = true,
-  canMerge = true,
-}: {
-  projectName: string;
-  // When false (a review.read-only role), withhold the act handlers so the
-  // ReviewCenter renders its inbox read-only — no mutation UI that would 403.
-  // Defaults to true to preserve behavior for callers that don't gate.
-  canAct?: boolean;
-  // When false, a change request offers no merge ("Ship it"): the merge route
-  // asserts project.write + project.gitops.merge, not review.act (KRTX-1720).
-  canMerge?: boolean;
-}) {
+export function ReviewCenterConnected({ projectName }: { projectName: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
+  // Which verdicts this viewer gets (KRTX-1720): the leaves each verdict's
+  // route asserts, mapped once in `@kortix/sdk` for web and mobile. A read-only
+  // role still sees the inbox, with no verdict control. The inbox stays live
+  // for every viewer: an unresolved probe offers no verdict.
+  const cans = useProjectCans(projectId, REVIEW_CONTROL_ACTIONS);
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useSettingsPanelStore((s) => s.close);
@@ -180,7 +175,6 @@ export function ReviewCenterConnected({
     const crId = crChangeRequestId(id);
     if (crId) {
       if (verdict === 'approve') {
-        if (!canMerge) return;
         merge.mutate(crId, {
           onSuccess: () => {
             successToast(tI18nComplete.raw('text0cad31cba248'));
@@ -294,12 +288,12 @@ export function ReviewCenterConnected({
       isFetched={isFetched}
       isError={isError}
       sessionLabels={sessionLabels}
-      onAct={canAct ? handleAct : undefined}
-      onBulkAct={canAct ? handleBulkAct : undefined}
+      onAct={handleAct}
+      onBulkAct={handleBulkAct}
+      verdictAllowed={(item, verdict) => reviewVerdictAllowed(item, verdict, cans)}
       onRefresh={() => void refetch()}
       recoveringCrId={startingCrId}
       onRecoverChange={recoverChange}
-      canMerge={canMerge}
       onOpenSession={(sessionId) => {
         // "See progress" only VIEWS the session — feedback delivery goes through
         // the backend now. Clear any stale queued prompt so navigating can't

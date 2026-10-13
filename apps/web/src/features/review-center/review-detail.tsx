@@ -21,6 +21,7 @@ import {
   useChangeRequestMergePreview,
 } from '@/features/project-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
+import type { ReviewVerdict } from '@kortix/sdk';
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowUpRightIcon as ArrowUpRight,
@@ -58,10 +59,10 @@ export interface ReviewActions {
   /** Start a real session from the blocked Change Request head branch. */
   recoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
   recoveringCrId?: string | null;
-  /** `false` hides a change's merge action ("Ship it"): the merge route
-   *  asserts project.write + project.gitops.merge (KRTX-1720). Absent (the
-   *  prototype inbox) keeps it. */
-  canMerge?: boolean;
+  /** Whether this viewer may give `verdict` on `item` (KRTX-1720): the inbox's
+   *  `reviewVerdictAllowed` over the viewer's leaves. A control for a verdict
+   *  it refuses does not render. */
+  allows: (item: ReviewItem, verdict: ReviewVerdict) => boolean;
 }
 
 /** A muted bordered panel — the friendly content surface. */
@@ -175,23 +176,26 @@ function ChangeBody({
             </ItemTitle>
             <ItemDescription>{tI18nComplete.raw('text0ffc4db692f7')}</ItemDescription>
           </ItemContent>
-          <ItemActions>
-            <Button
-              size="sm"
-              disabled={recovering}
-              onClick={() => {
-                if (actions.recoverChange) {
-                  actions.recoverChange(item, conflicts);
-                } else {
-                  actions.resolve(item.id, 'waiting', tI18nComplete.raw('text92bb0a437a39'));
-                  onClose();
-                }
-              }}
-            >
-              {recovering ? <Loading className="size-3.5 shrink-0" /> : null}
-              {tI18nComplete.raw('text30afafe4c16e')}
-            </Button>
-          </ItemActions>
+          {/* The fix stands in for Ship it, so it follows the merge verdict. */}
+          {actions.allows(item, 'approve') ? (
+            <ItemActions>
+              <Button
+                size="sm"
+                disabled={recovering}
+                onClick={() => {
+                  if (actions.recoverChange) {
+                    actions.recoverChange(item, conflicts);
+                  } else {
+                    actions.resolve(item.id, 'waiting', tI18nComplete.raw('text92bb0a437a39'));
+                    onClose();
+                  }
+                }}
+              >
+                {recovering ? <Loading className="size-3.5 shrink-0" /> : null}
+                {tI18nComplete.raw('text30afafe4c16e')}
+              </Button>
+            </ItemActions>
+          ) : null}
         </Item>
       )}
     </>
@@ -324,6 +328,8 @@ function ApprovalBody({
       {(() => {
         const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;
         const busy = actions.connected && actions.pendingId === item.id;
+        // Approve and deny assert the same leaves on a native item.
+        const decides = actions.allows(item, 'approve');
         return (
           <>
             <div className="space-y-2">
@@ -332,7 +338,7 @@ function ApprovalBody({
                   key={a.id}
                   action={a}
                   connected={actions.connected}
-                  readOnly={wholeItem}
+                  readOnly={wholeItem || !decides}
                   pending={busy && !wholeItem ? (actions.pendingDecision ?? 'approve') : null}
                   onOpenSession={openSession}
                   onApprove={() => {
@@ -354,7 +360,7 @@ function ApprovalBody({
                 />
               ))}
             </div>
-            {wholeItem && (
+            {wholeItem && decides && (
               <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
                 <p className="text-muted-foreground min-w-0 text-sm text-pretty">
                   {tI18nComplete.raw('text91273d498d36')} {list.length}{' '}
@@ -454,7 +460,8 @@ function DecisionBody({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const d = item.detail;
-  const answered = item.status !== 'needs_you';
+  // Answered already, or this viewer may not answer: the options only read.
+  const locked = item.status !== 'needs_you' || !actions.allows(item, 'answer');
   return (
     <>
       <Panel>
@@ -470,7 +477,7 @@ function DecisionBody({
             <button
               key={opt.id}
               type="button"
-              disabled={answered}
+              disabled={locked}
               onClick={() => {
                 actions.resolve(item.id, 'done', `Answered · ${opt.label} — agent resumed`);
                 onClose();
@@ -478,8 +485,8 @@ function DecisionBody({
               className={cn(
                 'focus-visible:ring-kortix-blue w-full rounded-md border px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none',
                 opt.recommended ? 'border-primary/40 bg-primary/[0.03]' : 'bg-popover',
-                !answered && 'hover:border-primary/40 hover:bg-primary/[0.05] active:scale-[0.99]',
-                answered && 'opacity-60',
+                !locked && 'hover:border-primary/40 hover:bg-primary/[0.05] active:scale-[0.99]',
+                locked && 'opacity-60',
               )}
             >
               <div className="flex items-center gap-2">
@@ -617,20 +624,21 @@ function ActionBar({
   // Decisions and native approvals decide inside their body.
   if (item.kind === 'decision' || item.kind === 'approval') return null;
 
-  // change · output · batch
+  // change · output · batch. Each control shows only for a verdict the viewer
+  // may give (KRTX-1720). Ship it on a change merges it; the conflict fix stands
+  // in for Ship it, so it follows the same verdict.
   const secondaryLabel = item.secondaryAction;
   const hasConflicts = item.kind === 'change' && conflicts.length > 0;
-  // Ship it on a change merges it. Without the merge leaf it would answer 403.
-  const showPrimary = item.kind !== 'change' || actions.canMerge !== false;
+  const showPrimary = actions.allows(item, 'approve');
 
   return (
     <div className="flex items-center gap-2">
-      {secondaryLabel && !composing && (
+      {secondaryLabel && !composing && actions.allows(item, 'changes') && (
         <Button variant="ghost" size="sm" onClick={() => setComposing(true)}>
           {secondaryLabel}
         </Button>
       )}
-      {hasConflicts && item.kind === 'change' ? (
+      {!showPrimary ? null : hasConflicts && item.kind === 'change' ? (
         <Button
           size="sm"
           disabled={actions.recoveringCrId === item.detail.crId}
@@ -650,7 +658,7 @@ function ActionBar({
           )}
           {tI18nComplete.raw('text30afafe4c16e')}
         </Button>
-      ) : showPrimary ? (
+      ) : (
         <Button
           size="sm"
           // Ready to ship reads as success. Only high risk keeps the brake.
@@ -664,7 +672,7 @@ function ActionBar({
           {checkingConflicts ? <Loading className="size-3.5 shrink-0" /> : null}
           {checkingConflicts ? tI18nComplete.raw('textec963ffc911b') : item.primaryAction}
         </Button>
-      ) : null}
+      )}
     </div>
   );
 }
