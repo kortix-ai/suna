@@ -7915,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "バージョン履歴",
       "line285JsxTextCopyPath": "パスをコピー",
       "line396JsxTextThisFolderIsEmpty": "このフォルダーは空です",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。",
+      "loadMoreItems": "さらに読み込む",
+      "loadMoreFailed": "さらに読み込めませんでした。もう一度お試しください。",
+      "partialSortNote": "{value0} 件を表示しています。すべて読み込むと並べ替えが適用されます。",
+      "showingFirstItems": "最初の {value0} 件を表示しています"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "ダブルクリックしてパスを編集",
@@ -8007,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "ファイルを検索...",
       "line124JsxTextTypeToSearchFiles": "入力してファイルを検索...",
-      "line136JsxTextNoFilesFound": "ファイルが見つかりません"
+      "line136JsxTextNoFilesFound": "ファイルが見つかりません",
+      "searchContents": "内容を検索",
+      "firstMatches": "最初の {value0} 件の一致を表示しています",
+      "searchContentsPlaceholder": "ファイルの内容を検索...",
+      "typeToSearchContents": "入力してファイルの内容を検索...",
+      "noMatchingLines": "一致する行がありません"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "その名前のファイルまたはフォルダーはすでに存在します",
@@ -20188,9 +20197,8 @@
     "calendarNextWeek": "次の週",
     "calendarPreviousMonth": "前の月",
     "calendarNextMonth": "次の月",
-    "calendarAllWeek": "週全体",
-    "calendarAllDay": "終日",
-    "calendarEvery": "{period}ごと",
+    "calendarMore": "他 {count} 件",
+    "calendarMoreOn": "{date} の他 {count, plural, other {# 件のリマインダー}}",
     "calendarSession": "セッション",
     "calendarEmptyWeek": "今週の実行予定はありません",
     "calendarEmptyDay": "この日の実行予定はありません",

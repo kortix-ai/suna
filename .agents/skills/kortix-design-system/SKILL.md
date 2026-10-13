@@ -50,6 +50,7 @@ file (the shadow ladder that never existed, the press value) are recorded in
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
 | **`@/lib/toast`** (deleted; never recreate it), raw `sonner`, `toast.success/error/info/warning()`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx`. An action button is the `button` option (a `Button`), not sonner's `action`. `tests/unit/toast-single-source.test.ts` fails on any other `sonner` import |
 | Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
+| A count beside a label (row, tab, menu item, button) as muted text or a `Badge` | **`CountBadge`** from `apps/web/src/components/ui/count-badge.tsx`: the sidebar Review-count recipe (tabular pill, row text colour, 15% tint, `99+`). Tone by meaning: `waiting`, `reminder`, `conflict`, `neutral`. Mobile: `CountBadge` in `apps/mobile/components/kortix/count-badge.tsx` |
 | **Any icon as a spinner** — `CircleNotchIcon`, `SpinnerIcon`, `SpinnerGapIcon`, or the same glyph aliased to `Loader`/`Loader2`/`IconLoader` | **`Loading`** from `apps/web/src/components/ui/loading.tsx` — the spinner. The one other busy mark is `SessionDotMatrix`, for session-scoped work only (D4f in `decisions.md`) |
 | Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
@@ -499,7 +500,7 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 - **Default `TabsList`:** the segmented control (recessed track, raised `shadow-xs` chip). A vertical list (a settings rail) is never segmented (`tabs.tsx`, `capability-tabs.tsx`).
 - **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`channels-view.tsx`)
 - **Filter / status tabs:** `TabsListCompact` + `TabsTriggerCompact` (`project-sessions-view.tsx`, `secrets-view.tsx`)
-- Tab badge count: `<Badge variant="secondary" size="sm">` inside trigger
+- Tab badge count: `<CountBadge count={n} />` inside trigger
 
 ## Loading pattern (canonical)
 

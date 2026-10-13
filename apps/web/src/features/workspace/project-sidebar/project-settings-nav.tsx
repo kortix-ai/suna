@@ -16,6 +16,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
+import { CountBadge } from '@/components/ui/count-badge';
 
 /**
  * The one project-configuration entry in the sidebar:
@@ -178,12 +179,12 @@ export function ProjectCustomizeNavItem() {
           </span>
           {t('customize')}
           {conflicts > 0 ? (
-            <span
-              className="text-kortix-orange ml-auto text-xs font-medium tabular-nums"
+            <CountBadge
+              count={conflicts}
+              tone="conflict"
+              className="ml-auto"
               aria-label={tDrives('conflictCount', { count: conflicts })}
-            >
-              {conflicts}
-            </span>
+            />
           ) : null}
         </HoverPrefetchLink>
       </SidebarMenuButton>

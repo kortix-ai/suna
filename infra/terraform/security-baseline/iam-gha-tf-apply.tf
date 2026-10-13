@@ -97,6 +97,8 @@ resource "aws_iam_role_policy" "gha_tf_apply_iam" {
           "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:ListAttachedRolePolicies",
+          # The AWS provider lists instance profiles before DeleteRole.
+          "iam:ListInstanceProfilesForRole",
           "iam:ListRolePolicies",
           "iam:PassRole",
           "iam:PutRolePolicy",
@@ -223,6 +225,9 @@ resource "aws_iam_role_policy" "gha_tf_apply_global_iam" {
           "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:ListAttachedRolePolicies",
+          # The AWS provider lists instance profiles before DeleteRole; without
+          # it Terraform Apply Global run 38291035787 could not delete a role.
+          "iam:ListInstanceProfilesForRole",
           "iam:ListRolePolicies",
           "iam:ListRoleTags",
           "iam:PassRole",

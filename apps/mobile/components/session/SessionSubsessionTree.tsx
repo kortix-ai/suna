@@ -27,6 +27,7 @@ import { Pressable, View } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 
+import { CountBadge } from '@/components/kortix/count-badge';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import {
@@ -79,20 +80,8 @@ export function subsessionCountLabel(count: number): string {
  */
 export function SubsessionCountBadge({ count }: { count: number }) {
   if (!showSubsessionCountBadge(count)) return null;
-  // Same shape as the drawer's Review count pill (`CountPill`): rounded-sm
-  // tag, neutral fill — blue there means "needs you", this is only a count.
-  return (
-    <View
-      className="rounded-sm bg-foreground/10 px-1.5 py-0.5"
-      accessible={false}
-      importantForAccessibility="no-hide-descendants">
-      <Text
-        className="font-roobert-medium text-xs text-muted-foreground"
-        style={{ fontVariant: ['tabular-nums'] }}>
-        {count > 99 ? '99+' : String(count)}
-      </Text>
-    </View>
-  );
+  // Only a count, so the neutral tone; the drawer's Review count is `waiting`.
+  return <CountBadge count={count} />;
 }
 
 function SubsessionRow({

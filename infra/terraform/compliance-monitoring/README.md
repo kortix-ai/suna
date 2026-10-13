@@ -6,17 +6,20 @@ stack has its own state so it cannot accidentally adopt or mutate the legacy
 
 It manages:
 
-- WAF association for every current ALB in us-west-2, eu-west-2, and
-  us-east-2.
+- WAF association for every current ALB in eu-west-2 and us-east-2. us-west-2
+  runs no workload since 2026-10-12, so this stack keeps nothing there except a
+  rule that forwards the Terraform lock table's AWS Backup failures to
+  eu-west-2. GuardDuty and root-login alert routing lives in
+  `security-baseline` and also delivers in eu-west-2.
 - Target-response-time, ELB 5xx, and unhealthy-host CloudWatch alarms for every
   current ALB, with regional SNS actions (Drata DCF-86 / DCF-88 / test 294).
   The reconciler adds a zero-healthy-hosts alarm per target group.
   `TargetResponseTime` was retired on 2026-08-26 because its 2 s threshold
   flapped on streaming traffic; it is restored at Average > 30 s sustained for
   15 minutes, above the by-design streaming averages.
-- CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
-  and production regions, discovered on every plan so replacement EKS workers
-  remain covered (Drata DCF-86).
+- CPU-utilization CloudWatch alarms for every running EC2 instance in
+  eu-west-2, discovered on every plan so replacement workers remain covered
+  (Drata DCF-86).
 - Regional Lambda reconcilers triggered by EC2 running-state events, plus a
   five-minute repair schedule, so replacement instances receive the same alarm
   without waiting for another Terraform apply.
@@ -29,6 +32,9 @@ It manages:
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
+- VPC flow logs for the dev (us-east-2) and staging (eu-west-2) VPCs, which had
+  none until 2026-10-12 (Drata DCF-406). The prod VPC carries a flow log created
+  by CLI. us-west-2 has no VPC since 2026-10-12.
 - A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
   backups. Velero retains backups for 30 days. S3 expires current and
   noncurrent object versions after 35 days.
@@ -57,9 +63,8 @@ Email SNS subscriptions remain a human confirmation step; Terraform must not
 pretend an unconfirmed subscription is a working alert channel. The us-east-2
 `kortix-compliance-alerts` subscription is declared in Terraform because Drata
 DCF-86 requires the alarm topic to hold a subscription, and it reads
-PendingConfirmation until the SNS confirmation email is clicked. The us-west-2
-and eu-west-2 topics carry confirmed email subscriptions managed outside
-Terraform.
+PendingConfirmation until the SNS confirmation email is clicked. The eu-west-2
+topic carries a confirmed email subscription managed outside Terraform.
 
 Because Drata fails `hasSubscription` while the only subscription is pending,
 the us-east-2 topic also carries a Lambda subscriber
@@ -70,17 +75,15 @@ CloudWatch Logs. The email subscription remains the human delivery channel.
 ## Verify EC2 CPU coverage
 
 The reconciler only writes an alarm when it is absent or its metric, threshold,
-period, instance dimension, or SNS action has drifted. Invoke both regional
-functions and compare every running instance ID with the alarm dimensions:
+period, instance dimension, or SNS action has drifted. Invoke the function and
+compare every running instance ID with the alarm dimensions:
 
 ```bash
-aws lambda invoke --region us-west-2 \
-  --function-name kortix-ec2-cpu-alarm-reconciler /tmp/usw2.json
 aws lambda invoke --region eu-west-2 \
   --function-name kortix-ec2-cpu-alarm-reconciler /tmp/euw2.json
 ```
 
-Both payloads must report `covered_instances == running_instances` and an empty
+The payload must report `covered_instances == running_instances` and an empty
 `updated_instances` list on the second invocation.
 
 ## Verify ALB alarm coverage
@@ -91,7 +94,7 @@ ALB + unhealthy-hosts and zero-healthy-hosts per target group`, an empty
 `updated_alarms` list, and an empty `deleted_alarms` list.
 
 ```bash
-for region in us-west-2 eu-west-2 us-east-2; do
+for region in eu-west-2 us-east-2; do
   aws lambda invoke --region "$region" \
     --function-name kortix-alb-alarm-reconciler \
     "/tmp/${region}-alb-reconciler.json"
@@ -119,7 +122,7 @@ is the record.
 
 | Test | Decision | Date | Rationale |
 | --- | --- | --- | --- |
-| `225` Hardware MFA for AWS Root Account | Disabled, risk accepted by the account owner | 2026-09-29 | SOC 2 does not require hardware MFA; the test comes from the CIS AWS Foundations Benchmark. Control `DCF-90` (root account monitored) is met by test `214` (root has MFA), test `124` (root unused), no root access keys, and a page on every successful root console sign-in (`../security-baseline/root-account-alerting.tf`: EventBridge rule `kortix-root-login-failures`, us-east-1 to us-west-2, SNS `suna-api-alerts`, confirmed email subscriber). Re-evaluate at the annual policy review. |
+| `225` Hardware MFA for AWS Root Account | Disabled, risk accepted by the account owner | 2026-09-29 | SOC 2 does not require hardware MFA; the test comes from the CIS AWS Foundations Benchmark. Control `DCF-90` (root account monitored) is met by test `214` (root has MFA), test `124` (root unused), no root access keys, and a page on every successful root console sign-in (`../security-baseline/root-account-alerting.tf`: EventBridge rule `kortix-root-login-failures`, us-east-1 to eu-west-2 since 2026-10-12, SNS `kortix-compliance-alerts`, confirmed email subscriber). Re-evaluate at the annual policy review. |
 | `300` AWS Lambda Error Rate Monitored | Re-enabled | 2026-09-29 | Every Lambda in the account has an `Errors` alarm (`reconciler-health.tf`). |
 
 ## Drata IaC scan: how it reads this tree

@@ -174,20 +174,45 @@ function piDirIn(releaseRoot: string): Promise<string | null> {
   return resolvePiProjectConfigDir({ projectTarget: releaseRoot } as HostConfig)
 }
 
+/** A module path's folder (`tools/lookup.ts` → `tools/`), or the path itself at the repo root. */
+const folderOf = (path: string) => path.slice(0, path.lastIndexOf('/') + 1) || path
+
+/**
+ * The repo folders of the `./` pi packages (`KORTIX_PI_PACKAGES`): a file
+ * package (one extension) is its folder, as a tool module is; a directory
+ * package is the directory. npm packages are not repo files.
+ */
+function localPackageDirs(raw: string | undefined): string[] {
+  let entries: unknown
+  try {
+    entries = JSON.parse(raw?.trim() || '[]')
+  } catch {
+    return []
+  }
+  if (!Array.isArray(entries)) return []
+  return entries.flatMap((entry) => {
+    const source = typeof entry === 'string' ? entry : (entry as { source?: unknown } | null)?.source
+    if (typeof source !== 'string' || !source.startsWith('./')) return []
+    const path = source.slice(2).replace(/\/+$/, '')
+    return [/\.[cm]?[jt]s$/.test(path) ? folderOf(path) : `${path}/`]
+  })
+}
+
 /**
  * What only a runtime start reads from a release: everything in pi's own
- * config dir except its skills, and the tools (the project tools and the
- * Kortix tool list in the governance, and every file in the folder of each
- * tool module).
+ * config dir except its skills, every file in the folder of each `./` pi
+ * package, and the tools (the project tools and the Kortix tool list in the
+ * governance, and every file in the folder of each tool module).
  */
-function startOnlyFiles(release: Pick<ReleaseManifest, 'files' | 'compiled_governance'> | null, releaseRoot: string | null, piDir: string | null): string {
+function startOnlyFiles(release: Pick<ReleaseManifest, 'files' | 'compiled_governance'> | null, releaseRoot: string | null, piDir: string | null, packageDirs: readonly string[]): string {
   if (!releaseRoot || !release) return ''
   const pi = piDir ? `${relative(releaseRoot, piDir)}/` : null
   const governance = parseCompiledAgentConfig(release.compiled_governance ?? undefined)
   const declared = governance?.project_tools ?? {}
-  const toolDirs = Object.values(declared).map((path) => path.slice(0, path.lastIndexOf('/') + 1) || path)
+  const toolDirs = Object.values(declared).map(folderOf)
   const startOnly = (path: string) =>
-    (pi !== null && path.startsWith(pi) && !path.startsWith(`${pi}skills/`)) || toolDirs.some((dir) => path.startsWith(dir))
+    (pi !== null && path.startsWith(pi) && !path.startsWith(`${pi}skills/`)) ||
+    [...toolDirs, ...packageDirs].some((dir) => path.startsWith(dir))
   const files = (release.files ?? []).filter(([path]) => startOnly(path!)).map(([path, , blob]) => `${path}:${blob}`).sort()
   return [
     ...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []),
@@ -210,6 +235,7 @@ function bounded(reasons: readonly string[]): string | null {
 
 export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConfigReleases {
   const { cfg, env } = options
+  const packageDirs = localPackageDirs(env.KORTIX_PI_PACKAGES)
   const root = options.root ?? bootConfigRoot()
   const noticePath = options.noticePath ?? CONFIG_RELEASE_NOTICE_PATH
   const api =
@@ -471,7 +497,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   /** The start-only pi files the runtime loaded: the running release's, or the working tree's pi dir. */
   async function loadedStartOnlyFiles(): Promise<string | null> {
     if (current.source === 'release' && current.release_id) {
-      return startOnlyFiles(await readReleaseManifest(root, current.release_id), current.dir, current.piDir)
+      return startOnlyFiles(await readReleaseManifest(root, current.release_id), current.dir, current.piDir, packageDirs)
     }
     // Off the release path the working tree's pi dir may hold extensions: unknown, so restart.
     return current.source === 'workspace' ? null : ''
@@ -603,7 +629,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     if (!runtime.idle()) return busy()
 
     const piDir = await piDirIn(dir)
-    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest, dir, piDir)
+    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest, dir, piDir, packageDirs)
     writeNotice(manifest, dir)
     const refused = await swap(
       runtime,
