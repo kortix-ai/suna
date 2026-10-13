@@ -94,7 +94,7 @@ export function DriveHeader({
 
   const reviewCount = reviewsToggle.openCount ?? 0;
   const params = useParams<{ id?: string }>();
-  // Volumes on for the organization: the repo browser is Repo; off, it is Files.
+  // Volumes on for the project: the repo browser is Repo; off, it is Files.
   const volumes = useFeatureFlag(params?.id, 'drives');
 
   const actions = (

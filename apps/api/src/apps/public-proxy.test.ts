@@ -423,6 +423,29 @@ describe('Apps public edge', () => {
     )).toBe(true);
   });
 
+  test('an unsigned claim of a local App host is not an App request', () => {
+    // Pentest H-3: the local carve-out skips the edge signature, so a claimed
+    // `*.apps.localhost` sent to the public API routed into App dispatch unsigned.
+    const request = new Request('https://api.kortix.com/', {
+      headers: { 'x-kortix-app-host': 'aaaaaaaaaaaaaaaa.apps.localhost' },
+    });
+    expect(resolveAppRequest(request, new URL(request.url))).toBeNull();
+  });
+
+  test('a deployed API does not serve a local App host unsigned, even as the real Host', () => {
+    const previous = config.KORTIX_URL;
+    const previousLocal = process.env.KORTIX_APPS_LOCAL;
+    try {
+      delete process.env.KORTIX_APPS_LOCAL;
+      (config as { KORTIX_URL: string }).KORTIX_URL = 'https://api.kortix.com';
+      const request = new Request('http://aaaaaaaaaaaaaaaa.apps.localhost/');
+      expect(verifyAppEdgeRequest(request, new URL(request.url), true)).toBe(false);
+    } finally {
+      (config as { KORTIX_URL: string }).KORTIX_URL = previous;
+      if (previousLocal !== undefined) process.env.KORTIX_APPS_LOCAL = previousLocal;
+    }
+  });
+
   test('allows direct local development without Cloudflare headers', () => {
     const request = new Request('http://aaaaaaaaaaaaaaaa.apps.localhost:8008/');
     expect(verifyAppEdgeRequest(request, new URL(request.url), true)).toBe(true);

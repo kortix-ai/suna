@@ -1,8 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { branchExists, freshBase, remoteBranchExists, removeWorktree, worktreeAddArgs } from '../lib';
+
+// Each case runs real git (init, clone, fetch, push) in temp repos: ~1.5 s
+// alone, past bun's 5 s default while the other `pnpm test` lanes share the
+// machine. A timeout there killed git mid-command and failed the whole run.
+setDefaultTimeout(20_000);
 
 const git = (cwd: string, ...args: string[]) => {
   const r = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });

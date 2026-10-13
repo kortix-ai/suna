@@ -23,8 +23,8 @@
  * ordinary typing is exact and only the overlay case is an estimate.
  */
 
-import { type MessageWithParts, type SessionHealthResult, classifyTurn } from '@kortix/sdk';
-import { useSession } from '@kortix/sdk/react';
+import { type SessionHealthResult, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
+import { useSession, useSessionLogThread } from '@kortix/sdk/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
@@ -41,11 +41,11 @@ import type { AppCommandId } from './composer/slash-commands.ts';
 import { SessionPrompts, Transcript } from './transcript/index.ts';
 
 /** Every assistant text part and tool output in the transcript, joined by newlines. */
-export function transcriptText(messages: readonly MessageWithParts[]): string {
+export function transcriptText(messages: readonly SessionLogMessage[]): string {
   const texts: string[] = [];
   for (const message of messages) {
-    if (message.info.role !== 'assistant') continue;
-    for (const part of classifyTurn(message).parts) {
+    if (message.role !== 'assistant') continue;
+    for (const part of classifySessionLogMessage(message).parts) {
       if (part.kind === 'text') texts.push(part.text);
       else if (part.kind === 'tool' && part.tool.outputText) texts.push(part.tool.outputText);
     }
@@ -54,7 +54,7 @@ export function transcriptText(messages: readonly MessageWithParts[]): string {
 }
 
 /** Every port-forwardable string in an assistant turn's text + tool output. */
-export function portsInTranscript(messages: readonly MessageWithParts[]): number[] {
+export function portsInTranscript(messages: readonly SessionLogMessage[]): number[] {
   return detectForwardablePorts(transcriptText(messages));
 }
 
@@ -206,10 +206,11 @@ export function SessionView({
   // every message-shape change; `ports.notice` is a no-op for a port already
   // known, so this is cheap in practice and never double-forwards.
   // biome-ignore lint/correctness/useExhaustiveDependencies(ports.notice): stable (see `usePorts`'s memoized return); only a transcript change should retrigger this scan.
+  const thread = useSessionLogThread(session);
   useEffect(() => {
-    const found = portsInTranscript(session.messages as unknown as MessageWithParts[]);
+    const found = portsInTranscript(thread?.messages ?? []);
     if (found.length) ports.notice(found, 'transcript');
-  }, [session.messages]);
+  }, [thread]);
 
   // Links panel rows. A ref, not state: nothing in this column renders them,
   // and a state update per terminal repaint would re-render the transcript.
@@ -226,11 +227,8 @@ export function SessionView({
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies(noticeLinks): only a transcript change should retrigger this scan.
   useEffect(() => {
-    noticeLinks(
-      extractUrls(transcriptText(session.messages as unknown as MessageWithParts[])),
-      'transcript',
-    );
-  }, [session.messages]);
+    noticeLinks(extractUrls(transcriptText(thread?.messages ?? [])), 'transcript');
+  }, [thread]);
 
   const onMetrics = useCallback((next: ComposerMetrics) => {
     setMetrics((current) =>

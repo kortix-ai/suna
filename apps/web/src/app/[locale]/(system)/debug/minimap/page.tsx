@@ -5,6 +5,7 @@ import { useRef } from 'react';
 
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import type { Part, Turn } from '@/ui';
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
 
 /**
  * /debug/minimap
@@ -83,6 +84,11 @@ const TURNS: Turn[] = [
   turn('u8', [text('ship it')]),
 ];
 
+/** The fixture rows as the session-log turns `ChatMinimap` reads (`sessionLogOfV1Rows`, flag off). */
+const LOG_TURNS = sessionLogTurns(
+  sessionLogOfV1Rows('ses_dbg', 'ses_dbg', TURNS.map((t) => t.userMessage)).threads[0]!,
+);
+
 export default function DebugMinimapPage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -115,7 +121,7 @@ export default function DebugMinimapPage() {
         </div>
 
         <ChatMinimap
-          turns={TURNS}
+          turns={LOG_TURNS}
           scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
           contentRef={contentRef as React.RefObject<HTMLDivElement>}
         />

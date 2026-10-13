@@ -36,6 +36,13 @@ import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { useLanguage } from '@/hooks/use-language';
 import { localeNames, locales, type Locale } from '@/i18n/config';
+import {
+  getDesktopQuickEntryShortcut,
+  isDesktop,
+  setDesktopQuickEntryShortcut,
+  type DesktopQuickEntryShortcut,
+} from '@/lib/desktop';
+import { useEffect, useState } from 'react';
 import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
 import { useTranslations } from '@/i18n/use-translations';
 import { SETTINGS_SHORTCUT_KEY } from '../settings-shortcut';
@@ -67,6 +74,16 @@ export interface PreferencesCopy {
     toggleSessionActionPanel: string;
   };
 }
+
+/** The desktop app's Quick Entry shortcut: the same choices as File ▸ Quick Entry Shortcut. */
+export interface QuickEntryShortcutSetting {
+  copy: { title: string; description: string; off: string; inUse: string };
+  state: DesktopQuickEntryShortcut;
+  onChange: (shortcut: string | null) => void;
+}
+
+/** A Select item value cannot be empty; this one stands for "off". */
+const QUICK_ENTRY_OFF = 'off';
 
 const MODIFIER_OPTIONS: { value: TabSwitchModifier; label: string }[] = [
   { value: 'meta', label: 'Cmd' },
@@ -114,6 +131,8 @@ export interface PreferencesTabViewProps {
   keyboardModifier?: TabSwitchModifier;
   onKeyboardModifierChange?: (value: TabSwitchModifier) => void;
   modifierLabel?: string;
+  /** Desktop app only; null hides the row. */
+  quickEntry?: QuickEntryShortcutSetting | null;
 }
 
 /** Presentational only — no hooks, no store read. */
@@ -125,6 +144,7 @@ export function PreferencesTabView({
   keyboardModifier = 'ctrl',
   onKeyboardModifierChange = () => {},
   modifierLabel = 'Ctrl',
+  quickEntry = null,
 }: PreferencesTabViewProps) {
   const shortcuts = shortcutList(modifierLabel, copy.shortcuts);
 
@@ -160,6 +180,43 @@ export function PreferencesTabView({
           title={copy.keyboardTitle}
           description={copy.keyboardDescription}
         />
+        {quickEntry ? (
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="preferences-quick-entry" className="text-xs">
+                {quickEntry.copy.title}
+              </Label>
+              <p className="text-muted-foreground text-xs">{quickEntry.copy.description}</p>
+              {quickEntry.state.inUse ? (
+                <p className="text-destructive text-xs">{quickEntry.copy.inUse}</p>
+              ) : null}
+            </div>
+            <Select
+              value={quickEntry.state.shortcut ?? QUICK_ENTRY_OFF}
+              onValueChange={(value) => quickEntry.onChange(value === QUICK_ENTRY_OFF ? null : value)}
+            >
+              <SelectTrigger
+                id="preferences-quick-entry"
+                aria-label={quickEntry.copy.title}
+                className="w-56 shrink-0"
+              >
+                <SelectValue>
+                  {quickEntry.state.choices.find((choice) => choice.value === quickEntry.state.shortcut)
+                    ?.label ?? quickEntry.copy.off}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {quickEntry.state.choices.map((choice) => (
+                  <SelectItem key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value={QUICK_ENTRY_OFF}>{quickEntry.copy.off}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
         <div className="space-y-2">
           <Label className="text-xs">{copy.modifierKey}</Label>
           <RadioGroup
@@ -182,7 +239,7 @@ export function PreferencesTabView({
           {shortcuts.map((s) => (
             <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
               <span className="text-foreground text-sm">{s.label}</span>
-              <kbd className="bg-muted text-muted-foreground inline-flex h-6 items-center rounded border px-2 font-mono text-xs whitespace-nowrap">
+              <kbd className="bg-muted text-muted-foreground inline-flex h-6 items-center rounded-sm border px-2 font-mono text-xs whitespace-nowrap">
                 {s.keys}
               </kbd>
             </div>
@@ -206,6 +263,20 @@ export function PreferencesTab() {
   // locale, so this container only ever runs this read while mounted, i.e.
   // while this tab is active.
   const { locale, setLanguage, availableLanguages } = useLanguage();
+
+  // Desktop app only: the shell owns the shortcut (the same setting as
+  // File ▸ Quick Entry Shortcut). Null on the web or an older desktop app.
+  const [quickEntryState, setQuickEntryState] = useState<DesktopQuickEntryShortcut | null>(null);
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let live = true;
+    void getDesktopQuickEntryShortcut().then((state) => {
+      if (live) setQuickEntryState(state);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const copy: PreferencesCopy = {
     title: t('title'),
@@ -246,6 +317,23 @@ export function PreferencesTab() {
         setKeyboardPreferences({ tabSwitchModifier: modifier, closeTabModifier: modifier })
       }
       modifierLabel={modifierLabel}
+      quickEntry={
+        quickEntryState
+          ? {
+              copy: {
+                title: t('quickEntryTitle'),
+                description: t('quickEntryDescription'),
+                off: t('quickEntryOff'),
+                inUse: t('quickEntryInUse'),
+              },
+              state: quickEntryState,
+              onChange: (shortcut) =>
+                void setDesktopQuickEntryShortcut(shortcut).then((state) => {
+                  if (state) setQuickEntryState(state);
+                }),
+            }
+          : null
+      }
     />
   );
 }

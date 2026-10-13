@@ -186,7 +186,6 @@ export async function readLogTranscriptWindow(input: {
       updatedAt: sessionLogs.updatedAt,
       projectId: sessionLogs.projectId,
       metadata: projects.metadata,
-      accountId: projects.accountId,
       mirrorMs: sql<number | null>`(SELECT extract(epoch from max(${sessionTranscriptMessages.capturedAt})) * 1000 FROM ${sessionTranscriptMessages} WHERE ${sessionTranscriptMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
       lastWriteMs: sql<number | null>`(SELECT extract(epoch from max(${sessionLogMessages.updatedAt})) * 1000 FROM ${sessionLogMessages} WHERE ${sessionLogMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
@@ -195,7 +194,7 @@ export async function readLogTranscriptWindow(input: {
     .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))
     .where(eq(sessionLogs.sessionId, input.sessionId))
     .limit(1);
-  if (!log || !resolveFeatureFlag(log.metadata, 'session_log', log.accountId)) return null;
+  if (!log || !resolveFeatureFlag(log.metadata, 'session_log')) return null;
   const lastWriteMs = Math.max(new Date(log.updatedAt).getTime(), log.lastWriteMs ?? 0);
   if (log.mirrorMs !== null && log.mirrorMs - lastWriteMs > STALE_LOG_MS) {
     if (!warnedStale.has(input.sessionId)) {

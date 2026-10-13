@@ -18,8 +18,7 @@ import {
 } from '@/components/ui/input-group';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { useTranslations } from '@/i18n/use-translations';
-import type { MessageWithParts } from '@/ui/types';
-import type { Message, Part } from '@kortix/sdk';
+import type { SessionLogMessage } from '@kortix/sdk';
 import { CaretDownIcon, CheckIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import {
   memo,
@@ -35,16 +34,67 @@ import { Copy } from '../icon/icons/copy';
 
 type Formatter = { time: (value: number | undefined) => string };
 
+/** A v1 store row, as much of it as the explorer reads. */
+export type RawV1Row = {
+  info: { id: string; role: string; time?: { created?: number } };
+  parts: ReadonlyArray<object>;
+};
+
+/** One explorer row of either source. `value` is what an opened row shows as JSON. */
+export type RawRow = { id: string; role: string; created: number | undefined; value: unknown; texts: string[] };
+
+// Keyed on the source object, which keeps its identity while unchanged, so a
+// memoized row skips its render and an open row skips its stringify.
+const rowCache = new WeakMap<object, RawRow>();
+function cachedRow<T extends object>(source: T, build: (source: T) => RawRow): RawRow {
+  let row = rowCache.get(source);
+  if (!row) rowCache.set(source, (row = build(source)));
+  return row;
+}
+
+const v1Row = (m: RawV1Row): RawRow => ({
+  id: m.info.id,
+  role: m.info.role,
+  created: m.info.time?.created,
+  value: { message: m.info, parts: m.parts },
+  texts: m.parts.flatMap((p) => ('text' in p && typeof p.text === 'string' ? [p.text] : [])),
+});
+
+const recordRow = (m: SessionLogMessage): RawRow => ({
+  id: m.message_id,
+  role: m.role,
+  created: Date.parse(m.created_at),
+  value: m,
+  texts: m.blocks.flatMap((b) => (b.type === 'text' || b.type === 'reasoning' ? [b.text] : [])),
+});
+
+/**
+ * What the raw explorer lists and Copy JSON copies: the session-log records on
+ * v2, else the v1 rows (each row's JSON is `{ message, parts }`, as before).
+ */
+export function rawExplorerData(
+  source: 'v1' | 'v2' | undefined,
+  records: SessionLogMessage[] | undefined,
+  rows: readonly RawV1Row[] | undefined,
+): { rows: RawRow[]; copy: unknown } {
+  if (source === 'v2') {
+    const list = records ?? [];
+    return { rows: list.map((m) => cachedRow(m, recordRow)), copy: list };
+  }
+  const list = rows ?? [];
+  return { rows: list.map((m) => cachedRow(m, v1Row)), copy: list };
+}
+
 // ============================================================================
 // Copy-all button (header action)
 // ============================================================================
 
 export function CopyAllButton({
-  messages,
+  value,
   copyLabel,
   copiedLabel,
 }: {
-  messages: MessageWithParts[] | undefined;
+  value: unknown;
   copyLabel: string;
   copiedLabel: string;
 }) {
@@ -59,11 +109,11 @@ export function CopyAllButton({
 
   const handleCopy = useCallback(() => {
     // Stringify on click only — never during render.
-    navigator.clipboard.writeText(JSON.stringify(messages ?? [], null, 2));
+    navigator.clipboard.writeText(JSON.stringify(value, null, 2));
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [messages]);
+  }, [value]);
 
   return (
     <Button
@@ -85,8 +135,8 @@ export function CopyAllButton({
 // ============================================================================
 
 /** Stringifies only while its accordion item is open — Radix unmounts closed content. */
-function RawMessageJson({ message, parts }: { message: Message; parts: Part[] }) {
-  const json = useMemo(() => JSON.stringify({ message, parts }, null, 2), [message, parts]);
+function RawMessageJson({ value }: { value: unknown }) {
+  const json = useMemo(() => JSON.stringify(value, null, 2), [value]);
   return (
     <div className="relative">
       <pre className="bg-muted/40 max-h-[400px] overflow-x-auto overflow-y-auto rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap select-text">
@@ -100,38 +150,36 @@ function RawMessageJson({ message, parts }: { message: Message; parts: Part[] })
 }
 
 const RawMessage = memo(function RawMessage({
-  message,
-  parts,
+  row,
   formatTime,
 }: {
-  message: Message;
-  parts: Part[];
+  row: RawRow;
   formatTime: Formatter['time'];
 }) {
   return (
     <AccordionItem
-      value={message.id}
+      value={row.id}
       className="border-b-0 [contain-intrinsic-size:auto_37px] [content-visibility:auto]"
     >
       <AccordionTrigger className="hover:bg-muted/40 rounded-md px-3 py-2 text-xs hover:no-underline">
         <div className="flex w-full items-center justify-between gap-2 pr-2">
           <div className="min-w-0 truncate font-mono">
             <Badge
-              variant={message.role === 'user' ? 'info' : 'success'}
+              variant={row.role === 'user' ? 'info' : 'success'}
               size="sm"
               className="mr-2 font-semibold uppercase"
             >
-              {message.role}
+              {row.role}
             </Badge>
-            <span className="text-muted-foreground">{message.id}</span>
+            <span className="text-muted-foreground">{row.id}</span>
           </div>
           <div className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">
-            {formatTime(message.time?.created)}
+            {formatTime(row.created)}
           </div>
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-3 pb-2">
-        <RawMessageJson message={message} parts={parts} />
+        <RawMessageJson value={row.value} />
       </AccordionContent>
     </AccordionItem>
   );
@@ -139,32 +187,29 @@ const RawMessage = memo(function RawMessage({
 
 /** Preserve the raw explorer's role and case-insensitive ID/text search. */
 export function filterRawMessages(
-  messages: MessageWithParts[] | undefined,
+  rows: RawRow[] | undefined,
   rawRole: 'all' | 'user' | 'assistant',
   deferredRawQuery: string,
 ) {
-  let list = messages ?? [];
-  if (rawRole !== 'all') list = list.filter((m) => m.info.role === rawRole);
+  let list = rows ?? [];
+  if (rawRole !== 'all') list = list.filter((m) => m.role === rawRole);
   const query = deferredRawQuery.trim().toLowerCase();
   if (query) {
     list = list.filter(
       (m) =>
-        m.info.id.toLowerCase().includes(query) ||
-        m.parts.some(
-          (p) =>
-            'text' in p && typeof p.text === 'string' && p.text.toLowerCase().includes(query),
-        ),
+        m.id.toLowerCase().includes(query) ||
+        m.texts.some((text) => text.toLowerCase().includes(query)),
     );
   }
   return list;
 }
 
 export function SessionContextMessageExplorer({
-  messages,
+  rows,
   formatTime,
   count,
 }: {
-  messages: MessageWithParts[] | undefined;
+  rows: RawRow[];
   formatTime: Formatter['time'];
   count: number;
 }) {
@@ -185,8 +230,8 @@ export function SessionContextMessageExplorer({
   const [rawRole, setRawRole] = useState<'all' | 'user' | 'assistant'>('all');
 
   const filteredRawMessages = useMemo(
-    () => filterRawMessages(messages, rawRole, deferredRawQuery),
-    [messages, rawRole, deferredRawQuery],
+    () => filterRawMessages(rows, rawRole, deferredRawQuery),
+    [rows, rawRole, deferredRawQuery],
   );
 
   return (
@@ -258,13 +303,8 @@ export function SessionContextMessageExplorer({
                 // for whatever is off-screen and rendering the full list up
                 // front costs nothing more than rendering 30 of it did.
                 <Accordion type="multiple" className="px-2 py-2">
-                  {filteredRawMessages.map((msg) => (
-                    <RawMessage
-                      key={msg.info.id}
-                      message={msg.info}
-                      parts={msg.parts}
-                      formatTime={formatTime}
-                    />
+                  {filteredRawMessages.map((row) => (
+                    <RawMessage key={row.id} row={row} formatTime={formatTime} />
                   ))}
                 </Accordion>
               )}

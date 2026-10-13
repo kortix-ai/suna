@@ -1,15 +1,14 @@
 'use client';
 
 /**
- * Volumes: the one switch for the volumes feature (Files over the project
- * drive, drive mounts, session volumes, boot artifacts, persistent machines),
- * per organization with an optional rollout, plus how new sessions of an
- * organization with Volumes on boot. One policy, stored server-side
- * (GET/PUT /admin/api/boot-modes); the rules live in
+ * Boot modes: how new sessions of a project with Volumes on boot, the kill
+ * switch, the fallback steps and the last 24 hours. Volumes and Stateless
+ * sessions are project feature flags, not set here. One policy, stored
+ * server-side (GET/PUT /admin/api/boot-modes); the rules live in
  * apps/api/src/platform/services/boot-mode.ts.
  */
-import { ArrowRightIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { ArrowRightIcon } from '@phosphor-icons/react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,13 +35,10 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { AdminBootMode, AdminBootModePolicy, AdminBootModeRule } from '@kortix/sdk';
-
-const INHERIT = 'inherit';
-import { useAdminAccounts, useAdminBootModes, useSetAdminBootModes } from '@kortix/sdk/react';
+import { useAdminBootModes, useSetAdminBootModes } from '@kortix/sdk/react';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
 import { AdminPanel, AdminSection } from '../_components/admin-panel';
-import { AdminSearch } from '../_components/admin-table';
 import { StatGrid, StatGridSkeleton, StatTile } from '../_components/stat-tile';
 
 type Translate = ReturnType<typeof useI18nTranslations>;
@@ -81,17 +77,15 @@ function reasons(tI18nHardcoded: Translate): Record<string, string> {
   };
 }
 
+/** The default mode. Never Volume: volume boot is only ever a project's Stateless sessions flag. */
 function ModeSelect({
   value,
   onChange,
   className,
-  allowVolume = true,
 }: {
   value: AdminBootMode;
   onChange: (mode: AdminBootMode) => void;
   className?: string;
-  /** False for the default: volume boot is only ever an organization's own rule. */
-  allowVolume?: boolean;
 }) {
   const tI18nHardcoded = useI18nTranslations('hardcodedUi');
   return (
@@ -100,7 +94,7 @@ function ModeSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {modes(tI18nHardcoded).filter((m) => allowVolume || m.value !== 'volume').map((m) => (
+        {modes(tI18nHardcoded).filter((m) => m.value !== 'volume').map((m) => (
           <SelectItem key={m.value} value={m.value}>
             {m.label}
           </SelectItem>
@@ -154,9 +148,6 @@ export default function AdminVolumesPage() {
   const modeLabel = (m: string) => MODES.find((x) => x.value === m)?.label ?? m;
   const q = useAdminBootModes();
   const [draft, setDraft] = useState<AdminBootModePolicy | null>(null);
-  const [picked, setPicked] = useState<Record<string, string>>({});
-  const [search, setSearch] = useState('');
-  const accounts = useAdminAccounts({ search: search.trim(), limit: 6 });
 
   // Follow the server while the draft has no local edits. A save writes the
   // saved policy into the query cache, so it lands here too.
@@ -166,12 +157,6 @@ export default function AdminVolumesPage() {
     setSynced(q.data.policy);
     if (untouched) setDraft(structuredClone(q.data.policy));
   }
-  const names = useMemo(() => {
-    const out: Record<string, string> = { ...picked };
-    for (const o of q.data?.orgs ?? []) if (o.name) out[o.accountId] = o.name;
-    return out;
-  }, [picked, q.data]);
-
   const save = useSetAdminBootModes({
     onSuccess: () => successToast(tI18nHardcoded('appAdminVolumesPage.saved')),
     onError: (e) => errorToast(e.message || tI18nHardcoded('appAdminVolumesPage.saveFailed')),
@@ -182,37 +167,6 @@ export default function AdminVolumesPage() {
   const data = q.data;
   const stats = data && 'modes' in data.stats ? data.stats : null;
   const set = (patch: Partial<AdminBootModePolicy>) => setDraft((d) => (d ? { ...d, ...patch } : d));
-  const setVolumes = (patch: Partial<AdminBootModePolicy['volumes']>) =>
-    setDraft((d) => (d ? { ...d, volumes: { ...d.volumes, ...patch } } : d));
-  const setOrgVolumes = (id: string, on: boolean | null) =>
-    setDraft((d) => {
-      if (!d) return d;
-      const orgs = { ...d.volumes.orgs };
-      if (on === null) delete orgs[id];
-      else orgs[id] = on;
-      return { ...d, volumes: { ...d.volumes, orgs } };
-    });
-  const setOrgRule = (id: string, rule: AdminBootModeRule | null) =>
-    setDraft((d) => {
-      if (!d) return d;
-      const orgs = { ...d.orgs };
-      if (rule) orgs[id] = rule;
-      else delete orgs[id];
-      return { ...d, orgs };
-    });
-  const removeOrg = (id: string) => {
-    setOrgVolumes(id, null);
-    setOrgRule(id, null);
-  };
-
-  // Stable order (by name), so a row never jumps while it is being edited.
-  const orgIds = draft
-    ? [...new Set([...Object.keys(draft.volumes.orgs), ...Object.keys(draft.orgs)])].sort((a, b) =>
-        (names[a] ?? a).localeCompare(names[b] ?? b),
-      )
-    : [];
-  const candidates = (accounts.data?.accounts ?? []).filter((a) => !orgIds.includes(a.accountId));
-  const everyone = draft?.volumes.enabled ?? false;
   const artifactsSource = draft?.artifacts || data?.env.bootArtifacts || null;
   const volumeProvider = data?.providers.volumeProvider ?? 'platinum';
   const otherProviders = (data?.providers.allowed ?? []).filter((p) => p !== volumeProvider);
@@ -247,198 +201,12 @@ export default function AdminVolumesPage() {
       ) : (
         <div className="space-y-8">
           <AdminSection
-            title={tI18nHardcoded('appAdminVolumesPage.volumesTitle')}
-            description={tI18nHardcoded('appAdminVolumesPage.volumesDescription')}
-          >
-            <AdminPanel className="space-y-5">
-              <Row
-                title={tI18nHardcoded('appAdminVolumesPage.everyOrganizationTitle')}
-                detail={tI18nHardcoded('appAdminVolumesPage.everyOrganizationDetail')}
-              >
-                <Switch
-                  checked={everyone}
-                  onCheckedChange={(on) => setVolumes({ enabled: on })}
-                  aria-label={tI18nHardcoded('appAdminVolumesPage.everyOrganizationLabel')}
-                />
-              </Row>
-              <div className="border-t" />
-              <Row
-                title={tI18nHardcoded('appAdminVolumesPage.rolloutTitle')}
-                detail={
-                  everyone
-                    ? tI18nHardcoded('appAdminVolumesPage.rolloutUnused')
-                    : draft.volumes.percent > 0
-                      ? tI18nHardcoded('appAdminVolumesPage.rolloutPercentDetail', { percent: draft.volumes.percent })
-                      : tI18nHardcoded('appAdminVolumesPage.rolloutOffDetail')
-                }
-              >
-                <span className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', everyone && 'opacity-50')}>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    disabled={everyone}
-                    value={draft.volumes.percent}
-                    onChange={(e) =>
-                      setVolumes({ percent: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) })
-                    }
-                    className="h-8 w-20"
-                    aria-label={tI18nHardcoded('appAdminVolumesPage.rolloutPercentLabel')}
-                  />
-                  %
-                </span>
-              </Row>
-            </AdminPanel>
-          </AdminSection>
-
-          <AdminSection
-            title={tI18nHardcoded('appAdminVolumesPage.organizationsTitle')}
-            description={tI18nHardcoded('appAdminVolumesPage.organizationsDescription')}
-            action={
-              <div className="w-full sm:w-72">
-                <AdminSearch value={search} onChange={setSearch} placeholder={tI18nHardcoded('appAdminVolumesPage.findOrganization')} />
-              </div>
-            }
-          >
-            <div className="space-y-3">
-              {search.trim() ? (
-                <AdminPanel flush>
-                  {accounts.isLoading ? (
-                    <div className="p-3">
-                      <Skeleton className="h-8 w-full" />
-                    </div>
-                  ) : candidates.length === 0 ? (
-                    <p className="text-muted-foreground p-3 text-xs">
-                      {tI18nHardcoded('appAdminVolumesPage.noOtherOrganization', { search })}
-                    </p>
-                  ) : (
-                    <ul className="divide-y">
-                      {candidates.map((a) => {
-                        const label = a.displayName || a.name || a.accountId;
-                        return (
-                          <li key={a.accountId} className="flex items-center justify-between gap-3 px-3 py-2">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm">{label}</div>
-                              <div className="text-muted-foreground truncate font-mono text-xs">
-                                {a.ownerEmail ? `${a.ownerEmail} · ` : ''}
-                                {a.accountId}
-                              </div>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                              onClick={() => {
-                                setPicked((n) => ({ ...n, [a.accountId]: label }));
-                                setOrgVolumes(a.accountId, true);
-                                setSearch('');
-                              }}
-                            >
-                              <PlusIcon className="size-3.5" />
-                              {tI18nHardcoded('appAdminVolumesPage.add')}
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </AdminPanel>
-              ) : null}
-              {orgIds.length ? (
-                <AdminPanel flush>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnOrganization')}</TableHead>
-                        <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnVolumes')}</TableHead>
-                        <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnBootMode')}</TableHead>
-                        <TableHead className="hidden sm:table-cell">{tI18nHardcoded('appAdminVolumesPage.columnLastStep')}</TableHead>
-                        <TableHead className="w-10" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {orgIds.map((id) => {
-                        const explicit = draft.volumes.orgs[id];
-                        const on = explicit ?? everyone;
-                        const rule = draft.orgs[id] ?? null;
-                        return (
-                          <TableRow key={id} className="group">
-                            <TableCell className="max-w-56">
-                              <div className="truncate text-sm">{names[id] ?? tI18nHardcoded('appAdminVolumesPage.organizationFallbackName')}</div>
-                              <div className="text-muted-foreground truncate font-mono text-xs">{id}</div>
-                            </TableCell>
-                            <TableCell>
-                              <label className="flex items-center gap-2 text-xs">
-                                <Switch
-                                  checked={on}
-                                  onCheckedChange={(v) => setOrgVolumes(id, v)}
-                                  aria-label={tI18nHardcoded('appAdminVolumesPage.organizationVolumesLabel', { name: names[id] ?? id })}
-                                />
-                                <span className="text-muted-foreground">{on ? tI18nHardcoded('appAdminVolumesPage.on') : tI18nHardcoded('appAdminVolumesPage.off')}</span>
-                              </label>
-                            </TableCell>
-                            <TableCell>
-                              <Select
-                                value={rule?.mode ?? INHERIT}
-                                disabled={!on}
-                                onValueChange={(v) =>
-                                  setOrgRule(
-                                    id,
-                                    v === INHERIT ? null : { mode: v as AdminBootMode, standardFallback: rule?.standardFallback ?? true },
-                                  )
-                                }
-                              >
-                                <SelectTrigger className="w-44" size="sm">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value={INHERIT}>
-                                    {tI18nHardcoded('appAdminVolumesPage.defaultModeOption', { mode: modeLabel(draft.default.mode) })}
-                                  </SelectItem>
-                                  {MODES.map((m) => (
-                                    <SelectItem key={m.value} value={m.value}>
-                                      {m.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              {rule && on ? (
-                                <FallbackSwitch rule={rule} onChange={(v) => setOrgRule(id, { ...rule, standardFallback: v })} />
-                              ) : null}
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                onClick={() => removeOrg(id)}
-                                aria-label={tI18nHardcoded('appAdminVolumesPage.removeOrganization')}
-                              >
-                                <XIcon className="size-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </AdminPanel>
-              ) : (
-                <p className="text-muted-foreground text-xs">{tI18nHardcoded('appAdminVolumesPage.noOrganizations')}</p>
-              )}
-            </div>
-          </AdminSection>
-
-          <AdminSection
             title={tI18nHardcoded('appAdminVolumesPage.bootModeTitle')}
             description={tI18nHardcoded('appAdminVolumesPage.bootModeDescription')}
           >
             <AdminPanel className="space-y-5">
               <Row title={tI18nHardcoded('appAdminVolumesPage.defaultModeTitle')} detail={MODES.find((m) => m.value === draft.default.mode)?.detail}>
                 <ModeSelect
-                  allowVolume={false}
                   value={draft.default.mode}
                   onChange={(mode) => set({ default: { ...draft.default, mode } })}
                 />
