@@ -16,6 +16,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instant the session can be restored, 30 days after the delete. Absent on an
   API that predates restore. Additive.
 
+### Added (gateway budget meters per period)
+- `GatewayBudgetRow` has `spent_usd`, `period_start` and `resets_at`: the
+  spend in the budget's own period (day, week or month, UTC), the number the
+  gateway compares with `limit_usd` before it admits a request, and when that
+  period ends. A member budget counts its member's requests only. Use
+  `spent_usd` for a budget meter, not `project_spend.cost`, which is
+  month-to-date. Optional, absent on an older server. Additive (KRTX-1725).
+- `GatewayBudgetRow.subject_email`: the member's email for a member budget,
+  also when the member has no spend this month and so no entry in `members`.
+  `null` for a project budget. Optional, absent on an older server. Additive.
+
 ### Added (permissions)
 - `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine
   answers about, the same strings as the API's catalog

@@ -160,9 +160,25 @@ export interface GatewayBudgetRow {
   budget_id: string;
   scope: 'project' | 'member';
   subject_user_id: string | null;
+  /**
+   * The member's email, for a member budget. Set also when the member has no
+   * spend this month and so no entry in `members`. `null` for a project budget
+   * or an unknown user. Absent on a server older than KRTX-1725.
+   */
+  subject_email?: string | null;
   limit_usd: number;
   period: 'day' | 'week' | 'month';
   action: 'block' | 'warn';
+  /**
+   * Spend in this budget's current period: the number the gateway compares
+   * with `limit_usd` before it admits a request. A member budget counts its
+   * member's requests only. Absent on a server older than KRTX-1725.
+   */
+  spent_usd?: number;
+  /** ISO time the current period started: 00:00 UTC, Monday for a week, the 1st for a month. */
+  period_start?: string;
+  /** ISO time the current period ends and `spent_usd` starts again from 0. */
+  resets_at?: string;
 }
 
 export interface GatewayMemberSpend {
@@ -174,6 +190,7 @@ export interface GatewayMemberSpend {
 }
 
 export interface GatewayBudgetsResponse {
+  /** Month-to-date project spend, whatever the budgets' periods. A meter reads its budget's `spent_usd`. */
   project_spend: { requests: number; cost: number };
   budgets: GatewayBudgetRow[];
   members: GatewayMemberSpend[];
