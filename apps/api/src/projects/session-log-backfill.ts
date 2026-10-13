@@ -25,10 +25,17 @@
  *   process: after its summary it does nothing until the process restarts or the
  *   mode changes, because each dry pass reads and converts every old mirror.
  * - Budget. A tick stops after the session that crossed `BACKFILL_BUDGET_MS`.
+ * - Checks. Every converted log is validated with `SessionLogSchema` in the converter: a log
+ *   that fails is not written (`validation_failed`). A dry pass also compares, per session,
+ *   `toV1(fromV1(rows))` with the stored v1 rows, with the P1 round-trip test's equality
+ *   (`session-log-v1.test.ts`: parsed JSON, keys sorted, rows as a multiset):
+ *   `roundtrip_mismatch_sessions` and `roundtrip_mismatch_messages`. The compare is on the
+ *   converted log before the F3 offload; the v1 read rehydrates offloaded texts.
  * - Logs. One info line of counts per tick that converted anything, one summary
  *   per pass. No session id or content above debug. A `write` pass while
  *   `SESSION_LOG_INGEST_ENABLED` is off skips every session: one warning per pass.
  */
+import { toV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
 import { sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -61,8 +68,15 @@ const zero = () => ({
   record_bytes: 0,
   /** Texts over 256 kB that go to an object. */
   offload_texts: 0,
-  /** Logs converted as `opencode` because no runtime projection names a harness. */
+  /** Logs converted as `opencode` because no runtime projection names a harness and the root is not pi-minted. */
   harness_defaulted: 0,
+  /** Logs converted as `pi` because no runtime projection names a harness and the mirror's root is pi-minted (`ses_pi…`). */
+  harness_inferred_pi: 0,
+  /** Sessions whose converted log fails `SessionLogSchema`: never written. */
+  validation_failed: 0,
+  // Dry only: sessions, and stored v1 rows, that `toV1(fromV1(rows))` does not give back exactly.
+  roundtrip_mismatch_sessions: 0,
+  roundtrip_mismatch_messages: 0,
   // The worst session: the longest conversion (a write holds the session lock for part of it),
   // the most messages, the most record bytes (both held in memory at once).
   max_session_ms: 0,
@@ -108,6 +122,26 @@ async function selectBatch(after: BackfillState['after']) {
      LIMIT ${BACKFILL_BATCH_SIZE}`);
 }
 
+/** Canonical JSON: keys sorted at every level, as the P1 round-trip test compares. */
+const canon = (v: unknown): string =>
+  JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+
+/** How many stored v1 rows `toV1` of the log does not give back exactly (rows compared as a multiset; an extra row counts too). */
+export function roundTripMismatches(log: SessionLog, rows: V1Row[]): number {
+  const back = new Map<string, number>();
+  for (const k of toV1(JSON.parse(JSON.stringify(log))).rows.map(canon)) back.set(k, (back.get(k) ?? 0) + 1);
+  let missing = 0;
+  for (const r of rows) {
+    const k = canon(r);
+    const n = back.get(k) ?? 0;
+    if (n > 0) back.set(k, n - 1);
+    else missing++;
+  }
+  let extra = 0;
+  for (const n of back.values()) extra += n;
+  return Math.max(missing, extra);
+}
+
 async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof writeSessionLogFromMirror, counts: BackfillCounts) {
   counts.sessions++;
   const started = performance.now();
@@ -117,6 +151,10 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   });
   counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
   if (result.outcome === 'skipped') counts.skipped++;
+  if (result.outcome === 'invalid') {
+    counts.validation_failed++;
+    logger.debug('[session-log] backfill session fails SessionLogSchema', { sessionId });
+  }
   if (result.outcome === 'failed') {
     counts.failed++;
     logger.debug('[session-log] backfill session failed', { sessionId, status: 'status' in result ? result.status : undefined });
@@ -125,7 +163,16 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   const { log, batch } = result;
   counts.logs++;
   counts[log.restore_grade]++;
-  if (result.harnessDefaulted) counts.harness_defaulted++;
+  if (result.harnessFrom === 'default') counts.harness_defaulted++;
+  if (result.harnessFrom === 'root') counts.harness_inferred_pi++;
+  if (mode === 'dry') {
+    const mismatches = roundTripMismatches(log, result.rows);
+    if (mismatches > 0) {
+      counts.roundtrip_mismatch_sessions++;
+      counts.roundtrip_mismatch_messages += mismatches;
+      logger.debug('[session-log] backfill round trip differs from the mirror', { sessionId, rows: mismatches });
+    }
+  }
   for (const k of ['tool_input', 'cut_point', 'attachment'] as const) counts[k] += log.grade_counts?.[k] ?? 0;
   let bytes = 0;
   for (const { message } of batch.puts) {
