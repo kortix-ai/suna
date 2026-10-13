@@ -20815,7 +20815,13 @@
       "link": "Link to a person…",
       "relink": "Change linked person…",
       "unlinked": "Linked to no one",
-      "getCapture": "Get Kortix Capture"
+      "getCapture": "Get Kortix Capture",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "Install guide"
+      }
     },
     "settings": {
       "title": "Organization settings",

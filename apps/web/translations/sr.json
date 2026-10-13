@@ -20815,7 +20815,13 @@
       "link": "Повежи са особом…",
       "relink": "Промени повезану особу…",
       "unlinked": "Није повезан ни са ким",
-      "getCapture": "Преузми Kortix Capture"
+      "getCapture": "Преузми Kortix Capture",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "Водич за инсталацију"
+      }
     },
     "settings": {
       "title": "Podešavanja organizacije",

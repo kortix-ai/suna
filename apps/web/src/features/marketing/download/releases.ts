@@ -50,9 +50,9 @@ export function pickDesktopAsset(assets: ReleaseAsset[], os: DesktopOs): Release
 }
 
 /**
- * Kortix Capture, the separate recorder app, ships in the same Release (deploy-prod
- * `attach-capture`): `KortixCapture-<v>-x64.msi`, `KortixCapture-<v>-universal.pkg`,
- * `kortix-capture_<v>_amd64.deb`. Never the Kortix app's own installer.
+ * Kortix Capture, the separate recorder app, ships in its own `capture-v*`
+ * Releases (the publish-capture workflow): `KortixCapture-<v>-x64.msi`,
+ * `KortixCapture-<v>-universal.pkg`, `kortix-capture_<v>_amd64.deb`.
  */
 export function pickCaptureAsset(assets: ReleaseAsset[], os: DesktopOs): ReleaseAsset | undefined {
   const pattern = { windows: /^kortixcapture.*\.msi$/, macos: /^kortixcapture.*\.pkg$/, linux: /^kortix-capture.*\.deb$/ }[os];
@@ -104,6 +104,41 @@ export async function getLatestRelease(): Promise<Release | null> {
       .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
     if (!assets.length) return null;
     return { version: (data.tag_name ?? '').replace(/^v/, ''), assets };
+  } catch {
+    return null;
+  }
+}
+
+/** Kortix Capture ships as its own Releases of this repo, tagged `capture-v<version>` (never "latest"). */
+const CAPTURE_TAG_PREFIX = 'capture-v';
+const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=50`;
+
+/**
+ * The newest published Kortix Capture release (the `publish-capture` workflow
+ * copies the installers from kortix-ai/capture). Null on any failure or when
+ * none is published; callers degrade like getLatestRelease's.
+ */
+export async function getLatestCaptureRelease(): Promise<Release | null> {
+  try {
+    const res = await fetch(RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-download' },
+      next: { revalidate: 600 },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as unknown;
+    if (!Array.isArray(data)) return null;
+    const release = (data as Array<{ tag_name?: string; draft?: boolean; assets?: GithubAsset[] }>).find(
+      (r) => !r.draft && (r.tag_name ?? '').startsWith(CAPTURE_TAG_PREFIX),
+    );
+    if (!release) return null;
+    const assets: ReleaseAsset[] = (release.assets ?? [])
+      .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
+        Boolean(a.name && a.browser_download_url),
+      )
+      .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+    if (!assets.length) return null;
+    return { version: (release.tag_name ?? '').slice(CAPTURE_TAG_PREFIX.length), assets };
   } catch {
     return null;
   }

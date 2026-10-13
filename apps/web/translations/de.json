@@ -20815,7 +20815,13 @@
       "link": "Einer Person zuordnen…",
       "relink": "Zugeordnete Person ändern…",
       "unlinked": "Keiner Person zugeordnet",
-      "getCapture": "Kortix Capture holen"
+      "getCapture": "Kortix Capture holen",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "Installationsanleitung"
+      }
     },
     "settings": {
       "title": "Organisationseinstellungen",

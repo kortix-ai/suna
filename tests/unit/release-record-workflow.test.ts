@@ -148,7 +148,7 @@ describe('deploy-prod: the release record is not gated on npm', () => {
     // Guards the reader itself: a `needs:` written as a block sequence, or a
     // job this reader cannot see, would silently make every assertion below
     // vacuous.
-    expect(jobs.size).toBe(31);
+    expect(jobs.size).toBe(30);
     expect(jobs.has('github-release')).toBe(true);
     for (const job of NPM_PUBLISH_JOBS) expect(jobs.has(job)).toBe(true);
     expect(workflow).not.toMatch(/^ {4}needs:\s*$/m);
@@ -194,7 +194,6 @@ describe('deploy-prod: the release record is not gated on npm', () => {
     'sync-staging-version',
     'announce',
     'attach-desktop',
-    'attach-capture',
   ])('%s does not transitively depend on an npm publish', (job) => {
     const deps = transitiveNeeds(jobs, job);
     expect(NPM_PUBLISH_JOBS.filter((p) => deps.has(p))).toEqual([]);
@@ -204,15 +203,9 @@ describe('deploy-prod: the release record is not gated on npm', () => {
     // Removing the npm edge must not also loosen these: attaching installers
     // to, announcing, or bumping VERSION for a Release that does not exist is
     // the failure this change is preventing, inverted.
-    for (const job of ['attach-desktop', 'attach-capture', 'announce', 'sync-main-version', 'sync-staging-version']) {
+    for (const job of ['attach-desktop', 'announce', 'sync-main-version', 'sync-staging-version']) {
       expect(jobs.get(job)!.needs).toContain('github-release');
     }
-  });
-
-  it('the Release never waits for the Kortix Capture installers', () => {
-    // attach-capture copies optional installers from another repo's release; a
-    // missing pin or token must not hold back or strip this one.
-    expect(transitiveNeeds(jobs, 'github-release').has('attach-capture')).toBe(false);
   });
 
   it('an npm publish failure still fails the run', () => {

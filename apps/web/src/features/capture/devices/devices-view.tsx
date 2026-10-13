@@ -2,12 +2,25 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, BuildingsIcon, CodeIcon, DesktopIcon } from '@phosphor-icons/react';
+import {
+  ArrowSquareOutIcon,
+  BuildingsIcon,
+  CodeIcon,
+  DesktopIcon,
+  DownloadSimpleIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { Fragment, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -42,6 +55,13 @@ import {
 import { deviceStatus, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, StatusLabel } from './device-status-ui';
 import { RolloutModal, WaitingComputers } from './rollout';
+
+/** Kortix Capture's installers, one per OS (/download/capture/<os> → the newest capture-v* Release). */
+const CAPTURE_DOWNLOADS = [
+  { os: 'windows', file: '.msi' },
+  { os: 'macos', file: '.pkg' },
+  { os: 'linux', file: '.deb' },
+] as const;
 
 type Scope = 'account' | 'mine';
 type Filter = 'all' | 'recording' | 'paused' | 'permission' | 'offline';
@@ -122,12 +142,31 @@ export function DevicesView({ accountId }: { accountId: string }) {
             </Button>
           ) : null}
           {/* Kortix Capture is its own app: a person installs it and signs in, or IT rolls it out. */}
-          <Button asChild size="sm" className="gap-1.5">
-            <Link href="/docs/capture#install-kortix-capture" target="_blank" rel="noreferrer">
-              {t('getCapture')}
-              <ArrowSquareOutIcon className="size-3.5 shrink-0" />
-            </Link>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="gap-1.5">
+                <DownloadSimpleIcon className="size-3.5 shrink-0" />
+                {t('getCapture')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {CAPTURE_DOWNLOADS.map(({ os, file }) => (
+                <DropdownMenuItem key={os} asChild>
+                  <a href={`/download/capture/${os}`}>
+                    {t(`download.${os}`)}
+                    <span className="text-muted-foreground ml-auto text-xs">{file}</span>
+                  </a>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <a href="/docs/capture#install-kortix-capture" target="_blank" rel="noreferrer">
+                  {t('download.guide')}
+                  <ArrowSquareOutIcon className="text-muted-foreground ml-auto size-3.5 shrink-0" />
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </>
       }
     >

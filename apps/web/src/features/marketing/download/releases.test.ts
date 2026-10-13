@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatSize, pickCliAsset, pickDesktopAsset, type ReleaseAsset } from './releases';
+import { formatSize, getLatestCaptureRelease, pickCliAsset, pickDesktopAsset, type ReleaseAsset } from './releases';
 
 /** Mirrors the real v0.11.0 asset list, including the decoys. */
 const ASSETS: ReleaseAsset[] = [
@@ -73,5 +73,49 @@ describe('formatSize', () => {
 
   test('returns an empty string for a missing or zero size', () => {
     expect(formatSize(0)).toBe('');
+  });
+});
+
+describe('getLatestCaptureRelease', () => {
+  const asset = (name: string) => ({ name, browser_download_url: `https://github.com/kortix-ai/suna/releases/download/x/${name}`, size: 2_097_152 });
+  const withReleases = async (releases: unknown[], run: () => Promise<void>) => {
+    const real = globalThis.fetch;
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      urls.push(String(url));
+      return Response.json(releases);
+    }) as typeof fetch;
+    try {
+      await run();
+    } finally {
+      globalThis.fetch = real;
+    }
+    return urls;
+  };
+
+  test('the newest published capture-v* release of the public repo, never a Kortix release or a draft', async () => {
+    const urls = await withReleases(
+      [
+        { tag_name: 'v0.14.0', draft: false, assets: [asset('Kortix-Setup-0.14.0.exe')] },
+        { tag_name: 'capture-v0.40', draft: true, assets: [asset('KortixCapture-v0.40-x64.msi')] },
+        { tag_name: 'capture-v0.39', draft: false, assets: [asset('KortixCapture-v0.39-x64.msi'), asset('kortix-capture_v0.39_amd64.deb')] },
+        { tag_name: 'capture-v0.38', draft: false, assets: [asset('KortixCapture-v0.38-x64.msi')] },
+      ],
+      async () => {
+        const release = await getLatestCaptureRelease();
+        expect(release?.version).toBe('0.39');
+        expect(release?.assets.map((a) => a.name)).toEqual(['KortixCapture-v0.39-x64.msi', 'kortix-capture_v0.39_amd64.deb']);
+      },
+    );
+    expect(urls[0]).toBe('https://api.github.com/repos/kortix-ai/suna/releases?per_page=50');
+  });
+
+  test('none published, or GitHub failing: null, so the caller degrades', async () => {
+    await withReleases([{ tag_name: 'v0.14.0', draft: false, assets: [asset('Kortix-Setup-0.14.0.exe')] }], async () => {
+      expect(await getLatestCaptureRelease()).toBeNull();
+    });
+    await withReleases({ message: 'API rate limit exceeded' } as never, async () => {
+      expect(await getLatestCaptureRelease()).toBeNull();
+    });
   });
 });

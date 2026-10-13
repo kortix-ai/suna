@@ -20815,7 +20815,13 @@
       "link": "ユーザーに紐付け…",
       "relink": "紐付けるユーザーを変更…",
       "unlinked": "誰にも紐付いていません",
-      "getCapture": "Kortix Capture を入手"
+      "getCapture": "Kortix Capture を入手",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "インストールガイド"
+      }
     },
     "settings": {
       "title": "組織の設定",

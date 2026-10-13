@@ -18,7 +18,12 @@ let assets = [
   asset('kortix-capture_0.39_amd64.deb'),
 ];
 beforeEach(() => {
-  globalThis.fetch = (async () => Response.json({ tag_name: 'v1.0.0', assets })) as unknown as typeof fetch;
+  // The Releases list: a Kortix release (never used here) and the Capture release.
+  globalThis.fetch = (async () =>
+    Response.json([
+      { tag_name: 'v1.0.0', draft: false, assets: [asset('Kortix-Setup-1.0.0.exe')] },
+      { tag_name: 'capture-v0.39', draft: false, assets },
+    ])) as unknown as typeof fetch;
 });
 afterEach(() => {
   globalThis.fetch = realFetch;

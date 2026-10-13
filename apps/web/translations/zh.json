@@ -20815,7 +20815,13 @@
       "link": "关联到某人…",
       "relink": "更改关联的人…",
       "unlinked": "未关联任何人",
-      "getCapture": "获取 Kortix Capture"
+      "getCapture": "获取 Kortix Capture",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "安装指南"
+      }
     },
     "settings": {
       "title": "组织设置",

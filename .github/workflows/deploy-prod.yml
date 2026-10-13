@@ -939,63 +939,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Kortix Capture installers ────────────────────────────────────────────────
-  # Kortix Capture is its own app (kortix-ai/capture, a private repo). The
-  # release attaches the installers of the pinned Capture release
-  # (capture-release.json `version`) to this public Release, where
-  # /download/capture/<os> finds them. Like attach-desktop it never blocks the
-  # release: github-release does not need it, and a missing pin or token only
-  # warns (learnings 2026-08-26: an optional publish must not strip a release).
-  attach-capture:
-    name: Attach Kortix Capture installers
-    needs: [version, github-release]
-    if: always() && needs.github-release.result == 'success'
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.workflow_sha }}
-          sparse-checkout: |
-            capture-release.json
-            .github/actions
-          persist-credentials: false
-      - name: Read the Capture release token from AWS Secrets Manager
-        continue-on-error: true
-        uses: ./.github/actions/aws-env
-        with:
-          keys: |
-            CAPTURE_RELEASES_TOKEN?
-      - name: Copy the pinned Capture installers into this Release
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          repo=$(jq -r .repo capture-release.json)
-          version=$(jq -r '.version // empty' capture-release.json)
-          if [ -z "$version" ]; then
-            echo "::notice::capture-release.json pins no Kortix Capture version; this release ships no Capture installers."
-            exit 0
-          fi
-          if [ -z "${CAPTURE_RELEASES_TOKEN:-}" ]; then
-            echo "::warning::CAPTURE_RELEASES_TOKEN is missing; Kortix Capture $version is not attached."
-            exit 0
-          fi
-          mkdir capture && cd capture
-          GH_TOKEN="$CAPTURE_RELEASES_TOKEN" gh release download "$version" --repo "$repo" \
-            --pattern 'KortixCapture*.msi' --pattern 'KortixCapture*.pkg' --pattern 'kortix-capture*.deb'
-          # A stable name for the copy-paste install command (Devices → Roll out, docs).
-          for f in KortixCapture-*-x64.msi; do [ -e "$f" ] && cp "$f" KortixCapture-x64.msi; done
-          for f in KortixCapture-*-universal.pkg; do [ -e "$f" ] && cp "$f" KortixCapture-universal.pkg; done
-          for f in kortix-capture_*_amd64.deb; do [ -e "$f" ] && cp "$f" kortix-capture_amd64.deb; done
-          sha256sum ./* > CAPTURE-SHA256SUMS
-          gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CAPTURE_RELEASES_TOKEN: ${{ env.CAPTURE_RELEASES_TOKEN || secrets.CAPTURE_RELEASES_TOKEN }}
-
   # ── Apply DB migrations to prod BEFORE the API rolls ────────────────────────
   # Closes the gap that caused the 2026-06-21 /triggers 500: migrations used to be
   # applied by a manual step at promote that got missed, so new code shipped

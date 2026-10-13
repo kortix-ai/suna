@@ -20815,7 +20815,13 @@
       "link": "Associer à une personne…",
       "relink": "Changer la personne associée…",
       "unlinked": "Associé à personne",
-      "getCapture": "Obtenir Kortix Capture"
+      "getCapture": "Obtenir Kortix Capture",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "Guide d’installation"
+      }
     },
     "settings": {
       "title": "Paramètres de l’organisation",

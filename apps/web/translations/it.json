@@ -20815,7 +20815,13 @@
       "link": "Collega a una persona…",
       "relink": "Cambia la persona collegata…",
       "unlinked": "Non collegato a nessuno",
-      "getCapture": "Scarica Kortix Capture"
+      "getCapture": "Scarica Kortix Capture",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "Guida all’installazione"
+      }
     },
     "settings": {
       "title": "Impostazioni dell’organizzazione",
