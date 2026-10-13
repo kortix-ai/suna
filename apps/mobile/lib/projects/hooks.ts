@@ -653,14 +653,18 @@ export function useProjectSessionsPaged(
     },
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  const isScanning =
-    shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isFetchNextPageError;
+  // A failed fetch ends the scan: the list's Show more (or a refresh) is the retry.
+  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;
+  // A refetch that answers the same pages keeps the same `data` (structural
+  // sharing), so the effect also runs on each answer's time. Read only while
+  // scanning: an idle list keeps its tracked-field renders.
+  const answeredAt = isScanning ? query.dataUpdatedAt : 0;
   const { data, fetchNextPage } = query;
   useEffect(() => {
-    // `cancelRefetch: false` joins a fetch already running (a poll) instead of
-    // cancelling it. Its answer is new `data`, which runs this again.
+    // `cancelRefetch: false` joins a fetch already running (a poll, a mount
+    // refetch) instead of cancelling it. Its answer runs this again.
     if (isScanning) void fetchNextPage({ cancelRefetch: false });
-  }, [isScanning, data, fetchNextPage]);
+  }, [isScanning, data, answeredAt, fetchNextPage]);
   return withSessions(query, { sessions, isScanning });
 }
 

@@ -15,12 +15,18 @@ type Page = { items: { session_id: string }[]; next_cursor: string | null };
 // Page N answers cursor `c-N` (page 0 the first read); an Error entry fails that read.
 let pages: (Page | Error)[] = [];
 const cursors: (string | null)[] = [];
+// A one-shot wait (ms) before the next read of a page index: a slow network.
+const slow = new Map<number, number>();
 const fakes: Record<string, Record<string, unknown>> = {
   './projects-client': {
     listProjectSessionsPage: async (_projectId: string, options: { cursor?: string | null }) => {
       const cursor = options.cursor ?? null;
       cursors.push(cursor);
-      const page = pages[cursor ? Number(cursor.slice(2)) : 0];
+      const index = cursor ? Number(cursor.slice(2)) : 0;
+      const wait = slow.get(index);
+      slow.delete(index);
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      const page = pages[index];
       if (page instanceof Error) throw page;
       return page;
     },
@@ -70,8 +76,12 @@ async function until(done: () => boolean) {
   for (let i = 0; i < 50 && !done(); i++) await settle();
 }
 
-async function mount(useList: () => { sessions: { session_id: string }[]; refetch: () => Promise<unknown> }) {
+async function mount(
+  useList: () => { sessions: { session_id: string }[]; refetch: () => Promise<unknown> },
+  seed?: (client: QueryClient) => void
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seed?.(client);
   let renders = 0;
   let list!: ReturnType<typeof useList>;
   function Consumer() {
@@ -186,5 +196,83 @@ describe('paged session hooks', () => {
     for (let i = 0; i < 5; i++) await settle();
     expect(cursors).toEqual([null]);
     expect((view.list() as any).isScanning).toBe(false);
+  });
+
+  // A refetch that answers the same pages keeps the same `data` (TanStack's
+  // structural sharing). The scan must go on when that fetch ends, or the list
+  // shows a loader with no exit.
+  const emptyThenRow = (): (Page | Error)[] => [
+    { items: [], next_cursor: 'c-1' },
+    { items: [{ session_id: 's-old' }], next_cursor: null },
+  ];
+
+  test('a refetch during a scan page (the drawer opens, a pull to refresh) does not stall the scan', async () => {
+    pages = emptyThenRow();
+    cursors.length = 0;
+    slow.set(1, 200);
+    const view = await mount(() => hooks.useProjectSessionsPaged('p-1', { poll: false }));
+    await until(() => cursors.length === 2);
+    // refetch() cancels the scan page in flight; page one answers unchanged.
+    await act(async () => {
+      await view.list().refetch();
+    });
+    await until(() => view.list().sessions.length > 0);
+    expect(cursors).toEqual([null, 'c-1', null, 'c-1']);
+    expect(view.list().sessions.map((s) => s.session_id)).toEqual(['s-old']);
+    expect((view.list() as any).isScanning).toBe(false);
+  });
+
+  test('a mount over a stale cached empty page with a cursor resumes the scan', async () => {
+    pages = emptyThenRow();
+    cursors.length = 0;
+    // The persisted cache keeps page one only. Older than `staleTime`, so the mount refetches it.
+    const view = await mount(
+      () => hooks.useProjectSessionsPaged('p-1', { poll: false }),
+      (client) =>
+        client.setQueryData(
+          hooks.projectKeys.projectSessionsPaged('p-1'),
+          { pages: [{ items: [], next_cursor: 'c-1' }], pageParams: [null] },
+          { updatedAt: Date.now() - 60_000 }
+        )
+    );
+    await until(() => view.list().sessions.length > 0);
+    expect(cursors).toEqual([null, 'c-1']);
+    expect(view.list().sessions.map((s) => s.session_id)).toEqual(['s-old']);
+  });
+
+  test('a refresh after a failed scan page resumes the scan', async () => {
+    pages = [{ items: [], next_cursor: 'c-1' }, new Error('offline')];
+    cursors.length = 0;
+    const view = await mount(() => hooks.useProjectSessionsPaged('p-1', { poll: false }));
+    await until(() => (view.list() as any).isFetchNextPageError);
+    pages[1] = { items: [{ session_id: 's-old' }], next_cursor: null };
+    // Pull to refresh: page one answers unchanged, slow enough that the
+    // render with the refetch running lands first.
+    slow.set(0, 100);
+    await act(async () => {
+      await view.list().refetch();
+    });
+    await until(() => view.list().sessions.length > 0);
+    expect(cursors).toEqual([null, 'c-1', null, 'c-1']);
+    expect(view.list().sessions.map((s) => s.session_id)).toEqual(['s-old']);
+  });
+
+  test('a refetch that fails during a scan ends the scan: no loader without a fetch, the next page stays offered', async () => {
+    pages = emptyThenRow();
+    cursors.length = 0;
+    slow.set(1, 200);
+    const view = await mount(() => hooks.useProjectSessionsPaged('p-1', { poll: false }));
+    await until(() => cursors.length === 2);
+    pages[0] = new Error('offline');
+    await act(async () => {
+      await view.list().refetch();
+    });
+    // Past the cancelled scan page's late answer.
+    for (let i = 0; i < 12; i++) await settle();
+    const list = view.list() as any;
+    expect(cursors).toEqual([null, 'c-1', null]);
+    expect(list.isFetching).toBe(false);
+    expect(list.isScanning).toBe(false);
+    expect(list.hasNextPage).toBe(true);
   });
 });
