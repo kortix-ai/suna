@@ -47,11 +47,12 @@ const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' }
  * - `skipped`: the switch is off, a journal owns the log, there is no mirror, nothing changed,
  *   a newer mirror capture ran, or the capture revs are exhausted.
  * - `written`, or `dry` (nothing written): `log` is `fromV1` of the mirror, `batch` what was (would be) written.
+ *   `harnessDefaulted`: no projection named `opencode` or `pi`, so the log took `opencode`.
  * - `failed`: the apply path refused the batch (`status`), or something threw.
  */
 export type MirrorLogWrite =
   | { outcome: 'skipped' }
-  | { outcome: 'written' | 'dry'; log: SessionLog; batch: SessionLogJournalRequest }
+  | { outcome: 'written' | 'dry'; log: SessionLog; batch: SessionLogJournalRequest; harnessDefaulted: boolean }
   | { outcome: 'failed'; status?: number };
 
 const SKIPPED = { outcome: 'skipped' } as const;
@@ -91,6 +92,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
     if (!read) return SKIPPED;
     const { s, rows, stored } = read;
 
+    const harnessDefaulted = s.harness !== 'pi' && s.harness !== 'opencode';
     const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness: s.harness === 'pi' ? 'pi' : 'opencode' });
     const { threads, ...session } = log;
     const byId = new Map(stored.map((r) => [r.id, r]));
@@ -109,7 +111,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       logger.warn('[session-log] capture revs exhausted; the capture writes no more v2 rows', { sessionId });
       return SKIPPED;
     }
-    if (options.dry) return { outcome: 'dry', log, batch };
+    if (options.dry) return { outcome: 'dry', log, batch, harnessDefaulted };
 
     const capturedAt = new Date(s.capturedAt!).getTime();
     const outcome = await writeCapturedSessionLog({ sessionId, projectId: s.projectId, accountId: s.accountId }, batch, async (tx) => {
@@ -125,7 +127,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       logger.warn('[session-log] capture write refused', { sessionId, status: outcome.status, body: outcome.body });
       return { outcome: 'failed', status: outcome.status };
     }
-    return { outcome: 'written', log, batch };
+    return { outcome: 'written', log, batch, harnessDefaulted };
   } catch (err) {
     logger.warn('[session-log] capture write failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
     return { outcome: 'failed' };

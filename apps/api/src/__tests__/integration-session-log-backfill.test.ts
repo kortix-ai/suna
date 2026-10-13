@@ -33,6 +33,8 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 const { backfillSessionLogs, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
+const { claimSessionLog } = await import('../projects/session-log-restore');
+const { config } = await import('../config');
 
 const OWNER = crypto.randomUUID();
 const ROOT = 'ses_backfillroot00000000001';
@@ -291,6 +293,55 @@ describe('failures', () => {
   });
 });
 
+describe('races and switches', () => {
+  test('a restore claim (generation 1) between the selection and the conversion: the generation-0 write is skipped', async () => {
+    const session = await oldSession([plain(0), plain(1)]);
+    const scope = { sessionId: session, projectId: project.project_id, accountId: project.account_id };
+    let claimed: Awaited<ReturnType<typeof snapshot>> | undefined;
+    const [tick] = await pass('write', newBackfillState(), {
+      convert: async (id, opts) => {
+        // Meanwhile: a capture writes the log, a fresh box claims it (generation 1), and the mirror gains a turn.
+        await writeSessionLogFromMirror(id);
+        expect(await claimSessionLog(scope)).not.toBeNull();
+        await db.insert(sessionTranscriptMessages).values([plain(2), plain(3)].map((m) => ({
+          sessionId: id, messageId: String(m.info.id), runtimeSessionId: ROOT, role: String(m.info.role), info: m.info, parts: m.parts,
+          messageCreatedAt: new Date((m.info.time as { created: number }).created),
+        })));
+        await db.update(sessionTranscriptMirrors).set({ capturedAt: new Date() }).where(eq(sessionTranscriptMirrors.sessionId, id));
+        claimed = await snapshot(id);
+        return writeSessionLogFromMirror(id, opts);
+      },
+    });
+    expect(claimed!.log?.generation).toBe(1);
+    expect(tick!.counts).toMatchObject({ sessions: 1, logs: 0, skipped: 1, failed: 0 });
+    expect(await snapshot(session)).toEqual(claimed!);
+  });
+
+  test('write with SESSION_LOG_INGEST_ENABLED=false skips every session and warns once per pass', async () => {
+    const a = await oldSession([plain(0), plain(1)]);
+    const b = await oldSession([plain(0), plain(1)]);
+    const warn = spyOn(logger, 'warn');
+    config.SESSION_LOG_INGEST_ENABLED = false;
+    try {
+      const state = newBackfillState();
+      const first = await backfillSessionLogs('write', state, { budgetMs: 0 });
+      const rest = await pass('write', state);
+      const all = [first, ...rest];
+      expect(all.reduce((n, t) => n + t.counts.skipped, 0)).toBe(2);
+      expect(all.reduce((n, t) => n + t.counts.logs, 0)).toBe(0);
+      expect([await hasLog(a), await hasLog(b)]).toEqual([false, false]);
+      const warnings = () => warn.mock.calls.filter(([msg]) => String(msg).includes('SESSION_LOG_INGEST_ENABLED=false'));
+      expect(warnings()).toHaveLength(1);
+      // The next pass warns again, once.
+      await pass('write', state);
+      expect(warnings()).toHaveLength(2);
+    } finally {
+      config.SESSION_LOG_INGEST_ENABLED = true;
+      warn.mockRestore();
+    }
+  });
+});
+
 describe('dry: converts in memory, writes nothing, reports the counts', () => {
   test('no row, no object; the counts are those of fromV1; info lines carry no session id; the pass ends with a summary', async () => {
     const big = await oldSession([...synthetic(), plain(1000, '€'.repeat(100_000)), plain(1001)]);
@@ -309,11 +360,16 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
       const grades = { native: 0, converted: 0, partial: 0 };
       for (const l of logs) grades[l.restore_grade as keyof typeof grades]++;
       const sum = (k: 'tool_input' | 'cut_point' | 'attachment') => logs.reduce((n, l) => n + l.grade_counts![k], 0);
-      const counts = ticks.reduce((t, x) => {
-        for (const [k, v] of Object.entries(x.counts)) t[k] = (t[k] ?? 0) + v;
-        return t;
-      }, {} as Record<string, number>);
-      expect(counts).toEqual({
+      expect(ticks).toHaveLength(1);
+      const lines = info.mock.calls.filter(([msg]) => String(msg).includes('backfill'));
+      expect(lines.map(([msg]) => msg)).toEqual(['[session-log] backfill tick', '[session-log] backfill pass complete']);
+      const bytesOf = (l: SessionLog) => l.threads.flatMap((t) => t.messages).reduce((n, m) => n + Buffer.byteLength(JSON.stringify(m)), 0);
+      const sizeOf = (l: SessionLog) => l.threads.flatMap((t) => t.messages).length;
+      const { pass_ms, max_session_ms, ...summary } = lines[1]![1] as Record<string, unknown>;
+      expect(pass_ms as number).toBeGreaterThanOrEqual(max_session_ms as number);
+      expect(max_session_ms as number).toBeGreaterThanOrEqual(0);
+      expect(summary).toEqual({
+        mode: 'dry',
         sessions: 2,
         logs: 2,
         skipped: 0,
@@ -325,18 +381,26 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         attachment: sum('attachment'),
         record_bytes: messages.reduce((n, m) => n + Buffer.byteLength(JSON.stringify(m)), 0),
         offload_texts: 1,
+        // Neither session has a runtime projection.
+        harness_defaulted: 2,
+        max_session_messages: Math.max(...logs.map(sizeOf)),
+        max_session_record_bytes: Math.max(...logs.map(bytesOf)),
       });
       expect(grades.partial).toBeGreaterThan(0);
-
-      const lines = info.mock.calls.filter(([msg]) => String(msg).includes('backfill'));
-      expect(lines.map(([msg]) => msg)).toEqual(['[session-log] backfill tick', '[session-log] backfill pass complete']);
-      expect(lines[1]![1]).toMatchObject({ mode: 'dry', sessions: 2, logs: 2, offload_texts: 1 });
+      // The tick line carries the same counts.
+      expect(lines[0]![1]).toMatchObject({ mode: 'dry', sessions: 2, harness_defaulted: 2, max_session_messages: Math.max(...logs.map(sizeOf)) });
       expect(JSON.stringify(lines)).not.toContain(big);
       expect(JSON.stringify(lines)).not.toContain(small);
 
-      // A dry pass is a cursor in memory: the next pass sees the same sessions again.
-      const [again] = await pass('dry', state);
-      expect(again!.counts.sessions).toBe(2);
+      // One dry pass per process: a later tick selects and converts nothing and logs nothing.
+      let converted = 0;
+      const again = await backfillSessionLogs('dry', state, { convert: async (id, opts) => (converted++, writeSessionLogFromMirror(id, opts)) });
+      expect(again).toEqual({ more: false, counts: expect.objectContaining({ sessions: 0, logs: 0 }) });
+      expect(converted).toBe(0);
+      expect(info.mock.calls.filter(([msg]) => String(msg).includes('backfill'))).toHaveLength(2);
+      // A mode change starts over: a write pass converts both.
+      const [write] = await pass('write', state);
+      expect(write!.counts).toMatchObject({ sessions: 2, logs: 2 });
     } finally {
       info.mockRestore();
     }

@@ -11,7 +11,9 @@ const BACKLOG_MS = 5_000;
 const state = newBackfillState();
 
 // Leader only, serial: old sessions into the session log (P3.1). Every 5 s while the queue
-// holds more, hourly once a pass ends. SESSION_LOG_BACKFILL=off (default) runs nothing.
+// holds more, hourly once a pass ends. `write` starts a new pass each hour (it retries the
+// failures; an empty queue costs one selection). `dry` runs one pass per process, then each
+// hourly tick does nothing. SESSION_LOG_BACKFILL=off (default) runs nothing.
 const worker = leaderTimer(async () => {
   const mode = config.SESSION_LOG_BACKFILL;
   if (mode === 'off') return IDLE_MS;
