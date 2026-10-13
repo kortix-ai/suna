@@ -31,10 +31,10 @@
   "marketing:download": "2026-10-08T13:52:49.000Z",
   "docs:accounts/identity": "2026-10-13T08:05:42.000Z",
   "docs:accounts": "2026-10-13T19:18:28.000Z",
-  "docs:api": "2026-10-13T20:36:53.000Z",
+  "docs:api": "2026-10-13T21:31:20.000Z",
   "docs:apps": "2026-10-13T19:19:29.000Z",
   "docs:audit-actions": "2026-10-13T20:08:14.000Z",
-  "docs:cli": "2026-10-13T20:36:53.000Z",
+  "docs:cli": "2026-10-13T21:31:20.000Z",
   "docs:clients": "2026-10-13T17:03:47.000Z",
   "docs:connect/channels": "2026-10-11T19:28:15.000Z",
   "docs:connect/computers": "2026-10-11T19:28:15.000Z",
@@ -59,5 +59,5 @@
   "docs:sdk/sessions": "2026-10-13T20:36:53.000Z",
   "docs:tui": "2026-10-11T19:28:15.000Z",
   "docs:work/runtime": "2026-10-11T19:28:15.000Z",
-  "docs:work/sessions": "2026-10-13T20:36:53.000Z"
+  "docs:work/sessions": "2026-10-13T21:31:20.000Z"
 }
