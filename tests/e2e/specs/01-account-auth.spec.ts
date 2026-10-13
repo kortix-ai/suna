@@ -44,6 +44,7 @@ async function requestEmailAuthentication(page: Page, email: string) {
     exact: true,
   });
   await expect(continueButton).toBeEnabled();
+  const linkSent = page.getByRole("heading", { name: "Check your email" });
   let submitted = false;
   for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
     const formRequest = page
@@ -55,15 +56,16 @@ async function requestEmailAuthentication(page: Page, email: string) {
       .then(() => true)
       .catch(() => false);
     await page.getByLabel("Email").press("Enter");
-    submitted = await formRequest;
+    // The link step itself proves the submit: the POST can settle outside
+    // the 2 s window (gate run 38482518701 reached "Check your email" with
+    // Continue gone, and the retry then waited for Continue forever).
+    submitted = (await formRequest) || (await linkSent.isVisible());
     if (!submitted) {
       await expect(continueButton).toBeEnabled();
     }
   }
   expect(submitted, "the hydrated auth form sends POST /auth").toBe(true);
-  await expect(
-    page.getByRole("heading", { name: "Check your email" }),
-  ).toBeVisible();
+  await expect(linkSent).toBeVisible();
   return sentAt;
 }
 
