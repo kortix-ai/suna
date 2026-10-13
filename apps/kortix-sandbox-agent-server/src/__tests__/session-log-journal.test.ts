@@ -621,6 +621,19 @@ describe('session-log journal', () => {
     expect(putIds(api.received)).toEqual(['m1'])
   })
 
+  test('a started journal sends its boot export: a box that wakes posts its native store before any turn end (P3.3)', async () => {
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'history')
+    fake.put('m2', 2, 'more history')
+    const journal = startSessionLogJournal(fake.port, { generation: 0 })
+    if (!journal) throw new Error('journal did not start')
+
+    await until(() => api.received.length > 0 && journal.clean, 5_000)
+    expect(putIds(api.received)).toEqual(['m1', 'm2'])
+    expect(api.received[0]!.body.generation).toBe(0)
+  })
+
   test('a second start stops the first journal: one drain loop per boot', async () => {
     const api = fakeApi()
     const first = fakeAdapter()
