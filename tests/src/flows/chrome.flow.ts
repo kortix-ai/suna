@@ -23,8 +23,12 @@ const form = (fields: Record<string, string>) => {
 const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64url');
 
 /** What the extension does: register a public client, authorize with PKCE, redeem the code. */
-async function oauthToken(ctx: FlowContext, who: Principal, scope = 'kortix'): Promise<string> {
-  const redirectUri = 'http://127.0.0.1:33417/callback';
+async function oauthToken(
+  ctx: FlowContext,
+  who: Principal,
+  scope = 'kortix',
+  redirectUri = 'http://127.0.0.1:33417/callback',
+): Promise<string> {
   const reg = await ctx.client.as(ctx.P.ANON).post('/v1/oauth/register', {
     client_name: 'Kortix for Chrome',
     redirect_uris: [redirectUri],
@@ -358,6 +362,46 @@ flow(
     await ctx.step('an OAuth token (not a sandbox credential) → 403', async () => {
       const oat = ctx.client.withBearer(await oauthToken(ctx, a), 'OAUTH_EXTENSION');
       (await oat.post('/v1/chrome/attach', body)).status(403);
+    });
+  },
+);
+
+// ── CHR-8: the side panel signs in with the extension's own token ────────────
+const EXTENSION_REDIRECT_URI = 'chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek/welcome.html';
+
+flow(
+  'CHR-8',
+  {
+    domain: 'chrome',
+    routes: ['POST /v1/chrome/panel-session', 'POST /v1/oauth/register', 'POST /v1/oauth/token'],
+  },
+  async (ctx) => {
+    const a = await freshUser(ctx);
+
+    await ctx.step('ANON → 401', async () => {
+      (await ctx.client.as(ctx.P.ANON).post('/v1/chrome/panel-session', {})).status(401);
+    });
+
+    await ctx.step('a signed-in user (Supabase JWT) → 403 chrome_panel_forbidden', async () => {
+      const r = await ctx.client.as(a).post('/v1/chrome/panel-session', {});
+      r.status(403);
+      if (r.json<{ code: string }>().code !== 'chrome_panel_forbidden') throw new Error(r.text());
+    });
+
+    await ctx.step('an OAuth token of another client → 403 chrome_panel_forbidden', async () => {
+      const other = ctx.client.withBearer(await oauthToken(ctx, a), 'OAUTH_OTHER_CLIENT');
+      const r = await other.post('/v1/chrome/panel-session', {});
+      r.status(403);
+      if (r.json<{ code: string }>().code !== 'chrome_panel_forbidden') throw new Error(r.text());
+    });
+
+    await ctx.step('an OAuth token of the extension client → 200 with a tokenHash, never cached', async () => {
+      const oat = ctx.client.withBearer(await oauthToken(ctx, a, 'kortix', EXTENSION_REDIRECT_URI), 'OAUTH_EXTENSION');
+      const r = await oat.post('/v1/chrome/panel-session', {});
+      r.status(200);
+      const { tokenHash } = r.json<{ tokenHash: string }>();
+      if (!tokenHash || tokenHash.length < 20) throw new Error(`tokenHash: ${tokenHash}`);
+      if (r.header('cache-control') !== 'no-store') throw new Error(`cache-control: ${r.header('cache-control')}`);
     });
   },
 );

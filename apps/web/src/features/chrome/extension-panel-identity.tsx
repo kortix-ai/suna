@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 
-import { KORTIX_EXTENSION_ID } from './extension';
+import { EXTENSION_ORIGIN, isExtensionPanelFrame } from '@/lib/supabase/panel-cookies';
 
 export interface ExtensionIdentityMessage {
   type: 'kortix.identity';
@@ -13,13 +13,17 @@ export interface ExtensionIdentityMessage {
 }
 
 /**
- * True when this document is the Kortix Chrome extension's side panel: framed,
- * and the framing page is the extension. Referrer is the only signal a page
- * gets about its embedder, and it is a hint, not a credential. The extension
- * checks `event.origin` on its side and trusts nothing else.
+ * True when this document is the Kortix in Chrome side panel: framed, and the
+ * framing page is the extension. `ancestorOrigins` is exact; the referrer is
+ * the fallback where a browser has no `ancestorOrigins`, and it is a hint, not
+ * a credential. The extension checks `event.origin` on its side.
  */
-export function isInsideExtensionPanel(referrer: string, framed: boolean): boolean {
-  return framed && referrer.startsWith(`chrome-extension://${KORTIX_EXTENSION_ID}`);
+export function isInsideExtensionPanel(
+  referrer: string,
+  framed: boolean,
+  ancestorOrigins?: ArrayLike<string>,
+): boolean {
+  return isExtensionPanelFrame(ancestorOrigins, referrer, framed);
 }
 
 export function identityMessage(user: { id: string; email?: string | null }): ExtensionIdentityMessage {
@@ -34,10 +38,9 @@ export function identityMessage(user: { id: string; email?: string | null }): Ex
 export function ExtensionPanelIdentity() {
   const { user } = useAuth();
   useEffect(() => {
-    if (!user || !isInsideExtensionPanel(document.referrer, window.top !== window.self)) return;
-    // '*': the embedder origin is not readable here. The payload is the user's
-    // own id and email, shown to the page that already frames this app.
-    window.parent.postMessage(identityMessage(user), '*');
+    if (!user || !isInsideExtensionPanel(document.referrer, window.top !== window.self, window.location.ancestorOrigins)) return;
+    // The target origin is the extension: no other page frames the panel.
+    window.parent.postMessage(identityMessage(user), EXTENSION_ORIGIN);
   }, [user]);
   return null;
 }

@@ -2453,6 +2453,13 @@
         "updateFailed": "Impossible de mettre à jour le mot de passe",
         "unexpected": "Une erreur inattendue s’est produite"
       }
+    },
+    "panel": {
+      "waitingTitle": "Connexion en cours",
+      "waitingBody": "Connexion de ce panneau à votre compte Kortix.",
+      "errorTitle": "Connexion impossible",
+      "errorBody": "Connectez-vous à Kortix dans un onglet du navigateur, puis rouvrez ce panneau.",
+      "signIn": "Se connecter"
     }
   },
   "onboarding": {

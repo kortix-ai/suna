@@ -13,6 +13,11 @@ describe('extension panel identity', () => {
     expect(isInsideExtensionPanel('', true)).toBe(false);
   });
 
+  test('ancestorOrigins wins over the referrer', () => {
+    expect(isInsideExtensionPanel('', true, [EXT.slice(0, -1)])).toBe(true);
+    expect(isInsideExtensionPanel(EXT + 'sidepanel.html', true, ['https://example.com'])).toBe(false);
+  });
+
   test('the message carries the user id and email', () => {
     expect(identityMessage({ id: 'u1', email: 'a@example.test' })).toEqual({
       type: 'kortix.identity', userId: 'u1', email: 'a@example.test',

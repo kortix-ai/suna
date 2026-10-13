@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 797,
+  "count": 798,
   "routes": [
     {
       "method": "GET",
@@ -1037,6 +1037,10 @@
     {
       "method": "PATCH",
       "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/panel-session"
     },
     {
       "method": "POST",

@@ -366,6 +366,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/chrome/connections/:id': { action: 'chrome.disconnect', title: 'Disconnected a browser' },
   'POST /v1/chrome/attach': { action: 'chrome.attach', title: 'Attached a session to a browser' },
   'POST /v1/chrome/release': { action: 'chrome.release', title: 'Released a browser from a session' },
+  'POST /v1/chrome/panel-session': { action: 'chrome.panel_session', title: 'Signed in the browser side panel' },
   'POST /v1/feedback': { action: 'feedback.create', title: 'Filed product feedback' },
   'DELETE /v1/notifications/device-token/:token': { action: 'notification.device_token.delete', title: 'Removed push notification device' },
   'GET /v1/notifications/preferences': { action: 'notification.preferences.read', title: 'Viewed notification preferences' },

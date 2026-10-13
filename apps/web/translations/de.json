@@ -2453,6 +2453,13 @@
         "updateFailed": "Passwort konnte nicht aktualisiert werden",
         "unexpected": "Ein unerwarteter Fehler ist aufgetreten"
       }
+    },
+    "panel": {
+      "waitingTitle": "Anmeldung läuft",
+      "waitingBody": "Dieses Panel wird mit deinem Kortix-Konto verbunden.",
+      "errorTitle": "Anmeldung nicht möglich",
+      "errorBody": "Melde dich in einem Browser-Tab bei Kortix an und öffne dieses Panel dann erneut.",
+      "signIn": "Anmelden"
     }
   },
   "onboarding": {

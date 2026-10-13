@@ -2453,6 +2453,13 @@
         "updateFailed": "パスワードを更新できませんでした",
         "unexpected": "予期しないエラーが発生しました"
       }
+    },
+    "panel": {
+      "waitingTitle": "サインインしています",
+      "waitingBody": "このパネルをKortixアカウントに接続しています。",
+      "errorTitle": "サインインできませんでした",
+      "errorBody": "ブラウザのタブでKortixにサインインしてから、このパネルを開き直してください。",
+      "signIn": "サインイン"
     }
   },
   "onboarding": {
