@@ -35,7 +35,7 @@
 // attestation with a skipped lane exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,7 +68,13 @@ function workingTree() {
   const tmp = mkdtempSync(join(tmpdir(), 'attest-index-'));
   const index = join(tmp, 'index');
   try {
-    copyFileSync(resolve(root, git(['rev-parse', '--git-path', 'index']).toString().trim()), index);
+    const real = resolve(root, git(['rev-parse', '--git-path', 'index']).toString().trim());
+    copyFileSync(real, index);
+    // Keep the index mtime: git re-hashes an entry whose file is not older than
+    // the index (its racy-entry check). A fresh copy mtime would let `add -A`
+    // trust the stat of a same-size edit made in the second of the last write.
+    const { atime, mtime } = statSync(real);
+    utimesSync(index, atime, mtime);
   } catch {} // no index yet: `add -A` builds one
   const env = { GIT_INDEX_FILE: index };
   git(['add', '-A'], env);
