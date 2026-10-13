@@ -127,7 +127,7 @@ export function RolloutModal({
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <Link href="/docs/capture-rollout" target="_blank">
+            <Link href="/docs/capture/rollout" target="_blank">
               {t('guide')}
               <ArrowSquareOutIcon className="size-3.5 shrink-0" />
             </Link>

@@ -47,11 +47,11 @@ connects in one of two ways:
 | Way | For | How |
 |---|---|---|
 | Sign in with Kortix | one person on their own computer | the person approves the computer in the browser |
-| Enrollment token | IT, for many computers at once | IT installs with a token; nobody signs in. See [Capture IT rollout](/docs/capture-rollout) |
+| Enrollment token | IT, for many computers at once | IT installs with a token; nobody signs in. See [IT rollout](/docs/capture/rollout) |
 
-Download the installer for the computer: [Windows](/download/capture/windows)
-(`.msi`), [macOS](/download/capture/macos) (`.pkg`) or
-[Linux](/download/capture/linux) (`.deb`).
+Download the installer for the computer: [Windows](https://kortix.com/download/capture/windows)
+(`.msi`), [macOS](https://kortix.com/download/capture/macos) (`.pkg`) or
+[Linux](https://kortix.com/download/capture/linux) (`.deb`).
 
 To sign in with Kortix:
 
@@ -167,7 +167,7 @@ read outside your permissions answers `403`
 |---|---|
 | `GET /` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` |
 | `PATCH /` `{ "enabled": true }` | the same; needs `capture.manage` |
-| `GET enrollment-tokens` · `POST enrollment-tokens` · `DELETE enrollment-tokens/<token_id>` | the IT rollout tokens; needs `capture.manage` (see [Capture IT rollout](/docs/capture-rollout)) |
+| `GET enrollment-tokens` · `POST enrollment-tokens` · `DELETE enrollment-tokens/<token_id>` | the IT rollout tokens; needs `capture.manage` (see [IT rollout](/docs/capture/rollout)) |
 | `GET enrollments?status=pending` · `POST enrollments/<id>/approve` `{ "user_id" }` · `POST enrollments/<id>/deny` | computers that wait for a decision; needs `capture.manage` |
 | `PUT devices/<device_id>/link` `{ "user_id" }` | links the device to a member, or unlinks it with `null`; needs `capture.manage` |
 | `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence |
