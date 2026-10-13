@@ -1,11 +1,16 @@
 {
-  "source_hash": "3c3c04260c4031750e2d420b3addf2acd031acf4de596e724873aa2657aa3f39",
-  "head": "f359c0b4d3fb7a046a8fb9bdfe877d51ac1f1ad7",
-  "passed": false,
+  "source_hash": "ec452ff6bfe693874dbf5e60fe136824e8abe3e8d7c73f1a222015285ba6499c",
+  "diff_files": [
+    "apps/web/src/components/markdown/copy-button.test.tsx",
+    "apps/web/src/components/markdown/copy-button.tsx"
+  ],
+  "diff_hash": "884c97bb15861bd7a8681814fe1afbb32184059bfabb1d7d4cc05612b14335fc",
+  "head": "fae35ab630181227841943aae6190012b58a2135",
+  "passed": true,
   "lanes": {
-    "core": "fail",
-    "packages": "fail",
-    "db-suites": "fail"
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-13T16:39:38.642Z"
+  "at": "2026-10-13T17:18:32.738Z"
 }
