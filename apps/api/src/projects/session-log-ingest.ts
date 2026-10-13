@@ -7,7 +7,8 @@
  * One transaction per batch, under a per-session advisory lock:
  * - Generation fence. `session_logs.generation` is the session's generation. A
  *   batch with an older one answers 409 and writes nothing. An equal one is
- *   accepted. A newer one is accepted and becomes the session's (P6 mints them).
+ *   accepted. A newer one is accepted and becomes the session's (the restore
+ *   claim mints them: `session-log-restore.ts`).
  * - Revisions. A put or a tombstone applies only when its (generation, rev) is
  *   above the stored message's. Every pair of the batch is acknowledged, applied
  *   or not, after commit. A higher put revives a tombstoned message.

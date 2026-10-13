@@ -213,6 +213,25 @@ SessionLogPutSchema = {
   message: SessionLogMessageSchema
 }
 
+SessionLogRestoreBlobSchema = {
+  message_id: string(min1)
+  block_id: string(min1)
+  ref: string(min1)
+  bytes: number(int)(min0)
+  sha256: string(regex)
+}
+
+SessionLogRestoreMissingSchema = {
+  error: literal("no_session_log")
+}
+
+SessionLogRestoreSchema = {
+  generation: number(int)(min0)
+  log: SessionLogSchema
+  revs: record(number(int)(min0))
+  blobs: array(SessionLogRestoreBlobSchema)
+}
+
 SessionLogSchema = {
   schema: literal("kortix.session/2")
   v: number(int)(min0)
