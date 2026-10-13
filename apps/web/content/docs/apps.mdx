@@ -546,6 +546,10 @@ import { kortixBinding } from '@kortix/sdk';
 const backend = kortixBinding('backend'); // { url: <origin>/_kortix/apps/backend, token: a token fetcher }
 ```
 
+To start the first token request before your bundle loads (an inline `<script>`),
+pass `fetch` to `kortixBinding`. Return the early response on its first call and
+the real `fetch` after. The binding then does not request the token twice.
+
 | The used App or service | Answer |
 |---|---|
 | Not in `uses` | `403 app_not_linked` |
