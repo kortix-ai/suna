@@ -414,6 +414,8 @@ Kortix does not record health probes, CORS preflights, or anonymous visitors to 
 
 Open **Account settings** → **Audit log**. Reading needs `audit.read` (owners and admins) and the entitlement.
 
+The **Session** filter searches the selected project's sessions that you can open, by name or session-id prefix, on the server. It lists 20 matches at a time: **Load more** reads the next 20. To filter by any other session, paste its full session id into the search field and pick it. A pasted id works with no project selected, for a session you cannot open, and for a deleted session.
+
 ```bash
 kortix audit ls --since 24h
 kortix audit ls --outcome denied --since 7d

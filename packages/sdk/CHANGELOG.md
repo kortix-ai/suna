@@ -548,6 +548,12 @@ and `useOpenCodeRuntimeReady`; they compile either way.
 The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- `useProjectSessions` ends its read past empty pages (`isScanning`) on a
+  failed fetch. Before, it read the failed page again as soon as the fetch
+  ended, for as long as the server failed. It also reads the next page when
+  a page answers before React renders the fetch that asked for it; before,
+  the read stopped there with `isScanning` true and no fetch running
+  (KRTX-1727).
 - `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
   and `throw` of a returned async generator inside its scope. Before, each
   `connector(slug).paginate` page ran outside the scope and used the
