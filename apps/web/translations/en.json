@@ -1050,6 +1050,10 @@
         "session_log": {
           "name": "Session log v2",
           "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
+        },
+        "session_log_restore": {
+          "name": "Session log restore",
+          "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
         }
       }
     },
