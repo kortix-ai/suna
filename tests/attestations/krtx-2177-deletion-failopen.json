@@ -1,8 +1,7 @@
 {
-  "source_hash": "daf6341e11bae0cc07292ae69d7c3b7858366d4c72f67fabce0292213a717dfa",
+  "source_hash": "1b9d181f52da0e91ff64c1803137ec1ea97a72794ce7299398697cff52440423",
   "diff_files": [
     "apps/mobile/components/session/__tests__/drawer-rows.test.ts",
-    "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
     "apps/web/src/features/workspace/settings/tabs/profile-tab.container.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/profile-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/profile-tab.tsx",
@@ -16,13 +15,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "6868d85456e826e135dc2aef9fe0afc7b532bc70c68d55d5510b0ff024fed7f0",
-  "head": "7ae83262644712894e5d6741127e9dd30b898b4d",
+  "diff_hash": "4281e4c34e7b0ce7e3899916e3b03773dfeae807ca4c1654243e7d98d71fa517",
+  "head": "124f89ecaf9568b31d527b4bf1f5ed7face89124",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T23:31:16.333Z"
+  "at": "2026-10-13T00:25:41.336Z"
 }
