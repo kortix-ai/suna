@@ -691,6 +691,25 @@ describe('in-place restart claim', () => {
     await concurrentMetadataWrite(f, { lifecycleStopClaim: { token: 'stop-1', claimedAtMs: 0 } });
     expect(await claimFor(f)).toBe(true);
   });
+
+  // The wake ladder's automatic restart used to stop the box a live wake was
+  // starting, and both provider starts then failed each other.
+  test('never claims a stopped row under a live wake claim, and claims it once the lease lapses', async () => {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sandboxStatus: 'stopped',
+      sandboxMetadata: {
+        runtimeWakeId: 'wake-1',
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    });
+    expect(await claimFor(f)).toBe(false);
+    const { sandbox } = await read(f);
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata.runtimeWakeId).toBe('wake-1');
+    await concurrentMetadataWrite(f, { runtimeWakeLeaseExpiresAt: '2026-01-01T00:00:00.000Z' });
+    expect(await claimFor(f)).toBe(true);
+  });
 });
 
 describe('first provisioning (session-sandbox writers)', () => {

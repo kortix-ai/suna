@@ -22,8 +22,7 @@
  *
  * No React import. Every rule here is unit-tested in plan-anchor.test.ts.
  */
-import { isToolPart, type MessageWithParts } from '@/ui';
-import { shouldShowToolPart, toolKind } from '@kortix/sdk';
+import { shouldShowToolPart, toolKind, type SessionLogTurn } from '@kortix/sdk';
 
 /**
  * A tool call that writes the plan. The runtime emits more than one spelling
@@ -34,31 +33,15 @@ export function isPlanWriteTool(tool: string): boolean {
   return toolKind(tool) === 'todowrite' && shouldShowToolPart({ tool });
 }
 
-export function planAnchorMessageId(allMessages: ReadonlyArray<MessageWithParts>): string | null {
-  let currentUserId: string | null = null;
-  let anchorId: string | null = null;
-  let lastUserId: string | null = null;
-
-  for (const message of allMessages) {
-    if (message.info.role === 'user') {
-      currentUserId = message.info.id;
-      lastUserId = message.info.id;
-      continue;
-    }
-
-    // A todo write before any user message belongs to no turn — skip it
-    // rather than anchoring the card above the transcript.
-    if (currentUserId === null) continue;
-
-    if (message.parts.some((part) => isToolPart(part) && isPlanWriteTool(part.tool))) {
-      anchorId = currentUserId;
-    }
-  }
-
-  // No turn wrote todos, yet the session may still hold some: compaction drops
-  // old parts, and the todo list comes from the runtime rather than from the
-  // transcript. Fall back to the last turn so the plan stays reachable.
-  return anchorId ?? lastUserId;
+/**
+ * The turn that owns the plan card: `SessionLogTurn.plan` (`sessionLogTurns`),
+ * the last turn that wrote the todos, else the last turn — the session may
+ * still hold todos with no write in the loaded history (compaction drops old
+ * blocks, and the todo list comes from the runtime), so the plan stays
+ * reachable. Null with no turn.
+ */
+export function planAnchorMessageId(turns: ReadonlyArray<Pick<SessionLogTurn, 'id' | 'plan'>>): string | null {
+  return turns.find((turn) => turn.plan)?.id ?? null;
 }
 
 /**
@@ -113,17 +96,14 @@ export function planBelongsToChat(state: PlanSurfaceState): boolean {
  * The anchor the CHAT should use — which is "none" unless the chat is the
  * plan's surface, per `planBelongsToChat`.
  *
- * The gate wraps the scan rather than sitting beside it, for two reasons.
- * `planAnchorMessageId` walks every part of every message — where the panel
- * owns the plan that is work with no consumer, and skipping it is free. And
- * returning `null` (which matches no message id) means every `ownsPlan`
+ * The gate wraps the lookup rather than sitting beside it: returning `null` (which matches no message id) means every `ownsPlan`
  * downstream, including the user bubble's own column cap, falls out of ONE
  * decision instead of two that can disagree.
  */
 export function chatPlanAnchorId(
-  allMessages: ReadonlyArray<MessageWithParts> | null | undefined,
+  turns: ReadonlyArray<Pick<SessionLogTurn, 'id' | 'plan'>> | null | undefined,
   chatOwnsPlan: boolean,
 ): string | null {
-  if (!chatOwnsPlan || !allMessages) return null;
-  return planAnchorMessageId(allMessages);
+  if (!chatOwnsPlan || !turns) return null;
+  return planAnchorMessageId(turns);
 }

@@ -30,7 +30,8 @@ const sdkInstallDeps: InstallDeps = { createConnector };
 /**
  * Install one app: add its connector profile to the project, then open the
  * connector page with "Add account" showing. Who may use an account is chosen
- * there, per account; the profile itself is always the project's.
+ * there, per account; the profile itself is always the project's. When the
+ * first sync fails, the page opens on its error and Retry instead.
  */
 export function useInstall(projectId: string) {
   const t = useTranslations('connectorPages');
@@ -56,15 +57,16 @@ export function useInstall(projectId: string) {
         .then(async (result) => {
           // Before the navigation: the connector page reads the fresh list.
           await refresh();
-          if (result.status === 'sync_failed') {
-            warningToast(
-              tI18nComplete('textd6a135de3872', { value0: result.name, value1: result.error }),
-            );
-            return;
+          // The profile exists either way, so land on its page. A failed sync
+          // shows its reason and Retry there instead of opening Add account.
+          const failed = result.status === 'sync_failed';
+          if (failed) {
+            warningToast(t('installedSyncFailed', { name: result.name, error: result.error }));
+          } else {
+            successToast(t('installed', { name: target.appName }));
           }
-          successToast(t('installed', { name: target.appName }));
           router.push(
-            connectorHref(projectId, result.slug, { app: options.app, addAccount: true }),
+            connectorHref(projectId, result.slug, { app: options.app, addAccount: !failed }),
           );
         })
         .catch(async (error: Error) => {

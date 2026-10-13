@@ -32,6 +32,7 @@ import {
   getProjectSessionConfigState,
   getProjectSessionScope,
   getSessionAudit,
+  getSessionLogPage,
   getSessionMessageAuthors,
   getSessionOpenBundle,
   getSessionParticipants,
@@ -1879,5 +1880,36 @@ describe('session watch', () => {
   test('setSessionWatch rejects on a 403 (an agent token cannot watch)', async () => {
     nextResponse = { status: 403, body: { error: 'Human login required' } };
     await expect(setSessionWatch('P1', 'S1', true)).rejects.toBeTruthy();
+  });
+});
+
+// P5.5: the stored session log, one page of one thread.
+describe('getSessionLogPage', () => {
+  const page = { session: { session_id: 'S1' }, generation: 0, threads: [], thread_id: 'ses_root', messages: [], has_more: false };
+
+  test('GETs /log with thread, before_seq and limit, and returns the page', async () => {
+    nextResponse = { status: 200, body: page };
+    expect(await getSessionLogPage('P1', 'S1', { thread: 'ses_child', before_seq: 12, limit: 500 })).toEqual(page);
+    expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/sessions/S1/log?thread=ses_child&before_seq=12&limit=500', method: 'GET' });
+  });
+
+  test('a 404 (no stored log, or no such thread) is null, without an error toast', async () => {
+    const onError = mock(() => {});
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+    try {
+      nextResponse = { status: 404, body: { error: 'No session log for this session' } };
+      expect(await getSessionLogPage('P1', 'S1')).toBeNull();
+      expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/log');
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    }
+  });
+
+  test('another failure, or a body that is not a page, rejects', async () => {
+    nextResponse = { status: 500, body: { error: 'boom' } };
+    await expect(getSessionLogPage('P1', 'S1')).rejects.toBeTruthy();
+    nextResponse = { status: 200, body: { messages: 'no' } };
+    await expect(getSessionLogPage('P1', 'S1')).rejects.toThrow('not a session log page');
   });
 });

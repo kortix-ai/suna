@@ -9,7 +9,7 @@ same thing with bigger numbers and `min_capacity >= 2`".
 ## What it creates
 
 - ECS cluster (Container Insights optional) + Fargate service, on `FARGATE` or
-  `FARGATE_SPOT` (`use_fargate_spot`, good for dev).
+  `FARGATE_SPOT` (`use_fargate_spot`, dev only: staging and prod run on-demand, because a Spot reclaim kills in-flight requests and agent turns).
 - ALB in public subnets; tasks in private subnets (SG locks tasks to ALB only).
 - HTTPS-only listener backed by the required `certificate_arn`; no HTTP listener
   or redirect is exposed.

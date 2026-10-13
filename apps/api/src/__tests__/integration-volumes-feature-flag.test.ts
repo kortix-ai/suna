@@ -1,10 +1,11 @@
 /**
- * Integration test (real HTTP route, real Postgres): the `volumes` feature flag
- * IS the organization's Volumes switch. A platform operator's
- * `PATCH /v1/projects/:id/features` writes the organization's entry in the
- * `session_boot_modes` policy row (the one Admin → Volumes edits), and the
- * derived `drives` / `ephemeral_sandboxes` flags follow it. Anyone else gets
- * 403 `feature_operator_only` and nothing changes.
+ * Integration test (real HTTP route, real Postgres): `volumes` and
+ * `stateless_sessions` are ordinary per-project flags. A project admin who is
+ * not a platform operator turns them on and off with
+ * `PATCH /v1/projects/:id/features`; the choice lives in the project's
+ * metadata, the derived `drives` / `ephemeral_sandboxes` flags and the boot
+ * mode follow it, and the `session_boot_modes` policy row is never written. A
+ * per-organization entry left in that row (before 2026-10-13) decides nothing.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
@@ -13,24 +14,20 @@ if (!process.env.PLATINUM_API_KEY || process.env.PLATINUM_API_KEY.startsWith('en
 }
 
 const { eq, sql } = await import('drizzle-orm');
-const { accountMembers, accounts, platformUserRoles, projectMembers, projects } = await import('@kortix/db');
+const { accountMembers, accounts, projectMembers, projects } = await import('@kortix/db');
 const { db } = await import('../shared/db');
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { insertIntoView } = await import('./helpers/compat-views');
-const { BOOT_MODE_SETTING_KEY, bootModePolicy, refreshBootModePolicy } = await import('../platform/services/boot-mode-setting');
-const { resolveVolumes } = await import('../platform/services/boot-mode');
-const { resolveFeatureFlag } = await import('../feature-flags/registry');
+const { BOOT_MODE_SETTING_KEY, refreshBootModePolicy } = await import('../platform/services/boot-mode-setting');
+const { resolveProjectBootMode } = await import('../platform/services/boot-mode-store');
 
 const ACCOUNT = crypto.randomUUID();
-const OTHER = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
-const OPERATOR = crypto.randomUUID();
 
 const minted: string[] = [];
 let ownerSecret = '';
-let operatorSecret = '';
 let original: unknown;
 
 async function storedPolicy(): Promise<Record<string, any> | undefined> {
@@ -38,6 +35,11 @@ async function storedPolicy(): Promise<Record<string, any> | undefined> {
     sql`select value from kortix.platform_settings where key = ${BOOT_MODE_SETTING_KEY}`,
   )) as unknown as Array<{ value: Record<string, any> }>;
   return rows[0]?.value;
+}
+
+async function storedFlags(): Promise<Record<string, unknown> | undefined> {
+  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
+  return (row?.metadata as { experimental?: Record<string, unknown> } | null)?.experimental;
 }
 
 beforeAll(async () => {
@@ -52,27 +54,22 @@ beforeAll(async () => {
     name: 'volumes-flag-test-project',
     repoUrl: 'https://example.com/volumes-flag.git',
   });
-  await insertIntoView(db, accountMembers, [
-    { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false },
-    { userId: OPERATOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
-  ]);
-  await insertIntoView(db, projectMembers, [
-    { accountId: ACCOUNT, projectId: PROJECT, userId: OWNER, projectRole: 'manager' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: OPERATOR, projectRole: 'manager' },
-  ]);
+  await insertIntoView(db, accountMembers, [{ userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false }]);
+  await insertIntoView(db, projectMembers, [{ accountId: ACCOUNT, projectId: PROJECT, userId: OWNER, projectRole: 'manager' }]);
   const owner = await createAccountToken({ accountId: ACCOUNT, userId: OWNER, name: 'volumes-flag-owner' });
   minted.push(owner.tokenId);
   ownerSecret = owner.secretKey;
-  await db.insert(platformUserRoles).values({ accountId: OPERATOR, role: 'admin' });
-  const operator = await createAccountToken({ accountId: ACCOUNT, userId: OPERATOR, name: 'volumes-flag-operator' });
-  minted.push(operator.tokenId);
-  operatorSecret = operator.secretKey;
 
+  // A row as #9592 left it: Volumes and Stateless on for this organization.
   original = await storedPolicy();
-  const seeded = { killSwitch: true, volumes: { enabled: false, percent: 0, orgs: { [OTHER]: true } } };
+  const legacy = {
+    killSwitch: false,
+    volumes: { enabled: false, percent: 0, orgs: { [ACCOUNT]: true } },
+    orgs: { [ACCOUNT]: { mode: 'volume', standardFallback: true } },
+  };
   await db.execute(sql`
     insert into kortix.platform_settings (key, value, updated_at)
-    values (${BOOT_MODE_SETTING_KEY}, ${JSON.stringify(seeded)}::jsonb, now())
+    values (${BOOT_MODE_SETTING_KEY}, ${JSON.stringify(legacy)}::jsonb, now())
     on conflict (key) do update set value = excluded.value, updated_at = now()
   `);
   await refreshBootModePolicy();
@@ -85,65 +82,75 @@ afterAll(async () => {
     await db.execute(sql`update kortix.platform_settings set value = ${JSON.stringify(original)}::jsonb where key = ${BOOT_MODE_SETTING_KEY}`);
   }
   for (const tokenId of minted) await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
-  await db.delete(platformUserRoles).where(eq(platformUserRoles.accountId, OPERATOR));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-function setVolumes(enabled: boolean | null, bearer: string) {
-  return app.request(`/v1/projects/${PROJECT}/features`, {
+async function setFlag(feature: 'volumes' | 'stateless_sessions', enabled: boolean | null) {
+  const res = await app.request(`/v1/projects/${PROJECT}/features`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ feature: 'volumes', enabled }),
+    headers: { Authorization: `Bearer ${ownerSecret}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ feature, enabled }),
   });
+  return { status: res.status, body: (await res.json()) as any };
 }
 
-describe('volumes feature flag ↔ organization Volumes switch', () => {
-  test('an organization owner who is not a platform operator gets 403 and nothing changes', async () => {
-    const before = await storedPolicy();
-    for (const enabled of [true, false, null]) {
-      const res = await setVolumes(enabled, ownerSecret);
-      expect(res.status).toBe(403);
-      expect(await res.json()).toMatchObject({ code: 'feature_operator_only', feature: 'volumes' });
+const row = (body: any, key: string) => body.experimental_features.find((f: { key: string }) => f.key === key);
+
+describe('Volumes and Stateless sessions are project flags', () => {
+  test("an organization entry in the policy row turns nothing on for the organization's projects", async () => {
+    const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.experimental).toMatchObject({ volumes: false, stateless_sessions: false, drives: false, ephemeral_sandboxes: false });
+    for (const key of ['volumes', 'stateless_sessions']) {
+      expect(row(body, key)).toMatchObject({ enabled: false, overridden: false, operator_only: false, scope: 'project' });
     }
-    expect(await storedPolicy()).toEqual(before);
-    expect(resolveFeatureFlag({}, 'drives', ACCOUNT)).toBe(false);
+    expect(await resolveProjectBootMode({ projectId: PROJECT, provider: 'platinum' })).toMatchObject({ mode: 'standard', source: 'volumes_off' });
   });
 
-  test('a platform operator toggles it: resolveVolumes flips for that organization and the derived flags follow', async () => {
-    const on = await setVolumes(true, operatorSecret);
+  test('a project admin (not a platform operator) turns them on and off; the policy row is never written', async () => {
+    const before = await storedPolicy();
+
+    // Stateless sessions need Volumes.
+    const early = await setFlag('stateless_sessions', true);
+    expect(early.status).toBe(400);
+    expect(early.body.error).toBe('Turn on Volumes first');
+
+    const on = await setFlag('volumes', true);
     expect(on.status).toBe(200);
-    const body = await on.json();
-    expect(body.experimental).toMatchObject({ volumes: true, drives: true, ephemeral_sandboxes: true });
-    expect(body.experimental_features.find((f: { key: string }) => f.key === 'volumes')).toMatchObject({
-      enabled: true,
-      overridden: true,
-      operator_only: true,
-      scope: 'organization',
-    });
-    expect(resolveVolumes(bootModePolicy().policy, ACCOUNT)).toEqual({ enabled: true, source: 'org' });
-    // The same row Admin → Volumes edits; nothing else in it moved, and the project's metadata is untouched.
-    const stored = await storedPolicy();
-    expect(stored?.volumes.orgs).toEqual({ [OTHER]: true, [ACCOUNT]: true });
-    expect(stored?.killSwitch).toBe(true);
-    const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
-    expect((row?.metadata as { experimental?: unknown } | null)?.experimental).toBeUndefined();
+    expect(on.body.experimental).toMatchObject({ volumes: true, drives: true, ephemeral_sandboxes: true });
+    expect(row(on.body, 'volumes')).toMatchObject({ enabled: true, overridden: true, operator_only: false, scope: 'project' });
+    expect(await storedFlags()).toEqual({ volumes: true });
+    expect(await resolveProjectBootMode({ projectId: PROJECT, provider: 'platinum' })).toMatchObject({ mode: 'standard', source: 'default' });
 
-    const off = await setVolumes(false, operatorSecret);
+    const stateless = await setFlag('stateless_sessions', true);
+    expect(stateless.status).toBe(200);
+    expect(row(stateless.body, 'stateless_sessions')).toMatchObject({ enabled: true, overridden: true });
+    expect(await resolveProjectBootMode({ projectId: PROJECT, provider: 'platinum' })).toMatchObject({ mode: 'volume', source: 'project' });
+
+    // Volumes off: everything built on it is off, the Stateless choice is kept but inert.
+    const off = await setFlag('volumes', false);
     expect(off.status).toBe(200);
-    expect(resolveVolumes(bootModePolicy().policy, ACCOUNT).enabled).toBe(false);
-    expect(resolveFeatureFlag({}, 'drives', ACCOUNT)).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { ephemeral_sandboxes: true } }, 'ephemeral_sandboxes', ACCOUNT)).toBe(false);
-    // Another organization is untouched.
-    expect(resolveFeatureFlag({}, 'drives', OTHER)).toBe(true);
+    expect(off.body.experimental).toMatchObject({ volumes: false, stateless_sessions: false, drives: false, ephemeral_sandboxes: false });
+    expect(row(off.body, 'stateless_sessions')).toMatchObject({ enabled: false, overridden: true });
+    expect(await resolveProjectBootMode({ projectId: PROJECT, provider: 'platinum' })).toMatchObject({ mode: 'standard', source: 'volumes_off' });
 
-    // Clearing removes the entry: back to the global switch (off).
-    const cleared = await setVolumes(null, operatorSecret);
-    expect(cleared.status).toBe(200);
-    expect((await storedPolicy())?.volumes.orgs).toEqual({ [OTHER]: true });
-    expect((await cleared.json()).experimental_features.find((f: { key: string }) => f.key === 'volumes')).toMatchObject({
-      enabled: false,
-      overridden: false,
+    // Clearing returns to the default (off).
+    expect((await setFlag('volumes', null)).status).toBe(200);
+    expect((await setFlag('stateless_sessions', null)).status).toBe(200);
+    expect(await storedFlags()).toBeUndefined();
+
+    expect(await storedPolicy()).toEqual(before);
+  });
+
+  test('a derived flag is not a choice of its own', async () => {
+    const res = await app.request(`/v1/projects/${PROJECT}/features`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${ownerSecret}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ feature: 'drives', enabled: true }),
     });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("follows the project's Volumes flag");
   });
 });

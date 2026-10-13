@@ -295,38 +295,22 @@ describe('the desired release is what the box runs', () => {
     expect(api.archiveRequests).toHaveLength(0)
   })
 
-  test('a box that checked out the release commit builds the release from its checkout: no download', async () => {
+  test('the checkout is never a config source: a box at the release commit still downloads the release', async () => {
     const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
     const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
     expect(run.result).toMatchObject({ dir, source: 'release', proven: true, fallbackReason: null })
     expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('RELEASE PROMPT\n')
-    expect(api.archiveRequests).toEqual([])
-    // A copy, sealed in the store: the checkout stays the session's to edit.
+    expect(api.archiveRequests).toHaveLength(1)
     expect(run.servedDirs).not.toContain(join(work, DIR))
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 
-  // Dev, 2026-10-08: a session created with no base pin (KORTIX_BASE_SHA
-  // unset) on a repository over the archive cap booted the image default for
-  // ~70 s, until the next convergence copied the same checkout.
-  test('a box with no base pin builds a release with no archive from its checkout', async () => {
+  test('a release with no archive and no snapshot boots the image default and says why', async () => {
     api.respond({ status: 200, json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
-    const run = await boot()
-    const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
-    expect(run.result).toMatchObject({ dir, source: 'release', proven: true, fallbackReason: null })
-    expect(api.archiveRequests).toEqual([])
-    expect(api.storageRequests).toEqual([])
-  })
-
-  test('a box with no base pin whose checkout is behind says why it has no release', async () => {
-    write(work, 'agents/next.md', 'next\n')
-    const tip = commitAll(work, 'next')
-    const built = buildRelease(work, tip, DIR, { governance: GOV })
-    git(work, 'checkout', '-q', 'HEAD~1')
-    api.respond({ status: 200, json: { ...built.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
-    const run = await boot()
+    const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
     expect(run.result.source).toBe('image-default')
-    expect(run.result.fallbackReason).toContain(`the checkout is at ${release.descriptor.source_commit!.slice(0, 12)}, not the release commit ${tip.slice(0, 12)}`)
+    expect(run.result.fallbackReason).toContain('the API has no project snapshot of this commit yet')
+    expect(api.archiveRequests).toEqual([])
   })
 
   test('a checkout that did not materialize is never read: the box downloads instead', async () => {
