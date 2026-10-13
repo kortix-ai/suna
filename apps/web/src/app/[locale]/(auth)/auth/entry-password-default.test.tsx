@@ -4,10 +4,10 @@
 // away ("Email me a link instead") — no auth email is sent until the customer
 // asks for it. New addresses and a degraded existence check keep the
 // magic-link default.
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { expect, mock, test } from 'bun:test';
 import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
-import { NextIntlClientProvider } from '@/i18n/use-translations';
 import messages from '../../../../../translations/en.json';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -30,6 +30,7 @@ mock.module('@/lib/supabase/client', () => ({
 }));
 let resolvedMode = 'unknown';
 let emailCodeSends = 0;
+let emailFailure: string | null = null;
 mock.module('./actions', () => ({
   resolveAuthMode: async () => ({ mode: resolvedMode }),
 }));
@@ -40,7 +41,9 @@ mock.module('@/lib/auth/submit-auth', () => ({
   AUTH_UNEXPECTED_MESSAGE: 'Something went wrong. Please try again.',
   submitAuthForm: async (_path: string, _body: FormData) => {
     emailCodeSends += 1;
-    return { ok: true, result: { success: true, email: 'synthetic@example.test' } };
+    return emailFailure
+      ? { ok: true, result: { message: emailFailure } }
+      : { ok: true, result: { success: true, email: 'synthetic@example.test' } };
   },
 }));
 mock.module('@/lib/env-config', () => ({
@@ -49,9 +52,7 @@ mock.module('@/lib/env-config', () => ({
 mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
 const { default: AuthPage } = await import('./page');
 
-async function continueWithEmail(
-  address: string,
-): Promise<NonNullable<ReturnType<typeof create>>> {
+async function continueWithEmail(address: string): Promise<NonNullable<ReturnType<typeof create>>> {
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
     root = create(
@@ -89,7 +90,9 @@ test('the password form still offers the email link as an explicit choice', asyn
     const linkButton = root.root.findAllByProps({ type: 'button' }).find((button) => {
       const children = button.props.children;
       return Array.isArray(children)
-        ? children.some((child: unknown) => typeof child === 'string' && child.includes('Email me a link'))
+        ? children.some(
+            (child: unknown) => typeof child === 'string' && child.includes('Email me a link'),
+          )
         : typeof children === 'string' && children.includes('Email me a link');
     });
     expect(linkButton).toBeDefined();
@@ -135,3 +138,34 @@ test('a closed signup address keeps the magic-link default', async () => {
     await act(async () => root.unmount());
   }
 });
+
+for (const failure of ['Email rate limit exceeded. Try again later.', 'Could not send the link']) {
+  test(`failed sign-in link stays visible on the password form: ${failure}`, async () => {
+    resolvedMode = 'signin';
+    const root = await continueWithEmail('existing@example.test');
+    try {
+      emailFailure = failure;
+      const linkButton = root.root
+        .findAllByType('button')
+        .find((button) =>
+          button.children.some(
+            (child) => typeof child === 'string' && child.includes('Email me a link'),
+          ),
+        );
+      if (!linkButton) throw new Error('Email-link button did not render');
+      await act(async () => linkButton.props.onClick());
+      const alerts = root.root.findAllByProps({ role: 'alert' });
+      expect(alerts).toHaveLength(1);
+      expect(JSON.stringify(root.toJSON())).toContain(failure);
+      expect(JSON.stringify(root.toJSON())).toContain('Welcome back');
+      expect(linkButton.props.disabled).toBe(false);
+      emailFailure = null;
+      await act(async () => linkButton.props.onClick());
+      expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(0);
+      expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+    } finally {
+      emailFailure = null;
+      await act(async () => root.unmount());
+    }
+  });
+}
