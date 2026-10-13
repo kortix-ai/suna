@@ -50,6 +50,7 @@ export const kortix = createKortix({
 | `eventStreamTransport` | no | Delivers the live event stream's bytes when your `fetch` cannot stream a response body (React Native without `expo/fetch`). |
 | `clientVersion` | no | Your surface and version as `<surface>/<version>`, for example `my-app/1.2.0`. The SDK sends it as `X-Kortix-Client-Version`. The API writes it to the request log only. |
 | `onError` | no | An error sink for a toast or a log. Default: no-op. |
+| `onAccessRemedy` | no | Receives `sso_required` or `account_mfa_required` when the API refuses a request until the person signs in through single sign-on or completes multi-factor authentication. It runs for every response of the REST client, not for the session runtime or its event stream. A browser also gets the `kortix:sso-required` and `kortix:mfa-required` window events. Default: no-op. |
 
 The client holds one configuration for the whole process. A second `createKortix()` call with a different `backendUrl` or `getToken` re-points every earlier client and logs one console warning. A server that acts for many people at the same time uses `createScopedKortix()` from `@kortix/sdk/server`. See [Authentication](/docs/sdk/auth).
 

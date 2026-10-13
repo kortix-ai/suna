@@ -11641,7 +11641,7 @@
       "text3e11e93e0f42": "Approve or deny the pending action to continue.",
       "text3e18e2dab6f2": "Negotiation",
       "text3e26769ed36a": "Owners and admins are Manager on every project.",
-      "text3e29ac703c2f": "Members must sign in with your identity provider — the password option disappears the moment this is on, and only your identity provider works after that.",
+      "text3e29ac703c2f": "Members must sign in with your identity provider. Turning this on signs out every member on this domain who signed in another way, which can include you.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Listed featured marketplaces",
       "text3e3d7edf97ee": "Repository access",

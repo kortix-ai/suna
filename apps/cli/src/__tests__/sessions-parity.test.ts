@@ -1127,12 +1127,15 @@ describe('kortix sessions preview — the printed URL resolves', () => {
   });
 
   test('no preview domain on a remote api: the path proxy, never a token in the url', async () => {
-    const remote = writeConfig(`http://127.0.0.2:${new URL(apiBase).port}`);
+    // A host the SDK does not call local (only `localhost` and `127.0.0.1`)
+    // that still reaches this server. Not 127.0.0.2: macOS answers only on
+    // 127.0.0.1, so a request to 127.0.0.2 hangs until the test times out.
+    const remote = writeConfig(`http://0.0.0.0:${new URL(apiBase).port}`);
     const r = await runCli(['sessions', 'preview', SESSION, '--json', ...P], remote);
     expect(r.code).toBe(0);
     const out = JSON.parse(r.stdout);
     expect(out.url).toBe(
-      `http://127.0.0.2:${new URL(apiBase).port}/v1/p/sandbox-parity/3000/`,
+      `http://0.0.0.0:${new URL(apiBase).port}/v1/p/sandbox-parity/3000/`,
     );
   });
 });

@@ -138,6 +138,7 @@
     "browseAsGuest": "以访客身份浏览",
     "signOutFailed": "无法退出登录，请检查网络连接后重试。",
     "signingOut": "正在退出登录…",
+    "ssoRequired": "您的组织要求使用单点登录。请改用 SSO 继续。",
     "mfa": {
       "title": "验证你的身份",
       "enterCode": "请输入身份验证器应用中的 6 位验证码。",

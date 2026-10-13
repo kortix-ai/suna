@@ -1005,11 +1005,20 @@ interface KortixPlatformConfig {
   billingEnabled?: boolean;
   sandboxId?: string | null;
   onError?: (error: unknown, context?: unknown) => void;
+  onAccessRemedy?: (code: 'sso_required' | 'account_mfa_required') => void;
   onToast?: (level, message, options?) => void;
   onNotify?: (event) => void;
   featureFlags?: KortixFeatureFlagOverrides; // per-flag overrides for non-Next.js hosts
 }
 ```
+
+`onAccessRemedy` receives the code of a 403 the person can fix: `sso_required`
+(sign in again through the account's identity provider) or
+`account_mfa_required` (complete multi-factor authentication). It runs for every
+response of the REST client (`backendApi`), also one made with `showErrors: false`.
+The session runtime proxy and the event stream do not call it. A browser also receives the
+`kortix:sso-required` or `kortix:mfa-required` window event. React Native has no
+DOM events, so `apps/mobile` uses the hook.
 
 `clientSource` is deprecated and inert. The audit log records what the API
 authenticated (`credential_kind`: browser session, personal access token,
