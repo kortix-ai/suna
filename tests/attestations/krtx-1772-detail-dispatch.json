@@ -1,0 +1,24 @@
+{
+  "source_hash": "56e73a4b2a999f4bd01e2852398cdd6334188b592858e4ec563d7e480e48d3a8",
+  "diff_files": [
+    "apps/web/src/features/file-viewer/file-category-content.tsx",
+    "apps/web/src/features/file-viewer/file-content-renderer.test.tsx",
+    "apps/web/src/features/file-viewer/file-content-renderer.tsx",
+    "apps/web/src/features/file-viewer/use-file-content-state.ts",
+    "apps/web/src/features/file-viewer/viewer-notice.tsx",
+    "apps/web/src/features/session/action-panel/easy/detail-keyboard.ts",
+    "apps/web/src/features/session/action-panel/easy/detail-motion.ts",
+    "apps/web/src/features/session/action-panel/easy/detail-view.test.tsx",
+    "apps/web/src/features/session/action-panel/easy/detail-view.tsx",
+    "apps/web/src/features/session/action-panel/easy/tool-parts.tsx"
+  ],
+  "diff_hash": "a537f65cdc310a79fd99e3a95016e8ff2b250d0a676eaebc930d5819c345c5f5",
+  "head": "15357cd125c1440ff06489527edde61acb65536f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-13T23:58:35.258Z"
+}
