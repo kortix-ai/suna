@@ -48,11 +48,11 @@ type Pending = { state: string; verifier: string; api: string; clientId: string;
  */
 export async function startSignIn(apiUrl: string | undefined, tabId?: number): Promise<void> {
   const api = normalizeApiUrl(apiUrl || (await getStored()).apiUrl || DEFAULT_API_URL);
-  // A server without Kortix for Chrome answers 404 here; one with it answers 401.
+  // A server without Kortix in Chrome answers 404 here; one with it answers 401.
   const host = SERVERS.find((x) => x.api === api)?.web ?? new URL(api).host;
   const probe = await fetch(`${api}/v1/chrome/connections`).catch(() => null);
   if (!probe) throw new Error(`Cannot reach ${host}. Check the server address.`);
-  if (probe.status === 404) throw new Error(`${host} does not have Kortix for Chrome yet. Pick another server.`);
+  if (probe.status === 404) throw new Error(`${host} does not have Kortix in Chrome yet.`);
   const m = await meta(api);
   const back = redirectUri();
   let { clientId, clientApi, redirectUri: regRedirect } = await getStored();
@@ -61,7 +61,7 @@ export async function startSignIn(apiUrl: string | undefined, tabId?: number): P
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        client_name: 'Kortix for Chrome',
+        client_name: 'Kortix in Chrome',
         redirect_uris: [back],
         token_endpoint_auth_method: 'none',
         grant_types: ['authorization_code', 'refresh_token'],

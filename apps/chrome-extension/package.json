@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run scripts/build.ts",
+    "build:dev": "KORTIX_EXTENSION_DEV=1 bun run scripts/build.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "bun run scripts/smoke.ts",
     "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"

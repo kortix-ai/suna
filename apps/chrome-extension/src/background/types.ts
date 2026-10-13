@@ -25,6 +25,8 @@ export type PageMessage =
   | { kortix: 'oauth-done'; url: string }
   | { kortix: 'signout' }
   | { kortix: 'whoami' }
+  | { kortix: 'panel-session' } // the side panel asks for a web session (see sidepanel.ts)
+  | { kortix: 'disconnect' } // remove this browser from Kortix, then sign out
   | { kortix: 'patch'; body: { name?: string; accessMode?: AccessMode; tabScope?: TabScope } }
   | { kortix: 'stop'; attachmentId: string }
   | { kortix: 'add-tab'; attachmentId: string; tabId: number }
@@ -44,3 +46,4 @@ export const SERVERS: { web: string; api: string }[] = [
   { web: 'staging.kortix.com', api: 'https://staging-api.kortix.com' },
 ];
 export const BRAND_BLUE = '#0099ff'; // --kortix-base in tokens.css (badge color)
+export const OFFLINE_GREY = '#666666'; // --muted-foreground in tokens.css (offline badge)

@@ -1,9 +1,9 @@
 ---
 name: kortix-chrome
-description: "Kortix for Chrome: the Chrome extension that connects a user's own browser to Kortix so a session's sandbox drives it over CDP (`kortix chrome use` + `agent-browser --cdp 9333`). Load WHENEVER you touch apps/chrome-extension, apps/api/src/chrome, the kortixd browser bridge, `kortix browser` CLI, the browsers settings tab or connect modal, the kortix-chrome managed skill, or when you build, load, test, publish or debug the extension."
+description: "Kortix in Chrome: the Chrome extension that connects a user's own browser to Kortix so a session's sandbox drives it over CDP (`kortix chrome use` + `agent-browser --cdp 9333`). Load WHENEVER you touch apps/chrome-extension, apps/api/src/chrome, the kortixd browser bridge, `kortix browser` CLI, the browsers settings tab or connect modal, the kortix-chrome managed skill, or when you build, load, test, publish or debug the extension."
 ---
 
-# Kortix for Chrome
+# Kortix in Chrome
 
 A user installs the **Kortix** Chrome extension and signs in. From then on, any
 of their sessions can drive that browser, with its logins, from the cloud
@@ -98,7 +98,16 @@ The store rejects a manifest with `key` ("key field is not allowed in manifest")
 5. The store fetches the Homepage and Support URLs before it allows a submit. A 404 blocks it
    ("Support URL is not reachable"). The listing uses `https://kortix.com/support`.
 6. Submit only after prod serves `/v1/chrome/connections`. Reviewers sign in at kortix.com. Before that,
-   the extension tells them "kortix.com does not have Kortix for Chrome yet".
+   the extension tells them "kortix.com does not have Kortix in Chrome yet".
+
+## Extension surfaces
+
+- Toolbar icon: opens the side panel (web app, session chips with "Add this tab" and Stop). Without `chrome.sidePanel` it opens the settings page. Badge: blue count while agents work, grey `!` when offline.
+- Settings page (`options.html`, "Kortix in Chrome settings"): browser name and status, Access, Tabs, shortcuts, Sign out, Disconnect this browser.
+- Shortcuts: `Alt+K` opens the panel, `Alt+Shift+K` stops every agent.
+- Overlay bar: docks bottom-right, moves top-right when a page control sits under it.
+- `bun run build` is the store build (kortix.com only). `bun run build:dev` adds "Another server…" to the welcome page.
+- No `_locales` yet: extension strings are English only.
 
 ## Troubleshooting
 

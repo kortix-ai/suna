@@ -122,7 +122,7 @@ describe('browser-level methods', () => {
   });
   test('unknown method -> -32601', async () => {
     const r = await f.call('1', 'Fetch.enable');
-    expect(r.error).toEqual({ code: -32601, message: 'Fetch.enable is not available in Kortix for Chrome' });
+    expect(r.error).toEqual({ code: -32601, message: 'Fetch.enable is not available in Kortix in Chrome' });
   });
 });
 

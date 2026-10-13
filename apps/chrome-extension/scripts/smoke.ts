@@ -21,20 +21,25 @@ async function until<T>(what: string, fn: () => T | undefined | Promise<T | unde
 }
 
 // ─── static page ─────────────────────────────────────────────────────────────
-// /seed logs a top-level page in (cookie + localStorage); /projects/** stands in for the Kortix web app inside the side panel.
-const serverSaw: string[] = [];
-const probes: { cookie: string; ls: string }[] = [];
+// /auth/panel and /projects/** stand in for the Kortix web app inside the side panel (panel sign-in contract).
+const handoffs: { hash: string; origin: string }[] = [];
 const html = (body: string, headers: Record<string, string> = {}) => new Response(body, { headers: { 'content-type': 'text/html', ...headers } });
 const web = Bun.serve({
   port: 0,
   fetch(req) {
     const u = new URL(req.url);
-    if (u.pathname === '/seed') return html(`<script>localStorage.setItem('login','yes')</script>seeded`, { 'set-cookie': ['login=yes; Path=/', 'none=yes; Path=/; SameSite=None; Secure'] as unknown as string });
-    if (u.pathname === '/report') { probes.push({ cookie: u.searchParams.get('c') ?? '', ls: u.searchParams.get('ls') ?? '' }); return new Response('ok'); }
-    if (u.pathname.startsWith('/projects')) { serverSaw.push(req.headers.get('cookie') ?? ''); return html(`<script>
-      fetch('/report?c=' + encodeURIComponent(document.cookie) + '&ls=' + encodeURIComponent(localStorage.getItem('login') ?? ''));
+    if (u.pathname === '/report') { handoffs.push({ hash: u.searchParams.get('hash') ?? '', origin: u.searchParams.get('origin') ?? '' }); return new Response('ok'); }
+    if (u.pathname === '/auth/panel') return html(`<script>
+      const ext = 'chrome-extension://${EXT_ID}';
+      addEventListener('message', (e) => {
+        if (e.origin !== ext || e.data?.type !== 'kortix.panel.session') return;
+        fetch('/report?hash=' + encodeURIComponent(e.data.tokenHash) + '&origin=' + encodeURIComponent(e.origin)).then(() => location.replace(${JSON.stringify(u.searchParams.get('next') ?? '/projects')}));
+      });
+      parent.postMessage({ type: 'kortix.panel.needSession' }, ext);
+    </script>signing in`);
+    if (u.pathname.startsWith('/projects')) return html(`<script>
       parent.postMessage({ type: 'kortix.identity', userId: 'u-web', email: 'web@example.test' }, '*');
-    </script>app ${u.pathname}`); }
+    </script>app ${u.pathname}`);
     return new Response(Bun.file(join(app, 'scripts/fixtures/form.html')), { headers: { 'content-type': 'text/html' } });
   },
 });
@@ -43,6 +48,8 @@ const web = Bun.serve({
 const frames: any[] = [];
 let control: any, bridge: any;
 const clients = new Map<string, any>();
+const panelSessionCalls: string[] = [];
+const chromeRow: Record<string, unknown> = {};
 let nextClient = 1;
 const api = Bun.serve<{ kind: string }>({
   port: 0,
@@ -52,6 +59,13 @@ const api = Bun.serve<{ kind: string }>({
     if (u.pathname.endsWith('/kortix/chrome/bridge')) {
       if (u.searchParams.get('token') !== 'test' || u.searchParams.get('ticket') !== 'T1') return new Response('no', { status: 401 });
       if (srv.upgrade(req, { data: { kind: 'bridge' } })) return;
+    }
+    if (u.pathname === '/v1/chrome/connections/b1' && req.method === 'PATCH') {
+      return req.json().then((body) => { Object.assign(chromeRow, body); return Response.json(chromeRow); });
+    }
+    if (u.pathname === '/v1/chrome/panel-session' && req.method === 'POST') {
+      panelSessionCalls.push(req.headers.get('authorization') ?? '');
+      return req.headers.get('authorization') === 'Bearer test' ? Response.json({ tokenHash: 'HASH-1' }) : Response.json({ error: 'chrome_panel_forbidden' }, { status: 403 });
     }
     if (u.pathname === '/v1/accounts/me' && req.headers.get('authorization') === 'Bearer test') return Response.json({ user_id: 'u-ext', email: 'ext@example.test' });
     return new Response('not found', { status: 404 });
@@ -64,10 +78,10 @@ const api = Bun.serve<{ kind: string }>({
         frames.push(f);
         if (f.type === 'auth') {
           if (f.token !== 'test') return ws.close(4001);
-          ws.send(JSON.stringify({ type: 'auth_ok', webUrl: `http://127.0.0.1:${web.port}`, chrome: {
+          ws.send(JSON.stringify({ type: 'auth_ok', webUrl: `http://127.0.0.1:${web.port}`, chrome: Object.assign(chromeRow, {
             id: 'b1', name: `${f.info.brand} · ${f.info.os}`, brand: f.info.brand, os: f.info.os, profileLabel: null,
             extensionVersion: f.info.extensionVersion, accessMode: 'always', tabScope: 'own', online: true, lastSeenAt: null,
-            createdAt: new Date().toISOString(), activeSessions: [] } }));
+            createdAt: new Date().toISOString(), activeSessions: [] }) }));
         }
         if (f.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
       } else {
@@ -147,7 +161,7 @@ const targets = async (): Promise<any[]> => {
 
 const ab = async (...args: string[]) => {
   const t0 = Date.now();
-  const p = Bun.spawn(['agent-browser', '--session', 'smoke', '--cdp', String(cdp.port), ...args], { stdout: 'pipe', stderr: 'pipe' });
+  const p = Bun.spawn(['agent-browser', '--session', `smoke-${port}`, '--cdp', String(cdp.port), ...args], { stdout: 'pipe', stderr: 'pipe' });
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   const code = await p.exited;
   console.log(`  $ agent-browser ${args.join(' ')}  -> exit ${code} (${Date.now() - t0} ms)\n${(out + err).trim().split('\n').slice(0, 8).map((l) => '      ' + l).join('\n')}`);
@@ -216,13 +230,18 @@ try {
   check('tab new', r.code === 0, r.out);
   r = await ab('tab', 'list');
   check('tab list shows two tabs', (r.out.match(/form\.html/g) ?? []).length >= 2, r.out);
-  const n = await sw.eval(`chrome.tabs.query({}).then(t => t.filter(x => x.groupId !== -1).length)`);
+  const n = await sw.eval(`chrome.tabGroups.query({ title: 'Kortix · Smoke test' }).then(([g]) => chrome.tabs.query({ groupId: g.id })).then(t => t.length)`);
   check('the new tab joined the group', n === 2, String(n));
   r = await ab('tab', 'close');
   check('tab close', r.code === 0, r.out);
   await sleep(500);
-  const n2 = await sw.eval(`chrome.tabs.query({}).then(t => t.filter(x => x.groupId !== -1).length)`);
+  const n2 = await sw.eval(`chrome.tabGroups.query({ title: 'Kortix · Smoke test' }).then(([g]) => chrome.tabs.query({ groupId: g.id })).then(t => t.length)`);
   check('one tab left in the group after close', n2 === 1, String(n2));
+
+  // Overlay: bar docks bottom-right; dark tokens apply; the agent label is a blue chip with white text.
+  check('overlay: bar docks bottom-right', (await overlay(`(() => { const b = r.querySelector('.bar').getBoundingClientRect(); return Math.abs(innerWidth - 16 - b.right) < 2 && Math.abs(innerHeight - 16 - b.bottom) < 2 && !r.querySelector('.bar').classList.contains('top'); })()`)) === true);
+  check('overlay: agent label is a fixed blue chip with white text', (await overlay(`(() => { const c = getComputedStyle(r.querySelector('.label')); return c.backgroundColor === 'rgb(0, 153, 255)' && c.color === 'rgb(255, 255, 255)'; })()`)) === true);
+  check('overlay: tokens resolve in the shadow tree', (await overlay(`getComputedStyle(r.querySelector('.bar')).backgroundColor !== 'rgba(0, 0, 0, 0)'`)) === true);
 
   // Take over, then resume. Refs reset with the tab switch: snapshot again.
   r = await ab('snapshot', '-i');
@@ -235,19 +254,6 @@ try {
   await until('overlay resumed', async () => (await overlay(`r.querySelector('.msg').textContent`)) === 'Kortix is working');
   r = await ab('click', `@${btn2}`);
   check('resumed: click works again', r.code === 0, r.out);
-
-  // Popup: opened as a tab, it reads status through the worker.
-  await fetch(`http://127.0.0.1:${port}/json/new?chrome-extension://${EXT_ID}/popup.html`, { method: 'PUT' });
-  const pop = await until('popup page', async () => (await targets()).find((t) => t.url.endsWith('/popup.html')));
-  const pp = await Cdp.open(pop.webSocketDebuggerUrl);
-  await until('popup renders sessions', async () => ((await pp.tryEval(`document.getElementById('sessions').textContent`)) ?? '').includes('Smoke test'));
-  check('popup: browser name, online, and the session with Stop', (await pp.eval(`document.getElementById('bname').textContent`)).includes('·')
-    && (await pp.eval(`document.getElementById('state').textContent`)) === 'Online'
-    && (await pp.eval(`!!document.querySelector('#sessions .session button')`)) === true);
-  check('popup: access mode "Always" and tabs "Only its own" pressed', (await pp.eval(
-    `document.querySelector('#mode [aria-pressed=true]').textContent + '/' + document.querySelector('#scope [aria-pressed=true]').textContent`)) === 'Always/Only its own');
-  pp.close();
-  await fetch(`http://127.0.0.1:${port}/json/close/${pop.id}`);
 
   // The overlay must stay out of the agent's accessibility tree: it must never click Stop for itself.
   r = await ab('snapshot', '-i');
@@ -310,6 +316,7 @@ try {
   const userB = `http://127.0.0.1:${web.port}/form.html?user=docs`;
   const userIds: number[] = await sw.eval(`Promise.all([chrome.windows.create({ url: '${userA}' }), chrome.windows.create({ url: '${userB}' })]).then((ws) => ws.map((w) => w.tabs[0].id))`);
   const stored = await sw.eval(`chrome.storage.local.get('chrome').then((r) => r.chrome)`);
+  Object.assign(chromeRow, { tabScope: 'all' });
   control.send(JSON.stringify({ type: 'chrome', chrome: { ...stored, tabScope: 'all' } }));
   await sleep(300);
   frames.length = 0;
@@ -344,35 +351,54 @@ try {
     const t = await until(`tab ${match}`, async () => (await targets()).find((x) => x.type === 'page' && x.url.startsWith(match)));
     return Cdp.open(t.webSocketDebuggerUrl);
   };
-  (await openTab(`${webOrigin}/seed`, `${webOrigin}/seed`)).close();
   control.send(JSON.stringify({ type: 'attach', attachmentId: 'a4', sessionId: 's4', sessionTitle: 'Panel test', projectId: 'p4',
     projectName: 'Smoke project', bridgePath: '/v1/p/x/8000/kortix/chrome/bridge?ticket=T1', ticket: 'T1', consent: false }));
   await until('attached a4', () => frames.find((f) => f.type === 'attached' && f.attachmentId === 'a4'));
   const panel = await openTab(`chrome-extension://${EXT_ID}/sidepanel.html`, `chrome-extension://${EXT_ID}/sidepanel.html`);
-  await until('panel header', async () => (await panel.tryEval(`document.getElementById('bname').textContent`)) !== '' ? true : undefined);
-  const bname = await panel.eval(`document.getElementById('bname').textContent`);
+  const bname = await until('panel header', async () => {
+    const t = await panel.tryEval(`document.getElementById('bname')?.textContent`);
+    return t ? t : undefined;
+  });
   check('panel: header shows the browser name', /·/.test(bname), bname);
-  check('panel: online dot is on', (await panel.eval(`document.getElementById('dot').classList.contains('on')`)) === true);
-  const src = await panel.eval(`document.getElementById('app').src`);
-  check('panel: iframe points at webUrl + /projects', src === `${webOrigin}/projects`, src);
-  const probe = await until('iframe probe', () => probes[0]);
-  console.log(`  storage partitioning probe (iframe in extension page): cookie="${probe.cookie}" localStorage="${probe.ls}"`);
-  console.log(`  server saw Cookie header on the iframe request: "${serverSaw[0]}"`);
-  check('panel: iframe shares the top-level login (cookie + localStorage, not partitioned)', probe.cookie.includes('login=yes') && probe.ls === 'yes', JSON.stringify(probe));
-  await until('chip', async () => (await panel.eval(`document.querySelector('.chip-open')?.textContent`)) === 'Open Panel test' ? true : undefined);
-  check('panel: chip "Open Panel test" shows while a session is attached', true);
+  await until('panel online dot', async () => (await panel.tryEval(`document.getElementById('dot').classList.contains('on')`)) ? true : undefined);
+  check('panel: online dot is on', true);
+  await until('panel handoff', () => handoffs[0]);
+  const src0 = await panel.eval(`document.getElementById('app').src`);
+  check('panel: iframe starts at /auth/panel?next=/projects', src0 === `${webOrigin}/auth/panel?next=%2Fprojects`, src0);
+  check('panel sign-in: one POST /v1/chrome/panel-session with the OAuth token', panelSessionCalls.length === 1 && panelSessionCalls[0] === 'Bearer test', JSON.stringify(panelSessionCalls));
+  check('panel sign-in: the page got the token hash from the extension origin', handoffs[0].hash === 'HASH-1' && handoffs[0].origin === `chrome-extension://${EXT_ID}`, JSON.stringify(handoffs));
+  await until('panel lands on /projects', async () => ((await panel.eval(`document.getElementById('app').src`)) === src0 ? true : undefined), 3000).catch(() => undefined);
+  // A needSession that does not come from the web page's frame is ignored.
+  await panel.eval(`postMessage({ type: 'kortix.panel.needSession' }, '*')`);
+  await sleep(600);
+  check('panel sign-in: a message from another source triggers no request', panelSessionCalls.length === 1, String(panelSessionCalls.length));
+  await until('chip', async () => (await panel.eval(`document.querySelector('.chip-open')?.textContent`)) === 'Panel test' ? true : undefined);
+  check('panel: chip "Panel test" shows while a session is attached, with Add this tab and Stop', (await panel.eval(`[...document.querySelectorAll('.chip button')].map((b) => b.textContent).join('|')`)) === 'Panel test|Add this tab|Stop');
   await panel.eval(`document.querySelector('.chip-open').click()`);
   check('panel: chip opens the session in the iframe', (await panel.eval(`document.getElementById('app').src`)) === `${webOrigin}/projects/p4/sessions/s4`);
   await until('account warning', async () => (await panel.eval(`!document.getElementById('warn').hidden`)) ? true : undefined);
-  check('panel: different web account shows the warning with Reload', /web@example\.test/.test(await panel.eval(`document.getElementById('warn-text').textContent`)) && (await panel.eval(`!!document.getElementById('reload')`)));
+  check('panel: different web account shows the warning with Reload and Dismiss', /web@example\.test/.test(await panel.eval(`document.getElementById('warn-text').textContent`)) && (await panel.eval(`!!document.getElementById('reload') && !!document.getElementById('dismiss')`)));
   await panel.eval(`document.getElementById('menu-btn').click()`);
-  check('panel: menu lists Settings, Manage browsers, Sign out', (await panel.eval(`[...document.querySelectorAll('#menu button')].map((b) => b.textContent).join('|')`)) === 'Settings|Manage browsers|Sign out');
+  check('panel: menu lists Kortix in Chrome settings and Sign out', (await panel.eval(`[...document.querySelectorAll('#menu button')].map((b) => b.textContent).join('|')`)) === 'Kortix in Chrome settings|Sign out');
+  // Focus survives a refresh: the 5 s poll and storage events must not rebuild the chip row.
+  await panel.eval(`document.querySelector('.chip-stop').focus()`);
+  await sleep(700);
+  check('panel: focus on a chip button survives a refresh', (await panel.eval(`document.activeElement?.classList.contains('chip-stop')`)) === true);
   panel.close();
   control.send(JSON.stringify({ type: 'detach', attachmentId: 'a4' }));
   await until('detached a4', () => frames.find((f) => f.type === 'detached' && f.attachmentId === 'a4'));
   const opts = await openTab(`chrome-extension://${EXT_ID}/options.html`, `chrome-extension://${EXT_ID}/options.html`);
   await until('options email', async () => (await opts.tryEval(`document.getElementById('email').textContent`)) === 'ext@example.test' ? true : undefined);
-  check('options: shows the signed-in email, access modes and shortcut', (await opts.eval(`[...document.querySelectorAll('#mode button')].map((b) => b.textContent).join('|') + '/' + document.getElementById('key').textContent.length`)).startsWith('Without asking|Ask first|Off/'));
+  check('options: browser name, online, email', (await opts.eval(`document.getElementById('bname').textContent`)).includes('·') && (await opts.eval(`document.getElementById('state').textContent`)) === 'Online');
+  check('options: access and tabs are radiogroups with the web labels', (await opts.eval(`[...document.querySelectorAll('#mode button')].map((b) => b.textContent).join('|') + '/' + [...document.querySelectorAll('#scope button')].map((b) => b.textContent).join('|') + '/' + document.getElementById('mode').getAttribute('role')`)) === 'Without asking|Ask first|Off/All tabs|Only tabs it opens/radiogroup');
+  check('options: access "Without asking" and tabs "All tabs" checked', (await opts.eval(`document.querySelector('#mode [aria-checked=true]').textContent + '/' + document.querySelector('#scope [aria-checked=true]').textContent`)) === 'Without asking/All tabs');
+  check('options: both shortcuts listed', (await opts.eval(`document.getElementById('key').textContent.length > 0 && document.getElementById('stopkey').textContent.length > 0`)) === true);
+  await opts.eval(`document.querySelector('#mode button[data-v=ask]').focus()`);
+  await opts.eval(`document.getElementById('mode').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`);
+  await until('arrow key picks the next radio', async () => ((await opts.eval(`document.querySelector('#mode [aria-checked=true]').textContent`)) === 'Off' ? true : undefined));
+  check('options: arrow keys move through the radios and patch', true);
+  await opts.eval(`document.querySelector('#mode button[data-v=always]').click()`);
+  await until('access back to Without asking', async () => ((await opts.eval(`document.querySelector('#mode [aria-checked=true]').textContent`)) === 'Without asking' ? true : undefined));
   opts.close();
 
   // F1: a confirm() the agent opens must not deadlock agent-browser.

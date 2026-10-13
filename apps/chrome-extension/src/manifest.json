@@ -12,7 +12,8 @@
   "side_panel": { "default_path": "sidepanel.html" },
   "options_page": "options.html",
   "commands": {
-    "_execute_action": { "suggested_key": { "default": "Alt+K", "mac": "Alt+K" }, "description": "Open Kortix" }
+    "_execute_action": { "suggested_key": { "default": "Alt+K", "mac": "Alt+K" }, "description": "Open Kortix" },
+    "kortix-stop": { "suggested_key": { "default": "Alt+Shift+K", "mac": "Alt+Shift+K" }, "description": "Stop every agent in this browser" }
   },
   "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [

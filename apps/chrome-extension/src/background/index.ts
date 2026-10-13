@@ -11,7 +11,20 @@ const control: Control = new Control({
   chrome: (b) => void hub.patchChrome(b),
   authed: (b) => void hub.patchChrome(b),
   disconnected: () => void hub.endAll('closed'),
+  state: (online) => paintOffline(online),
 });
+
+/** Offline shows on the toolbar badge after 4 s, so a browser start does not flash it. */
+let offlineTimer: ReturnType<typeof setTimeout> | undefined;
+function paintOffline(online: boolean) {
+  clearTimeout(offlineTimer);
+  const paint = async () => {
+    hub.offline = !!(await getStored()).token && !control.online;
+    await hub.badge();
+  };
+  if (online) void paint();
+  else offlineTimer = setTimeout(() => void paint(), 4000);
+}
 
 const boot = (async () => {
   await hub.init();
@@ -19,10 +32,15 @@ const boot = (async () => {
   await control.connect();
 })();
 
-// The toolbar icon opens the side panel. Chromium builds without it keep the popup.
-// Runs on every worker start, which covers install and startup: setPopup does not persist.
+// The toolbar icon opens the side panel. Chromium builds without it open the settings page.
+// Runs on every worker start, which covers install and startup.
 if (chrome.sidePanel) void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-else void chrome.action.setPopup({ popup: 'popup.html' });
+else chrome.action.onClicked.addListener(() => void chrome.runtime.openOptionsPage());
+
+// Alt+Shift+K: the keyboard way to stop every agent in this browser.
+chrome.commands.onCommand.addListener((name) => {
+  if (name === 'kortix-stop') void boot.then(() => hub.endAll('stopped'));
+});
 
 chrome.alarms.create('keepalive', { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(() => void boot.then(() => control.connect()));
@@ -97,6 +115,21 @@ chrome.runtime.onMessage.addListener((m: PageMessage, sender, reply) => {
       case 'whoami': {
         const me = (await api('/accounts/me')) as { user_id: string; email: string };
         return { userId: me.user_id, email: me.email };
+      }
+      case 'panel-session': {
+        // The side panel's web app has no cookie yet: mint it a session for this account. The hash is a credential; never log it.
+        const r = (await api('/chrome/panel-session', { method: 'POST' })) as { tokenHash?: unknown };
+        if (typeof r?.tokenHash !== 'string' || !r.tokenHash) throw new Error('Kortix did not return a session.');
+        return { tokenHash: r.tokenHash };
+      }
+      case 'disconnect': {
+        const { chromeId } = await getStored();
+        if (chromeId) await api(`/chrome/connections/${chromeId}`, { method: 'DELETE' });
+        await hub.endAll('closed');
+        control.stop();
+        await signOutLocal();
+        await setStored({ chromeId: null });
+        return status();
       }
       case 'signin': return void (await startSignIn(m.apiUrl, sender.tab?.id));
       case 'oauth-done': return connectFlow(m.url);

@@ -1,31 +1,46 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kortix settings</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="pages.css"></head>
+<title>Kortix in Chrome settings</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="pages.css"></head>
 <body class="options">
 <main class="opt">
   <svg class="symbol" viewBox="0 0 30 25" fill="currentColor" aria-hidden="true"><path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z"/></svg>
-  <h1>Kortix settings</h1>
+  <h1>Kortix in Chrome settings</h1>
   <section id="out" hidden>
     <p>Connect this browser to change its settings.</p>
     <button id="connect" class="primary">Connect to Kortix</button>
   </section>
   <div id="in" hidden>
-    <section class="card"><h2>Permissions</h2>
-      <p class="hint">What Kortix agents may do in this browser.</p>
-      <span class="label">Access</span>
-      <div class="seg" id="mode"><button data-v="always">Without asking</button><button data-v="ask">Ask first</button><button data-v="off">Off</button></div>
-      <span class="label">Tabs</span>
-      <div class="seg" id="scope"><button data-v="all">All tabs</button><button data-v="own">Only tabs it opens</button></div>
-      <p id="err" class="err" hidden></p>
+    <section aria-labelledby="h-browser"><h2 id="h-browser">This browser</h2>
+      <div class="item">
+        <div><div class="strong" id="bname"></div>
+          <div class="sub"><span class="dot" id="dot"></span><span id="state">Offline</span><span id="server-row" hidden></span></div></div>
+        <a id="manage" href="#" target="_blank" rel="noreferrer">Manage in Kortix</a>
+      </div>
     </section>
-    <section class="card"><h2>Shortcuts</h2>
-      <div class="row"><span>Open Kortix</span><kbd id="key">Alt+K</kbd></div>
-      <p class="hint"><a href="#" id="shortcuts">Change shortcuts</a></p>
+    <section aria-labelledby="h-perm"><h2 id="h-perm">Permissions</h2>
+      <div class="item">
+        <div><div class="strong">Access</div><div class="sub">What Kortix agents may do in this browser.</div></div>
+        <div class="seg" id="mode"><button type="button" data-v="always">Without asking</button><button type="button" data-v="ask">Ask first</button><button type="button" data-v="off">Off</button></div>
+      </div>
+      <div class="item">
+        <div><div class="strong">Tabs</div><div class="sub">Which tabs they can see.</div></div>
+        <div class="seg" id="scope"><button type="button" data-v="all">All tabs</button><button type="button" data-v="own">Only tabs it opens</button></div>
+      </div>
+      <p id="err" class="err" role="alert" hidden></p>
     </section>
-    <section class="card"><h2>Account</h2>
-      <div class="row"><span>Signed in as</span><span id="email"></span></div>
-      <div class="row"><span>Server</span><span id="server"></span></div>
-      <div class="actions"><button id="signout">Log out</button></div>
+    <section aria-labelledby="h-keys"><h2 id="h-keys">Shortcuts</h2>
+      <div class="item"><span>Open the side panel</span><kbd id="key">Alt+K</kbd></div>
+      <div class="item"><span>Stop every agent in this browser</span><kbd id="stopkey">Alt+Shift+K</kbd></div>
+      <p class="sub"><a href="#" id="shortcuts">Change shortcuts</a></p>
+    </section>
+    <section aria-labelledby="h-account"><h2 id="h-account">Account</h2>
+      <div class="item"><span>Signed in as</span><span class="strong" id="email"></span></div>
+      <div class="item"><span>Sign out of Kortix in this browser</span><button id="signout">Sign out</button></div>
+      <div class="item">
+        <div><div class="strong">Disconnect this browser</div><div class="sub">Removes it from your Kortix account. Agents lose access at once.</div></div>
+        <button id="disconnect" class="danger">Disconnect this browser</button>
+        <span class="confirm" id="confirm" hidden><button id="cancel">Cancel</button><button id="really" class="danger solid">Disconnect</button></span>
+      </div>
     </section>
   </div>
 </main>

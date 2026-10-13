@@ -1,6 +1,6 @@
-# Kortix for Chrome protocol
+# Kortix in Chrome protocol
 
-The contract between the four parts of Kortix for Chrome. Every part implements
+The contract between the four parts of Kortix in Chrome. Every part implements
 exactly this. Change this file in the same commit as any wire change.
 
 | Part | Path | Talks to |
@@ -18,7 +18,7 @@ exactly this. Change this file in the same commit as any wire change.
   Store upload to keep the ID.
 - **Extension credential:** OAuth 2.1 with PKCE (S256) against the API's existing
   authorization server. The extension registers itself with
-  `POST /v1/oauth/register` (`client_name: "Kortix for Chrome"`,
+  `POST /v1/oauth/register` (`client_name: "Kortix in Chrome"`,
   `redirect_uris: ["chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek/welcome.html"]`,
   `token_endpoint_auth_method: "none"`). Sign-in runs in a normal tab: the
   welcome page's tab goes to `/v1/oauth/authorize` (`scope=kortix`), and Kortix
@@ -28,7 +28,7 @@ exactly this. Change this file in the same commit as any wire change.
   `kortix_ort_` (30 days). The extension refreshes 5 min before expiry.
   Endpoints come from `GET <api>/.well-known/oauth-authorization-server`.
   Before sign-in, `GET /v1/chrome/connections` without a token answers `401` on a server
-  with Kortix for Chrome and `404` on one without it.
+  with Kortix in Chrome and `404` on one without it.
 - **Sandbox credential:** the session-scoped `KORTIX_TOKEN` (`kortix_pat_`). The
   API resolves it to `{userId, sessionId, projectId}`. The browser owner must be
   that `userId`.
@@ -95,6 +95,21 @@ only the caller's own browsers.
 | `GET /v1/chrome/connections` | `200 Browser[]`, newest `last_seen_at` first |
 | `PATCH /v1/chrome/connections/:id` | body `{name?, accessMode?, tabScope?}` → `200 Browser`. Pushes `{"type":"chrome"}` to the extension. |
 | `DELETE /v1/chrome/connections/:id` | `204`. Sets `revoked_at`, sends close `4003`, ends active attachments. |
+
+| `POST /v1/chrome/panel-session` | Only a `kortix_oat_` token issued to the Kortix in Chrome client (else `403 chrome_panel_forbidden`). `200 {tokenHash}`: a one-time Supabase magiclink hash for the token's user. The side panel exchanges it for a web session. Never log it. |
+
+### Side panel sign-in
+
+The side panel iframes `${webUrl}/auth/panel?next=/projects`. Chrome hides `SameSite=Lax`
+cookies from frames inside extension pages, so the web app keeps the panel session in a
+partitioned cookie and gets it from the extension:
+
+1. The page posts `{type:"kortix.panel.needSession"}` to its parent.
+2. The panel accepts it only when `event.origin` is the web origin and `event.source` is its iframe.
+3. The panel asks the worker (`panel-session` RPC), which calls `POST /v1/chrome/panel-session`.
+4. The panel posts `{type:"kortix.panel.session", tokenHash}` to the iframe with the web origin as target.
+
+At most 2 requests per frame navigation (one request, one retry).
 
 Sandbox routes accept only a session-scoped sandbox credential.
 
@@ -182,7 +197,7 @@ methods (no `sessionId`):
 | `Target.closeTarget` | `chrome.tabs.remove`, return `{success:true}` |
 | `Target.activateTarget` | `chrome.tabs.update(tabId,{active:true})` |
 | `Target.getTargetInfo` | The tab's info, or the browser target without `targetId` |
-| other | error `-32601 "<method> is not available in Kortix for Chrome"` |
+| other | error `-32601 "<method> is not available in Kortix in Chrome"` |
 
 Commands with a `sessionId` go to `chrome.debugger.sendCommand({tabId[, sessionId: child]}, method, params)`.
 Events from `chrome.debugger.onEvent` go to every client session on that tab.

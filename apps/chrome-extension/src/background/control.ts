@@ -9,6 +9,7 @@ export type ControlHandlers = {
   chrome(b: ChromeConnection): void;
   authed(b: ChromeConnection, webUrl: string): void;
   disconnected(): void; // 4003: removed from Kortix
+  state(online: boolean): void; // the control socket came up or went down
 };
 
 async function identity() {
@@ -38,10 +39,14 @@ export class Control {
 
   /** Dial if signed in and not already connected. */
   private dialing = false;
+  private again = false;
   async connect() {
-    if (this.dialing || (this.ws && this.ws.readyState <= WebSocket.OPEN)) return;
+    // A call that lands while another dial is deciding (the token may have just been saved) is not lost.
+    if (this.dialing) { this.again = true; return; }
+    if (this.ws && this.ws.readyState <= WebSocket.OPEN) return;
     this.dialing = true;
     try { await this.dial(); } finally { this.dialing = false; }
+    if (this.again) { this.again = false; await this.connect(); }
   }
 
   private async dial() {
@@ -58,6 +63,7 @@ export class Control {
       switch (f.type) {
         case 'auth_ok':
           this.online = true;
+          this.h.state(true);
           this.tries = 0;
           this.ping = setInterval(() => this.send({ type: 'ping' }), 20_000);
           void setStored({ chromeId: f.chrome.id, chrome: f.chrome, webUrl: f.webUrl }).then(() => {
@@ -74,6 +80,7 @@ export class Control {
       clearInterval(this.ping);
       this.online = false;
       if (this.ws !== ws) return;
+      this.h.state(false);
       this.ws = undefined;
       if (e.code === 4003) {
         await signOutLocal();
@@ -93,6 +100,7 @@ export class Control {
     this.online = false;
     clearInterval(this.ping);
     ws?.close();
+    this.h.state(false);
   }
 
   /** Resolves true on the next auth_ok, false on a refusal or after `ms`. */

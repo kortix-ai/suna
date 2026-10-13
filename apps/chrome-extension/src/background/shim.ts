@@ -167,7 +167,7 @@ export class Shim {
         return { targetInfo: info };
       }
       default:
-        throw new CdpError(-32601, `${method} is not available in Kortix for Chrome`);
+        throw new CdpError(-32601, `${method} is not available in Kortix in Chrome`);
     }
   }
 

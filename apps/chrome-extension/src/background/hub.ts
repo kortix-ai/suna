@@ -3,7 +3,7 @@
 import { Attachment, toTabInfo, type AttachmentEnv } from './attachment';
 import { forget } from './pool';
 import { getStored } from './state';
-import { BRAND_BLUE, type AttachFrame, type AttachmentRecord, type ChromeConnection } from './types';
+import { BRAND_BLUE, OFFLINE_GREY, type AttachFrame, type AttachmentRecord, type ChromeConnection } from './types';
 
 type Reason = 'stopped' | 'closed' | 'canceled_by_user' | 'error';
 type Pending = { frame: AttachFrame; windowId?: number; decided: boolean };
@@ -12,6 +12,8 @@ export class Hub {
   readonly all = new Map<string, Attachment>();
   private pending = new Map<string, Pending>();
   chrome?: ChromeConnection;
+  /** Signed in, but the control socket is down. The toolbar badge says so. */
+  offline = false;
 
   constructor(private send: (frame: Record<string, unknown>) => void) {}
 
@@ -41,7 +43,7 @@ export class Hub {
     const p: Pending = { frame, decided: false };
     this.pending.set(id, p);
     const w = await chrome.windows.create({
-      type: 'popup', width: 420, height: 360, focused: true,
+      type: 'popup', width: 420, height: 400, focused: true,
       url: chrome.runtime.getURL(`consent.html?id=${encodeURIComponent(id)}`),
     });
     p.windowId = w?.id;
@@ -98,10 +100,13 @@ export class Hub {
     await this.badge();
   }
 
-  private async badge() {
+  /** Blue count while agents work (agent state), grey "!" when offline, else clear. */
+  async badge() {
     const n = this.all.size;
-    await chrome.action.setBadgeText({ text: n ? String(n) : '' });
-    await chrome.action.setBadgeBackgroundColor({ color: BRAND_BLUE });
+    const text = n ? String(n) : this.offline ? '!' : '';
+    await chrome.action.setBadgeText({ text });
+    await chrome.action.setBadgeBackgroundColor({ color: n ? BRAND_BLUE : OFFLINE_GREY });
+    await chrome.action.setTitle({ title: this.offline && !n ? 'Kortix (offline)' : 'Kortix' });
   }
 
   // ─── Chrome events ─────────────────────────────────────────────────────────
