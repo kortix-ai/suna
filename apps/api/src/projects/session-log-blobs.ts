@@ -63,9 +63,13 @@ function preview(bytes: Buffer): string {
   return bytes.subarray(0, end).toString('utf8');
 }
 
+const large = (t: Text) => Buffer.byteLength(t.text) > SESSION_LOG_OFFLOAD_BYTES;
+
+/** How many texts of `record` `offloadLargeTexts` would move to an object. */
+export const largeTextCount = (record: unknown): number => textsOf(record).filter(large).length;
+
 /** The record to store for `message`: each text over 256 kB becomes preview + `ref` + `bytes`. */
 export async function offloadLargeTexts<T>(scope: Scope, message: T): Promise<T> {
-  const large = (t: Text) => Buffer.byteLength(t.text) > SESSION_LOG_OFFLOAD_BYTES;
   if (!textsOf(message).some(large)) return message;
   const record = structuredClone(message);
   for (const t of textsOf(record).filter(large)) {
