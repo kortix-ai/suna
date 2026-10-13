@@ -221,10 +221,10 @@ flow(
     let onShared = '';
     let elsewhere = '';
 
-    const group = async (members: Principal[]) => {
+    const group = async (slug: string, members: Principal[]) => {
       const created = await owner.post(
         '/v1/accounts/:accountId/iam/groups',
-        { name: ctx.fixtures.name('grp') },
+        { name: ctx.fixtures.name(slug) },
         { params },
       );
       const groupId = created.status(201).json<{ group_id: string }>().group_id;
@@ -268,9 +268,9 @@ flow(
       async () => {
         await team.grantProjectRole(shared.id, viewer.userId!, 'member');
         await team.grantProjectRole(shared.id, coProject.userId!, 'member');
-        mine = await group([viewer, groupMate]);
-        onShared = await group([viaGroup]);
-        elsewhere = await group([stranger]);
+        mine = await group('grp-mine', [viewer, groupMate]);
+        onShared = await group('grp-shared', [viaGroup]);
+        elsewhere = await group('grp-elsewhere', [stranger]);
         await grantGroup(shared.id, onShared);
         await grantGroup(hidden.id, onShared);
         await grantGroup(hidden.id, elsewhere);
