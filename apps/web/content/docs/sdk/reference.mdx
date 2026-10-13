@@ -275,7 +275,7 @@ Policies and approvals are explained in [Policies and approvals](/docs/connect/c
 
 | Method | What it does |
 | --- | --- |
-| `secrets.list()` · `secrets.upsert(input)` · `secrets.remove(name)` | Secret metadata · create or update a write-only value with its delivery policy · delete. |
+| `secrets.list()` · `secrets.upsert(input)` · `secrets.remove(name)` | Secret metadata · create or update a write-only value with its delivery policy · delete. Each listed secret carries `status`: `'undecryptable'` when the server can no longer decrypt the stored value, so `upsert` it again. |
 | `secrets.setStrategy(identifier, 'runtime' \| 'egress' \| 'broker' \| 'denied', options?)` | Set the exposure: `runtime` is environment, `egress` is enforced, `denied` is none. `broker` keeps the value out of the session. |
 | `secrets.broker(identifier, request)` | Send one policy-bound HTTPS request with the secret. Needs a session-scoped token. |
 | `secrets.setPersonal(name, { value?, active? })` · `secrets.removePersonal(name)` | Your own value for a secret, used in your sessions. `active: false` keeps your value but uses the shared one. `removePersonal` deletes your value. |
