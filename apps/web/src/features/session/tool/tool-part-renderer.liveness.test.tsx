@@ -7,8 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ToolPartRenderer } from '../tool-part-renderer';
-import { openCall } from './call-liveness';
+import { ToolPartRenderer } from './tool-part-renderer';
 
 // Synthetic calls; every id and value is invented.
 const T0 = 1_790_000_000_000;
@@ -44,24 +43,11 @@ const render = (call: ToolCallBlock, turnLive: boolean) =>
     </QueryClientProvider>,
   );
 
-describe('openCall: a closure-rule call is open again', () => {
-  test('running when it started, else pending; no result; the same object per call', () => {
-    const bash = closed(toolCallBlock(OPEN.bash));
-    const write = closed(toolCallBlock(OPEN.write));
-    expect(openCall(bash)).toMatchObject({ status: 'running', call_id: 'call_prt_bash' });
-    expect(openCall(bash).result).toBeUndefined();
-    expect(openCall(write).status).toBe('pending');
-    expect(openCall(bash)).toBe(openCall(bash));
-  });
-
-  test('every other call is returned as is: open, complete, and a real error', () => {
-    const live = toolCallBlock(OPEN.bash);
-    const done = toolCallBlock(part('prt_done', 'bash', { status: 'completed', input: { command: 'ls' }, output: 'a', title: 'ls', metadata: {}, time: { start: T0, end: T0 + 1 } }));
-    const failed = toolCallBlock(part('prt_err', 'read', { status: 'error', input: { filePath: '/w/x' }, error: 'File not found', time: { start: T0, end: T0 + 1 } }));
-    for (const call of [live, done, failed]) expect(openCall(call)).toBe(call);
-  });
-});
-
+/**
+ * The liveness rule is the SDK's (`sessionLogCallStatus`, `sessionLogOpenCall`, tested in
+ * packages/sdk). This pins what the renderer draws with it: a dead open call on the v1 live
+ * view and its closure-rule block on the v2 page at rest are one DOM, on a live turn and after it.
+ */
 describe('one rendering for a dead open call: the v1 live view and the v2 page at rest', () => {
   for (const [name, p] of Object.entries(OPEN)) {
     for (const turnLive of [false, true]) {
