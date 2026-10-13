@@ -27,6 +27,14 @@
  *
  * The verdict row is the sheet's pinned footer (`BottomSheetFooter`), so Merge
  * stays on screen over a long change. The scroll content pads by its height.
+ *
+ * Each verdict shows only for a viewer who holds the leaves its route asserts
+ * (KRTX-1720, `reviewVerdictAllowed`), from one `useCans` probe: Merge needs
+ * project.write + project.gitops.merge; Request changes, Close, a decision's
+ * answer and every native verdict need project.write + project.review.act. A
+ * built-in member gets none of them, and an unresolved probe offers none. A
+ * connector call keeps its `needs_you` rule: the API sends no per-item verdict
+ * for it yet.
  */
 import * as React from 'react';
 import { View, useWindowDimensions } from 'react-native';
@@ -37,6 +45,7 @@ import {
   type BottomSheetFooterProps,
 } from '@gorhom/bottom-sheet';
 import type { ReviewItem, ReviewVerdict } from '@kortix/sdk';
+import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -76,7 +85,12 @@ import {
   verdictNeedsConfirm,
   verdictNeedsFeedback,
 } from '@/lib/review/review-meta';
-import { planReviewVerdict, reviewVerdictsFor } from '@/lib/review/review-verdict';
+import {
+  REVIEW_CONTROL_ACTIONS,
+  planReviewVerdict,
+  reviewVerdictAllowed,
+  reviewVerdictsFor,
+} from '@/lib/review/review-verdict';
 import { useReviewVerdict } from '@/lib/review/use-review';
 import { openLink } from '@/lib/utils/open-link';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
@@ -111,6 +125,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
     const isDark = colorScheme === 'dark';
     const background = useSheetBackground();
     const toast = useToast();
+    const cans = useCans({ projectId }, REVIEW_CONTROL_ACTIONS);
     const verdictMutation = useReviewVerdict(projectId, {
       onSuccess: (input) => {
         haptics.success();
@@ -229,11 +244,14 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
       modalRef.current?.snapToIndex(0);
     }, []);
     // A decision answers from its option rows; its footer holds Dismiss alone.
+    // Only the verdicts this viewer may give (KRTX-1720).
+    const allows = (verdict: ReviewVerdict) => !!item && reviewVerdictAllowed(item.id, verdict, cans);
     const verdicts = React.useMemo<ReviewVerdict[]>(() => {
       if (!item) return [];
-      return item.kind === 'decision' ? ['dismiss'] : reviewVerdictsFor(item.kind);
-    }, [item]);
-    const showFooter = !!item && actionable && !askingFeedback && !openFile;
+      const offered: ReviewVerdict[] = item.kind === 'decision' ? ['dismiss'] : reviewVerdictsFor(item.kind);
+      return offered.filter((verdict) => reviewVerdictAllowed(item.id, verdict, cans));
+    }, [item, cans]);
+    const showFooter = !!item && actionable && verdicts.length > 0 && !askingFeedback && !openFile;
 
     // ── Resolve conflicts (in place of Merge while the preview reports any) ──
     const conflicted = item?.kind === 'change' && hasMergeConflicts(item.status, previewQuery.data);
@@ -360,7 +378,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
                   projectId={projectId}
                   item={item}
                   onAnswer={send}
-                  actionable={actionable}
+                  actionable={actionable && allows('answer')}
                   diff={diffQuery.data}
                   diffLoading={diffQuery.isLoading}
                   diffFailed={diffQuery.isError}
@@ -427,7 +445,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
                     close the change request without merging. The `dismiss`
                     verdict — it confirms after the sheet closes, then closes
                     the change request (`planReviewVerdict` → `close`). */}
-                {item.kind === 'change' && actionable && !askingFeedback ? (
+                {item.kind === 'change' && actionable && allows('dismiss') && !askingFeedback ? (
                   <SettingsGroup>
                     <SettingsRow
                       icon={XCircleIcon}

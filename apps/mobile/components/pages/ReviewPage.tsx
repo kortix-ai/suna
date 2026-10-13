@@ -19,11 +19,16 @@
  * the tabs. Three tabs fill the capsule's width on a 360pt phone, so the `+`
  * lives in the header. The list is one `SettingsGroup` of `SettingsRow`s, the
  * app's list (Jay, 2026-09-23).
+ *
+ * The `+` shows only for a viewer who holds project.write + project.gitops.push,
+ * the leaves `POST /change-requests` asserts (KRTX-1720), from one `useCans`
+ * probe. `ReviewDetailSheet` gates each verdict on the same probe.
  */
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import {
   reviewSegmentForStatus,
@@ -62,6 +67,7 @@ import {
   type ReviewTone,
 } from '@/lib/review/review-meta';
 import { reviewKeys, useReviewItems } from '@/lib/review/use-review';
+import { REVIEW_CONTROL_ACTIONS, canOpenChangeRequest } from '@/lib/review/review-verdict';
 import { THEME } from '@/lib/utils/theme';
 import { sessionDisplayTitle } from '@/lib/session/session-list';
 import type { PageTab } from '@/stores/tab-store';
@@ -120,6 +126,7 @@ export function ReviewPage({
   const [versionsOpened, setVersionsOpened] = React.useState(false);
   const branchesQuery = useProjectBranches(projectId, versionsOpened);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const canOpenChange = canOpenChangeRequest(useCans({ projectId }, REVIEW_CONTROL_ACTIONS));
 
   // Session titles name the thread a connector approval came from.
   const sessionsQuery = useProjectSessions(projectId, { poll: false });
@@ -174,10 +181,14 @@ export function ReviewPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        onAdd={() => {
-          haptics.tap();
-          createSheetRef.current?.present();
-        }}
+        onAdd={
+          canOpenChange
+            ? () => {
+                haptics.tap();
+                createSheetRef.current?.present();
+              }
+            : undefined
+        }
         addLabel="Open a change request"
         rightActions={
           <Button
