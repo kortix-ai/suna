@@ -5,10 +5,23 @@
  * the API's env and is covered in
  * apps/api/src/__tests__/integration-session-log-ingest.test.ts.
  * `SLOG-2` is the read path (P4.2): the v1 reads with the `session_log` flag
- * off and on, and `GET …/log`.
+ * off and on, and `GET …/log`. `SLOG-3` is the restore claim (P6.1); its operator
+ * switch (503) is covered in
+ * apps/api/src/__tests__/integration-session-log-restore.test.ts.
  */
-import { fromV1, SessionLogJournalResponseSchema, SessionLogManifestSchema, SessionLogPageSchema, type V1Row } from "@kortix/api-contract/session-log";
+import { createHash } from "node:crypto";
+import {
+  fromV1,
+  SessionLogJournalResponseSchema,
+  SessionLogManifestSchema,
+  SessionLogPageSchema,
+  SessionLogRestoreMissingSchema,
+  SessionLogRestoreSchema,
+  type SessionLogRestore,
+  type V1Row,
+} from "@kortix/api-contract/session-log";
 import { Client } from "pg";
+import type { FlowContext } from "../core/types";
 import { flow } from "../core/flow";
 import { createDatabaseSession } from "../fixtures/database-project";
 import { setFeatureAsOperator } from "../fixtures/feature-flags";
@@ -28,6 +41,28 @@ const message = (id: string, seq: number, over: Record<string, unknown> = {}) =>
 const batch = (generation: number, puts: Array<{ rev: number; message: unknown }>) =>
   Bun.gzipSync(JSON.stringify({ generation, puts, tombstones: [], threads: [] }));
 
+/**
+ * The credential a session sandbox holds: an account token bound to the project and the
+ * session, live while the session's sandbox row is (the session lease). `close` deletes
+ * the sandbox row (no reaper reads a row without an external_id) and the connection.
+ */
+async function sandboxCredential(ctx: FlowContext, projectId: string, sessionId: string) {
+  const minted = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: "Session log journal", account_id: ctx.P.OWNER.accountId });
+  minted.status(201);
+  const credential = minted.json<{ token_id: string; secret_key: string }>();
+  const db = new Client({ connectionString: ctx.env.databaseUrl!, ssl: /localhost|127\.0\.0\.1/.test(ctx.env.databaseUrl!) ? false : { rejectUnauthorized: false } });
+  await db.connect();
+  await db.query("UPDATE kortix.account_tokens SET project_id = $2, session_id = $3 WHERE token_id = $1", [credential.token_id, projectId, sessionId]);
+  await db.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, ctx.P.OWNER.accountId, projectId]);
+  return {
+    box: ctx.client.withBearer(credential.secret_key, "SESSION_SANDBOX"),
+    close: async () => {
+      await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = $1 AND external_id IS NULL", [sessionId]).catch(() => {});
+      await db.end().catch(() => {});
+    },
+  };
+}
+
 flow(
   "SLOG-1",
   {
@@ -46,17 +81,8 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: project.id, sessionId };
 
-    // The credential a session sandbox holds: an account token bound to the project and the session.
-    const minted = await owner.post("/v1/accounts/tokens", { name: "Session log journal", account_id: ctx.P.OWNER.accountId });
-    minted.status(201);
-    const credential = minted.json<{ token_id: string; secret_key: string }>();
-    const db = new Client({ connectionString: ctx.env.databaseUrl!, ssl: /localhost|127\.0\.0\.1/.test(ctx.env.databaseUrl!) ? false : { rejectUnauthorized: false } });
-    await db.connect();
-    await db.query("UPDATE kortix.account_tokens SET project_id = $2, session_id = $3 WHERE token_id = $1", [credential.token_id, project.id, sessionId]);
-    // A session PAT authenticates only while its sandbox row is live (the session lease).
-    await db.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, ctx.P.OWNER.accountId, project.id]);
+    const { box, close } = await sandboxCredential(ctx, project.id, sessionId);
     try {
-      const box = ctx.client.withBearer(credential.secret_key, "SESSION_SANDBOX");
       const post = (body: Uint8Array) =>
         box.post(JOURNAL, body, { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } });
 
@@ -102,9 +128,7 @@ flow(
         (await owner.get(MANIFEST, { params })).status(403);
       });
     } finally {
-      // No reaper reads a sandbox row without an external_id: a leaked `active` row stays forever.
-      await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = $1 AND external_id IS NULL", [sessionId]).catch(() => {});
-      await db.end().catch(() => {});
+      await close();
     }
   },
 );
@@ -183,14 +207,7 @@ flow(
     });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: project.id, sessionId };
-    const minted = await owner.post("/v1/accounts/tokens", { name: "Session log journal", account_id: accountId });
-    minted.status(201);
-    const credential = minted.json<{ token_id: string; secret_key: string }>();
-    const db = new Client({ connectionString: ctx.env.databaseUrl!, ssl: /localhost|127\.0\.0\.1/.test(ctx.env.databaseUrl!) ? false : { rejectUnauthorized: false } });
-    await db.connect();
-    await db.query("UPDATE kortix.account_tokens SET project_id = $2, session_id = $3 WHERE token_id = $1", [credential.token_id, project.id, sessionId]);
-    await db.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, accountId, project.id]);
-    const box = ctx.client.withBearer(credential.secret_key, "SESSION_SANDBOX");
+    const { box, close } = await sandboxCredential(ctx, project.id, sessionId);
 
     /** Every v1 read with `captured_at` set aside: the sync pages of 4 to the end, the child, compact, the bundle's transcript leg. */
     const v1Reads = async () => {
@@ -260,8 +277,87 @@ flow(
       });
     } finally {
       await setFeatureAsOperator(ctx, project.id, "session_log", null).catch(() => {});
-      await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = $1 AND external_id IS NULL", [sessionId]).catch(() => {});
-      await db.end().catch(() => {});
+      await close();
+    }
+  },
+);
+
+const RESTORE = "/v1/projects/:projectId/sessions/:sessionId/log/restore";
+const ATTACHMENT = "/v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId";
+
+flow(
+  "SLOG-3",
+  {
+    domain: "sessions",
+    requires: ["database"],
+    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, `POST ${RESTORE}`, `GET ${ATTACHMENT}`],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId! });
+    ctx.track("session", sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id, sessionId };
+    const { box, close } = await sandboxCredential(ctx, project.id, sessionId);
+    const post = (body: unknown) =>
+      box.post(JOURNAL, Bun.gzipSync(JSON.stringify(body)), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } });
+    const thread = (id: string, parent: string | null) => ({ schema: "kortix.session/2", v: 1, thread_id: id, parent_thread_id: parent, spawned_by: null, agent: null, title: null, created_at: T, ext: {} });
+    // A synthetic tool output over the 256 kB offload threshold.
+    const output = "0123456789abcdef".repeat(20_000);
+    const tool = { type: "tool_call", id: "prt_tool", call_id: "call_tool", name: "bash", kind: "shell", input: { command: "cat big.log" }, status: "complete", result: { content: [{ type: "text", text: output }], is_error: false } };
+    const session = {
+      schema: "kortix.session/2", v: 1, session_id: sessionId, title: "Synthetic restore", created_at: T, restore_grade: "native",
+      harness: { current: "opencode", history: [] }, selection: { agent: null, model: null }, todos: [], pending: { questions: [], permissions: [] }, ext: {},
+    };
+
+    try {
+      await ctx.step("a session without a stored log → 404 no_session_log, and the project owner's own token → 403", async () => {
+        (await box.post(RESTORE, undefined, { params })).status(404).body().schema(SessionLogRestoreMissingSchema);
+        (await owner.post(RESTORE, undefined, { params })).status(403);
+      });
+
+      await ctx.step("the box journals two threads at generation 0: a 320 kB tool output, an out-of-context message, a tombstone → 200", async () => {
+        (await post({
+          generation: 0, session, threads: [thread("main", null), thread("ses_child", "main")], tombstones: [],
+          puts: [
+            { rev: REV + 4, message: message("msg_u3", 3) },
+            { rev: REV + 1, message: message("msg_u0", 0) },
+            { rev: REV + 2, message: message("msg_a1", 1, { role: "assistant", finish: "tool_calls", blocks: [tool] }) },
+            { rev: REV + 3, message: message("msg_old2", 2, { in_context: false, hidden_reason: "superseded" }) },
+            { rev: REV + 5, message: message("msg_c0", 0, { thread_id: "ses_child" }) },
+          ],
+        })).status(200);
+        (await post({ generation: 0, session: undefined, threads: [], puts: [], tombstones: [{ message_id: "msg_u3", rev: REV + 9 }] })).status(200);
+      });
+
+      let claimed: SessionLogRestore;
+      await ctx.step("a fresh box claims the session → 200 gzipped: generation 1, live messages in seq order, every rev, one stored-by-reference text", async () => {
+        const r = await box.post(RESTORE, undefined, { params, headers: { "accept-encoding": "gzip" } });
+        r.status(200).body().schema(SessionLogRestoreSchema).has("$.generation", 1);
+        if (r.header("content-encoding") !== "gzip") throw new Error(`content-encoding ${r.header("content-encoding")}, expected gzip`);
+        claimed = r.json<SessionLogRestore>();
+        const ids = claimed.log.threads.map((t) => [t.thread_id, t.messages.map((m) => m.message_id)]);
+        const expected = [["main", ["msg_u0", "msg_a1", "msg_old2"]], ["ses_child", ["msg_c0"]]];
+        if (JSON.stringify(ids) !== JSON.stringify(expected)) throw new Error(`threads ${JSON.stringify(ids)}, expected ${JSON.stringify(expected)}`);
+        const revs = { msg_u0: REV + 1, msg_a1: REV + 2, msg_old2: REV + 3, msg_u3: REV + 9, msg_c0: REV + 5 };
+        if (!Bun.deepEquals(claimed.revs, revs)) throw new Error(`revs ${JSON.stringify(claimed.revs)}`);
+        const blob = claimed.blobs[0];
+        if (claimed.blobs.length !== 1 || blob?.message_id !== "msg_a1" || blob.block_id !== "prt_tool" || blob.bytes !== output.length) throw new Error(`blobs ${JSON.stringify(claimed.blobs)}`);
+      });
+
+      await ctx.step("the box still journaling at generation 0 → 409 {generation:1}; a journal batch at generation 1 → 200", async () => {
+        (await post({ generation: 0, threads: [], tombstones: [], puts: [{ rev: REV + 10, message: message("msg_zombie", 4) }] })).status(409).body().has("$", { generation: 1 });
+        (await post({ generation: 1, threads: [], tombstones: [], puts: [{ rev: REV + 11, message: message("msg_u4", 4) }] })).status(200);
+      });
+
+      await ctx.step("the box reads the full text of the blob through the attachments route → 200, its sha256 matches", async () => {
+        const blob = claimed!.blobs[0]!;
+        const r = await box.get(ATTACHMENT, { params: { ...params, attachmentId: blob.ref.split("/").at(-1)! } });
+        r.status(200);
+        if (createHash("sha256").update(r.text()).digest("hex") !== blob.sha256) throw new Error("the attachment's sha256 differs from the blob's");
+      });
+    } finally {
+      await close();
     }
   },
 );

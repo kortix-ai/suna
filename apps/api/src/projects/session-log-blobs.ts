@@ -41,17 +41,20 @@ const MIME = 'text/plain; charset=utf-8';
 
 type Scope = { projectId: string; sessionId: string };
 type Text = { type: 'text'; text: string; ref?: string; bytes?: number };
-type Block = { type?: string; result?: { content?: unknown[]; model_content?: unknown[] } };
+type Block = { type?: string; id?: string; result?: { content?: unknown[]; model_content?: unknown[] } };
 
-/** The F3 texts of a record: its text blocks and its tool results' text items. */
-function textsOf(record: unknown): Text[] {
-  const blocks = ((record as { blocks?: unknown }).blocks ?? []) as Block[];
-  return blocks.flatMap((b) =>
-    (b.type === 'text' ? [b] : b.type === 'tool_call' ? [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])] : []).filter(
-      (t): t is Text => (t as Text)?.type === 'text' && typeof (t as Text).text === 'string',
-    ),
+const blocksOf = (record: unknown) => ((record as { blocks?: unknown }).blocks ?? []) as Block[];
+/** The F3 texts of one block: the text block itself, or a tool result's text items. */
+const blockTexts = (b: Block): Text[] =>
+  (b.type === 'text' ? [b] : b.type === 'tool_call' ? [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])] : []).filter(
+    (t): t is Text => (t as Text)?.type === 'text' && typeof (t as Text).text === 'string',
   );
-}
+/** The F3 texts of a record: its text blocks and its tool results' text items. */
+const textsOf = (record: unknown): Text[] => blocksOf(record).flatMap(blockTexts);
+
+/** Every text of a record that carries a `ref`, with the id of its block (the text block, or the tool call). */
+export const referencedTexts = (record: unknown): Array<{ block_id: string; ref: string }> =>
+  blocksOf(record).flatMap((b) => blockTexts(b).flatMap((t) => (t.ref === undefined ? [] : [{ block_id: String(b.id), ref: t.ref }])));
 
 /** The first 16 kB, cut at a character boundary. */
 function preview(bytes: Buffer): string {
