@@ -28,6 +28,7 @@ import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 import { repairLegacyInlineAttachments } from './legacy-inline-attachment-repair';
+import { promptAgent } from './agent-availability';
 import type {
   ContinueSessionCommand,
   LegacyInlineAttachmentRepairMetadata,
@@ -70,6 +71,7 @@ export async function continueSession(
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
       status: projectSessions.status,
+      agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
       projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessions.projectId)})`,
     })
@@ -214,7 +216,7 @@ export async function continueSession(
       idempotencyKey,
       {
         parts: command.parts,
-        overrides: command.overrides,
+        overrides: { ...command.overrides, agent: promptAgent(command.overrides?.agent, session.agentName) },
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
         noReply: command.noReply,

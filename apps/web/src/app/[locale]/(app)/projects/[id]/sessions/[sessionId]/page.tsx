@@ -97,6 +97,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
+import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
@@ -1502,6 +1503,16 @@ function ActiveSessionChat({
     // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
     // route id — which never changes, so there is nothing to adopt.
   }, [sessionId, chatSessionId]);
+
+  // A desktop Quick Entry prompt for this session lands under the route id
+  // (the only id the producer knows); SessionChat reads prefills by
+  // `chatSessionId`. Keyed on the waiting prefill too: a second prompt while
+  // this page is open lands after the chat resolved, and must move as well.
+  const routePrefillId = useSessionComposerPrefillStore((s) => s.prefillBySession[sessionId]?.id);
+  useEffect(() => {
+    if (!chatSessionId || routePrefillId === undefined) return;
+    useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);
+  }, [sessionId, chatSessionId, routePrefillId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────
   useEffect(() => {
