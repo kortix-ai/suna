@@ -5,6 +5,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session restore)
+- `restoreProjectSession(projectId, sessionId)` and `session.restore()`
+  (`POST /v1/projects/:p/sessions/:s/restore`) take a deleted session out of
+  the trash. Its messages, stored files and branch come back, and its next
+  start boots a fresh sandbox from the branch. A refusal rejects with an
+  `ApiError`: 409 `session_not_deleted`, 409 `session_sandbox_removal_pending`
+  (retry in a minute), 410 `session_purged`. Additive (KRTX-1734).
+- `deleteProjectSession` resolves to `{ ok, restore_until? }`: the last
+  instant the session can be restored, 30 days after the delete. Absent on an
+  API that predates restore. Additive.
+
 ### Added (connector credential re-sync)
 - `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
   connector the server re-reads the tools after the write: `sync` is that run
