@@ -361,12 +361,11 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('name: full suite + quality gates');
   });
 
-  test('promotion and release branches skip the local attestation; CI tests their SHA', () => {
+  test('pre-push requires no test attestation; the author picks the tests', () => {
+    // 2026-10-13: the attestation gate blocked docs-only pushes behind a ~6 min
+    // run that failed 36 of 80 times. `dev` is gated by the Tests run on every push.
     const hook = readFileSync(resolve(root, '.githooks/pre-push'), 'utf8');
-    expect(hook).toContain('[ "${remote_ref#refs/heads/promote/}" = "$remote_ref" ] || continue');
-    expect(hook).toContain('[ "${remote_ref#refs/heads/release/}" = "$remote_ref" ] || continue');
-    // Every other branch still verifies; `dev` strictly.
-    expect(hook).toContain('[ "$remote_ref" = refs/heads/dev ] && strict="--strict"');
+    expect(hook).not.toContain('verify-attestation');
   });
 
   test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
