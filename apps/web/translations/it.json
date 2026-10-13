@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "Disconnetti OpenCode Go",
     "opencodeGoFailed": "Impossibile connettere OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Non decifrabile",
+      "hint": "Kortix non riesce a decifrare il valore salvato. La chiave di cifratura è cambiata o il valore è danneggiato. Chiunque gestisca questo progetto può reinserirlo.",
+      "reenter": "Reinserisci il valore",
+      "dialog": "Kortix non riesce a decifrare il valore salvato. Reinseriscilo per salvare."
+    }
+  },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"
   },

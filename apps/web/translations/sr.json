@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "Isključi OpenCode Go",
     "opencodeGoFailed": "Povezivanje OpenCode Go nije uspelo"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Не може да се дешифрује",
+      "hint": "Kortix не може да дешифрује сачувану вредност. Кључ за шифровање је промењен или је вредност оштећена. Свако ко управља овим пројектом може поново да је унесе.",
+      "reenter": "Поново унеси вредност",
+      "dialog": "Kortix не може да дешифрује сачувану вредност. Унесите је поново да бисте сачували."
+    }
+  },
   "useCases": {
     "headline": "Циклуси који покрећу компанију"
   },

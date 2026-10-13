@@ -152,6 +152,7 @@ import {
 } from './secret-optimistic-cache';
 
 import { AudienceBadge } from './audience-badge';
+import { UndecryptableValue } from './undecryptable-value';
 import { audienceVisibility } from './connector-connections';
 import {
   type SecretAudienceDraft,
@@ -194,6 +195,8 @@ export interface SecretRow {
   sharedWith: ConnectionShare[];
   /** False when it is shared with specific people and the viewer is not one of them. */
   usable: boolean;
+  /** Kortix can no longer decrypt the stored value (`status: 'undecryptable'`). */
+  undecryptable: boolean;
 }
 
 type SecretSavePlan = {
@@ -648,6 +651,7 @@ export function buildRows(
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
     sharedWith: item.shared_with ?? [],
     usable: item.usable ?? true,
+    undecryptable: item.status === 'undecryptable',
   });
 
   const rows: SecretRow[] = [];
@@ -679,6 +683,7 @@ export function buildRows(
       deliveryBlockedReason: null,
       sharedWith: [],
       usable: true,
+      undecryptable: false,
     });
   }
 
@@ -770,10 +775,10 @@ function SecretTableRow({
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
 
+  // No row tint for an unset required secret: the orange asterisk carries that
+  // state, and a status hue belongs on the mark (color.md, Accents and status).
   return (
-    <TableRow
-      className={cn(row.requirement === 'required' && !row.configured && 'bg-kortix-orange/[0.04]')}
-    >
+    <TableRow>
       {/* The identifier and its marks share one line — the cell used to stack
           three blocks (identifier, → key, a badge row), so a five-row table
           read as fifteen. `→ key` still gets its own muted line, but only on
@@ -790,7 +795,11 @@ function SecretTableRow({
         </div>
       </TableCell>
       <TableCell className="text-muted-foreground max-w-[160px] align-middle text-xs whitespace-nowrap">
-        {statusLabel(row)}
+        {row.undecryptable ? (
+          <UndecryptableValue onReenter={canManageShared ? onEdit : undefined} />
+        ) : (
+          statusLabel(row)
+        )}
       </TableCell>
       <TableCell className="max-w-[220px] align-middle whitespace-normal">
         <div className="flex flex-col items-start gap-1">
@@ -952,6 +961,7 @@ function SecretDialog({
   const viewerId = useAuth().user?.id ?? null;
   const accountId = useProjectAccountId(projectId);
   const tSharing = useI18nTranslations('accessSharing');
+  const tSecrets = useI18nTranslations('secrets');
   const projectName =
     useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
       .data?.project?.name ?? '';
@@ -1017,7 +1027,8 @@ function SecretDialog({
     setAudience(audienceDraftFrom(row?.sharedWith ?? [], viewerId));
   };
 
-  const requiresValue = !row?.configured;
+  // A value Kortix cannot decrypt is lost: saving without a new one would keep it broken.
+  const requiresValue = !row?.configured || Boolean(row?.undecryptable);
   const enforcedPolicy = buildEnforcedPolicy({
     hosts,
     legacyInject,
@@ -1381,7 +1392,9 @@ function SecretDialog({
               )}
               {row?.configured && (
                 <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('text51b5970e84eb')}
+                  {row.undecryptable
+                    ? tSecrets('undecryptable.dialog')
+                    : tI18nComplete.raw('text51b5970e84eb')}
                 </p>
               )}
 

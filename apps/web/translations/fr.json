@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "Déconnecter OpenCode Go",
     "opencodeGoFailed": "Impossible de connecter OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Indéchiffrable",
+      "hint": "Kortix ne peut pas déchiffrer la valeur enregistrée. La clé de chiffrement a changé ou la valeur est endommagée. Toute personne qui gère ce projet peut la saisir à nouveau.",
+      "reenter": "Saisir à nouveau la valeur",
+      "dialog": "Kortix ne peut pas déchiffrer la valeur enregistrée. Saisissez-la à nouveau pour enregistrer."
+    }
+  },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
   },

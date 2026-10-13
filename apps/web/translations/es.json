@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "Desconectar OpenCode Go",
     "opencodeGoFailed": "No se pudo conectar OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "No descifrable",
+      "hint": "Kortix no puede descifrar el valor guardado. La clave de cifrado cambió o el valor está dañado. Cualquier persona que administre este proyecto puede volver a introducirlo.",
+      "reenter": "Volver a introducir el valor",
+      "dialog": "Kortix no puede descifrar el valor guardado. Vuelve a introducirlo para guardar."
+    }
+  },
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"
   },

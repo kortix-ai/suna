@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "OpenCode Go trennen",
     "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Nicht entschlüsselbar",
+      "hint": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Der Schlüssel hat sich geändert, oder der Wert ist beschädigt. Jeder, der dieses Projekt verwaltet, kann ihn neu eingeben.",
+      "reenter": "Wert neu eingeben",
+      "dialog": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Gib ihn erneut ein, um zu speichern."
+    }
+  },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
   },

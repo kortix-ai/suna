@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "Disconnect OpenCode Go",
     "opencodeGoFailed": "Failed to connect OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Undecryptable",
+      "hint": "Kortix cannot decrypt the stored value. The encryption key changed, or the value is damaged. Anyone who manages this project can enter it again.",
+      "reenter": "Re-enter value",
+      "dialog": "Kortix cannot decrypt the stored value. Enter it again to save."
+    }
+  },
   "useCases": {
     "headline": "The loops that run a company"
   },

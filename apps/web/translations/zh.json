@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "断开 OpenCode Go",
     "opencodeGoFailed": "无法连接 OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "无法解密",
+      "hint": "Kortix 无法解密已保存的值。加密密钥已更改，或该值已损坏。管理此项目的任何人都可以重新输入。",
+      "reenter": "重新输入值",
+      "dialog": "Kortix 无法解密已保存的值。请重新输入后保存。"
+    }
+  },
   "useCases": {
     "headline": "驱动公司运转的循环"
   },

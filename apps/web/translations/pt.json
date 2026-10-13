@@ -147,6 +147,14 @@
     "opencodeGoDisconnect": "Desconectar OpenCode Go",
     "opencodeGoFailed": "Não foi possível conectar o OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Não decifrável",
+      "hint": "O Kortix não consegue decifrar o valor salvo. A chave de criptografia mudou ou o valor está danificado. Qualquer pessoa que gerencie este projeto pode inseri-lo novamente.",
+      "reenter": "Inserir o valor novamente",
+      "dialog": "O Kortix não consegue decifrar o valor salvo. Insira-o novamente para salvar."
+    }
+  },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
   },
