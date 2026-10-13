@@ -1,18 +1,18 @@
 {
-  "source_hash": "993822985dbdfaa55686bf273abec66c5d887e04d6727c1a38954f2d53eaf19b",
+  "source_hash": "1b6471a29a7b5cefbfc34599c1ffd61442da5178b824cb6133183bbb6df826f8",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-list-poll-memo-attribution.test.ts",
     "apps/api/src/__tests__/integration-session-list-poll-memo.test.ts",
     "apps/api/src/projects/lib/session-list-poll-memo.ts",
     "apps/api/src/projects/routes/project-sessions.ts"
   ],
-  "diff_hash": "54e9c643f0208a3d34bb8997c0ff07fd9f51bfcf11964a674102f5a2aa57b480",
-  "head": "de60c38a5181544efaa03b215afc3a98be57af20",
-  "passed": false,
+  "diff_hash": "9e57ab7c0f6203d9d7302f2edbd747b9979b85ffa31dca259d72558f33945e33",
+  "head": "a5450351eee772665b1b5e5b8df310a3513de7ac",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-12T05:23:44.932Z"
+  "at": "2026-10-13T04:57:36.370Z"
 }
