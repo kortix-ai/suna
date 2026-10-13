@@ -1,16 +1,16 @@
 {
-  "source_hash": "69b2bb04374cd033aa78ae44640cb70d6d38640643811c12399ee5a881531a15",
+  "source_hash": "97ae74331be92969ce39c27d880cf13310affa985a8a80fc6505298f03b4bba6",
   "diff_files": [
     "apps/web/src/features/contact/demo-qualifier-modal.test.tsx",
     "apps/web/src/features/contact/demo-qualifier-modal.tsx"
   ],
-  "diff_hash": "7da6f953edb5bb6c423f50fad365498a43171e631c9dbb5165dbf410f605f5c6",
-  "head": "831442a8c0e901654b77711f3299d02b1e8fdb41",
+  "diff_hash": "929426779fd8e9eceb543c01cf3b0808fcfef0932e46a02de81673f17825e696",
+  "head": "3a0947f983aad44832a540a208593e253c25a8bf",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-13T21:36:56.018Z"
+  "at": "2026-10-13T23:25:53.574Z"
 }

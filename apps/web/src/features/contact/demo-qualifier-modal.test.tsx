@@ -78,7 +78,10 @@ async function form(size: string) {
 for (const size of ['1-10', '11-50']) {
   for (const status of [400, 413, 429, 500]) {
     test(`${size}: HTTP ${status} keeps the form and permits retry`, async () => {
-      globalThis.fetch = mock(async () => new Response(null, { status }));
+      globalThis.fetch = (async (
+        _input: RequestInfo | URL,
+        _init?: RequestInit,
+      ) => new Response(null, { status })) as typeof fetch;
       const renderer = await form(size);
       await act(async () =>
         renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
@@ -87,7 +90,10 @@ for (const size of ['1-10', '11-50']) {
       expect(errorToast).toHaveBeenCalledTimes(1);
       expect(renderer.root.findByProps({ type: 'submit' }).props.disabled).toBe(false);
       expect(renderer.root.findByProps({ id: 'dq-company' }).props.value).toBe('Synthetic company');
-      globalThis.fetch = mock(async () => new Response(null, { status: 201 }));
+      globalThis.fetch = (async (
+        _input: RequestInfo | URL,
+        _init?: RequestInit,
+      ) => new Response(null, { status: 201 })) as typeof fetch;
       await act(async () =>
         renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
       );
@@ -99,9 +105,12 @@ for (const size of ['1-10', '11-50']) {
     });
   }
   test(`${size}: a network failure keeps the form`, async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = (async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => {
       throw new TypeError('Network unavailable');
-    });
+    }) as typeof fetch;
     const renderer = await form(size);
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
     expect(renderer.root.findAllByType('form')).toHaveLength(1);
@@ -110,7 +119,10 @@ for (const size of ['1-10', '11-50']) {
   });
   for (const status of [200, 204]) {
     test(`${size}: HTTP ${status} advances without an error toast`, async () => {
-      globalThis.fetch = mock(async () => new Response(null, { status }));
+      globalThis.fetch = (async (
+        _input: RequestInfo | URL,
+        _init?: RequestInit,
+      ) => new Response(null, { status })) as typeof fetch;
       const renderer = await form(size);
       await act(async () =>
         renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
