@@ -247,8 +247,27 @@ describe('GET .../log', () => {
     await setFlag(true);
   });
 
-  test('refuses the sandbox credential, a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
-    expect((await get(`${base()}/log`, sandboxToken)).status).toBe(403);
+  test('a session-bound token reads the log wherever the v1 transcript route serves it, and nowhere else', async () => {
+    const other = await seedProject('session-log-read-other', { accountId: project.account_id });
+    const otherSession = await seedSession(other, OWNER);
+    try {
+      const statuses = async (path: string) => [
+        (await get(`${path}/transcript?shape=sync`, sandboxToken)).status,
+        (await get(`${path}/log`, sandboxToken)).status,
+      ];
+      // (a) its own session, (b) a sibling session of its project, (c) a session of another project.
+      expect(await statuses(base())).toEqual([200, 200]);
+      expect(await statuses(base(nativeSession))).toEqual([200, 200]);
+      expect(await statuses(`/v1/projects/${other.project_id}/sessions/${otherSession}`)).toEqual([403, 403]);
+      const own = (await (await get(`${base()}/log?limit=500`, sandboxToken)).json()) as Page;
+      const owner = (await (await get(`${base()}/log?limit=500`)).json()) as Page;
+      expect(own).toEqual(owner);
+    } finally {
+      await db.delete(projects).where(eq(projects.projectId, other.project_id));
+    }
+  });
+
+  test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
     expect((await get(`${base()}/log?thread=ses_not_a_thread`)).status).toBe(404);

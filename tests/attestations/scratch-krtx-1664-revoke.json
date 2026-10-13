@@ -1,0 +1,21 @@
+{
+  "source_hash": "517c29eb7834056cc6654fb657c686f653b622dd5f6cc44348bcd6a2dde34cc9",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-13T115449Z-verify-persisted-revocation-before-printing-cli-success.md",
+    "apps/cli/src/__tests__/connectors-connect.test.ts",
+    "apps/cli/src/__tests__/connectors-revoke.blackbox.test.ts",
+    "apps/cli/src/commands/connectors.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/connectors.flow.ts"
+  ],
+  "diff_hash": "260a59c9f9c22891ee5190eb01895d36565e0c910171b132304be7c8dc200f64",
+  "head": "a4d49a352642c2079f8b9c1d53f31ab93af05780",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T20:21:05.133Z"
+}

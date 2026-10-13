@@ -43,6 +43,16 @@ export async function claimInPlaceRestart(input: {
         OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
         OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' <= ${claim.startedAt.toISOString()}
       )`,
+      // A live wake claim owns the provider start. A restart would stop the
+      // box under it, and the two concurrent Platinum `/start` calls then fail
+      // each other (409 not stopped, 503 relocation_failed): a prod session
+      // took ~6 min to open on 2026-10-13. The wake lease ends the wait.
+      sql`(
+        ${sessionSandboxes.metadata}->>'runtimeWakeId' IS NULL
+        OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' IS NULL
+        OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
+        OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' <= ${claim.startedAt.toISOString()}
+      )`,
     ),
   });
   return Boolean(claimed);

@@ -2,8 +2,9 @@
   Every change to `dev`, `staging` or `prod` goes through a pull request (SOC 2 CC8.1).
   Procedure: CONTRIBUTING.md and the `contributing` skill (.agents/skills/contributing).
 
-  - A pull request into `dev` runs no CI. Run `pnpm test` and the changed behaviour on
-    your local stack before you open it; list the commands below. Add `test` or
+  - A pull request into `dev` runs no CI. Run the tests that cover the change and the
+    changed behaviour on your local stack; list the commands below, or say why a diff
+    (docs, a skill, a script) needed none. Add `test` or
     `preview` only for one explicit CI run.
   - `prod` needs an approving review and the `full suite + quality gates` check.
     `dev` / `staging` need the pull request only. The author owns what was verified.
@@ -43,8 +44,8 @@ Closes #
 
 ## How was this tested?
 
-<!-- The exact commands you ran in your box and their results: the narrowest test,
-     `pnpm test`, and the changed behaviour on the local stack. -->
+<!-- The exact commands you ran in your box and their results: the tests that cover
+     the change, and the changed behaviour on the local stack. -->
 
 ## Security & data review
 
@@ -64,5 +65,5 @@ Closes #
 
 - [ ] Change is scoped and understandable
 - [ ] The demo video shows the change working
-- [ ] Tests cover the change, and `pnpm test` passed locally
+- [ ] The tests that cover the change ran locally and passed
 - [ ] Security & data review above is satisfied

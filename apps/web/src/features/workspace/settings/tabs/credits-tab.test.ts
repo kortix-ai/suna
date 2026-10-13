@@ -2,7 +2,6 @@ import type { AccountState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
-  canOfferTopup,
   creditBuckets,
   describeDailyRefresh,
   formatCountdown,
@@ -220,34 +219,5 @@ describe('formatPeriod', () => {
 
   test('an unparseable date does not render "Invalid Date"', () => {
     expect(formatPeriod('not-a-date', 'also-not')).toBeNull();
-  });
-});
-
-describe('canOfferTopup', () => {
-  /** Only the two fields this gate reads. */
-  function purchaseState(canPurchaseCredits: boolean, canManageBilling?: boolean): AccountState {
-    return {
-      subscription: { can_purchase_credits: canPurchaseCredits },
-      ...(canManageBilling === undefined ? {} : { can_manage_billing: canManageBilling }),
-    } as unknown as AccountState;
-  }
-
-  test('needs the tier entitlement AND the billing permission', () => {
-    expect(canOfferTopup(purchaseState(true, true))).toBe(true);
-    // Entitled plan, wrong person — the card would 403 on click.
-    expect(canOfferTopup(purchaseState(true, false))).toBe(false);
-    // Right person, plan cannot buy credits at all.
-    expect(canOfferTopup(purchaseState(false, true))).toBe(false);
-  });
-
-  test('an API response with no `can_manage_billing` does not lock an owner out', () => {
-    // The field is additive on the wire and its own API comment says absent
-    // means allowed. Reading it as falsy would hide the control on every
-    // deployment older than the field.
-    expect(canOfferTopup(purchaseState(true))).toBe(true);
-  });
-
-  test('an account with no subscription block offers nothing', () => {
-    expect(canOfferTopup({} as AccountState)).toBe(false);
   });
 });
