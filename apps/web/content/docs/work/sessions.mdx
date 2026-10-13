@@ -49,6 +49,7 @@ Each session also has an `origin`, the class of caller that started it.
 You need the `project.session.start` permission. The agent you pick, or the project's default agent, must be one you may launch.
 
 - **Web, desktop, or mobile app:** write a prompt in the composer and send it. See [Web, desktop & mobile](/docs/clients).
+- **Desktop app, from any other app:** press **Command+Shift+Space** (**Ctrl+Shift+Space** on Windows and Linux), type the prompt, and press Enter. See [Quick Entry](/docs/clients#quick-entry).
 - **CLI:** run `kortix sessions new` from a linked project directory.
 - **API and SDK:** `POST /v1/projects/<project_id>/sessions` answers `201` with the session, or `202` when the create continues in the background. See [Sessions from code](/docs/sdk/sessions).
 - **Slack, Microsoft Teams, and email:** a message to the bot starts a session. See [Slack, Teams & email](/docs/connect/channels).

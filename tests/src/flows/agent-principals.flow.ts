@@ -932,13 +932,13 @@ flow(
       const bystander = await world.mintAgentSession({ agent: 'bystander', launcher: human });
 
       // Local Apps are served by the API under `<route-key>.apps.localhost`;
-      // the API honours `x-kortix-app-host` for local hosts. A deployed target
+      // the Host header names the App there. A deployed target
       // is requested at its public App URL.
       const host = new URL(appUrl).host;
       const local = new URL(appUrl).hostname.endsWith('.apps.localhost');
       const request = (headers: Record<string, string>) =>
         rawRequest(local ? `${ctx.env.apiUrl.replace(/\/v1$/, '')}/agp-probe` : `${appUrl}/agp-probe`, {
-          headers: { accept: 'application/json', ...(local ? { 'x-kortix-app-host': new URL(appUrl).hostname } : {}), ...headers },
+          headers: { accept: 'application/json', ...(local ? { host } : {}), ...headers },
         });
       const admitted = (r: { status: number; body: any; text: string }, who: string) => {
         if (r.status === 401 || r.body?.code === 'app_auth_required') {

@@ -30,15 +30,24 @@ import { resolveGatewayRoute } from './routing';
 // wrapper over the shared in-process hooks in ./hooks — the standalone service
 // and the in-API mount run identical logic; only the transport (HTTP vs direct
 // call) differs.
+/** Sent by the gateway (KORTIX_INTERNAL_EDGE_KEY) through the api-router Worker. */
+const INTERNAL_EDGE_HEADER = 'x-kortix-internal-edge-key';
+
 export function createInternalGatewayRoutes() {
   const app = new Hono();
-  const internalToken = process.env.GATEWAY_INTERNAL_TOKEN;
+  const { GATEWAY_INTERNAL_TOKEN: internalToken, KORTIX_INTERNAL_EDGE_KEY: edgeKey } = process.env;
 
   for (const warning of weakInternalTokenWarnings(internalToken)) {
-    logger.warn(`[gateway-internal-auth] ${warning}`);
+    logger.error(`[gateway-internal-auth] ${warning}`);
   }
 
   app.use('*', async (c, next) => {
+    // The api-router Worker's /internal gate, enforced again here: the backend
+    // origins are public hostnames too and never pass through that Worker, and
+    // Hono matches the DECODED path (`/%69nternal/...`) a raw prefix check misses.
+    if (edgeKey && !matchesInternalToken(`Bearer ${c.req.header(INTERNAL_EDGE_HEADER) ?? ''}`, edgeKey)) {
+      return c.json({ error: 'not found' }, 404);
+    }
     if (!internalToken) return c.json({ error: 'internal gateway disabled' }, 503);
     if (!matchesInternalToken(c.req.header('authorization'), internalToken)) {
       return c.json({ error: 'unauthorized' }, 401);

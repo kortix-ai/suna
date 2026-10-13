@@ -1035,6 +1035,7 @@ interface KortixPlatformConfig {
   /** @deprecated Inert: the SDK sends no client label. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   clientVersion?: string; // '<surface>/<version>', sent as X-Kortix-Client-Version
+  credentialHeader?: string; // send the raw token in this header instead of Authorization
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -1064,6 +1065,29 @@ Set `clientVersion` to the host's surface and release version, for example
 The API writes it to its request log only, so a route is retired only when no
 supported client version still calls it. It is telemetry: it never reaches the
 audit log and grants nothing. A blank value sends nothing.
+
+Set `credentialHeader` when a backend proxy reads the credential from a custom
+header, for example `credentialHeader: 'x-app-reader-token'`. The SDK then sends
+the raw token from `getToken` in that header and sends no `Authorization`. The
+401 replay still asks `getToken` for a fresh token. A caller-set header of the
+same name wins.
+
+To start the first App-binding token fetch before the SDK loads (an inline
+`<script>`), hand its response to `kortixBinding` through the `fetch` option. The
+binding calls `fetch` once per token; return the early response for the first
+call and the real `fetch` after:
+
+```ts
+const early = fetch('/_kortix/token?audience=backend', { credentials: 'same-origin' });
+let first: Promise<Response> | null = early;
+const backend = kortixBinding('backend', {
+  fetch: (input, init) => {
+    const reply = first;
+    first = null;
+    return reply ?? fetch(input, init);
+  },
+});
+```
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

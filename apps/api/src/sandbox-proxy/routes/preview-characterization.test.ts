@@ -324,25 +324,24 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(1);
   });
 
-  test('a member without session visibility is refused on the daemon port, not on an app port', async () => {
-    sessionAccessAllowed = false;
-    let thrown: unknown = null;
-    try {
-      await forward({ port: 8000, path: '/session' });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(HTTPException);
-    expect((thrown as HTTPException).status).toBe(403);
-    expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
-    expect(fetchCalls).toBe(0);
-
-    // An ordinary app port carries no conversation, so the visibility gate does not apply.
-    queueFetch(new Response('app', { status: 200 }));
-    const appPort = await forward({ port: 3000, path: '/' });
-    expect(appPort.status).toBe(200);
-    expect(fetchCalls).toBe(1);
-  });
+  // Pentest M-2: an app port serves the session's workspace too, so a member
+  // whose session access was revoked must not replay ids into its dev server.
+  test.each([[8000, '/session'], [3000, '/'], [3211, '/file.txt']])(
+    'a member without session visibility is refused on port %d',
+    async (port, path) => {
+      sessionAccessAllowed = false;
+      let thrown: unknown = null;
+      try {
+        await forward({ port, path });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(HTTPException);
+      expect((thrown as HTTPException).status).toBe(403);
+      expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
+      expect(fetchCalls).toBe(0);
+    },
+  );
 
   test('a share-token caller cannot switch agents — refused with no principal to authorize', async () => {
     queueFetch(new Response('should never be fetched'));
@@ -825,13 +824,13 @@ describe('resolvePreviewWsUpstream', () => {
     expect(result).toEqual({ ok: false, status: 403, message: 'not authorized' });
   });
 
-  test('session visibility gates the conversation ports, not an app port', async () => {
+  test('session visibility gates every port, an app port included', async () => {
     sessionAccessAllowed = false;
     const daemon = await resolvePreviewWsUpstream(wsArgs());
     expect(daemon).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
 
     const appPort = await resolvePreviewWsUpstream(wsArgs({ upstreamPort: 3000, remainingPath: '/ws' }));
-    expect(appPort.ok).toBe(true);
+    expect(appPort).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
   });
 
   test('a stopped box stays 503 unless the attach was marked user-initiated on a PTY path', async () => {

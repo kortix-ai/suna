@@ -143,16 +143,28 @@ export function ComposerChatInput({
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
-  const restoredOptions = prefill?.options;
   const setAgent = local.agent.set;
   const setModel = local.model.set;
   const setVariant = local.model.variant.set;
+  // A prefill that names an agent, model and effort (desktop Quick Entry) is
+  // held back until they are this composer's selection, one per commit: the
+  // model is stored per agent and the effort per model, so each write must see
+  // the one before it. Then the composer gets the prefill and, with `submit`,
+  // sends under that selection. Applying all three in one tick put the model in
+  // the old agent's slot, and a same-tick submit sent the old selection.
+  const optionsPrefill = prefill?.options ? prefill : null;
+  const [optionsStep, setOptionsStep] = useState<{ id: number; step: number } | null>(null);
+  const optionsStepFor = optionsPrefill && optionsStep?.id === optionsPrefill.id ? optionsStep.step : 0;
+  const rosterLoaded = agents !== undefined && !providersLoading;
   useEffect(() => {
-    if (!restoredOptions) return;
-    if (restoredOptions.agent) setAgent(restoredOptions.agent);
-    if (restoredOptions.model) setModel(restoredOptions.model);
-    setVariant(restoredOptions.variant ?? undefined);
-  }, [restoredOptions, setAgent, setModel, setVariant]);
+    if (!optionsPrefill?.options || !rosterLoaded || optionsStepFor >= 3) return;
+    const wanted = optionsPrefill.options;
+    if (optionsStepFor === 0 && wanted.agent) setAgent(wanted.agent);
+    if (optionsStepFor === 1 && wanted.model) setModel(wanted.model);
+    if (optionsStepFor === 2) setVariant(wanted.variant ?? undefined);
+    setOptionsStep({ id: optionsPrefill.id, step: optionsStepFor + 1 });
+  }, [optionsPrefill, optionsStepFor, rosterLoaded, setAgent, setModel, setVariant]);
+  const deliveredPrefill = optionsPrefill && optionsStepFor < 3 ? null : prefill;
 
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
@@ -257,7 +269,7 @@ export function ComposerChatInput({
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}
-      prefill={prefill}
+      prefill={deliveredPrefill}
       onPrefillApplied={onPrefillApplied}
       aboveSlot={aboveSlot}
       inputSlot={inputSlot}
