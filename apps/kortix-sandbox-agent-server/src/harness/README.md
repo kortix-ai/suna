@@ -829,6 +829,20 @@ Every daemon path that aborts an OpenCode turn calls
 `noteOpencodeStopRequested` first. A new abort path must do the same, or its
 stops read as victims.
 
+## OpenCode orphans (P2.9)
+
+OpenCode runs in its own process group, so a daemon that dies without its
+shutdown path (SIGKILL, the OOM killer, a panic) leaves it running on its
+port. The supervisor relaunches the daemon, and before the new lifecycle's
+first spawn `reapOrphanedOpencode` (`open-code/lifecycle.ts`) SIGKILLs the
+process group of every `… serve --port <internal|standby> --hostname
+127.0.0.1` that is not this daemon's child or group, then waits (bind check,
+5 s at most) for both ports. It runs once per lifecycle, so it never sees an
+OpenCode the current daemon owns. Each kill logs `[opencode] killing an
+OpenCode a previous daemon left on its port` with the group and its
+arguments. pi has no child process and needs none of this. Test:
+`opencode-lifecycle.e2e.test.ts` ("a daemon killed with SIGKILL").
+
 ## Native features remain available
 
 The common interface is not a feature limit. Host controllers register every

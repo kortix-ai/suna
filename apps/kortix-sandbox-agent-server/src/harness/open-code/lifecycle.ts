@@ -1948,6 +1948,60 @@ export interface OpencodeLifecycleOptions {
   readOpenTurn?: (baseUrl: string) => Promise<string | null>
 }
 
+/**
+ * Kill every `opencode serve` a previous daemon left on this box's ports.
+ *
+ * OpenCode runs in its own process group (spawnChild), so a daemon that dies
+ * without its shutdown path (SIGKILL, the OOM killer, a panic) leaves it
+ * running and holding the port. The supervisor relaunches the daemon in
+ * seconds, and every OpenCode the new daemon spawns exits with EADDRINUSE:
+ * health stays `starting` until the API parks the session (dev 2026-10-13,
+ * three times). A process on our ports with our exact `serve` arguments is
+ * that orphan. Called once per lifecycle, before its first spawn, so it never
+ * sees an OpenCode this daemon owns; our own children and group are skipped
+ * anyway. The port wait is a bind, the only reliable "free" check.
+ */
+async function reapOrphanedOpencode(ports: readonly number[]): Promise<void> {
+  let table: string
+  try {
+    table = await new Response(
+      Bun.spawn(['ps', '-ww', '-eo', 'pid=,ppid=,pgid=,args='], { stdout: 'pipe', stderr: 'ignore' }).stdout,
+    ).text()
+  } catch (err) {
+    logger.warn('[opencode] could not list processes; orphan check skipped', { err: (err as Error).message })
+    return
+  }
+  const rows = table
+    .split('\n')
+    .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/))
+    .filter((row): row is RegExpMatchArray => row !== null)
+  const ownGroup = rows.find((row) => Number(row[1]) === process.pid)?.[3]
+  const groups = new Map<number, string>()
+  for (const [, , ppid, pgid, args] of rows) {
+    if (Number(ppid) === process.pid || pgid === ownGroup || Number(pgid) <= 1) continue
+    if (ports.some((port) => args!.endsWith(` serve --port ${port} --hostname 127.0.0.1`))) groups.set(Number(pgid), args!)
+  }
+  if (groups.size === 0) return
+  for (const [pgid, args] of groups) {
+    logger.warn('[opencode] killing an OpenCode a previous daemon left on its port', { pgid, args })
+    try {
+      process.kill(-pgid, 'SIGKILL')
+    } catch {}
+  }
+  const deadline = Date.now() + 5_000
+  const bindable = (port: number) => {
+    try {
+      Bun.serve({ port, hostname: '127.0.0.1', fetch: () => new Response() }).stop(true)
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (const port of ports) {
+    while (!bindable(port) && Date.now() < deadline) await Bun.sleep(50)
+  }
+}
+
 export function createOpencodeLifecycle(
   cfg: Config,
   projectEnv?: ProjectEnvStore,
@@ -1996,6 +2050,7 @@ export function createOpencodeLifecycle(
   let opencodeCwd = cfg.workspace
   const startupMark = options.onStartupMark ?? (() => {})
   let binaryResolutionPromise: Promise<string | null> | null = null
+  let orphansReaped = false
 
   async function resolveBinaryPath(): Promise<string | null> {
     if (!binaryResolutionPromise) {
@@ -2739,6 +2794,10 @@ export function createOpencodeLifecycle(
     async start() {
       stopping = false
       state = 'starting'
+      if (!orphansReaped) {
+        orphansReaped = true
+        await reapOrphanedOpencode([currentCfg.opencodeInternalPort, currentCfg.opencodeStandbyPort])
+      }
       const bin = await resolveBinaryPath()
       if (!bin) {
         logger.warn('[opencode] binary not found; daemon will continue, opencode reports as starting')
