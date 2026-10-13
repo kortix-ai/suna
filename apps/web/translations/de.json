@@ -152,7 +152,14 @@
       "badge": "Nicht entschlüsselbar",
       "hint": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Der Schlüssel hat sich geändert, oder der Wert ist beschädigt. Jeder, der dieses Projekt verwaltet, kann ihn neu eingeben.",
       "reenter": "Wert neu eingeben",
-      "dialog": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Gib ihn erneut ein, um zu speichern."
+      "dialog": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Geben Sie ihn erneut ein, um zu speichern.",
+      "keyHint": "Kortix kann diesen API-Schlüssel nicht entschlüsseln. Der Verschlüsselungsschlüssel des Servers hat sich geändert, oder der gespeicherte Schlüssel ist beschädigt. Kortix verwendet ihn erst wieder, wenn sein Besitzer oder ein Konto-Admin ihn neu eingibt.",
+      "loginHint": "Kortix kann diese Anmeldung nicht entschlüsseln. Der Verschlüsselungsschlüssel des Servers hat sich geändert, oder die gespeicherte Anmeldung ist beschädigt. Kortix verwendet sie erst wieder, wenn ihr Besitzer sie neu verbindet.",
+      "reenterKey": "Schlüssel neu eingeben",
+      "mineHint": "Kortix kann Ihren eigenen Wert dieses Geheimnisses nicht entschlüsseln. Ihre Sitzungen lesen ihn statt des gemeinsamen Werts und schlagen fehl, bis Sie ihn löschen.",
+      "deleteMine": "Meinen Wert löschen",
+      "mineDeleted": "Wert gelöscht",
+      "mineDeleteError": "Ihr Wert konnte nicht gelöscht werden. Versuchen Sie es erneut."
     }
   },
   "useCases": {

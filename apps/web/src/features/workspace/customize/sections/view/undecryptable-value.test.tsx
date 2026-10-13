@@ -25,6 +25,8 @@ for (const key of Object.getOwnPropertyNames(win)) {
 
 import { UndecryptableValue } from './undecryptable-value';
 
+const { buildRows } = await import('./secrets-view');
+
 let root: Root | null = null;
 let host: HTMLElement | null = null;
 
@@ -46,7 +48,7 @@ afterEach(() => {
 describe('UndecryptableValue', () => {
   test('a manager sees the badge and a Re-enter value button that opens the edit flow', () => {
     let opened = 0;
-    const el = mount(<UndecryptableValue onReenter={() => opened++} />);
+    const el = mount(<UndecryptableValue onAction={() => opened++} />);
 
     expect(el.textContent).toContain('Undecryptable');
     const button = [...el.querySelectorAll('button')].find((b) => b.textContent === 'Re-enter value');
@@ -66,10 +68,55 @@ describe('UndecryptableValue', () => {
   });
 
   test('the badge is keyboard-reachable and carries no value', () => {
-    const el = mount(<UndecryptableValue onReenter={() => {}} />);
+    const el = mount(<UndecryptableValue onAction={() => {}} />);
     const badge = el.querySelector('[data-slot="badge"]');
 
     expect(badge?.getAttribute('tabindex')).toBe('0');
     expect(badge?.querySelector('svg')).not.toBeNull();
+  });
+});
+
+describe("the viewer's own broken override (KRTX-1719)", () => {
+  const item = (mine: { active: boolean; status?: 'ok' | 'undecryptable' } | null, status?: 'ok' | 'undecryptable') => ({
+    identifier: 'OPENAI_API_KEY',
+    name: 'OPENAI_API_KEY',
+    project_id: 'p1',
+    secret_id: 's1',
+    created_by: null,
+    created_at: null,
+    updated_at: null,
+    configured: true,
+    mine: mine && { ...mine, updated_at: '2026-10-13T00:00:00.000Z' },
+    effective_source: mine?.active ? ('mine' as const) : ('shared' as const),
+    can_manage_shared: true,
+    status,
+  });
+
+  test('a row marks an active override Kortix cannot decrypt apart from the shared value', () => {
+    const [row] = buildRows([item({ active: true, status: 'undecryptable' }, 'ok')]);
+    expect(row).toMatchObject({ undecryptable: false, mineUndecryptable: true });
+  });
+
+  test('an inactive broken override does not reach sessions, so the row does not flag it', () => {
+    const [row] = buildRows([item({ active: false, status: 'undecryptable' }, 'undecryptable')]);
+    expect(row).toMatchObject({ undecryptable: true, mineUndecryptable: false });
+  });
+
+  test('the override badge carries its own hint and the delete action, disabled while it runs', () => {
+    let deleted = 0;
+    const el = mount(
+      <UndecryptableValue hint="Your own value" actionLabel="Delete my value" onAction={() => deleted++} pending />,
+    );
+    const button = [...el.querySelectorAll('button')].find((b) => b.textContent === 'Delete my value');
+    expect(button?.disabled).toBe(true);
+    act(() => root!.unmount());
+    host!.remove();
+    const live = mount(<UndecryptableValue hint="Your own value" actionLabel="Delete my value" onAction={() => deleted++} />);
+    act(() => {
+      [...live.querySelectorAll('button')]
+        .find((b) => b.textContent === 'Delete my value')!
+        .dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(deleted).toBe(1);
   });
 });

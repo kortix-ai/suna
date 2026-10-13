@@ -152,7 +152,14 @@
       "badge": "No descifrable",
       "hint": "Kortix no puede descifrar el valor guardado. La clave de cifrado cambió o el valor está dañado. Cualquier persona que administre este proyecto puede volver a introducirlo.",
       "reenter": "Volver a introducir el valor",
-      "dialog": "Kortix no puede descifrar el valor guardado. Vuelve a introducirlo para guardar."
+      "dialog": "Kortix no puede descifrar el valor guardado. Vuelve a introducirlo para guardar.",
+      "keyHint": "Kortix no puede descifrar esta clave de API. La clave de cifrado del servidor cambió o la clave guardada está dañada. Kortix no la usa hasta que su propietario o un administrador de la cuenta la vuelva a introducir.",
+      "loginHint": "Kortix no puede descifrar este inicio de sesión. La clave de cifrado del servidor cambió o el inicio de sesión guardado está dañado. Kortix no lo usa hasta que su propietario lo vuelva a conectar.",
+      "reenterKey": "Volver a introducir la clave",
+      "mineHint": "Kortix no puede descifrar tu propio valor de este secreto. Tus sesiones lo leen en lugar del valor compartido, así que fallan hasta que lo elimines.",
+      "deleteMine": "Eliminar mi valor",
+      "mineDeleted": "Valor eliminado",
+      "mineDeleteError": "No se pudo eliminar tu valor. Inténtalo de nuevo."
     }
   },
   "useCases": {
