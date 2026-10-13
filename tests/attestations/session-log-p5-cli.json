@@ -1,5 +1,5 @@
 {
-  "source_hash": "ca9bbaa745d960617d6d6ce24a7f7a7d4d1a723094b19ac2053317c2506f1840",
+  "source_hash": "b079bc0cdf138b39dfbfc6443265574fd9b34b1f8d44953e370c7c3ff781c4ca",
   "diff_files": [
     "apps/cli/src/__tests__/sessions-chat-sdk.e2e.test.ts",
     "apps/cli/src/commands/sessions-chat.test.ts",
@@ -35,16 +35,17 @@
     "packages/starter/src/embedded.generated.json",
     "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-cli.md",
     "tests/spec/end-to-end.md",
+    "tests/src/flows/apps-tokens.flow.ts",
     "tests/src/flows/session-log.flow.ts",
     "tests/src/flows/session-transcript-history.flow.ts"
   ],
-  "diff_hash": "120e71913bdca4cd6d142808ccb3a2b4edb503362003301ab94b8585af7d270b",
-  "head": "103da2f4d305ebe52174c8a1233a1e19a3f74a72",
-  "passed": false,
+  "diff_hash": "7a0ffa9e0a274d3bc2f0a47cf877b7763c4e7b3d61f036641afb64c896825306",
+  "head": "74c5a52b1c3e8710382a03265b9d174890e3c072",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-13T18:21:19.414Z"
+  "at": "2026-10-13T18:37:24.949Z"
 }
