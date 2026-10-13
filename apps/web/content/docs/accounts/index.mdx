@@ -146,7 +146,7 @@ Removal, [Leave](#leave) and SCIM deactivation (`active: false` or `DELETE`, see
 - every reminder they set in the account's projects. The reminder becomes `paused`. A reminder that a session's agent set keeps firing;
 - their seat on a per-seat plan. Their personal drive folders pass to an owner.
 
-The audit log records one `member.offboarded` event per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled`.
+The audit log records one `member.offboarded` event, titled **Offboarded a member**, per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled`. A count is `0` when the person had nothing of that kind, and `null` when that step failed.
 
 ### Errors
 
