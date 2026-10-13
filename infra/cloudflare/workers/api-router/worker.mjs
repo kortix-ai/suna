@@ -417,15 +417,23 @@ export default {
       redirect: 'manual',
     });
 
+    // A GET or HEAD whose origin connection drops before any response is sent
+    // once more: it has no body and no side effect. A reset Cloudflare→ALB
+    // connection ("Network connection lost") failed staging release-gate
+    // flows on 2026-10-13. Never a POST: the origin may already have run it.
+    const attempts = dropBody ? 2 : 1;
     let response;
-    try {
-      response = await fetch(modifiedRequest);
-    } catch (error) {
-      return originUnreachableResponse(
-        isGateway,
-        request,
-        error instanceof Error && error.message ? error.message : 'fetch failed',
-      );
+    for (let attempt = 1; !response; attempt++) {
+      try {
+        response = await fetch(modifiedRequest);
+      } catch (error) {
+        if (attempt < attempts) continue;
+        return originUnreachableResponse(
+          isGateway,
+          request,
+          error instanceof Error && error.message ? error.message : 'fetch failed',
+        );
+      }
     }
     // Cloudflare attaches the accepted socket to response.webSocket. Creating
     // a new Response drops that non-standard property and breaks the upgrade.

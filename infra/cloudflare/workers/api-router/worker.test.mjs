@@ -173,7 +173,7 @@ describe('api-router worker', () => {
     expect(prodTerraform).toMatch(/module "api"[\s\S]*?min_capacity\s*=\s*3/);
   });
 
-  test('keeps staging sized for the release gate, with an on-demand floor', () => {
+  test('keeps staging sized for the release gate, on-demand like prod', () => {
     const stagingTerraform = readFileSync(
       new URL('../../../terraform/environments/staging-eu-west-2/main.tf', import.meta.url),
       'utf8',
@@ -212,12 +212,13 @@ describe('api-router worker', () => {
     );
     expect(stagingFloor).toBeGreaterThanOrEqual(num(devApi, 'min_capacity'));
 
-    // A Spot-only service with no on-demand base goes to zero tasks on one
-    // reclaim, and the edge then reports that as MAINTENANCE_MODE.
-    expect(stagingApi).toMatch(/fargate_base_on_demand\s*=\s*1/);
+    // No Spot on staging, API or gateway: a reclaim killed in-flight requests
+    // and agent turns during the v0.13.57 release gate (2026-10-13).
+    expect(stagingApi).toMatch(/use_fargate_spot\s*=\s*false/);
     expect(stagingTerraform).toMatch(
-      /module "gateway"[\s\S]*?fargate_base_on_demand\s*=\s*1/,
+      /module "gateway"[\s\S]*?use_fargate_spot\s*=\s*false/,
     );
+    expect(stagingTerraform).not.toMatch(/use_fargate_spot\s*=\s*true/);
     // Without a NON-ZERO value the module never creates the
     // ALBRequestCountPerTarget policy (0 is its default and the module skips
     // it), and an I/O-bound gateway blocked on upstream models never moves
@@ -959,6 +960,38 @@ describe('api-router worker', () => {
       retry_after_seconds: 30,
     });
     expect(body.error.message).toBe('Kortix API origin is unreachable: connection refused');
+  });
+
+  test('a GET whose origin connection drops is sent once more; a POST never is', async () => {
+    // Staging release gate, 2026-10-13: a reset Cloudflare→ALB connection
+    // threw "Network connection lost" before any response. A GET or HEAD is
+    // safe to repeat; a POST may already have run at the origin.
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('Network connection lost.');
+      return Response.json({ ok: true }, { status: 200 });
+    };
+    const get = await worker.fetch(new Request('https://api.kortix.com/v1/accounts'), env);
+    expect(get.status).toBe(200);
+    expect(calls).toBe(2);
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('Network connection lost.');
+    };
+    const post = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', { method: 'POST', body: '{}' }),
+      env,
+    );
+    expect(post.status).toBe(503);
+    expect(calls).toBe(1);
+
+    calls = 0;
+    const getTwice = await worker.fetch(new Request('https://api.kortix.com/v1/accounts'), env);
+    expect(getTwice.status).toBe(503);
+    expect(calls).toBe(2);
   });
 
   test('a healthy origin response carries no origin-status header', async () => {
