@@ -20590,5 +20590,17 @@
     "you": "あなた",
     "manageFolderAccess": "アクセスを管理",
     "viewFolderAccess": "アクセスを表示"
+  },
+  "agentManualCreate": {
+    "title": "エージェントを作成",
+    "description": "まず指示を保存してください。モデルとツールはエージェントのページで設定できます。",
+    "created": "エージェントを作成しました",
+    "failed": "エージェントを作成できませんでした",
+    "name": "名前",
+    "duplicate": "この名前のエージェントはすでに存在します。",
+    "nameHelp": "小文字、数字、ハイフン、アンダースコアを使用してください。",
+    "instructions": "指示",
+    "cancel": "キャンセル",
+    "create": "作成"
   }
 }

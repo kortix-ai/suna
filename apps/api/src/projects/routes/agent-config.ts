@@ -465,6 +465,13 @@ export function registerAgentConfigRoutes(): void {
         );
       }
 
+      if (c.req.header('If-None-Match') === '*') {
+        const existing = readAgentBlockV2(manifest, agentName);
+        if (!existing.ok || existing.block !== null) {
+          return c.json({ error: 'An agent with this name already exists', code: 'agent_exists' }, 409);
+        }
+      }
+
       if (governanceBlock.sandbox) {
         try {
           await resolveTemplateBySlug(await withProjectGitAuth(loaded.row), governanceBlock.sandbox);

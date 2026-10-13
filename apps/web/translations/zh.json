@@ -20590,5 +20590,17 @@
     "you": "你",
     "manageFolderAccess": "管理访问权限",
     "viewFolderAccess": "查看访问权限"
+  },
+  "agentManualCreate": {
+    "title": "创建智能体",
+    "description": "现在保存指令。模型和工具可在智能体页面配置。",
+    "created": "智能体已创建",
+    "failed": "无法创建智能体",
+    "name": "名称",
+    "duplicate": "已存在同名智能体。",
+    "nameHelp": "请使用小写字母、数字、连字符或下划线。",
+    "instructions": "指令",
+    "cancel": "取消",
+    "create": "创建"
   }
 }

@@ -44,7 +44,11 @@ export function useAgentConfig(projectId: string | undefined, agentName: string 
  * Same key and freshness as {@link useAgentConfig}, so the page renders from
  * it; a fresh entry is not read again.
  */
-export function prefetchAgentConfig(queryClient: QueryClient, projectId: string, agentName: string) {
+export function prefetchAgentConfig(
+  queryClient: QueryClient,
+  projectId: string,
+  agentName: string,
+) {
   void queryClient.prefetchQuery({
     queryKey: agentConfigQueryKey(projectId, agentName),
     queryFn: () => getAgentConfig(projectId, agentName),
@@ -72,10 +76,15 @@ export function applyAgentConfigSaveResponse(
   );
 }
 
-export function useUpdateAgentConfig(projectId: string, agentName: string) {
+export function useUpdateAgentConfig(
+  projectId: string,
+  agentName: string,
+  options?: { createOnly?: boolean },
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (block: AgentConfigBlock) => updateAgentConfig(projectId, agentName, block),
+    mutationFn: (block: AgentConfigBlock) =>
+      updateAgentConfig(projectId, agentName, block, options),
     onSuccess: (response) => {
       // The save response is the committed block, so the cache takes it as is.
       // A refetch would repeat the forced Git read for data already in hand.

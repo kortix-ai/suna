@@ -20590,5 +20590,17 @@
     "you": "Tu",
     "manageFolderAccess": "Gestisci accesso",
     "viewFolderAccess": "Vedi accesso"
+  },
+  "agentManualCreate": {
+    "title": "Crea un agente",
+    "description": "Salva ora le istruzioni. Configura il modello e gli strumenti nella pagina dell’agente.",
+    "created": "Agente creato",
+    "failed": "Impossibile creare l’agente",
+    "name": "Nome",
+    "duplicate": "Esiste già un agente con questo nome.",
+    "nameHelp": "Usa lettere minuscole, cifre, trattini o trattini bassi.",
+    "instructions": "Istruzioni",
+    "cancel": "Annulla",
+    "create": "Crea"
   }
 }

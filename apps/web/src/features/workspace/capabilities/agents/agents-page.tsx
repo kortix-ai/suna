@@ -3,6 +3,7 @@
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
@@ -29,7 +31,6 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -51,14 +52,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { agentHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
 
-import { filterAgents } from './agent-filter';
 import { useSlashFocus } from '@/hooks/utils';
+import { filterAgents } from './agent-filter';
+import { CreateAgentModal } from './create-agent-modal';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -99,6 +101,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const tManual = useTranslations('agentManualCreate');
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef);
 
@@ -173,8 +177,12 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
-          description: tI18nComplete.raw('text5210c5acc2cd'),
-          href: `/projects/${projectId}/files`,
+          description: detectManifestVersion(config?.manifest_raw) === 2
+            ? tManual('description')
+            : tI18nComplete.raw('text5210c5acc2cd'),
+          ...(detectManifestVersion(config?.manifest_raw) === 2
+            ? { onSelect: () => setCreateOpen(true) }
+            : { href: `/projects/${projectId}/files` }),
         }}
       />
     ) : null;
@@ -220,6 +228,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ) : undefined
       }
     >
+      {createOpen && canWrite ? (
+        <CreateAgentModal
+          projectId={projectId}
+          names={agents.map((agent) => agent.name)}
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+        />
+      ) : null}
       <CatalogGrid
         isLoading={detailQuery.isLoading}
         isError={detailQuery.isError}
@@ -256,7 +272,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             key={agent.path}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
+            title={
+              isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)
+            }
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
