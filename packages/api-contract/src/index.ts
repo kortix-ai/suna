@@ -1142,6 +1142,17 @@ export const ProjectSessionSchema = z.object({
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
 
+/**
+ * `DELETE /v1/projects/:projectId/sessions/:sessionId`. The session is in the
+ * trash until `restore_until`: `POST .../restore` brings it back before then,
+ * and the retention purge deletes its messages and files after it.
+ */
+export const SessionDeleteResultSchema = z.object({
+  ok: z.literal(true),
+  restore_until: z.string(),
+});
+export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
+
 export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
   status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
   before_sha: z.string().nullable().optional(),

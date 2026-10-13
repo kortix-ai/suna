@@ -1795,6 +1795,14 @@
       "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
     }
   },
+  "sessionDelete": {
+    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内恢复该会话。之后，其消息和文件将被删除。分支会保留。",
+    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
+    "restoring": "正在恢复会话…",
+    "undo": "撤销",
+    "restored": "会话已恢复",
+    "restoreFailed": "无法恢复会话"
+  },
   "modelSelector": {
     "search": "搜索模型",
     "free": "免费",
@@ -6893,8 +6901,6 @@
       "line120JsxTextFailedToLoadSessions": "无法加载会话",
       "line132JsxTextNoSessionsYet": "还没有会话。",
       "line189JsxTextDeleteSession": "删除会话？",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "这将永久销毁以下对象的分支和沙盒：",
-      "line193JsxTextThisActionCannotBeUndone": "。此操作无法撤销。",
       "line312JsxAttrAriaLabelSessionActions": "会话操作"
     },
     "componentsProjectsProjectSidebar": {
@@ -10767,6 +10773,7 @@
       "text2380f018cc45": "搜索模型…",
       "text23922935b1f8": "连接已保存",
       "text2395784386a5": "选择可打开的用户",
+      "text239ee7bae236": "一名成员",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "会话通过您自己的域名或隧道，调用您自己栈内的网关。Kortix 在该路径中没有凭据，也无法看到其中内容。",
       "text23b0caa9d34a": "成员已移除",
@@ -12040,6 +12047,7 @@
       "text48845bff334a": "关闭",
       "text4891f0add1ec": "已将群组从项目中移除关联",
       "text489314dd2a13": "无法打开此链接。",
+      "text489b7ab47238": "每天",
       "text48b2c90ba0f7": "2026 年第一季度",
       "text48b8f318d5d6": "治理：每个智能体可以触及的内容",
       "text48bb9aa078f3": "此连接器通过其平台连接管理身份验证。",
@@ -14246,6 +14254,7 @@
       "text888f1dba5133": "Sandbox 计算当前按",
       "text889485d2bdde": "每日平台与功能讲解。",
       "text88a550e0f44e": "运行于",
+      "text88b1d1a67e34": "每月",
       "text88b1dfafbd5f": "计费方",
       "text88c2105adecf": "请回答上面的问题以继续。",
       "text88c45d9e526c": "颜色",
@@ -15517,7 +15526,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "负责汇总，而不是做判断。",
       "textac318011a661": "加载较早的请求",
-      "textac371f652a2d": "这将永久销毁每个会话的分支和沙箱，且无法撤销。",
       "textac4059cfd550": "每次更改都可版本控制、审查和撤销",
       "textac454bda92f9": "正在创建项目…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15785,7 +15793,6 @@
       "textb400f4160d8e": "正在加载成本摘要",
       "textb40f3be54b3e": "选择会话",
       "textb4214ac48923": "只读访问",
-      "textb427c3dec904": "每",
       "textb439f94567ff": "订阅已激活",
       "textb4415e2f9e92": "重试会话审计请求。",
       "textb4518309c8a3": "以及你启动的其他每个会话，每个都运行在自己的计算机上",
@@ -16699,6 +16706,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "属性名称",
       "textcdbf6975e8a3": "目标",
+      "textcdca8801db76": "每周",
       "textcdcdff6eb6db": "你亲自编写的工具",
       "textcdd3dd706df5": "创建自己的应用面板，已选择 Non-gallery 选项",
       "textcdd43080fef2": "此处对比：",
@@ -19488,6 +19496,7 @@
       "texte7cd9e292007": "说明代理应该做什么。",
       "textb67ba8d96c42": "给这个触发器起个名称。",
       "text2b8e1487be3b": "选择要使用的会话。",
+      "text2b8fcd81df9b": "{value0} 重置",
       "text473d5c3c6169": "说明按什么对运行分组，这样每个对话都有自己的会话。",
       "text8f4597a69c3c": "每个条件都需要一个字段和一个值。",
       "text01bed311e7d0": "所有应用",

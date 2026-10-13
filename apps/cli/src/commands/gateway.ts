@@ -42,7 +42,8 @@ Routing:
   routing preview <model> [--image] Resolve what a request would route to.
 
 Spend:
-  budget [ls]                       Budgets + this month's spend. --json.
+  budget [ls]                       Budgets with their spend this period,
+                                    + this month's spend. --json.
   budget set --limit <usd> [flags]  Upsert a budget:
     --scope project|member  --user <id>  --period day|week|month
     --action block|warn
@@ -296,8 +297,11 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
         process.stdout.write(`\n  ${C.dim}BUDGETS${C.reset}\n`);
         for (const b of data.budgets) {
           const who = b.scope === 'member' ? ` ${C.dim}user=${b.subject_user_id}${C.reset}` : '';
+          // The spend in the budget's own period: what the gateway checks (KRTX-1725).
+          const spent = typeof b.spent_usd === 'number' ? `${money(b.spent_usd)} of ` : '';
+          const reset = b.resets_at ? ` ${C.dim}resets ${b.resets_at}${C.reset}` : '';
           process.stdout.write(
-            `  ${money(b.limit_usd)}/${b.period} ${b.scope} (${b.action})${who} ${C.faded}${b.budget_id}${C.reset}\n`,
+            `  ${spent}${money(b.limit_usd)}/${b.period} ${b.scope} (${b.action})${who}${reset} ${C.faded}${b.budget_id}${C.reset}\n`,
           );
         }
       } else {
