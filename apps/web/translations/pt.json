@@ -1810,6 +1810,14 @@
       "ownerOnly": "Somente o proprietário da sessão ou um gerente do projeto pode reiniciar esta sessão."
     }
   },
+  "sessionDelete": {
+    "description": "Exclui <name>{label}</name> e remove o sandbox dela. Você pode restaurar a sessão por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
+    "bulkDescription": "Exclui cada sessão selecionada e remove o sandbox dela. Você pode restaurar cada sessão por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
+    "restoring": "Restaurando a sessão…",
+    "undo": "Desfazer",
+    "restored": "Sessão restaurada",
+    "restoreFailed": "Não foi possível restaurar a sessão"
+  },
   "modelSelector": {
     "search": "Buscar modelos",
     "free": "Grátis",
@@ -6908,8 +6916,6 @@
       "line120JsxTextFailedToLoadSessions": "Não foi possível carregar as sessões",
       "line132JsxTextNoSessionsYet": "Ainda não há sessões.",
       "line189JsxTextDeleteSession": "Excluir sessão?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Isso destruirá permanentemente a branch e o sandbox de",
-      "line193JsxTextThisActionCannotBeUndone": ". Esta ação não pode ser desfeita.",
       "line312JsxAttrAriaLabelSessionActions": "Ações da sessão"
     },
     "componentsProjectsProjectSidebar": {
@@ -10782,6 +10788,7 @@
       "text2380f018cc45": "Pesquisar modelos…",
       "text23922935b1f8": "Conexão salva",
       "text2395784386a5": "Escolha quem pode abrir",
+      "text239ee7bae236": "Um membro",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "As sessões chamam o gateway dentro da sua própria stack, pelo seu próprio domínio ou túnel. O Kortix não possui nenhuma credencial nesse caminho nem visibilidade sobre ele.",
       "text23b0caa9d34a": "Membro removido",
@@ -12055,6 +12062,7 @@
       "text48845bff334a": "Dispensar",
       "text4891f0add1ec": "Grupo desanexado do projeto",
       "text489314dd2a13": "Este link não pode ser aberto.",
+      "text489b7ab47238": "por dia",
       "text48b2c90ba0f7": "T1 26",
       "text48b8f318d5d6": "governance: o que cada agente pode acessar",
       "text48bb9aa078f3": "Este conector gerencia a autenticação por meio da conexão da plataforma.",
@@ -14261,6 +14269,7 @@
       "text888f1dba5133": "A computação do Sandbox é cobrada atualmente a",
       "text889485d2bdde": "Explicações diárias sobre a plataforma e os recursos.",
       "text88a550e0f44e": "Executa em",
+      "text88b1d1a67e34": "por mês",
       "text88b1dfafbd5f": "Cobrado por",
       "text88c2105adecf": "Responda à pergunta acima para continuar.",
       "text88c45d9e526c": "Cores",
@@ -15532,7 +15541,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "A montagem, não o julgamento.",
       "textac318011a661": "Carregar solicitações anteriores",
-      "textac371f652a2d": "Isso destrói permanentemente a branch e o sandbox de cada sessão. Não é possível desfazer.",
       "textac4059cfd550": "Cada alteração é versionada, revisável e reversível",
       "textac454bda92f9": "Criando projeto…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15800,7 +15808,6 @@
       "textb400f4160d8e": "Carregando resumo de custos",
       "textb40f3be54b3e": "Escolha uma sessão",
       "textb4214ac48923": "Acesso somente leitura",
-      "textb427c3dec904": "por",
       "textb439f94567ff": "Assinatura ativada",
       "textb4415e2f9e92": "Tente novamente a solicitação de auditoria da sessão.",
       "textb4518309c8a3": "e todas as outras sessões que você iniciar, cada uma em sua própria máquina",
@@ -16714,6 +16721,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "nome do atributo",
       "textcdbf6975e8a3": "Objetivo",
+      "textcdca8801db76": "por semana",
       "textcdcdff6eb6db": "as ferramentas que você mesmo escreveu",
       "textcdd3dd706df5": "Painel Create your own application com a opção Non-gallery selecionada",
       "textcdd43080fef2": "Comparados aqui:",
@@ -19503,6 +19511,7 @@
       "texte7cd9e292007": "Diga o que o agente deve fazer.",
       "textb67ba8d96c42": "Dê um nome a este gatilho.",
       "text2b8e1487be3b": "Escolha qual sessão usar.",
+      "text2b8fcd81df9b": "Reinicia em {value0}",
       "text473d5c3c6169": "Diga pelo que agrupar as execuções, para que cada conversa tenha sua própria sessão.",
       "text8f4597a69c3c": "Cada condição precisa de um campo e de um valor.",
       "text01bed311e7d0": "Todos os aplicativos",

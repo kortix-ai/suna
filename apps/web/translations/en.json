@@ -1810,6 +1810,14 @@
       "ownerOnly": "Only the session owner or a project manager can restart this session."
     }
   },
+  "sessionDelete": {
+    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore the session for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each session for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "restoring": "Restoring the session…",
+    "undo": "Undo",
+    "restored": "Session restored",
+    "restoreFailed": "Could not restore the session"
+  },
   "modelSelector": {
     "search": "Search models",
     "free": "Free",
@@ -6919,8 +6927,6 @@
       "line120JsxTextFailedToLoadSessions": "Failed to load sessions",
       "line132JsxTextNoSessionsYet": "No sessions yet.",
       "line189JsxTextDeleteSession": "Delete session?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "This will permanently destroy the branch and sandbox for",
-      "line193JsxTextThisActionCannotBeUndone": ". This action cannot be undone.",
       "line312JsxAttrAriaLabelSessionActions": "Session actions"
     },
     "componentsProjectsProjectSidebar": {
@@ -10793,6 +10799,7 @@
       "text2380f018cc45": "Search models…",
       "text23922935b1f8": "Connection saved",
       "text2395784386a5": "Choose who can open",
+      "text239ee7bae236": "A member",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "Sessions call the gateway inside your own stack, over your own domain or tunnel. Kortix has no credential in that path and no visibility into it.",
       "text23b0caa9d34a": "Member removed",
@@ -12066,6 +12073,7 @@
       "text48845bff334a": "Dismiss",
       "text4891f0add1ec": "Detached group from project",
       "text489314dd2a13": "This link cannot be opened.",
+      "text489b7ab47238": "per day",
       "text48b2c90ba0f7": "Q1 26",
       "text48b8f318d5d6": "governance: what each agent may touch",
       "text48bb9aa078f3": "This connector manages authentication through its platform connection.",
@@ -14272,6 +14280,7 @@
       "text888f1dba5133": "Sandbox compute currently bills at",
       "text889485d2bdde": "Daily platform and feature explainers.",
       "text88a550e0f44e": "Runs on",
+      "text88b1d1a67e34": "per month",
       "text88b1dfafbd5f": "Billed by",
       "text88c2105adecf": "Answer the question above to continue.",
       "text88c45d9e526c": "Colors",
@@ -15543,7 +15552,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "The assembly, not the judgement.",
       "textac318011a661": "Load older requests",
-      "textac371f652a2d": "This permanently destroys each session's branch and sandbox. It cannot be undone.",
       "textac4059cfd550": "Every change versioned, reviewable, reversible",
       "textac454bda92f9": "Creating project…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15811,7 +15819,6 @@
       "textb400f4160d8e": "Loading cost summary",
       "textb40f3be54b3e": "Choose a session",
       "textb4214ac48923": "Read-only access",
-      "textb427c3dec904": "per",
       "textb439f94567ff": "Subscription activated",
       "textb4415e2f9e92": "Retry the session audit request.",
       "textb4518309c8a3": "and every other session you start, each on its own machine",
@@ -16725,6 +16732,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "attribute name",
       "textcdbf6975e8a3": "Goal",
+      "textcdca8801db76": "per week",
       "textcdcdff6eb6db": "the tools you wrote yourself",
       "textcdd3dd706df5": "Create your own application panel with the Non-gallery option selected",
       "textcdd43080fef2": "Compared here:",
@@ -19514,6 +19522,7 @@
       "texte7cd9e292007": "Say what the agent should do.",
       "textb67ba8d96c42": "Give this trigger a name.",
       "text2b8e1487be3b": "Choose which session to use.",
+      "text2b8fcd81df9b": "Resets {value0}",
       "text473d5c3c6169": "Say what to group runs by, so each conversation gets its own session.",
       "text8f4597a69c3c": "Every condition needs both a field and a value.",
       "text01bed311e7d0": "All apps",

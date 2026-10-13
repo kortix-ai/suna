@@ -16,7 +16,10 @@
  *
  * How an end is recorded today:
  * - a session delete stamps the ISO string `project_sessions.metadata.deletedAt`
- *   (`deleteSession`; the account deletion stamps it too). Nothing un-deletes.
+ *   (`deleteSession`; the account deletion stamps it too). Until the rows go,
+ *   the session is in the trash: `restoreSession` strips the stamp, and this
+ *   purge then skips it. `SESSION_DELETE_ROWS_DAYS` is therefore also the
+ *   restore window (`sessionRestoreUntil`), and the done marker below ends it.
  * - a subscription end is `credit_accounts.stripe_subscription_status` in
  *   `SUBSCRIPTION_END_STATUSES`. THAT SET IS EMPTY, so the subscription path is inert and
  *   only the session-delete path is live. Decision D6b (which signal ends a subscription)
@@ -30,8 +33,9 @@
  *
  * Known limits: an archived project stamps no session `deletedAt`; a RevenueCat end
  * writes stripe status null; a rows purge that runs late (worker off, backlog) moves its
- * objects phase past day 90 by the same delay; `deleteSession` already empties the
- * session's attachment folder at delete time, so the day-37 phase is a backstop.
+ * objects phase past day 90 by the same delay. The day-37 phase is the only delete
+ * of a deleted session's attachment folder: `deleteSession` keeps it so a restore
+ * gets the files back (KRTX-1734).
  *
  * A session is never touched while it is in use:
  * - a session that is not deleted, and whose account has no dead subscription;
@@ -63,7 +67,8 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { sessionAttachmentStore } from './lib/session-attachments';
 
-const SESSION_DELETE_ROWS_DAYS = 30;
+/** Days from a session delete to its rows purge: the restore window too. */
+export const SESSION_DELETE_ROWS_DAYS = 30;
 const SUBSCRIPTION_END_ROWS_DAYS = 80;
 const OBJECTS_AFTER_ROWS_DAYS = 7;
 export const PURGE_BATCH_SIZE = 200;
@@ -77,6 +82,15 @@ export const PURGE_BATCH_SIZE = 200;
 export const SUBSCRIPTION_END_STATUSES: readonly string[] = [];
 
 const DAY_MS = 86_400_000;
+
+/**
+ * The last instant a deleted session can be restored: its rows purge is due
+ * then. Null for a stamp that is not a date (the purge never takes those).
+ */
+export function sessionRestoreUntil(deletedAt: unknown): Date | null {
+  const at = typeof deletedAt === 'string' ? Date.parse(deletedAt) : Number.NaN;
+  return Number.isFinite(at) ? new Date(at + SESSION_DELETE_ROWS_DAYS * DAY_MS) : null;
+}
 // What `deleteSession` and the account deletion write: an ISO instant. Anything else is skipped,
 // so one unreadable stamp cannot fail the query for every other session.
 const ISO_INSTANT =

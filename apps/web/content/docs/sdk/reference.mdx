@@ -399,7 +399,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 
 | Area | Methods |
 | --- | --- |
-| Lifecycle | `get()`, `update(input)`, `delete()`, `start()`, `startOrThrow()`, `restart()`, `stop()` |
+| Lifecycle | `get()`, `update(input)`, `delete()`, `restore()`, `start()`, `startOrThrow()`, `restart()`, `stop()` |
 | Readiness | `ensureReady({ readyTimeoutMs?, session? })`, `health()` (never throws on a non-2xx status) |
 | Prompts | `send(text, { model?, agent? })`, `abort()`, `prompts.create` · `.list` · `.remove` · `.retry` · `.edit` · `.interrupt` · `.hold` |
 | Live events | `stream({ onEvent, onGapRehydrate?, signal? })` returns a handle with `close()` |

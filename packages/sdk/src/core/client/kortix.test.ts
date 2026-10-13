@@ -242,6 +242,11 @@ test('session(projectId, sessionId).cost binds project scope without starting th
   expect(last().method).toBe('GET');
 });
 
+test('session(...).restore takes the deleted session out of the trash', async () => {
+  await kortix.session('PID123', 'SID456').restore();
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/sessions/SID456/restore' });
+});
+
 test('project(id).session(sid) is the same session handle', async () => {
   await kortix.project('PA').session('SB').get();
   expect(last().url).toContain('/projects/PA/sessions/SB');

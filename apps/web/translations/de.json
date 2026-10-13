@@ -1810,6 +1810,14 @@
       "ownerOnly": "Nur der Sitzungsinhaber oder ein Projektmanager kann diese Sitzung neu starten."
     }
   },
+  "sessionDelete": {
+    "description": "Löscht <name>{label}</name> und entfernt ihre Sandbox. Du kannst die Sitzung {days} Tage lang wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
+    "bulkDescription": "Löscht jede ausgewählte Sitzung und entfernt ihre Sandbox. Du kannst jede Sitzung {days} Tage lang wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
+    "restoring": "Sitzung wird wiederhergestellt…",
+    "undo": "Rückgängig",
+    "restored": "Sitzung wiederhergestellt",
+    "restoreFailed": "Sitzung konnte nicht wiederhergestellt werden"
+  },
   "modelSelector": {
     "search": "Modelle suchen",
     "free": "Kostenlos",
@@ -6908,8 +6916,6 @@
       "line120JsxTextFailedToLoadSessions": "Sitzungen konnten nicht geladen werden",
       "line132JsxTextNoSessionsYet": "Noch keine Sessions.",
       "line189JsxTextDeleteSession": "Session löschen?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Dadurch werden der Branch und die Sandbox dauerhaft zerstört für",
-      "line193JsxTextThisActionCannotBeUndone": ". Diese Aktion kann nicht rückgängig gemacht werden.",
       "line312JsxAttrAriaLabelSessionActions": "Session-Aktionen"
     },
     "componentsProjectsProjectSidebar": {
@@ -10782,6 +10788,7 @@
       "text2380f018cc45": "Modelle suchen …",
       "text23922935b1f8": "Verbindung gespeichert",
       "text2395784386a5": "Auswählen, wer sie öffnen kann",
+      "text239ee7bae236": "Ein Mitglied",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "Sitzungen rufen das Gateway in Ihrem eigenen Stack über Ihre eigene Domain oder Ihren eigenen Tunnel auf. Kortix hat in diesem Pfad keine Zugangsdaten und keinen Einblick.",
       "text23b0caa9d34a": "Mitglied entfernt",
@@ -12055,6 +12062,7 @@
       "text48845bff334a": "Schließen",
       "text4891f0add1ec": "Gruppe vom Projekt entfernt",
       "text489314dd2a13": "Dieser Link kann nicht geöffnet werden.",
+      "text489b7ab47238": "pro Tag",
       "text48b2c90ba0f7": "Q1 26",
       "text48b8f318d5d6": "Governance: worauf jeder Agent zugreifen darf",
       "text48bb9aa078f3": "Dieser Connector verwaltet die Authentifizierung über seine Plattformverbindung.",
@@ -14261,6 +14269,7 @@
       "text888f1dba5133": "Sandbox-Compute wird derzeit zum",
       "text889485d2bdde": "Tägliche Erklärungen zu Plattform und Features.",
       "text88a550e0f44e": "Läuft auf",
+      "text88b1d1a67e34": "pro Monat",
       "text88b1dfafbd5f": "Abgerechnet von",
       "text88c2105adecf": "Beantworte die obige Frage, um fortzufahren.",
       "text88c45d9e526c": "Farben",
@@ -15532,7 +15541,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "Die Zusammenstellung, nicht das Urteil.",
       "textac318011a661": "Ältere Anfragen laden",
-      "textac371f652a2d": "Dadurch werden der Branch und die Sandbox jeder Sitzung dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "textac4059cfd550": "Jede Änderung versioniert, überprüfbar und reversibel",
       "textac454bda92f9": "Projekt wird erstellt…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15800,7 +15808,6 @@
       "textb400f4160d8e": "Kostenübersicht wird geladen",
       "textb40f3be54b3e": "Sitzung auswählen",
       "textb4214ac48923": "Nur-Lese-Zugriff",
-      "textb427c3dec904": "pro",
       "textb439f94567ff": "Abonnement aktiviert",
       "textb4415e2f9e92": "Anfrage für Sitzungs-Audit wiederholen.",
       "textb4518309c8a3": "und jede andere Sitzung, die Sie starten — jeweils auf einem eigenen Computer",
@@ -16714,6 +16721,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "Attributname",
       "textcdbf6975e8a3": "Ziel",
+      "textcdca8801db76": "pro Woche",
       "textcdcdff6eb6db": "die Tools, die du selbst geschrieben hast",
       "textcdd3dd706df5": "Bereich „Create your own application“ mit ausgewählter Option „Non-gallery“",
       "textcdd43080fef2": "Hier verglichen:",
@@ -19503,6 +19511,7 @@
       "texte7cd9e292007": "Sag, was der Agent tun soll.",
       "textb67ba8d96c42": "Gib diesem Trigger einen Namen.",
       "text2b8e1487be3b": "Wähle, welche Sitzung verwendet werden soll.",
+      "text2b8fcd81df9b": "Wird am {value0} zurückgesetzt",
       "text473d5c3c6169": "Lege fest, wonach Läufe gruppiert werden, damit jede Unterhaltung ihre eigene Sitzung erhält.",
       "text8f4597a69c3c": "Jede Bedingung braucht ein Feld und einen Wert.",
       "text01bed311e7d0": "Alle Apps",

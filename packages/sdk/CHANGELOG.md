@@ -21,6 +21,28 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ApiError.code === 'SECRET_UNDECRYPTABLE'` and a message that names it.
   Additive (KRTX-1719).
 
+### Added (session restore)
+- `restoreProjectSession(projectId, sessionId)` and `session.restore()`
+  (`POST /v1/projects/:p/sessions/:s/restore`) take a deleted session out of
+  the trash. Its messages, stored files and branch come back, and its next
+  start boots a fresh sandbox from the branch. A refusal rejects with an
+  `ApiError`: 409 `session_not_deleted`, 409 `session_sandbox_removal_pending`
+  (retry in a minute), 410 `session_purged`. Additive (KRTX-1734).
+- `deleteProjectSession` resolves to `{ ok, restore_until? }`: the last
+  instant the session can be restored, 30 days after the delete. Absent on an
+  API that predates restore. Additive.
+
+### Added (gateway budget meters per period)
+- `GatewayBudgetRow` has `spent_usd`, `period_start` and `resets_at`: the
+  spend in the budget's own period (day, week or month, UTC), the number the
+  gateway compares with `limit_usd` before it admits a request, and when that
+  period ends. A member budget counts its member's requests only. Use
+  `spent_usd` for a budget meter, not `project_spend.cost`, which is
+  month-to-date. Optional, absent on an older server. Additive (KRTX-1725).
+- `GatewayBudgetRow.subject_email`: the member's email for a member budget,
+  also when the member has no spend this month and so no entry in `members`.
+  `null` for a project budget. Optional, absent on an older server. Additive.
+
 ### Added (permissions)
 - `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine
   answers about, the same strings as the API's catalog
