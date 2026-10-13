@@ -1868,10 +1868,11 @@ describe('Preview proxy: hop attribution when the provider never resolves', () =
 // the static-file listener (3211), which reads that session's workspace.
 // Ownership alone cannot separate end-users when every session of a wrapper
 // shares one created_by.
-describe('Preview proxy: per-session gate on session-data ports', () => {
+describe('Preview proxy: per-session gate on every port', () => {
   const FOREIGN_SESSION = '99999999-9999-4999-8999-999999999999';
 
-  test.each([8000, 4096, 4097, 3211])(
+  // Pentest M-2: an app port serves that session's workspace too.
+  test.each([8000, 4096, 4097, 3211, TEST_PORT])(
     'another session\'s caller is refused on port %p',
     async (port) => {
       const res = await createProxyTestApp().request(`/v1/p/session-gate-${port}/${port}/`, {
@@ -1882,7 +1883,7 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
     },
   );
 
-  test('the session\'s own caller, and any caller on an ordinary app port, are forwarded', async () => {
+  test('the session\'s own caller is forwarded on the daemon port and an app port', async () => {
     const app = createProxyTestApp();
     const own = await app.request(`/v1/p/session-gate-own/8000/kortix/health`, {
       headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
@@ -1890,7 +1891,7 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
     expect(own.status).toBe(200);
 
     const appPort = await app.request(`/v1/p/session-gate-app/${TEST_PORT}/`, {
-      headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': FOREIGN_SESSION },
+      headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
     });
     expect(appPort.status).toBe(200);
   });
