@@ -58,10 +58,11 @@ interface AccountMemberRow {
 
 const HELP = help`Usage: kortix groups <subcommand> [options]
 
-Account groups — a named set of people you grant a role to once. Reads need
-group.read; create/rename/add need group.update or group.members.manage plus
-the Enterprise \`rbac\` entitlement. Delete and remove-member are cleanup and
-are never entitlement-gated.
+Account groups — a named set of people you grant a role to once. group.read
+lists every group; without it you see your own groups and the groups on the
+projects you can read. create/rename/add need group.update or
+group.members.manage plus the Enterprise \`rbac\` entitlement. Delete and
+remove-member are cleanup and are never entitlement-gated.
 
 Groups:
   ls [--json]                       List groups with member + project counts.
@@ -86,7 +87,7 @@ Options:
   --name <n>          New group name (set).
   --description <t>   Description (create, set).
   --no-description    Clear the description (set).
-  --account <id>      Operate on this account (default: the active account).
+  --account <id>      Operate on this account (default: the linked project's account, else the active account).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output (read subcommands).
   -y, --yes           Skip the confirmation prompt.

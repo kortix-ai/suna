@@ -45,19 +45,8 @@ async function buildProvisionContext(c: Context): Promise<ProvisionContext> {
   return { body, scope };
 }
 
-async function freshVolumesPolicy(_c: Context, next: () => Promise<void>): Promise<void> {
-  await (await import('../../platform/services/boot-mode-setting')).ensureBootModePolicyFresh();
-  await next();
-}
-
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);
-  // A project's feature flags (Volumes, Stateless sessions) come from the
-  // Volumes policy row, cached 30 s per instance. Reading the project or
-  // flipping a flag re-reads that row so every instance agrees right after a
-  // flip. Only these two routes: the rest of the project API stays off it.
-  projectsApp.use('/:projectId', freshVolumesPolicy);
-  projectsApp.use('/:projectId/features', freshVolumesPolicy);
 
   projectsApp.openapi(
     createRoute({

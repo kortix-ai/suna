@@ -55,7 +55,7 @@ Subcommands:
     --csv <file>                    Write the rows as CSV. Needs --by.
 
 Global options:
-  --account <id>     Operate on this account (default: active account).
+  --account <id>     Operate on this account (default: the linked project's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.

@@ -32,7 +32,13 @@ import { cn } from '@/lib/utils';
 import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useAccountState } from '@/hooks/billing';
-import { getProjectDetail, isAbortError, turnRetryLabel, type GatewayErrorDetails } from '@kortix/sdk';
+import {
+  canManageBilling,
+  getProjectDetail,
+  isAbortError,
+  turnRetryLabel,
+  type GatewayErrorDetails,
+} from '@kortix/sdk';
 import {
   contract,
   qk,
@@ -208,8 +214,11 @@ function InsufficientCreditsCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   // KRTX-1720: a member cannot buy credits (`billing.write`), and the billing
-  // pane the buttons open is hidden from them. Say who can act instead.
-  const canManageBilling = useAccountState({ accountId }).data?.can_manage_billing !== false;
+  // pane the buttons open is hidden from them. Say who can act instead. Until
+  // the account state loads, the card offers neither: no purchase link before
+  // the answer, and no "ask an owner" to an owner.
+  const accountState = useAccountState({ accountId }).data;
+  const mayManageBilling = canManageBilling(accountState);
   const balance = parseBalance(errorText);
   const billingTo = accountSettingsTarget({ tab: 'billing', accountId });
   const title = tHardcodedUi.raw(
@@ -229,7 +238,7 @@ function InsufficientCreditsCard({
           {balance ? `Balance ${balance}` : errorText}
         </ItemDescription>
       </ItemContent>
-      {canManageBilling ? (
+      {mayManageBilling ? (
         <ItemActions className={ROW_ACTIONS}>
           <Button asChild size="sm" className="active:scale-[0.96]">
             <HubLink to={billingTo}>
@@ -243,7 +252,7 @@ function InsufficientCreditsCard({
             </HubLink>
           </Button>
         </ItemActions>
-      ) : (
+      ) : accountState ? (
         <>
           <ItemDescription className="text-xs">
             {tHardcodedUi.raw('componentsSessionSessionErrorBanner.askOwnerToAddCredits')}
@@ -254,7 +263,7 @@ function InsufficientCreditsCard({
             </ItemActions>
           ) : null}
         </>
-      )}
+      ) : null}
     </ErrorRow>
   );
 }
@@ -409,7 +418,7 @@ function TurnErrorCheckpoint({
   const canOpen = describeTurnErrorRow({ text, gateway, raw }).expandable;
 
   const row = (
-    <div className="flex w-full items-center gap-3 text-left text-sm leading-[1.5]">
+    <div className="flex w-full items-center gap-3 text-left text-sm">
       <WarningCircleIcon className="text-kortix-red size-4 flex-none" />
       <span className="text-foreground flex-none font-medium">
         {tI18nComplete.raw('text1a4f630ac1b6')}

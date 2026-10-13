@@ -24,8 +24,8 @@ function findCatalogFlag(key: string) {
 
 /** Registered but deliberately not offered as a toggle — see "Hidden flags" in
  *  the registry header. */
-// Flags derived from the organization's Volumes switch are hidden too, but are
-// not project choices at all: they are covered by platform/services/boot-mode.test.ts.
+// Flags derived from the project's Volumes flag are hidden too, but are not
+// choices of their own: they are covered by platform/services/boot-mode.test.ts.
 const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden && !f.derivedFrom).map((f) => f.key);
 
 describe('registry ↔ contract', () => {
@@ -385,9 +385,9 @@ describe('catalogHidden', () => {
     });
   }
 
-  test('every offered project flag is writable by project admins (operator_only false)', () => {
-    // An organization flag (`volumes`) is listed, but only a platform operator writes it.
-    for (const f of buildFeatureFlagCatalog({}).filter((f) => f.scope === 'project')) {
+  test('every offered flag is a project flag writable by project admins (operator_only false)', () => {
+    for (const f of buildFeatureFlagCatalog({})) {
+      expect(f.scope).toBe('project');
       expect(f.operator_only).toBe(false);
       expect(isOperatorOnlyFeatureFlag(f.key)).toBe(false);
     }
@@ -402,10 +402,11 @@ describe('featureDisabledBody', () => {
       expect(body.code).toBe('feature_disabled');
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
-      // A flag derived from the organization's Volumes switch has no Settings row,
-      // and a hidden flag has no toggle in Settings to point at.
+      // A flag derived from Volumes points at the Volumes toggle, and a hidden
+      // flag has no toggle in Settings to point at. No message names an organization.
       const derived = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.derivedFrom;
-      expect(body.error).toContain(derived ? 'organization' : HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
+      expect(body.error).toContain(derived ? 'Turn on Volumes' : HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
+      expect(body.error).not.toContain('organization');
     }
   });
 });

@@ -145,7 +145,20 @@ kortix sessions approve <session_id> [<request_id>] --always # or --reject, --me
 kortix sessions answer <session_id> [<request_id>] --option "<value>" --text "<answer>"
 ```
 
-A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still shows it. Send a message to continue.
+A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still reads **Needs you**. The session page then shows no answer card, and `kortix sessions answer` finds no question: send a message to continue. That message answers the question and closes it.
+
+### Needs you in the session lists
+
+A session reads **Needs you** in the sidebar, on the Sessions page, and in the mobile app while something waits on you: an open agent question, a connector call under an **Ask** policy, or a review item. `GET /v1/projects/<project_id>/approvals/needs-input` lists the sessions with an open question or a pending connector call. The lists read it every 30 seconds, and again when a question opens or closes in an open session or you decide a connector call. A project manager sees every session. Any other member sees the sessions they started.
+
+An open question closes when:
+
+- you answer or dismiss it,
+- a new message starts a turn in the session,
+- the turn ends, or
+- a Slack or Teams thread takes the question. Your reply in the thread starts a new turn.
+
+A message that joins a running turn does not close that turn's question: the turn still waits for the answer. A question stays open while its sandbox is stopped after the wait limit. A permission request shows on the session page only.
 
 A connector call under an **Ask** policy is a different thing: a durable approval that waits until a person decides.
 
@@ -161,13 +174,13 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 
 | Read | CLI | API |
 | --- | --- | --- |
-| Recent messages | `kortix sessions log [<id>] [--limit N]` | `GET .../sessions/<session_id>/transcript` |
+| Recent messages | `kortix sessions log [<id>] [--limit N] [--json]` | `GET .../sessions/<session_id>/log` |
 | One session's fields | `kortix sessions info <id>` | `GET .../sessions/<session_id>` |
 | What every agent does now | `kortix sessions status [--all]` | — |
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the saved transcript of a stopped session. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `"provisional": true`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 

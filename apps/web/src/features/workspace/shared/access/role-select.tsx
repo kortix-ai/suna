@@ -242,6 +242,8 @@ export function useAccountRoles(accountId: string, enabled = true) {
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export interface RoleSelectProps {
+  /** Trigger height. `md` (h-10) matches an `Input` beside it in a form. */
+  size?: 'sm' | 'md';
   scope: RoleScope;
   accountId: string;
   value: RoleValue;
@@ -285,6 +287,7 @@ export function RoleSelect({
   id,
   className,
   placeholder = 'Choose a role',
+  size,
 }: RoleSelectProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const rolesQuery = useAccountRoles(accountId, rbacEnabled);
@@ -320,7 +323,7 @@ export function RoleSelect({
       onValueChange={(next) => onChange(selectValueToRoleValue(next))}
       disabled={disabled}
     >
-      <SelectTrigger id={id} className={className}>
+      <SelectTrigger id={id} size={size} className={className}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

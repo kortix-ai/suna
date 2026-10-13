@@ -13,6 +13,9 @@
  */
 
 
+import { getProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
 import { Fragment, Suspense, useState, type CSSProperties, type ReactNode } from 'react';
 
 import {
@@ -30,9 +33,11 @@ import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import { HubLink, useAccountPanelId, useHubSearchParams } from './account-hub-location';
 import { AccountSettingsSidebar } from './account-settings-sidebar';
+import { AccountHubSheetProvider } from './hub-sheet';
 import { accountHubCrumbs } from './sections';
 import { useAccountDetail } from './use-account-detail';
 import { useAccountHubSection } from './use-account-hub-access';
+import { useAccountMembers } from './use-account-members';
 
 /** `--container-sidebar` in the design: 300px, not the project sidebar's 320. */
 export const SETTINGS_SIDEBAR_WIDTH_PX = 300;
@@ -52,26 +57,49 @@ function ShellBreadcrumb() {
   const hubParams = useHubSearchParams();
   const { activeSection } = useAccountHubSection(accountId);
   const accountQuery = useAccountDetail(accountId);
+  // Same key as the Members pane: the member crumb costs no request.
+  const membersQuery = useAccountMembers(accountId);
+  const memberId = hubParams.get('member');
+  const member = memberId
+    ? membersQuery.data?.find((entry) => entry.user_id === memberId)
+    : undefined;
+  // Same key as the project access panel: the project crumb costs no request.
+  const projectId = activeSection === 'access-projects' ? hubParams.get('project') : null;
+  const projectQuery = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId!),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
   const crumbs = accountHubCrumbs(
     {
       accountId,
       activeSection,
       setup: hubParams.get('setup'),
       accountName: accountQuery.data?.name,
+      memberId,
+      memberName: member ? member.email || member.user_id : null,
+      projectId,
+      projectName: projectId ? projectQuery.data?.name : null,
     },
     tI18nComplete,
   );
 
   return (
     <Breadcrumb className="min-w-0 flex-1">
-      <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
+      {/* Ancestors are muted links with a hover fill; the page you are on is
+          ink. Every crumb is one 28px lane, so the slashes and the hover
+          fills share a centre line. Long names cap and truncate (the full
+          name is the hover title) so the bar never wraps or pushes. */}
+      <BreadcrumbList className="flex-nowrap items-center gap-0.5 text-sm sm:gap-0.5">
         {crumbs.map((crumb, index) => {
           // The account crumb and the slash before it leave below `md`.
           const desktopOnly = crumb.kind === 'account';
+          const cap = crumb.kind === 'account' ? 'max-w-56' : 'max-w-64';
           return (
             <Fragment key={`${index}:${crumb.label}`}>
               {index > 0 ? (
-                <BreadcrumbSeparator className={cn(desktopOnly && 'hidden md:block')}>
+                <BreadcrumbSeparator className={cn('text-border', desktopOnly && 'hidden md:block')}>
                   <span aria-hidden className="bg-border block h-3.5 w-px rotate-12" />
                 </BreadcrumbSeparator>
               ) : null}
@@ -81,15 +109,21 @@ function ShellBreadcrumb() {
                 ) : crumb.to ? (
                   <BreadcrumbLink
                     asChild
-                    className="text-foreground hover:bg-hover flex h-7 min-w-0 items-center rounded-sm px-2"
+                    className={cn(
+                      'text-muted-foreground hover:bg-hover hover:text-foreground flex h-7 min-w-0 items-center rounded-md px-2',
+                      cap,
+                    )}
                   >
-                    <HubLink to={crumb.to} className="truncate">
-                      {crumb.label}
+                    <HubLink to={crumb.to} title={crumb.label}>
+                      <span className="truncate">{crumb.label}</span>
                     </HubLink>
                   </BreadcrumbLink>
                 ) : (
-                  <BreadcrumbPage className="flex h-7 items-center truncate px-2 font-medium">
-                    {crumb.label}
+                  <BreadcrumbPage
+                    title={crumb.label}
+                    className={cn('text-foreground flex h-7 items-center px-2 font-medium', cap)}
+                  >
+                    <span className="truncate">{crumb.label}</span>
                   </BreadcrumbPage>
                 )}
               </BreadcrumbItem>
@@ -127,7 +161,11 @@ export function AccountSettingsShell({ children }: { children: ReactNode }) {
             <ShellBreadcrumb />
           </Suspense>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        {/* Bounded, not scrolling: the hub sheet splits this column, and the
+            page and the sheet each scroll inside their own half. */}
+        <div className="min-h-0 flex-1">
+          <AccountHubSheetProvider>{children}</AccountHubSheetProvider>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

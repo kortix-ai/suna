@@ -17,7 +17,7 @@ import { FoldersIcon, GitBranchIcon } from '@phosphor-icons/react';
 import { repoNavLabel } from './files-nav-label';
 
 /**
- * Top-level repo browser entry: Repo when the organization has Volumes on (the
+ * Top-level repo browser entry: Repo when the project has Volumes on (the
  * shared folders are then Files, a tab under Customize), Files otherwise. Hidden when the caller lacks `project.file.read`: that
  * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
  * floor `member` role), so showing it to a plain member would just land them on
@@ -51,7 +51,7 @@ export function ProjectFilesNavItem() {
   const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
   const queryClient = useQueryClient();
-  // Volumes on for the organization (the project's derived `drives` flag).
+  // Volumes on for the project (its derived `drives` flag).
   const volumes = useFeatureFlag(projectId, 'drives');
   const label = repoNavLabel(volumes.enabled);
 

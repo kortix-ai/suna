@@ -277,7 +277,6 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // check and the Git transport.
   const repoMaterializePromise: Promise<string | null> = cfg.autoClone
     ? provideWorkspace(cfg, {
-        bootMark,
         onSummary: (summary) => {
           bootState.workspaceProvider = summary
         },
@@ -289,7 +288,6 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
           // spawn for CPU and the proxied Git path.
           // …and after the blob-pack import has settled (backfillAfterHydration).
           if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
-          bootMark('repo-materialized')
           // Pin the credential helper repo-locally now the repo exists, so
           // `git push` authenticates whatever the invoking shell's HOME is.
           // Part of materialization, not a step after readiness: the agent can
