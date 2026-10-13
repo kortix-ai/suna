@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { enrollmentUrl, expiryDate, msiCommand, parseDomains, parseLimit, personLabel } from './rollout-model';
+import { enrollmentUrl, expiryDate, installCommand, msiCommand, parseDomains, parseLimit, personLabel } from './rollout-model';
 
 describe('IT rollout model', () => {
   test('domains: any separator, a leading @, any case, no duplicates', () => {
@@ -36,5 +36,17 @@ describe('IT rollout model', () => {
   test('an expiry is a calendar date, never "just now"', () => {
     expect(expiryDate('2026-11-12T13:28:02.000Z', 'en-GB')).toBe('12 Nov 2026');
     expect(expiryDate('2026-11-12T13:28:02.000Z', 'de')).toBe('12. Nov. 2026');
+  });
+
+  test('macOS and Linux write a root-only config.json with the URL and the token, then install the package', () => {
+    const mac = installCommand('macos', 'https://api.kortix.com', 'kortix_enr_x');
+    expect(mac).toContain('{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_x"}');
+    expect(mac).toContain('sudo chmod 600 "/Library/Application Support/Kortix/Capture/config.json"');
+    expect(mac.split('\n').at(-1)).toBe('sudo installer -pkg KortixCapture-universal.pkg -target /');
+    const linux = installCommand('linux', 'https://api.kortix.com', 'kortix_enr_x');
+    expect(linux).toContain('sudo tee /etc/kortix/capture.json');
+    expect(linux).toContain('sudo chmod 600 /etc/kortix/capture.json');
+    expect(linux.split('\n').at(-1)).toBe('sudo apt install ./kortix-capture_amd64.deb');
+    expect(installCommand('windows', 'https://api.kortix.com', 'kortix_enr_x')).toBe(msiCommand('https://api.kortix.com', 'kortix_enr_x'));
   });
 });

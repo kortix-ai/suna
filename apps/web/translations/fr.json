@@ -20971,8 +20971,12 @@
       "createFailed": "Impossible de créer le jeton",
       "createdTitle": "{name} : copiez le jeton maintenant",
       "createdBody": "Kortix n’affiche ce jeton qu’une fois. Quiconque le possède peut inscrire des ordinateurs dans cette organisation jusqu’à ce que vous le révoquiez.",
-      "installTitle": "Installation silencieuse sur chaque ordinateur Windows",
-      "installBody": "Exécutez-la en tant qu’administrateur ou déployez-la avec Intune ou une stratégie de groupe. À la prochaine ouverture de session Windows, l’ordinateur s’inscrit et commence l’enregistrement. La personne voit un avis dans la zone de notification.",
+      "installTitle": "Installer sur chaque ordinateur",
+      "installBody": {
+        "windows": "Exécutez-la en tant qu’administrateur ou déployez-la avec Intune ou une stratégie de groupe. À la prochaine ouverture de session Windows, l’ordinateur s’inscrit, commence l’enregistrement et la personne voit un avis.",
+        "macos": "Exécutez-la dans Terminal ou déployez le paquet avec votre MDM et le jeton dans un profil de configuration (domaine ai.kortix.capture). La personne autorise l’enregistrement de l’écran une fois ; un profil PPPC peut accorder le reste.",
+        "linux": "Exécutez-la sur un bureau X11. À la prochaine ouverture de session, l’ordinateur s’inscrit et commence l’enregistrement. Les sessions Wayland ne sont pas encore enregistrées."
+      },
       "usage": "{count, plural, one {# ordinateur} other {# ordinateurs}}",
       "usageOf": "{count} sur {max} ordinateurs",
       "expired": "Expiré {time}",
@@ -21022,7 +21026,12 @@
       "unlinked": "Association retirée",
       "linkFailed": "Impossible de changer la personne associée",
       "save": "Enregistrer",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

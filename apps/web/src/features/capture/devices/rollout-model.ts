@@ -24,6 +24,32 @@ export function msiCommand(url: string, token: string): string {
   return `msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=${url} ENROLLMENT_TOKEN=${token}`;
 }
 
+export type RolloutOs = 'windows' | 'macos' | 'linux';
+export const ROLLOUT_OS: readonly RolloutOs[] = ['windows', 'macos', 'linux'];
+
+/** The machine config IT writes on macOS and Linux (root-only, 0600): the engine's `config.json`. */
+const configJson = (url: string, token: string) => JSON.stringify({ url, enrollment_token: token });
+
+/** The install IT runs on one computer of `os`, enrollment token included. */
+export function installCommand(os: RolloutOs, url: string, token: string): string {
+  if (os === 'windows') return msiCommand(url, token);
+  if (os === 'macos') {
+    const dir = '/Library/Application Support/Kortix/Capture';
+    return [
+      `sudo mkdir -p "${dir}"`,
+      `echo '${configJson(url, token)}' | sudo tee "${dir}/config.json" >/dev/null`,
+      `sudo chmod 600 "${dir}/config.json"`,
+      'sudo installer -pkg KortixCapture-universal.pkg -target /',
+    ].join('\n');
+  }
+  return [
+    'sudo install -d -m 755 /etc/kortix',
+    `echo '${configJson(url, token)}' | sudo tee /etc/kortix/capture.json >/dev/null`,
+    'sudo chmod 600 /etc/kortix/capture.json',
+    'sudo apt install ./kortix-capture_amd64.deb',
+  ].join('\n');
+}
+
 /** The token's lifetime choices, in days; null never expires. */
 export const EXPIRY_DAYS = [7, 30, 90, null] as const;
 export type ExpiryDays = (typeof EXPIRY_DAYS)[number];

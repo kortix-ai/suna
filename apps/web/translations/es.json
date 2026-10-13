@@ -20971,8 +20971,12 @@
       "createFailed": "No se pudo crear el token",
       "createdTitle": "{name}: copia el token ahora",
       "createdBody": "Kortix muestra este token una sola vez. Quien lo tenga puede inscribir equipos en esta organización hasta que lo revoques.",
-      "installTitle": "Instalación silenciosa en cada equipo Windows",
-      "installBody": "Ejecútalo como administrador o distribúyelo con Intune o una directiva de grupo. En el siguiente inicio de sesión de Windows, el equipo se inscribe y empieza a grabar. La persona ve un aviso en el área de notificación.",
+      "installTitle": "Instalar en cada equipo",
+      "installBody": {
+        "windows": "Ejecútalo como administrador o distribúyelo con Intune o una directiva de grupo. En el siguiente inicio de sesión de Windows el equipo se inscribe, empieza a grabar y la persona ve un aviso.",
+        "macos": "Ejecútalo en Terminal o distribuye el paquete con tu MDM y el token en un perfil de configuración (dominio ai.kortix.capture). La persona aprueba la grabación de pantalla una vez; un perfil PPPC puede conceder el resto.",
+        "linux": "Ejecútalo en un escritorio con X11. En el siguiente inicio de sesión el equipo se inscribe y empieza a grabar. Las sesiones Wayland aún no se graban."
+      },
       "usage": "{count, plural, one {# equipo} other {# equipos}}",
       "usageOf": "{count} de {max} equipos",
       "expired": "Caducó {time}",
@@ -21022,7 +21026,12 @@
       "unlinked": "Dispositivo desvinculado",
       "linkFailed": "No se pudo cambiar la persona vinculada",
       "save": "Guardar",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

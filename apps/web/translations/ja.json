@@ -20971,8 +20971,12 @@
       "createFailed": "トークンを作成できませんでした",
       "createdTitle": "{name}: 今すぐトークンをコピーしてください",
       "createdBody": "Kortix がこのトークンを表示するのは一度だけです。取り消すまで、これを持つ人は誰でもこの組織にコンピューターを登録できます。",
-      "installTitle": "各 Windows コンピューターへのサイレントインストール",
-      "installBody": "管理者として実行するか、Intune またはグループポリシーで配布します。次回の Windows サインイン時にコンピューターが登録され、記録を開始します。本人には通知領域にお知らせが表示されます。",
+      "installTitle": "各コンピューターにインストール",
+      "installBody": {
+        "windows": "管理者として実行するか、Intune またはグループポリシーで配布します。次回の Windows サインイン時にコンピューターが登録されて記録を開始し、本人にお知らせが表示されます。",
+        "macos": "ターミナルで実行するか、MDM でパッケージを配布し、トークンを構成プロファイル (ドメイン ai.kortix.capture) で渡します。画面収録は本人が一度承認します。それ以外は PPPC プロファイルで許可できます。",
+        "linux": "X11 のデスクトップで実行します。次回のサインイン時にコンピューターが登録され、記録を開始します。Wayland セッションはまだ記録されません。"
+      },
       "usage": "{count, plural, other {# 台のコンピューター}}",
       "usageOf": "{max} 台中 {count} 台",
       "expired": "期限切れ {time}",
@@ -21022,7 +21026,12 @@
       "unlinked": "紐付けを解除しました",
       "linkFailed": "紐付けを変更できませんでした",
       "save": "保存",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

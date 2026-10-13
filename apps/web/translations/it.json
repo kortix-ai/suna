@@ -20971,8 +20971,12 @@
       "createFailed": "Impossibile creare il token",
       "createdTitle": "{name}: copia ora il token",
       "createdBody": "Kortix mostra questo token una sola volta. Chi lo possiede può registrare computer in questa organizzazione finché non lo revochi.",
-      "installTitle": "Installazione silenziosa su ogni computer Windows",
-      "installBody": "Eseguilo come amministratore o distribuiscilo con Intune o con un criterio di gruppo. Al prossimo accesso a Windows il computer si registra e inizia a registrare. La persona vede un avviso nell’area di notifica.",
+      "installTitle": "Installa su ogni computer",
+      "installBody": {
+        "windows": "Eseguilo come amministratore o distribuiscilo con Intune o un criterio di gruppo. Al prossimo accesso a Windows il computer si registra, inizia a registrare e la persona vede un avviso.",
+        "macos": "Eseguilo nel Terminale o distribuisci il pacchetto con il tuo MDM e il token in un profilo di configurazione (dominio ai.kortix.capture). La persona approva una volta la registrazione dello schermo; un profilo PPPC può concedere il resto.",
+        "linux": "Eseguilo su un desktop X11. Al prossimo accesso il computer si registra e inizia a registrare. Le sessioni Wayland non vengono ancora registrate."
+      },
       "usage": "{count, plural, one {# computer} other {# computer}}",
       "usageOf": "{count} di {max} computer",
       "expired": "Scaduto {time}",
@@ -21022,7 +21026,12 @@
       "unlinked": "Collegamento rimosso",
       "linkFailed": "Impossibile cambiare la persona collegata",
       "save": "Salva",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

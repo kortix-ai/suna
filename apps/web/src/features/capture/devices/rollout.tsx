@@ -52,6 +52,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useCopy } from '@/hooks/use-copy';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -63,11 +64,13 @@ import {
   enrollmentUrl,
   EXPIRY_DAYS,
   expiryDate,
-  msiCommand,
+  installCommand,
   parseDomains,
   parseLimit,
   personLabel,
+  ROLLOUT_OS,
   type ExpiryDays,
+  type RolloutOs,
 } from './rollout-model';
 
 const errorText = (error: unknown, fallback: string) =>
@@ -260,14 +263,26 @@ function NewTokenForm({
 function CreatedToken({ token }: { token: CaptureEnrollmentTokenSecret }) {
   const t = useTranslations('capture.rollout');
   const url = enrollmentUrl(getEnv().BACKEND_URL);
+  const [os, setOs] = useState<RolloutOs>('windows');
   return (
     <section className="space-y-3" aria-live="polite">
       <Label>{t('createdTitle', { name: token.name })}</Label>
       <p className="text-muted-foreground text-xs text-pretty">{t('createdBody')}</p>
       <CopyBlock text={token.token} />
-      <p className="text-sm font-medium">{t('installTitle')}</p>
-      <CopyBlock text={msiCommand(url, token.token)} />
-      <p className="text-muted-foreground text-xs text-pretty">{t('installBody')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">{t('installTitle')}</p>
+        <Tabs value={os} onValueChange={(value) => setOs(value as RolloutOs)}>
+          <TabsListCompact aria-label={t('installTitle')}>
+            {ROLLOUT_OS.map((value) => (
+              <TabsTriggerCompact key={value} value={value}>
+                {t(`os.${value}`)}
+              </TabsTriggerCompact>
+            ))}
+          </TabsListCompact>
+        </Tabs>
+      </div>
+      <CopyBlock text={installCommand(os, url, token.token)} />
+      <p className="text-muted-foreground text-xs text-pretty">{t(`installBody.${os}`)}</p>
     </section>
   );
 }

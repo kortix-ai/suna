@@ -20971,8 +20971,12 @@
       "createFailed": "Could not create the token",
       "createdTitle": "{name}: copy the token now",
       "createdBody": "Kortix shows this token once. Anyone who has it can enroll computers into this organization until you revoke it.",
-      "installTitle": "Silent install on each Windows computer",
-      "installBody": "Run it as an administrator, or deploy it with Intune or Group Policy. At the next Windows sign-in, the computer enrolls and starts recording. The person sees a notice in the notification area.",
+      "installTitle": "Install on each computer",
+      "installBody": {
+        "windows": "Run it as an administrator, or deploy it with Intune or Group Policy. At the next Windows sign-in the computer enrolls and starts recording, and the person sees a notice.",
+        "macos": "Run it in Terminal, or deploy the package with your MDM and the token in a configuration profile (domain ai.kortix.capture). The person approves Screen Recording once; a PPPC profile can grant the rest.",
+        "linux": "Run it on a desktop with X11. At the next sign-in the computer enrolls and starts recording. Wayland sessions are not recorded yet."
+      },
       "usage": "{count, plural, one {# computer} other {# computers}}",
       "usageOf": "{count} of {max} computers",
       "expired": "Expired {time}",
@@ -21022,7 +21026,12 @@
       "unlinked": "Device unlinked",
       "linkFailed": "Could not change the linked person",
       "save": "Save",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

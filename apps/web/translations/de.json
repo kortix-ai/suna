@@ -20971,8 +20971,12 @@
       "createFailed": "Das Token konnte nicht erstellt werden",
       "createdTitle": "{name}: Kopiere das Token jetzt",
       "createdBody": "Kortix zeigt dieses Token nur einmal. Wer es hat, kann Computer in diese Organisation registrieren, bis du es widerrufst.",
-      "installTitle": "Stille Installation auf jedem Windows-Computer",
-      "installBody": "Führe es als Administrator aus oder verteile es mit Intune oder einer Gruppenrichtlinie. Bei der nächsten Windows-Anmeldung registriert sich der Computer und beginnt mit der Aufnahme. Die Person sieht einen Hinweis im Infobereich.",
+      "installTitle": "Auf jedem Computer installieren",
+      "installBody": {
+        "windows": "Führe es als Administrator aus oder verteile es mit Intune oder einer Gruppenrichtlinie. Bei der nächsten Windows-Anmeldung registriert sich der Computer, beginnt mit der Aufnahme, und die Person sieht einen Hinweis.",
+        "macos": "Führe es im Terminal aus oder verteile das Paket mit deinem MDM und dem Token in einem Konfigurationsprofil (Domain ai.kortix.capture). Die Person erlaubt die Bildschirmaufnahme einmal; ein PPPC-Profil kann den Rest freigeben.",
+        "linux": "Führe es auf einem Desktop mit X11 aus. Bei der nächsten Anmeldung registriert sich der Computer und beginnt mit der Aufnahme. Wayland-Sitzungen werden noch nicht aufgenommen."
+      },
       "usage": "{count, plural, one {# Computer} other {# Computer}}",
       "usageOf": "{count} von {max} Computern",
       "expired": "Abgelaufen {time}",
@@ -21022,7 +21026,12 @@
       "unlinked": "Zuordnung entfernt",
       "linkFailed": "Die Zuordnung konnte nicht geändert werden",
       "save": "Speichern",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

@@ -1,11 +1,11 @@
 ---
 title: Capture IT rollout
-description: Install Kortix Capture on many computers with one enrollment token. Each computer enrolls and records on its own, with no sign-in to Kortix, and you link it to a person when you want.
+description: Install Kortix Capture on many Windows, macOS and Linux computers with one enrollment token. Each computer enrolls and records on its own, with no sign-in to Kortix, and you link it to a person when you want.
 ---
 
-IT installs Kortix Capture, the separate recorder app, on every computer with
-one command. The installer adds a Windows service. At each Windows sign-in the
-service enrolls the computer and starts recording. Nobody signs in to Kortix
+IT installs Kortix Capture, the separate recorder app, on every Windows, macOS
+or Linux computer with one command. The installer adds a machine service. At
+each sign-in the service enrolls the computer and starts recording. Nobody signs in to Kortix
 by hand, nobody needs a Kortix account, and nobody can quit the recorder
 except IT.
 
@@ -64,7 +64,7 @@ account until you revoke it, so handle it like a password.
 From the API: `POST /v1/accounts/<account_id>/capture/enrollment-tokens` with
 `{"name": "Pilot laptops", "email_domains": ["corp.example"], "max_devices": 20}`.
 
-## 2. Install on each computer
+## 2. Install on each Windows computer
 
 Run as an administrator:
 
@@ -152,8 +152,46 @@ retries on its own.
 | `403` `enrollment_denied` | An admin denied this computer. | asks again every 6 hours |
 | `403` `capture_disabled` | Capture is off for the account. | asks again every hour |
 
-## macOS and Linux
+## macOS
 
-The silent install with an enrollment token is Windows only for now. On macOS
-and Linux each person installs Kortix Capture and chooses
-**Sign in with Kortix…** ([Capture → Install Kortix Capture](/docs/capture#install-kortix-capture)).
+IT writes the Kortix URL and the token to a root-only file, then installs the
+package. The package installs `Kortix Capture.app` (Developer ID signed and
+notarized), a machine service (LaunchDaemon) that holds the token and enrolls
+each person who signs in, and an agent that records in every session.
+
+```bash
+sudo mkdir -p "/Library/Application Support/Kortix/Capture"
+echo '{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_..."}' | sudo tee "/Library/Application Support/Kortix/Capture/config.json" >/dev/null
+sudo chmod 600 "/Library/Application Support/Kortix/Capture/config.json"
+sudo installer -pkg KortixCapture-universal.pkg -target /
+```
+
+With an MDM, deploy the package and a configuration profile for the domain
+`ai.kortix.capture` with the keys `Url` and `EnrollmentToken`. A profile is
+readable by every user on the computer; use the root-only file when the token
+must stay secret.
+
+macOS asks the person to allow Screen Recording once. A Privacy Preferences
+Policy Control (PPPC) profile can pre-approve Accessibility and Input
+Monitoring for `ai.kortix.capture`; for Screen Recording it can only let a
+standard user approve it. To remove Kortix Capture:
+`sudo "/Applications/Kortix Capture.app/Contents/Resources/uninstall.sh"`.
+
+## Linux
+
+```bash
+sudo install -d -m 755 /etc/kortix
+echo '{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_..."}' | sudo tee /etc/kortix/capture.json >/dev/null
+sudo chmod 600 /etc/kortix/capture.json
+sudo apt install ./kortix-capture_amd64.deb
+```
+
+The package installs a machine service (`kortix-capture-machine`) that holds
+the token and enrolls each person who signs in to a graphical session, and a
+user service that records in every session. Kortix Capture records X11
+sessions; a Wayland session enrolls but records nothing yet. To remove it:
+`sudo apt purge kortix-capture`.
+
+Without the config file on macOS or Linux, each person chooses
+**Sign in with Kortix…** from the Kortix Capture icon
+([Capture → Install Kortix Capture](/docs/capture#install-kortix-capture)).

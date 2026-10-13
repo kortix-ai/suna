@@ -20971,8 +20971,12 @@
       "createFailed": "无法创建令牌",
       "createdTitle": "{name}：请立即复制令牌",
       "createdBody": "Kortix 只显示此令牌一次。在你撤销之前，持有它的任何人都可以将电脑注册到此组织。",
-      "installTitle": "在每台 Windows 电脑上静默安装",
-      "installBody": "以管理员身份运行，或通过 Intune 或组策略分发。下次登录 Windows 时，电脑会注册并开始录制。该人员会在通知区域看到提示。",
+      "installTitle": "在每台电脑上安装",
+      "installBody": {
+        "windows": "以管理员身份运行，或通过 Intune 或组策略分发。下次登录 Windows 时，电脑会注册并开始录制，用户会看到提示。",
+        "macos": "在终端中运行，或通过 MDM 分发安装包，并在配置描述文件（域 ai.kortix.capture）中提供令牌。用户只需批准一次屏幕录制；其余权限可由 PPPC 描述文件授予。",
+        "linux": "在 X11 桌面上运行。下次登录时，电脑会注册并开始录制。尚不支持录制 Wayland 会话。"
+      },
       "usage": "{count, plural, other {# 台电脑}}",
       "usageOf": "{count} / {max} 台电脑",
       "expired": "已于 {time}过期",
@@ -21022,7 +21026,12 @@
       "unlinked": "已取消关联",
       "linkFailed": "无法更改关联的人",
       "save": "保存",
-      "domainsPlaceholder": "corp.example"
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      }
     }
   }
 }

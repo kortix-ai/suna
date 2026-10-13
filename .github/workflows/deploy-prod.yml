@@ -987,7 +987,9 @@ jobs:
           GH_TOKEN="$CAPTURE_RELEASES_TOKEN" gh release download "$version" --repo "$repo" \
             --pattern 'KortixCapture*.msi' --pattern 'KortixCapture*.pkg' --pattern 'kortix-capture*.deb'
           # A stable name for the copy-paste install command (Devices → Roll out, docs).
-          for msi in KortixCapture-*-x64.msi; do [ -e "$msi" ] && cp "$msi" KortixCapture-x64.msi; done
+          for f in KortixCapture-*-x64.msi; do [ -e "$f" ] && cp "$f" KortixCapture-x64.msi; done
+          for f in KortixCapture-*-universal.pkg; do [ -e "$f" ] && cp "$f" KortixCapture-universal.pkg; done
+          for f in kortix-capture_*_amd64.deb; do [ -e "$f" ] && cp "$f" kortix-capture_amd64.deb; done
           sha256sum ./* > CAPTURE-SHA256SUMS
           gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
         env:
