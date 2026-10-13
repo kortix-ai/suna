@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "Remplacé pour ce projet",
         "defaultOn": "Activé par défaut",
-        "defaultOff": "Désactivé par défaut",
-        "organization": "Toute l'organisation, géré par Kortix"
+        "defaultOff": "Désactivé par défaut"
       },
       "search": "Rechercher des fonctionnalités",
       "loadFailed": "Impossible de charger le projet",
@@ -1172,7 +1171,7 @@
         },
         "apps": {
           "name": "Applications",
-          "description": "Déployez des sites statiques, paquets JavaScript, Dockerfiles et images OCI vers des URL serverless stables, et exécutez des backends : une base de données, des fonctions serveur, des requêtes en temps réel, du stockage de fichiers, de la planification et de la recherche sur une machine toujours active."
+          "description": "Déployez des sites statiques, paquets JavaScript, Dockerfiles et images OCI vers des URL stables, et exécutez des backends : une base de données, des fonctions serveur, des requêtes en temps réel, du stockage de fichiers, de la planification et de la recherche sur une machine toujours active."
         },
         "monitors": {
           "name": "Moniteurs",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Fichiers partagés et sessions sur volumes pour toute l'organisation."
+          "description": "Fichiers partagés et sessions sur volumes pour ce projet."
         },
         "stateless_sessions": {
           "name": "Sessions sans état",
@@ -14337,6 +14336,7 @@
       "text8b624587552a": "Échec de l’émission du token",
       "text8b64afef1a24": "Rien de préparé pour le moment",
       "text8b728638c006": "perdra ce contournement. Chaque action repassera par les contrôles d’autorisation habituels.",
+      "text8b7811603173": "Rechercher des sessions ou coller un ID de session",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Téléversement",
       "text8b9965f7aaa5": "Ajoutez une stratégie d’accès",
@@ -19587,7 +19587,8 @@
       "text6f52b07880a0": "Prendre un instantané",
       "text91dc861375bc": "Politique de version mobile consultée",
       "texta37dd5ef6ef2": "Personnaliser la barre latérale",
-      "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar"
+      "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar",
+      "text2313fe21ea84": "Modifier {name}"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -19668,40 +19669,15 @@
       "reasonOther": "Autre",
       "fallBackToTheImage": "Se replier sur l’image",
       "fallBackToImage": "Repli sur l’image",
-      "saved": "Volumes enregistrés",
-      "saveFailed": "Impossible d’enregistrer les volumes",
-      "title": "Volumes",
-      "description": "Un seul interrupteur pour Fichiers, les montages de drive, les volumes de session et les artefacts de démarrage, par organisation. Désactivé, une organisation voit le produit sans volumes. Les modifications atteignent chaque processus API en moins de 30 secondes.",
+      "saved": "Modes de démarrage enregistrés",
+      "saveFailed": "Impossible d’enregistrer les modes de démarrage",
+      "title": "Modes de démarrage",
+      "description": "Comment démarrent les nouvelles sessions d’un projet dont les volumes sont activés, et les replis qu’elles prennent. Les volumes et les sessions sans état sont des feature flags du projet, pas des réglages d’ici. Les modifications atteignent chaque processus API en moins de 30 secondes.",
       "discard": "Annuler les modifications",
       "save": "Enregistrer",
-      "volumesTitle": "Volumes",
-      "volumesDescription": "Activé : Fichiers est le drive du projet et le navigateur de dépôt s’appelle Repo, les sessions montent leurs dossiers et démarrent sur un volume. Désactivé : Fichiers est le navigateur de dépôt et les sessions démarrent depuis l’image. Une session dont les fichiers sont déjà sur un volume garde son volume quand son organisation est désactivée.",
-      "everyOrganizationTitle": "Activé pour toutes les organisations",
-      "everyOrganizationDetail": "Les organisations désactivées ci-dessous restent désactivées.",
-      "everyOrganizationLabel": "Volumes pour toutes les organisations",
-      "rolloutTitle": "Déploiement progressif",
-      "rolloutUnused": "Inutilisé tant que les volumes sont activés pour toutes les organisations.",
-      "rolloutPercentDetail": "{percent} % des organisations sans réglage propre, choisies par un hachage stable de l’identifiant d’organisation.",
-      "rolloutOffDetail": "Activer les volumes pour une partie des organisations sans réglage propre.",
-      "rolloutPercentLabel": "Pourcentage de déploiement",
-      "organizationsTitle": "Organisations",
-      "organizationsDescription": "Le réglage propre d’une organisation l’emporte sur l’interrupteur et le déploiement progressif. Son mode de démarrage s’applique tant que les volumes sont activés pour elle.",
-      "findOrganization": "Rechercher une organisation",
-      "noOtherOrganization": "Aucune autre organisation ne correspond à « {search} ». Les organisations déjà listées ci-dessous ne sont pas répétées.",
-      "add": "Ajouter",
-      "columnOrganization": "Organisation",
-      "columnVolumes": "Volumes",
-      "columnBootMode": "Mode de démarrage",
-      "columnLastStep": "Dernière étape",
-      "organizationFallbackName": "Organisation",
-      "organizationVolumesLabel": "Volumes pour {name}",
-      "on": "Activé",
       "off": "Désactivé",
-      "defaultModeOption": "Par défaut ({mode})",
-      "removeOrganization": "Retirer l’organisation",
-      "noOrganizations": "Aucune organisation n’a de réglage propre.",
       "bootModeTitle": "Mode de démarrage",
-      "bootModeDescription": "Comment démarrent les nouvelles sessions d’une organisation dont les volumes sont activés, sauf si l’organisation a son propre mode.",
+      "bootModeDescription": "Comment démarrent les nouvelles sessions d’un projet dont les volumes sont activés. Un projet dont les sessions sans état sont activées démarre sur un volume.",
       "defaultModeTitle": "Mode par défaut",
       "killSwitchTitle": "Coupe-circuit : démarrer chaque nouvelle session depuis l’image",
       "killSwitchDetail": "Remplace tous les modes d’un coup ; Fichiers et les drives restent tels quels. Une session dont les fichiers sont déjà sur un volume garde son volume.",
@@ -19721,7 +19697,7 @@
       "failedBoots": "démarrages échoués",
       "volumeAttemptsLabel": "Tentatives sur volume",
       "artifactsAttemptsLabel": "Tentatives avec artefacts",
-      "lastStepNote": "(activé sauf si une règle désactive la dernière étape)",
+      "lastStepNote": "(activé sauf si le mode par défaut désactive la dernière étape)",
       "whereModesApplyTitle": "Où les modes s’appliquent",
       "whereModesApplyDescription": "Les fournisseurs et les interrupteurs de déploiement proviennent de l’environnement du serveur. Le volume d’artefacts peut être défini ici ; vide, celui de l’environnement est utilisé.",
       "volumeProviderTitle": "Fournisseur de volumes : {provider}",
@@ -19737,8 +19713,8 @@
       "artifactsVolumeFromEnvironment": "Les sessions en Image + artefacts ou Volume montent {source} (depuis l’environnement).",
       "artifactsVolumeNone": "Aucun défini : les modes avec artefacts démarrent comme si l’image était seule.",
       "artifactsVolumeLabel": "Volume d’artefacts et tag",
-      "ephemeralSandboxesOff": "{variable} est désactivé dans ce déploiement : les règles qui demandent Volume démarrent en Image + artefacts.",
-      "nothingSaved": "Rien d’enregistré pour l’instant : les volumes sont désactivés pour toutes les organisations."
+      "ephemeralSandboxesOff": "{variable} est désactivé dans ce déploiement : les sessions sans état démarrent en Image + artefacts.",
+      "nothingSaved": "Rien d’enregistré pour l’instant : les projets dont les volumes sont activés démarrent depuis l’image."
     }
   },
   "projectOnboarding": {
@@ -20067,6 +20043,7 @@
     "notFoundDescription": "Il a été supprimé ou le lien est incorrect.",
     "backToConnectors": "Retour aux connecteurs",
     "installed": "{name} est installé",
+    "installedSyncFailed": "{name} est installé. Kortix n’a pas pu charger ses outils : {error}",
     "newSession": "Nouvelle session",
     "sections": "Sections de {name}",
     "noticeNoAccountTitle": "{name} n’a aucun compte",

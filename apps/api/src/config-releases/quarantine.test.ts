@@ -74,6 +74,7 @@ const deps = (): DesiredReleaseDeps => ({
     return releaseAt(commit);
   },
   resolveBase: async () => tip,
+  readBase: async () => tip,
   loadRoster: async () => ({ enabled: [], defaultAgent: null, readable: true, governed: false }),
   invalidate: () => {},
 });

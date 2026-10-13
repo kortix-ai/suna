@@ -255,7 +255,8 @@ async function build(
   store: ConfigArchiveStore,
   archiveLimit?: number,
 ): Promise<ConfigRelease> {
-  let mirror = await refreshMirror(project);
+  // A commit the mirror holds needs no fetch (`freshRef`).
+  let mirror = await refreshMirror(project, false, { freshRef: commit });
   // A commit the warm mirror has not fetched yet: fetch once, then give up.
   if ((await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], mirror)).exitCode !== 0) {
     mirror = await refreshMirror(project, true);

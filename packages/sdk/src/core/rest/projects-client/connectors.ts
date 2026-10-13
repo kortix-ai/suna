@@ -1958,6 +1958,12 @@ export async function getConnectStatus() {
   );
 }
 
+/**
+ * Store a connector's shared credential. For an MCP connector the server then
+ * re-reads the tools: `sync` is that run, and a per-slug error in it means the
+ * credential is stored but the tools still fail to load. Absent for other
+ * providers and on older servers.
+ */
 export async function setConnectorCredential(
   projectId: string,
   slug: string,
@@ -1965,7 +1971,7 @@ export async function setConnectorCredential(
 ) {
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
-    await backendApi.put<{ ok: boolean }>(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
     ),

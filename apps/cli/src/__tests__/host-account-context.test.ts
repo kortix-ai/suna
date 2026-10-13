@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveAccountContext } from '../command-helpers.ts';
@@ -80,5 +80,53 @@ test('real permissions and audit CLI processes send the named host account', asy
     }
     expect(requests).toHaveLength(2);
     expect(requests.every(path => path.includes('/accounts/other-account/'))).toBe(true);
+  } finally { server.stop(true); }
+});
+
+function link(account_id: string, host?: string) {
+  const cwd = process.cwd();
+  mkdirSync(join(dir, '.kortix'), { recursive: true });
+  writeFileSync(join(dir, '.kortix', 'link.json'), JSON.stringify({ project_id: 'synthetic-project', account_id, host }));
+  process.chdir(dir);
+  return () => process.chdir(cwd);
+}
+
+test('a host-bound project link beats the active account, like the host notice', () => {
+  const restore = link('linked-account', 'home');
+  try {
+    expect(resolveAccountContext()?.accountId).toBe('linked-account');
+    expect(resolveAccountContext({ accountArg: 'pinned-account' })?.accountId).toBe('pinned-account');
+    expect(resolveAccountContext({ hostArg: 'other' })?.accountId).toBe('other-account');
+  } finally { restore(); }
+});
+test('a link with no host does not override the active account', () => {
+  const restore = link('linked-account');
+  try { expect(resolveAccountContext()?.accountId).toBe('home-account'); } finally { restore(); }
+});
+
+test('real groups CLI process creates the group in the linked account', async () => {
+  const requests: string[] = [];
+  const server = Bun.serve({ port: 0, fetch(request) {
+    requests.push(`${request.method} ${new URL(request.url).pathname}`);
+    return Response.json({ group: { id: 'g1', name: 'ops' }, groups: [] });
+  } });
+  configure('other-account', 'synthetic-other-token', `http://127.0.0.1:${server.port}`);
+  const config = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8'));
+  config.hosts.home.url = `http://127.0.0.1:${server.port}`;
+  writeFileSync(join(dir, 'config.json'), JSON.stringify(config));
+  mkdirSync(join(dir, '.kortix'));
+  writeFileSync(join(dir, '.kortix', 'link.json'), JSON.stringify({ project_id: 'synthetic-project', account_id: 'linked-account', host: 'home' }));
+  try {
+    const run = async (...extra: string[]) => {
+      const child = Bun.spawn([process.execPath, new URL('../index.ts', import.meta.url).pathname, 'groups', 'create', 'ops', ...extra], {
+        cwd: dir, env: { ...process.env, KORTIX_NO_UPDATE_CHECK: '1' }, stdout: 'pipe', stderr: 'pipe',
+      });
+      await child.exited;
+    };
+    await run();
+    await run('--account', 'pinned-account');
+    expect(requests.some(r => r.includes('/accounts/linked-account/'))).toBe(true);
+    expect(requests.some(r => r.includes('/accounts/pinned-account/'))).toBe(true);
+    expect(requests.some(r => r.includes('/accounts/home-account/'))).toBe(false);
   } finally { server.stop(true); }
 });

@@ -1138,8 +1138,7 @@
       "origin": {
         "overridden": "Sostituito per questo progetto",
         "defaultOn": "Attivo per impostazione predefinita",
-        "defaultOff": "Disattivo per impostazione predefinita",
-        "organization": "Tutta l'organizzazione, gestito da Kortix"
+        "defaultOff": "Disattivo per impostazione predefinita"
       },
       "search": "Cerca funzionalità",
       "loadFailed": "Impossibile caricare il progetto",
@@ -1172,7 +1171,7 @@
         },
         "apps": {
           "name": "App",
-          "description": "Distribuisci siti statici, pacchetti JavaScript, Dockerfile e immagini OCI su URL serverless stabili ed esegui backend: un database, funzioni server, query in tempo reale, archiviazione file, pianificazione e ricerca su una macchina sempre attiva."
+          "description": "Distribuisci siti statici, pacchetti JavaScript, Dockerfile e immagini OCI su URL stabili ed esegui backend: un database, funzioni server, query in tempo reale, archiviazione file, pianificazione e ricerca su una macchina sempre attiva."
         },
         "monitors": {
           "name": "Monitor",
@@ -1212,7 +1211,7 @@
         },
         "volumes": {
           "name": "Volumi",
-          "description": "File condivisi e sessioni su volumi per tutta l'organizzazione."
+          "description": "File condivisi e sessioni su volumi per questo progetto."
         },
         "stateless_sessions": {
           "name": "Sessioni senza stato",
@@ -14337,6 +14336,7 @@
       "text8b624587552a": "Impossibile generare il token",
       "text8b64afef1a24": "Nessuna macchina ancora preparata",
       "text8b728638c006": "perderà l'eccezione. Ogni azione passerà di nuovo dai normali controlli.",
+      "text8b7811603173": "Cerca sessioni o incolla un ID sessione",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Caricamento",
       "text8b9965f7aaa5": "Aggiungi una policy di accesso",
@@ -19587,7 +19587,8 @@
       "text6f52b07880a0": "Crea snapshot ora",
       "text91dc861375bc": "Criteri di versione mobile visualizzati",
       "texta37dd5ef6ef2": "Personalizza barra laterale",
-      "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar"
+      "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar",
+      "text2313fe21ea84": "Modifica {name}"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -19668,40 +19669,15 @@
       "reasonOther": "Altro",
       "fallBackToTheImage": "Ripiegare sull’immagine",
       "fallBackToImage": "Ripiego sull’immagine",
-      "saved": "Volumi salvati",
-      "saveFailed": "Impossibile salvare i volumi",
-      "title": "Volumi",
-      "description": "Un unico interruttore per File, montaggi del drive, volumi di sessione e artefatti di avvio, per organizzazione. Se è disattivato, un’organizzazione vede il prodotto senza volumi. Le modifiche raggiungono ogni processo API entro 30 secondi.",
+      "saved": "Modalità di avvio salvate",
+      "saveFailed": "Impossibile salvare le modalità di avvio",
+      "title": "Modalità di avvio",
+      "description": "Come si avviano le nuove sessioni di un progetto con i volumi attivi e quali ripieghi prendono. I volumi e le sessioni senza stato sono feature flag del progetto, non si impostano qui. Le modifiche raggiungono ogni processo API entro 30 secondi.",
       "discard": "Annulla modifiche",
       "save": "Salva",
-      "volumesTitle": "Volumi",
-      "volumesDescription": "Attivo: File è il drive del progetto e il browser del repository si chiama Repo, le sessioni montano le loro cartelle e si avviano su un volume. Disattivo: File è il browser del repository e le sessioni si avviano dall’immagine. Una sessione i cui file sono già su un volume mantiene il suo volume quando la sua organizzazione viene disattivata.",
-      "everyOrganizationTitle": "Attivo per ogni organizzazione",
-      "everyOrganizationDetail": "Le organizzazioni disattivate qui sotto restano disattivate.",
-      "everyOrganizationLabel": "Volumi per ogni organizzazione",
-      "rolloutTitle": "Rilascio graduale",
-      "rolloutUnused": "Non usato finché i volumi sono attivi per ogni organizzazione.",
-      "rolloutPercentDetail": "{percent}% delle organizzazioni senza un’impostazione propria, scelte con un hash stabile dell’id dell’organizzazione.",
-      "rolloutOffDetail": "Attiva i volumi per una quota delle organizzazioni senza un’impostazione propria.",
-      "rolloutPercentLabel": "Percentuale di rilascio",
-      "organizationsTitle": "Organizzazioni",
-      "organizationsDescription": "L’impostazione propria di un’organizzazione prevale sull’interruttore e sul rilascio graduale. La sua modalità di avvio si applica finché i volumi sono attivi per lei.",
-      "findOrganization": "Cerca un’organizzazione",
-      "noOtherOrganization": "Nessun’altra organizzazione corrisponde a «{search}». Le organizzazioni già elencate qui sotto non vengono ripetute.",
-      "add": "Aggiungi",
-      "columnOrganization": "Organizzazione",
-      "columnVolumes": "Volumi",
-      "columnBootMode": "Modalità di avvio",
-      "columnLastStep": "Ultimo passo",
-      "organizationFallbackName": "Organizzazione",
-      "organizationVolumesLabel": "Volumi per {name}",
-      "on": "Attivo",
       "off": "Disattivo",
-      "defaultModeOption": "Predefinita ({mode})",
-      "removeOrganization": "Rimuovi organizzazione",
-      "noOrganizations": "Nessuna organizzazione ha un’impostazione propria.",
       "bootModeTitle": "Modalità di avvio",
-      "bootModeDescription": "Come si avviano le nuove sessioni di un’organizzazione con i volumi attivi, a meno che l’organizzazione non abbia una modalità propria.",
+      "bootModeDescription": "Come si avviano le nuove sessioni di un progetto con i volumi attivi. Un progetto con le sessioni senza stato attive si avvia su un volume.",
       "defaultModeTitle": "Modalità predefinita",
       "killSwitchTitle": "Interruttore di emergenza: avvia ogni nuova sessione dall’immagine",
       "killSwitchDetail": "Sostituisce tutte le modalità in una volta; File e drive restano come sono. Una sessione i cui file sono già su un volume mantiene il suo volume.",
@@ -19721,7 +19697,7 @@
       "failedBoots": "avvii non riusciti",
       "volumeAttemptsLabel": "Tentativi con volume",
       "artifactsAttemptsLabel": "Tentativi con artefatti",
-      "lastStepNote": "(attivo a meno che una regola non disattivi l’ultimo passo)",
+      "lastStepNote": "(attivo a meno che la modalità predefinita non disattivi l’ultimo passo)",
       "whereModesApplyTitle": "Dove si applicano le modalità",
       "whereModesApplyDescription": "I fornitori e gli interruttori di deployment provengono dall’ambiente del server. Il volume degli artefatti si può impostare qui; se vuoto, si usa quello dell’ambiente.",
       "volumeProviderTitle": "Fornitore dei volumi: {provider}",
@@ -19737,8 +19713,8 @@
       "artifactsVolumeFromEnvironment": "Le sessioni in Immagine + artefatti o Volume montano {source} (dall’ambiente).",
       "artifactsVolumeNone": "Nessuno impostato: le modalità con artefatti si avviano come se ci fosse solo l’immagine.",
       "artifactsVolumeLabel": "Volume degli artefatti e tag",
-      "ephemeralSandboxesOff": "{variable} è disattivato in questo deployment: le regole che chiedono Volume si avviano con Immagine + artefatti.",
-      "nothingSaved": "Ancora nulla di salvato: i volumi sono disattivati per ogni organizzazione."
+      "ephemeralSandboxesOff": "{variable} è disattivato in questo deployment: le sessioni senza stato si avviano con Immagine + artefatti.",
+      "nothingSaved": "Ancora nulla di salvato: i progetti con i volumi attivi si avviano dall’immagine."
     }
   },
   "projectOnboarding": {
@@ -20067,6 +20043,7 @@
     "notFoundDescription": "È stato rimosso o il link è errato.",
     "backToConnectors": "Torna ai connettori",
     "installed": "{name} è installato",
+    "installedSyncFailed": "{name} è installato. Kortix non è riuscito a caricare i suoi strumenti: {error}",
     "newSession": "Nuova sessione",
     "sections": "Sezioni di {name}",
     "noticeNoAccountTitle": "{name} non ha alcun account",

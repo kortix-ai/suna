@@ -60,12 +60,11 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatUsd } from '@/features/billing/account-overview';
-import { AutoTopupCard } from '@/features/billing/auto-topup-card';
-import { CreditTopupSection } from '@/features/billing/credit-topup-section';
+import { TopupControls } from '@/features/billing/topup-controls';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import type { AccountState } from '@kortix/sdk';
+import { type AccountState, canOfferTopup } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { ReceiptIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -279,25 +278,6 @@ function formatDay(iso: string | null | undefined, locale?: string): string | nu
 
 // ─── Container ──────────────────────────────────────────────────────────────
 
-/**
- * Whether to offer the top-up control at all.
- *
- * Two independent gates, and both have to pass. `can_purchase_credits` is a
- * TIER entitlement — whether this plan may buy credits. `can_manage_billing`
- * is a PERMISSION — whether this person may (billing.write, owners only by
- * default). The API's own comment on the field says absent means allowed, so
- * an older response does not lock an owner out; the billing API enforces the
- * same gate server-side either way, so this is a UI hint, not the control.
- *
- * A member without the permission still reads the whole pane. Knowing the
- * balance is not the same as being able to change it, and hiding the number
- * from the people who spend it is what made this pane necessary.
- */
-export function canOfferTopup(state: AccountState): boolean {
-  if (!state.subscription?.can_purchase_credits) return false;
-  return state.can_manage_billing !== false;
-}
-
 export function CreditsTab({ accountId }: { accountId: string | undefined }) {
   const t = useTranslations('settings.credits');
   const accountState = useAccountState({ accountId });
@@ -338,31 +318,15 @@ export function CreditsTab({ accountId }: { accountId: string | undefined }) {
           // Passed in as a slot rather than rendered inside `CreditsView`:
           // both children are hook-driven, and the view has to stay renderable
           // against a fixed `AccountState` with no query client. Same reason
-          // the model above is pure.
-          topup={canOfferTopup(state) ? <TopupPanel /> : null}
+          // the model above is pure. `canOfferTopup` (the plan may buy credits
+          // AND this person may change billing) also decides whether the pane
+          // draws the "Add credits" section around the slot at all. A member
+          // still reads the whole pane: knowing the balance is not the same as
+          // being able to change it.
+          topup={canOfferTopup(state) ? <TopupControls state={state} /> : null}
         />
       </div>
     </BillingAccountProvider>
-  );
-}
-
-/**
- * Add credits and Auto top-up in one card, the shape
- * `/accounts/[id]?tab=billing` uses. `CreditTopupSection` renders no chrome of
- * its own by contract (no border, no padding, no heading) and `AutoTopupCard`
- * carries its own heading, which is why the seam is a plain `border-t` and
- * only the first half gets a label from outside.
- */
-function TopupPanel() {
-  return (
-    <div className="bg-popover rounded-md border">
-      <div className="px-4 py-4">
-        <CreditTopupSection />
-      </div>
-      <div className="border-t px-4 py-4">
-        <AutoTopupCard fetchSettings showSaveButton />
-      </div>
-    </div>
   );
 }
 

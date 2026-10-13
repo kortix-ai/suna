@@ -34,7 +34,6 @@ export interface S3Attempt {
 /** The provider's state `acquire` reports into. */
 export interface AcquireTrace {
   mode: ProjectSnapshotMode
-  mark: (label: string) => void
   /** Per-stage wall clock; the provider's summary reads it. */
   timings: Record<string, number>
   s3: S3Attempt
@@ -86,7 +85,7 @@ export async function acquire(
   transport: SnapshotTransferOptions,
 ): Promise<MaterializedProject> {
   const { cfg, expectedSha } = req
-  const { mode, mark, timings, s3: s3State } = trace
+  const { mode, timings, s3: s3State } = trace
 
   if (mode === 'git') {
     const git = await materializeViaGit(req)
@@ -110,12 +109,11 @@ export async function acquire(
     if (mode === 'require-s3' && skip.reason !== 'not-fresh') throw skip
     s3State.skipped = skip
     logger.info('[workspace-provider] s3 skipped; git-only start', {
-      event: 'config_provider_s3_skipped',
+      event: 'workspace_provider_s3_skipped',
       mode,
       reason: skip.reason,
       expectedSha,
     })
-    mark(`config-provider:s3:skipped:${skip.reason}`)
     const git = await materializeViaGit(req)
     return { ...git, timings: { ...timings, ...git.timings } }
   }
@@ -177,7 +175,7 @@ export async function acquire(
     const s3DurationMs = Date.now() - s3Started
     timings.s3_failed = s3DurationMs
     logger.warn('[workspace-provider] s3 acquisition failed', {
-      event: 'config_provider_s3_failed',
+      event: 'workspace_provider_s3_failed',
       mode: mode,
       projectId: cfg.projectId,
       sessionId: cfg.branchName,
@@ -188,19 +186,17 @@ export async function acquire(
       durationMs: s3DurationMs,
       error: failure.message.slice(0, 300),
     })
-    mark(`config-provider:s3:failed:${failure.reason}`)
     if (S3_NO_FALLBACK_REASONS.has(failure.reason) || mode === 'require-s3') {
       throw failure
     }
     logger.warn('[workspace-provider] falling back to git', {
-      event: 'config_provider_fallback',
+      event: 'workspace_provider_fallback',
       from: 's3',
       to: 'git',
       reason: failure.reason,
       stage: failure.stage,
       expectedSha,
     })
-    mark('config-provider:fallback')
     // ONE coordinated transition: the S3 stage is already gone; make sure no
     // partial activation survives either, then hand the SAME pinned request
     // to Git.
