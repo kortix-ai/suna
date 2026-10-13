@@ -4,6 +4,11 @@ import { contextToolTrigger } from '../turns/tools/tool-meta';
 import { partOutcome } from '../turns/tools/tool-outcome';
 import { getChildSessionId, shouldShowToolPart } from '../turns/parts';
 import { toToolView } from '../turns/classify';
+import { getToolPrimaryArg } from '../turns/tools/tool-meta';
+import { isEmptyShowPart } from '../turns/segments/session-activity-groups';
+import { createArtifactKind, familyForTool, narrateFailedStep, narrateStep } from '../turns/segments/narration';
+import { groupSteps } from '../turns/segments/group-steps';
+import { stepLabel } from '../turns/segments/step-label';
 import { toolCallBlock, toolCallMetadata } from './tool-call';
 import type { ToolCallBlock } from './types';
 import { fromV1, type V1Row } from './v1';
@@ -103,4 +108,67 @@ describe('the part helpers read a block the way they read its part', () => {
     expect(shouldShowToolPart(toolCallBlock(PARTS.todoread!))).toBe(false);
     for (const p of each) expect(shouldShowToolPart(toolCallBlock(p))).toBe(shouldShowToolPart(p));
   });
+});
+
+describe('the step helpers read blocks the way they read their parts', () => {
+  const extra = {
+    shown: part('prt_show', 'show', { status: 'completed', input: { path: '/w/report.pdf', title: 'Report' }, output: 'ok', title: '', metadata: {}, time: { start: T0 + 130, end: T0 + 131 } }),
+    emptyShow: part('prt_show0', 'show', { status: 'completed', input: {}, output: 'Error: path or url required', title: '', metadata: {}, time: { start: T0 + 140, end: T0 + 141 } }),
+    image: part('prt_img', 'image_gen', { status: 'completed', input: { action: 'generate', prompt: 'a cat' }, output: '{"path":"/w/cat.png"}', title: '', metadata: {}, time: { start: T0 + 150, end: T0 + 160 } }),
+    bash2: part('prt_bash2', 'bash', { status: 'completed', input: { command: 'pwd' }, output: '/w', title: 'pwd', metadata: { exit: 0 }, time: { start: T0 + 170, end: T0 + 175 } }),
+  };
+  const each = [...Object.values(PARTS), ...Object.values(extra)];
+
+  test('getToolPrimaryArg, isEmptyShowPart, createArtifactKind', () => {
+    for (const p of each) {
+      const call = toolCallBlock(p);
+      expect(getToolPrimaryArg(call)).toBe(getToolPrimaryArg(p));
+      expect(isEmptyShowPart(call)).toBe(isEmptyShowPart(p));
+      expect(createArtifactKind(call)).toBe(createArtifactKind(p));
+    }
+    expect(isEmptyShowPart(toolCallBlock(extra.emptyShow))).toBe(true);
+    expect(createArtifactKind(toolCallBlock(extra.image))).toBe('image');
+  });
+
+  test('stepLabel', () => {
+    for (const p of each) expect(stepLabel(toolCallBlock(p))).toEqual(stepLabel(p));
+  });
+
+  test('narrateStep and narrateFailedStep', () => {
+    for (const p of each) {
+      const family = familyForTool(p.tool);
+      if (family === 'hidden') continue;
+      expect(narrateStep(family, [toolCallBlock(p)])).toBe(narrateStep(family, [p]));
+      expect(narrateFailedStep(family, [toolCallBlock(p)])).toBe(narrateFailedStep(family, [p]));
+    }
+  });
+
+  test('groupSteps: the same steps, holding the blocks it was given', () => {
+    const calls = each.map((p) => toolCallBlock(p));
+    const fromParts = groupSteps(each);
+    const fromCalls = groupSteps(calls);
+    expect(fromCalls.map(({ parts: _p, ...s }) => s)).toEqual(fromParts.map(({ parts: _p, ...s }) => s));
+    expect(fromCalls.map((s) => s.parts.map((c) => c.id))).toEqual(fromParts.map((s) => s.parts.map((p) => p.id)));
+    for (const step of fromCalls) for (const c of step.parts) expect(calls).toContain(c);
+  });
+});
+
+describe('a call the closure rule closed, reopened, reads as its stored v1 part', () => {
+  // The host rule (apps/web call-liveness.ts): a closure-rule block is open again,
+  // `running` when it started, else `pending`, with no result. Its residual was taken
+  // against the closed block, and still rebuilds the stored part.
+  const rest = atRest();
+  for (const name of ['task', 'pending'] as const) {
+    test(name, () => {
+      const stored = PARTS[name]!;
+      const closed = rest.get(stored.id)!;
+      expect(closed).toMatchObject({ status: 'error', result: { synthetic: true, error: { code: 'interrupted' } } });
+      const { result: _result, ...open } = closed;
+      const reopened: ToolCallBlock = { ...open, status: closed.started_at ? 'running' : 'pending' };
+      expect(reopened.status).toBe(stored.state.status as ToolCallBlock['status']);
+      expect(toolCallMetadata(reopened)).toEqual(toolCallMetadata(toolCallBlock(stored)));
+      expect(toToolView(reopened)).toEqual(toToolView(stored));
+      expect(getChildSessionId(reopened)).toBe(getChildSessionId(stored));
+    });
+  }
 });

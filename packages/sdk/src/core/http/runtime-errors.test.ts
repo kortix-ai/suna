@@ -160,7 +160,7 @@ test('isRuntimeNotReadyResponse is only the daemon answer, not every sandbox sta
     'sandbox not ready (status: stopped)',
     'Sandbox is not running',
     'runtime_not_ready_timeout',
-    '[opencode-sdk] Server URL not ready — sandbox is still loading',
+    '[kortix-runtime] Server URL not ready — sandbox is still loading',
     'Insufficient credits',
     '',
   ]) {
@@ -171,7 +171,7 @@ test('isRuntimeNotReadyResponse is only the daemon answer, not every sandbox sta
 
 test('isRuntimeStartingError also covers a runtime URL that is not pinned yet', () => {
   for (const message of [
-    '[opencode-sdk] Server URL not ready — sandbox is still loading',
+    '[kortix-runtime] Server URL not ready — sandbox is still loading',
     '[kortix-pty] Server URL not ready — sandbox is still loading',
     'sandbox not ready (status: starting)',
   ]) {

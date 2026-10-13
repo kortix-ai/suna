@@ -1,6 +1,7 @@
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { ToolPart } from '@/ui';
+import { toolCallBlock, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -270,13 +271,13 @@ describe('DetailSidebarToggle (F3v2)', () => {
   });
 });
 
-function part(tool: string, status: 'completed' | 'error' = 'completed'): ToolPart {
-  return {
+function part(tool: string, status: 'completed' | 'error' = 'completed'): ToolCallBlock {
+  return toolCallBlock({
     type: 'tool',
     tool,
     callID: `c-${tool}-${Math.random()}`,
     state: { status },
-  } as unknown as ToolPart;
+  } as unknown as ToolPart);
 }
 
 /**
@@ -288,7 +289,7 @@ function part(tool: string, status: 'completed' | 'error' = 'completed'): ToolPa
  * failure banner and the raw tool views.
  */
 function toolPartsChildren(props: {
-  parts: ToolPart[];
+  calls: ToolCallBlock[];
   sessionId: string;
   summary?: string;
 }): ReactElement[] {
@@ -304,7 +305,7 @@ function toolPartsChildren(props: {
 describe('ToolParts summary line (W3, opt-in)', () => {
   test('with `summary` set, a muted plain-language line renders above the failure banner and the tool views', () => {
     const children = toolPartsChildren({
-      parts: [part('bash', 'error')],
+      calls: [part('bash', 'error')],
       sessionId: 's1',
       summary: 'Ran a command',
     });
@@ -332,7 +333,7 @@ describe('ToolParts summary line (W3, opt-in)', () => {
   });
 
   test('without `summary` (the default StepDetailBody uses), no summary line renders', () => {
-    const children = toolPartsChildren({ parts: [part('bash')], sessionId: 's1' });
+    const children = toolPartsChildren({ calls: [part('bash')], sessionId: 's1' });
     expect(children.some((c) => c.type === 'p')).toBe(false);
   });
 });
@@ -351,8 +352,8 @@ describe('ToolParts summary line (W3, opt-in)', () => {
  * the row, in `tool/shared/infrastructure.test.tsx`.
  */
 describe('ToolParts defaultOpen wiring (Task 16, W11/D13)', () => {
-  const openFlags = (parts: ToolPart[]) =>
-    toolPartsChildren({ parts, sessionId: 's1' })
+  const openFlags = (calls: ToolCallBlock[]) =>
+    toolPartsChildren({ calls, sessionId: 's1' })
       .filter((c) => c.type === ToolPartRenderer)
       .map((c) => (c.props as { defaultOpen?: boolean }).defaultOpen);
 
@@ -379,7 +380,7 @@ describe('ToolParts defaultOpen wiring (Task 16, W11/D13)', () => {
 
 describe('ToolParts wrapper — un-cap keeps height only (Task 17, W11/D14)', () => {
   test('max-h-none stays; overflow-visible is gone so ToolCodeCard keeps its x-axis scrollbar', () => {
-    const provider = ToolParts({ parts: [part('bash')], sessionId: 's1' }) as ReactElement<{
+    const provider = ToolParts({ calls: [part('bash')], sessionId: 's1' }) as ReactElement<{
       children: ReactElement<{ className: string }>;
     }>;
     const wrapperClassName = provider.props.children.props.className;
@@ -392,8 +393,8 @@ describe('ToolParts — a lone show call fills the panel', () => {
   // The show tool sizes its preview `h-full` all the way down to the iframe.
   // That height only resolves if this column has one; without it the iframe
   // fell back to the browser's 150px default and the preview was clipped.
-  function columnClass(parts: ToolPart[]): string {
-    const provider = ToolParts({ parts, sessionId: 's1' }) as ReactElement<{
+  function columnClass(calls: ToolCallBlock[]): string {
+    const provider = ToolParts({ calls, sessionId: 's1' }) as ReactElement<{
       children: ReactElement<{ className: string }>;
     }>;
     return provider.props.children.props.className;
