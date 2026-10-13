@@ -24,6 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useQueryClient } from '@tanstack/react-query';
 
 const monoFont = MONO_FONT_FAMILY;
+import { CountBadge } from '@/components/kortix/count-badge';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Input } from '@/components/ui/input';
@@ -38,7 +39,7 @@ import { BottomSheetModal, BottomSheetView, BottomSheetScrollView, BottomSheetTe
 // touchable on Android (and RN's own on iOS) for correct gesture arbitration
 // inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
 const BottomSheetTouchable = GestureHandlerPressable;
-import { useThemeColors } from '@/lib/theme-colors';
+import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -704,30 +705,10 @@ export function ProjectDetailPage({
                 }}>
                 {t.label}
               </RNText>
-              {t.count > 0 && (
-                <View
-                  style={{
-                    backgroundColor: active
-                      ? isDark
-                        ? withAlpha(THEME.dark.foreground, 0.1)
-                        : withAlpha(THEME.light.foreground, 0.06)
-                      : isDark
-                        ? withAlpha(THEME.dark.foreground, 0.05)
-                        : withAlpha(THEME.light.foreground, 0.03),
-                    borderRadius: 10,
-                    paddingHorizontal: 6,
-                    paddingVertical: 1,
-                  }}>
-                  <RNText
-                    style={{
-                      fontSize: 11,
-                      fontFamily: 'Roobert',
-                      color: active ? fg : mutedStrong,
-                    }}>
-                    {t.count}
-                  </RNText>
-                </View>
-              )}
+              <CountBadge
+                count={t.count}
+                textClassName={active ? 'text-primary' : 'text-muted-foreground'}
+              />
             </Pressable>
           );
         })}
@@ -1613,7 +1594,7 @@ export function ProjectDetailPage({
                         }}>
                         Description
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.description}
                       </SelectableMarkdownText>
                     </View>
@@ -1633,7 +1614,7 @@ export function ProjectDetailPage({
                         }}>
                         Verification condition
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.verification_condition}
                       </SelectableMarkdownText>
                     </View>
@@ -1669,7 +1650,7 @@ export function ProjectDetailPage({
                           Input needed
                         </RNText>
                       </View>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.blocking_question}
                       </SelectableMarkdownText>
                     </View>
@@ -1697,7 +1678,7 @@ export function ProjectDetailPage({
                         }}>
                         Result
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.result}
                       </SelectableMarkdownText>
                       {!!selectedTask.verification_summary && (
@@ -1721,7 +1702,7 @@ export function ProjectDetailPage({
                             }}>
                             Verification
                           </RNText>
-                          <SelectableMarkdownText isDark={isDark}>
+                          <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                             {selectedTask.verification_summary}
                           </SelectableMarkdownText>
                         </View>

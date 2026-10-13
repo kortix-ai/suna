@@ -7,77 +7,81 @@ import { dispatchAgentMailEvent, resolveProjectForAgentMailInbox } from './sessi
 import { verifyAgentMailSignature } from './verify';
 import type { AgentMailMessageReceivedEvent } from './types';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { runWebhookWork } from '../webhook-work';
 
-emailWebhookApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/agentmail',
-    tags: ['channels'],
-    summary: 'AgentMail inbound email webhook (Svix signature verified)',
-    request: {
-      body: { content: { 'application/json': { schema: z.any() } } },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean() }), 'Accepted'),
-      ...errors(400, 401, 503),
-    },
-  }),
-  async (c: any) => {
-    const rawBody = await c.req.text();
-    let event: AgentMailMessageReceivedEvent;
-    try {
-      event = JSON.parse(rawBody) as AgentMailMessageReceivedEvent;
-    } catch {
-      return c.json({ error: 'Invalid JSON' }, 400);
-    }
-    // Verify the signature BEFORE any ack. Returning 200 on a malformed unsigned
-    // body (the old behavior) let an unauthenticated caller poison ack/monitoring
-    // with `{}` -> 200 ok. Reject malformed unsigned bodies with 400 instead.
-    // See NEW-1 (weekly pentest run #4).
-    if (!event?.event_type || !event.message?.inbox_id) {
-      return c.json({ error: 'Missing event_type or message.inbox_id' }, 400);
-    }
+export function registerEmailWebhookRoutes(): void {
+  emailWebhookApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/agentmail',
+      tags: ['channels'],
+      summary: 'AgentMail inbound email webhook (Svix signature verified)',
+      request: {
+        body: { content: { 'application/json': { schema: z.any() } } },
+      },
+      responses: {
+        200: json(z.object({ ok: z.boolean() }), 'Accepted'),
+        ...errors(400, 401, 503),
+      },
+    }),
+    async (c: any) => {
+      const rawBody = await c.req.text();
+      let event: AgentMailMessageReceivedEvent;
+      try {
+        event = JSON.parse(rawBody) as AgentMailMessageReceivedEvent;
+      } catch {
+        return c.json({ error: 'Invalid JSON' }, 400);
+      }
+      // Verify the signature BEFORE any ack. Returning 200 on a malformed unsigned
+      // body (the old behavior) let an unauthenticated caller poison ack/monitoring
+      // with `{}` -> 200 ok. Reject malformed unsigned bodies with 400 instead.
+      // See NEW-1 (weekly pentest run #4).
+      if (!event?.event_type || !event.message?.inbox_id) {
+        return c.json({ error: 'Missing event_type or message.inbox_id' }, 400);
+      }
 
-    const projectId = event.message?.inbox_id
-      ? await resolveProjectForAgentMailInbox(event.message.inbox_id)
-      : null;
-    const secret = projectId
-      ? await loadAgentMailWebhookSecretForInbox(projectId, event.message.inbox_id)
-      : config.AGENTMAIL_WEBHOOK_SECRET;
-    if (!secret) {
-      return c.json({ error: 'AgentMail webhook signing is not configured' }, 503);
-    }
-    // AgentMail documents the legacy `svix-*` names, while newer Svix /
-    // Standard Webhooks deliveries may use the equivalent `webhook-*` names.
-    // Accept both without weakening verification: the same raw body, timestamp,
-    // message id, signature and per-inbox secret are still required.
-    const svixId = c.req.header('svix-id') ?? c.req.header('webhook-id') ?? '';
-    const svixTimestamp = c.req.header('svix-timestamp') ?? c.req.header('webhook-timestamp') ?? '';
-    const svixSignature = c.req.header('svix-signature') ?? c.req.header('webhook-signature') ?? '';
-    const ok = verifyAgentMailSignature({
-      rawBody,
-      secret,
-      svixId,
-      svixTimestamp,
-      svixSignature,
-    });
-    if (!ok) {
-      console.warn('[email-webhook] signature verification failed', {
-        inboxId: event.message.inbox_id,
-        hasSvixId: Boolean(c.req.header('svix-id')),
-        hasWebhookId: Boolean(c.req.header('webhook-id')),
-        hasSvixTimestamp: Boolean(c.req.header('svix-timestamp')),
-        hasWebhookTimestamp: Boolean(c.req.header('webhook-timestamp')),
-        hasSvixSignature: Boolean(c.req.header('svix-signature')),
-        hasWebhookSignature: Boolean(c.req.header('webhook-signature')),
+      const projectId = event.message?.inbox_id
+        ? await resolveProjectForAgentMailInbox(event.message.inbox_id)
+        : null;
+      const secret = projectId
+        ? await loadAgentMailWebhookSecretForInbox(projectId, event.message.inbox_id)
+        : config.AGENTMAIL_WEBHOOK_SECRET;
+      if (!secret) {
+        return c.json({ error: 'AgentMail webhook signing is not configured' }, 503);
+      }
+      // AgentMail documents the legacy `svix-*` names, while newer Svix /
+      // Standard Webhooks deliveries may use the equivalent `webhook-*` names.
+      // Accept both without weakening verification: the same raw body, timestamp,
+      // message id, signature and per-inbox secret are still required.
+      const svixId = c.req.header('svix-id') ?? c.req.header('webhook-id') ?? '';
+      const svixTimestamp = c.req.header('svix-timestamp') ?? c.req.header('webhook-timestamp') ?? '';
+      const svixSignature = c.req.header('svix-signature') ?? c.req.header('webhook-signature') ?? '';
+      const ok = verifyAgentMailSignature({
+        rawBody,
+        secret,
+        svixId,
+        svixTimestamp,
+        svixSignature,
       });
-      return c.json({ error: 'Invalid signature' }, 401);
-    }
-    bindIntegrationPrincipal('agentmail');
+      if (!ok) {
+        console.warn('[email-webhook] signature verification failed', {
+          inboxId: event.message.inbox_id,
+          hasSvixId: Boolean(c.req.header('svix-id')),
+          hasWebhookId: Boolean(c.req.header('webhook-id')),
+          hasSvixTimestamp: Boolean(c.req.header('svix-timestamp')),
+          hasWebhookTimestamp: Boolean(c.req.header('webhook-timestamp')),
+          hasSvixSignature: Boolean(c.req.header('svix-signature')),
+          hasWebhookSignature: Boolean(c.req.header('webhook-signature')),
+        });
+        return c.json({ error: 'Invalid signature' }, 401);
+      }
+      bindIntegrationPrincipal('agentmail');
 
-    void dispatchAgentMailEvent(event).catch((err) => {
-      console.error('[email-webhook] handler failed', err);
-    });
-    return c.json({ ok: true });
-  },
-);
+      // A failure inside the ack window answers 500 so AgentMail retries; the
+      // dedup claims are released first (`webhook-work.ts`).
+      const outcome = await runWebhookWork('email-webhook', () => dispatchAgentMailEvent(event));
+      if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
+      return c.json({ ok: true });
+    },
+  );
+}

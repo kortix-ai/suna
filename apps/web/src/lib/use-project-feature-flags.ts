@@ -37,11 +37,16 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
-  const piWorker = useFeatureFlag(projectId, 'pi_worker');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
-  const configReleases = useFeatureFlag(projectId, 'config_releases');
   const usRegion = useFeatureFlag(projectId, 'us_region');
+  const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
+  const notificationCenter = useFeatureFlag(projectId, 'notification_center');
+  const volumes = useFeatureFlag(projectId, 'volumes');
+  const statelessSessions = useFeatureFlag(projectId, 'stateless_sessions');
+  const drives = useFeatureFlag(projectId, 'drives');
+  const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
+  const sessionLog = useFeatureFlag(projectId, 'session_log');
 
   return {
     flags: {
@@ -55,13 +60,18 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
-      pi_worker: piWorker.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       pi_harness: piHarness.enabled,
-      config_releases: configReleases.enabled,
       us_region: usRegion.enabled,
+      event_triggers: eventTriggers.enabled,
+      notification_center: notificationCenter.enabled,
+      volumes: volumes.enabled,
+      stateless_sessions: statelessSessions.enabled,
+      drives: drives.enabled,
+      ephemeral_sandboxes: ephemeralSandboxes.enabled,
+      session_log: sessionLog.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: usRegion.isLoading,
+    isLoading: sessionLog.isLoading,
   };
 }

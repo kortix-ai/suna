@@ -13,13 +13,13 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { accountMembers } from '@kortix/db';
 import { sql } from 'drizzle-orm';
-import * as realShared from '../projects/routes/shared';
+import * as realShared from '../projects/session-open';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
-mock.module('../projects/routes/shared', () => ({
+mock.module('../projects/session-open', () => ({
   ...realShared,
   openSession: async () => ({ stage: 'starting', sandbox: null, opencode_session_id: null, retriable: true }),
 }));

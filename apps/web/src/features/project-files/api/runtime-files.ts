@@ -14,12 +14,19 @@
 import type {
   FileContent,
   FileNode,
-  FindMatch,
   GitFileStatus,
   RuntimeProjectInfo,
   ServerHealth,
 } from '@/features/file-browser/types';
-import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk';
+import {
+  fetchProjectArchive,
+  fetchProjectFileRaw,
+  listProjectDirectory,
+  readProjectFile,
+  searchProjectFiles,
+} from '@kortix/sdk';
+import { getLanguageFromExt } from '@/features/file-viewer';
+import type { FileContentMatch } from '../explorer-source';
 
 const READ_ONLY = 'Read-only — project files come from Git';
 
@@ -53,97 +60,223 @@ function basename(p: string): string {
   return idx === -1 ? trimmed : trimmed.slice(idx + 1);
 }
 
+export { toRepoRelative };
+
 // ---------------------------------------------------------------------------
 // Listing
 // ---------------------------------------------------------------------------
 
+/** Entries per folder page. A folder with more shows "Load more" (KRTX-1723). */
+export const FILE_LIST_PAGE_SIZE = 500;
+
+export interface FileListPage {
+  /** Folders first, then files, each in the server's order. */
+  nodes: FileNode[];
+  /** Pass to the next call for the rest of the folder. Null: no next page. */
+  nextCursor: string | null;
+  /**
+   * The folder holds more entries than this page. With `nextCursor` null it
+   * cannot be paged: an API older than paging cut it at 5,000 entries.
+   */
+  truncated: boolean;
+}
+
 /**
- * List immediate children (files + directories) of `dirPath` for the given
- * project at the given ref.
+ * One page of the immediate children (files + directories) of `dirPath` for
+ * the given project at the given ref. Without `cursor` it reads the first page.
  *
- * The backend returns a FLAT recursive list (`git ls-tree -r`), so we filter
- * down to entries whose parent equals `dirPath`, plus synthesised directory
- * entries for unique intermediate path segments below `dirPath`.
+ * One folder level per request (`depth=1`). The recursive list stops at 1,000
+ * files, so a tree built from it lost every folder that sorted after file
+ * 1,000 (KRTX-1723). A folder larger than one page continues through
+ * `nextCursor`, which pins the commit the first page read.
  */
 export async function listFiles(
   projectId: string,
   ref: string,
   dirPath: string,
-): Promise<FileNode[]> {
+  cursor?: string,
+): Promise<FileListPage> {
   const relativeDir = toRepoRelative(dirPath);
-  const apiDir = relativeDir || undefined;
-
-  const entries = await listProjectFiles(projectId, {
+  const { entries, truncated, next_cursor } = await listProjectDirectory(projectId, {
     ref,
-    path: apiDir,
+    path: relativeDir || undefined,
+    cursor,
+    limit: FILE_LIST_PAGE_SIZE,
   });
 
-  // recursive list → dir-immediate children filter
-  const prefix = relativeDir ? `${relativeDir}/` : '';
-  const fileNodes = new Map<string, FileNode>();
-  const dirNodes = new Map<string, FileNode>();
+  const toNode = (entry: (typeof entries)[number]): FileNode => ({
+    name: basename(entry.path),
+    path: toWorkspacePath(entry.path),
+    absolute: toWorkspacePath(entry.path),
+    type: entry.type,
+    ignored: false,
+  });
+  return {
+    nodes: [
+      ...entries.filter((entry) => entry.type === 'directory').map(toNode),
+      ...entries.filter((entry) => entry.type === 'file').map(toNode),
+    ],
+    nextCursor: next_cursor ?? null,
+    truncated: !!truncated,
+  };
+}
 
-  for (const entry of entries) {
-    if (relativeDir && !entry.path.startsWith(prefix)) continue;
-    const rest = relativeDir ? entry.path.slice(prefix.length) : entry.path;
-    if (!rest) continue;
+/**
+ * Search the project's files by name on the server, which reads the whole
+ * repository (not a capped list). Returns "/workspace/..." paths, the form
+ * the tree uses.
+ */
+export async function searchFiles(
+  projectId: string,
+  ref: string,
+  query: string,
+  options?: { limit?: number },
+): Promise<string[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { results } = await searchProjectFiles(projectId, q, { ref, limit: options?.limit });
+  return results.map((match) => toWorkspacePath(match.path));
+}
 
-    const firstSep = rest.indexOf('/');
-    if (firstSep === -1) {
-      fileNodes.set(entry.path, {
-        name: basename(entry.path),
-        path: toWorkspacePath(entry.path),
-        absolute: toWorkspacePath(entry.path),
-        type: 'file',
-        ignored: false,
-      });
-    } else {
-      const dirSegment = rest.slice(0, firstSep);
-      const dirRelPath = relativeDir ? `${relativeDir}/${dirSegment}` : dirSegment;
-      if (!dirNodes.has(dirRelPath)) {
-        dirNodes.set(dirRelPath, {
-          name: dirSegment,
-          path: toWorkspacePath(dirRelPath),
-          absolute: toWorkspacePath(dirRelPath),
-          type: 'directory',
-          ignored: false,
-        });
-      }
-    }
-  }
-
-  return [...dirNodes.values(), ...fileNodes.values()];
+/**
+ * Search the text of every file at the ref on the server (`git grep`, case
+ * insensitive, at most 10 lines per file). Returns "/workspace/..." paths and
+ * the 1-based line of each match.
+ */
+export async function searchFileContents(
+  projectId: string,
+  ref: string,
+  query: string,
+  options?: { limit?: number },
+): Promise<FileContentMatch[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { results } = await searchProjectFiles(projectId, q, {
+    ref,
+    content: true,
+    limit: options?.limit,
+  });
+  return results.map((match) => ({
+    path: toWorkspacePath(match.path),
+    lineNumber: match.line_number ?? 1,
+    lineText: match.line_text ?? '',
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
 
+/**
+ * Extensions whose preview renders from the blob pipeline (`useBinaryBlob`) or
+ * from bytes the renderer fetches itself. Their `content` field is never read,
+ * so `readFile` reports binary for them without touching the network.
+ */
+const BLOB_SERVED_EXTENSIONS = new Set([
+  // Office documents and spreadsheets (legacy formats take the binary fallback).
+  'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls',
+  // Databases.
+  'sqlite', 'sqlite3', 'db', 'db3', 'sdb', 's3db',
+  // Media and archives.
+  'mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogv',
+  'mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'wma',
+  'zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk',
+  // HEIC renders through the HEIC blob pipeline, never as base64 content.
+  'heic', 'heif',
+]);
+
+/** The mime types the base64 content path needs: the image data URL and pdf. */
+const BASE64_MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+  tiff: 'image/tiff',
+  tif: 'image/tiff',
+  pdf: 'application/pdf',
+};
+
+/** Git's own binary rule, and the sandbox daemon's: a NUL byte in the first
+ *  8000 bytes means binary. Text effectively never contains one. */
+function isTextBytes(bytes: Uint8Array): boolean {
+  return !bytes.subarray(0, 8000).includes(0);
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function readRawBytes(projectId: string, repoPath: string, ref: string): Promise<Uint8Array> {
+  const blob = await fetchProjectFileRaw(projectId, repoPath, ref);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/**
+ * Read a file at the project's git ref as the shared viewer's `FileContent`.
+ *
+ * `/files/content` answers every file as text — `git show` stdout, which is
+ * lossy for anything that is not UTF-8 — and the old adapter hard-coded
+ * `type: 'text'` on top of it, so every binary category rendered blank or as
+ * mojibake. This classifies the way the sandbox daemon does: bytes decide, and
+ * each category takes the shape its renderer consumes.
+ */
 export async function readFile(
   projectId: string,
   ref: string,
   filePath: string,
 ): Promise<FileContent> {
   const relativePath = toRepoRelative(filePath);
-  const result = await readProjectFile(projectId, relativePath, ref);
-  return {
-    type: 'text',
-    content: result.content,
-  };
+  const name = basename(relativePath);
+  const hasExtension = name.includes('.');
+  const ext = hasExtension ? name.split('.').pop()!.toLowerCase() : '';
+
+  // The renderers for these read the blob pipeline or their own bytes; fetch
+  // nothing for their unused content.
+  if (hasExtension && BLOB_SERVED_EXTENSIONS.has(ext)) {
+    return { type: 'binary', content: '', mimeType: 'application/octet-stream' };
+  }
+
+  // Images and PDFs render from base64 content — the same shape the daemon's
+  // /file/content serves for binaries.
+  if (hasExtension && BASE64_MIME_BY_EXT[ext]) {
+    const bytes = await readRawBytes(projectId, relativePath, ref);
+    return { type: 'binary', content: toBase64(bytes), encoding: 'base64', mimeType: BASE64_MIME_BY_EXT[ext] };
+  }
+
+  // A name the language table knows (code, config, markdown, csv, html…) is
+  // text, and the JSON content read is byte-safe for it.
+  if (hasExtension && getLanguageFromExt(name) !== 'plaintext') {
+    const result = await readProjectFile(projectId, relativePath, ref);
+    return { type: 'text', content: result.content };
+  }
+
+  // Unknown or missing extension: the bytes decide, text or binary.
+  const bytes = await readRawBytes(projectId, relativePath, ref);
+  if (isTextBytes(bytes)) {
+    return { type: 'text', content: new TextDecoder().decode(bytes), mimeType: 'text/plain; charset=utf-8' };
+  }
+  return { type: 'binary', content: '', mimeType: 'application/octet-stream' };
 }
 
 /**
- * Project API returns text only; binary preview is unsupported.
- * Producing an empty blob keeps consumers happy without lying about content.
+ * Read a file as a Blob of its exact bytes. Binary previews (docx, video,
+ * audio, pptx, zip, HEIC) and single-file downloads both come through here.
  */
 export async function readFileAsBlob(
   projectId: string,
   ref: string,
   filePath: string,
 ): Promise<Blob> {
-  const relativePath = toRepoRelative(filePath);
-  const result = await readProjectFile(projectId, relativePath, ref);
-  return new Blob([result.content], { type: 'text/plain;charset=utf-8' });
+  return fetchProjectFileRaw(projectId, toRepoRelative(filePath), ref);
 }
 
 export async function downloadFile(
@@ -242,11 +375,6 @@ export async function findFiles(
   _query: string,
   _options?: { type?: 'file' | 'directory'; limit?: number },
 ): Promise<string[]> {
-  return [];
-}
-
-// TODO: wire to project history/search once backend supports it
-export async function findText(_pattern: string): Promise<FindMatch[]> {
   return [];
 }
 

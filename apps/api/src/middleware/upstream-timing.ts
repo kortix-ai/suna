@@ -103,7 +103,7 @@ export async function upstreamTiming(c: Context, next: Next): Promise<void> {
     ...(durations.upstream > 0 ? [`up;dur=${durations.upstream}`] : []),
     `api;dur=${durations.api}`,
     // The turn-latency spec (PR #7840) §5: present only on a promptDelivery turn
-    // (see recordTurnStageMarks's one caller, sandbox-proxy/routes/preview.ts)
+    // (see recordTurnStageMarks's one caller, sandbox-proxy/forward/upstream.ts)
     // — empty, and therefore invisible, on every other request.
     ...formatTurnStageEntries(),
   ];

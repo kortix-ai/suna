@@ -25,26 +25,26 @@ function handlerSource(method: string, path: string): string {
 const DESCRIPTOR = handlerSource('post', '/{projectId}/sessions/{sessionId}/config-release');
 const ARCHIVE = handlerSource('get', '/{projectId}/config-archives/{configTreeId}');
 
-describe('the feature flag is the chokepoint of both routes', () => {
-  test('each route gates on the flag', () => {
-    expect(DESCRIPTOR).toContain('configReleasesGate(c, project)');
-    expect(ARCHIVE).toContain('configReleasesGate(c, project)');
+describe('no feature flag gates either route', () => {
+  // Config releases graduated out of the flag system. A value a project
+  // stored under the old `config_releases` flag must not turn either route
+  // into a `403 feature_disabled`.
+  test('neither route reads a feature flag', () => {
+    for (const source of [SRC, DESCRIPTOR, ARCHIVE]) {
+      expect(source).not.toContain('requireFeatureFlag');
+      expect(source).not.toContain('configReleasesGate');
+      expect(source).not.toContain('config_releases');
+    }
   });
 
-  test('the descriptor route gates AFTER authz, so a non-member learns nothing', () => {
+  test('the descriptor route authorizes BEFORE any release is built', () => {
     const authz = DESCRIPTOR.indexOf('PROJECT_ACTIONS.PROJECT_SESSION_READ');
-    const gate = DESCRIPTOR.indexOf('configReleasesGate(c, project)');
+    const sandbox = DESCRIPTOR.indexOf('sandboxSession(c, projectId, sessionId)');
+    const build = DESCRIPTOR.indexOf('resolveDesiredRelease(');
     expect(authz).toBeGreaterThan(-1);
-    expect(gate).toBeGreaterThan(authz);
-  });
-
-  test('the flag is read BEFORE any release is built or archive is served', () => {
-    expect(DESCRIPTOR.indexOf('configReleasesGate(c, project)')).toBeLessThan(
-      DESCRIPTOR.indexOf('resolveDesiredRelease('),
-    );
-    expect(ARCHIVE.indexOf('configReleasesGate(c, project)')).toBeLessThan(
-      ARCHIVE.indexOf('serveConfigArchive('),
-    );
+    expect(sandbox).toBeGreaterThan(-1);
+    expect(build).toBeGreaterThan(authz);
+    expect(build).toBeGreaterThan(sandbox);
   });
 });
 

@@ -48,8 +48,6 @@ import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { isPlausibleServiceKey } from './heal-session-token';
 
-export { isPlausibleServiceKey };
-
 /** One bounded exec. A reconcile must never hold an open. */
 const EXEC_TIMEOUT_MS = 15_000;
 

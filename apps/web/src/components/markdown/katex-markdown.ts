@@ -117,6 +117,15 @@ export const katexRemarkPlugins: PluggableList = Object.entries(defaultRemarkPlu
   },
 ) as PluggableList;
 
+export const KATEX_RENDER_OPTIONS = {
+  throwOnError: false,
+  errorColor: 'var(--color-muted-foreground)',
+  strict: 'ignore' as const,
+  // Agent-authored math: bound `\rule{99999em}{1em}` and macro blow-ups.
+  maxSize: 20,
+  maxExpand: 200,
+};
+
 /**
  * Build rehype plugins with sanitize BEFORE katex so KaTeX output is not stripped.
  * Streamdown default order is raw → katex → sanitize → harden (broken for fractions/sqrt).
@@ -126,6 +135,12 @@ export function buildKatexRehypePlugins(includeRaw: boolean): PluggableList {
   for (const [key, plugin] of Object.entries(defaultRehypePlugins)) {
     if (key === 'sanitize' && Array.isArray(plugin)) {
       byKey[key] = [plugin[0], katexSanitizeSchema];
+    } else if (key === 'katex' && Array.isArray(plugin)) {
+      byKey[key] = [plugin[0], {
+          ...(plugin[1] as object),
+          maxSize: KATEX_RENDER_OPTIONS.maxSize,
+          maxExpand: KATEX_RENDER_OPTIONS.maxExpand,
+        }];
     } else {
       byKey[key] = plugin;
     }
@@ -148,11 +163,6 @@ export function buildKatexRehypePlugins(includeRaw: boolean): PluggableList {
 export const katexRehypePlugins = buildKatexRehypePlugins(true);
 export const katexRehypePluginsNoRaw = buildKatexRehypePlugins(false);
 
-export const KATEX_RENDER_OPTIONS = {
-  throwOnError: false,
-  errorColor: 'var(--color-muted-foreground)',
-  strict: 'ignore' as const,
-};
 
 export function normalizeClassName(className?: string | string[]): string {
   if (!className) return '';

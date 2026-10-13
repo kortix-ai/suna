@@ -22,6 +22,13 @@ import { errors, json, makeOpenApiApp } from '../openapi';
 import { appTlsCheckStatus, type AppExistsCheck } from '../apps/edge';
 import { resolvePreviewHost } from '../sandbox-proxy/preview-hosts';
 import { resolveExternalIdFromHostLabel } from '../sandbox-proxy/backend';
+import { requestClientKey } from '../middleware/client-ip';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+
+// The gate is anonymous and each unknown preview host costs a table scan, so one
+// client address gets a bounded number of asks. The bundled Caddy asks once per
+// new hostname, far below this.
+const TLS_CHECK_POLICY = { limit: 120, windowMs: 60_000 };
 
 /** Whether a sandbox with this host label exists. */
 export type SandboxExistsCheck = (sandboxLabel: string) => Promise<boolean>;
@@ -52,8 +59,7 @@ export async function previewTlsCheckStatus(
 
 /**
  * 200 if `domain` is a hostname this deployment actually serves — an App or a
- * sandbox preview. Checked in that order; they cannot both match, because the
- * two families sit under different base domains.
+ * sandbox preview. No two can match: previews sit under a different base domain.
  */
 export async function edgeTlsCheckStatus(
   domain: string | null | undefined,
@@ -69,6 +75,7 @@ export function createEdgeApp(
   deps: { appExists?: AppExistsCheck; sandboxExists?: SandboxExistsCheck } = {},
 ) {
   const edgeApp = makeOpenApiApp();
+  const limiter = new TokenBucketRateLimiter('edge_tls_check');
 
   edgeApp.openapi(
     createRoute({
@@ -79,10 +86,18 @@ export function createEdgeApp(
       request: { query: z.object({ domain: z.string().optional() }) },
       responses: {
         200: json(z.object({ ok: z.boolean() }), 'Domain is a servable host'),
-        ...errors(403, 404),
+        ...errors(403, 404, 429),
       },
     }),
     async (c) => {
+      const limit = limiter.check(requestClientKey(c), TLS_CHECK_POLICY);
+      if (!limit.allowed) {
+        return c.json(
+          { error: true, message: 'Too many TLS checks', status: 429 as const },
+          429,
+          { 'Retry-After': String(Math.ceil(limit.resetMs / 1000)) },
+        );
+      }
       const status = await edgeTlsCheckStatus(c.req.query('domain'), deps);
       if (status === 200) return c.json({ ok: true }, 200);
       return c.json(

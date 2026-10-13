@@ -2,6 +2,8 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../../billing/services/compute-metering';
 import * as realProviders from '../../../platform/providers';
+import * as realBoxQueries from '../../reaping/box-queries';
+import * as realInboxRows from '../inbox-rows';
 import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 
 let sandboxRow: Record<string, unknown> | null = null;
@@ -14,6 +16,11 @@ let captureGate: Promise<void> | null = null;
 // script a fail-then-succeed stop without mocking the provider module again.
 let stopErrors: Array<Error | undefined> = [];
 let pausedCompute: string[] = [];
+// The manual stop claim (box-queries): what it was asked for, whether it is
+// granted, and which claim tokens were released.
+let claimGranted = true;
+let claimCalls: string[] = [];
+let releasedClaims: string[] = [];
 let cacheInvalidations: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
@@ -136,6 +143,24 @@ mock.module('../../lib/session-transcript-capture', () => ({
   },
 }));
 
+mock.module('../../reaping/box-queries', () => ({
+  ...realBoxQueries,
+  claimManualSandboxStop: async (sandboxId: string, token: string) => {
+    callOrder.push('claim');
+    claimCalls.push(`${sandboxId}:${token}`);
+    return claimGranted;
+  },
+  releaseSandboxStopClaim: async (_sandboxId: string, token: string) => {
+    releasedClaims.push(token);
+  },
+}));
+
+// The Stop's prompt hold is its own write, proven on real rows in
+// __tests__/integration-session-status-transitions.test.ts.
+mock.module('../inbox-rows', () => ({
+  ...realInboxRows,
+  holdInboxPrompts: async () => 0,
+}));
 const { stopSession } = await import('../stop');
 
 const baseInput = {
@@ -154,6 +179,9 @@ beforeEach(() => {
   process.env.STOP_SYNC_BUDGET_MS = '5000';
   stopErrors = [];
   pausedCompute = [];
+  claimGranted = true;
+  claimCalls = [];
+  releasedClaims = [];
   cacheInvalidations = [];
   updateCalls = [];
 
@@ -284,6 +312,39 @@ describe('stopSession', () => {
     expect(
       updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
     ).toBe(true);
+  });
+
+  // 05#4: a prompt could land between the abort and provider.stop. The claim
+  // makes beginSandboxTurn refuse it, so it must commit before the abort.
+  test('claims the row before it aborts the turn and powers the box off', async () => {
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    const result = await stopSession(baseInput);
+    expect(result.status).toBe(200);
+    expect(callOrder[0]).toBe('claim');
+    expect(callOrder.indexOf('claim')).toBeLessThan(callOrder.indexOf('abort'));
+    expect(callOrder.indexOf('claim')).toBeLessThan(callOrder.indexOf('provider.stop'));
+    expect(claimCalls).toHaveLength(1);
+    // applyStoppedState strips the claim; a successful stop releases nothing.
+    expect(releasedClaims).toEqual([]);
+  });
+
+  test('answers `stopping` and does nothing when another stop already holds the claim', async () => {
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    claimGranted = false;
+    const result = await stopSession(baseInput);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, status: 'stopping' });
+    expect(stopCalls).toEqual([]);
+    expect(abortFetchCalls).toEqual([]);
+  });
+
+  test('releases its claim when the provider stop fails', async () => {
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    stopError = new Error('internal provider error: connection refused');
+    const result = await stopSession(baseInput);
+    expect(result.status).toBe(502);
+    expect(releasedClaims).toHaveLength(1);
+    expect(releasedClaims[0]).toBe(claimCalls[0].split(':')[1]);
   });
 
   test('502s on a genuine provider failure and leaves the rows untouched', async () => {
@@ -430,7 +491,7 @@ describe('stopSession', () => {
       expect(abortFetchCalls[0]?.url).toBe('https://daemon.example.test/kortix/abort');
       expect(abortFetchCalls[0]?.init.method).toBe('POST');
       // Ordering: the abort call happens strictly before provider.stop().
-      expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
+      expect(callOrder).toEqual(['claim', 'abort', 'capture:sess-1', 'provider.stop']);
       // And it asks for a TAIL. This capture is AWAITED with the user holding
       // the Stop button; the default scope is a 60s pagination with three
       // retries. The whole copy is maintained at every turn end, so the only

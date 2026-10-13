@@ -1,17 +1,31 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import Loading from '@/components/ui/loading';
 import { SESSION_NOTICE } from '@kortix/sdk';
 import { MoonIcon } from '@phosphor-icons/react';
 
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
+import { ComputerAwakeBar } from './computer-awake-bar';
 import { QuoteList } from './quote-list';
+import { ServedModelBar } from './served-model-bar';
+
+/**
+ * A full-width bar between a docked question and the card (the notice, the
+ * served-model bar). The question, these bars, and the card read as one
+ * surface: square top, and the side segments of the ring the question starts
+ * and the card ends. The clip keeps only the side ring, so no ring line
+ * crosses a seam.
+ */
+const DOCKED_MIDDLE_LAYER_CLASS =
+  'ring-muted/15 rounded-t-none ring-3 [clip-path:inset(0_-8px_0_-8px)]';
 
 /**
  * The composer's stack ABOVE the card: the `'above'` `/` dock anchor, the
- * reply-quote card, then the queue strip and the "still waking" notice.
+ * reply-quote card, then the queue strip, the "still waking" notice, the
+ * "computer stays on" strip and the served-model strip.
  * `ComposerImpl` owns the state and effects and passes them in; this renders
  * exactly the subtree `ComposerImpl` used to inline (KRTX-373 phase 1).
  */
@@ -35,9 +49,18 @@ export function ComposerAboveCard({
   inputSlot,
   notice = null,
   onNoticeRetry,
+  servedModel = null,
+  computerAwake = null,
+  onModelChange,
   slashMenuPlacement = 'above',
+  questionActive = false,
 }: ComposerAboveCardProps) {
   const showQueueStrip = Boolean(inputSlot);
+  // The strip explains the model selector, so it shows only where one exists.
+  const served = onModelChange ? servedModel : null;
+  // A waking computer is not one that stays on: the notice says what is true.
+  // A docked question meets the card as one surface: no strip between them.
+  const awake = notice || questionActive ? null : computerAwake;
 
   return (
     <>
@@ -81,17 +104,23 @@ export function ComposerAboveCard({
     {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
 
     {/*
-      The stack above the card. Each layer owns its OWN top rounding rather
-      than leaning on a wrapper clip: the old `overflow-hidden rounded-t-xl`
-      on this wrapper only rounded whichever child happened to be topmost,
-      so a full-width notice under the 96%-wide queue strip kept square
-      corners — the "sometimes it breaks" bug. The rule now is width-based
-      and unconditional: a layer wider than the one above it rounds its top
-      (queue strip at 96%, first full-width bar, the card itself); a layer
-      the SAME width as the one above stays square and shares the divider.
+      The stack above the card. Every layer is full width (the strip, the
+      notice, the sandbox-on strip, the served-model bar, the card), so the stack reads as one
+      surface: the topmost visible layer rounds its top, every layer under
+      it is square and its top border is the divider. A narrower strip
+      exposed the corners of the layer under it and is not allowed
+      (`composer-above-card.test.tsx` pins `w-full`).
+
+      Whether the strip is visible is known only to CSS (`:empty`, see
+      below), so "square under a visible strip" is a sibling selector on
+      this wrapper. `ComposerCard` applies the same rule to the card
+      through `data-composer-stack`.
     */}
-    {(notice || showQueueStrip) && (
-      <div className="relative isolate flex w-full flex-col items-center justify-center">
+    {(notice || awake || served || showQueueStrip) && (
+      <div
+        data-composer-stack
+        className="relative isolate flex w-full flex-col items-center justify-center [&>[data-composer-strip]:not(:empty)~*]:rounded-t-none"
+      >
         {/*
           ONE element carries both the strip's chrome (bg, border, padding)
           AND `empty:hidden`. `inputSlot` is a fragment whose children all
@@ -102,7 +131,16 @@ export function ComposerAboveCard({
           shell around it kept painting as an empty sliver.
         */}
         {showQueueStrip && (
-          <div className={COMPOSER_INPUT_SLOT_CLASS}>
+          // A pending question also carries a ring around the whole
+          // surface, down to the card: each layer clips its ring at the seam.
+          <div
+            data-composer-strip
+            className={cn(
+              COMPOSER_INPUT_SLOT_CLASS,
+              questionActive &&
+                'bg-background ring-muted/15 ring-3 [clip-path:inset(-8px_-8px_0_-8px)]',
+            )}
+          >
             {inputSlot}
           </div>
         )}
@@ -111,9 +149,13 @@ export function ComposerAboveCard({
           <div
             role="status"
             aria-live="polite"
-            // Always rounded: it is either the topmost layer or sits under
-            // the NARROWER queue strip — both cases expose its top corners.
-            className="bg-sidebar border-border flex w-full items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5"
+            // Rounded when topmost; square under a visible strip (the
+            // wrapper's sibling rule). Under a docked question it also
+            // carries the side ring.
+            className={cn(
+              'bg-sidebar border-border flex w-full items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5',
+              questionActive && DOCKED_MIDDLE_LAYER_CLASS,
+            )}
           >
             {notice === SESSION_NOTICE.idle ? (
               <MoonIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
@@ -135,6 +177,18 @@ export function ComposerAboveCard({
               </Button>
             )}
           </div>
+        )}
+
+        {awake && <ComputerAwakeBar line={awake} />}
+
+        {served && (
+          <ServedModelBar
+            notice={served}
+            className={cn(
+              (notice || awake) && 'rounded-t-none',
+              questionActive && DOCKED_MIDDLE_LAYER_CLASS,
+            )}
+          />
         )}
       </div>
     )}

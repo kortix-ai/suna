@@ -152,6 +152,8 @@ interface FilesStoreActions {
 export function isWithinRoot(path: string, root: string): boolean {
   const normPath = path.replace(/\/+$/, '') || '/';
   const normRoot = root.replace(/\/+$/, '') || '/';
+  // Everything is within `/`. Comparing against `'/' + '/'` put no path in it.
+  if (normRoot === '/') return true;
   return normPath === normRoot || normPath.startsWith(normRoot + '/');
 }
 
@@ -195,7 +197,8 @@ export function createFilesStore(): FilesStoreApi {
 
     navigateToPath: (path: string) => {
       const { rootPath } = get();
-      let normalized = path || '/workspace';
+      // An empty path is "home": the root this explorer is held to, if any.
+      let normalized = path || rootPath || '/workspace';
       // Clamp to rootPath when set — prevent escaping the project directory
       if (rootPath && !isWithinRoot(normalized, rootPath)) {
         normalized = rootPath;
@@ -246,6 +249,7 @@ export function createFilesStore(): FilesStoreApi {
         filePathList: fileList,
         currentFileIndex: index,
         isSearchOpen: false,
+        targetLine: null,
         // REMOVED: currentPath: parentDir - don't jump to file's folder
       });
       get().revealPath(filePath);
@@ -256,6 +260,7 @@ export function createFilesStore(): FilesStoreApi {
         view: 'browser',
         panelMode: 'welcome',
         selectedFilePath: null,
+        targetLine: null,
       });
     },
 
@@ -266,6 +271,7 @@ export function createFilesStore(): FilesStoreApi {
         set({
           currentFileIndex: nextIndex,
           selectedFilePath: filePathList[nextIndex],
+          targetLine: null,
         });
       }
     },
@@ -277,6 +283,7 @@ export function createFilesStore(): FilesStoreApi {
         set({
           currentFileIndex: prevIndex,
           selectedFilePath: filePathList[prevIndex],
+          targetLine: null,
         });
       }
     },

@@ -18,7 +18,7 @@ import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import { OpencodeDb } from '@/harness/open-code/opencode-db'
 import { RuntimeStateStore } from '@/harness/open-code/runtime-state-projection'
-import { kortixEventBus, resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createRuntimeRouter } from '@/routes/kortix/runtime'
 import { createOpenCodeQueryService } from '@/harness/open-code/queries'
 
@@ -99,6 +99,9 @@ let dbPath: string
 function buildDb(messages = 6, attachmentBytes = 120_000): void {
   const db = new Database(dbPath, { create: true })
   db.exec('PRAGMA journal_mode = WAL')
+  // A throwaway temp database: durability costs real fsyncs, and on a loaded
+  // worker sandbox that pushed the beforeEach past bun's 5 s default.
+  db.exec('PRAGMA synchronous = OFF')
   db.exec(`
     CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL,
       directory text NOT NULL, title text NOT NULL, version text NOT NULL, revert text, agent text, model text,
@@ -457,6 +460,22 @@ describe('GET /messages/:sessionId', () => {
     expect(body.head_seq).toBeNull()
   })
 
+  test('a cursor read on a degraded database is a typed error, never a silently wrong page', async () => {
+    const { app } = makeRouter({ dbPath: join(root, 'absent.db') })
+    const delta = await app.request(`http://d/messages/${SESSION}?after_seq=100`, { headers: auth })
+    expect(delta.status).toBe(502)
+    const body = (await delta.json()) as any
+    expect(body.error).toBe('transcript unreadable')
+    expect(body.source).toBe('opencode-http')
+    expect(body.detail).toBe('cursor reads need the sqlite mirror; it is unavailable')
+    expect(body.db.supported).toBe(false)
+    expect(body.db.version_supported).toBe(true)
+    expect(body.messages).toBeUndefined()
+    // A message-id cursor (`?after=msg_…`) degrades the same way.
+    const after = await app.request(`http://d/messages/${SESSION}?after=msg_004`, { headers: auth })
+    expect(after.status).toBe(502)
+  })
+
   test('gzip compresses the transcript page', async () => {
     const { app } = makeRouter()
     const gz = await app.request(`http://d/messages/${SESSION}?limit=6`, { headers: { ...auth, 'Accept-Encoding': 'gzip' } })
@@ -517,7 +536,7 @@ describe('GET /events (SSE)', () => {
     const bus = kortixEventBus()
     for (let i = 1; i <= 5; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
 
-    const res = await app.request('http://d/events?since=2', { headers: auth })
+    const res = await app.request(`http://d/events?since=2&epoch=${bus.epoch}`, { headers: auth })
     // hello + replay(3,4,5) + live(6,7)
     const framesPromise = readFrames(res, 6)
     await Bun.sleep(20)
@@ -559,6 +578,30 @@ describe('GET /events (SSE)', () => {
     expect(events[2]).toMatchObject({ type: 'session.idle', seq: 6 })
   })
 
+  test('a consumer that never reads is dropped once its queue passes the cap, never buffered forever', async () => {
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const res = await app.request('http://d/events', { headers: auth })
+    // Nothing reads the body: every frame queues in the stream.
+    for (let i = 0; i < 1_500; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
+    const reader = res.body!.getReader()
+    let frames = 0
+    const deadline = Date.now() + 2_000
+    for (;;) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((r) => setTimeout(() => r({ done: true, value: undefined }), Math.max(0, deadline - Date.now()))),
+      ])
+      if (chunk.done) break
+      frames += 1
+    }
+    // The stream ENDED (client reconnects with its cursor) and queued at most the cap + hello.
+    expect(Date.now()).toBeLessThan(deadline)
+    expect(frames).toBeLessThan(1_100)
+    // A later event reaches no listener of the dropped stream: publish must not grow its queue.
+    publishOpenCodeEvent(bus, { type: 'x', properties: {} })
+  })
+
   test('the heartbeat is a TYPED event every 15 s and carries no seq', async () => {
     // Capture the stream's interval instead of sleeping 15 s. What matters is
     // the WIRE FORM: a `:` comment would be swallowed by every SSE parser and
@@ -587,6 +630,69 @@ describe('GET /events (SSE)', () => {
     const data = dataOf(heartbeat!)
     expect(data.type).toBe('kortix.heartbeat')
     expect(data).not.toHaveProperty('seq')
+  })
+
+  test('a reader that falls too far behind is dropped, so its queue stays bounded', async () => {
+    // The API stops reading while its own client is slow (R5.1 backpressure).
+    // The daemon then ends this stream instead of queueing without limit; the
+    // API reconnects with its cursor and the ring replays what it missed.
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const res = await app.request('http://d/events', { headers: auth })
+    for (let i = 0; i < 10_000; i++) {
+      publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
+    }
+    expect(bus.subscriberCount).toBe(0)
+    const frames = await readFrames(res, 20_000, 2_000)
+    // hello + at most the bounded backlog, then the end of the stream.
+    expect(frames.length).toBeLessThan(5_000)
+    // The ring still holds everything the reader missed.
+    expect(bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay).toHaveLength(10_000)
+  })
+
+  test('schema negotiation: the default, empty and schema=v1 streams are the v1 bus byte for byte; schema=v2 is the log bus plus every v1 frame but the transcript', async () => {
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const logBus = sessionLogEventBus()
+    publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { sessionID: SESSION, messageID: 'msg_a', partID: 'prt_a', field: 'text', delta: 'Hel' } })
+    logBus.publish('log.block.delta', { thread_id: SESSION, message_id: 'msg_a', block_id: 'prt_a', delta: 'Hel' }, SESSION)
+    publishOpenCodeEvent(bus, { type: 'session.idle', properties: { sessionID: SESSION } })
+    logBus.publish('log.thread', { thread_id: SESSION }, SESSION)
+    bus.publishDaemon('kortix.turn', { verdict: 'idle' }, SESSION)
+    publishOpenCodeEvent(bus, { type: 'message.updated', properties: { sessionID: SESSION, info: { id: 'msg_a', role: 'assistant' } } })
+    publishOpenCodeEvent(bus, { type: 'permission.asked', properties: { id: 'per_a', sessionID: SESSION, permission: 'bash' } })
+    // The frame format before schema negotiation existed: `event`, `id`, `data` of each v1 envelope.
+    const v1Frames = bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay.map((e) => `event: ${e.type}\nid: ${e.seq}\ndata: ${JSON.stringify(e)}`)
+    expect(v1Frames).toHaveLength(5)
+    const read = async (query: string, want: number) => {
+      const res = await app.request(`http://d/events?${query}since=0`, { headers: auth })
+      expect(res.status).toBe(200)
+      return { epoch: res.headers.get('x-kortix-epoch'), frames: await readFrames(res, want) }
+    }
+    for (const query of ['', 'schema=&', 'schema=v1&']) {
+      const { epoch, frames } = await read(query, 6)
+      expect(epoch).toBe(bus.epoch)
+      expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: bus.epoch, head_seq: 5, first_seq: 1 })
+      expect(frames.slice(1)).toEqual(v1Frames)
+      expect(frames.join('\n')).not.toContain('log.')
+    }
+    const { epoch, frames } = await read('schema=v2&', 6)
+    expect(epoch).toBe(logBus.epoch)
+    expect(logBus.epoch).not.toBe(bus.epoch)
+    expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: logBus.epoch, head_seq: 5 })
+    // Its own dense seqs; the v1 frames that are not transcript content ride along unchanged (P4.3b); no message.* frame.
+    const v2 = frames.slice(1).map(dataOf)
+    expect(v2.map((e) => [e.seq, e.type])).toEqual([[1, 'log.block.delta'], [2, 'session.idle'], [3, 'log.thread'], [4, 'kortix.turn'], [5, 'permission.asked']])
+    expect(v2[1]!.payload).toEqual({ sessionID: SESSION })
+    expect(v2[4]!.payload).toEqual({ id: 'per_a', sessionID: SESSION, permission: 'bash' })
+    expect(frames.join('\n')).not.toContain('message.')
+  })
+
+  test('an unknown schema is a 400 that names the supported ones', async () => {
+    const { app } = makeRouter()
+    const res = await app.request('http://d/events?schema=v3', { headers: auth })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'unknown schema', schema: 'v3', supported: ['v1', 'v2'] })
   })
 
   test('cancelling the stream unsubscribes', async () => {

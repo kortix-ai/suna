@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
  * bounded-timeout → catch scaffold became one shared helper.
  *
  * The four:
- *   - `removeStrandedOpencodeMessage` (runtime-client)
+ *   - `retractStrandedMessage` (runtime-client)
  *   - `queuedContinueHasStagedRevert` (runtime-client)
  *   - `abortRuntimeTurn` (abort-runtime-turn)
  *   - `releaseRuntimeQuestion` (release-runtime-question)
@@ -68,11 +68,11 @@ describe('one-sided runtime calls fail open on a network throw', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('removeStrandedOpencodeMessage reports false', async () => {
-    const { removeStrandedOpencodeMessage } = await import(
+  test('retractStrandedMessage reports false', async () => {
+    const { retractStrandedMessage } = await import(
       '../projects/session-lifecycle/runtime-client'
     );
-    expect(await removeStrandedOpencodeMessage(row, 'msg_0198f3a1b2c4AbCdEfGhIjKlMn')).toBe(false);
+    expect(await retractStrandedMessage(row, 'msg_0198f3a1b2c4AbCdEfGhIjKlMn')).toBe(false);
   });
 
   test('queuedContinueHasStagedRevert reports false', async () => {

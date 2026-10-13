@@ -137,7 +137,16 @@
       "privacy": "Privacy Policy"
     },
     "signOutFailed": "Unable to sign out. Check your connection and try again.",
-    "signingOut": "Signing out…"
+    "signingOut": "Signing out…",
+    "mfa": {
+      "title": "Verify it’s you",
+      "enterCode": "Enter the 6-digit code from your authenticator app.",
+      "codeLabel": "6-digit code",
+      "verify": "Verify",
+      "verifying": "Verifying…",
+      "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
+      "verifyFailed": "Could not verify the code. Check your connection and try again."
+    }
   },
   "onboarding": {
     "welcome": "See what Kortix can do",
@@ -1190,5 +1199,40 @@
     "showMoreSubsessions_other": "Show {{count}} more",
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
+  },
+  "updateRequired": {
+    "title": "Update required",
+    "body": "This version of Kortix is no longer supported. Update the app to continue.",
+    "bodyNoStore": "This version of Kortix is no longer supported. Update the app from the App Store or Google Play to continue.",
+    "button": "Update"
+  },
+  "invites": {
+    "group": "Invites",
+    "fallbackTitle": "Invite",
+    "invitedYouToProject": "{{inviter}} invited you to a project.",
+    "invitedToProject": "You have been invited to a project.",
+    "invitedYouToTeam": "{{inviter}} invited you to join a team.",
+    "invitedToTeam": "You have been invited to join a team.",
+    "joinProject": "You'll join {{project}} as {{role}}.",
+    "joinAccount": "You'll join this account as {{role}} and see projects the owner gives you access to.",
+    "roleMember": "a member",
+    "roleManager": "a manager",
+    "roleAdmin": "an admin",
+    "accept": "Accept invite",
+    "accepting": "Accepting…",
+    "decline": "Decline invite",
+    "declining": "Declining…",
+    "notNow": "Not now",
+    "acceptFailed": "Could not accept the invite. Try again.",
+    "declineFailed": "Could not decline the invite. Try again.",
+    "notFoundTitle": "Invite not found",
+    "notFoundBody": "This invite link is invalid or has been revoked.",
+    "loadFailed": "Could not load the invite",
+    "expiredTitle": "Invite expired",
+    "expiredBody": "Ask the person who invited you to send a new one.",
+    "wrongAccountTitle": "Switch accounts",
+    "wrongAccountBody": "This invite is addressed to a different account. You're signed in as {{email}}.",
+    "signOutAndContinue": "Sign out and continue",
+    "backToProjects": "Back to projects"
   }
 }

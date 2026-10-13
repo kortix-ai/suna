@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "Klicken Sie auf den Link in der E-Mail, um Ihr Konto zu bestätigen, und melden Sie sich dann an.",
     "browseAsGuest": "Als Gast durchsuchen",
     "signOutFailed": "Abmelden fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
-    "signingOut": "Wird abgemeldet…"
+    "signingOut": "Wird abgemeldet…",
+    "mfa": {
+      "title": "Bestätige, dass du es bist",
+      "enterCode": "Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
+      "codeLabel": "6-stelliger Code",
+      "verify": "Bestätigen",
+      "verifying": "Wird bestätigt…",
+      "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
+      "verifyFailed": "Der Code konnte nicht geprüft werden. Prüfe deine Verbindung und versuche es erneut."
+    }
   },
   "onboarding": {
     "welcome": "Sehen Sie, was Kortix kann",
@@ -1188,5 +1197,40 @@
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+  },
+  "updateRequired": {
+    "title": "Update erforderlich",
+    "body": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App, um fortzufahren.",
+    "bodyNoStore": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App im App Store oder bei Google Play, um fortzufahren.",
+    "button": "Aktualisieren"
+  },
+  "invites": {
+    "group": "Einladungen",
+    "fallbackTitle": "Einladung",
+    "invitedYouToProject": "{{inviter}} hat dich zu einem Projekt eingeladen.",
+    "invitedToProject": "Du wurdest zu einem Projekt eingeladen.",
+    "invitedYouToTeam": "{{inviter}} hat dich in ein Team eingeladen.",
+    "invitedToTeam": "Du wurdest in ein Team eingeladen.",
+    "joinProject": "Du trittst {{project}} als {{role}} bei.",
+    "joinAccount": "Du trittst diesem Konto als {{role}} bei und siehst die Projekte, für die dir der Inhaber Zugriff gibt.",
+    "roleMember": "Mitglied",
+    "roleManager": "Manager",
+    "roleAdmin": "Admin",
+    "accept": "Einladung annehmen",
+    "accepting": "Wird angenommen…",
+    "decline": "Einladung ablehnen",
+    "declining": "Wird abgelehnt…",
+    "notNow": "Nicht jetzt",
+    "acceptFailed": "Einladung konnte nicht angenommen werden. Versuche es erneut.",
+    "declineFailed": "Einladung konnte nicht abgelehnt werden. Versuche es erneut.",
+    "notFoundTitle": "Einladung nicht gefunden",
+    "notFoundBody": "Dieser Einladungslink ist ungültig oder wurde widerrufen.",
+    "loadFailed": "Einladung konnte nicht geladen werden",
+    "expiredTitle": "Einladung abgelaufen",
+    "expiredBody": "Bitte die Person, die dich eingeladen hat, um eine neue Einladung.",
+    "wrongAccountTitle": "Konto wechseln",
+    "wrongAccountBody": "Diese Einladung ist an ein anderes Konto gerichtet. Du bist als {{email}} angemeldet.",
+    "signOutAndContinue": "Abmelden und fortfahren",
+    "backToProjects": "Zurück zu den Projekten"
   }
 }

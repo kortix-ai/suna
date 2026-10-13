@@ -22,7 +22,8 @@ import {
   getSessionAudit,
   resolveApproval,
 } from '@kortix/sdk';
-import { readSessionAudit } from '@kortix/sdk/react';
+import { qk, readSessionAudit, useSessionStreamConnected } from '@kortix/sdk/react';
+import { useEffect, useRef } from 'react';
 import {
   type QueryClient,
   useInfiniteQuery,
@@ -75,6 +76,24 @@ export function useSessionAudit(
   const enabled = !!projectId && !!sessionId && (options?.enabled ?? true);
   const queryClient = useQueryClient();
   const key = sessionAuditKey(projectId, sessionId);
+  // R5.3: the session stream carries the audit watermark. While it is up, the
+  // list is re-read when the watermark moves instead of on a 5-15 s poll.
+  const streamConnected = useSessionStreamConnected(projectId ?? '', sessionId ?? '');
+  const { data: watermark } = useQuery<unknown>({
+    queryKey: qk.project.sessionAuditWatermark(projectId ?? '', sessionId ?? ''),
+    queryFn: () => null,
+    enabled: false,
+  });
+  const watermarkKey = watermark === undefined ? null : JSON.stringify(watermark);
+  const lastWatermark = useRef<string | null>(null);
+  useEffect(() => {
+    if (!options?.poll || !enabled || watermarkKey === null) return;
+    const previous = lastWatermark.current;
+    lastWatermark.current = watermarkKey;
+    if (previous !== null && previous !== watermarkKey) {
+      void queryClient.invalidateQueries({ queryKey: sessionAuditKey(projectId, sessionId) });
+    }
+  }, [options?.poll, enabled, watermarkKey, queryClient, projectId, sessionId]);
   return useQuery<SessionAudit>({
     queryKey: key,
     // The session-open bundle (the turn-latency spec (PR #7840) R4) answers this
@@ -94,7 +113,8 @@ export function useSessionAudit(
     enabled,
     staleTime: 10_000,
     refetchOnMount: options?.poll ? true : false,
-    refetchInterval: options?.poll ? (query) => sessionAuditPollMs(query.state.data) : false,
+    refetchInterval:
+      options?.poll && !streamConnected ? (query) => sessionAuditPollMs(query.state.data) : false,
   });
 }
 

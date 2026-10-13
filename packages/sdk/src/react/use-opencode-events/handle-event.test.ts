@@ -105,6 +105,8 @@ function buildHandler(
      *  production does, for tests whose contract depends on the order in
      *  which the reducer and `handle-event.ts` see the same event. */
     realSyncStore?: boolean;
+    /** The Kortix session of the stream the handler serves. */
+    sessionId?: string;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -154,6 +156,7 @@ function buildHandler(
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
+    sessionId: overrides.sessionId,
     reconcileSessionTail: overrides.reconcileSessionTail,
     userPartsGraceMs: overrides.userPartsGraceMs,
   });
@@ -1515,5 +1518,23 @@ describe('event-family routing characterization', () => {
     expect(addPermission.calls).toHaveLength(1);
     expect(notifications[0]?.kind).toBe('permission');
     expect(fetchLspDiagnosticsDebounced.calls).toHaveLength(1);
+  });
+});
+
+describe('log.* frames (the session log)', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  test("go to the session log of the stream's own session, and not to the v1 reducer", () => {
+    const h = buildHandler({ sessionId: 'kses_stream' });
+    h.handleEvent({ type: 'log.state', properties: { generation: 1, session: { title: 'From the stream' } } } as never);
+    expect(useSyncStore.getState().sessionLogs.kses_stream?.session.title).toBe('From the stream');
+    expect(h.applySyncEvent.calls).toHaveLength(0);
+  });
+
+  test('are dropped by a handler that serves no single session', () => {
+    const h = buildHandler();
+    h.handleEvent({ type: 'log.state', properties: { generation: 1, session: { title: 'x' } } } as never);
+    expect(useSyncStore.getState().sessionLogs).toEqual({});
+    expect(h.applySyncEvent.calls).toHaveLength(0);
   });
 });

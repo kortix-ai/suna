@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "Clique no link do e-mail para verificar sua conta e faça login.",
     "browseAsGuest": "Navegar como convidado",
     "signOutFailed": "Não foi possível sair. Verifique sua conexão e tente novamente.",
-    "signingOut": "Saindo…"
+    "signingOut": "Saindo…",
+    "mfa": {
+      "title": "Confirme que é você",
+      "enterCode": "Digite o código de 6 dígitos do seu app autenticador.",
+      "codeLabel": "Código de 6 dígitos",
+      "verify": "Verificar",
+      "verifying": "Verificando…",
+      "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
+      "verifyFailed": "Não foi possível verificar o código. Confira sua conexão e tente novamente."
+    }
   },
   "onboarding": {
     "welcome": "Veja o que o Kortix pode fazer",
@@ -1188,5 +1197,40 @@
     "showMoreSubsessions_other": "Mostrar mais {{count}}",
     "showMoreSubsessionsLabel_one": "Mostrar mais {{count}} subsessão de {{title}}",
     "showMoreSubsessionsLabel_other": "Mostrar mais {{count}} subsessões de {{title}}"
+  },
+  "updateRequired": {
+    "title": "Atualização necessária",
+    "body": "Esta versão do Kortix não é mais compatível. Atualize o app para continuar.",
+    "bodyNoStore": "Esta versão do Kortix não é mais compatível. Atualize o app na App Store ou no Google Play para continuar.",
+    "button": "Atualizar"
+  },
+  "invites": {
+    "group": "Convites",
+    "fallbackTitle": "Convite",
+    "invitedYouToProject": "{{inviter}} convidou você para um projeto.",
+    "invitedToProject": "Você foi convidado para um projeto.",
+    "invitedYouToTeam": "{{inviter}} convidou você para entrar em uma equipe.",
+    "invitedToTeam": "Você foi convidado para entrar em uma equipe.",
+    "joinProject": "Você entrará em {{project}} como {{role}}.",
+    "joinAccount": "Você entrará nesta conta como {{role}} e verá os projetos aos quais o proprietário der acesso.",
+    "roleMember": "membro",
+    "roleManager": "gerente",
+    "roleAdmin": "administrador",
+    "accept": "Aceitar convite",
+    "accepting": "Aceitando…",
+    "decline": "Recusar convite",
+    "declining": "Recusando…",
+    "notNow": "Agora não",
+    "acceptFailed": "Não foi possível aceitar o convite. Tente novamente.",
+    "declineFailed": "Não foi possível recusar o convite. Tente novamente.",
+    "notFoundTitle": "Convite não encontrado",
+    "notFoundBody": "Este link de convite é inválido ou foi revogado.",
+    "loadFailed": "Não foi possível carregar o convite",
+    "expiredTitle": "Convite expirado",
+    "expiredBody": "Peça a quem convidou você para enviar um novo.",
+    "wrongAccountTitle": "Trocar de conta",
+    "wrongAccountBody": "Este convite é para outra conta. Você entrou como {{email}}.",
+    "signOutAndContinue": "Sair e continuar",
+    "backToProjects": "Voltar aos projetos"
   }
 }

@@ -105,7 +105,7 @@ fi
 # Translation catalogs keep their key order (apps/web/scripts/i18n-catalogs.mjs).
 # A conflict resolution that rebuilt them reordered every catalog twice
 # (2026-09-22, and #7337 on 2026-09-28), and CI only saw it after the merge to
-# main. A merge commit may take either parent's order. The check reads the
+# dev. A merge commit may take either parent's order. The check reads the
 # working tree. Set I18N_REORDER=1 for an intentional reorder.
 if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
   && git diff --cached --name-only | grep -qE '^apps/web/translations/[^/]+\.json$'; then

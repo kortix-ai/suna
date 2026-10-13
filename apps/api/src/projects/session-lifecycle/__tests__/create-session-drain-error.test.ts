@@ -67,12 +67,12 @@ mock.module('../../../shared/db', () => ({
 mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => {
     throw new Error('not expected: create_session never opens a session in this test');
   },
 }));
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     throw new Error('not expected: create_session never forwards a prompt in this test');
   },

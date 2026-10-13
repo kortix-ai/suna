@@ -41,7 +41,10 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   },
 }));
 
-mock.module('../llm-gateway/models/served-managed-models', () => ({ platformDefaultModelId: () => 'glm-5.3-flash' }));
+mock.module('../llm-gateway/models/served-managed-models', () => ({
+  platformDefaultModelId: () => 'glm-5.3-flash',
+  isPlatformDefaultModelId: (id: string) => id === 'glm-5.3-flash',
+}));
 
 // The gateway's own personal-key rule for a live session.
 const ownerQueries: Array<Record<string, unknown>> = [];

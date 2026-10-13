@@ -1,5 +1,6 @@
 /**
- * @internal Not covered by semver. `apps/web` depends on these zustand stores;
- * nothing else should. They may change shape in any release.
+ * @internal Not covered by semver. They may change shape in any release.
+ * @deprecated No replacement. No host imports this subpath; `@kortix/sdk/react`
+ * (`useSession`) reads session state. Removed in the next major.
  */
 export * from '../browser/stores/opencode-pending-store';

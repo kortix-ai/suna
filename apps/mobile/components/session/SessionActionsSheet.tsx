@@ -16,8 +16,11 @@
  * Delete confirms in an `AlertDialog` that opens only after the sheet has
  * closed — never two overlays at once.
  *
- * COR-148 (Jay, 2026-09-24): three rows sit above Rename, in their own
- * untitled group — Open change request · View changes · Compact. Open change
+ * COR-148 (Jay, 2026-09-24): four rows sit above Rename, in their own
+ * untitled group — Open change request · View changes · Files · Compact.
+ * Files (KRTX-1636) closes the sheet, then opens the project's Files page
+ * as a sub-page over the thread (`onOpenFiles`), so back returns to that
+ * thread; it shows for the open thread even when the sandbox is asleep. Open change
  * request is web's "Propose changes": shown while the session has changes, it
  * closes the sheet and sends web's prompt to the thread (the agent commits and
  * runs `kortix cr open` into the session's base), queued if the agent works.
@@ -30,7 +33,7 @@
  * Disabled while the session works, hidden when the runtime does not serve
  * `session.compact` (pi). View changes and Compact need the live
  * runtime, so they show only for the thread on screen; a drawer long press on
- * another session shows none of the three. Rules:
+ * another session shows none of the four. Rules:
  * `lib/session/session-actions.ts`. Export transcript and Archive are not on
  * mobile.
  *
@@ -45,6 +48,7 @@ import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-she
 import Animated from 'react-native-reanimated';
 import { View } from 'react-native';
 import {
+  FolderOpenIcon,
   GitDiffIcon,
   GitPullRequestIcon,
   PencilIcon as Pencil,
@@ -132,7 +136,7 @@ const PARENT_VIEW: Record<Exclude<SheetView, 'options'>, SheetView> = {
   'change-file': 'changes',
 };
 /** What runs once the sheet has closed: a follow-up overlay, never two at once. */
-type AfterClose = 'delete' | 'open-cr' | 'compact' | null;
+type AfterClose = 'delete' | 'open-cr' | 'compact' | 'files' | null;
 
 /** A view `present` can open straight to, skipping the options. */
 export type SessionActionsInitialView = 'rename';
@@ -149,10 +153,15 @@ export interface SessionActionsSheetRef {
 
 export interface SessionActionsSheetProps {
   projectId: string;
+  /**
+   * The Files row, after the sheet has closed: push the project's Files page
+   * over the thread (ProjectScreen, `openSubPage('page:files-nav')`).
+   */
+  onOpenFiles?: () => void;
 }
 
 export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, SessionActionsSheetProps>(
-  function SessionActionsSheet({ projectId }, ref) {
+  function SessionActionsSheet({ projectId, onOpenFiles }, ref) {
     const insets = useSafeAreaInsets();
     const toast = useToast();
     const queryClient = useQueryClient();
@@ -288,6 +297,9 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           .requestSend(liveSessionId, openChangeRequestPrompt(changeRequestBaseRef(session)));
         haptics.success();
         toast.success('Asked your agent to propose these changes for review.');
+      } else if (next === 'files') {
+        // Pushed only now, so the page animates over the thread, not under the sheet.
+        onOpenFiles?.();
       } else if (next === 'compact') {
         confirm({
           title: 'Compact session',
@@ -297,7 +309,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           onConfirm: runCompact,
         });
       }
-    }, [menuSession, confirm, runCompact, liveSessionId, toast, takeAfterClose]);
+    }, [menuSession, confirm, runCompact, liveSessionId, toast, takeAfterClose, onOpenFiles]);
 
     const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
       haptics.tap();
@@ -449,7 +461,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       compacting: isCompacting,
     });
     const hasTopRows =
-      topRows.openChangeRequest.visible || topRows.viewChanges.visible || topRows.compact.visible;
+      topRows.openChangeRequest.visible || topRows.viewChanges.visible || topRows.files.visible || topRows.compact.visible;
 
     return (
       <>
@@ -512,6 +524,17 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                           disabled={!topRows.viewChanges.enabled}
                           right={topRows.viewChanges.enabled ? undefined : null}
                           onPress={() => pushView('changes')}
+                        />
+                      ) : null}
+                      {topRows.files.visible ? (
+                        <SettingsRow
+                          icon={FolderOpenIcon}
+                          label="Files"
+                          right={null}
+                          onPress={() => {
+                            haptics.tap();
+                            closeThen('files');
+                          }}
                         />
                       ) : null}
                       {topRows.compact.visible ? (

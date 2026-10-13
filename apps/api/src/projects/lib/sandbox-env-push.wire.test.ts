@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { postEnvToDaemon } from './sandbox-env-push';
+import { postEnvToDaemon } from './sandbox-env-transport';
 
 /**
  * `POST /kortix/env` across daemon builds (W3 D2). A W3 daemon reads

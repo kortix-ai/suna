@@ -8,6 +8,8 @@
  */
 
 import { unwrapError } from './errors';
+import { isToolCallBlock, toolPartOf } from '../session-log/tool-call';
+import type { ToolCallBlock } from '../session-log/types';
 import { inputPath, toolKind } from './tool-kind';
 import { normalizeName } from './tools/tool-meta';
 import type {
@@ -161,8 +163,8 @@ export function isToolPartHidden(
 
 const HIDDEN_TOOLS = new Set(['todoread', 'context_info']);
 
-export function shouldShowToolPart(part: Pick<ToolPartLike, 'tool'>): boolean {
-  return !HIDDEN_TOOLS.has(part.tool);
+export function shouldShowToolPart(part: Pick<ToolPartLike, 'tool'> | ToolCallBlock): boolean {
+  return !HIDDEN_TOOLS.has(isToolCallBlock(part) ? part.name : part.tool);
 }
 
 // ============================================================================
@@ -185,9 +187,10 @@ const CHILD_SESSION_TOOLS = new Set([
 
 /**
  * The child session a delegating tool call runs: `state.metadata.sessionId`,
- * which OpenCode's and pi's `task` both set.
+ * which OpenCode's and pi's `task` both set. Reads a tool call block the same way.
  */
-export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): string | undefined {
+export function getChildSessionId(call: Pick<ToolPartLike, 'tool' | 'state'> | ToolCallBlock): string | undefined {
+  const part: Pick<ToolPartLike, 'tool' | 'state'> = isToolCallBlock(call) ? toolPartOf(call) : call;
   const tool = part.tool || '';
   // `oc-` twins of the plugin tools never name a child.
   if (tool.startsWith('oc-')) return undefined;
@@ -195,6 +198,9 @@ export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): s
   if (kind === 'task' || kind === 'delegate') {
     const metaSessionId = (part.state?.metadata as { sessionId?: unknown } | undefined)?.sessionId;
     if (typeof metaSessionId === 'string' && metaSessionId) return metaSessionId;
+    if (kind === 'task' && part.state?.status === 'error') {
+      return part.state.error?.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1];
+    }
   }
   return legacyChildSessionId(tool, part.state);
 }

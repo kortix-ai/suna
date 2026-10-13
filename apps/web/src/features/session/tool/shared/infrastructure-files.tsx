@@ -8,11 +8,11 @@ import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { WarningIcon as AlertTriangle, WarningCircleIcon as CircleAlert } from '@phosphor-icons/react';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
-import { type Diagnostic, getDiagnostics, type ToolPart } from '@/ui';
+import { type Diagnostic, getDiagnostics } from '@/ui';
 import { cn } from '@/lib/utils';
 import { useToolCardFrame, useToolCardPad, useToolIndent } from './surface';
 import { MD_FLUSH_CLASSES, useToolNavigation } from './infrastructure-preview';
-import { toToolView } from '@kortix/sdk';
+import { toToolView, type ToolCallBlock } from '@kortix/sdk';
 import { partOutput } from './infrastructure-parts';
 
 /**
@@ -132,10 +132,10 @@ export function ToolCode({ code, language }: { code: string; language: string })
   );
 }
 
-export function getToolDiagnostics(part: ToolPart, filePath: string | undefined): Diagnostic[] {
+export function getToolDiagnostics(call: ToolCallBlock, filePath: string | undefined): Diagnostic[] {
   if (!filePath) return [];
 
-  const output = partOutput(part);
+  const output = partOutput(call);
   if (
     output &&
     (output.includes('<file_diagnostics>') || output.includes('<project_diagnostics>'))
@@ -171,7 +171,7 @@ export function getToolDiagnostics(part: ToolPart, filePath: string | undefined)
     }
   }
 
-  return getDiagnostics(toToolView(part).diagnostics as Record<string, Diagnostic[]> | undefined, filePath);
+  return getDiagnostics(toToolView(call).diagnostics as Record<string, Diagnostic[]> | undefined, filePath);
 }
 
 export function DiagnosticsDisplay({

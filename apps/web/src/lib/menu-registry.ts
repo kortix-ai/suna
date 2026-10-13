@@ -226,7 +226,7 @@ export interface MenuItemDef {
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
   /** If set, the item is only shown when the session's runtime serves this
-   *  feature (`runtimeSupports`; a pi session has no compact). */
+   *  feature (`runtimeSupports`). */
   requiresRuntime?: RuntimeCapability;
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
@@ -735,6 +735,20 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository drive browser explorer',
+  },
+  {
+    // The project's shared folders: the Files tab under Customize. Only for
+    // projects with the `drives` flag on, like the tab itself.
+    id: 'proj-shared-files',
+    label: 'Shared files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/files',
+    requiresProject: true,
+    requiresFlag: 'drives',
+    keywords: 'files folders drive shared company my folder access share',
   },
   {
     id: 'proj-apps',
@@ -1311,6 +1325,20 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'toggleSidebar',
     shortcut: 'Ctrl+B',
+  },
+  {
+    // Opens the Customize sidebar modal (`customize-sidebar-modal.tsx`),
+    // mounted by the project sidebar, so it needs a project.
+    id: 'customize-sidebar',
+    label: 'Customize Sidebar',
+    icon: PanelLeftClose,
+    group: 'view',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'customizeSidebar',
+    requiresProject: true,
+    // No 'navigation': a group word, not one on screen (command-palette-search.test.ts).
+    keywords: 'sidebar customize reorder hide show rows',
   },
   {
     id: 'toggle-panel-mode',

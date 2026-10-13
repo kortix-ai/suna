@@ -24,3 +24,13 @@ export function migrationCheckOrder(command: string, databaseUrl: string, previe
 export function migrationBootstrapsPrerequisites(command: string): boolean {
   return command === 'bootstrap' || command === 'local-up' || command === 'preview-up';
 }
+
+/**
+ * One transaction per migration file. With `singleTransaction: true` a pending
+ * backlog ran as one transaction that held every touched table's locks until
+ * the last file: on 2026-10-11 a 25-file prod batch deadlocked against live
+ * traffic three times when it reached `CREATE TRIGGER ... ON project_sessions`.
+ * Per file, each migration holds its locks only for itself, and a retry resumes
+ * at the file that failed.
+ */
+export const RUNNER_TRANSACTION_MODE = { singleTransaction: false } as const;

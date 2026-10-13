@@ -40,7 +40,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest } = await import('../shared/audit');
+const { auditApiRequest } = await import('../middleware/audit');
 const { __clearProjectAccountLookupForTests } = await import('../shared/project-account-lookup');
 
 const USER = '00000000-0000-4000-a000-000000000001';

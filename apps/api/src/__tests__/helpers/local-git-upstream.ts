@@ -5,9 +5,9 @@
 // DNS, TLS, and the mirror's retries before it fails. A bare repository on disk
 // answers in milliseconds, and the suite then exercises the real git path.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export interface LocalGitUpstream {
   /** Absolute path of the bare repository. Seed it as the project's `repoUrl`. */
@@ -17,11 +17,13 @@ export interface LocalGitUpstream {
 }
 
 /**
- * Creates a bare repository with one commit (`README.md`) on `main`, and points
- * the API's mirror cache (`KORTIX_GIT_CACHE_DIR`) into the same temporary
- * directory, so the suite writes nothing under the shared `/tmp/kortix`.
+ * Creates a bare repository with one commit on `main` containing `files`
+ * (path → content, e.g. a `kortix.yaml` manifest for suites that need one),
+ * and points the API's mirror cache (`KORTIX_GIT_CACHE_DIR`) into the same
+ * temporary directory, so the suite writes nothing under the shared
+ * `/tmp/kortix`.
  */
-export function createLocalGitUpstream(label: string): LocalGitUpstream {
+export function createLocalGitUpstream(label: string, files: Record<string, string> = {}): LocalGitUpstream {
   const root = mkdtempSync(join(tmpdir(), `kortix-${label}-`));
   const repoUrl = join(root, 'upstream.git');
   const work = join(root, 'work');
@@ -34,7 +36,12 @@ export function createLocalGitUpstream(label: string): LocalGitUpstream {
   git(root, 'init', '-q', '--bare', '--initial-branch=main', repoUrl);
   git(root, 'init', '-q', '--initial-branch=main', work);
   writeFileSync(join(work, 'README.md'), `# ${label}\n`);
-  git(work, 'add', 'README.md');
+  for (const [path, content] of Object.entries(files)) {
+    const target = join(work, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  }
+  git(work, 'add', '.');
   git(work, 'commit', '-q', '-m', 'seed');
   git(work, 'push', '-q', repoUrl, 'main');
 

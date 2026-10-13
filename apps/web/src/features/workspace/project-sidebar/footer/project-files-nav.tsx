@@ -11,11 +11,14 @@ import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProject } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { FoldersIcon } from '@phosphor-icons/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { FoldersIcon, GitBranchIcon } from '@phosphor-icons/react';
+
+import { repoNavLabel } from './files-nav-label';
 
 /**
- * Top-level Files entry. Hidden when the caller lacks `project.file.read`: that
+ * Top-level repo browser entry: Repo when the organization has Volumes on (the
+ * shared folders are then Files, a tab under Customize), Files otherwise. Hidden when the caller lacks `project.file.read`: that
  * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
  * floor `member` role), so showing it to a plain member would just land them on
  * a page whose every read 403s. Optimistic while the probe loads — the entry
@@ -48,6 +51,9 @@ export function ProjectFilesNavItem() {
   const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
   const queryClient = useQueryClient();
+  // Volumes on for the organization (the project's derived `drives` flag).
+  const volumes = useFeatureFlag(projectId, 'drives');
+  const label = repoNavLabel(volumes.enabled);
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -83,7 +89,7 @@ export function ProjectFilesNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip={t('files')}
+        tooltip={t(label)}
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink
@@ -94,8 +100,8 @@ export function ProjectFilesNavItem() {
           onFocus={prefetchSummary}
           onTouchStart={prefetchSummary}
         >
-          <FoldersIcon />
-          {t('files')}
+          {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
+          {t(label)}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

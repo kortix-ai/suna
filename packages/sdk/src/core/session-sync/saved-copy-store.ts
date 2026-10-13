@@ -4,8 +4,9 @@
  * Opening a session painted nothing until the control plane answered with the
  * saved copy it captured at the last turn end: skeleton rows for 0.3-2.3 s on
  * every cold open, and for as long as the backend took when it was slow. With
- * this store the next open paints the last copy in the first frame, and the
- * fresh one reconciles into it by message id.
+ * this store the next open paints the last copy as soon as the device reads it
+ * (one task after the first frame), and the fresh one reconciles into it by
+ * message id.
  *
  * WHAT IT STORES, AND WHY THAT IS SAFE. Only envelopes the SERVER sent: the
  * transcript mirror, which the API writes because a turn ended, carrying
@@ -17,13 +18,16 @@
  * wrong, and the painting side keeps its root-identity guard
  * (`shouldHydrateFromMirror`).
  *
- * Framework-free: the host passes the storage (`localStorage` on web,
- * AsyncStorage on mobile) and the signed-in user. Every failure — a full,
+ * Framework-free: the host passes the storage (IndexedDB on web, through
+ * `indexedDBKeyValueStorage`; AsyncStorage on mobile) and the signed-in user.
+ * Both are asynchronous, so no read blocks a frame. Every failure — a full,
  * corrupt or missing store — costs only the old cold open; nothing throws.
  */
 
 import type { KeyValueStorage } from '../cache/persisted-query-cache';
 import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
+import { registerSessionLogCopies, SESSION_LOG_COPY } from '../session-log/saved-log';
+import type { CopyCodec, CopyStore, StoredCopy } from './copy-store-types';
 
 export interface SavedCopyStoreOptions {
   storage: KeyValueStorage;
@@ -98,13 +102,6 @@ interface IndexEntry {
   c: number;
 }
 
-interface StoredCopy {
-  v: number;
-  user: string;
-  at: number;
-  e: SessionTranscriptSyncEnvelope;
-}
-
 type MaybePromise<T> = T | Promise<T>;
 
 function isPromise<T>(value: unknown): value is Promise<T> {
@@ -126,7 +123,7 @@ function then<T, R>(value: MaybePromise<T>, fn: (resolved: T) => R): MaybePromis
  * thread outgrows the bound. The newest messages are what the first frame
  * shows; refusing the whole copy gave exactly those sessions a cold open.
  */
-function fitSavedCopy(stored: StoredCopy, maxChars: number): string | null {
+function fitSavedCopy(stored: StoredCopy<SessionTranscriptSyncEnvelope>, maxChars: number): string | null {
   const whole = JSON.stringify(stored);
   if (whole.length <= maxChars) return whole;
   const { messages } = stored.e;
@@ -166,7 +163,34 @@ function capturedAtMs(envelope: SessionTranscriptSyncEnvelope): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const ENVELOPE: CopyCodec<SessionTranscriptSyncEnvelope> = {
+  paintable: isPaintableSavedCopy,
+  fit: fitSavedCopy,
+  capturedAt: capturedAtMs,
+};
+
+/**
+ * The v1 store. A second store under `<namespace>.log` keeps the v2 copies (the session-log
+ * page, `core/session-log/saved-log.ts`): a separate key, so a copy one format wrote is never
+ * read as the other. `remove` and `clear` forget both.
+ */
 export function createSavedCopyStore(options: SavedCopyStoreOptions): SavedCopyStore {
+  const v1 = createCopyStore(options, ENVELOPE);
+  const v2 = createCopyStore({ ...options, namespace: `${options.namespace ?? DEFAULT_NAMESPACE}.log` }, SESSION_LOG_COPY);
+  const store: SavedCopyStore = {
+    ...v1,
+    remove: async (projectId, sessionId) => {
+      await Promise.all([v1.remove(projectId, sessionId), v2.remove(projectId, sessionId)]);
+    },
+    clear: async () => {
+      await Promise.all([v1.clear(), v2.clear()]);
+    },
+  };
+  registerSessionLogCopies(store, v2, v1.remove);
+  return store;
+}
+
+function createCopyStore<T>(options: SavedCopyStoreOptions, codec: CopyCodec<T>): CopyStore<T> {
   const {
     storage,
     userId,
@@ -273,9 +297,9 @@ export function createSavedCopyStore(options: SavedCopyStoreOptions): SavedCopyS
       const scope = `${projectId}/${sessionId}`;
       return then(safeGet(keyFor(projectId, sessionId)), (raw) => {
         if (!raw) return null;
-        let stored: StoredCopy;
+        let stored: StoredCopy<T>;
         try {
-          stored = JSON.parse(raw) as StoredCopy;
+          stored = JSON.parse(raw) as StoredCopy<T>;
         } catch {
           removeNow(keyFor(projectId, sessionId));
           void forgetScope(scope);
@@ -286,7 +310,7 @@ export function createSavedCopyStore(options: SavedCopyStoreOptions): SavedCopyS
           stored.v !== VERSION ||
           stored.user !== userId ||
           now() - stored.at > maxAgeMs ||
-          !isPaintableSavedCopy(stored.e)
+          !codec.paintable(stored.e)
         ) {
           removeNow(keyFor(projectId, sessionId));
           void forgetScope(scope);
@@ -299,11 +323,11 @@ export function createSavedCopyStore(options: SavedCopyStoreOptions): SavedCopyS
 
     write(projectId, sessionId, envelope) {
       const scope = `${projectId}/${sessionId}`;
-      if (!isPaintableSavedCopy(envelope)) return forgetScope(scope);
-      const stored: StoredCopy = { v: VERSION, user: userId, at: now(), e: envelope };
-      const text = fitSavedCopy(stored, maxEnvelopeBytes);
+      if (!codec.paintable(envelope)) return forgetScope(scope);
+      const stored: StoredCopy<T> = { v: VERSION, user: userId, at: now(), e: envelope };
+      const text = codec.fit(stored, maxEnvelopeBytes);
       if (text === null) return forgetScope(scope);
-      const captured = capturedAtMs(envelope);
+      const captured = codec.capturedAt(envelope);
       return enqueue(async () => {
         const entries = await loadIndex();
         const existing = entries.find((entry) => entry.s === scope);

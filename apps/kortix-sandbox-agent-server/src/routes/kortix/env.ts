@@ -4,11 +4,7 @@ import type { HarnessControlOperations } from '@/harness/contract/control'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { logger } from '@/lib/log/logger'
 import { legacyEnvFields, legacyRuntimeEnv } from './legacy-names'
-
-function bearerToken(header: string | undefined): string | null {
-  if (!header?.startsWith('Bearer ')) return null
-  return header.slice('Bearer '.length).trim() || null
-}
+import { bearerMatches } from './control-auth'
 
 export function createEnvRouter(
   cfg: Config,
@@ -21,7 +17,7 @@ export function createEnvRouter(
     if (!cfg.sandboxToken) {
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
-    if (bearerToken(c.req.header('Authorization')) !== cfg.sandboxToken) {
+    if (!bearerMatches(c.req.header('Authorization'), cfg.sandboxToken)) {
       return c.json({ error: 'unauthorized' }, 401)
     }
     // Defense in depth: this is a server-to-server control endpoint. The API's

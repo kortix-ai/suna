@@ -114,6 +114,7 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 }));
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'anthropic/claude-sonnet-4-6',
+  isPlatformDefaultModelId: (id: string) => id === 'anthropic/claude-sonnet-4-6',
 }));
 mock.module('../lib/serializers', () => ({
   ...require('../lib/serializers'),
@@ -121,7 +122,7 @@ mock.module('../lib/serializers', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-open-bundle');
+(await import('./session-open-bundle')).registerSessionOpenBundleRoutes();
 
 function buildApp() {
   const app = new Hono<{ Variables: { userId: string; authType: string } }>();

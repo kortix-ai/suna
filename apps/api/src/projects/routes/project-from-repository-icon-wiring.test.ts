@@ -155,7 +155,7 @@ mock.module('../lib/project-registration', () => ({
 // imported, so these requests need no Authorization header — auth itself is
 // mocked out above via `assertAuthorized`.
 const { projectsApp } = await import('../lib/app');
-await import('./project-from-repository');
+(await import('./project-from-repository')).registerProjectFromRepositoryRoutes();
 
 function post(path: string, body: Record<string, unknown>) {
   return projectsApp.request(path, {

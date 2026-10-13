@@ -30,7 +30,7 @@ try {
   // A tree from before the layered layout (no `src/services/`) keeps the
   // release store at `boot-config.ts`. Map that name, so each rule judges the
   // code and not a path that moved. `harness/` is the same in both layouts.
-  const legacyName = (name: string) => (name === 'boot-config.ts' ? 'services/config-release/boot-config.ts' : name)
+  const legacyName = (name: string) => (name === 'boot-config.ts' ? 'services/config-provider/boot-config.ts' : name)
   const layered = existsSync(join(staging, prefix, 'services'))
   const old = (await productionSources(join(staging, prefix))).map((file) => (layered ? file : { ...file, name: legacyName(file.name) }))
   const current = await productionSources(srcRoot)

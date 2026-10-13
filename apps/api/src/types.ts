@@ -1,60 +1,7 @@
-import { z } from 'zod';
 import type { AgentGrant } from '@kortix/db';
 import type { BillingState } from './billing/services/billing-state';
 
-// === Request Schemas (Router) ===
-
-export const WebSearchRequestSchema = z.object({
-  query: z.string().min(1, 'Query is required'),
-  max_results: z.number().int().min(1).max(10).default(5),
-  search_depth: z.enum(['basic', 'advanced']).default('basic'),
-  session_id: z.string().optional(),
-});
-
-export const ImageSearchRequestSchema = z.object({
-  query: z.string().min(1, 'Query is required'),
-  max_results: z.number().int().min(1).max(20).default(5),
-  safe_search: z.boolean().default(true),
-  session_id: z.string().optional(),
-});
-
-// === Response Types (Router) ===
-
-export interface WebSearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-  published_date: string | null;
-}
-
-export interface WebSearchResponse {
-  results: WebSearchResult[];
-  query: string;
-  cost: number;
-}
-
-export interface ImageSearchResult {
-  title: string;
-  url: string;
-  thumbnail_url: string;
-  source_url: string;
-  width: number | null;
-  height: number | null;
-}
-
-export interface ImageSearchResponse {
-  results: ImageSearchResult[];
-  query: string;
-  cost: number;
-}
-
 // === Billing Types (Router billing service) ===
-
-export interface BillingCheckResult {
-  hasCredits: boolean;
-  message: string;
-  balance: number | null;
-}
 
 export interface BillingDeductResult {
   success: boolean;
@@ -64,6 +11,8 @@ export interface BillingDeductResult {
   reason?: string;
   transactionId?: string;
   error?: string;
+  /** The wallet could not answer (infra fault, not a refusal). The caller answers 503. */
+  retryable?: boolean;
 }
 
 // === Context Types ===
@@ -299,6 +248,11 @@ export interface AccountStateResponse {
     enabled: boolean;
     threshold: number;
     amount: number;
+    /** Why a failed charge turned auto top-up off (KRTX-1718). */
+    disabled_reason: string | null;
+    /** The decline code or failure text of the last failed charge. */
+    last_failure_reason: string | null;
+    last_failure_at: string | null;
   };
   instances: Array<{
     sandbox_id: string;
@@ -380,8 +334,3 @@ interface ModelInfo {
   priority: number;
 }
 
-export interface TokenUsageRequest {
-  prompt_tokens: number;
-  completion_tokens: number;
-  model: string;
-}

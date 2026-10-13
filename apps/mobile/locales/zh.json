@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "单击电子邮件中的链接以验证您的帐户，然后登录。",
     "browseAsGuest": "以访客身份浏览",
     "signOutFailed": "无法退出登录，请检查网络连接后重试。",
-    "signingOut": "正在退出登录…"
+    "signingOut": "正在退出登录…",
+    "mfa": {
+      "title": "验证你的身份",
+      "enterCode": "请输入身份验证器应用中的 6 位验证码。",
+      "codeLabel": "6 位验证码",
+      "verify": "验证",
+      "verifying": "正在验证…",
+      "invalidCode": "该验证码无效。请检查身份验证器应用后重试。",
+      "verifyFailed": "无法验证该验证码。请检查网络连接后重试。"
+    }
   },
   "onboarding": {
     "welcome": "看看Kortix能做什么",
@@ -1188,5 +1197,40 @@
     "showMoreSubsessions_other": "再显示 {{count}} 个",
     "showMoreSubsessionsLabel_one": "再显示 {{title}} 的 {{count}} 个子会话",
     "showMoreSubsessionsLabel_other": "再显示 {{title}} 的 {{count}} 个子会话"
+  },
+  "updateRequired": {
+    "title": "需要更新",
+    "body": "此版本的 Kortix 已不再受支持。请更新应用以继续使用。",
+    "bodyNoStore": "此版本的 Kortix 已不再受支持。请从 App Store 或 Google Play 更新应用以继续使用。",
+    "button": "更新"
+  },
+  "invites": {
+    "group": "邀请",
+    "fallbackTitle": "邀请",
+    "invitedYouToProject": "{{inviter}} 邀请你加入一个项目。",
+    "invitedToProject": "你已受邀加入一个项目。",
+    "invitedYouToTeam": "{{inviter}} 邀请你加入一个团队。",
+    "invitedToTeam": "你已受邀加入一个团队。",
+    "joinProject": "你将以{{role}}身份加入 {{project}}。",
+    "joinAccount": "你将以{{role}}身份加入此账户，并可查看所有者授予你访问权限的项目。",
+    "roleMember": "成员",
+    "roleManager": "管理者",
+    "roleAdmin": "管理员",
+    "accept": "接受邀请",
+    "accepting": "正在接受…",
+    "decline": "拒绝邀请",
+    "declining": "正在拒绝…",
+    "notNow": "以后再说",
+    "acceptFailed": "无法接受邀请，请重试。",
+    "declineFailed": "无法拒绝邀请，请重试。",
+    "notFoundTitle": "未找到邀请",
+    "notFoundBody": "此邀请链接无效或已被撤销。",
+    "loadFailed": "无法加载邀请",
+    "expiredTitle": "邀请已过期",
+    "expiredBody": "请让邀请你的人重新发送一个邀请。",
+    "wrongAccountTitle": "切换账户",
+    "wrongAccountBody": "此邀请发给的是另一个账户。你当前以 {{email}} 登录。",
+    "signOutAndContinue": "退出并继续",
+    "backToProjects": "返回项目"
   }
 }

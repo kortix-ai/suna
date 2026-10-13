@@ -1,5 +1,5 @@
 import { MANAGED_MODELS as BUNDLED_MANAGED_MODELS, type ManagedModel } from '@kortix/llm-catalog';
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import { config } from '../../config';
 
 const managedModelSchema = z.object({

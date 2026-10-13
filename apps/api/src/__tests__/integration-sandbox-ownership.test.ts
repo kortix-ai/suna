@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { createDb, platformSettings, sessionEnvironments, sessionSandboxes, type Database } from '@kortix/db';
+import { createDb, platformSettings, sessionSandboxes, type Database } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { config } from '../config';
@@ -35,6 +35,10 @@ const server = Bun.serve({
     return Response.json({ id, state: 'stopped' });
   },
 });
+// `localhost` does not resolve on a platform sandbox, which answers
+// ConnectionRefused instead of serving the stub fleet. Loopback by address
+// connects on every host (the same convention as shared/platinum.test.ts).
+const STUB_ORIGIN = `http://127.0.0.1:${server.port}`;
 
 beforeAll(async () => {
   if (!process.env.TEST_DATABASE_URL) throw new Error('Run through pnpm test -- --db-only sandbox-ownership');
@@ -46,7 +50,7 @@ beforeAll(async () => {
   await peer.execute(sql`create table kortix.platform_settings (
     key varchar(255) primary key, value jsonb not null, updated_at timestamptz not null default now()
   )`);
-  config.PLATINUM_API_URL = server.url.origin;
+  config.PLATINUM_API_URL = STUB_ORIGIN;
   config.PLATINUM_API_KEY = 'pt_synthetic_ownership';
   config.ALLOWED_SANDBOX_PROVIDERS = ['platinum'];
   config.KORTIX_INSTANCE_ID = undefined;
@@ -93,27 +97,22 @@ test('two databases sharing one environment and provider cannot orphan-stop each
     .toEqual(['sbx_synthetic_legacy']);
 });
 
-test('stale stopped status and live turns remain referenced; worker environments do too', async () => {
+test('stale stopped status and live turns remain referenced', async () => {
   await db.insert(sessionSandboxes).values({
     sandboxId: crypto.randomUUID(), sessionId: `ownership-${crypto.randomUUID()}`,
     accountId, projectId, externalId, provider: 'platinum', status: 'stopped',
     updatedAt: new Date('2026-01-01'), metadata: { activeTurns: { synthetic: { state: 'active' } } },
   });
-  await db.insert(sessionEnvironments).values({
-    sessionId: `ownership-env-${crypto.randomUUID()}`, accountId, projectId,
-    externalId: `${externalId}-env`, provider: 'platinum', status: 'error', updatedAt: new Date('2026-01-01'),
-  });
   expect(await hasProviderBoxReference('platinum', externalId)).toBe(true);
-  expect(await hasProviderBoxReference('platinum', `${externalId}-env`)).toBe(true);
   expect(await hasProviderBoxReference('daytona', externalId)).toBe(false);
   const marker = await sandboxOwnershipMarker();
-  fleet = [externalId, `${externalId}-env`].map((id) => ({
+  fleet = [externalId].map((id) => ({
     id, state: 'running', created_at: '2026-01-01T00:00:00Z',
     metadata: { 'kortix.managed': marker, 'kortix.env': config.INTERNAL_KORTIX_ENV },
   }));
   stops.length = 0;
   const result = await reapOrphanProviderBoxes();
-  // Referenced, so the ORPHAN path never touches either box.
+  // Referenced, so the ORPHAN path never touches the box.
   expect(result.stopped).toBe(0);
   // But the session row says `stopped` while the provider lists its box
   // running: a row/VM divergence, and the reconciler closes it by stopping the
@@ -121,7 +120,6 @@ test('stale stopped status and live turns remain referenced; worker environments
   // no turn authority by the platform's own predicate
   // (session-lifecycle/inbox-admission.ts, `sessionHoldsTurnAuthority`).
   expect(result.divergence).toEqual({ diverged: 1, closed: 1, errors: 0 });
-  // The session_environments row is not a session sandbox: out of scope here.
   expect(stops).toEqual([externalId]);
 });
 

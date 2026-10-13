@@ -59,7 +59,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { iamRouter } = await import('../accounts/iam/app');
-await import('../accounts/iam/mfa');
+(await import('../accounts/iam/mfa')).registerIamMfaRoutes();
 
 function buildApp() {
   const app = new Hono();

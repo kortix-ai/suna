@@ -1,12 +1,13 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
+import { accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { actorOf } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { countAccountMembers, countBillableAccountMembers, userAccountRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
@@ -82,18 +83,7 @@ export function registerAccountRoutes(): void {
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role. Reading the role off the join labelled the switcher with a value
       // the engine no longer decides on.
-      const readMembershipRows = () =>
-        db
-          .select({
-            accountId: accountMembers.accountId,
-            name: accounts.name,
-            createdAt: accounts.createdAt,
-            updatedAt: accounts.updatedAt,
-            branding: accounts.branding,
-          })
-          .from(accountMembers)
-          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-          .where(eq(accountMembers.userId, userId));
+      const readMembershipRows = () => userAccountRows(userId);
       const loadMemberships = async () => {
         const [membershipRows, rolesByAccount] = await Promise.all([
           readMembershipRows(),
@@ -307,24 +297,13 @@ export function registerAccountRoutes(): void {
       // real auth user) are kept; falls back to a plain count if auth is unreachable.
       let memberCount = 0;
       try {
-        const res = await db.execute<{ n: number }>(sql`
-      SELECT COUNT(*)::int AS n
-      FROM kortix.account_members am
-      WHERE am.account_id = ${accountId}::uuid
-        AND NOT (
-          am.user_id = am.account_id
-          AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = am.user_id)
-        )
-    `);
+        const res = await countBillableAccountMembers(accountId);
         const countRows =
           (res as unknown as { rows?: Array<{ n: number }> }).rows ??
           (res as unknown as Array<{ n: number }>);
         memberCount = Number(countRows?.[0]?.n ?? 0);
       } catch {
-        const [memberCountRow] = await db
-          .select({ n: count() })
-          .from(accountMembers)
-          .where(eq(accountMembers.accountId, accountId));
+        const [memberCountRow] = await countAccountMembers(accountId);
         memberCount = Number(memberCountRow?.n ?? 0);
       }
       const [projectCountRow] = await db

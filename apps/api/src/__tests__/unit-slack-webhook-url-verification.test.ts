@@ -74,7 +74,7 @@ mock.module('../channels/slack/interactivity', () => ({
   handleViewSubmission: async () => {},
 }));
 
-await import('../channels/slack/routes');
+(await import('../channels/slack/routes')).registerSlackWebhookRoutes();
 const { slackWebhookApp } = await import('../channels/slack/app');
 
 afterAll(() => {

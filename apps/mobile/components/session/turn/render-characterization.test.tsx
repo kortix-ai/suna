@@ -33,7 +33,7 @@ const passthrough =
   ({ children, ...props }: any) =>
     React.createElement(host, props, children);
 
-mock.module('react-native', () => ({ View: passthrough('rn-view'), Text: passthrough('rn-text') }));
+mock.module('react-native', () => ({ View: passthrough('rn-view'), Text: passthrough('rn-text'), Pressable: passthrough('rn-pressable') }));
 const AnimatedView = passthrough('rn-animated-view');
 mock.module('react-native-reanimated', () => ({
   default: { View: AnimatedView },
@@ -43,6 +43,7 @@ mock.module('react-native-reanimated', () => ({
   useSharedValue: (value: unknown) => ({ value }),
   withTiming: () => ({}),
   withSpring: () => ({}),
+  runOnJS: (fn: unknown) => fn,
 }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('expo-clipboard', () => ({
@@ -57,7 +58,8 @@ mock.module('@/components/kortix/pressable-surface', () => ({
     return React.createElement('rn-pressable-surface', props, children);
   },
 }));
-mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer') }));
+const LoopMotion = React.createContext(true);
+mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer'), LoopMotionContext: LoopMotion }));
 mock.module('@/components/ui/separator', () => ({ Separator: passthrough('rn-separator') }));
 mock.module('@/components/ui/text', () => ({ Text: passthrough('rn-text') }));
 mock.module('@/components/ui/button', () => ({
@@ -100,7 +102,7 @@ mock.module('@/lib/icons', () => ({
 }));
 mock.module('@/lib/session/user-message', () => ({ webSpace: (n: number) => n * 4 }));
 mock.module('@/lib/utils/theme', () => ({
-  MOTION: { duration: { normal: 150 }, easing: { inOut: [0.4, 0, 0.2, 1] } },
+  MOTION: { duration: { normal: 150, slow: 300 }, easing: { inOut: [0.4, 0, 0.2, 1], default: [0.4, 0, 0.2, 1] } },
   THEME: {
     light: { accent: '#light-accent', mutedForeground: '#light-fg' },
     dark: { accent: '#dark-accent', mutedForeground: '#dark-fg' },
@@ -129,8 +131,12 @@ mock.module('@/components/session/SessionErrorBanner', () => ({ TurnErrorDisplay
 mock.module('@/components/session/tool/shared/infrastructure', () => ({ TurnLiveContext: React.createContext(false) }));
 mock.module('@/components/session/tool/tool-part-renderer', () => ({ ToolPartRenderer: passthrough('rn-tool') }));
 mock.module('@/components/session/tool/tools/register', () => ({}));
-mock.module('@/components/session/turn/activity-burst', () => ({ ActivityBurst: passthrough('rn-burst') }));
+// A burst prints its `isTrailing` and the `LoopMotionContext` it renders under.
+mock.module('@/components/session/turn/activity-burst', () => ({
+  ActivityBurst: ({ isTrailing }: any) => React.createElement('rn-burst', { isTrailing, loop: React.useContext(LoopMotion) }),
+}));
 mock.module('@/components/session/turn/user-message', () => ({ UserMessage: passthrough('rn-user-message') }));
+mock.module('@/components/session/SessionChangeRequests', () => ({ SessionChangeRequests: passthrough('rn-change-requests') }));
 
 let CompactionMarker: typeof import('./compaction-divider').CompactionMarker;
 let TurnActions: typeof import('./turn-actions').TurnActions;
@@ -345,5 +351,171 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
     expect(textParts.at(-1)).toMatchObject({ text: 'Looks good so far. One nit.' });
     expect(textParts.at(-1).isStreaming).toBeFalsy();
     expect(textPartLifecycle).toEqual(['mount:Looks good so far']);
+  });
+
+  // KRTX-1678: the reply streamed as a standalone block and moved into the
+  // segments list when the first tool call arrived — a remount mid-stream.
+  test('the first tool call does not remount the streaming reply', async () => {
+    const toolPart = {
+      id: 'tool-1',
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call-1',
+      state: { status: 'running', input: { command: 'ls' } },
+      sessionID: 's-1',
+      messageID: 'a-1',
+    };
+    const withTool = {
+      ...turnWith('Let me check the files.'),
+      assistantMessages: [
+        {
+          info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } },
+          parts: [textPart('Let me check the files.'), toolPart],
+        },
+      ],
+    } as unknown as import('@/lib/session/types').Turn;
+    const working = (turn: import('@/lib/session/types').Turn) => (
+      <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />
+    );
+
+    await act(async () => {
+      tree = create(working(turnWith('Let me check the files.')));
+    });
+    await act(async () => {
+      tree?.update(working(withTool));
+    });
+
+    expect(textParts.at(-1)).toMatchObject({ text: 'Let me check the files.', isStreaming: true });
+    expect(textPartLifecycle).toEqual(['mount:Let me check the files.']);
+  });
+
+  test('change request cards render at the end of the turn once it settles', async () => {
+    const changeRequests = [{ id: 'cr:1' }] as unknown as import('@/lib/session/session-change-requests').ChangeItem[];
+    const onOpen = () => {};
+
+    await act(async () => {
+      tree = create(
+        <SessionTurn
+          turn={turnWith('Opened a change request.')}
+          isWorkingTurn
+          sessionStatus={{ type: 'busy' } as never}
+          isBusy
+          changeRequests={changeRequests}
+          onOpenChangeRequest={onOpen}
+        />,
+      );
+    });
+    // Working: an outcome is not a settled fact yet (web gates on `!working`).
+    expect(JSON.stringify(tree?.toJSON() ?? {})).not.toContain('rn-change-requests');
+
+    await act(async () => {
+      tree?.update(
+        <SessionTurn
+          turn={turnWith('Opened a change request.', 3_000)}
+          isWorkingTurn={false}
+          isBusy={false}
+          changeRequests={changeRequests}
+          onOpenChangeRequest={onOpen}
+        />,
+      );
+    });
+    const json = JSON.stringify(tree?.toJSON() ?? {});
+    expect(json).toContain('rn-change-requests');
+    // Above the action bar, as web's outcome cards.
+    expect(json.indexOf('rn-change-requests')).toBeLessThan(json.indexOf('session-turn-actions'));
+  });
+});
+
+describe('SessionTurn segments: every burst loops while on screen, trailing is structural', () => {
+  const tool = (id: string) => ({
+    id, type: 'tool', tool: 'bash', callID: `call-${id}`, sessionID: 's-1', messageID: 'a-1',
+    state: { status: 'running', input: { command: 'ls' }, time: { start: 2_000 } },
+  });
+  const text = (id: string) => ({ id, type: 'text', text: `between ${id}`, sessionID: 's-1', messageID: 'a-1' });
+  const turn = {
+    userMessage: {
+      info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+      parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+    },
+    assistantMessages: [
+      { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } }, parts: [tool('t-1'), text('x-1'), tool('t-2')] },
+    ],
+  } as unknown as import('@/lib/session/types').Turn;
+  const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never)).map((node) => node.props);
+
+  for (const onScreen of [true, false]) {
+    test(`onScreen=${onScreen}: only the last burst is trailing; every burst loops only on screen`, async () => {
+      await act(async () => {
+        tree = create(
+          <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy onScreen={onScreen} />,
+        );
+      });
+      expect(bursts()).toEqual([
+        { isTrailing: false, loop: onScreen },
+        { isTrailing: true, loop: onScreen },
+      ]);
+    });
+  }
+});
+
+// KRTX-2113: a settled turn folds its work behind one "Worked for" row.
+describe('SessionTurn work fold: live stream as today, settled work behind one row', () => {
+  const bash = {
+    id: 't-1', type: 'tool', tool: 'bash', callID: 'call-t-1', sessionID: 's-1', messageID: 'a-1',
+    state: { status: 'completed', input: { command: 'ls' }, output: '', time: { start: 2_000, end: 2_500 } },
+  };
+  const reply = (text: string) => ({ id: 'x-final', type: 'text', text, sessionID: 's-1', messageID: 'a-1' });
+  const turnWith = (text: string, completed?: number) =>
+    ({
+      userMessage: {
+        info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+        parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+      },
+      assistantMessages: [
+        { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [bash, reply(text)] },
+      ],
+    }) as unknown as import('@/lib/session/types').Turn;
+  const row = () => tree!.root.findAll((node) => node.type === ('rn-pressable' as never));
+  const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never));
+
+  test('working: no row, the burst and the reply stream as today', async () => {
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnWith('Found it')} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />);
+    });
+    expect(row()).toHaveLength(0);
+    expect(bursts()).toHaveLength(1);
+    expect(textParts.at(-1)).toMatchObject({ text: 'Found it', isStreaming: true });
+  });
+
+  test('settle: the work collapses behind "Worked for 2s", the reply keeps its instance', async () => {
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnWith('Found it')} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />);
+    });
+    await act(async () => {
+      tree?.update(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} />);
+    });
+    expect(row()).toHaveLength(1);
+    expect(row()[0].props.accessibilityHint).toBe('Opens the activity');
+    expect(JSON.stringify(tree?.toJSON() ?? {})).toContain('Worked for 2s');
+    expect(bursts()).toHaveLength(0);
+    expect(textParts.at(-1)).toMatchObject({ text: 'Found it.' });
+    expect(textPartLifecycle).toEqual(['mount:Found it']);
+  });
+
+  test('a tap opens the activity sheet on the turn\'s work; nothing expands inline', async () => {
+    const { useActivitySheetStore } = await import('@/lib/session/activity-sheet-store');
+    useActivitySheetStore.getState().close();
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} sessionId="s-1" />);
+    });
+    await act(async () => row()[0].props.onPress());
+    expect(bursts()).toHaveLength(0);
+    const sheet = useActivitySheetStore.getState().sheet;
+    expect(sheet?.partIds).toEqual(['t-1']);
+    expect(sheet?.context).toMatchObject({ sessionId: 's-1', turnLive: false });
+    // The final text stays below the row.
+    const json = JSON.stringify(tree?.toJSON() ?? {});
+    expect(json.indexOf('Worked for')).toBeLessThan(json.lastIndexOf('Found it.'));
+    useActivitySheetStore.getState().close();
   });
 });

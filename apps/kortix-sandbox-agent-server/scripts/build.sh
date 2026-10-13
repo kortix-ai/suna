@@ -57,7 +57,6 @@ compile_with_retry() {
 echo "Typechecking (tsc --noEmit) before compile…"
 bun run typecheck
 
-bun build --target=bun --format=esm --tsconfig-override ./tsconfig.json --outfile=dist/server.mjs src/main.ts
 compile_with_retry
 chmod +x dist/kortix-agent
 
@@ -79,5 +78,4 @@ cp -f dist/kortix-agent dist/kortixd
 chmod +x dist/kortixd
 
 size="$(stat -f%z dist/kortix-agent 2>/dev/null || stat -c%s dist/kortix-agent)"
-bundle_size="$(stat -f%z dist/server.mjs 2>/dev/null || stat -c%s dist/server.mjs)"
-echo "Built dist/kortixd (+ compat dist/kortix-agent) for ${target} (${size} bytes) and dist/server.mjs (${bundle_size} bytes)"
+echo "Built dist/kortixd (+ compat dist/kortix-agent) for ${target} (${size} bytes)"

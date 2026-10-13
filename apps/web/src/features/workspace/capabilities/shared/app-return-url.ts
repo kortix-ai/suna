@@ -24,3 +24,12 @@ export function parseAppReturnUrl(raw: string | null | undefined): string | null
   if (url.protocol !== 'kortix:') return null;
   return raw;
 }
+
+/**
+ * Which `return_to` a page honours: the URL's when valid, else the one
+ * remembered for the tab. Both pass the same check, because storage is as
+ * user-writable as the query string.
+ */
+export function resolveAppReturn(fromUrl: string | null, remembered: string | null): string | null {
+  return parseAppReturnUrl(fromUrl) ?? parseAppReturnUrl(remembered);
+}

@@ -828,8 +828,6 @@ function scanFile(file) {
       const coveredAuditTitleText =
         file === path.join(srcDir, 'components/iam/audit-display-helpers.ts') &&
         localizedAuditTitleText.has(node.text);
-      const coveredStarterPromptText =
-        file === path.join(srcDir, 'lib/starter-prompts.ts') && ['label', 'prompt'].includes(name);
       const coveredSessionsCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/sessions-tab.tsx') &&
         [
@@ -939,7 +937,7 @@ function scanFile(file) {
           catalogRoot === 'CARD_COPY') ||
         (file ===
           path.join(srcDir, 'features/workspace/capabilities/shared/capability-tab-routes.ts') &&
-          catalogRoot === 'CAPABILITY_TABS') ||
+          ['CAPABILITY_TABS', 'FLAGGED_CAPABILITY_TABS'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/customize/sections/connectors-view.tsx') &&
           ['POLICY_CHOICES', 'POLICY_LABEL'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/customize/sections/gateway-view.tsx') &&
@@ -966,8 +964,6 @@ function scanFile(file) {
         (file === path.join(srcDir, 'lib/kortix/task-meta.ts') && catalogRoot === 'STATUS_META') ||
         (file === path.join(srcDir, 'lib/agent-discovery.ts') &&
           ['API_CATALOG', 'MCP_SERVER_CARD'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'lib/mcp/public-content-server.ts') &&
-          catalogRoot === 'TOOL_DEFINITIONS') ||
         (file === path.join(srcDir, 'components/setup-links/setup-link-button.tsx') &&
           catalogRoot === 'COPY') ||
         (file === path.join(srcDir, 'features/billing/cost-explorer/cost-chart.tsx') &&
@@ -1109,7 +1105,6 @@ function scanFile(file) {
         !coveredRoleText &&
         !coveredSiteConfigText &&
         !coveredAuditTitleText &&
-        !coveredStarterPromptText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
         !coveredOnboardingProfileFixture &&

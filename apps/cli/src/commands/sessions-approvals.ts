@@ -419,16 +419,23 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
     process.stdout.write('\n');
     process.stdout.write(`  ${C.dim}${pad('EXECUTION', idW)}   RISK          ACTION${C.reset}\n`);
     for (const action of actions) {
-      const path = action.connector ? `${action.connector}.${action.action}` : action.action;
+      // `action` already carries the connector prefix (`<slug>.<action>`) — the
+      // same field --json emits. Never prepend `connector` again.
       process.stdout.write(
-        `  ${C.cyan}${pad(action.execution_id, idW)}${C.reset}   ${pad(action.risk ?? 'unknown', 12)}  ${C.bold}${path}${C.reset}\n`,
+        `  ${C.cyan}${pad(action.execution_id, idW)}${C.reset}   ${pad(action.risk ?? 'unknown', 12)}  ${C.bold}${action.action}${C.reset}\n`,
       );
       const args = action.result_summary?.args_preview;
       if (args !== undefined) {
         process.stdout.write(`    ${C.dim}args ${JSON.stringify(args)}${C.reset}\n`);
       }
+      // The /approve page handles both decisions; the CLI approve/deny commands
+      // are refused for PAT and agent callers (APPROVAL_REQUIRES_HUMAN).
+      if (action.approval_url) {
+        process.stdout.write(`    ${C.dim}decide at ${action.approval_url}${C.reset}\n`);
+      }
       process.stdout.write(
-        `    ${C.dim}kortix sessions approvals ${sessionId} approve ${action.execution_id}${C.reset}\n`,
+        `    ${C.dim}approve: kortix sessions approvals ${sessionId} approve ${action.execution_id}${C.reset}\n` +
+          `    ${C.dim}deny: kortix sessions approvals ${sessionId} deny ${action.execution_id}${C.reset}\n`,
       );
     }
     process.stdout.write('\n');

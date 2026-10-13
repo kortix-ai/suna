@@ -18,7 +18,7 @@ const url = process.env.TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const migrationPath = join(
   import.meta.dir,
-  '../migrations/20261004002924533_public_credit_usage_policy_roles.sql',
+  '../migrations/20261004173000002_public_credit_usage_policy_roles.sql',
 );
 
 const ACCOUNT_A = '11111111-1111-1111-1111-111111111111';

@@ -33,10 +33,10 @@ EOF
 
 run_case() { # <name>  (expects $TMP prepared by caller)
   KORTIX_TEST_LOG="${TMP}/log" \
-  KORTIX_COMPILED_BOOT_MODE="${KORTIX_TEST_COMPILED_MODE:-off}" \
   KORTIX_AGENT_BIN="${TMP}/bin/kortix-agent" \
   KORTIX_AGENT_STATE_DIR="${TMP}/state" \
   KORTIX_WORKSPACE="${TMP}/ws" \
+  KORTIX_BOOT_ARTIFACTS_DIR="${TMP}/art" \
     bash "${ENTRYPOINT}" >"${TMP}/out" 2>&1
   echo $?
 }
@@ -234,60 +234,25 @@ code=$(run_case)
   || no "pinned" "log=$(tr '\n' ',' < "${TMP}/log")"
 rm -rf "${TMP}"
 
+# ---------------------------------------------------------------------------
+# Boot artifacts: the release's daemon on the artifacts volume runs instead of
+# the image's; one that fails fast falls back to the image's.
+# ---------------------------------------------------------------------------
 setup
-cat > "${TMP}/bin/kortix-agent" <<'EOF'
-#!/usr/bin/env bash
-if [ "${1:-}" = "install-compiled-runtime" ]; then
-  cat > "${KORTIX_AGENT_STATE_DIR}/server.mjs" <<'MJS'
-import { spawnSync } from "node:child_process";
-const child = spawnSync(process.env.KORTIX_AGENT_BIN, ["compiled-child"], { env: process.env, stdio: "inherit" });
-process.exit(child.status ?? 1);
-MJS
-  echo "${KORTIX_AGENT_STATE_DIR}/server.mjs"
-  exit 0
-fi
-echo "AGENT:${1:-legacy}" >> "${KORTIX_TEST_LOG}"
-exit 0
-EOF
-chmod +x "${TMP}/bin/kortix-agent"
-KORTIX_TEST_COMPILED_MODE=prefer
+mkdir -p "${TMP}/art/kortix"
+echo '{"release": "r1"}' > "${TMP}/art/manifest.json"
+make_agent "${TMP}/bin/kortix-agent" baked 0
+make_agent "${TMP}/art/kortix/kortix-agent" artifact 0
 code=$(run_case)
-unset KORTIX_TEST_COMPILED_MODE
-[ "${code}" = "0" ] && grep -q 'AGENT:compiled-child' "${TMP}/log" \
-  && ok "compiled prefer: verified server.mjs launches the agent" \
-  || no "compiled prefer" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
-rm -rf "${TMP}"
-
-setup
-cat > "${TMP}/bin/kortix-agent" <<'EOF'
-#!/usr/bin/env bash
-if [ "${1:-}" = "install-compiled-runtime" ]; then exit 1; fi
-echo "AGENT:legacy" >> "${KORTIX_TEST_LOG}"
-exit 0
-EOF
-chmod +x "${TMP}/bin/kortix-agent"
-KORTIX_TEST_COMPILED_MODE=prefer
+[ "${code}" = "0" ] && grep -q AGENT:artifact "${TMP}/log" && ! grep -q AGENT:baked "${TMP}/log" \
+  && ok "boot artifacts: release daemon runs instead of the image's" \
+  || no "boot artifacts" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
+make_agent "${TMP}/art/kortix/kortix-agent" artifact 3
+: > "${TMP}/log"
 code=$(run_case)
-unset KORTIX_TEST_COMPILED_MODE
-[ "${code}" = "0" ] && grep -q 'AGENT:legacy' "${TMP}/log" \
-  && ok "compiled prefer: failed install falls back to the baked agent" \
-  || no "compiled prefer fallback" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
-rm -rf "${TMP}"
-
-setup
-cat > "${TMP}/bin/kortix-agent" <<'EOF'
-#!/usr/bin/env bash
-if [ "${1:-}" = "install-compiled-runtime" ]; then exit 1; fi
-echo "AGENT:must-not-run" >> "${KORTIX_TEST_LOG}"
-exit 0
-EOF
-chmod +x "${TMP}/bin/kortix-agent"
-KORTIX_TEST_COMPILED_MODE=required
-code=$(run_case)
-unset KORTIX_TEST_COMPILED_MODE
-[ "${code}" = "1" ] && ! grep -q 'AGENT:must-not-run' "${TMP}/log" \
-  && ok "compiled required: failed install stops before legacy boot" \
-  || no "compiled required" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
+[ "${code}" = "0" ] && grep -q AGENT:artifact "${TMP}/log" && grep -q AGENT:baked "${TMP}/log" \
+  && ok "boot artifacts: a failing release daemon falls back to the image's" \
+  || no "boot artifacts fallback" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
 rm -rf "${TMP}"
 
 echo

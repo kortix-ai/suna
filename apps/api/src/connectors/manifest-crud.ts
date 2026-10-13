@@ -20,7 +20,7 @@ import {
   RESERVED_SLUG_PROVIDERS,
   extractConnectors,
 } from '../projects/connectors';
-import { loadManifestForEdit } from '../projects/index';
+import { loadManifestForEdit } from '../projects/surface';
 import { withProjectGitAuth } from '../projects/lib/git';
 import {
   type DefaultMode,

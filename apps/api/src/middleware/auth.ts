@@ -12,9 +12,9 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verif
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
 import { markDeadCredential } from '../shared/dead-credential-log';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from './client-ip';
 import { isOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { withActor } from './auth-actor';
@@ -24,6 +24,7 @@ import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-bu
 import { serviceAccountPrincipal, patPrincipal, jwtPrincipal } from './auth-principal';
 import { applyOAuthAccessTokenPrincipal } from './auth-oauth';
 import { enforceTokenProjectScope } from './auth-scope';
+import { bearerToken } from '../shared/bearer-token';
 export { clearSsoSyncMemo } from './auth-sso';
 export { combinedAuth } from './auth-combined';
 
@@ -84,14 +85,23 @@ export async function apiKeyAuth(c: Context, next: Next) {
 async function resolveApiKeyAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // Absent and non-Bearer are different failures (KRTX-2168): an edge that
+  // drops the header and a browser answering an HTTP auth challenge with
+  // `Authorization: Basic` must not share one 401 shape.
+  if (!authHeader) {
     auditLoginFail({ c, reason: 'missing_auth_header', authType: 'apiKey' });
     throw new HTTPException(401, {
-      message: 'Missing or invalid Authorization header',
+      message: 'Missing Authorization header',
     });
   }
 
-  const token = authHeader.slice(7);
+  const token = bearerToken(authHeader);
+  if (token === null) {
+    auditLoginFail({ c, reason: 'invalid_auth_scheme', authType: 'apiKey' });
+    throw new HTTPException(401, {
+      message: 'Unsupported Authorization scheme: expected "Bearer <token>"',
+    });
+  }
 
   if (!token) {
     auditLoginFail({ c, reason: 'empty_token', authType: 'apiKey' });
@@ -171,12 +181,20 @@ export async function supabaseAuth(c: Context, next: Next) {
 async function resolveSupabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  // Same distinction as resolveApiKeyAuth (KRTX-2168).
+  if (!authHeader) {
     auditLoginFail({ c, reason: 'missing_auth_header' });
-    throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
+    throw new HTTPException(401, { message: 'Missing Authorization header' });
   }
 
-  const token = authHeader.slice(7);
+  const token = bearerToken(authHeader);
+  if (token === null) {
+    auditLoginFail({ c, reason: 'invalid_auth_scheme' });
+    throw new HTTPException(401, {
+      message: 'Unsupported Authorization scheme: expected "Bearer <token>"',
+    });
+  }
+
   if (!token) {
     auditLoginFail({ c, reason: 'empty_token' });
     throw new HTTPException(401, { message: 'Missing token' });

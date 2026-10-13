@@ -62,6 +62,12 @@ interface SandboxConnectionStore {
 	 * keep the stall clock off; keeping it lets every surface tell them apart.
 	 */
 	parked: boolean;
+	/**
+	 * A session stream (`GET .../events`) feeds this store from the server's
+	 * `kortix.runtime.status` / `kortix.runtime.health` frames (R5.3). While
+	 * true, `useRuntimeReconnect` sends no `/kortix/health` probe.
+	 */
+	streamDriven: boolean;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -127,7 +133,14 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	lastRuntimeEvidenceAt: null,
 	bootingSinceAt: null,
 	parked: false,
+	streamDriven: false,
 }));
+
+/** A session stream now feeds (or stopped feeding) this store. See `streamDriven`. */
+export function setConnectionStreamDriven(streamDriven: boolean) {
+	if (useSandboxConnectionStore.getState().streamDriven === streamDriven) return;
+	useSandboxConnectionStore.setState({ streamDriven });
+}
 
 /** Record the health probe's `capabilities`; an unchanged list keeps the same array. */
 export function setRuntimeCapabilities(capabilities: readonly string[] | null) {

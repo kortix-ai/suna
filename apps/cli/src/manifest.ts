@@ -113,9 +113,10 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
 export function lintManifest(
   data: Record<string, unknown>,
   format: ManifestFormat = 'toml',
+  projectIssues: ManifestIssue[] = [],
 ): ManifestIssues {
   const { issues } = validateManifest(data, format);
-  return classifyIssues(issues);
+  return classifyIssues([...issues, ...projectIssues]);
 }
 
 function classifyIssues(issues: ManifestIssue[]): ManifestIssues {

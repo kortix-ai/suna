@@ -14,6 +14,12 @@
  * lists confirm the project in the background (`confirmLastProject`); one no
  * account lists any more is forgotten and this screen resolves again.
  *
+ * Invites (KRTX-1731): an invite link opened before sign-in opens first
+ * (`takeInviteLink`). With no last project, a pending invite opens before any
+ * project (`startDestination`): a project invite stays pending until it is
+ * accepted, so the invitee would otherwise land in an empty account. The last
+ * project still opens with no request; the switcher sheet lists invites.
+ *
  * Every automatic "take me into the app" redirect (sign-in, a back button with
  * no history, leaving an account) replaces to `/` so it lands here. With no
  * last project, a failed request falls back to the lists this device kept; with
@@ -33,6 +39,9 @@ import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
 import { log } from '@/lib/logger';
 import { projectKeys } from '@/lib/projects/hooks';
+import { listMyAccountInvites, type MyAccountInvite } from '@/lib/accounts/accounts-client';
+import { inviteKeys } from '@/lib/invites/hooks';
+import { inviteHref, skippedInvites, takeInviteLink } from '@/lib/invites/invite-landing';
 import { checkLastProject, freshOrCached, resolveLandingProject } from '@/lib/projects/landing';
 import {
   classifyStartFailure,
@@ -84,6 +93,13 @@ function fetchProjects(queryClient: QueryClient, accountId: string): Promise<Kor
   });
 }
 
+/** The caller's pending invites. A failed list is none: an invite never blocks the start (web `/projects/start`). */
+function fetchMyInvites(queryClient: QueryClient): Promise<MyAccountInvite[]> {
+  return queryClient
+    .fetchQuery({ queryKey: inviteKeys.mine, queryFn: () => listMyAccountInvites(), retry: false })
+    .catch(() => []);
+}
+
 /**
  * The background half of opening the last project at once: the server's lists
  * decide whether it still belongs to this user (`checkLastProject`). Listed:
@@ -128,7 +144,7 @@ async function confirmLastProject(input: {
 export default function StartScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isAuthenticated, isLoading: authLoading, signOut } = useAuthContext();
+  const { user, isAuthenticated, mfaRequired, isLoading: authLoading, signOut } = useAuthContext();
   const userId = user?.id ?? null;
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
   const [signingOut, setSigningOut] = React.useState(false);
@@ -151,6 +167,12 @@ export default function StartScreen() {
       router.replace('/auth');
       return;
     }
+    // A session that owes a TOTP code reaches nothing else, no fetch included.
+    if (mfaRequired) {
+      log.log('🚀 → /auth/mfa (TOTP code required)');
+      router.replace('/auth/mfa');
+      return;
+    }
     // The last project is stored per user: wait for the user id.
     if (!userId) return;
 
@@ -169,6 +191,14 @@ export default function StartScreen() {
         ]);
         if (cancelled) return;
 
+        // An invite link opened before sign-in (app/+native-intent.ts).
+        const inviteLink = takeInviteLink();
+        if (inviteLink) {
+          log.log(`🚀 → /invites/${inviteLink} (invite link)`);
+          router.replace(inviteHref(inviteLink));
+          return;
+        }
+
         // The last project opens now; the server confirms it in the background.
         const lastProjectId = useLastProjectStore.getState().byUser[userId] ?? null;
         if (lastProjectId) {
@@ -184,22 +214,34 @@ export default function StartScreen() {
           () => fetchAccounts(queryClient),
           () => queryClient.getQueryData<KortixAccount[]>(projectKeys.accounts)
         );
-        const resolution = await resolveLandingProject({
-          accounts,
-          selectedAccountId: useCurrentAccountStore.getState().selectedAccountId,
-          lastProjectId: null,
-          listProjects: (accountId) =>
-            freshOrCached(
-              () => fetchProjects(queryClient, accountId),
-              () => queryClient.getQueryData<KortixProject[]>(projectKeys.projects(accountId))
-            ),
-        });
+        // Invites after accounts: the account list claims workspace invites,
+        // so the pending list holds only what still needs an answer.
+        const [resolution, invites] = await Promise.all([
+          resolveLandingProject({
+            accounts,
+            selectedAccountId: useCurrentAccountStore.getState().selectedAccountId,
+            lastProjectId: null,
+            listProjects: (accountId) =>
+              freshOrCached(
+                () => fetchProjects(queryClient, accountId),
+                () => queryClient.getQueryData<KortixProject[]>(projectKeys.projects(accountId))
+              ),
+          }),
+          fetchMyInvites(queryClient),
+        ]);
         if (cancelled) return;
 
         const destination = startDestination(
           resolution,
-          !!useOnboardingStore.getState().upgradeSeenByUser[userId]
+          !!useOnboardingStore.getState().upgradeSeenByUser[userId],
+          invites,
+          skippedInvites
         );
+        if (destination.kind === 'invite') {
+          log.log(`🚀 → /invites/${destination.inviteId} (pending invite)`);
+          router.replace(inviteHref(destination.inviteId));
+          return;
+        }
         if (destination.kind === 'project') {
           // Every account-scoped surface agrees with where the user landed.
           useCurrentAccountStore.getState().setSelectedAccountId(destination.accountId);
@@ -243,7 +285,7 @@ export default function StartScreen() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [authLoading, isAuthenticated, userId, attempt, queryClient, router]);
+  }, [authLoading, isAuthenticated, mfaRequired, userId, attempt, queryClient, router]);
 
   const handleSignOut = React.useCallback(async () => {
     if (signingOut) return;

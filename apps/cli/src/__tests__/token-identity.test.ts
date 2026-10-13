@@ -202,7 +202,7 @@ describe('permission-denial identity footer', () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
     process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
-    recordPermissionDenial(403);
+    recordPermissionDenial(403, undefined, refusedCredential());
 
     const cap = captureStderr();
     try {
@@ -217,11 +217,18 @@ describe('permission-denial identity footer', () => {
     expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');
   });
 
+  /** The refused credential the footer resolves the identity from. A dead
+   *  local port keeps the live `/accounts/me` re-derivation fast and
+   *  hermetic — the cached identity below is what the footer prints. */
+  function refusedCredential() {
+    return { host: 'http://127.0.0.1:9', token: 'kortix_pat_session' };
+  }
+
   async function footerFor(detail: { code?: string; action?: string }): Promise<string> {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
     process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
-    recordPermissionDenial(403, undefined, detail);
+    recordPermissionDenial(403, detail, refusedCredential());
     const cap = captureStderr();
     try {
       await printPermissionDenialIdentity();
@@ -285,6 +292,26 @@ describe('permission-denial identity footer', () => {
     expect(cap.output()).toBe('');
   });
 
+  test('a refusal recorded without the refused credential prints nothing — never the active host\'s identity', async () => {
+    // KRTX-1564: the footer exists to name the REFUSED credential. With no
+    // credential on the record it cannot name anything honestly; the active
+    // host's identity is a different credential (inside a sandbox, the
+    // injected session token) and naming it sent the customer looking at an
+    // unrelated token row.
+    process.env.KORTIX_API_URL = 'https://api.kortix.com';
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    rememberTokenIdentity('kortix_pat_session', agentMe());
+    recordPermissionDenial(403);
+
+    const cap = captureStderr();
+    try {
+      await printPermissionDenialIdentity();
+    } finally {
+      cap.restore();
+    }
+    expect(cap.output()).toBe('');
+  });
+
   test('a non-identity status is not recorded', async () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
     process.env.KORTIX_TOKEN = 'kortix_pat_session';
@@ -305,7 +332,7 @@ describe('permission-denial identity footer', () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
     process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
-    recordPermissionDenial(403);
+    recordPermissionDenial(403, undefined, refusedCredential());
     recordPermissionDenial(403);
 
     const first = captureStderr();

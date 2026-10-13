@@ -61,7 +61,7 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 `main` takes PRs with no required CI: the developer's own box is the pre-merge
 check (the **testing** skill, "your machine is the pre-merge gate"). A person
 may add the `test` label for one explicit six-lane run (the **contributing**
-skill). A daily `schedule` runs the six `Tests` lanes on `main` as a **non-blocking trunk
+skill). A daily `schedule` runs the `Tests` lanes on `main` as a **non-blocking trunk
 signal** (a push does not), and an automated "repair main" pass opens fix-forward PRs
 (`fix(...): repair main after <sha> (...)`) when that scheduled run is red. **Neither
 the scheduled run nor the repair pass blocks a promotion** — do not wait for either
@@ -89,8 +89,8 @@ against whatever `origin/main` HEAD is right now.
 
 ### Step 3 — the staging PR is the gate
 
-The PR into `staging` runs the full six-lane `Tests` suite (`core`,
-`browser-1`…`browser-4`, `packages`) plus CodeQL (`Analyze
+The PR into `staging` runs the full ten-lane `Tests` suite (`core`,
+`browser-1`…`browser-8`, `packages`) plus CodeQL (`Analyze
 javascript-typescript`), Trivy filesystem scan, gitleaks, the `packages/db`
 migration gates (`Migrations are sequential`, `Migration files are well-formed`,
 `Applies cleanly to a fresh DB`, `Schema matches migrations`, `Squawk
@@ -108,7 +108,15 @@ Merge only when **all** of these hold:
 - every review thread is resolved — `staging`'s branch protection sets
   `required_conversation_resolution: true`, so GitHub blocks the merge button
   on an open thread (a CodeQL finding included) until you resolve or reply to it;
-- Step 5's migration cost pass is done for every new migration in the diff.
+- Step 5's migration cost pass is done for every new migration in the diff;
+- **one time, until the per-region Terraform state move finishes:** if
+  `origin/staging` does not yet contain #9693 (the state move) and this
+  promotion does, run right before the merge:
+  `AWS_PROFILE=kortix node infra/terraform/scripts/statemove/copy-states.mjs staging`
+  (every line `OK ... kms=yes tagged`), then
+  `node infra/terraform/scripts/statemove/deny-old-keys.mjs staging`. Without it,
+  Deploy Staging stops at "Check the regional state copy". Delete this bullet
+  once staging's state is in eu-west-2.
 
 **Never merge a staging PR with a pending or failing check "because it'll
 probably pass."** A shard that never starts (bootstrap failure) gives no
@@ -207,18 +215,26 @@ triggers on that PR.
 ### Step 8 — release gate triage
 
 `tests-release.yml`'s `full suite + quality gates` job is the only *required*
-check in the repository (on the PR into `prod`). Staging's API and its database
-run in different AWS regions today (`us-west-2` API, `eu-west-2` DB — PR #7844
-merged the colocation fix but it is not yet applied to the live staging infra),
-so a `503 request_deadline` (55 s) or a flow timeout on the release gate is
-**environmental**, not a product regression (owner decision, 2026-09-29).
-Classify it as such in a PR comment and move on. Every other failure is fixed on
+check in the repository (on the PR into `prod`). Until 2026-10-06 staging's API
+ran in `us-west-2` and its database in `eu-west-2`, so the owner decision of
+2026-09-29 classified a `503 request_deadline` (55 s) or a flow timeout on the
+release gate as **environmental**. Since 2026-10-06 both run in `eu-west-2`, so
+that cross-region reason no longer holds: confirm with the owner before you
+classify a timeout as environmental. Every other failure is fixed on
 `main` and re-promoted through Steps 2–7 (a new staging SHA means the release
 PR must be re-dispatched too). Rerun a failed job once; a shard that
 never gets past its own bootstrap gives no signal, so rerun it rather than
 reading it as a pass or a fail.
 
 ### Step 9 — prod
+
+**One time, until the per-region Terraform state move finishes:** if
+`origin/prod` does not yet contain #9693 and this release does, first run
+`AWS_PROFILE=kortix node infra/terraform/scripts/statemove/copy-states.mjs prod`
+(every line `OK ... kms=yes tagged`), then
+`node infra/terraform/scripts/statemove/deny-old-keys.mjs prod`. Without it,
+Deploy Prod stops at "Check the regional state copy". Delete this paragraph
+once prod's state is in eu-west-2.
 
 Merge the release PR:
 
@@ -320,3 +336,21 @@ no `vX.Y.Z` Release.
    the three npm packages, the GitHub Release (24 assets), and Better Stack all
    verified on the new version.
 8. `:stable` moved only if the user explicitly asked for it this release.
+9. **One-time, release carrying #9272 (the `/internal/*` edge gate):** the
+   api-router worker ships inert until `INTERNAL_EDGE_KEY` is set. Do it per env,
+   in this order, after that release is live in the env. A wrong order breaks LLM
+   inference, because the gateway calls `/internal/gateway/*` through the public
+   API host.
+   1. Generate a random 32-byte key. Never print it.
+   2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
+      `kortix-<env>-env` in its `blob_region` region (the **dotenvx-secrets**
+      skill, "Which region to edit"; needs an MFA session) and to
+      `apps/api/.env.<env>` with `dotenvx set`.
+   3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
+      gateway `GET /v1/models` with a PAT still returns 200.
+   4. Only then `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the
+      api-router worker, and redeploy the worker.
+   5. Verify: public `curl https://<api-host>/internal/gateway/authenticate`
+      returns 404 (the worker gate, not the app's 401), and a gateway chat call
+      gives the same answer as before.
+   Rollback: delete the worker secret. The gateway header is harmless.

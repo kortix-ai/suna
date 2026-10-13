@@ -1,10 +1,11 @@
 import { createInterface } from 'node:readline';
 import {
-  extractGatewayErrorDetails,
-  findSessionAttachments,
-  unwrapError,
   type MessageWithParts,
   type Part,
+  extractGatewayErrorDetails,
+  findSessionAttachments,
+  sessionModelPin,
+  unwrapError,
 } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
@@ -173,6 +174,12 @@ session (or starts one with --new).
                           and return as soon as it is stored. Survives a
                           sleeping or mid-turn sandbox; manage what is waiting
                           with \`kortix sessions queue\`.
+  --steer                 One-shot only: hand the prompt to the turn that is
+                          running now. The agent reads it at its next step;
+                          the turn does not stop. Stored like --queue, so it
+                          never wakes the sandbox. With no turn running, it
+                          starts one. A session that cannot steer runs it as
+                          --queue.
   --json                  One-shot only: print the reply as JSON (for scripts /
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
@@ -201,6 +208,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   let wantNew = false;
   let json = false;
   let queue = false;
+  let steer = false;
   try {
     projectArg = takeFlagValue(rest, ['--project']);
     hostArg = takeFlagValue(rest, ['--host']);
@@ -209,6 +217,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     wantNew = takeFlagBool(rest, ['--new']);
     json = takeFlagBool(rest, ['--json']);
     queue = takeFlagBool(rest, ['--queue']);
+    steer = takeFlagBool(rest, ['--steer']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -224,26 +233,35 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('--queue needs --prompt "<text>".')}\n`);
     return 2;
   }
+  if (steer && promptText === undefined) {
+    process.stderr.write(`${status.err('--steer needs --prompt "<text>".')}\n`);
+    return 2;
+  }
+  if (steer && queue) {
+    process.stderr.write(`${status.err('Pass --steer or --queue, not both.')}\n`);
+    return 2;
+  }
+  const inbox = queue || steer;
   const opts: CtxOpts = { projectArg, hostArg };
 
   // ── Resolve which session to chat with ──────────────────────────────────
   const initialPromptSubmitted =
-    positional[0] === undefined && wantNew && promptText !== undefined && !queue;
+    positional[0] === undefined && wantNew && promptText !== undefined && !inbox;
   const sessionId = await resolveChatSessionId(
     positional[0],
     wantNew,
-    queue ? undefined : promptText,
+    inbox ? undefined : promptText,
     opts,
     json,
     agent,
   );
   if (!sessionId) return 1;
 
-  // --queue is deliberately routed BEFORE loadSessionForChat: the whole point
-  // of the durable inbox is that it accepts a prompt for a session whose
-  // sandbox is asleep or mid-turn, and loadSessionForChat would wake it.
-  if (queue) {
-    return queuePrompt(sessionId, opts, promptText!, json);
+  // --queue and --steer are deliberately routed BEFORE loadSessionForChat: the
+  // whole point of the durable inbox is that it accepts a prompt for a session
+  // whose sandbox is asleep or mid-turn, and loadSessionForChat would wake it.
+  if (inbox) {
+    return queuePrompt(sessionId, opts, promptText!, json, steer ? 'steer' : undefined);
   }
 
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
@@ -291,7 +309,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
 }
 
 /**
- * `chat --prompt --queue` — hand the message to the server-side inbox and
+ * `chat --prompt --queue` / `--steer` — hand the message to the server-side inbox and
  * return. No runtime call, so a stopped or busy session takes it just as
  * readily as an idle one; the control plane delivers it at the next boundary.
  */
@@ -300,22 +318,35 @@ async function queuePrompt(
   opts: CtxOpts,
   text: string,
   json: boolean,
+  delivery?: 'steer',
 ): Promise<number> {
+  const flag = delivery ? '--steer' : '--queue';
   const located = await locateSessionAnywhere(
     sessionId,
     opts,
-    (host) => `kortix sessions chat ${sessionId} --prompt "…" --queue --host ${host}`,
+    (host) => `kortix sessions chat ${sessionId} --prompt "…" ${flag} --host ${host}`,
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
   let result: CreateSessionPromptResult;
   try {
-    result = await queueSessionPrompt(client, projectId, session, text);
+    result = await queueSessionPrompt(client, projectId, session, text, delivery);
   } catch (err) {
     return surfaceApiError(err);
   }
   if (json) {
     emitJson(result);
+    return 0;
+  }
+  const short = session.session_id.split('-')[0];
+  if (delivery === 'steer') {
+    process.stdout.write(
+      `${status.ok(
+        result.deduped
+          ? `Already sent as ${C.bold}${result.prompt_id}${C.reset}`
+          : `Sent ${C.bold}${result.prompt_id}${C.reset} to steer the running turn ${C.dim}(${result.state}). The agent reads it at its next step. Track it with \`kortix sessions queue ${short}\`.${C.reset}`,
+      )}\n`,
+    );
     return 0;
   }
   process.stdout.write(
@@ -838,7 +869,8 @@ By default shows active sessions (running / provisioning / failed); pass --all
 to include stopped ones. Aliases: \`overview\`, \`ps\`.
 
   --all, -a         Include stopped/completed sessions.
-  --json            Structured output for scripting.
+  --json            Structured output for scripting; each session carries
+                    model, its resolved model id (null when none stored).
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -925,6 +957,9 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         status: s.status,
         branch: s.branch_name,
         agent: s.agent_name,
+        // Stored resolved model pin; null = the row stores none and the
+        // session follows the default chain.
+        model: sessionModelPin(s),
         updated_at: s.updated_at,
         activity: activity.get(s.session_id) ?? null,
       })),

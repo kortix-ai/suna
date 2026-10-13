@@ -1,4 +1,4 @@
-import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
+import type { AccountInviteLanding, KortixAccount, KortixProject } from '@kortix/sdk';
 
 import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/workspace-grouping';
 
@@ -161,13 +161,16 @@ export function countProjects(sections: AccountSection[]): number {
 }
 
 /**
- * Where Join goes. A project invite opens the first invited project. A plain
- * workspace invite has no project yet, so the caller stays on the selector
- * and the refreshed lists show the joined account.
+ * The route of an invite landing (KRTX-1731). `accountInviteLanding` in the
+ * SDK decides where an accepted invite lands, for every host: the invited
+ * project, or the joined account. An account lands on the door for that
+ * account; the plain door reopened the project this browser remembered, in
+ * the account the user came from.
  */
-export function joinDestination(invite: MyAccountInvite): string | null {
-  const first = invite.projects[0];
-  return first ? `/projects/${first.project_id}` : null;
+export function inviteLandingPath(landing: AccountInviteLanding): string {
+  return landing.kind === 'project'
+    ? `/projects/${landing.projectId}`
+    : `/projects/start?account=${encodeURIComponent(landing.accountId)}`;
 }
 
 /**
@@ -178,16 +181,27 @@ export function joinDestination(invite: MyAccountInvite): string | null {
  *  - the user has exactly one project in total.
  * A pending invite always shows the selector, so an invite is never skipped
  * past on the way into a project.
+ *
+ * `requestedAccountId` (`/projects/start?account=<id>`, after an account
+ * switch or an invite accept) bounds both answers to that account, and wins
+ * over a pending invite: the user just chose where to go (KRTX-1731).
  */
-export type DoorDecision = { kind: 'open'; projectId: string; accountId: string } | { kind: 'select' };
+export type DoorDecision =
+  | { kind: 'open'; projectId: string; accountId: string }
+  | { kind: 'select'; accountId?: string };
 
 export function decideDoor(input: {
   sections: AccountSection[];
   inviteCount: number;
   rememberedProjectId: string | null;
+  requestedAccountId?: string | null;
 }): DoorDecision {
-  if (input.inviteCount > 0) return { kind: 'select' };
-  const all = input.sections.flatMap((section) => section.projects);
+  const requested = input.requestedAccountId ?? null;
+  const select: DoorDecision = requested ? { kind: 'select', accountId: requested } : { kind: 'select' };
+  if (input.inviteCount > 0 && !requested) return select;
+  const all = input.sections
+    .flatMap((section) => section.projects)
+    .filter((project) => !requested || project.account_id === requested);
   if (input.rememberedProjectId) {
     const remembered = all.find((project) => project.project_id === input.rememberedProjectId);
     if (remembered) {
@@ -197,5 +211,5 @@ export function decideDoor(input: {
   if (all.length === 1) {
     return { kind: 'open', projectId: all[0].project_id, accountId: all[0].account_id };
   }
-  return { kind: 'select' };
+  return select;
 }

@@ -63,6 +63,44 @@ const layers = {
   },
 };
 
+/**
+ * True when `abs` is a module inside src/projects/ other than its two public
+ * entry points: index.ts (route registration + surface) and surface.ts.
+ * @param {string} abs
+ */
+function isProjectsDeepPath(abs) {
+  const rel = relative(SRC, abs).split(sep).join('/').replace(/\.ts$/, '');
+  return rel.startsWith('projects/') && rel !== 'projects/index' && rel !== 'projects/surface';
+}
+
+/** @type {import('eslint').Rule.RuleModule} */
+const projectsSurface = {
+  meta: {
+    type: 'problem',
+    messages: {
+      deep: "A module outside projects/ imports '{{path}}'. Import from 'projects' (index.ts) or 'projects/surface' instead, and add the name to projects/surface.ts when it is missing.",
+    },
+    schema: [],
+  },
+  create(context) {
+    // projects/ reaches its own files freely.
+    if (relative(SRC, context.filename).split(sep).join('/').startsWith('projects/')) return {};
+    /** @param {any} source */
+    const check = (source) => {
+      if (typeof source?.value !== 'string' || !source.value.startsWith('.')) return;
+      if (isProjectsDeepPath(resolve(dirname(context.filename), source.value))) {
+        context.report({ node: source, messageId: 'deep', data: { path: source.value } });
+      }
+    };
+    return {
+      ImportDeclaration: (node) => check(node.source),
+      ExportNamedDeclaration: (node) => check(node.source),
+      ExportAllDeclaration: (node) => check(node.source),
+      ImportExpression: (node) => check(node.source),
+    };
+  },
+};
+
 /** @type {import('eslint').Rule.RuleModule} */
 const replicaLocal = {
   meta: {
@@ -100,9 +138,10 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    plugins: { 'kortix-api': { rules: { layers, 'replica-local': replicaLocal } } },
+    plugins: { 'kortix-api': { rules: { layers, 'projects-surface': projectsSurface, 'replica-local': replicaLocal } } },
     rules: {
       'kortix-api/layers': 'error',
+      'kortix-api/projects-surface': 'error',
       'kortix-api/replica-local': 'error',
       'no-console': 'error',
       'no-restricted-syntax': [

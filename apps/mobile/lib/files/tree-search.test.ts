@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { searchFileTree, searchResultLocation } from './tree-search';
+import { directoryChildren, isCutDirectory, searchFileTree, searchResultLocation } from './tree-search';
 
 const TREE = [
   { path: 'README.md', size: 10 },
@@ -59,5 +59,63 @@ describe('searchResultLocation', () => {
   test('names the parent folder, or the root label', () => {
     expect(searchResultLocation({ parent: 'src/app' })).toBe('src/app');
     expect(searchResultLocation({ parent: '' })).toBe('Files');
+  });
+});
+
+// KRTX-1723: the page read one recursive list cut at 1,000 files, so every
+// folder that sorted after file 1,000 was missing. It reads one level now.
+describe('directoryChildren', () => {
+  test('splits one folder level into folder names and files, in entry order', () => {
+    expect(
+      directoryChildren([
+        {
+          entries: [
+            { path: 'src/z', type: 'directory' },
+            { path: 'src/index.ts', type: 'file', size: 12 },
+            { path: 'src/a', type: 'directory' },
+          ],
+        },
+      ]),
+    ).toEqual({ dirs: ['z', 'a'], files: [{ path: 'src/index.ts', size: 12 }] });
+  });
+
+  test('a file without a size keeps a null size', () => {
+    expect(directoryChildren([{ entries: [{ path: 'a.txt', type: 'file' }] }]).files).toEqual([
+      { path: 'a.txt', size: null },
+    ]);
+  });
+
+  test('a folder over one page joins its pages in order, each entry once', () => {
+    const page = (from: number, to: number) => ({
+      entries: Array.from({ length: to - from }, (_, i) => ({
+        path: `a/f${String(from + i).padStart(4, '0')}.txt`,
+        type: 'file' as const,
+      })),
+    });
+    const { files } = directoryChildren([page(0, 500), page(500, 1000), page(1000, 1200)]);
+    expect(files).toHaveLength(1200);
+    expect(new Set(files.map((f) => f.path)).size).toBe(1200);
+    expect(files[0].path).toBe('a/f0000.txt');
+    expect(files[500].path).toBe('a/f0500.txt');
+    expect(files[1199].path).toBe('a/f1199.txt');
+  });
+
+  test('no pages yet is an empty folder level', () => {
+    expect(directoryChildren([])).toEqual({ dirs: [], files: [] });
+  });
+});
+
+// KRTX-1723: an API older than paging ignores `limit`, cuts the folder at
+// 5,000 entries and sends no cursor. The page must not read as complete.
+describe('isCutDirectory', () => {
+  test('a cut last page without a cursor is cut', () => {
+    expect(isCutDirectory([{ truncated: true }])).toBe(true);
+    expect(isCutDirectory([{ truncated: true, next_cursor: null }])).toBe(true);
+  });
+
+  test('a page with a cursor, a whole page, or no page yet is not', () => {
+    expect(isCutDirectory([{ truncated: true, next_cursor: 'C2' }])).toBe(false);
+    expect(isCutDirectory([{ truncated: false, next_cursor: null }])).toBe(false);
+    expect(isCutDirectory([])).toBe(false);
   });
 });

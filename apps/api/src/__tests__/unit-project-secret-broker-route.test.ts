@@ -171,7 +171,7 @@ mock.module('../secrets/http-broker', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/secret-broker');
+(await import('../projects/routes/secret-broker')).registerSecretBrokerRoutes();
 
 function buildApp() {
   const app = new Hono<{

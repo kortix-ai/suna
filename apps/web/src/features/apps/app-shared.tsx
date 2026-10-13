@@ -7,7 +7,7 @@ import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-transla
 import type { UiTranslator } from '@/i18n/translator';
 
 import { cn } from '@/lib/utils';
-import { type App, type AppAccessMode, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
+import { type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
 
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
@@ -67,8 +67,6 @@ export function appCommand(app: App): string {
   return `kortix apps deploy . --app ${app.app_id}`;
 }
 
-/** The command that puts a first App on this page. Shown in the empty state. */
-export const FIRST_DEPLOY_COMMAND = 'kortix apps deploy .';
 
 /**
  * The hostname a person reads an App by.
@@ -92,14 +90,16 @@ export function appHost(url: string): string {
  * it is intent, not fact — an App that has never been deployed reports
  * `running` and has no runtime at all. Every surface must therefore read
  * `active_deployment_id` first, and it does so here rather than in each of the
- * three places that used to re-derive it.
+ * three places that used to re-derive it. A static App is live whenever it
+ * has an active deployment (`hosting_type`).
  */
 export function appStatus(
   app: App,
   tI18nComplete: UiTranslator,
 ): { deployed: boolean; live: boolean; label: string; dot: string } {
   const deployed = Boolean(app.active_deployment_id);
-  const live = deployed && app.desired_state === 'running';
+  // A static App has no runtime: it serves whatever `desired_state` says.
+  const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');
   return {
     deployed,
     live,
@@ -112,6 +112,66 @@ export function appStatus(
     // the only one that earns colour.
     dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
   };
+}
+
+/**
+ * Does this App offer `capability`? The ONE way the Apps UI branches between
+ * Apps: the server lists what each App supports (`app.capabilities`), and a
+ * control shows only for the Apps that support it.
+ */
+/**
+ * The Apps the grid shows as cards (`display`): not `listed: false`, and not a
+ * tab of a parent that exists. A tab whose parent is gone stays reachable as a card.
+ */
+export function gridApps(apps: App[], canAdmin = true): App[] {
+  const slugs = new Set(apps.map((app) => app.slug));
+  return apps.filter((app) =>
+    app.display?.listed !== false
+    && !(app.display?.parent && slugs.has(app.display.parent))
+    && (canAdmin || !appAdminsOnly(app)));
+}
+
+/** The Apps `app`'s detail shows as tabs (their `display.parent` is its slug). */
+export function childApps(apps: App[], app: App, canAdmin = true): App[] {
+  return apps.filter((row) => row.display?.parent === app.slug && (canAdmin || !appAdminsOnly(row)));
+}
+
+/**
+ * Its primary service is `access: admins` (a backend's admin dashboard): only
+ * project admins can open it, so nobody else is shown a card or tab for it.
+ */
+/**
+ * The App whose live preview a card shows: the App itself, or, when it hides
+ * its own (`display.preview: none`), its first tab the viewer may open (a
+ * backend's dashboard). Null: the card shows an icon.
+ */
+export function cardPreviewApp(apps: App[], app: App, canAdmin = true): App | null {
+  if (app.display?.preview !== 'none') return app;
+  const first = childApps(apps, app, canAdmin)[0];
+  return first && appCan(first, 'preview') && first.viewer_can_access !== false ? first : null;
+}
+
+export function appAdminsOnly(app: App): boolean {
+  return app.services?.find((service) => service.name === 'http')?.access === 'admins';
+}
+
+/** A tab's label: the App's name without its parent's slug ("crm-data-dashboard" → "Dashboard"). */
+export function appTabLabel(child: App, parent: App): string {
+  const name = child.name.startsWith(`${parent.slug}-`) ? child.name.slice(parent.slug.length + 1) : child.name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+export function appCan(app: App, capability: AppCapability): boolean {
+  return app.capabilities?.includes(capability) ?? false;
+}
+
+/** "2 vCPU · 4 GB · 20 GB": the machine size of an App. */
+export function appSizeLabel(app: App, t: UiTranslator): string {
+  return t('textce0eabb01151', {
+    value0: app.machine.cpu,
+    value1: app.machine.memory_gb,
+    value2: app.machine.disk_gb,
+  });
 }
 
 /**
@@ -184,7 +244,7 @@ export function DeployCommand({ code, className }: { code: string; className?: s
         className,
       )}
     >
-      <span aria-hidden className="text-muted-foreground/50 shrink-0 font-mono text-xs select-none">
+      <span aria-hidden className="text-muted-foreground shrink-0 font-mono text-xs select-none">
         $
       </span>
       <code className="text-foreground truncate font-mono text-xs">{code}</code>

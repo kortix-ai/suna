@@ -105,12 +105,12 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
 
     // One user of the treatment left in this file: `Try again`. `Back to
     // projects` moved into the shared `AccountTopBar` with the rest of the top
-    // row and carries the same treatment there; Log out moved into that bar's
-    // account menu.
+    // row; since #9687 it is the shared back pill (components/ui/back-pill.tsx).
+    // Log out moved into that bar's account menu.
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
     expect(treatmentMatches).toHaveLength(1);
     const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
-    expect(bar).toContain('text-muted-foreground hover:text-foreground');
+    expect(bar).toContain('backPillClass(');
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {
@@ -189,7 +189,9 @@ describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026
   // its own flag and the page answers it with the upgrade dialog.
   test('the hook exposes limitReached, derived from the shared isProjectLimitError', () => {
     expect(hook).toContain("limitReached = status === 'error' && isProjectLimitError(lastError)");
-    expect(hook).toContain('limitReached };');
+    // `phase` (KRTX-1543) returns beside it: the streamed provisioning phase
+    // the handoff renders.
+    expect(hook).toContain('canRetry, limitReached, phase };');
   });
 
   test('messageFor keeps the server text for the cap — it already says what to do', () => {

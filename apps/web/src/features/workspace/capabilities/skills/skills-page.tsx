@@ -2,7 +2,7 @@
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -34,7 +34,9 @@ import {
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
+import { NewSkillModal } from '@/features/workspace/capabilities/skills/new-skill-modal';
 import { filterSkills, type SkillScope } from './skill-scope';
+import { useSlashFocus } from '@/hooks/utils';
 
 type ScopeFilter = SkillScope | 'all';
 
@@ -55,10 +57,13 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
  * `skills` list, not `filtered` — so typing into search while the modal is
  * open can't yank it shut out from under the user.
  * "New" in the header and "Create a skill" in the empty state are the SAME
- * control under two labels (`createButton`), reusing `useConfigureThread` /
- * `newConfigPrompt('skill')` unchanged — creation still happens by an agent
- * editing the repo on a branch, not a form here. The empty state adds Docs as
- * its secondary, which is all a reader without write permission gets.
+ * control under two labels (`createButton`), with two ways in:
+ * "Create in chat" reuses `useConfigureThread` / `newConfigPrompt('skill')`
+ * (an agent edits the repo on a branch — needs a model), and "Create with a
+ * form" commits the skill straight onto the default branch, no model needed
+ * — on a fresh free account the chat path was a dead end ("requires a paid
+ * plan", no model to pick). The empty state adds Docs as its secondary,
+ * which is all a reader without write permission gets.
  */
 export function SkillsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -70,8 +75,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const configure = useConfigureThread(projectId);
 
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef);
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -117,7 +125,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
 
   // One control, two labels. The header has a title beside it and can be terse;
   // the empty state is the whole screen and has to name what it creates. Both
-  // start the same configure thread, so they cannot drift apart.
+  // offer the same two ways in, so they cannot drift apart.
   // `size="sm"` is `h-8` — the same height as the search input beside it in the
   // header group. The Button default is `h-9`, which left the pair 4px
   // mismatched on a row that is centred, so both edges were off.
@@ -127,6 +135,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         label={label}
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('skill'))}
+        manual={{
+          label: tI18nComplete.raw('texta38668224f1a'),
+          description: tI18nComplete.raw('textedac6130dac7'),
+          onSelect: () => setFormOpen(true),
+        }}
       />
     ) : null;
 
@@ -141,6 +154,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
+            ref={searchRef}
             placeholder={tI18nComplete.raw('text76c02b7eddca')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -221,6 +235,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
           if (!next) setSelectedPath(null);
         }}
       />
+      <NewSkillModal projectId={projectId} open={formOpen} onOpenChange={setFormOpen} />
     </CapabilityPageShell>
   );
 }

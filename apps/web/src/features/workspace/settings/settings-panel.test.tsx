@@ -244,17 +244,11 @@ describe('SettingsPanelView — the dialog frame', () => {
   });
 });
 
-test('mobile Settings navigation has a zoom-safe first row on macOS', () => {
+test('mobile Settings headers sit in the native titlebar band on macOS', () => {
   const source = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8');
   const css = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
   expect(source).toContain('kx-settings-mobile-titlebar');
-  expect(source).toContain('kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2');
-  expect(source).toContain('kx-settings-mobile-tabs');
-  expect(css).toMatch(/\.kx-settings-mobile-titlebar \.kx-settings-mobile-tabs\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
-  // The tabs are a segmented track: the outer box takes the control size and
-  // the inner list and triggers fill it, so nothing exceeds the band.
-  expect(css).toMatch(/\[data-slot='tabs-list'\]\.kx-settings-mobile-tabs\s*\{[^}]*height:\s*100%/);
-  expect(css).toMatch(/\.kx-settings-mobile-titlebar \[data-slot='tabs-trigger'\]\s*\{[^}]*height:\s*100%/);
+  expect(css).toMatch(/\.kx-settings-mobile-titlebar \.kx-settings-mobile-close\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
 });
 
 /**
@@ -332,13 +326,18 @@ describe('SettingsPanelShell — real tab content gating', () => {
   });
 
   /**
-   * Appearance and Sessions read Zustand stores and `next-themes`, neither of
-   * which throws without a provider, so the throw signal cannot prove they
-   * mounted. For those two the proof is the pane heading: present when the
-   * tab is active, absent otherwise (`RailTriggerBody` renders the label too,
-   * so the heading is matched as the `h2` `SettingsTabHeader` emits).
+   * Appearance reads Zustand stores and `next-themes`, neither of which throws
+   * without a provider, so the throw signal cannot prove it mounted. Its proof
+   * is the pane heading: present when the tab is active, absent otherwise
+   * (`RailTriggerBody` renders the label too, so the heading is matched as the
+   * `h2` `SettingsTabHeader` emits).
+   *
+   * Sessions (Notifications) left this list deliberately with KRTX-1742: it
+   * reads the `notification_center` flag (`useNotificationCenter`) and the
+   * person's server record (`useNotificationPreferences`), so it is
+   * query-backed like the rest.
    */
-  const STORE_ONLY_TABS = ['appearance', 'sessions'] as const;
+  const STORE_ONLY_TABS = ['appearance'] as const;
   const QUERY_BACKED_TABS = SETTINGS_TABS.filter(
     (tab) => !(STORE_ONLY_TABS as readonly string[]).includes(tab),
   );
@@ -434,14 +433,24 @@ describe('SettingsPanelShell — project-free', () => {
 });
 
 describe('SettingsPanelShell — mobile', () => {
-  test('renders a flat horizontal tablist instead of one list per group', () => {
+  // Two screens, like a phone's Settings app: the section list, then a pane.
+  test('opens on the section list: every row, no pane header', () => {
     const html = render({ isMobile: true });
-    expect((html.match(/role="tablist"/g) ?? []).length).toBe(1);
     expect((html.match(/role="tab"/g) ?? []).length).toBe(allItems.length);
+    // Radix keeps a tabpanel for every value, so the pane's absence is its
+    // back pill's absence.
+    expect(html).not.toContain('rounded-full');
   });
 
-  test('renders the close button', () => {
+  test('a caller that named a tab lands on its pane, with a back pill to the list', () => {
+    const html = render({ isMobile: true, startOnPane: true });
+    expect(html).not.toContain('role="tab"');
+    expect(html).toContain('rounded-full');
+  });
+
+  test('renders the close button on both screens', () => {
     expect(render({ isMobile: true })).toContain('aria-label="Close"');
+    expect(render({ isMobile: true, startOnPane: true })).toContain('aria-label="Close"');
   });
 });
 

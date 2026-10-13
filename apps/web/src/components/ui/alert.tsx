@@ -1,20 +1,19 @@
+import { CheckCircleIcon, InfoIcon, WarningCircleIcon, WarningIcon, type Icon } from '@phosphor-icons/react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
-import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { cn } from '@/lib/utils';
 
-const alertVariants = cva('w-full rounded-md', {
+// The genui Callout, exactly (features/genui/components/inline.tsx, Paper Callout 14): the tone is the
+// /15 fill and the solid 16px glyph; title and body stay ink. Tone type on a tone fill read ~2:1
+// (Marko, 2026-09-03), so text never takes the hue.
+const alertVariants = cva('flex w-full gap-2.5 rounded-lg px-3.5 py-2.5', {
   variants: {
     variant: {
-      default: 'bg-popover text-foreground',
-      destructive:
-        'text-destructive bg-popover [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-destructive/90',
-      // Foreground text on a faint fill with a tinted edge — the tone is the
-      // border and the icon, never the type (see `info-banner.tsx`). Orange
-      // type on an orange fill was ~2:1 (Marko, 2026-09-03).
-      warning:
-        'text-foreground bg-kortix-orange/10 border border-kortix-orange/40 [&_[data-slot=item-media]_svg]:text-kortix-orange [&_[data-slot=item-description]]:text-foreground/75',
+      default: 'bg-kortix-blue/15',
+      success: 'bg-kortix-green/15',
+      warning: 'bg-kortix-orange/15',
+      destructive: 'bg-kortix-red/15',
     },
   },
   defaultVariants: {
@@ -22,17 +21,23 @@ const alertVariants = cva('w-full rounded-md', {
   },
 });
 
-function AlertMedia({
-  className,
-  variant = 'default',
-  ...props
-}: React.ComponentProps<typeof ItemMedia>) {
+type AlertVariant = NonNullable<VariantProps<typeof alertVariants>['variant']>;
+
+const ALERT_GLYPH: Record<AlertVariant, { icon: Icon; className: string }> = {
+  default: { icon: InfoIcon, className: 'text-kortix-blue' },
+  success: { icon: CheckCircleIcon, className: 'text-kortix-green' },
+  warning: { icon: WarningIcon, className: 'text-kortix-orange' },
+  destructive: { icon: WarningCircleIcon, className: 'text-kortix-red' },
+};
+
+/** Replaces the variant's glyph. Only for a state the glyph cannot say (a spinner while loading). */
+function AlertMedia({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    <ItemMedia
+    <div
       data-slot="alert-media"
-      variant={variant}
       className={cn(
-        'mt-0 shrink-0 self-start [&_svg]:pointer-events-none [&_svg]:shrink-0',
+        // mt-0.5 centers a 16px glyph on the first 20px line, of the title or of the body.
+        'mt-0.5 flex shrink-0 self-start [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
         className,
       )}
       {...props}
@@ -40,17 +45,19 @@ function AlertMedia({
   );
 }
 
-function AlertContent({ className, ...props }: React.ComponentProps<typeof ItemContent>) {
-  return <ItemContent data-slot="alert-content" className={className} {...props} />;
-}
-
-function AlertTitle({ className, ...props }: React.ComponentProps<typeof ItemTitle>) {
+function AlertContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    <ItemTitle
-      data-slot="alert-title"
-      className={cn('line-clamp-1 min-h-4 tracking-tight', className)}
+    <div
+      data-slot="alert-content"
+      className={cn('flex min-w-0 flex-1 flex-col text-sm', className)}
       {...props}
     />
+  );
+}
+
+function AlertTitle({ className, ...props }: React.ComponentProps<'span'>) {
+  return (
+    <span data-slot="alert-title" className={cn('text-foreground font-[550]', className)} {...props} />
   );
 }
 
@@ -59,9 +66,8 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
     <div
       data-slot="item-description"
       className={cn(
-        'text-muted-foreground text-sm leading-normal font-medium',
+        'text-foreground text-pretty',
         '[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4',
-        '[&_p]:leading-relaxed',
         className,
       )}
       {...props}
@@ -69,8 +75,14 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
-function AlertActions({ className, ...props }: React.ComponentProps<typeof ItemActions>) {
-  return <ItemActions data-slot="alert-actions" className={className} {...props} />;
+function AlertActions({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="alert-actions"
+      className={cn('flex shrink-0 items-center gap-2 self-center', className)}
+      {...props}
+    />
+  );
 }
 
 function partitionAlertChildren(children: React.ReactNode) {
@@ -79,33 +91,9 @@ function partitionAlertChildren(children: React.ReactNode) {
   const actionChildren: React.ReactNode[] = [];
 
   React.Children.forEach(children, (child) => {
-    if (!React.isValidElement(child)) {
-      if (child != null) {
-        contentChildren.push(child);
-      }
-      return;
-    }
-
-    if (child.type === AlertMedia) {
-      mediaChildren.push(child);
-      return;
-    }
-
-    if (child.type === AlertActions) {
-      actionChildren.push(child);
-      return;
-    }
-
-    if (
-      child.type === AlertTitle ||
-      child.type === AlertDescription ||
-      child.type === AlertContent
-    ) {
-      contentChildren.push(child);
-      return;
-    }
-
-    mediaChildren.push(<AlertMedia key={mediaChildren.length}>{child}</AlertMedia>);
+    if (React.isValidElement(child) && child.type === AlertMedia) mediaChildren.push(child);
+    else if (React.isValidElement(child) && child.type === AlertActions) actionChildren.push(child);
+    else if (child != null) contentChildren.push(child);
   });
 
   const hasContentWrapper = contentChildren.some(
@@ -123,25 +111,29 @@ function Alert({
 }: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
   const { mediaChildren, contentChildren, actionChildren, hasContentWrapper } =
     partitionAlertChildren(children);
+  const glyph = ALERT_GLYPH[variant ?? 'default'];
 
   return (
-    <Item
+    <div
       role="alert"
       data-slot="alert"
-      variant="outline"
-      size="sm"
       className={cn(alertVariants({ variant }), className)}
       {...props}
     >
-      {mediaChildren}
+      {mediaChildren.length > 0 ? (
+        mediaChildren
+      ) : (
+        <glyph.icon
+          data-slot="alert-glyph"
+          className={cn('mt-0.5 size-4 shrink-0', glyph.className)}
+          weight="fill"
+          aria-hidden
+        />
+      )}
       {contentChildren.length > 0 &&
-        (hasContentWrapper ? (
-          contentChildren
-        ) : (
-          <ItemContent data-slot="alert-content">{contentChildren}</ItemContent>
-        ))}
+        (hasContentWrapper ? contentChildren : <AlertContent>{contentChildren}</AlertContent>)}
       {actionChildren}
-    </Item>
+    </div>
   );
 }
 

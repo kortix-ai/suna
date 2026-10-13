@@ -4,7 +4,10 @@
  * never holds it. Backs the in-sandbox `slack download` + `slack send --file`
  * once the token is pulled from the box (KORTIX-206 Phase C2).
  */
+import { dbChannelOwnership, gateChannelRead, type ChannelOwnership } from '../../connectors/channel-read-scope';
+import { DOWNLOAD_TOO_LARGE, readCapped } from '../core/download';
 import { loadSlackTokenForProject } from '../install-store';
+import { getFileInfo } from '../slack-api';
 
 const SLACK_API = 'https://slack.com/api';
 // Only ever attach the bot token to Slack's FILE-serving hosts — `url` is
@@ -12,14 +15,26 @@ const SLACK_API = 'https://slack.com/api';
 // arbitrary origin. Narrowed from the apex `slack.com` (where `/api/*` lives,
 // reachable with the bot token attached) to the file subdomains only. See S3-2.
 const SLACK_HOST = /^(files|files-origin|files-priv|files-private|files-public)\.slack\.com$/i;
+/**
+ * A file URL names its file: `/files-pri/<team>-<file>/[download/]<name>`
+ * (`url_private`, `url_private_download`) or `/files-tmb/<team>-<file>-<hash>/<name>`
+ * (a thumbnail).
+ */
+const SLACK_FILE_PATH = /^\/files-(?:pri|tmb)\/T[A-Z0-9]+-(F[A-Z0-9]+)(?:-[a-z0-9]+)?\/(?:download\/)?[^/]+$/;
 
 export type FileProxyError = { ok: false; error: string; status: number };
 
-/** Fetch a Slack-hosted file with the project's bot token. SSRF-guarded. */
+/**
+ * Fetch a Slack-hosted file with the project's bot token. SSRF-guarded, and
+ * confined like a `file_info` read: one workspace token serves every project
+ * connected to that workspace, so the file must be shared in a conversation
+ * this project may read (connectors/channel-read-scope.ts).
+ */
 export async function downloadSlackFile(
   projectId: string,
   url: string,
-): Promise<{ ok: true; body: ArrayBuffer; contentType: string } | FileProxyError> {
+  ownership: ChannelOwnership = dbChannelOwnership,
+): Promise<{ ok: true; body: Uint8Array; contentType: string } | FileProxyError> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -29,19 +44,30 @@ export async function downloadSlackFile(
   if (parsed.protocol !== 'https:' || !SLACK_HOST.test(parsed.hostname)) {
     return { ok: false, error: 'url must be an https://*.slack.com file URL', status: 400 };
   }
+  const fileId = SLACK_FILE_PATH.exec(parsed.pathname)?.[1];
+  if (!fileId) {
+    return { ok: false, error: 'url must be a Slack file URL (url_private or url_private_download)', status: 400 };
+  }
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return { ok: false, error: 'Slack not connected for this project', status: 404 };
+
+  const info = await getFileInfo(token, fileId);
+  if (!info.ok) return { ok: false, error: `Slack file ${fileId}: ${info.error ?? 'not found'}`, status: 404 };
+  const gate = await gateChannelRead(
+    { projectId, platform: 'slack', actionPath: 'file_info', args: { file: fileId }, risk: 'read' },
+    ownership,
+  );
+  const answer = gate.refusal ? { refusal: gate.refusal } : await gate.answer(info);
+  if ('refusal' in answer) return { ok: false, error: answer.refusal.message, status: 403 };
 
   const res = await fetch(parsed.href, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) return { ok: false, error: `download failed: HTTP ${res.status}`, status: 502 };
-  return {
-    ok: true,
-    body: await res.arrayBuffer(),
-    contentType: res.headers.get('content-type') ?? 'application/octet-stream',
-  };
+  const body = await readCapped(res);
+  if (!body) return { ok: false, error: DOWNLOAD_TOO_LARGE, status: 413 };
+  return { ok: true, body, contentType: res.headers.get('content-type') ?? 'application/octet-stream' };
 }
 
 /** Upload a file to Slack (the 3-step external-upload flow), token server-side. */

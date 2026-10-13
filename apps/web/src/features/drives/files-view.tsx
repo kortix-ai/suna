@@ -1,0 +1,202 @@
+'use client';
+
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@/features/project-files';
+import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
+import { useTranslations } from '@/i18n/use-translations';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { FolderSimpleIcon, HouseIcon, ShareNetworkIcon, UsersThreeIcon } from '@phosphor-icons/react';
+import { type Drive, getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
+
+import { DriveConflictsBar } from './drive-conflicts-bar';
+import { DriveFilesProvider, driveExplorerSource, parentDrivePath, toDrivePath } from './drive-explorer-source';
+import { FolderAccessDialog } from './folder-access-dialog';
+import { FolderAccessPanel } from './folder-access-panel';
+
+/**
+ * /projects/[id]/customize/files — the project's Files, a Customize tab (the
+ * tab bar is its header): one folder tree everyone in the
+ * project works in, in the same explorer as Repo. What each person sees and
+ * may change follows folder access; their own folder (`Users/<name>`) is
+ * private until they share it and is the desktop of their sessions.
+ */
+export function FilesView({ projectId }: { projectId: string }) {
+  const t = useTranslations('drives');
+  const availability = useDriveAvailability(projectId);
+  const drive = useProjectDrive(projectId, availability.enabled);
+  const router = useRouter();
+  // Volumes off for the organization: there is no drive page; Files is the repo browser.
+  // Trust only a fresh answer: a cached one may predate a switch flip.
+  const detail = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+    refetchOnWindowFocus: false,
+  });
+  const settled = detail.isFetchedAfterMount || (detail.isSuccess && !detail.isStale);
+  const off = settled && !detail.isFetching && !availability.enabled;
+  useEffect(() => {
+    if (off) router.replace(`/projects/${projectId}/files`);
+  }, [off, projectId, router]);
+
+  let body: ReactNode;
+  if (availability.isLoading || (availability.enabled && drive.isLoading)) {
+    body = (
+      <div className="space-y-2 p-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  } else if (!availability.enabled) {
+    body = null;
+  } else if (drive.isError || !drive.data) {
+    body = (
+      <ErrorState
+        title={t('loadError')}
+        className="h-full"
+        action={
+          <Button variant="outline" size="sm" onClick={() => void drive.refetch()}>
+            {t('retry')}
+          </Button>
+        }
+      />
+    );
+  } else {
+    body = <FilesBrowser drive={drive.data} projectId={projectId} />;
+  }
+
+  return (
+    <div className="bg-background flex h-full min-h-0 flex-1 flex-col">
+      {body}
+    </div>
+  );
+}
+
+function FilesBrowser({ drive, projectId }: { drive: Drive; projectId: string }) {
+  // The explorer's store starts at the top of Files, not at a sandbox path.
+  const store = useMemo(() => {
+    const s = createFilesStore();
+    // Held to `/`, so "home" (the root crumb, an empty path) is the top of
+    // Files and never the sandbox default `/workspace`, which Files has not.
+    s.setState({ currentPath: '/', rootPath: '/', expandedDirs: new Set() });
+    return s;
+  }, []);
+  return (
+    <DriveFilesProvider driveId={drive.driveId}>
+      <FilesStoreProvider store={store}>
+        <FilesExplorer drive={drive} projectId={projectId} />
+      </FilesStoreProvider>
+    </DriveFilesProvider>
+  );
+}
+
+function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }) {
+  const t = useTranslations('drives');
+  const currentPath = useFilesStore((s) => s.currentPath);
+  const navigateToPath = useFilesStore((s) => s.navigateToPath);
+  const path = toDrivePath(currentPath);
+  const folder = useDriveFolder(drive.driveId, path);
+  const access = folder.data?.access ?? 'none';
+  const canWrite = access === 'write' || access === 'manage';
+  const [sharing, setSharing] = useState(false);
+
+  // A folder that is gone (deleted, moved, or never there) is not an error
+  // page: step up to the nearest folder that lists.
+  const missing = folder.isError && path !== '/' && (folder.error as { status?: number } | null)?.status === 404;
+  useEffect(() => {
+    if (!missing) return;
+    navigateToPath(parentDrivePath(path).replace(/^\//, '') || '/');
+  }, [missing, path, navigateToPath]);
+
+  // Upload, new folder, rename and delete only where the caller may write;
+  // the API refuses the rest anyway.
+  const source = useMemo(
+    () => ({ ...driveExplorerSource, capabilities: { ...driveExplorerSource.capabilities, write: canWrite } }),
+    [canWrite],
+  );
+
+  const leading = (
+    <div className="flex items-center gap-1">
+      {drive.personalFolder ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => navigateToPath(drive.personalFolder!.replace(/^\//, ''))}
+          title={t('myFolderHint')}
+        >
+          <HouseIcon className="size-4" />
+          <span className="hidden sm:inline">{t('myFolder')}</span>
+        </Button>
+      ) : null}
+      {drive.sharedWithMe?.length ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" title={t('sharedWithMeHint')}>
+              <UsersThreeIcon className="size-4" />
+              <span className="hidden sm:inline">{t('sharedWithMe')}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-w-80">
+            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+              {t('sharedWithMeHint')}
+            </DropdownMenuLabel>
+            {drive.sharedWithMe.map((folder) => (
+              <DropdownMenuItem key={folder.path} onSelect={() => navigateToPath(folder.path.replace(/^\//, ''))}>
+                <FolderSimpleIcon className="size-4 shrink-0" />
+                <span className="truncate" title={folder.path}>
+                  {folder.path.replace(/^\//, '')}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+      {path !== '/' ? (
+        <Button type="button" variant="ghost" size="sm" onClick={() => setSharing(true)}>
+          <ShareNetworkIcon className="size-4" />
+          <span className="hidden sm:inline">{t('shareFolder')}</span>
+        </Button>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <FileExplorerSourceProvider value={source}>
+      <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <DriveExplorer leading={leading} rootLabel={t('files')} />
+          <DriveConflictsBar
+            driveId={drive.driveId}
+            onOpenFolder={(p) => navigateToPath(p.replace(/^\//, ''))}
+          />
+        </div>
+        {/* Who can open the folder in view, beside it: the same section an
+            agent's page shows for who can use the agent. */}
+        <aside className="hidden w-80 shrink-0 overflow-y-auto border-l p-4 lg:block">
+          <FolderAccessPanel driveId={drive.driveId} path={path} onManage={() => setSharing(true)} />
+        </aside>
+      </div>
+      <FolderAccessDialog
+        driveId={drive.driveId}
+        projectId={projectId}
+        path={path}
+        open={sharing}
+        onOpenChange={setSharing}
+      />
+    </FileExplorerSourceProvider>
+  );
+}

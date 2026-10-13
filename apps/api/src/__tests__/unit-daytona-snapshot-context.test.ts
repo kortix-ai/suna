@@ -72,6 +72,9 @@ beforeEach(() => {
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
 let scaffoldBareAtDaytonaBoundary = false;
+// Opencode-config staging, observed mid-build at the same boundary (the
+// provider's finally deletes the context before a test could inspect it).
+let opencodeConfigStaging: Record<string, boolean> = {};
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
 const contextPaths: string[] = [];
@@ -94,6 +97,14 @@ mock.module('@daytonaio/sdk', () => ({
         execFileSync('git', ['--git-dir', scaffoldPath, 'rev-parse', '--is-bare-repository'], {
           encoding: 'utf8',
         }).trim() === 'true';
+      const stagedConfigDir = join(path, '..', 'kortix-opencode-config');
+      opencodeConfigStaging = {
+        packageJson: existsSync(join(stagedConfigDir, 'package.json')),
+        starterTool: existsSync(join(stagedConfigDir, 'tools', 'memory.ts')),
+        rootNodeModules: existsSync(join(stagedConfigDir, 'node_modules')),
+        nestedNodeModules: existsSync(join(stagedConfigDir, 'tools', 'node_modules')),
+        backupTree: existsSync(join(stagedConfigDir, '.node_modules-backup-1')),
+      };
       contextPaths.push(path);
       return { kind: 'mock-image', path };
     },
@@ -136,6 +147,46 @@ describe('Daytona snapshot build context', () => {
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
     expect(scaffoldBareAtDaytonaBoundary).toBe(true);
+  });
+
+  test('stages the opencode config through the dependency-tree filter, not a bare copy', async () => {
+    contextPaths.length = 0;
+    createImpl = async () => {};
+    snapshotState = () => 'active';
+
+    // A developer-local opencode config that carries dependency trees: the
+    // staging path must exclude them (stageOpencodeConfigTree), never copy
+    // them verbatim into the uploaded build context.
+    const configSource = join(fixtureRoot, 'opencode-config-with-deps');
+    await mkdir(join(configSource, 'node_modules', 'provider-sdk'), { recursive: true });
+    await mkdir(join(configSource, 'tools', 'node_modules', 'nested-sdk'), { recursive: true });
+    await mkdir(join(configSource, '.node_modules-backup-1'), { recursive: true });
+    writeFileSync(join(configSource, 'package.json'), '{"dependencies":{"zod":"4.1.8"}}');
+    writeFileSync(join(configSource, 'tools', 'memory.ts'), 'export default {}');
+    writeFileSync(join(configSource, 'node_modules', 'provider-sdk', 'index.js'), 'heavy');
+    writeFileSync(join(configSource, 'tools', 'node_modules', 'nested-sdk', 'index.js'), 'heavy');
+    writeFileSync(join(configSource, '.node_modules-backup-1', 'index.js'), 'heavy');
+
+    const previousConfigPath = process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH;
+    process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = configSource;
+    try {
+      await daytonaProvider.buildSnapshot(buildInput('kortix-test-config-filter'));
+    } finally {
+      process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = previousConfigPath;
+    }
+
+    // Observed on the REAL staged filesystem at the Daytona boundary, before
+    // buildSnapshot's finally cleans the context.
+    expect(contextPaths).toHaveLength(1);
+    expect(opencodeConfigStaging.packageJson).toBe(true);
+    expect(opencodeConfigStaging.starterTool).toBe(true);
+    expect(opencodeConfigStaging.rootNodeModules).toBe(false);
+    expect(opencodeConfigStaging.nestedNodeModules).toBe(false);
+    expect(opencodeConfigStaging.backupTree).toBe(false);
+    // The composed Dockerfile still bakes the warm-up layer from the staged tree.
+    expect(dockerfileSeen).toContain(
+      'COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/',
+    );
   });
 });
 

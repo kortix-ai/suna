@@ -38,13 +38,8 @@
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { loadActiveSandbox } from './sandbox-runtime-refresh';
-import {
-  lastKnownManagedCatalog,
-  modelConfirmation,
-  noteModelConfirmation,
-  noteRunningCatalog,
-} from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 
 /**
@@ -66,7 +61,6 @@ export interface ModelCatalogConvergeDeps {
   fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
-const SANDBOX_SERVICE_PORT = 8000;
 
 const defaultConvergeDeps: ModelCatalogConvergeDeps = {
   loadActiveSandbox,
@@ -247,31 +241,4 @@ async function convergeOneModel(
   }
   if (result.modelPresent) deps.noteModelConfirmation(sessionId, model);
   return { decision: 'converged', daemonOutcome: result.outcome };
-}
-
-/**
- * Record what a health read said about this box's managed catalog. Called
- * from the SAME probe `turn-start-convergence.ts`'s `noteAssetsFromHealth`
- * already runs — never a second network call.
- */
-export function noteManagedCatalogFromHealth(
-  sessionId: string,
-  ids: string[] | null,
-  fallbackReason: string | null,
-): void {
-  noteRunningCatalog(sessionId, ids, fallbackReason);
-}
-
-export function defaultModelCatalogTurnStartDeps(
-  isManagedModelId: (id: string) => boolean,
-  probe: (sessionId: string) => Promise<RunningCatalogLookup | undefined>,
-): ModelCatalogTurnStartDeps {
-  return {
-    isManagedModelId,
-    lastKnown: lastKnownManagedCatalog,
-    probe,
-    convergeCatalog: async (sessionId, model) => convergeSandboxModelCatalog(sessionId, undefined, model),
-    modelConfirmation,
-    noteModelConfirmation,
-  };
 }

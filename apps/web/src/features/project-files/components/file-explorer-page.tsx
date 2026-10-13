@@ -23,6 +23,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
+import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
 import { useChangeRequests } from '../hooks/use-change-requests';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
@@ -40,6 +41,8 @@ import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
+import { FileSearch } from './file-search';
+import { isPartialListing, LoadMoreRow } from './load-more-row';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
 
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -65,6 +68,10 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const copyToClipboard = useFilesStore((s) => s.copyToClipboard);
   const cutToClipboard = useFilesStore((s) => s.cutToClipboard);
   const clearClipboard = useFilesStore((s) => s.clearClipboard);
+  // Filename search over the whole repository (KRTX-1723): ⌘P or the `⋯` menu.
+  const searchEnabled = useFileExplorerSource().capabilities.search;
+  const isSearchOpen = useFilesStore((s) => s.isSearchOpen);
+  const toggleSearch = useFilesStore((s) => s.toggleSearch);
 
   const projectCtx = useProjectContext();
   const projectId = projectCtx?.projectId ?? '';
@@ -72,7 +79,9 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
   useFileEventInvalidation();
 
-  const { data: files, isLoading, error, refetch: refetchFiles } = useFileList(currentPath);
+  const listing = useFileList(currentPath);
+  const { data: files, isLoading, error, refetch: refetchFiles } = listing;
+  const partial = isPartialListing(listing);
 
   const { data: gitStatuses } = useGitStatus();
   const gitStatusMap = useMemo(() => buildGitStatusMap(gitStatuses), [gitStatuses]);
@@ -141,14 +150,17 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       return sortOrder === 'desc' ? -cmp : cmp;
     };
 
+    // A partial folder keeps the server's name order: a sorted subset would
+    // put a later page's rows above the ones shown (KRTX-1723).
+    const sorted = (nodes: FileNode[]) => (partial ? nodes : nodes.sort(sortFn));
     const allDirs = files.filter((f) => f.type === 'directory');
     const elevatedDirs = allDirs
       .filter((f) => ELEVATED_DIRS.has(f.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const dirs = allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)).sort(sortFn);
-    const fileItems = files.filter((f) => f.type === 'file').sort(sortFn);
+    const dirs = sorted(allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)));
+    const fileItems = sorted(files.filter((f) => f.type === 'file'));
     return { elevatedDirs, dirs, fileItems };
-  }, [files, sortBy, sortOrder]);
+  }, [files, sortBy, sortOrder, partial]);
 
   const handleNavigateToDir = useCallback(
     (node: FileNode) => {
@@ -354,10 +366,14 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
         e.preventDefault();
         handlePaste();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && searchEnabled) {
+        e.preventDefault();
+        toggleSearch();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [clipboard, handlePaste]);
+  }, [clipboard, handlePaste, searchEnabled, toggleSearch]);
 
   const [historyPopoverPath, setHistoryPopoverPath] = useState<string | null>(null);
 
@@ -394,6 +410,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     !isLoading &&
     !error &&
     Boolean(files) &&
+    !listing.hasNextPage &&
     elevatedDirs.length === 0 &&
     dirs.length === 0 &&
     fileItems.length === 0;
@@ -420,6 +437,8 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           downloadDir(dirPath, dirName);
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+        showSearch={searchEnabled}
+        sortDisabled={partial}
       />
 
       <div className="relative min-h-0 flex-1">
@@ -465,7 +484,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
             </div>
           )}
 
-          {error && !isLoading && (
+          {!!error && !isLoading && (
             <ErrorState
               title={tHardcodedUi.raw(
                 'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
@@ -524,6 +543,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
                   elevatedDirs={elevatedDirs}
                   dirs={dirs}
                   files={fileItems}
+                  sortDisabled={partial}
                   onNavigateToDir={handleNavigateToDir}
                   onOpenFile={handleOpenFile}
                   onPreviewFile={handlePreviewFile}
@@ -542,6 +562,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
                   readOnly
                 />
               )}
+              <LoadMoreRow listing={listing} />
             </>
           )}
         </div>
@@ -557,6 +578,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       <ChangeRequestDetailDialog crId={createdCrId} onClose={() => setCreatedCrId(null)} />
 
       <FilePreviewModal />
+      {searchEnabled && isSearchOpen && <FileSearch />}
 
       {historyPopoverPath && (
         <div className="bg-popover border-border animate-in slide-in-from-bottom-4 fade-in-0 fixed right-4 bottom-4 z-50 overflow-hidden rounded-md border shadow-2xl duration-200">

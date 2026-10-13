@@ -4,8 +4,6 @@ import {
   detectPlatform,
   isMobilePlatform,
   normalizePlatform,
-  orderedDesktop,
-  orderedMobile,
 } from './detect-os';
 
 const UA = {
@@ -84,31 +82,5 @@ describe('isMobilePlatform', () => {
     expect(isMobilePlatform('macos')).toBe(false);
     expect(isMobilePlatform('windows')).toBe(false);
     expect(isMobilePlatform('linux')).toBe(false);
-  });
-});
-
-describe('orderedDesktop', () => {
-  test('puts the detected OS first and keeps the rest in canonical order', () => {
-    expect(orderedDesktop('windows')).toEqual(['windows', 'macos', 'linux']);
-    expect(orderedDesktop('linux')).toEqual(['linux', 'macos', 'windows']);
-    expect(orderedDesktop('macos')).toEqual(['macos', 'windows', 'linux']);
-  });
-
-  test('leaves the desktop order canonical when a phone is detected', () => {
-    expect(orderedDesktop('ios')).toEqual(['macos', 'windows', 'linux']);
-    expect(orderedDesktop('android')).toEqual(['macos', 'windows', 'linux']);
-  });
-});
-
-describe('orderedMobile', () => {
-  test('puts the detected mobile OS first', () => {
-    expect(orderedMobile('android')).toEqual(['android', 'ios']);
-    expect(orderedMobile('ios')).toEqual(['ios', 'android']);
-  });
-
-  test('leaves the mobile order canonical when a desktop OS is detected', () => {
-    expect(orderedMobile('macos')).toEqual(['ios', 'android']);
-    expect(orderedMobile('windows')).toEqual(['ios', 'android']);
-    expect(orderedMobile('linux')).toEqual(['ios', 'android']);
   });
 });

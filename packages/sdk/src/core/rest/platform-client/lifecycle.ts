@@ -5,7 +5,6 @@
 
 import {
   createProjectSession,
-  deleteProjectSession,
   startProjectSession,
   listProjects,
   restartProjectSession,

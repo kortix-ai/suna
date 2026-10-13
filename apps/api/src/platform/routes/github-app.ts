@@ -42,7 +42,6 @@ import {
   isGithubAppConfigured,
   isGithubAppOAuthConfigured,
   GITHUB_APP_MANIFEST_PERMISSIONS,
-  normalizeGitHubFrontendOrigin,
   resolveGitHubAppSlug,
   signGitHubAppJwt,
   type GitHubAppInstallState,

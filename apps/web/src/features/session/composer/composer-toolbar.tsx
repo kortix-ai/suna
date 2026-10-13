@@ -1,13 +1,12 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import type { ProviderListResponse } from '@kortix/sdk/react';
+import type { FlatModel, ProviderListResponse } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import Loading from '@/components/ui/loading';
-import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';

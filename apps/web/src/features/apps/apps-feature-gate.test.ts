@@ -5,8 +5,8 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 
 // Structural assertions follow the owning modules after extraction.
-const appsSource = () => ['apps-view', 'app-detail', 'app-shared', 'app-preview', 'app-density', 'app-access']
-  .map((name) => readFileSync(resolve(root, `features/apps/${name}.tsx`), 'utf8'))
+const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts', 'app-density.tsx', 'app-access.tsx']
+  .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
   .join('\n');
 
 test('every Apps discovery surface hides until the apps feature flag is on', () => {
@@ -47,16 +47,20 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
     resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
     'utf8',
   );
+  const navStore = readFileSync(resolve(root, 'stores/sidebar-nav-store.ts'), 'utf8');
 
-  // It is a project surface you configure and operate, so it belongs on the
-  // Customize row — not below Files among the bottom-anchored alerts, which
-  // shift as late-arriving billing and sandbox state lands.
-  const customizeAt = sidebar.indexOf('<ProjectCustomizeNavItem />');
-  const appsAt = sidebar.indexOf('<ProjectAppsNavItem />');
-  const filesAt = sidebar.indexOf('<ProjectFilesNavItem />');
+  // It is a project surface you configure and operate, so it belongs with the
+  // Customize row in the top nav group — not among the bottom-anchored alerts,
+  // which shift as late-arriving billing and sandbox state lands. The rows are
+  // customizable now; this pins the default order and the group they render in.
+  const defaults = navStore.slice(navStore.indexOf('SIDEBAR_NAV_DEFAULTS'));
+  const customizeAt = defaults.indexOf("id: 'customize'");
+  const appsAt = defaults.indexOf("id: 'apps'");
+  const filesAt = defaults.indexOf("id: 'files'");
   expect(customizeAt).toBeGreaterThan(-1);
   expect(appsAt).toBeGreaterThan(customizeAt);
   expect(appsAt).toBeLessThan(filesAt);
+  expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
 });
 
 test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {
@@ -90,7 +94,8 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('New App');
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
-  expect(view).toContain('<iframe');
+  // The preview frame is pooled (app-preview-pool.ts): created once, moved between slots.
+  expect(view).toContain("document.createElement('iframe')");
   expect(view).toContain('max-w-7xl px-4');
 });
 
@@ -179,7 +184,7 @@ test("a card caption is the App's name and its state — not its hostname", () =
 
   // The URL is not gone from the product — the detail layer still names it on
   // the control that opens the App.
-  expect(view).toContain('appHost(app.url)');
+  expect(view).toContain('appHost(viewed.url)');
 });
 
 test('the Apps row matches the row contract of the group it sits in', () => {
@@ -218,7 +223,9 @@ test('an App with no deployment never claims to be Running', () => {
   const view = appsSource();
 
   expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
-  expect(view).toContain("const live = deployed && app.desired_state === 'running';");
+  // `deployed` gates both branches; a static App is live without a runtime
+  // (behavior asserted in app-shared.test.ts).
+  expect(view).toContain("const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');");
   expect(view).toContain("!deployed ? 'Not deployed'");
   // The badge and its tint must both follow real state, not intent.
   expect(view).not.toContain("variant={app.desired_state === 'running' ? 'success' : 'muted'}");
@@ -230,8 +237,8 @@ test('a suspended App preview issues the request that wakes its active deploymen
 
   expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain('if (!url)');
-  expect(view).toContain('src={url}');
-  expect(view).toContain('data-testid="app-live-preview"');
+  expect(view).toContain('frame.src = url');
+  expect(view).toContain("frame.dataset.testid = 'app-live-preview'");
   expect(view).not.toContain("app.desired_state === 'stopped'");
   expect(view).not.toContain('Suspended. Open the App or use Wake App to resume it.');
 });

@@ -7,9 +7,10 @@
  * a real importer through this path (both were only used internally by the
  * now-deleted `SessionChatInputImpl`/its popovers; every live
  * `ProviderListResponse` user already imports it straight from
- * `@kortix/sdk/react`).
+ * `@kortix/sdk/react`). `flattenModels`/`FlatModel` are likewise not
+ * re-exported: their one definition lives in `@kortix/sdk/react` (KRTX-451
+ * phase 4), and every importer takes it straight from the SDK.
  */
-export { AgentSelector } from './composer/agent-selector';
+export { AgentSelector, agentDisplayLabel } from './composer/agent-selector';
 export { Composer as SessionChatInput, type SessionChatInputProps } from './composer/composer';
 export type { AttachedFile, TrackedMention } from './composer/types';
-export { flattenModels, type FlatModel } from './model-flatten';

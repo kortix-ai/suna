@@ -12,14 +12,20 @@
  * (prod, 2026-09-25).
  *
  * Also pins `dropAccountGitHubInstallation`, the delete behind the self-heal in
- * `resolveGitHubRepoAuth`: it removes one row of one account and nothing else.
+ * `resolveGitHubRepoAuth`: it removes one row of one account and nothing else,
+ * and `consumeGitHubInstallationState`, the one-time install state behind
+ * `POST /projects/github/installation`.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accountGithubInstallations } from '@kortix/db';
+import { accountGithubInstallationStates, accountGithubInstallations } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
 import type { GitHubAppInstallation } from '../projects/github';
-import { dropAccountGitHubInstallation, listAccountGitHubInstallations } from '../projects/lib/git';
+import {
+  consumeGitHubInstallationState,
+  dropAccountGitHubInstallation,
+  listAccountGitHubInstallations,
+} from '../projects/lib/git';
 import { upsertAccountGitHubInstallation } from '../projects/routes/github-installations';
 import { db } from '../shared/db';
 import { seedAccount } from './helpers/integration-fixtures';
@@ -151,5 +157,42 @@ describe('dropAccountGitHubInstallation', () => {
         ),
     ).toHaveLength(0);
     expect((await rowsFor(otherAccountId)).map((row) => row.installationId)).toEqual(['163461158']);
+  });
+});
+
+describe('consumeGitHubInstallationState', () => {
+  const userId = '00000000-0000-4000-a000-0000000c0de1';
+
+  async function seedState(nonce: string, expiresInMs: number) {
+    await db.insert(accountGithubInstallationStates).values({
+      stateNonce: nonce,
+      accountId,
+      userId,
+      expiresAt: new Date(Date.now() + expiresInMs),
+    });
+  }
+
+  test('a state is consumed once; the same installation replayed is idempotent, another installation is refused', async () => {
+    await seedState('state-replay', 30 * 60 * 1000);
+    const consume = (installationId: string) =>
+      consumeGitHubInstallationState({ accountId, userId, nonce: 'state-replay', installationId });
+
+    expect(await consume('42')).toBe('consumed');
+    // GitHub can deliver the setup redirect twice: a replay for the SAME
+    // installation answers like the first call instead of failing the user.
+    expect(await consume('42')).toBe('already_consumed');
+    // A captured state never binds a different installation to the account.
+    expect(await consume('43')).toBe('invalid');
+  });
+
+  test('an expired, foreign or unknown state is invalid', async () => {
+    await seedState('state-expired', -60 * 1000);
+    await seedState('state-foreign', 30 * 60 * 1000);
+
+    expect(await consumeGitHubInstallationState({ accountId, userId, nonce: 'state-expired', installationId: '42' })).toBe('invalid');
+    expect(
+      await consumeGitHubInstallationState({ accountId: otherAccountId, userId, nonce: 'state-foreign', installationId: '42' }),
+    ).toBe('invalid');
+    expect(await consumeGitHubInstallationState({ accountId, userId, nonce: 'state-unknown', installationId: '42' })).toBe('invalid');
   });
 });

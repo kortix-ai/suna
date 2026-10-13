@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -42,7 +43,7 @@ describe('ConnectorCallTool', () => {
   );
 
   test('the outcome and the response stay; the request arguments fold', () => {
-    const html = renderToStaticMarkup(withProviders(<ConnectorCallTool part={part} defaultOpen />));
+    const html = renderToStaticMarkup(withProviders(<ConnectorCallTool call={toolCallBlock(part)} defaultOpen />));
 
     // What happened, and what came back.
     expect(html).toContain('slack.post_message');
@@ -60,7 +61,7 @@ describe('ConnectorCallTool', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <ConnectorCallTool part={part} defaultOpen />
+          <ConnectorCallTool call={toolCallBlock(part)} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );
@@ -75,7 +76,7 @@ describe('ConnectorDescribeTool', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ConnectorDescribeTool
-          part={makePart(
+          call={toolCallBlock(makePart(
             'kortix-connectors_describe',
             { tool: 'slack.post_message' },
             JSON.stringify({
@@ -83,7 +84,7 @@ describe('ConnectorDescribeTool', () => {
               description: 'Post a message to a channel.',
               inputSchema: { type: 'object', properties: { thread_ts: { type: 'string' } } },
             }),
-          )}
+          ))}
           defaultOpen
         />,
       ),

@@ -530,15 +530,18 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     expect(code).not.toContain('onboarding');
   });
 
-  test('nothing renders phase progress — the create reports no steps to the user', () => {
-    expect(code).not.toContain('phase');
-    expect(code).not.toContain('provision-progress');
-    expect(code).not.toContain('provision-phases');
-    // Multi-line since `limitReached` joined the destructure (2026-09-17);
-    // the pin is on WHICH names the page takes from the hook, not the wrap.
+  test('the handoff renders the streamed provisioning phases the hook holds (KRTX-1543)', () => {
+    // The managed create streams its provisioning phases over
+    // `/projects/provision-stream`; the hook holds the latest one and the
+    // page hands it to the handoff, which turns it into the step list. The
+    // page used to render no phase progress at all — one opaque shimmer for
+    // the whole wait — which is exactly what the journey reported.
     expect(code.replace(/\s+/g, ' ')).toContain(
-      'const { create, status, error: createError, retry, canRetry, limitReached, } = useCreateWorkspace();',
+      'const { create, status, error: createError, retry, canRetry, limitReached, phase, } = useCreateWorkspace();',
     );
+    const handoff = code.match(/<WorkspaceHandoff[\s\S]*?\/>/)?.[0];
+    expect(handoff).toBeDefined();
+    expect(handoff).toContain('phase={phase}');
   });
 
   test('the page heading belongs to the form branch, so the swap is one motion', () => {

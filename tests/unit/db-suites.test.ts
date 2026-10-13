@@ -1,17 +1,19 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DB_SUITE_QUARANTINE,
   dbSuiteVerdict,
   discoverDbSuites,
   dumpAsSql,
+  migrationTemplateHash,
   parseJunitCounts,
   selectDbSuites,
   suiteDatabaseName,
   suiteDatabaseOwnerPid,
   suiteEnvironment,
   templateDatabaseName,
+  templateWeekKey,
   withDatabase,
 } from '../src/core/db-suites';
 
@@ -187,5 +189,32 @@ describe('db-suites verdict', () => {
       ok: false,
       reason: 'timed out',
     });
+  });
+});
+
+describe('db-suites template calendar key', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('is the Monday of the week, stable within it, new on Monday 00:00 UTC', () => {
+    expect(templateWeekKey(new Date('2026-11-02T00:00:00Z'))).toBe('2026-11-02'); // Monday 00:00
+    expect(templateWeekKey(new Date('2026-11-04T12:00:00Z'))).toBe('2026-11-02'); // Wednesday
+    expect(templateWeekKey(new Date('2026-11-08T23:59:59Z'))).toBe('2026-11-02'); // Sunday 23:59
+    expect(templateWeekKey(new Date('2026-11-09T00:00:00Z'))).toBe('2026-11-09'); // next Monday
+  });
+
+  it('rebuilds the template when the ISO week rolls over', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-04T12:00:00Z') });
+    const wednesday = migrationTemplateHash(root, 'schema');
+    vi.setSystemTime(new Date('2026-11-09T12:00:00Z'));
+    const nextMonday = migrationTemplateHash(root, 'schema');
+    expect(nextMonday).not.toBe(wednesday);
+  });
+
+  it('keeps one template across a whole week', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-02T09:00:00Z') });
+    const monday = migrationTemplateHash(root, 'schema');
+    vi.setSystemTime(new Date('2026-11-08T23:00:00Z'));
+    const sunday = migrationTemplateHash(root, 'schema');
+    expect(sunday).toBe(monday);
   });
 });

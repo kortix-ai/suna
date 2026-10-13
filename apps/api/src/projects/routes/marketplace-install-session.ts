@@ -79,7 +79,7 @@ function buildItemInstallPrompt(
   ];
   if (needs.length) {
     lines.push(
-      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with the \`request_secret\` / \`connect\` tools (or \`kortix secrets request\` / \`kortix connectors link\`) — never ask me to paste a raw key.`,
+      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with \`kortix secrets request\` / \`kortix connectors connect\` — never ask me to paste a raw key.`,
       '4. Tell me in one line what it can now do and how to use it.',
     );
   } else {
@@ -194,29 +194,31 @@ async function handleMarketplaceInstallSession(c: any) {
   return c.json({ session_id: result.row.sessionId }, 201);
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/marketplace/install-session',
-    tags: ['marketplace'],
-    summary: 'Start a session that installs a marketplace item',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: lenientBody({
-              id: z.string().openapi({ description: 'Marketplace item id to install.' }),
-            }),
+export function registerMarketplaceInstallSessionRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/marketplace/install-session',
+      tags: ['marketplace'],
+      summary: 'Start a session that installs a marketplace item',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: {
+          content: {
+            'application/json': {
+              schema: lenientBody({
+                id: z.string().openapi({ description: 'Marketplace item id to install.' }),
+              }),
+            },
           },
         },
       },
-    },
-    responses: {
-      201: json(z.any(), 'Session started'),
-      ...errors(400, 402, 403, 404),
-    },
-  }),
-  handleMarketplaceInstallSession,
-);
+      responses: {
+        201: json(z.any(), 'Session started'),
+        ...errors(400, 402, 403, 404),
+      },
+    }),
+    handleMarketplaceInstallSession,
+  );
+}

@@ -20,6 +20,7 @@ import type {
 export type RuntimeFrame =
   | KortixSessionEvent
   | { type: 'session.created' | 'session.updated'; properties: { sessionID: string; info: Record<string, unknown> } }
+  | { type: 'session.compacted'; properties: { sessionID: string } }
 
 interface StoredMessage {
   info: KortixMessageInfo

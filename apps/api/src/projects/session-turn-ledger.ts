@@ -223,7 +223,12 @@ export function extractTurnIdentity(
 export interface SandboxTurnStart extends SandboxTurnIdentity {
   token: string;
 }
-export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_message' | 'no_box';
+export type RuntimeTurnAdoption =
+  | 'adopted'
+  | 'identity_bound'
+  | 'open_turn_exists'
+  | 'known_message'
+  | 'no_box';
 /**
  * Apply terminal evidence. A retryable error is not terminal. When both sides
  * know the OpenCode user message ID, a delayed event may clear only that turn.
@@ -503,6 +508,12 @@ export const REAPER_TURN_CAUSES = {
   boxStoppedMidTurnRecovering: {
     name: 'SandboxStoppedMidTurnRecovering',
     message: 'The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn.',
+  },
+  /** The turn waited on a person past `turnWaitingMaxMs`; the reaper ended it. */
+  awaitingInput: {
+    name: 'TurnAwaitingInput',
+    message:
+      'This turn stopped because the agent waited for an answer or an approval that did not come. Send a message to continue.',
   },
 } as const satisfies Record<string, SessionTurnEndErrorRecord>;
 

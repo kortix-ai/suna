@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatFireTime, reminderTitle, soonestFire } from './reminder-format';
+import { formatFireTime, nearestFire, reminderTitle, soonestFire } from './reminder-format';
 
 const NOW = Date.parse('2026-09-29T10:00:00.000Z');
 
@@ -31,6 +31,42 @@ describe('soonestFire', () => {
       ]),
     ).toBe(Date.parse('2026-09-29T11:00:00.000Z'));
     expect(soonestFire([{ state: 'paused', next_fire_at: null }])).toBeNull();
+  });
+});
+
+describe('nearestFire', () => {
+  const at = (iso: string) => Date.parse(iso);
+  test('the soonest upcoming fire first', () => {
+    expect(
+      nearestFire([
+        { state: 'done', next_fire_at: null, last_fired_at: '2026-10-01T10:00:00Z', at: null },
+        { state: 'active', next_fire_at: '2026-11-20T08:00:00Z', last_fired_at: null, at: null },
+      ]),
+    ).toBe(at('2026-11-20T08:00:00Z'));
+  });
+
+  test('else the latest fire that happened, else a paused next slot', () => {
+    expect(
+      nearestFire([
+        { state: 'done', next_fire_at: null, last_fired_at: '2026-09-01T10:00:00Z', at: null },
+        { state: 'done', next_fire_at: null, last_fired_at: '2026-10-01T10:00:00Z', at: null },
+        { state: 'paused', next_fire_at: '2026-12-01T10:00:00Z', last_fired_at: null, at: null },
+      ]),
+    ).toBe(at('2026-10-01T10:00:00Z'));
+    expect(
+      nearestFire([
+        { state: 'paused', next_fire_at: '2026-12-01T10:00:00Z', last_fired_at: null, at: null },
+      ]),
+    ).toBe(at('2026-12-01T10:00:00Z'));
+    // A paused one-shot keeps its scheduled time in `at`, not `next_fire_at`.
+    expect(
+      nearestFire([
+        { state: 'paused', next_fire_at: null, last_fired_at: null, at: '2026-10-07T18:00:00Z' },
+      ]),
+    ).toBe(at('2026-10-07T18:00:00Z'));
+    expect(
+      nearestFire([{ state: 'done', next_fire_at: null, last_fired_at: null, at: null }]),
+    ).toBeNull();
   });
 });
 

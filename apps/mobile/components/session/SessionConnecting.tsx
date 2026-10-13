@@ -32,7 +32,6 @@
 
 import React from 'react';
 import { ScrollView, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { groupMessagesIntoTurns, type SessionMessageAuthors, type SessionParticipants } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,16 +42,19 @@ import { Icon } from '@/components/ui/icon';
 import { COMPOSER_CARD_CLASS, Composer } from '@/components/kortix/composer';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
+import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
 import { AttachmentTile } from '@/components/session/attachment-tile';
-import { UserMessageBubble } from '@/components/session/turn/user-message';
+import { MessageBody, UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
 import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
+import { splitPastedContent } from '@kortix/shared';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { webSpace } from '@/lib/session/user-message';
 import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson } from '@/lib/session/participants';
@@ -64,8 +66,8 @@ export interface SessionConnectError {
   detail?: string;
 }
 
-/** `text-[0.9rem] leading-[22px] font-medium` — same as the thread's user bubble (turn/user-message.tsx). */
-const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHeight: 22 } as const;
+/** The first prompt has no session mentions yet. */
+const NO_SESSIONS: { id: string; title: string }[] = [];
 const noop = () => {};
 
 export function SessionConnecting({
@@ -120,8 +122,12 @@ export function SessionConnecting({
   const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId).data;
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  // The floating composer area's height: the content above rests over it.
+  const [bottomHeight, setBottomHeight] = React.useState(0);
   const files = firstFiles ?? [];
-  const hasFiles = files.length > 0;
+  // The home send carries pastes inline: tiles here, the typed words in the bubble.
+  const firstPrompt = React.useMemo(() => splitPastedContent(firstMessage ?? ''), [firstMessage]);
+  const hasFiles = files.length > 0 || firstPrompt.pastes.length > 0;
   const turns = React.useMemo(
     () => (messages && messages.length > 0 ? (groupMessagesIntoTurns(messages) as unknown as Turn[]) : []),
     [messages],
@@ -146,13 +152,12 @@ export function SessionConnecting({
   if (empty && !error && !hasFiles && !firstMessage) {
     return (
       <View style={{ flex: 1 }} className="bg-background">
-        <View style={{ flex: 1 }} />
-        <View style={{ paddingBottom: insets.bottom }}>
+        <FloatingComposerArea>
           {statusLabel ? <WakingStatus label={statusLabel} /> : null}
           <View className="px-4 pb-3 pt-1">
             <WakingComposer />
           </View>
-        </View>
+        </FloatingComposerArea>
       </View>
     );
   }
@@ -161,7 +166,9 @@ export function SessionConnecting({
     <View style={{ flex: 1 }} className="bg-background">
       {/* The thread's list area: the first message under the header, the
           loader (or the failure) centred in what is left. */}
-      <View style={{ flex: 1, paddingTop: insets.top + FLOATING_MENU_CLEARANCE }} className="px-4">
+      <View
+        style={{ flex: 1, paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: error ? 0 : bottomHeight }}
+        className="px-4">
         {/* The thread's user message (`turn/user-message.tsx`): one
             right-aligned column capped at 80%, files above the bubble. */}
         {hasFiles || firstMessage ? (
@@ -172,6 +179,14 @@ export function SessionConnecting({
                 showsHorizontalScrollIndicator={false}
                 className="flex-grow-0"
                 contentContainerStyle={{ gap: webSpace(2) }}>
+                {firstPrompt.pastes.map((paste) => (
+                  <AttachmentTile
+                    key={`pasted:${paste.id}`}
+                    filename="Pasted text"
+                    preview={paste.text}
+                    onPress={() => openPastedText(paste)}
+                  />
+                ))}
                 {files.map((file, index) => (
                   <AttachmentTile
                     key={`${file.uri}-${index}`}
@@ -184,9 +199,9 @@ export function SessionConnecting({
                 ))}
               </ScrollView>
             ) : null}
-            {firstMessage ? (
+            {firstPrompt.text ? (
               <UserMessageBubble isDark={isDark}>
-                <Text style={BUBBLE_TEXT_STYLE}>{firstMessage}</Text>
+                <MessageBody text={firstPrompt.text} sessions={NO_SESSIONS} />
               </UserMessageBubble>
             ) : null}
           </View>
@@ -204,19 +219,46 @@ export function SessionConnecting({
         </View>
       </View>
 
-      {/* The thread's composer, where `SessionPage` puts it (`px-4 pb-3 pt-1`
-          above the safe area). Disabled: there is no runtime to send to yet.
-          None under a failure: nothing can be sent. */}
+      {/* The thread's composer, floating where `SessionPage` puts it
+          (`px-4 pb-3 pt-1` above the safe area). Disabled: there is no
+          runtime to send to yet. None under a failure: nothing can be sent. */}
       {error ? (
         <View style={{ height: insets.bottom }} />
       ) : (
-        <View style={{ paddingBottom: insets.bottom }}>
+        <FloatingComposerArea onHeight={setBottomHeight}>
           <View className="px-4 pb-3 pt-1">
-            <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
+            <WakingComposer />
           </View>
-        </View>
+        </FloatingComposerArea>
       )}
     </View>
+  );
+}
+
+/**
+ * The composer area, floating over the thread as in `SessionPage`: absolute at
+ * the bottom, over the composer fade, so the thread runs to the screen edge.
+ * Taps reach the thread everywhere but on the cards. Reports its height so the
+ * thread's end can rest above it.
+ */
+function FloatingComposerArea({ children, onHeight }: { children: React.ReactNode; onHeight?: (height: number) => void }) {
+  const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  return (
+    <>
+      <ComposerBottomFade
+        testID="waking-composer-fade"
+        background={THEME[colorScheme === 'dark' ? 'dark' : 'light'].background}
+        bottomInset={insets.bottom}
+      />
+      <View
+        testID="waking-composer-area"
+        pointerEvents="box-none"
+        style={{ position: 'absolute', right: 0, bottom: 0, left: 0, paddingBottom: insets.bottom }}
+        onLayout={onHeight ? (event) => onHeight(event.nativeEvent.layout.height) : undefined}>
+        {children}
+      </View>
+    </>
   );
 }
 
@@ -276,8 +318,8 @@ function SavedThread({
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
-  const { colorScheme } = useColorScheme();
-  const background = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  // The floating composer area's height: the newest turn rests above it.
+  const [bottomHeight, setBottomHeight] = React.useState(0);
   // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
   // turn pads itself, `px-4` in `SessionTurn`), web's `mt-12` between turns
   // (`turnTopGap`), and attachment tiles / file mentions opening the Recent
@@ -287,7 +329,7 @@ function SavedThread({
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: 12 }}
+        contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: bottomHeight + 12 }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
         {turns.map((turn, index) => {
           const gap = turnTopGap({ index, working: false, pending: false, previousPending: false });
@@ -312,14 +354,7 @@ function SavedThread({
         })}
       </ScrollView>
 
-      {/* The thread's fade above the input (`SessionPage`). */}
-      <LinearGradient
-        colors={[withAlpha(background, 0), withAlpha(background, 1)]}
-        style={{ height: 24, marginTop: -24, zIndex: 1 }}
-        pointerEvents="none"
-      />
-
-      <View style={{ paddingBottom: insets.bottom }}>
+      <FloatingComposerArea onHeight={setBottomHeight}>
         {error ? (
           <View className="px-4 pb-3 pt-1">
             <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} sessionId={sessionId} />
@@ -332,7 +367,7 @@ function SavedThread({
             </View>
           </>
         )}
-      </View>
+      </FloatingComposerArea>
 
       <ToolFilePreviewHost />
     </View>

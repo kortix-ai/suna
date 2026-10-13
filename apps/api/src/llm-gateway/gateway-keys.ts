@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { gatewayApiKeys } from '@kortix/db';
+import { gatewayApiKeys, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { generateGatewayKeyPair, hashSecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync, markTokenValidated } from '../shared/token-hash';
@@ -100,6 +100,9 @@ export async function validateGatewayKey(
       expiresAt: gatewayApiKeys.expiresAt,
     })
     .from(gatewayApiKeys)
+    // A key of a deleted workspace authorizes nothing (KRTX-1714): the
+    // delete archives the project, and its revoke route answers 404 after.
+    .innerJoin(projects, and(eq(projects.projectId, gatewayApiKeys.projectId), eq(projects.status, 'active')))
     .where(eq(gatewayApiKeys.secretKeyHash, hash))
     .limit(1);
 

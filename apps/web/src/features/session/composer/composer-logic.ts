@@ -9,6 +9,13 @@
  */
 
 import type { Command } from '@kortix/sdk/react';
+import {
+  PASTED_INLINE_MAX_BYTES,
+  type PastedContent,
+  serializePromptWithPastes,
+  shouldTilePaste,
+  utf8Bytes,
+} from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 
 import {
@@ -457,6 +464,8 @@ export interface PlanDraftSubmissionInput {
   commandSplit?: { before: string; after: string };
   /** The composer's reply quotes, in list order. Every send leads with them. */
   quotes?: readonly string[];
+  /** The composer's pasted-text tiles, in order. They follow the quotes, ahead of the typed text. */
+  pastes?: PastedContent[];
 }
 
 export type DraftSubmissionPlan =
@@ -493,24 +502,82 @@ export function planDraftSubmission({
   commands,
   commandSplit,
   quotes = [],
+  pastes = [],
 }: PlanDraftSubmissionInput): DraftSubmissionPlan {
   const trimmed = text.trim();
-  if (!commandName) return { kind: 'message', text: withReplyQuotes(quotes, trimmed) };
+  // Every typed `<pasted_content` is escaped here, tiles or not, so a tag the
+  // user typed can never parse as a tile on the other side.
+  const lead = (body: string) => withReplyQuotes(quotes, serializePromptWithPastes(body, pastes));
+  if (!commandName) return { kind: 'message', text: lead(trimmed) };
 
   const command = commands.find((candidate) => candidate.name === commandName);
   if (command) {
-    // The quotes ride in the args, so the command template sees them, and in
-    // `split.before`, so the sent bubble draws them (turn/user-message.tsx
-    // parses quotes out of the split halves of a command message).
-    const args = withReplyQuotes(quotes, trimmed);
+    // The quotes and tiles ride in the args, so the command template sees
+    // them, and in `split.before`, so the sent bubble draws them
+    // (turn/user-message.tsx parses quotes out of the split halves of a
+    // command message).
+    const args = lead(trimmed);
     const split =
-      commandSplit && quotes.length > 0
-        ? { before: withReplyQuotes(quotes, commandSplit.before), after: commandSplit.after }
+      commandSplit && (quotes.length > 0 || pastes.length > 0)
+        ? { before: lead(commandSplit.before), after: commandSplit.after }
         : commandSplit;
     return { kind: 'command', command, args: args || undefined, ...(split ? { split } : {}) };
   }
 
-  return { kind: 'message', text: withReplyQuotes(quotes, `/${commandName} ${trimmed}`.trim()) };
+  return { kind: 'message', text: lead(`/${commandName} ${trimmed}`.trim()) };
+}
+
+/**
+ * Where a pasted string goes: into the editor as typed (`inline`), into a
+ * tile (`tile`), or — when the tile would push the inline prompt past
+ * `PASTED_INLINE_MAX_BYTES` — out as a `.txt` attachment (`file`).
+ */
+export function classifyPaste(
+  text: string,
+  typed: string,
+  pastes: PastedContent[],
+): 'inline' | 'tile' | 'file' {
+  if (!shouldTilePaste(text)) return 'inline';
+  const next = [...pastes, { id: '00000000', text }];
+  return utf8Bytes(serializePromptWithPastes(typed, next)) > PASTED_INLINE_MAX_BYTES
+    ? 'file'
+    : 'tile';
+}
+
+/**
+ * Mod-z (undo), not Mod-Shift-z (redo). A tile paste is `preventDefault`-ed, so
+ * the editor's history never saw it: this key removes the newest such tile
+ * first (`composer.tsx`). Cmd or Ctrl on every platform; ponytail: Ctrl-z on
+ * a Mac also takes the tile, add a platform check if anyone minds.
+ */
+export function isUndoKey(
+  e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'isComposing'>,
+): boolean {
+  // Mid-IME composition the key belongs to the input method.
+  if (e.isComposing) return false;
+  return (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z';
+}
+
+/** Pops the newest tile in `stack` that is still in `pastes` (one removed with its X is skipped). Mutates `stack`. */
+export function popPasteUndo(
+  stack: string[],
+  pastes: readonly PastedContent[],
+): string | undefined {
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (pastes.some((paste) => paste.id === id)) return id;
+  }
+  return undefined;
+}
+
+/** `pasted-text-<n>.txt`, numbered after the pasted-text files already attached. */
+export function nextPastedTextFileName(names: readonly string[]): string {
+  let max = 0;
+  for (const name of names) {
+    const n = /^pasted-text-(\d+)\.txt$/.exec(name)?.[1];
+    if (n) max = Math.max(max, Number(n));
+  }
+  return `pasted-text-${max + 1}.txt`;
 }
 
 /**

@@ -5,7 +5,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
-import type { SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
+import type { ChangeRequest, SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
 import { sessionAuditKey } from './session-audit-shared';
 import { TurnErrorDisplay } from './session-error-banner';
@@ -107,8 +107,41 @@ mock.module('@/features/session/composer/composer', () => ({
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
+const { changeRequestKeys } = await import(
+  '@/features/project-files/hooks/use-change-requests'
+);
 
 const errorTurn = (error?: unknown) => ({ assistantMessages: [{ info: { error } }] });
+
+const changeRequestFixture = (): ChangeRequest => ({
+  cr_id: 'cr-fixture',
+  account_id: 'account-fixture',
+  project_id: 'project-fixture',
+  number: 7,
+  title: 'synthetic files reorder',
+  description: 'a synthetic change request for the outcome pin',
+  base_ref: 'main',
+  head_ref: 'cr/synthetic',
+  status: 'open',
+  head_commit_sha: null,
+  base_commit_sha: null,
+  origin_session_id: 'project-session-fixture',
+  created_by: 'agent-fixture',
+  merged_at: null,
+  merged_by: null,
+  merge_commit_sha: null,
+  closed_at: null,
+  closed_by: null,
+  metadata: {},
+  created_at: new Date(2000).toISOString(),
+  updated_at: new Date(2000).toISOString(),
+});
+
+const seedSessionChangeRequests = (client: QueryClient, crs: ChangeRequest[]) =>
+  client.setQueryData(
+    changeRequestKeys.sessionList('project-fixture', 'project-session-fixture'),
+    { change_requests: crs },
+  );
 
 describe('SessionChat turn error presentation', () => {
   test('aborted turn stays silent without a control-plane notice', () => {
@@ -199,6 +232,21 @@ describe('SessionChat transcript rows', () => {
     } finally {
       fixtureMessages = baseFixtureMessages;
       persistedOutcome = {};
+    }
+  });
+
+  // An edit rewinds the failed message and sends a new one; the ledger keeps the
+  // old failure under a message id the transcript no longer holds.
+  test('a persisted failure clears once a later message is sent, as after an edit', () => {
+    persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'rewound-prompt', ended_at: new Date(0).toISOString(), error: null }] };
+    try {
+      fixtureMessages = baseFixtureMessages;
+      expect(renderChat()).not.toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'rewound-prompt', ended_at: new Date(50).toISOString(), error: null }] };
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+    } finally {
+      persistedOutcome = {};
+      fixtureMessages = baseFixtureMessages;
     }
   });
 
@@ -321,9 +369,9 @@ describe('SessionChat transcript rows', () => {
 // pins one section the transcript move must preserve, through the whole
 // SessionChat render, so the same assertions hold before and after the move.
 describe('SessionChat moved turn sections', () => {
-  const renderChat = () =>
+  const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
           <SidebarProvider>
             <SessionChat
@@ -412,9 +460,194 @@ describe('SessionChat moved turn sections', () => {
     ];
     try {
       const markup = renderChat();
-      // ActivityBurst renders only through the turn's segmented steps section.
-      expect(markup).toContain('group/burst');
+      // The settled turn folds its burst behind the "Worked" row (KRTX-2113);
+      // the row renders only through the turn's segmented steps section.
+      expect(markup).toContain('group/work');
+      expect(markup).toContain('>Worked</span>');
+      expect(markup).not.toContain('group/burst');
     } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  // KRTX-2113: a settled turn folds its work into one "Worked for" row; the
+  // `show` deliverable and the final message stay visible below it.
+  const foldTurn = (userId: string) => [
+    userFixture(userId, 'build the synthetic report'),
+    {
+      info: {
+        id: `${userId}-assistant`,
+        role: 'assistant',
+        parentID: userId,
+        agent: 'build',
+        time: { created: 1_000, completed: 135_000 },
+      },
+      parts: [
+        {
+          id: `${userId}-bash`,
+          type: 'tool',
+          callID: `${userId}-call-bash`,
+          tool: 'bash',
+          state: { status: 'completed', input: { command: 'echo synthetic' }, output: 'synthetic' },
+        },
+        { id: `${userId}-interim`, type: 'text', text: 'Let me check the synthetic config.' },
+        {
+          id: `${userId}-bash-2`,
+          type: 'tool',
+          callID: `${userId}-call-bash-2`,
+          tool: 'bash',
+          state: { status: 'completed', input: { command: 'echo again' }, output: 'again' },
+        },
+        {
+          id: `${userId}-show`,
+          type: 'tool',
+          callID: `${userId}-call-show`,
+          tool: 'show',
+          state: {
+            status: 'completed',
+            input: { type: 'text', title: 'Synthetic Deliverable', content: 'deliverable body' },
+            output: '',
+            metadata: {},
+          },
+        },
+        { id: `${userId}-final`, type: 'text', text: 'Here is the synthetic final answer.' },
+      ],
+    },
+  ];
+
+  test('a settled turn shows the Worked row, the hoisted show card and the final text', () => {
+    fixtureMessages = foldTurn('user-fold');
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('Worked for 2m 14s');
+      expect(markup).toContain('Synthetic Deliverable');
+      expect(markup).toContain('Here is the synthetic final answer.');
+      expect(markup).not.toContain('Let me check the synthetic config.');
+      expect(markup).not.toContain('group/burst');
+      // Order: row → deliverable → final text.
+      const row = markup.indexOf('Worked for 2m 14s');
+      const card = markup.indexOf('Synthetic Deliverable');
+      const final = markup.indexOf('Here is the synthetic final answer.');
+      expect(row).toBeLessThan(card);
+      expect(card).toBeLessThan(final);
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  const plumbingTurn = (userId: string, parts: unknown[]) => [
+    userFixture(userId, 'answer from memory'),
+    {
+      info: {
+        id: `${userId}-assistant`,
+        role: 'assistant',
+        parentID: userId,
+        agent: 'build',
+        time: { created: 1_000, completed: 5_000 },
+      },
+      parts,
+    },
+  ];
+  const prune = (id: string) => ({
+    id,
+    type: 'tool',
+    callID: `call-${id}`,
+    tool: 'prune',
+    state: { status: 'completed', input: {}, output: 'ok' },
+  });
+
+  test('a trailing plumbing-only burst does not hide the final text', () => {
+    fixtureMessages = plumbingTurn('user-plumbing', [
+      {
+        id: 'plumbing-bash',
+        type: 'tool',
+        callID: 'call-plumbing-bash',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'echo seen' }, output: 'seen' },
+      },
+      { id: 'plumbing-final', type: 'text', text: 'Synthetic answer after plumbing.' },
+      prune('plumbing-prune'),
+    ]);
+    try {
+      const markup = renderChat();
+      // The trailing burst renders no row, so it cannot end the turn: the
+      // text before it is still the final text.
+      expect(markup).toContain('Worked for 4s');
+      expect(markup).toContain('Synthetic answer after plumbing.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a turn whose only work is a plumbing burst renders no Worked row', () => {
+    fixtureMessages = plumbingTurn('user-plumbing-only', [
+      {
+        id: 'plumbing-only-show',
+        type: 'tool',
+        callID: 'call-plumbing-only-show',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          input: { type: 'text', title: 'Plumbing Deliverable', content: 'body' },
+          output: '',
+          metadata: {},
+        },
+      },
+      prune('plumbing-only-prune'),
+      { id: 'plumbing-only-final', type: 'text', text: 'Synthetic answer from memory.' },
+    ]);
+    try {
+      const markup = renderChat();
+      expect(markup).not.toContain('>Worked');
+      expect(markup).toContain('Plumbing Deliverable');
+      expect(markup).toContain('Synthetic answer from memory.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a settled turn with no work (a card and text) renders no Worked row', () => {
+    fixtureMessages = plumbingTurn('user-no-work', [
+      {
+        id: 'no-work-show',
+        type: 'tool',
+        callID: 'call-no-work-show',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          input: { type: 'text', title: 'Lone Deliverable', content: 'body' },
+          output: '',
+          metadata: {},
+        },
+      },
+      { id: 'no-work-final', type: 'text', text: 'Synthetic note under the card.' },
+    ]);
+    try {
+      const markup = renderChat();
+      expect(markup).not.toContain('>Worked');
+      // Nothing to fold: the plain list, no accordion wrapper.
+      expect(markup).not.toContain('group/work');
+      expect(markup).toContain('Lone Deliverable');
+      expect(markup).toContain('Synthetic note under the card.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a working turn streams every step as today, with no Worked row', () => {
+    fixtureMessages = foldTurn('user-fixture');
+    busy = true;
+    try {
+      const markup = renderChat();
+      // Streaming text paints through ThrottledMarkdown, which is empty under
+      // SSR, so the live view is pinned by its burst rows instead.
+      expect(markup).toContain('group/burst');
+      expect(markup).toContain('echo synthetic');
+      expect(markup).toContain('echo again');
+      expect(markup).toContain('Synthetic Deliverable');
+      expect(markup).not.toContain('Worked for');
+    } finally {
+      busy = false;
       fixtureMessages = baseFixtureMessages;
     }
   });
@@ -439,5 +672,51 @@ describe('SessionChat moved turn sections', () => {
     } finally {
       fixtureMessages = baseFixtureMessages;
     }
+  });
+
+  // Pin for the turn-outcome footer (KRTX-1622): the KRTX-355 session-chat
+  // split moved the `TurnFooter` comment block but dropped its
+  // `{!working && <TurnOutcomes …/>}` render, so the provider pipeline below
+  // fed a context nothing read. Both cases render through the whole
+  // SessionChat so the provider → anchor → footer path is the one under test.
+  describe('turn-outcome footer', () => {
+    test('a settled turn whose span contains this session’s change request renders its outcome card', () => {
+      fixtureMessages = [
+        userFixture('user-cr', 'open the synthetic change request'),
+        {
+          info: {
+            id: 'assistant-cr',
+            role: 'assistant',
+            parentID: 'user-cr',
+            agent: 'build',
+            time: { created: 2000 },
+          },
+          parts: [],
+        },
+      ];
+      const client = new QueryClient();
+      seedSessionChangeRequests(client, [changeRequestFixture()]);
+      try {
+        const markup = renderChat(client);
+        expect(markup).toContain('data-testid="turn-outcomes"');
+        expect(markup).toContain('synthetic files reorder');
+        expect(markup).toContain('Waiting for you');
+      } finally {
+        fixtureMessages = baseFixtureMessages;
+      }
+    });
+
+    test('a turn still working renders no outcome card yet', () => {
+      busy = true;
+      const client = new QueryClient();
+      seedSessionChangeRequests(client, [changeRequestFixture()]);
+      try {
+        // The change request postdates the only turn's start, so it anchors to
+        // the working turn; the `!working` gate is what must hide it.
+        expect(renderChat(client)).not.toContain('data-testid="turn-outcomes"');
+      } finally {
+        busy = false;
+      }
+    });
   });
 });

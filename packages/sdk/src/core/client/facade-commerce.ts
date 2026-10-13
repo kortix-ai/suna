@@ -17,7 +17,10 @@ export function bindCommerce() {
     },
     tierConfigurations: P.getBillingTierConfigurations,
 
-    /** Stripe checkout — start a subscription and confirm it post-redirect. */
+    /**
+     * @deprecated The API retired these routes. Both reject with
+     * `ENDPOINT_RETIRED`. Use `createPerSeatCheckout`. Removed in the next major.
+     */
     checkout: {
       createSession: (input: Parameters<typeof P.createCheckoutSession>[0]) =>
         P.createCheckoutSession(input),
@@ -31,6 +34,7 @@ export function bindCommerce() {
         P.createPortalSession(returnUrl, accountId),
       cancel: (feedback?: string, accountId?: string) => P.cancelSubscription(feedback, accountId),
       reactivate: (accountId?: string) => P.reactivateSubscription(accountId),
+      /** @deprecated Rejects with `ENDPOINT_RETIRED`. Use `createPortalSession`. Removed in the next major. */
       scheduleDowngrade: (targetTierKey: string, commitmentType?: string, accountId?: string) =>
         P.scheduleDowngrade(targetTierKey, commitmentType, accountId),
       cancelScheduledChange: (accountId?: string) => P.cancelScheduledChange(accountId),

@@ -9,41 +9,40 @@
  *   be stale, or the sandbox foreign. The monitor asks Supabase to refresh the
  *   session and decides on that answer (`classifyRefreshResult`).
  * - a `SIGNED_OUT` auth event that no sign-out in the app asked for. auth-js
- *   emits it when a refresh fails for good (revoked or expired refresh token).
- *   Every deliberate sign-out calls `disarm()` first.
+ *   emits it when a refresh fails for good. The refresh guard
+ *   (`refresh-fetch.ts`) makes that happen only for a definitive GoTrue
+ *   rejection. Every deliberate sign-out calls `disarm()` first.
  *
  * Pure except for the injected `refresh`; the Supabase wiring lives in
  * `session-expiry-monitor.ts`. `bun test` covers this file.
  */
 
 import { create } from 'zustand';
+import { DEFINITIVE_REFRESH_ERROR_CODES } from './refresh-fetch';
 
 /** What a Supabase `refreshSession()` answer means for the login. */
 export type RefreshVerdict = 'valid' | 'expired' | 'transient';
 
 export interface RefreshResult {
-  error: { name?: string; status?: number } | null;
+  error: { name?: string; status?: number; code?: string } | null;
   hasSession: boolean;
 }
 
 /**
- * - no error and a session: the login works.
- * - a network failure (`AuthRetryableFetchError`, no status, 5xx), a timeout
- *   (408), or a rate limit (429): unknown, so transient. Never shown.
- * - a missing session (`AuthSessionMissingError`), or any other 4xx (auth-js
- *   answers 400 `refresh_token_not_found` / `session_not_found` for a dead
- *   refresh token): expired.
+ * - no error and a session: the login works. No error and no session: unknown.
+ * - a missing session (`AuthSessionMissingError`), or a GoTrue code that
+ *   proves the refresh token or its user is gone
+ *   (`DEFINITIVE_REFRESH_ERROR_CODES`, for example `refresh_token_not_found`):
+ *   expired.
+ * - every other error is transient and never shown: a network failure, a
+ *   5xx, a 408 or 429, a 4xx with no code (a proxy or WAF answered), a
+ *   discarded refresh (409), an unparsable answer.
  */
 export function classifyRefreshResult(result: RefreshResult): RefreshVerdict {
   const { error } = result;
   if (!error) return result.hasSession ? 'valid' : 'transient';
-  if (error.name === 'AuthRetryableFetchError') return 'transient';
   if (error.name === 'AuthSessionMissingError') return 'expired';
-  const status = error.status;
-  if (typeof status !== 'number' || status === 0 || status >= 500) return 'transient';
-  if (status === 408 || status === 429) return 'transient';
-  if (status >= 400) return 'expired';
-  return 'transient';
+  return error.code && DEFINITIVE_REFRESH_ERROR_CODES.has(error.code) ? 'expired' : 'transient';
 }
 
 /**

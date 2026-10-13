@@ -18,6 +18,7 @@ export {
   BillingError,
   RequestTooLargeError,
   parseBillingError,
+  isAuthFailure,
   isBillingError,
   formatBillingErrorForUI,
   FEATURE_DISABLED_CODE,

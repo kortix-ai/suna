@@ -224,7 +224,7 @@ const fakeDb: any = {
 };
 mock.module('../../shared/db', () => ({ db: fakeDb }));
 
-await import('./session-scope');
+(await import('./session-scope')).registerSessionScopeRoutes();
 
 const putScope = (body: unknown) =>
   app.request(base, {

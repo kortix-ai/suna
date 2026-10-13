@@ -12,9 +12,14 @@ import { describe, expect, test } from 'bun:test';
  * Assert the wiring by reading the module source, so this test needs no
  * database or environment to run.
  */
-const DB_DEPS_SOURCE = await Bun.file(
-  new URL('../connectors/db-deps.ts', import.meta.url).pathname,
-).text();
+// db-deps.ts wires ConnectorRouterDeps; db-deps-gateway.ts wires GatewayDeps.
+const DB_DEPS_SOURCE = (
+  await Promise.all(
+    ['db-deps.ts', 'db-deps-gateway.ts'].map((file) =>
+      Bun.file(new URL(`../connectors/${file}`, import.meta.url).pathname).text(),
+    ),
+  )
+).join('\n');
 
 const REQUIRED_DEP_KEYS = [
   'listDiscoverConnectors',

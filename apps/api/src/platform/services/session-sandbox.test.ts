@@ -33,13 +33,13 @@
 // file-scoped — batching many files into one `bun test a b c...` invocation
 // can leak mocks/cached module instances across files. See the same caveat
 // documented in ../../projects/sandbox-reaper.test.ts.
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import * as realAgents from '../../projects/agents';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
-import * as realProviderTransitionStore from '../../projects/provider-transition/provider-transition-store';
+import * as realProviderTransitionRouting from '../../projects/provider-transition/provider-transition-routing';
 import * as realProviders from '../providers';
 
 const dialect = new PgDialect();
@@ -275,8 +275,8 @@ mock.module('../providers', () => ({
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
 }));
 
-mock.module('../../projects/provider-transition/provider-transition-store', () => ({
-  ...realProviderTransitionStore,
+mock.module('../../projects/provider-transition/provider-transition-routing', () => ({
+  ...realProviderTransitionRouting,
   readActiveRouting: async () => activeRouting,
 }));
 
@@ -290,7 +290,6 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     const queued = imageResolutionQueue.shift();
@@ -318,10 +317,10 @@ mock.module('../../snapshots/builder', () => ({
   deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
     standardImageDeleteCalls.push(opts);
   },
-  // The real resolver throws TemplateNotFoundError for `meta` / `pi-worker`:
-  // neither is a project template.
+  // The real resolver throws TemplateNotFoundError for `meta`: it is not a
+  // project template.
   resolveTemplate: async (_project: unknown, slug: unknown) => {
-    if (slug === 'meta' || slug === 'pi-worker') throw new Error(`template ${String(slug)} not found`);
+    if (slug === 'meta') throw new Error(`template ${String(slug)} not found`);
     return {};
   },
 }));
@@ -392,6 +391,7 @@ mock.module('../../shared/session-failure-notifier', () => ({
 }));
 
 const { provisionSessionSandbox } = await import('./session-sandbox');
+const { SecretGrantResolutionError } = await import('../../projects/lib/secret-grant');
 
 function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -954,6 +954,35 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(recordedEvents).toEqual([]);
   });
 
+  // KRTX-2064: the provisioner takes the env promise in and only awaits it
+  // after the row insert, the token mint and the provider select. Any throw
+  // in between (the authoritative row conflict here) used to leave the env
+  // rejection with no consumer — an unhandled rejection, which on Bun is
+  // process-fatal (the 2026-10-09 API crash: fail-closed secret grant on a
+  // git auth error while the session boot raced a row conflict). The guard
+  // attaches a no-op catch at promise creation; the real error is still
+  // owned by the awaiting catch below and fails the session there.
+  test('an env build that rejects after the row-conflict throw stays handled, not unhandled', async () => {
+    identityConflict = true;
+    const envFailure = new SecretGrantResolutionError(
+      'kortix',
+      new Error("fatal: Authentication failed for 'https://github.com/example/example.git/'"),
+    );
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await expect(
+        provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(envFailure) }),
+      ).rejects.toMatchObject({ name: 'RuntimeIdentityConflictError' });
+      // Drain microtasks and timers so Bun's unhandled-rejection bookkeeping runs.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
   test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {
     identityConflict = true;
     recoveryPlaceholder = true;
@@ -1070,60 +1099,5 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     );
     expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
     expect(mergedMetadata(preserved?.updates)).toMatchObject({ stoppedDuringProvisioning: true });
-  });
-});
-
-describe('pi worker pool claim (P1.8)', () => {
-  test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
-    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
-    const claim = source.indexOf('const pooledClaim =');
-    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
-    const refill = source.indexOf('void maintainPiWorkerPool()', claim);
-    const externalId = source.indexOf('bgExternalId = result.externalId', claim);
-    expect(claim).toBeGreaterThan(-1);
-    // Claim sits BEFORE the provider create and only for pi worker boots on
-    // daytona; the refill kick fires after either path, before activation.
-    const gate = source.slice(claim, create);
-    expect(gate).toContain("opts.metadata?.pi_worker_boot === true && providerName === 'daytona'");
-    expect(gate).toContain('claimParkedPiWorkerBox(providerCreateInput.envVars ?? {})');
-    expect(create).toBeGreaterThan(claim);
-    expect(refill).toBeGreaterThan(create);
-    expect(externalId).toBeGreaterThan(refill);
-    // A claim failure must NEVER fail the session — it degrades to cold create.
-    expect(gate).toContain('return null');
-  });
-
-  test('a claimed box records the pool path in its provision timeline', async () => {
-    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
-    const claim = source.indexOf('if (pooledClaim) {');
-    const mark = source.indexOf("tl.mark('pool-claim')", claim);
-    const elseBranch = source.indexOf('} else {', claim);
-    expect(claim).toBeGreaterThan(-1);
-    expect(mark).toBeGreaterThan(claim);
-    expect(mark).toBeLessThan(elseBranch);
-  });
-});
-
-describe('pi worker pool — stale-label hazard', () => {
-  test('reap and claim both re-verify the park label on the direct object', async () => {
-    const source = await Bun.file(new URL('./pi-worker-pool.ts', import.meta.url)).text();
-    // Maintain: every listed box passes verifyStillParked BEFORE the
-    // dead/stale/over-age triage that feeds the reap list.
-    const verify = source.indexOf('async function verifyStillParked');
-    const maintain = source.indexOf('export function maintainPiWorkerPool');
-    const verifyCall = source.indexOf('await verifyStillParked(box.externalId)', maintain);
-    const triage = source.indexOf("state === 'stopped'", maintain);
-    expect(verify).toBeGreaterThan(-1);
-    expect(verifyCall).toBeGreaterThan(maintain);
-    expect(verifyCall).toBeLessThan(triage);
-    // An unknowable box is never reapable.
-    const verifyBody = source.slice(verify, source.indexOf('}', source.indexOf('catch', verify)));
-    expect(verifyBody).toContain('return false');
-    // Claim: the direct object's labels gate the dial.
-    const claim = source.indexOf('export async function claimParkedPiWorkerBox');
-    const gate = source.indexOf("liveLabels[PARK_LABEL] !== '1'", claim);
-    const dial = source.indexOf('/kortix/claim', claim);
-    expect(gate).toBeGreaterThan(claim);
-    expect(gate).toBeLessThan(dial);
   });
 });

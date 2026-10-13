@@ -16,7 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
-import { useFilesStore } from '@/features/file-browser/store/files-store';
+import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -57,6 +57,7 @@ import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } fro
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
+import { isPartialListing, LoadMoreRow } from './load-more-row';
 
 /** System directories always pinned at the top of the listing. */
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -88,6 +89,7 @@ export function DriveExplorer({
   embedded = false,
   shareContext,
   leading,
+  rootLabel,
   listingAs,
   panels,
   children,
@@ -99,6 +101,8 @@ export function DriveExplorer({
    * strip. Sharing the row is what lets that host drop its own header.
    */
   leading?: ReactNode;
+  /** The first crumb of the path bar (default: the store root's name). */
+  rootLabel?: string;
   /**
    * Element type for the listing region.
    *
@@ -142,13 +146,9 @@ export function DriveExplorer({
 
   source.useFileEventInvalidation();
 
-  const {
-    data: files,
-    isLoading,
-    isFetching,
-    error,
-    refetch: refetchFiles,
-  } = source.useFileList(currentPath);
+  const listing = source.useFileList(currentPath);
+  const { data: files, isLoading, isFetching, error, refetch: refetchFiles } = listing;
+  const partial = isPartialListing(listing);
 
   // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
   // own, so keep polling. A parked box never reaches here: `parked` switches
@@ -201,6 +201,7 @@ export function DriveExplorer({
 
   const isRootPath = currentPath === '/' || currentPath === '.' || currentPath === '';
   const normalizedCurrentPath = isRootPath ? '' : currentPath.replace(/\/$/, '');
+  const filesAllowedHere = capabilities.filesAllowedAt?.(currentPath) ?? true;
 
   // Auto-focus folder input
   useEffect(() => {
@@ -290,14 +291,17 @@ export function DriveExplorer({
       return sortOrder === 'desc' ? -cmp : cmp;
     };
 
+    // A partial folder keeps the server's name order: a sorted subset would
+    // put a later page's rows above the ones shown (KRTX-1723).
+    const sorted = (nodes: FileNode[]) => (partial ? nodes : nodes.sort(sortFn));
     const allDirs = files.filter((f) => f.type === 'directory');
     const elevatedDirs = allDirs
       .filter((f) => ELEVATED_DIRS.has(f.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const dirs = allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)).sort(sortFn);
-    const fileItems = files.filter((f) => f.type === 'file').sort(sortFn);
+    const dirs = sorted(allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)));
+    const fileItems = sorted(files.filter((f) => f.type === 'file'));
     return { elevatedDirs, dirs, fileItems };
-  }, [files, sortBy, sortOrder]);
+  }, [files, sortBy, sortOrder, partial]);
 
   // ── Handlers ──────────────────────────────────────────────────
 
@@ -361,9 +365,17 @@ export function DriveExplorer({
     [renameMutation, tHardcodedUi],
   );
 
-  const handleDelete = useCallback((node: FileNode) => {
-    setDeleteTarget(node);
-  }, []);
+  const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
+  const filesStore = useFilesStoreApi();
+  const handleDelete = useCallback(
+    (node: FileNode) => {
+      // An open preview sits above every dialog; close it so the confirmation
+      // is not hidden behind it.
+      if (filesStore.getState().selectedFilePath) goBackToBrowser();
+      setDeleteTarget(node);
+    },
+    [goBackToBrowser, filesStore],
+  );
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -504,55 +516,89 @@ export function DriveExplorer({
     [handleUploadFiles],
   );
 
-  // Create folder
-  const handleCreateFolder = useCallback(async () => {
-    if (!newFolderName.trim()) {
-      setIsCreatingFolder(false);
-      return;
-    }
-    const folderPath = normalizedCurrentPath
-      ? `${normalizedCurrentPath}/${newFolderName.trim()}`
-      : newFolderName.trim();
-    try {
-      await mkdirMutation.mutateAsync({ dirPath: folderPath });
-      successToast(tHardcodedUi('i18nComplete.text0597374d9d22', { value0: newFolderName.trim() }));
-    } catch (err) {
-      errorToast(
-        tHardcodedUi('i18nComplete.text5334297c9387', {
-          value0:
-            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
-        }),
-      );
-    } finally {
-      setIsCreatingFolder(false);
-      setNewFolderName('');
-    }
-  }, [newFolderName, normalizedCurrentPath, mkdirMutation, tHardcodedUi]);
+  // Create folder / file. Enter submits, and so does the blur when the input
+  // then goes away — with the same name, so a second create answered "already
+  // exists" for a folder that had just been made. One submit per edit: the
+  // ref is set on the first, the input closes at once, and opening the input
+  // again re-arms it.
+  const createSubmittedRef = useRef(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  // Create file
-  const handleCreateFile = useCallback(async () => {
-    if (!newFileName.trim()) {
-      setIsCreatingFile(false);
-      return;
-    }
-    const filePath = normalizedCurrentPath
-      ? `${normalizedCurrentPath}/${newFileName.trim()}`
-      : newFileName.trim();
-    try {
-      await createMutation.mutateAsync({ filePath });
-      successToast(tHardcodedUi('i18nComplete.textf8a7fef9482a', { value0: newFileName.trim() }));
-    } catch (err) {
-      errorToast(
-        tHardcodedUi('i18nComplete.text6658eaceba2a', {
-          value0:
-            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
-        }),
-      );
-    } finally {
-      setIsCreatingFile(false);
-      setNewFileName('');
-    }
-  }, [newFileName, normalizedCurrentPath, createMutation, tHardcodedUi]);
+  useEffect(() => {
+    if (isCreatingFolder || isCreatingFile) createSubmittedRef.current = false;
+  }, [isCreatingFolder, isCreatingFile]);
+
+  const nameTaken = useCallback(
+    (name: string) => {
+      const lower = name.toLowerCase();
+      return (files ?? []).some((f) => f.name.toLowerCase() === lower);
+    },
+    [files],
+  );
+
+  const submitCreate = useCallback(
+    async (kind: 'folder' | 'file') => {
+      if (createSubmittedRef.current) return;
+      const name = (kind === 'folder' ? newFolderName : newFileName).trim();
+      const close = () => {
+        setCreateError(null);
+        if (kind === 'folder') {
+          setIsCreatingFolder(false);
+          setNewFolderName('');
+        } else {
+          setIsCreatingFile(false);
+          setNewFileName('');
+        }
+      };
+      if (!name) {
+        close();
+        return;
+      }
+      // A name already in this folder stays in the input with the reason,
+      // instead of a request that can only fail.
+      if (nameTaken(name)) {
+        setCreateError(tHardcodedUi('i18nComplete.textf445afc1e6ed', { value0: name }));
+        return;
+      }
+      createSubmittedRef.current = true;
+      close();
+      const target = normalizedCurrentPath ? `${normalizedCurrentPath}/${name}` : name;
+      try {
+        if (kind === 'folder') {
+          await mkdirMutation.mutateAsync({ dirPath: target });
+          successToast(tHardcodedUi('i18nComplete.text0597374d9d22', { value0: name }));
+        } else {
+          await createMutation.mutateAsync({ filePath: target });
+          successToast(tHardcodedUi('i18nComplete.textf8a7fef9482a', { value0: name }));
+        }
+      } catch (err) {
+        if ((err as { status?: number } | null)?.status === 409) {
+          // Someone else made it meanwhile: reopen the input with the reason.
+          if (kind === 'folder') {
+            setNewFolderName(name);
+            setIsCreatingFolder(true);
+          } else {
+            setNewFileName(name);
+            setIsCreatingFile(true);
+          }
+          setCreateError(tHardcodedUi('i18nComplete.textf445afc1e6ed', { value0: name }));
+        } else {
+          errorToast(
+            tHardcodedUi(kind === 'folder' ? 'i18nComplete.text5334297c9387' : 'i18nComplete.text6658eaceba2a', {
+              value0:
+                err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+            }),
+          );
+        }
+      } finally {
+        createSubmittedRef.current = false;
+      }
+    },
+    [newFolderName, newFileName, nameTaken, normalizedCurrentPath, mkdirMutation, createMutation, tHardcodedUi],
+  );
+
+  const handleCreateFolder = useCallback(() => void submitCreate('folder'), [submitCreate]);
+  const handleCreateFile = useCallback(() => void submitCreate('file'), [submitCreate]);
 
   // Paste
   const handlePaste = useCallback(async () => {
@@ -691,7 +737,7 @@ export function DriveExplorer({
 
   const handlePageDrop = useCallback(
     async (e: React.DragEvent) => {
-      if (!canWrite) return;
+      if (!canWrite || !filesAllowedHere) return;
       e.preventDefault();
       e.stopPropagation();
       dragPageCounter.current = 0;
@@ -700,13 +746,14 @@ export function DriveExplorer({
       if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
       await handleUploadFiles(e.dataTransfer.files);
     },
-    [canWrite, handleUploadFiles],
+    [canWrite, filesAllowedHere, handleUploadFiles],
   );
 
   const isEmpty =
     !isLoading &&
     !error &&
     Boolean(files) &&
+    !listing.hasNextPage &&
     elevatedDirs.length === 0 &&
     dirs.length === 0 &&
     fileItems.length === 0;
@@ -724,8 +771,10 @@ export function DriveExplorer({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <DriveNewMenu
             compact={embedded}
-            onUpload={canWrite ? handleUpload : undefined}
-            onNewFile={canWrite ? () => setIsCreatingFile(true) : undefined}
+            onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
+            onNewFile={
+              canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setIsCreatingFile(true) : undefined
+            }
             onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
           />
           <DriveViewMenu
@@ -741,11 +790,12 @@ export function DriveExplorer({
               downloadDir(dirPath, dirName);
             }}
             isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+            sortDisabled={partial}
           />
         </div>
       </div>
 
-      <DrivePathBar as="row" />
+      <DrivePathBar as="row" rootLabel={rootLabel} />
 
       {/* Search overlay */}
       {capabilities.search && isSearchOpen && <FileSearch />}
@@ -784,11 +834,17 @@ export function DriveExplorer({
                 type="text"
                 ref={folderInputRef}
                 value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
+                onChange={(e) => {
+                  setNewFolderName(e.target.value);
+                  setCreateError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') handleCreateFolder();
                   if (e.key === 'Escape') {
+                    // A cancel: the blur that follows must not create it.
+                    createSubmittedRef.current = true;
+                    setCreateError(null);
                     setIsCreatingFolder(false);
                     setNewFolderName('');
                   }
@@ -808,11 +864,17 @@ export function DriveExplorer({
                 type="text"
                 ref={fileCreateInputRef}
                 value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
+                onChange={(e) => {
+                  setNewFileName(e.target.value);
+                  setCreateError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') handleCreateFile();
                   if (e.key === 'Escape') {
+                    // A cancel: the blur that follows must not create it.
+                    createSubmittedRef.current = true;
+                    setCreateError(null);
                     setIsCreatingFile(false);
                     setNewFileName('');
                   }
@@ -824,6 +886,11 @@ export function DriveExplorer({
                 )}
               />
             </div>
+          )}
+          {createError && (
+            <p role="alert" className="text-destructive mt-1.5 max-w-md pl-6 text-xs">
+              {createError}
+            </p>
           )}
         </div>
       )}
@@ -978,6 +1045,7 @@ export function DriveExplorer({
                   elevatedDirs={elevatedDirs}
                   dirs={dirs}
                   files={fileItems}
+                  sortDisabled={partial}
                   onNavigateToDir={handleNavigateToDir}
                   onOpenFile={handleOpenFile}
                   onPreviewFile={handlePreviewFile}
@@ -997,6 +1065,7 @@ export function DriveExplorer({
                   readOnly={!canWrite}
                 />
               )}
+              <LoadMoreRow listing={listing} />
             </>
           )}
         </div>
@@ -1005,7 +1074,7 @@ export function DriveExplorer({
       </ListingRegion>
 
       {/* Drag & drop overlay */}
-      {canWrite && isDragOverPage && (
+      {canWrite && filesAllowedHere && isDragOverPage && (
         <div className="bg-background/80 border-primary/50 pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-2xl">

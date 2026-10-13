@@ -27,449 +27,451 @@ function teamsPublicBaseUrl(): string | undefined {
   return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
 }
 
-// ─── Microsoft Teams install — shared multi-tenant app, bind a tenant ────
+export function registerChannelTeamsRoutes(): void {
+  // ─── Microsoft Teams install — shared multi-tenant app, bind a tenant ────
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/teams/installation',
-    tags: ['channels'],
-    summary: 'Get the Microsoft Teams installation',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const install = await loadTeamsInstall(projectId);
-    return c.json(install ?? null);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/teams/mode',
-    tags: ['channels'],
-    summary: 'Get the Microsoft Teams connection mode',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const byoAppId = await loadTeamsAppIdForProject(projectId);
-    const install = await loadTeamsInstall(projectId).catch(() => null);
-    return c.json({
-      ...teamsMode(baseUrl, { projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl }),
-      orgInstalled: install?.orgInstalled ?? false,
-      deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
-    });
-  },
-);
-
-// POST /v1/projects/:projectId/channels/teams/oauth/complete
-// The web completion page posts the provider's {code, state} here with the
-// signed-in user's bearer. The install lands only when the signed state names
-// this caller and this project (see channels/install-completion.ts).
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/teams/oauth/complete',
-    tags: ['channels'],
-    summary: 'Complete the Microsoft Teams OAuth connection',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: InstallCompletionBody } } },
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/channels/teams/installation',
+      tags: ['channels'],
+      summary: 'Get the Microsoft Teams installation',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const install = await loadTeamsInstall(projectId);
+      return c.json(install ?? null);
     },
-    responses: {
-      200: json(z.object({ redirect_url: z.string() }), 'OK'),
-      ...errors(400, 403, 404, 503),
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/channels/teams/mode',
+      tags: ['channels'],
+      summary: 'Get the Microsoft Teams connection mode',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+      const byoAppId = await loadTeamsAppIdForProject(projectId);
+      const install = await loadTeamsInstall(projectId).catch(() => null);
+      return c.json({
+        ...teamsMode(baseUrl, { projectId, byoAppId }),
+        orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl }),
+        orgInstalled: install?.orgInstalled ?? false,
+        deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
+      });
     },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Same gate as the manual connect route: installing a Teams app is a
-    // connector-write capability.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
-    const body = InstallCompletionBody.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) {
-      return c.json({ error: 'Missing code or state', code: INSTALL_STATE_INVALID }, 400);
-    }
-    const result = await completeTeamsOauthInstall({
-      projectId,
-      userId: loaded.userId,
-      code: body.data.code,
-      state: body.data.state,
-    });
-    if (!result.ok) {
-      return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
-    }
-    return c.json({ redirect_url: result.redirectUrl });
-  },
-);
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/teams/manifest',
-    tags: ['channels'],
-    summary: 'Download the Microsoft Teams app manifest',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const byoAppId = await loadTeamsAppIdForProject(projectId);
-    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, { projectId, byoAppId });
-    if (!mode.available || !mode.appId) {
-      return c.json({ error: 'Teams is not configured on this server' }, 409);
-    }
-    return c.json(
-      buildTeamsManifest({
-        appId: mode.appId,
-        baseUrl,
-        appName: config.TEAMS_APP_NAME,
-        botName: config.TEAMS_APP_NAME,
-      }),
-    );
-  },
-);
+  // POST /v1/projects/:projectId/channels/teams/oauth/complete
+  // The web completion page posts the provider's {code, state} here with the
+  // signed-in user's bearer. The install lands only when the signed state names
+  // this caller and this project (see channels/install-completion.ts).
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/teams/connect',
-    tags: ['channels'],
-    summary: 'Connect Microsoft Teams',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Connecting a Teams bot is a connector-write capability — a custom role can
-    // withhold it and a scoped agent must hold it (central fold), mirroring the
-    // Slack (channel-slack.ts slack/connect) and email connect twins.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
-
-    let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
-    }
-    const tenantId = body.tenant_id?.trim();
-    const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
-    if (!tenantId || (!isUuid(tenantId) && !isDomain(tenantId))) {
-      return c.json(
-        { error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' },
-        400,
-      );
-    }
-
-    const appId = body.app_id?.trim() || null;
-    const appPassword = body.app_password?.trim() || null;
-    if ((appId && !appPassword) || (!appId && appPassword)) {
-      return c.json(
-        { error: 'app_id and app_password must be provided together for a bring-your-own bot' },
-        400,
-      );
-    }
-    if (appId && !isUuid(appId)) {
-      return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
-    }
-
-    // A tenant id or domain is public, so typing one proves nothing. The
-    // install decides which tenant's messages route to this project and which
-    // tenant the file proxy mints Graph tokens for, so it is accepted only
-    // with proof of the tenant:
-    //  - a bring-your-own bot proves it with its own credentials (Microsoft
-    //    issues the app a token for that tenant only when the app is there);
-    //  - the managed bot proves it through "Connect with Microsoft" (the OAuth
-    //    callback reads the tenant from Microsoft's token), not through here.
-    if (!appId || !appPassword) {
-      return c.json(
-        {
-          error:
-            'A tenant id alone cannot be verified. Use "Connect with Microsoft" to connect the Kortix bot, ' +
-            'or connect your own bot with its app id and client secret.',
-          code: 'TEAMS_TENANT_UNVERIFIED',
-        },
-        400,
-      );
-    }
-    const proof = await proveTeamsTenant({ tenantId, creds: { appId, appPassword } });
-    if (!proof.ok) {
-      return c.json({ error: proof.error, code: 'TEAMS_TENANT_UNVERIFIED' }, 400);
-    }
-
-    const summary = await saveTeamsInstall({
-      projectId,
-      tenantId: proof.tenantId,
-      teamName: body.team_name?.trim() || null,
-      appId,
-      appPassword,
-    });
-    void reconcileChannelConnectors(projectId);
-    return c.json(summary);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/channels/teams/installation',
-    tags: ['channels'],
-    summary: 'Disconnect Microsoft Teams',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Disconnecting the Teams bot is connector-write — twin of the Slack/email
-    // disconnect gates; a custom role can withhold it, a scoped agent must hold it.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
-    await deleteTeamsInstall(projectId);
-    void reconcileChannelConnectors(projectId);
-    return c.json({ status: 'disconnected' });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/teams/file',
-    tags: ['channels'],
-    summary: 'Download a Microsoft Teams file',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      query: z.object({ url: z.string() }),
-    },
-    responses: {
-      200: {
-        description: 'File bytes',
-        content: { 'application/octet-stream': { schema: z.any() } },
-      },
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const result = await downloadTeamsFile(projectId, c.req.query('url') ?? '');
-    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
-    c.header('Content-Type', result.contentType);
-    return c.body(result.body);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/teams/conversations',
-    tags: ['channels'],
-    summary: 'List Microsoft Teams conversations the bot can post to',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: {
-      200: json(
-        z.object({ conversations: z.array(z.object({ conversationId: z.string(), name: z.string().nullable(), type: z.string().nullable() })) }),
-        'Conversations this project may post into',
-      ),
-      ...errors(403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    return c.json({ conversations: await listTeamsPostTargets(projectId) });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/teams/message',
-    tags: ['channels'],
-    summary: 'Post a Microsoft Teams message',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(
-        z.object({ ok: z.boolean(), conversationId: z.string(), delivered: z.string() }).passthrough(),
-        'Message posted',
-      ),
-      ...errors(400, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Posting into a customer's Teams conversation is a send primitive, gated
-    // on connector-write exactly like the file upload below.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
-    const body = await readJsonObject(c);
-    const result = await postToTeamsConversation(projectId, {
-      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
-      text: typeof body.text === 'string' ? body.text : undefined,
-      card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
-    });
-    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404);
-    return c.json(result);
-  },
-);
-
-// Edit and delete a message the bot posted: the agent's `teams edit` and
-// `teams delete`, as `slack edit` / `slack delete`. Same floor and the same
-// conversation authorization as the post above.
-for (const op of ['edit', 'delete'] as const) {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: `/{projectId}/channels/teams/message/${op}`,
+      path: '/{projectId}/channels/teams/oauth/complete',
       tags: ['channels'],
-      summary: `${op === "edit" ? "Edit" : "Delete"} a Microsoft Teams bot message`,
+      summary: 'Complete the Microsoft Teams OAuth connection',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: InstallCompletionBody } } },
+      },
+      responses: {
+        200: json(z.object({ redirect_url: z.string() }), 'OK'),
+        ...errors(400, 403, 404, 503),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Same gate as the manual connect route: installing a Teams app is a
+      // connector-write capability.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
+      const body = InstallCompletionBody.safeParse(await c.req.json().catch(() => null));
+      if (!body.success) {
+        return c.json({ error: 'Missing code or state', code: INSTALL_STATE_INVALID }, 400);
+      }
+      const result = await completeTeamsOauthInstall({
+        projectId,
+        userId: loaded.userId,
+        code: body.data.code,
+        state: body.data.state,
+      });
+      if (!result.ok) {
+        return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
+      }
+      return c.json({ redirect_url: result.redirectUrl });
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/channels/teams/manifest',
+      tags: ['channels'],
+      summary: 'Download the Microsoft Teams app manifest',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const byoAppId = await loadTeamsAppIdForProject(projectId);
+      const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+      const mode = teamsMode(baseUrl, { projectId, byoAppId });
+      if (!mode.available || !mode.appId) {
+        return c.json({ error: 'Teams is not configured on this server' }, 409);
+      }
+      return c.json(
+        buildTeamsManifest({
+          appId: mode.appId,
+          baseUrl,
+          appName: config.TEAMS_APP_NAME,
+          botName: config.TEAMS_APP_NAME,
+        }),
+      );
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/channels/teams/connect',
+      tags: ['channels'],
+      summary: 'Connect Microsoft Teams',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
+      responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Connecting a Teams bot is a connector-write capability — a custom role can
+      // withhold it and a scoped agent must hold it (central fold), mirroring the
+      // Slack (channel-slack.ts slack/connect) and email connect twins.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
+
+      let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
+      try {
+        body = (await c.req.json()) as typeof body;
+      } catch {
+        return c.json({ error: 'Invalid JSON body' }, 400);
+      }
+      const tenantId = body.tenant_id?.trim();
+      const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
+      if (!tenantId || (!isUuid(tenantId) && !isDomain(tenantId))) {
+        return c.json(
+          { error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' },
+          400,
+        );
+      }
+
+      const appId = body.app_id?.trim() || null;
+      const appPassword = body.app_password?.trim() || null;
+      if ((appId && !appPassword) || (!appId && appPassword)) {
+        return c.json(
+          { error: 'app_id and app_password must be provided together for a bring-your-own bot' },
+          400,
+        );
+      }
+      if (appId && !isUuid(appId)) {
+        return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
+      }
+
+      // A tenant id or domain is public, so typing one proves nothing. The
+      // install decides which tenant's messages route to this project and which
+      // tenant the file proxy mints Graph tokens for, so it is accepted only
+      // with proof of the tenant:
+      //  - a bring-your-own bot proves it with its own credentials (Microsoft
+      //    issues the app a token for that tenant only when the app is there);
+      //  - the managed bot proves it through "Connect with Microsoft" (the OAuth
+      //    callback reads the tenant from Microsoft's token), not through here.
+      if (!appId || !appPassword) {
+        return c.json(
+          {
+            error:
+              'A tenant id alone cannot be verified. Use "Connect with Microsoft" to connect the Kortix bot, ' +
+              'or connect your own bot with its app id and client secret.',
+            code: 'TEAMS_TENANT_UNVERIFIED',
+          },
+          400,
+        );
+      }
+      const proof = await proveTeamsTenant({ tenantId, creds: { appId, appPassword } });
+      if (!proof.ok) {
+        return c.json({ error: proof.error, code: 'TEAMS_TENANT_UNVERIFIED' }, 400);
+      }
+
+      const summary = await saveTeamsInstall({
+        projectId,
+        tenantId: proof.tenantId,
+        teamName: body.team_name?.trim() || null,
+        appId,
+        appPassword,
+      });
+      void reconcileChannelConnectors(projectId);
+      return c.json(summary);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}/channels/teams/installation',
+      tags: ['channels'],
+      summary: 'Disconnect Microsoft Teams',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Disconnecting the Teams bot is connector-write — twin of the Slack/email
+      // disconnect gates; a custom role can withhold it, a scoped agent must hold it.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
+      await deleteTeamsInstall(projectId);
+      void reconcileChannelConnectors(projectId);
+      return c.json({ status: 'disconnected' });
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/channels/teams/file',
+      tags: ['channels'],
+      summary: 'Download a Microsoft Teams file',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({ url: z.string() }),
+      },
       responses: {
-        200: json(z.object({ ok: z.boolean(), conversationId: z.string(), messageId: z.string() }).passthrough(), `Message ${op === 'edit' ? 'edited' : 'deleted'}`),
-        ...errors(400, 403, 404, 502),
+        200: {
+          description: 'File bytes',
+          content: { 'application/octet-stream': { schema: z.any() } },
+        },
+        ...errors(400, 403, 404, 413),
       },
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+      const result = await downloadTeamsFile(projectId, c.req.query('url') ?? '');
+      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404 | 413);
+      c.header('Content-Type', result.contentType);
+      return c.body(result.body);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/channels/teams/conversations',
+      tags: ['channels'],
+      summary: 'List Microsoft Teams conversations the bot can post to',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: {
+        200: json(
+          z.object({ conversations: z.array(z.object({ conversationId: z.string(), name: z.string().nullable(), type: z.string().nullable() })) }),
+          'Conversations this project may post into',
+        ),
+        ...errors(403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      return c.json({ conversations: await listTeamsPostTargets(projectId) });
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/channels/teams/message',
+      tags: ['channels'],
+      summary: 'Post a Microsoft Teams message',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(
+          z.object({ ok: z.boolean(), conversationId: z.string(), delivered: z.string() }).passthrough(),
+          'Message posted',
+        ),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Posting into a customer's Teams conversation is a send primitive, gated
+      // on connector-write exactly like the file upload below.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
       const body = await readJsonObject(c);
-      const target = {
+      const result = await postToTeamsConversation(projectId, {
         conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
-        messageId: String(body.message_id ?? body.messageId ?? ''),
-      };
-      const result = op === 'edit'
-        ? await editTeamsMessage(projectId, {
-            ...target,
-            text: typeof body.text === 'string' ? body.text : undefined,
-            card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
-          })
-        : await deleteTeamsMessage(projectId, target);
-      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404 | 502);
+        text: typeof body.text === 'string' ? body.text : undefined,
+        card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
+      });
+      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404);
+      return c.json(result);
+    },
+  );
+
+  // Edit and delete a message the bot posted: the agent's `teams edit` and
+  // `teams delete`, as `slack edit` / `slack delete`. Same floor and the same
+  // conversation authorization as the post above.
+  for (const op of ['edit', 'delete'] as const) {
+    projectsApp.openapi(
+      createRoute({
+        method: 'post',
+        path: `/{projectId}/channels/teams/message/${op}`,
+        tags: ['channels'],
+        summary: `${op === "edit" ? "Edit" : "Delete"} a Microsoft Teams bot message`,
+        ...auth,
+        request: {
+          params: z.object({ projectId: z.string() }),
+          body: { content: { 'application/json': { schema: AnyObject } } },
+        },
+        responses: {
+          200: json(z.object({ ok: z.boolean(), conversationId: z.string(), messageId: z.string() }).passthrough(), `Message ${op === 'edit' ? 'edited' : 'deleted'}`),
+          ...errors(400, 403, 404, 502),
+        },
+      }),
+      async (c: any) => {
+        const projectId = c.req.param('projectId');
+        const loaded = await loadProjectForUser(c, projectId, 'read');
+        if (!loaded) return c.json({ error: 'Not found' }, 404);
+        await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+        const body = await readJsonObject(c);
+        const target = {
+          conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+          messageId: String(body.message_id ?? body.messageId ?? ''),
+        };
+        const result = op === 'edit'
+          ? await editTeamsMessage(projectId, {
+              ...target,
+              text: typeof body.text === 'string' ? body.text : undefined,
+              card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
+            })
+          : await deleteTeamsMessage(projectId, target);
+        if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404 | 502);
+        return c.json(result);
+      },
+    );
+  }
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/channels/teams/file/upload',
+      tags: ['channels'],
+      summary: 'Upload a file to Microsoft Teams',
+      description:
+        'Delivers a file into a Teams conversation bound to the project. The service URL and tenant come from the ' +
+        "binding and the project's stored install, never from the request: `service_url` is accepted and ignored.",
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(
+          z
+            .object({ ok: z.boolean(), delivered: z.string(), uploadId: z.string().optional(), url: z.string().optional() })
+            .passthrough(),
+          'File delivered (consent card, inline image, or team-drive link)',
+        ),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Posting a consent card drives the project bot to SEND into the customer's
+      // Teams channel — a send primitive gated on connector-write like the Slack
+      // (channel-slack.ts slack/file/upload) and meet/speak twins.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
+      const body = await readJsonObject(c);
+      // `service_url` in the body is ignored: the server addresses the
+      // conversation (teams/post.ts resolveTeamsProjectConversation).
+      const result = await initiateTeamsUpload(projectId, {
+        conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+        botId: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+        filename: String(body.filename ?? ''),
+        contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+        description: typeof body.description === 'string' ? body.description : undefined,
+        conversationType:
+          body.conversation_type === 'channel' || body.conversation_type === 'groupChat' || body.conversation_type === 'personal'
+            ? body.conversation_type
+            : undefined,
+        teamGroupId: typeof body.team_group_id === 'string' && body.team_group_id ? body.team_group_id : undefined,
+      });
+      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
       return c.json(result);
     },
   );
 }
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/teams/file/upload',
-    tags: ['channels'],
-    summary: 'Upload a file to Microsoft Teams',
-    description:
-      'Delivers a file into a Teams conversation bound to the project. The service URL and tenant come from the ' +
-      "binding and the project's stored install, never from the request: `service_url` is accepted and ignored.",
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(
-        z
-          .object({ ok: z.boolean(), delivered: z.string(), uploadId: z.string().optional(), url: z.string().optional() })
-          .passthrough(),
-        'File delivered (consent card, inline image, or team-drive link)',
-      ),
-      ...errors(400, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Posting a consent card drives the project bot to SEND into the customer's
-    // Teams channel — a send primitive gated on connector-write like the Slack
-    // (channel-slack.ts slack/file/upload) and meet/speak twins.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
-    const body = await readJsonObject(c);
-    // `service_url` in the body is ignored: the server addresses the
-    // conversation (teams/post.ts resolveTeamsProjectConversation).
-    const result = await initiateTeamsUpload(projectId, {
-      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
-      botId: typeof body.bot_id === 'string' ? body.bot_id : undefined,
-      filename: String(body.filename ?? ''),
-      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
-      description: typeof body.description === 'string' ? body.description : undefined,
-      conversationType:
-        body.conversation_type === 'channel' || body.conversation_type === 'groupChat' || body.conversation_type === 'personal'
-          ? body.conversation_type
-          : undefined,
-      teamGroupId: typeof body.team_group_id === 'string' && body.team_group_id ? body.team_group_id : undefined,
-    });
-    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
-    return c.json(result);
-  },
-);

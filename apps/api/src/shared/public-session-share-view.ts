@@ -126,16 +126,24 @@ export interface PublicSessionTranscript {
   messages: CompactPublicMessage[];
 }
 
-/** Seam for tests: production reads the mirror from PostgreSQL. */
+/** The stored-transcript read. The route passes `readStoredTranscriptWindow`
+ *  (the session log when the project flag `session_log` is on, else the
+ *  mirror); without it, the mirror. Tests inject their own. */
 export interface PublicSessionMessagesDeps {
   readMirror?: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
 }
 
+const readMirrorOnly = (sessionId: string, limit: number) => readSessionTranscriptMirror({ sessionId, limit });
+
 /** A mirror read that fails reads as "nothing saved": this is a best-effort
  *  fallback on an anonymous route, and it must never 500 it. */
-async function readMirrorSafely(sessionId: string, limit: number): Promise<MirrorSnapshot | null> {
+async function readMirrorSafely(
+  read: NonNullable<PublicSessionMessagesDeps['readMirror']>,
+  sessionId: string,
+  limit: number,
+): Promise<MirrorSnapshot | null> {
   try {
-    return await readSessionTranscriptMirror({ sessionId, limit });
+    return await read(sessionId, limit);
   } catch (err) {
     console.warn('[public-session-share-view] saved transcript read failed:', err);
     return null;
@@ -222,7 +230,7 @@ export async function getPublicSessionMessages(
   row: Pick<PublicShareRow, 'sessionId'> & { externalId: string | null; sandboxStatus: string | null },
   deps: PublicSessionMessagesDeps = {},
 ): Promise<PublicSessionMessagesResult> {
-  const readMirror = deps.readMirror ?? readMirrorSafely;
+  const readMirror = (sessionId: string, limit: number) => readMirrorSafely(deps.readMirror ?? readMirrorOnly, sessionId, limit);
   const degrade = async (
     reason: string,
     opencodeSessionId: string | null = null,

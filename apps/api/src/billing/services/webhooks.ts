@@ -16,6 +16,7 @@ import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isUuid } from '../../shared/validate';
+import { handleChargeRefunded, handleDisputeClosed, handleDisputeCreated } from './refund-clawback';
 import { planKeyFromMetadata, activateSubscriptionForAccount } from './stripe-checkout-webhooks';
 
 function planKeyMetadata(planKey: string): { tier_key: string; plan_key: string } {
@@ -35,7 +36,16 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   }
 
   if (session.mode === 'subscription') {
-    await withAccountLock(accountId, () => handleSubscriptionCheckout(session, accountId));
+    // Read the subscription BEFORE the lock. The lock pins a pooled connection
+    // for its whole body (2 holders per process); a Stripe round trip inside it
+    // queues every other webhook during a renewal burst.
+    const subscriptionId = typeof session.subscription === 'string'
+      ? session.subscription
+      : session.subscription?.id;
+    const subscription = subscriptionId
+      ? await getStripe().subscriptions.retrieve(subscriptionId)
+      : null;
+    await withAccountLock(accountId, () => handleSubscriptionCheckout(session, accountId, subscription));
   }
 }
 
@@ -93,17 +103,18 @@ export async function handleCheckoutAsyncPaymentFailed(session: Stripe.Checkout.
   );
 }
 
-async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, accountId: string) {
+async function handleSubscriptionCheckout(
+  session: Stripe.Checkout.Session,
+  accountId: string,
+  subscription: Stripe.Subscription | null,
+) {
   const tierKey = planKeyFromMetadata(session.metadata);
   if (!tierKey) return;
 
   const subscriptionId = typeof session.subscription === 'string'
     ? session.subscription
     : session.subscription?.id;
-  if (!subscriptionId) return;
-
-  const stripe = getStripe();
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  if (!subscriptionId || !subscription) return;
 
   if (session.payment_status !== 'paid') {
     await applyStripeSync(
@@ -194,6 +205,21 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 
     case 'subscription_schedule.completed':
       await handleScheduleCompleted(event.data.object as any);
+      break;
+
+    case 'charge.refunded':
+      await handleChargeRefunded(
+        event.data.object as Stripe.Charge,
+        event.data.previous_attributes as Partial<Stripe.Charge> | undefined,
+      );
+      break;
+
+    case 'charge.dispute.created':
+      await handleDisputeCreated(event.data.object as Stripe.Dispute);
+      break;
+
+    case 'charge.dispute.closed':
+      await handleDisputeClosed(event.data.object as Stripe.Dispute);
       break;
 
     case 'subscription_schedule.released':

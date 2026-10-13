@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
+import { accountInviteLanding, type KortixAccount, type KortixProject } from '@kortix/sdk';
 
 import {
   buildAccountSections,
   countProjects,
   decideDoor,
   filterSections,
-  joinDestination,
+  inviteLandingPath,
   type ProjectListResult,
 } from './project-selector-model';
 
@@ -165,24 +165,58 @@ describe('decideDoor — skip the selector only for one obvious answer', () => {
   });
 });
 
-describe('joinDestination', () => {
-  const base = {
-    invite_id: 'i',
-    account_id: 'a',
-    account_name: 'Acme',
-    initial_role: 'member',
-    inviter_email: null,
-    created_at: '',
-    expires_at: '',
-  } as unknown as MyAccountInvite;
-
-  test('a project invite opens the first invited project', () => {
-    expect(joinDestination({ ...base, projects: [{ project_id: 'p1', name: 'X', role: 'member' }] } as MyAccountInvite)).toBe(
-      '/projects/p1',
-    );
+// KRTX-1731: after an account switch (palette, invite accept) the door reopened
+// the project this browser remembered, in whatever account, and reset the
+// selected account to it. A requested account bounds the decision.
+describe('decideDoor — a requested account', () => {
+  const twoAccounts = buildAccountSections({
+    accounts: [account('a', 'owner'), account('b', 'member')],
+    lists: [list('a', [project('pa', 'a')]), list('b', [project('pb1', 'b'), project('pb2', 'b')])],
   });
 
-  test('a workspace invite has no direct destination', () => {
-    expect(joinDestination({ ...base, projects: [] } as MyAccountInvite)).toBeNull();
+  test('a remembered project outside the requested account is not opened', () => {
+    expect(
+      decideDoor({ sections: twoAccounts, inviteCount: 0, rememberedProjectId: 'pa', requestedAccountId: 'b' }),
+    ).toEqual({ kind: 'select', accountId: 'b' });
+  });
+
+  test('a remembered project inside the requested account opens', () => {
+    expect(
+      decideDoor({ sections: twoAccounts, inviteCount: 0, rememberedProjectId: 'pb2', requestedAccountId: 'b' }),
+    ).toEqual({ kind: 'open', projectId: 'pb2', accountId: 'b' });
+  });
+
+  test("the requested account's only project opens, even with a pending invite", () => {
+    expect(
+      decideDoor({ sections: twoAccounts, inviteCount: 1, rememberedProjectId: 'pb1', requestedAccountId: 'a' }),
+    ).toEqual({ kind: 'open', projectId: 'pa', accountId: 'a' });
+  });
+});
+
+describe('inviteLandingPath — the route of an accepted invite', () => {
+  test('a project landing opens that project', () => {
+    expect(inviteLandingPath({ kind: 'project', projectId: 'pw', accountId: 'b' })).toBe('/projects/pw');
+  });
+
+  test('an account landing goes to the door for the joined account', () => {
+    expect(inviteLandingPath({ kind: 'account', accountId: 'b' })).toBe('/projects/start?account=b');
+  });
+
+  // The web hosts' three inputs, through the SDK rule.
+  test('an accept that granted a project, a re-opened project invite, a workspace invite', () => {
+    expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw' }] }))).toBe(
+      '/projects/pw',
+    );
+    const described = {
+      account_id: 'b',
+      projects: [
+        { project_id: 'pw', name: 'Website', role: 'member' },
+        { project_id: 'px', name: 'Docs', role: 'manager' },
+      ],
+    };
+    expect(inviteLandingPath(accountInviteLanding({ account_id: described.account_id }, described))).toBe('/projects/pw');
+    expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [] }, { projects: [] }))).toBe(
+      '/projects/start?account=b',
+    );
   });
 });

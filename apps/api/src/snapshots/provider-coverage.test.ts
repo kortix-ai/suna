@@ -4,7 +4,6 @@ import {
   observeTemplateProviderCoverage,
   resolveConfiguredProjectProviderPin,
   resolveRoutedTemplateState,
-  resolveUsableProjectProviderPin,
   SANDBOX_TEMPLATE_PROVIDERS,
 } from './provider-coverage';
 
@@ -105,17 +104,6 @@ describe('sandbox template provider coverage', () => {
       state: null,
       launch_ready: false,
     });
-  });
-
-  test('only treats a usable explicit project pin as pinned', () => {
-    const enabled = (provider: string) => provider !== 'e2b';
-    expect(resolveUsableProjectProviderPin({}, enabled)).toBeNull();
-    expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'platinum' }, enabled))
-      .toBe('platinum');
-    expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'e2b' }, enabled))
-      .toBeNull();
-    expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'bogus' }, enabled))
-      .toBeNull();
   });
 
   test('retains a valid configured pin for presentation while unavailable', () => {

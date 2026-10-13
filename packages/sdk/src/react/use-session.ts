@@ -21,7 +21,7 @@
 
 import type { Message, Part } from '../core/runtime/runtime-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
@@ -41,6 +41,7 @@ import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
+import { onSessionStopped } from '../core/http/session-stopped';
 import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
@@ -53,10 +54,11 @@ import {
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
+import { onRuntimeGone } from '../core/session/runtime-gone';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
-import { holdLiveStart } from './hold-live-start';
+import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
@@ -64,6 +66,14 @@ import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
+import { useSessionStream } from './use-session-stream';
+import { sessionStreamConnected } from '../core/session/control-stream';
+import {
+  PRESENCE_AWAKE_REFRESH_MS,
+  presenceAwakeFrom,
+  presenceReporter,
+  watchHumanPresence,
+} from './human-presence';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -86,6 +96,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
+import { useSessionLogSync } from './use-session-log';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -144,7 +155,7 @@ export const SESSION_START_POLL_MS = 1_500;
  *  - `sandbox.external_id` — the provider sandbox id. The proxy route is the
  *    SDK's to compose (`getSandboxUrlForExternalId`), never the host's.
  *  - `runtime_url` — a RELATIVE path, `/p/<external_id>/8000`
- *    (`apps/api/src/projects/routes/shared.ts:526`). Returned verbatim it is a
+ *    (`apps/api/src/projects/session-open/index.ts:526`). Returned verbatim it is a
  *    string no host can fetch.
  *
  * The external id wins because it is the same derivation `startProjectSession`
@@ -447,6 +458,9 @@ export function computeStartSettled(input: {
  * to `stopped` on the very next look.
  */
 export const SESSION_START_FRESH_MS = 30_000;
+
+/** At most one `/start` re-read per this window when the proxy reports the box gone. */
+const RUNTIME_GONE_REFETCH_MIN_MS = 3_000;
 
 /**
  * OUTCOME-AWARE `staleTime` for the `/start` query (TanStack's function
@@ -973,8 +987,28 @@ export async function answerPermission(
 }
 
 export interface UseSessionOptions {
-  /** Renew this browser tab's presence while the signed-in session view is visible. */
+  /** Hold this browser tab's presence lease while the signed-in view is visible and used (input in the last 10 min). */
   browserPresence?: boolean;
+  /**
+   * This tab shows its own notifications (the host's browser notifications
+   * are on and permitted). Sent on the presence lease, so the server skips the
+   * phone and Web Push only while an ALERTING tab is in use. Default false: a
+   * present tab that does not alert leaves the phone push on. A change is
+   * sent at once. Needs `browserPresence`.
+   */
+  presenceAlerts?: boolean;
+  /**
+   * End the presence lease when the page closes or enters the back/forward
+   * cache, so a turn that ends right after the tab closes still notifies:
+   * `pagehide` reports absent, and every absent report is sent with
+   * `keepalive`, so it outlives the page. Default false, the presence before
+   * KRTX-1742: no `pagehide` report and no `keepalive`. A closing tab still
+   * turns hidden and reports absent, but the browser may cancel that request
+   * as the page unloads; the lease then lives to its 90 s expiry. Pass the
+   * project's `notification_center` flag. A change applies at once, with no
+   * new report. Needs `browserPresence`.
+   */
+  presencePageExit?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
@@ -1083,38 +1117,126 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     initialRuntimeSessionId = options.initialOpenCodeSessionId ?? null,
     subscribeMessages = true,
     browserPresence = false,
+    presenceAlerts = false,
+    presencePageExit = false,
   } = options;
 
+  // One presence id per mounted view. The session stream carries it, and the
+  // server renews the lease while the stream is open (R5.3). The lease exists
+  // only while a person used the page recently, not while a tab is merely
+  // visible (KRTX-1729, `human-presence.ts`).
+  const [presenceTabId] = useState(() => (browserPresence ? crypto.randomUUID() : null));
+  // The flag rides on the reporter, not on the effect's deps: a dep change
+  // would stop the watcher (an absent PUT) and start it again (KRTX-1742).
+  const presenceAlertsRef = useRef(presenceAlerts);
+  const presencePageExitRef = useRef(presencePageExit);
+  const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
+  // Until when this person's presence keeps the computer on (KRTX-1729), from
+  // the latest present PUT's response. Null while absent, for a viewer, for a
+  // computer the renewal found not running, and from a turn's start until the
+  // next renewal answers.
+  const [presenceAwake, setPresenceAwakeState] = useState<{ until: Date; capAt: Date } | null>(null);
+  // Set only on a change: a same-value set during a streamed update still
+  // renders the host once, and hosts count on one render per delta.
+  const presenceAwakeRef = useRef(presenceAwake);
+  const setPresenceAwake = useCallback((next: { until: Date; capAt: Date } | null) => {
+    if (next === null && presenceAwakeRef.current === null) return;
+    presenceAwakeRef.current = next;
+    setPresenceAwakeState(next);
+  }, []);
+  // Only the latest report's response may set the window: a present PUT that
+  // lands after an absent report, or after a turn started, must not bring it
+  // back. Bumped by each report and by each clear.
+  const presenceReportRef = useRef(0);
   useEffect(() => {
-    if (!browserPresence || !projectId || !sessionId) return;
-    const tab_id = crypto.randomUUID();
+    if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
+    const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
-    const send = (active: boolean) => {
-      void handle.presence({ tab_id, active }).catch(() => {});
-    };
-    const visibility = () => send(!document.hidden);
-    visibility();
-    const interval = window.setInterval(() => {
-      if (!document.hidden) send(true);
-    }, 30_000);
-    document.addEventListener('visibilitychange', visibility);
+    // Without page exit, an absent PUT goes without `keepalive`, as before
+    // KRTX-1742: a closing page may cancel it, and the lease then expires.
+    const reporter = presenceReporter(({ active, alerts }) => {
+      const report = ++presenceReportRef.current;
+      if (!active) setPresenceAwake(null);
+      const keepalive = !active && presencePageExitRef.current;
+      void handle
+        .presence({ tab_id, active, alerts }, { keepalive })
+        .then((res) => {
+          // A failed request says nothing about the window: keep the last one.
+          if (active && report === presenceReportRef.current && res.data) {
+            setPresenceAwake(presenceAwakeFrom(res.data));
+          }
+        })
+        .catch(() => {});
+    }, presenceAlertsRef.current);
+    presenceReporterRef.current = reporter;
+    const stop = watchHumanPresence(
+      { doc: document, win: window },
+      reporter.report,
+      () => sessionStreamConnected(projectId, sessionId),
+      () => presencePageExitRef.current,
+    );
+    // The stream renews the lease and the deadline without a response, so the
+    // window ages: read it again while the person is here.
+    const refresh = window.setInterval(reporter.refresh, PRESENCE_AWAKE_REFRESH_MS);
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', visibility);
-      send(false);
+      window.clearInterval(refresh);
+      presenceReporterRef.current = null;
+      stop();
     };
-  }, [browserPresence, projectId, sessionId]);
+  }, [browserPresence, presenceTabId, projectId, sessionId]);
+  useEffect(() => {
+    presenceAlertsRef.current = presenceAlerts;
+    presenceReporterRef.current?.setAlerts(presenceAlerts);
+  }, [presenceAlerts]);
+  useEffect(() => {
+    presencePageExitRef.current = presencePageExit;
+  }, [presencePageExit]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;
+  // Read by `/start`'s refetch interval, which runs outside render.
+  const streamConnectedRef = useRef(false);
+  // The session a Stop in THIS tab stopped. Until something else brings the
+  // box back (a restart, a new message), every `/start` this hook sends is a
+  // keep-alive poll: it reports the stop, it never undoes it. Without this, a
+  // session stopped before it was ever `ready` went on polling as an open, and
+  // the first poll after the stop woke it again.
+  const stoppedByUserRef = useRef<string | null>(null);
+  // When this tab opened the session (its first `/start`, or an explicit
+  // retry). Every open-mode poll carries its age, so a Stop made anywhere
+  // after the open wins over the polls, however late they reach the API.
+  const openedAtRef = useRef<{ sessionId: string; at: number } | null>(null);
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
-    queryFn: async () =>
-      holdLiveStart(
-        queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId)),
-        await startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
-      ),
+    queryFn: async () => {
+      const previous = queryClient.getQueryData<SessionStartResult | null>(
+        sessionStartKey(projectId, sessionId),
+      );
+      if (openedAtRef.current?.sessionId !== sessionId) openedAtRef.current = { sessionId, at: Date.now() };
+      const heldByStop = stoppedByUserRef.current === sessionId;
+      const mode = heldByStop
+        ? 'keep-stopped'
+        : liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      // A background tab that shows the session ready does not poll: the poll
+      // only keeps a box alive for nobody. The next visible fetch revalidates.
+      if (mode === 'skip' && previous) return previous;
+      const next = await startProjectSession(projectId, sessionId, {
+        waitMs,
+        repositoryMode,
+        // The keep-alive poll must report a user Stop or an idle park, never
+        // undo it. An open (no ready answer cached yet) wakes the box as before.
+        keepStopped: mode === 'keep-stopped',
+        intentAgeMs: Date.now() - openedAtRef.current.at,
+      });
+      // Anything but `stopped` means the box is coming back by an explicit
+      // action elsewhere (a restart, a sent message): this tab follows it.
+      if (heldByStop && next && next.stage !== 'stopped' && stoppedByUserRef.current === sessionId) {
+        stoppedByUserRef.current = null;
+        openedAtRef.current = { sessionId, at: Date.now() };
+      }
+      return holdLiveStart(previous, next);
+    },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
@@ -1123,13 +1245,41 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         : Math.min(1000 * 2 ** failureCount, 5000),
     staleTime: sessionStartStaleTime,
     ...SESSION_START_POLL_OPTIONS,
+    // Once ready, a connected stream reports every box change (and re-reads
+    // `/start` on it); the 60 s ready recheck is a poll it replaces.
+    refetchInterval: (query) =>
+      streamConnectedRef.current && query.state.data?.stage === 'ready'
+        ? false
+        : SESSION_START_POLL_OPTIONS.refetchInterval(query),
   });
+  // A user Stop (any host, via `stopProjectSession`) re-reads `/start` at once:
+  // the poll answers `stopped` (keep_stopped) instead of waiting up to 60 s.
+  useEffect(() => {
+    if (!startEnabled) return;
+    return onSessionStopped((stoppedId) => {
+      if (stoppedId !== sessionId) return;
+      stoppedByUserRef.current = sessionId;
+      void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    });
+  }, [startEnabled, projectId, sessionId, queryClient]);
   const startData = start.data ?? null;
   const startError = isSessionStartError(start.error) ? start.error : null;
   const stage = startData?.stage ?? null;
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
+  // The window follows the computer (KRTX-1729): one that becomes ready reads
+  // it at once, and one that stops ends it, with any response in flight.
+  const startReadyRef = useRef(startReady);
+  useEffect(() => {
+    if (startReady && !startReadyRef.current) {
+      presenceReporterRef.current?.refresh();
+    } else if (!startReady && startReadyRef.current) {
+      presenceReportRef.current += 1;
+      setPresenceAwake(null);
+    }
+    startReadyRef.current = startReady;
+  }, [startReady]);
 
   // T8 defect 1 — `useRuntimeReconnect`'s first-mount
   // `resetForServerSwitch()` (a plain `useEffect`) unconditionally seeds
@@ -1194,6 +1344,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
 
+  // 1c. The session's ONE live connection (R5.3): the server's turn verdict,
+  // queue, box, wake ladder, title and runtime health, plus the runtime's own
+  // events. While it is up, the polls below stand down.
+  const streamConnected = useSessionStream(projectId, sessionId, {
+    enabled: startEnabled,
+    tabId: presenceTabId ?? undefined,
+  });
+  streamConnectedRef.current = streamConnected;
+
   // Track how long /start has been returning nothing usable — no data, no
   // error — so `computeStartSettled` can bound the "given up" case (see
   // START_INCONCLUSIVE_GIVE_UP_MS) instead of waiting on a poll that a
@@ -1231,14 +1390,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   });
 
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
-  // sandbox we switched to (not a bare bool) so navigating between sessions (this
+  // box we switched to (not a bare bool) so navigating between sessions (this
   // hook instance is reused) re-gates instead of binding the new session to the
   // previous sandbox. One active session at a time is the supported model, so the
   // whole chat path (SSE, sync, send) rides this single global switch — there is no
   // separate per-session client to keep in sync.
-  const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
+  //
+  // Keyed on the box (`external_id`), not on `sandbox_id`: an ephemeral session
+  // keeps its `sandbox_id` (= the session id) across a stop that deletes its box
+  // and a wake that boots a new one. Keyed on `sandbox_id`, the switch never
+  // re-ran for the new box, and every read stayed on the deleted one until a
+  // reload ("Lost contact with this session's computer").
+  const [switchedBoxId, setSwitchedBoxId] = useState<string | null>(null);
   useEffect(() => {
-    if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
+    if (!startReady || !sandbox?.external_id || switchedBoxId === sandbox.external_id) return;
     // Point the app's runtime at THIS session's box — no global "switch", just set
     // the current runtime url. Every read (getClient, the SSE stream, files/
     // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
@@ -1248,12 +1413,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       sandbox.external_id,
       sandbox.sandbox_id,
     );
-    setSwitchedSandboxId(sandbox.sandbox_id);
-  }, [startReady, sandbox, switchedSandboxId]);
+    setSwitchedBoxId(sandbox.external_id);
+  }, [startReady, sandbox, switchedBoxId]);
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox?.external_id && switchedBoxId === sandbox.external_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -1269,16 +1434,39 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       getSandboxUrlForExternalId(sandbox.external_id),
       startData?.capabilities,
     );
-  }, [switched]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [switched, switchedBoxId]);
+
+  // 3b. The proxy says the box behind our runtime URL is gone (deleted by an
+  // ephemeral stop; another tab or the send path may already have woken the
+  // session on a new box). The URL can never answer again, so ask `/start`
+  // now instead of waiting out its once-a-minute recheck.
+  const refetchStart = start.refetch;
+  useEffect(() => {
+    if (!startEnabled || !switchedBoxId) return;
+    const switchedUrl = getSandboxUrlForExternalId(switchedBoxId);
+    let lastAt = 0;
+    return onRuntimeGone((runtimeUrl) => {
+      if (runtimeUrl !== switchedUrl) return;
+      const now = Date.now();
+      if (now - lastAt < RUNTIME_GONE_REFETCH_MIN_MS) return;
+      lastAt = now;
+      void refetchStart();
+    });
+  }, [startEnabled, switchedBoxId, refetchStart]);
 
   // 4. Open the live SSE stream. This was a provider component (RuntimeEvent
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
-  useRuntimeEventStream({ enabled: switched });
+  // R5.3: its events come from the session stream mounted in 1c.
+  useRuntimeEventStream({ enabled: switched, projectId, sessionId });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
+  // 5a. The session log (v2) when negotiated; until then a no-op and the
+  // transcript below stays the only source (`use-session-log.ts`).
+  useSessionLogSync(projectId, sessionId, { enabled: transcriptHistoryEnabled });
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
@@ -1312,6 +1500,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled,
     runtimeSessionId: ocSessionId,
   });
+  // A turn keeps the computer on and moves presence's cap (2 h after the
+  // latest turn), so the window from before it is wrong after it (KRTX-1729):
+  // a turn that starts clears it, and a turn that ends reads it again.
+  const turnRunning = working.state === 'working';
+  const turnRanRef = useRef(turnRunning);
+  useEffect(() => {
+    if (turnRunning) {
+      presenceReportRef.current += 1;
+      setPresenceAwake(null);
+    } else if (turnRanRef.current) {
+      presenceReporterRef.current?.refresh();
+    }
+    turnRanRef.current = turnRunning;
+  }, [turnRunning]);
   // The receipt lives in a per-session store, not in this component: the
   // composer mounts its own `useSessionWorking` for the same session and they
   // share one `/turn` cache entry. Two private receipts meant the observer
@@ -1328,6 +1530,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
+    streamConnected,
     // Until the saved-history read answers with a copy, the session-open
     // bundle's copy of the same mirror may paint (`undefined` = read it).
     mirror: transcriptHistory.envelope ?? undefined,
@@ -1375,6 +1578,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // proof waits for the turn record, the host must not paint its boot screen.
   const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
   const turnRead = typeof turnOutcome.atMs === 'number';
+  // The idle flip above can land before the control plane closes the turn in
+  // its ledger (`endedByRuntime`: ~200 ms, 15 s in one measured case), and the
+  // refresh it sends then reads the open turn's deadline and cap. The ledger's
+  // newest ended turn changing is when the server's window is right, so the
+  // awake window is read again then (KRTX-1729). The first read is no news.
+  const lastEndedToken = turnOutcome.last_ended?.turn_token ?? null;
+  const lastEndedSeenRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!turnRead) return;
+    const seen = lastEndedSeenRef.current;
+    lastEndedSeenRef.current = lastEndedToken;
+    if (seen !== undefined && seen !== lastEndedToken) presenceReporterRef.current?.refresh();
+  }, [turnRead, lastEndedToken]);
   const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
@@ -1420,11 +1636,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // hydration in `useRuntimeEventStream`. Disabled entirely when `chatEngine`
   // is off — see that option's jsdoc: a host mounting its own chat surface
   // already runs its own copy of this poller for the same session.
+  // R5.3: with the session stream up, an ask cannot be dropped — the box's
+  // ring replays it on a reconnect and a resync re-reads the pending lists —
+  // so these polls run only while the stream is down.
   useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
   });
   usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
   });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
@@ -1536,7 +1755,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // actually has: has this conversation produced a user message yet.
   const hasUserMessages = userMsgCount > 0;
   useEffect(() => {
-    if (!chatEngine || !hasUserMessages) return;
+    // R5.3: the stream's `kortix.control.session` frame carries the title the
+    // moment it is written; the ladder is the fallback without it.
+    if (!chatEngine || !hasUserMessages || streamConnected) return;
     titleRefreshAbortRef.current?.abort();
     const controller = new AbortController();
     titleRefreshAbortRef.current = controller;
@@ -1548,7 +1769,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       }
     });
     return () => controller.abort();
-  }, [chatEngine, projectId, queryClient, sessionId, hasUserMessages]);
+  }, [chatEngine, projectId, queryClient, sessionId, hasUserMessages, streamConnected]);
   const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
   const pending = sendState.pending;
   const pendingBaseCount = useRef(0);
@@ -1837,6 +2058,21 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  and for which turn. The one answer; `isBusy` is its boolean face. */
     working,
     isBusy: working.state === 'working',
+    /**
+     * Until when this person's presence keeps the session's computer on
+     * (KRTX-1729): `until` is the computer's stop time after the latest
+     * renewal, `capAt` the time presence cannot keep it on past (2 h after the
+     * latest turn). Set from the presence lease's responses, so it needs
+     * `browserPresence`. Null while the person is absent (hidden tab, or no
+     * input for 10 min), for a viewer who may not start the session, after a
+     * renewal that found the computer not running, from a turn's start until
+     * the next renewal answers, and against an API before KRTX-1729. Read
+     * again every 5 min while present, when a turn ends, and when the
+     * control plane closes a turn. A stop between two reads shows only at
+     * the next read, up to 5 min later: `until` is the latest stop time the
+     * hook knows, not proof the computer is running.
+     */
+    presenceAwake,
     isCompacting,
     isLoading: sync.isLoading,
     /**
@@ -1903,6 +2139,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     removePermission,
     /** Force a re-poll of /start (e.g. a Retry button on the boot screen). */
     retry: () => {
+      // An explicit retry is an open, whatever this tab stopped before.
+      stoppedByUserRef.current = null;
+      openedAtRef.current = { sessionId, at: Date.now() };
       void start.refetch();
     },
   };

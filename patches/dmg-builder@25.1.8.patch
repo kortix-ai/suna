@@ -1,0 +1,14 @@
+diff --git a/vendor/dmgbuild/core.py b/vendor/dmgbuild/core.py
+index 1adc35289fc604f3dd5545d3d86fbacb6baeaf69..e224b7144f07ad481d6cd525fb53fd4a3956a8bf 100644
+--- a/vendor/dmgbuild/core.py
++++ b/vendor/dmgbuild/core.py
+@@ -255,7 +255,8 @@ def build_dmg():
+       icvp['backgroundColorBlue'] = float(c.b)
+     elif background_file:
+       alias = Alias.for_file(background_file)
+-      background_bmk = Bookmark.for_file(background_file)
++      # No pBBk bookmark: macOS 26 Finder ignores the background when it is
++      # present (electron-builder#9072, fixed upstream in dmgbuild#275).
+ 
+       icvp['backgroundType'] = 2
+       icvp['backgroundImageAlias'] = biplist.Data(alias.to_bytes())

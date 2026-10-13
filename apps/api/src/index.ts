@@ -7,6 +7,7 @@ import './lib/sentry';
 import { config } from './config';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { runInboundAudit } from './shared/audit-edge';
+import { beginWork, captureServer, finishRequest } from './shared/drain';
 import { describeEmailChain } from './lib/email/transport';
 import { initModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
@@ -52,7 +53,7 @@ console.log(`
 ║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║
-║    /v1/router     (search, LLM, proxy)                    ║
+║    /v1/router     (Tavily/Serper/Firecrawl proxy)         ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
@@ -113,6 +114,24 @@ if (import.meta.main) {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
+async function handleInbound(req: Request, server: any): Promise<Response | undefined> {
+  // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,
+  // `"/nice%20ports%2C/Tri%6Eity.txt%2ebak"`, …) for requests that arrive
+  // WITHOUT a `Host` header — raw HTTP/1.0 port-scanner probes and malformed
+  // clients. Every downstream `new URL(c.req.url)` / `new URL(req.url)`
+  // call site (auth middleware, OpenAPI server URL, sandbox preview /
+  // public-share proxy, git proxy, Slack/Teams webhook routers, …) assumes
+  // an absolute URL and would otherwise throw
+  // `TypeError: "…" cannot be parsed as a URL.` → app.onError → Sentry.
+  // Rebuild the Request once, here, with the absolute URL so all of those
+  // call sites are safe. No-op for normal requests (which already carry an
+  // absolute `req.url`). See lib/request-url.ts ensureAbsoluteRequestUrl.
+  // BS pattern 28e9a65c… (scanner noise, 0 users, first seen 2026-04-27).
+  req = ensureAbsoluteRequestUrl(req, config.PORT);
+  const url = getRequestUrl(req, config.PORT);
+  return runInboundAudit(req, url, () => dispatchInbound(req, url, server, app));
+}
+
 export default {
   port: config.PORT,
 
@@ -129,21 +148,15 @@ export default {
   idleTimeout: 0,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
-    // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,
-    // `"/nice%20ports%2C/Tri%6Eity.txt%2ebak"`, …) for requests that arrive
-    // WITHOUT a `Host` header — raw HTTP/1.0 port-scanner probes and malformed
-    // clients. Every downstream `new URL(c.req.url)` / `new URL(req.url)`
-    // call site (auth middleware, OpenAPI server URL, sandbox preview /
-    // public-share proxy, git proxy, Slack/Teams webhook routers, …) assumes
-    // an absolute URL and would otherwise throw
-    // `TypeError: "…" cannot be parsed as a URL.` → app.onError → Sentry.
-    // Rebuild the Request once, here, with the absolute URL so all of those
-    // call sites are safe. No-op for normal requests (which already carry an
-    // absolute `req.url`). See lib/request-url.ts ensureAbsoluteRequestUrl.
-    // BS pattern 28e9a65c… (scanner noise, 0 users, first seen 2026-04-27).
-    req = ensureAbsoluteRequestUrl(req, config.PORT);
-    const url = getRequestUrl(req, config.PORT);
-    return runInboundAudit(req, url, () => dispatchInbound(req, url, server, app));
+    // Shutdown waits for this request, and for its streamed body, before it exits.
+    captureServer(server);
+    const end = beginWork();
+    try {
+      return finishRequest(req.url, await handleInbound(req, server), end);
+    } catch (error) {
+      end();
+      throw error;
+    }
   },
 
   websocket: {

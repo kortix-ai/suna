@@ -17,6 +17,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { db } from '../shared/db';
 import {
   canAccessPreviewSandbox,
@@ -65,6 +66,13 @@ beforeAll(async () => {
     accountId: OWNER_ACCOUNT,
     name: 'preview-access',
     repoUrl: 'https://example.test/preview-access.git',
+  });
+  // MEMBER holds a project role; SECOND_MEMBER is an account member with none
+  // (a guest of some other project): the proxy must tell them apart.
+  await assignRole(SYSTEM_ACTOR, OWNER_ACCOUNT, {
+    principal: { type: 'user', id: MEMBER },
+    roleKey: 'member',
+    scope: { type: 'project', id: PROJECT },
   });
   await db.insert(projectSessions).values([
     {
@@ -127,6 +135,12 @@ describe('canAccessPreviewSandbox', () => {
   // platform admin (staff debugging a box by name).
   test.each([
     { who: 'a member of the owning account', userId: MEMBER, sandbox: EXTERNAL_ID, allowed: true },
+    {
+      who: 'an account member with no role on the sandbox project',
+      userId: SECOND_MEMBER,
+      sandbox: EXTERNAL_ID,
+      allowed: false,
+    },
     { who: 'a member of another account', userId: OUTSIDER, sandbox: EXTERNAL_ID, allowed: false },
     {
       who: 'a platform admin of another account',

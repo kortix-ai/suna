@@ -10,6 +10,7 @@ import {
   normalizeIndexDef,
   pendingMigrations,
 } from './verify-live-schema';
+import { unappliedMigrationFiles } from './prune-unapplied-migrations';
 import { LIVE_SCHEMA_WAIVERS, type LiveSchemaWaivers } from './verify-live-schema-waivers';
 
 /** A synthetic database's compared objects: each `table.column` puts the column on its table. */
@@ -322,5 +323,16 @@ describe('LIVE_SCHEMA_WAIVERS', () => {
     ]) {
       expect(LIVE_SCHEMA_WAIVERS.indexes).not.toHaveProperty(name);
     }
+  });
+});
+
+describe('unappliedMigrationFiles', () => {
+  test('keeps files the ledger records, drops the rest, ignores non-migration files', () => {
+    const files = ['a.sql', 'b.concurrent.ts', 'c.sql', 'README.md'];
+    expect(unappliedMigrationFiles(files, ['a', 'b.concurrent'])).toEqual(['c.sql']);
+  });
+
+  test('an empty ledger prunes nothing', () => {
+    expect(unappliedMigrationFiles(['a.sql'], [])).toEqual([]);
   });
 });

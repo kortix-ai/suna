@@ -1,0 +1,274 @@
+/**
+ * Integration test (real PostgreSQL, fresh migrated database, real routes): the
+ * session-log journal ingest and manifest (P2.2) that kortixd's journal calls.
+ *
+ * Every request goes through `app.request` with a real session PAT (the
+ * credential a session sandbox holds as `KORTIX_TOKEN`) and a gzipped body,
+ * the way the daemon sends it. The assertions read the rows back.
+ */
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { accountMembers, accounts, projectSessions, projects, sessionLogMessages, sessionLogs, sessionSandboxes, sessionTurns } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { config } from '../config';
+import { db } from '../shared/db';
+import { insertIntoView } from './helpers/compat-views';
+
+const { app } = await import('../index');
+const { createAccountToken } = await import('../repositories/account-tokens');
+
+const ACCOUNT = crypto.randomUUID();
+const PROJECT = crypto.randomUUID();
+const OWNER = crypto.randomUUID();
+const SESSION = crypto.randomUUID();
+const OTHER = crypto.randomUUID();
+// A daemon journal revision: max(Date.now() * 1000, last + 1), past int4.
+const REV = 1_791_681_474_704_000;
+const T = '2026-10-11T10:00:00.000Z';
+
+const tokens: Record<string, string> = {};
+let ownerToken = '';
+
+const producer = { harness: 'opencode', harness_version: '1.18.15', adapter_version: '1' };
+const message = (id: string, seq: number, over: Record<string, unknown> = {}) => ({
+  schema: 'kortix.session/2', v: 1, message_id: id, thread_id: 'main', seq,
+  role: 'user', kind: 'turn', status: 'complete', in_context: true,
+  model: null, usage: null, finish: null, error: null,
+  created_at: T, completed_at: null, producer, blocks: [], ext: {}, ...over,
+});
+const thread = (id: string) => ({
+  schema: 'kortix.session/2', v: 1, thread_id: id, parent_thread_id: null, spawned_by: null,
+  agent: null, title: null, created_at: T, ext: {},
+});
+const sessionPatch = {
+  schema: 'kortix.session/2', v: 1, session_id: SESSION, title: null, created_at: T,
+  restore_grade: 'native', harness: { current: 'opencode', history: [] },
+  selection: { agent: null, model: null }, todos: [], pending: { questions: [], permissions: [] }, ext: {},
+};
+
+type Batch = { generation: number; puts: unknown[]; tombstones: unknown[]; threads: unknown[]; session?: unknown };
+const batch = (b: Partial<Batch>): Batch => ({ generation: 0, puts: [], tombstones: [], threads: [], ...b });
+const path = (sessionId: string, leaf: 'journal' | 'manifest') => `/v1/projects/${PROJECT}/sessions/${sessionId}/log/${leaf}`;
+
+const journal = (body: Batch | Uint8Array, token = tokens[SESSION]!, sessionId = SESSION) =>
+  app.request(path(sessionId, 'journal'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${token}` },
+    body: (body instanceof Uint8Array ? body : Bun.gzipSync(JSON.stringify(body))) as BodyInit,
+  });
+const manifest = (token = tokens[SESSION]!) =>
+  app.request(path(SESSION, 'manifest'), { headers: { Authorization: `Bearer ${token}` } });
+
+const stored = (id: string) =>
+  db
+    .select({ rev: sessionLogMessages.rev, hash: sessionLogMessages.contentHash, deletedAt: sessionLogMessages.deletedAt, seq: sessionLogMessages.seq, record: sessionLogMessages.record })
+    .from(sessionLogMessages)
+    .where(and(eq(sessionLogMessages.sessionId, SESSION), eq(sessionLogMessages.messageId, id)))
+    .then((rows) => rows[0]);
+const messageCount = async () =>
+  (await db.select({ id: sessionLogMessages.messageId }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, SESSION))).length;
+
+beforeAll(async () => {
+  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-log-ingest' });
+  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'session-log-ingest', repoUrl: 'https://example.test/session-log.git' });
+  await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
+  for (const sessionId of [SESSION, OTHER]) {
+    await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: PROJECT, branchName: sessionId, createdBy: OWNER });
+    // A session PAT authenticates only while its sandbox row is live (the session lease).
+    await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: ACCOUNT, projectId: PROJECT, status: 'active', config: {}, metadata: {} });
+    tokens[sessionId] = (await createAccountToken({ accountId: ACCOUNT, userId: OWNER, projectId: PROJECT, sessionId, name: `session-log-${sessionId.slice(0, 8)}` })).secretKey;
+  }
+  ownerToken = (await createAccountToken({ accountId: ACCOUNT, userId: OWNER, name: 'session-log-owner' })).secretKey;
+  // The turn whose user message is msg_u1: the journal marks it durable.
+  await db.insert(sessionTurns).values({ turnToken: `turn-${SESSION}`, sessionId: SESSION, sandboxId: SESSION, projectId: PROJECT, accountId: ACCOUNT, messageId: 'msg_u1', state: 'active' });
+});
+
+afterAll(async () => {
+  config.SESSION_LOG_INGEST_ENABLED = true;
+  await db.delete(sessionTurns).where(eq(sessionTurns.sessionId, SESSION));
+  await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, ACCOUNT));
+  await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
+  await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
+  await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+});
+
+const first = batch({
+  puts: [
+    { rev: REV + 1, message: message('msg_u1', 0) },
+    { rev: REV + 2, message: message('msg_a1', 1, { role: 'assistant', reply_to: 'msg_u1', finish: 'stop', completed_at: T }) },
+  ],
+  threads: [thread('main')],
+  session: sessionPatch,
+});
+
+describe('journal', () => {
+  test('a two-message batch answers 200 with both pairs, stores them, and marks the turn durable', async () => {
+    const res = await journal(first);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ acked: [{ message_id: 'msg_u1', rev: REV + 1 }, { message_id: 'msg_a1', rev: REV + 2 }] });
+    const row = await stored('msg_a1');
+    expect(row?.rev).toBe(REV + 2);
+    expect(row?.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const [log] = await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log).toMatchObject({ generation: 0, harnessCurrent: 'opencode', restoreGrade: 'native', v: 1 });
+    expect((log!.record as { session_id: string }).session_id).toBe(SESSION);
+    const [turn] = await db.select({ at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.sessionId, SESSION));
+    expect(turn?.at).toBeInstanceOf(Date);
+  });
+
+  test('a replay of the same batch is idempotent: same acknowledgement, same rows, same durable time', async () => {
+    const before = await stored('msg_u1');
+    const durable = async () => (await db.select({ at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.sessionId, SESSION)))[0]?.at;
+    const firstDurable = await durable();
+    // A daemon that restarts re-sends every message; the turn was durable at the first acknowledgement.
+    await Bun.sleep(20);
+    const res = await journal(first);
+    expect(res.status).toBe(200);
+    expect((await res.json()).acked).toHaveLength(2);
+    expect(await stored('msg_u1')).toEqual(before);
+    expect(await messageCount()).toBe(2);
+    expect(await durable()).toEqual(firstDurable!);
+  });
+
+  test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
+    // A harness slicing an emoji in half emits `\ud83d` alone; JSON keeps it
+    // ("\\ud83d") and Postgres jsonb rejects the escape — one such record
+    // failed the whole 730 KB INSERT and the daemon retried it forever
+    // (2026-10-12: 243 5xx on this route in a day). The ingest must sanitize
+    // to U+FFFD, like a terminal, and ack the batch. Runs in the OTHER
+    // session so the manifest test's exact message list stays closed.
+    const res = await journal(batch({
+      puts: [{ rev: REV + 70, message: message('msg_well', 7, { blocks: [{ type: 'text', id: 'blk_well', text: 'sliced emoji \ud83d done' }] }) }],
+    }), tokens[OTHER]!, OTHER);
+    expect(res.status).toBe(200);
+    const [row] = await db
+      .select({ record: sessionLogMessages.record })
+      .from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, OTHER), eq(sessionLogMessages.messageId, 'msg_well')));
+    const block = (row!.record as { blocks: Array<{ id?: string; text?: string }> }).blocks.find((b) => b.id === 'blk_well');
+    expect(block!.text).toBe('sliced emoji \uFFFD done');
+  });
+
+  test('the highest rev wins; a lower rev is acknowledged and changes nothing', async () => {
+    const edited = message('msg_u1', 0, { status: 'aborted' });
+    expect((await journal(batch({ puts: [{ rev: REV + 10, message: edited }] }))).status).toBe(200);
+    const applied = await stored('msg_u1');
+    expect(applied?.rev).toBe(REV + 10);
+    expect(applied?.record).toEqual(edited);
+
+    const stale = await journal(batch({ puts: [{ rev: REV + 5, message: message('msg_u1', 0, { status: 'error' }) }] }));
+    expect(stale.status).toBe(200);
+    expect(await stale.json()).toEqual({ acked: [{ message_id: 'msg_u1', rev: REV + 5 }] });
+    expect(await stored('msg_u1')).toEqual(applied);
+  });
+
+  test('a record keeps fields this API does not know', async () => {
+    const future = message('msg_u2', 2, { future_field: { kept: true } });
+    expect((await journal(batch({ puts: [{ rev: REV + 11, message: future }] }))).status).toBe(200);
+    expect((await stored('msg_u2'))?.record).toEqual(future);
+  });
+
+  test('a tombstone is a revision: it deletes, keeps the seq, and a lower put does not revive', async () => {
+    const res = await journal(batch({ tombstones: [{ message_id: 'msg_a1', rev: REV + 20 }] }));
+    expect(await res.json()).toEqual({ acked: [{ message_id: 'msg_a1', rev: REV + 20 }] });
+    const gone = await stored('msg_a1');
+    expect(gone?.deletedAt).toBeInstanceOf(Date);
+    expect(gone?.rev).toBe(REV + 20);
+    expect(gone?.seq).toBe(1);
+
+    const late = await journal(batch({ puts: [{ rev: REV + 15, message: message('msg_a1', 1, { role: 'assistant' }) }] }));
+    expect(late.status).toBe(200);
+    expect((await stored('msg_a1'))?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  test('a seq another message of the thread holds answers 422 with the pair, and the batch writes nothing', async () => {
+    const res = await journal(
+      batch({
+        puts: [
+          { rev: REV + 30, message: message('msg_new', 3) },
+          { rev: REV + 31, message: message('msg_dup', 1) }, // msg_a1 (tombstoned) holds seq 1
+        ],
+        threads: [thread('side')],
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_dup', rev: REV + 31, thread_id: 'main', seq: 1 });
+    expect(await stored('msg_new')).toBeUndefined();
+    const [side] = await db.execute(sql`select count(*)::int as n from kortix.session_log_threads where session_id = ${SESSION} and thread_id = 'side'`);
+    expect((side as { n: number }).n).toBe(0);
+  });
+
+  test('a newer generation becomes the session generation; an older one answers 409 and writes nothing', async () => {
+    expect((await journal(batch({ generation: 2, puts: [{ rev: REV + 40, message: message('msg_u3', 4) }] }))).status).toBe(200);
+    const [log] = await db.select({ generation: sessionLogs.generation }).from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log?.generation).toBe(2);
+
+    const zombie = await journal(batch({ generation: 1, puts: [{ rev: REV + 50, message: message('msg_zombie', 5) }], session: { title: 'zombie' } }));
+    expect(zombie.status).toBe(409);
+    expect(await zombie.json()).toEqual({ generation: 2 });
+    expect(await stored('msg_zombie')).toBeUndefined();
+    const [after] = await db.select({ record: sessionLogs.record }).from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect((after!.record as { title: unknown }).title).toBeNull();
+  });
+
+  test('a session patch merges into the record and the typed columns', async () => {
+    const patch = { title: 'Renamed', restore_grade: 'partial', grade_counts: { tool_input: 1, cut_point: 0, attachment: 0 } };
+    expect((await journal(batch({ generation: 2, session: patch }))).status).toBe(200);
+    const [log] = await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log).toMatchObject({ restoreGrade: 'partial', gradeCounts: patch.grade_counts, harnessCurrent: 'opencode' });
+    expect(log!.record).toMatchObject({ title: 'Renamed', session_id: SESSION, restore_grade: 'partial' });
+  });
+
+  test('bodies: invalid JSON shape 400, over 2 MB gzipped 413, over 16 MB raw 413', async () => {
+    expect((await journal(batch({ puts: [{ rev: -1, message: {} }] }))).status).toBe(400);
+    expect((await journal(new Uint8Array(2 * 1024 * 1024 + 1))).status).toBe(413);
+    expect((await journal(Bun.gzipSync(new Uint8Array(17 * 1024 * 1024)))).status).toBe(413);
+  });
+});
+
+describe('credential', () => {
+  test('a user token, or another session sandbox credential, answers 403', async () => {
+    expect((await journal(first, ownerToken)).status).toBe(403);
+    expect((await journal(first, tokens[OTHER]!)).status).toBe(403);
+    expect((await manifest(tokens[OTHER]!)).status).toBe(403);
+  });
+});
+
+describe('manifest', () => {
+  test('lists the generation and every message with its rev as a JSON number and its tombstone', async () => {
+    const res = await manifest();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { generation: number; messages: Array<{ message_id: string; rev: unknown; deleted: boolean; content_hash: string }> };
+    expect(body.generation).toBe(2);
+    expect(body.messages.map((m) => [m.message_id, m.rev, m.deleted])).toEqual([
+      ['msg_u1', REV + 10, false],
+      ['msg_a1', REV + 20, true],
+      ['msg_u2', REV + 11, false],
+      ['msg_u3', REV + 40, false],
+    ]);
+    expect(body.messages[0]!.content_hash).toBe((await stored('msg_u1'))!.hash);
+  });
+});
+
+describe('operator switch', () => {
+  test('SESSION_LOG_INGEST_ENABLED=false answers 503 on both routes and writes nothing', async () => {
+    config.SESSION_LOG_INGEST_ENABLED = false;
+    try {
+      expect((await journal(batch({ generation: 2, puts: [{ rev: REV + 60, message: message('msg_off', 6) }] }))).status).toBe(503);
+      expect((await manifest()).status).toBe(503);
+      expect(await stored('msg_off')).toBeUndefined();
+    } finally {
+      config.SESSION_LOG_INGEST_ENABLED = true;
+    }
+  });
+});
+
+test('RLS stays on with no policy on the four session-log tables', async () => {
+  const rows = (await db.execute(sql`
+    SELECT c.relname AS name, c.relrowsecurity AS rls,
+           (SELECT count(*)::int FROM pg_policies p WHERE p.schemaname = 'kortix' AND p.tablename = c.relname) AS policies
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'kortix' AND c.relkind = 'r' AND c.relname LIKE 'session_log%' ORDER BY 1`)) as unknown as Array<{ name: string; rls: boolean; policies: number }>;
+  expect(rows).toEqual(
+    ['session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
+  );
+});

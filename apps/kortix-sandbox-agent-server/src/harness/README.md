@@ -28,7 +28,7 @@ session (a restart or resume re-reads the selection).
 | Location | Responsibility |
 | --- | --- |
 | `harness.ts` | Resolution, `loadConfig`, the boot context and the union helpers every box uses |
-| `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`); no router dependencies |
+| `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`, `session-log`); no router dependencies |
 | `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, the host facts of `/kortix/health` (`host-health.ts`), and every daemon-to-API callback (see below) |
 | `../services/runtime-assets/port.ts` | Harness maintenance contract, owned by the service that consumes it |
 | `open-code/service.ts` | Composition over one lifecycle; native typed ports |
@@ -41,7 +41,7 @@ session (a restart or resume re-reads the selection).
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
@@ -57,13 +57,220 @@ route, the body, the credential, the retries and the dead-token breaker.
 
 | Module | Callback |
 | --- | --- |
-| `shared/turn-relay.ts` | `POST /projects/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, memory-guard end), `/turn-question`, `/turn-permission` |
+| `shared/turn-relay.ts` | `POST /projects/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, `steer_read`, memory-guard end), `/turn-question`, `/turn-permission` |
 | `shared/projection-relay.ts` | `POST /platform/runtime-projection`; the adapter registers its state reader |
 | `shared/audit-relay.ts` | `POST /projects/:id/sessions/:id/audit/events`: sanitize, batch, spool; batches carry `source: 'runtime'` and the harness id. pi feeds it every frame it publishes (`PiRuntimeHooks.onFrame`), so pi sessions have a tool audit trail |
 | `shared/boot-timeline-relay.ts` | `POST /platform/boot-timeline` |
+| `shared/session-log-journal.ts` | `POST /projects/:id/sessions/:id/log/journal`: the session log (`kortix.session/2`, `@kortix/api-contract/session-log`), see below |
 
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
+
+## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b)
+
+An adapter implements `SessionLogPort` (`contract/session-log.ts`):
+`changes(cursors)` returns the messages, tombstones, thread upserts and session
+patch since one `ExportCursor` per thread; `restore(log)` writes a session log
+into the native store before the harness starts and returns the cursors of what
+it wrote; `fingerprint()` digests the native store for the boot reconcile;
+`live(threadId, messageId)` names the seq (and pi's `created_at`) of a message
+of the live turn (see "The live turn" below); `capabilities` is the adapter's
+`AdapterCapabilities`. pi implements it
+(`pi/session-log.ts`, P2.5), and OpenCode (`open-code/session-log.ts`, P2.6).
+Both rebuild the whole log on each read and diff it against the cursors with
+`logChanges` (`shared/session-log-journal.ts`).
+
+The pi boot starts the journal once the runtime is ready and a session is
+bound, before the first turn, with generation 0: nothing mints a session
+generation before P6's restore. `lifecycle.stop()` stops it before the runtime
+stops. The adapter reads `PiRuntime.sessionLogSnapshot()`: the root's
+`SessionManager` branch and session header, each sub-agent child's agent
+messages, and the v1 transcript. pi entries carry pi's own ids, so the runtime
+records the Kortix message id of each pi message (and of each compaction
+entry: its marker) and persists the map and the header in its dump; block ids
+are the v1 part ids. `seq` is monotonic per thread and never reused (the API
+keeps a tombstoned row's seq): a root message's seq is its entry's position in
+pi's append-only entry list, and the runtime issues each child message a seq
+once and persists it. `restore` returns no cursors until P6 writes the native
+store. The mapping decisions are in the header of `pi/session-log.ts`. A v1
+file part pi never received is a harness block (`kind: 'undelivered_file'`,
+`model_visible: false`), never an attachment: the model never saw it, so a
+restore must not present it.
+
+The OpenCode export reads `opencode.db` through `OpencodeDb.storeSnapshot()`
+(every session, message, part and todo row, one WAL snapshot), assembles the
+v1 rows as OpenCode's HTTP serves them, drops attachment bytes as the API's
+mirror does, and converts them with `fromV1`: one mapping with the API's
+capture (P2.7) and backfill (P3.1). Its records equal `fromV1` of the mirror
+rows except in the fields only the daemon knows: `seq`, `producer`
+(`opencode`), attachment `ref`/`bytes`/`sha256`, and the session's title,
+`created_at`, todos, `restore_grade: 'native'` and harness history (the list
+is in the header of `open-code/session-log.ts`). `seq` is issued once per
+message in OpenCode's message order and persisted in
+`$KORTIX_RUNTIME_STATE_DIR/opencode-session-log.json`, so a restart keeps
+every seq and a revert never hands a deleted message's seq to the next one;
+the deleted messages reach the journal as tombstones. `startSessionRuntime`
+starts the journal (generation 0) before the event loop and the first prompt;
+the service's host `lifecycle.stop()` stops it before OpenCode stops, and a
+restart (`this.stop()` inside the native lifecycle) leaves it running.
+
+Known limits of the pi export:
+- A dump written before P2.5 has no header; pi makes a fresh one on load, so `created_at` is the restart time for a session that spans the upgrade.
+- The journal does not start on a box with `repoMaterializationError` (the boot returns before it): turns run through the proxy on such a box are not journaled.
+
+Known limits of the OpenCode export:
+- OpenCode 1.18.23's compaction part has no `tail_start_id` on a live box, so the compaction block's `first_kept_message_id` is `null` (what OpenCode stored; a restore into another harness counts it as a missing cut point).
+- A daemon restart sends every message again in its first batch: nothing gives the journal its cursors before P6.
+- A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until P6 seeds seqs from the API's cursors.
+
+### The v2 stream (P4.3)
+
+`GET /kortix/runtime/events?schema=v2` streams the session log as `log.*`
+frames (capability `session.log.v2`; payload schemas in
+`@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`) in place
+of the v1 transcript frames, and every other v1 frame unchanged. The frames
+ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so the
+v1 stream keeps dense seqs and the v2 stream resumes with its own `since` and
+`epoch`. Without `schema`, or with `schema=v1`, the stream is the v1 stream,
+byte for byte (an empty `schema=` too); another value is a 400.
+
+Frame classification (`V1_TRANSCRIPT_EVENTS` in
+`services/event-bus/kortix-event-bus.ts`, the set P4.4 adds to
+`@kortix/api-contract/session-log`; `kortix-event-bus.test.ts` fails when a
+`KortixSessionEvent` type is unclassified):
+- replaced by `log.*` (never on v2): `message.updated`, `message.removed`,
+  `message.part.updated`, `message.part.removed`, `message.part.delta`;
+- kept (copied onto v2): `session.status`, `session.idle`, `session.error`,
+  `permission.asked`, `permission.replied`, `question.asked`,
+  `question.replied`, `question.rejected`, `todo.updated`, and every frame
+  beyond `KortixSessionEvent` (`session.created`, `session.updated`,
+  `session.diff`, `session.compacted`, pty, lsp, `kortix.*` daemon frames).
+
+The copy is a `tap` on the v1 bus (`kortixEventBus()` installs it): a
+daemon-internal listener that runs before the subscribers and is not counted
+in `subscriberCount`. The journal's v1 listener is a tap too. The
+`sse-subscriber` swap blocker counts the subscribers of both buses.
+
+| Frame | Payload | Emitted |
+| --- | --- | --- |
+| `log.state` | `{ generation, session }`: the session patch the batch carries | when a collection finds the session fields changed |
+| `log.thread` | the thread upsert (no messages) | for each thread a collection finds new or changed |
+| `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set; and a live put while a turn runs (below) |
+| `log.block.delta` | `{ thread_id, message_id, block_id, delta }` | for each v1 `message.part.delta` text frame while the journal runs |
+| any kept v1 type | the v1 payload, unchanged | for each such frame on the v1 bus |
+
+The journal publishes the first three in `collectOnce`, from the same records
+it posts (same ids, seqs and revs), in that order. It collects when it starts
+(the store is at rest: the stream gets the session and its threads before the
+first turn streams), at each turn end and at the daemon stop. The delta frames
+come from the v1 bus: both harnesses stream text with the v1 session, message
+and part ids, which are the thread, message and block ids of the records.
+
+#### The live turn (P4.3b)
+
+A put with `status: 'streaming'` precedes the first delta of a message; a
+later put with a higher `rev` replaces it. The client keeps the highest `rev`
+of each message, appends each delta to the block it names, and lets the next
+put replace the whole record.
+
+The journal folds the v1 frames of each message it has not collected. It
+publishes a live put of a message on the v2 bus only, never into the dirty
+set: apps/api receives the turn end's record alone (its `log_durable_at`
+reacts to a non-streaming assistant message). A live put is published:
+- on the first `message.updated` of a message: the prompt (complete) and each
+  assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
+- on each `message.part.updated` of a part the message did not have: a new
+  text, reasoning, tool or step block. The put is built in the bus listener,
+  before the next v1 frame, so a block is on the stream before its first delta
+  and its text holds exactly the deltas published before it;
+- on each `message.part.updated` of a tool part that changes its
+  `state.status` or the key set of its `state.metadata` (the keys with a
+  defined value: what the wire carries) (P4.7): a call that
+  starts running, a task that names its child (`sessionId`), a bash call that
+  names its `command`. A value change alone (bash rewrites `metadata.output`
+  per stdout chunk, a pending call's `raw` grows) publishes nothing: a put
+  rebuilds the whole message.
+
+The record is `liveMessageFromV1` of the frames so far (`@kortix/api-contract`
+`live.ts`, the same function the API relay runs for an older daemon):
+`fromV1` with `live: true`. An open reply is `streaming`, and so is a reply
+with an open call (pi completes a reply before its calls run). An open call
+keeps its v1 status (`pending` or `running`) without a result; a pending call
+whose input streams carries the text so far (`raw`) as its `input`. The v1
+residual of each block stays in its `ext`, so a running call keeps its display
+metadata (task `sessionId`, bash `command`; the SDK's `toolCallMetadata` reads
+it) and `toV1` gives back the frames. The adapter's `live` names
+the fields the frames do not carry, so a live put carries the `message_id`,
+`thread_id`, `seq` and `created_at` of the turn end's record:
+- OpenCode stores a message before it publishes it, in the order it creates
+  them, so `live` issues the message's seq from the persisted seq map at its
+  first frame; the turn end's collection reads the same seq.
+- pi appends a message's entry at its `message_end`, after the reply has
+  streamed. pi's own listener appends every earlier entry before the runtime
+  sees the next event, so the reply pi streams gets the next entry:
+  `getEntries().length + 1` (a sub-agent child: its `nextSeq`), with pi's own
+  timestamp as `created_at`. An extension that appends a non-message entry
+  while the reply streams moves the reply one entry later; its turn-end put
+  then carries the higher seq and replaces the live ones. A prompt has no seq
+  until pi appends its entry when its turn starts: its put goes out with the
+  first assistant `message.updated` of that turn, not at accept.
+
+The collection's put of a message has a higher rev than its live puts, and a
+message the journal has collected gets no live put again.
+
+A live message the harness removes before the journal collects it (pi
+retracts a queued prompt, OpenCode reverts) leaves no ghost: on
+`message.removed` the journal drops its row and, if a put of it went out,
+publishes the journal-form tombstone `{ message_id, rev }` on the v2 bus; on
+`message.part.removed` it publishes a fresh put without the part.
+
+Limits:
+- A block's changes after it first appears (a reasoning block's end, a
+  running call's growing output, a pending call's growing `raw`) reach the v2
+  stream with the next live put of that message or at the turn end, not on
+  their own. A call's status change (its result included) and a new metadata
+  key get their own put. Unlike the v1 stream, a pending call's input preview
+  does not grow on v2 until the call runs (a P5 follow-up).
+- A daemon that crashes mid-turn never sends the turn end's put: a client
+  keeps a `streaming` put until the next epoch's `kortix.resync` or its reread
+  of the saved session log (P4.5).
+- A journal the API turned off (404, 409) publishes no `log.*` frame more,
+  deltas included: a 404 API has no relay for the stream, and a 409 box is a
+  zombie. A box with no control plane starts no journal: its v2 stream
+  carries the kept v1 frames only.
+- A `kortix.resync` on the v2 stream carries an empty `recover`: the client
+  reads the saved session log again (P4.5).
+
+Debug: `KORTIX_SESSION_LOG_DUMP_DIR=<dir>` (off by default) makes the journal
+write each batch body as JSON to `<dir>` and acknowledge it at once, instead of
+posting it. Use it to read what a box exports before the ingest route exists
+(read the files back through `/file/content`). Nothing reaches apps/api while
+it is set. Never point it under `/workspace`: the batches hold full prompts and
+tool output, which would land in the project tree.
+
+The journal (`shared/session-log-journal.ts`) drops a message whose native hash
+equals its cursor's (schema rule C13), so an unchanged or restored message is
+never sent again, and a thread equal to the last one it collected. It posts the
+rest in order, in gzipped batches of at most 1 MB, each message with a `rev`
+that is monotonic across boots (`max(Date.now() * 1000, last + 1)`), and keeps
+them dirty until apps/api acknowledges `(message_id, rev)`.
+
+Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
+orphan path through `relayTurnEnd`, OpenCode's normal turn end through
+`relayTurnEndToApi`. The memory-guard turn end does not flush. The daemon
+shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
+Each flush waits at most 3 s, or until the first failed post; a batch not
+acknowledged by then keeps retrying in the background. A provider stop is not
+known to deliver SIGTERM to kortixd, so for a provider stop the turn-end flush
+and the P6 boot reconcile carry the log.
+
+Network errors, 401, 408, 429 and 5xx (503: the operator switch is off) back
+off like the audit relay; a dead session token (the KRTX-446 breaker) sends
+nothing. 404 (an older API) and 409 (a newer generation owns the session) turn
+it off for the boot and stop the drain at once. Another 4xx drops the batch. A
+200 that does not acknowledge a batch is retried 3 times, then its pairs are
+dropped: the native store still holds them. A second `startSessionLogJournal`
+stops the first journal.
 
 ## Health and capabilities (E19, E1)
 
@@ -74,8 +281,10 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1` (both harnesses), and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode,
-`session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
+(`HarnessDiagnosticsService.capabilities()`, read on each health call: all twelve
+on OpenCode 1.18.15 and later, the eleven without `session.steer` on an older or
+unknown OpenCode version; `session.subagents`, `session.compact`,
+`session.commands`, `session.steer` and `session.log.v2` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
 
@@ -88,6 +297,58 @@ other adapter, no route and nothing in `src/app/`. The app hands a boot what it
 needs through `HarnessBootContext` (`serve` starts the HTTP server).
 `bun run lint` enforces all of it.
 
+## Steering
+
+`POST /kortix/runtime/sessions/:id/steer` takes the `/prompt` body with
+`message_id` required (400 without it), behind the same auth, readiness gate
+and `X-Kortix-Turn-Verb` header. The running turn reads the message at its next
+step boundary, after the running tool batch; the turn does not stop. Answers:
+`202 { message_id, steered: true }`; `200 { deduplicated: true }` for an id
+already admitted, steered or on the transcript; `409 { code: 'no_active_turn' }`
+when no turn runs (nothing is stored, the caller sends a prompt);
+`501 { code: 'feature_not_supported' }` on OpenCode older than 1.18.15.
+
+- **Read.** pi: the loop emits the message as a user message
+  (`steeringMode: 'all'`: every message steered before one boundary arrives
+  together). The daemon publishes it on the wire then, under its id, and the
+  replies after it name it as `parentID`. OpenCode: the first assistant
+  `message.updated` whose `parentID` is the steered id. Both relay `steer_read`
+  once per id (`shared/turn-relay.ts`).
+- **Withdraw.** The retract (below) on an unread steered message removes it
+  (pi: from kortixd's queue in front of `agent.steer()`; pi can only clear its
+  queue, so the rest are steered again in order). A read one answers
+  `409 { code: 'message_read' }`.
+- **Leftovers (pi).** A turn that ends on its own with unread steered messages
+  starts the next turn with them, in the same queue slot: the first is its
+  prompt, the rest are read before its first model call. A stopped turn (Stop,
+  Quick Queue, the no-progress watchdog) drops them. OpenCode needs neither: its
+  loop does not end while a newer user message is unanswered.
+- **Gaps.** A steered message keeps the turn's model, agent and variant. On pi
+  it does not run extension `input` handlers, `/skill:` or prompt-template
+  expansion (a prompt does). Unread steered messages live in memory: a daemon
+  restart loses them.
+
+## Retract
+
+`POST /kortix/runtime/messages/:sid/:mid/retract` takes back a user message no
+model call has read (`runtime.retract.v1` in `/kortix/health` `capabilities`),
+behind the same auth, readiness gate and `X-Kortix-Turn-Verb` header. apps/api
+uses it to cancel a forwarded prompt, to hold forwarded prompts after a Stop,
+and to re-place a stranded prompt. Answers: `200 { retracted: true }`; `404`
+when the session holds no such message; `409 { code: 'message_read' }` when a
+model call read it (its turn runs or ran), and it stays.
+
+- **pi** decides from its own state: an unread steered message, a prompt
+  admitted behind the running work that has not started, and a `no_reply`
+  message no turn has read (pi omits its session entry from the model context)
+  are retracted. A retracted id may be sent again. The `DELETE` verb and the
+  compatibility `DELETE /session/:id/message/:mid` answer the same way, so an
+  older API gets the fix too.
+- **OpenCode** cannot tell a read message from an unread one, so apps/api
+  proves "unread" from the transcript first (`reachedPlacement`). The adapter
+  deletes the message whole when idle; when the loop runs and refuses that, it
+  deletes every part, and OpenCode's loop skips a user message with no parts.
+
 ## The pi harness
 
 > **Direction: pi replaces OpenCode.** OpenCode support is temporary and will
@@ -96,18 +357,12 @@ needs through `HarnessBootContext` (`serve` starts the HTTP server).
 > section. Until then OpenCode stays the default. When the move is complete,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core`) is bundled into the daemon binary and runs
-INSIDE the daemon process. There is no child process, no port, no RPC and no
-second sandbox: pi's built-in `bash`/`read`/`write`/`edit` run on
-`NodeExecutionEnv` over `/workspace`, Kortix adds `glob`/`grep` (ripgrep) and
-`question`, and the five Kortix tools a project template gives an OpenCode
-session, compiled into the daemon under the same names, arguments and output
-JSON: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage`
-(Firecrawl), `memory` and `show` (`pi/kortix-web-tools.ts`,
-`pi/kortix-memory-tool.ts`, `pi/kortix-show-tool.ts`). The three web tools call
-the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`) with the
-sandbox token; a box with no control plane calls the upstream with the
-project's own key. A project needs no `harnesses/pi/` file for any of them.
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
+into the daemon binary and runs INSIDE the daemon process. There is no child
+process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
+`bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
+`glob`/`grep` (ripgrep) and `question`, and the hosted tools (see "Hosted
+tools" below). A project needs no `harnesses/pi/` file for any of them.
 Every model request goes to the Kortix LLM gateway through the
 daemon's localhost LLM proxy, under the same `kortix` provider id OpenCode uses.
 
@@ -127,29 +382,41 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
 
+`KORTIX_AGENT_NAME` (else the config's `default_agent`) is the session's
+agent. A prompt that picks a primary agent of the compiled config runs its
+turn on that agent: its prompt, permission policy, tool switches, sampling and
+variant, and its `model` when the prompt names none. A prompt that picks none
+runs on the session's agent, as on OpenCode. A pick of a subagent, a disabled
+agent or an unknown name is logged and runs on the session's agent. pi
+packages and extensions stay the ones the session booted with.
+
 ### Config releases
 
-With the project's `config_releases` flag on, pi runs the base branch's
-current config release, exactly as OpenCode does (`pi/config-release.ts`,
-contract in `services/config-release/`). A release is the same archive under
-`/opt/kortix/config/<release_id>`, verified against its Git blob IDs and
-sealed read-only. pi reads three things from it: the compiled governance
-(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/`, and `pi/`, its own
-config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`: skills,
-extensions, prompts, `settings.json`), which the API composes into the release.
-The rest of the archive (`opencode.json`, `tools/`, `plugins/`) is OpenCode's
-and pi ignores it, so a commit that breaks only those files is a working config
-on pi.
+pi runs the base branch's current config release, exactly as OpenCode does
+(`pi/config-release.ts`, contract in `services/config-provider/`). A release is
+a checkout of the base branch under `/opt/kortix/config/<release_id>`, with
+the repository's own layout, verified against its Git blob IDs and sealed
+read-only. pi reads from it what it reads from `/workspace`: the compiled
+governance (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the
+legacy `.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`),
+and its own config dir (`pi.config_dir`, else `harnesses/pi`, else
+`.kortix/pi`: skills, extensions, prompts, `settings.json`), resolved inside
+the release by `resolvePiProjectConfigDir`.
+OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
+only those files is a working config on pi.
 
 - **Boot.** `runPi` starts the choice beside the repository checkout, and
   `lifecycle.start()` waits for it: the desired release, then the last release
   this box proved (`current.json`), then the image default (managed skills and
-  the provisioned governance). `/workspace` is read only while the flag is off.
+  the provisioned governance). `/workspace` is read only when the box has no
+  Kortix API, or an API from before config releases graduated answers `403
+  feature_disabled`.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
-  into the runtime's env, the skill directory moves to `<release>/skills`, and
-  `PiRuntime.reconfigure()` re-reads both. A release that changes anything
-  under `pi/` other than its skills (extensions, prompts, settings, which only
+  into the runtime's env, the skill directories and the `AGENTS.md` root
+  (`PiConfigReleases.projectRoot()`) move into the release, and
+  `PiRuntime.reconfigure()` re-reads them. A release that changes anything
+  in pi's config dir other than its skills (extensions, prompts, settings, which only
   a start reads) restarts the runtime in place instead: the same root, the
   transcript restored. Nothing else restarts, and the answer carries
   `reload: null` either way. A turn in flight, or one admitted behind it
@@ -175,7 +442,7 @@ one harness's tool. Each adapter maps its tools onto them: pi's `write` is
 `web_search`/`image_search` and `scrape_webpage` follow `websearch` and
 `webfetch` (`pi/interactions.ts` `toolCapability`); pi asks for them like any
 other tool. A rule under the tool's own name wins over its capability. OpenCode's `pty_*` tools follow `bash`, and the
-template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
+hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against the `bash` command
@@ -195,8 +462,9 @@ prompt-template expansion. A package from https://pi.dev/packages runs
 unmodified: Kortix writes no per-extension code. Kortix keeps the model (the
 gateway provider is registered with pi's `ModelRuntime` only to pass its auth
 check), the tools, the wire, and the permission policy, which runs BEFORE any
-extension `tool_call` handler. pi's compaction and auto-retry are off: the
-transcript and the product own them.
+extension `tool_call` handler. pi's auto-retry is off: the product owns it
+(`pi/transient-retry.ts`). pi's built-in `mcp`, `codemode` and `tool-search`
+extensions are not loaded: a host passes them in, and Kortix passes none.
 
 Three sources, in pi's own scopes:
 
@@ -204,7 +472,7 @@ Three sources, in pi's own scopes:
 |---|---|---|
 | system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
 | project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained, minified ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files minus the code that file inlined, type declarations, source maps and the root README/CHANGELOG — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
-| repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
+| repo-local | `<workspace>/.pi/extensions/*.ts`, or a `./` path in `harnesses.pi.packages` (a file is one extension, anywhere in the repo) | the repo itself: a `./` path resolves against the config release root while a release runs, else the working tree (`packageRoot`); a release that changes a file in its folder restarts the runtime (`pi/config-release.ts` `startOnlyFiles`) |
 
 A project entry for the same package overrides the system one. Nothing installs
 at boot. pi installs a missing package on load (13.2 s for two packages,
@@ -236,23 +504,89 @@ stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
+### The conversation, compaction and slash commands
+
+pi's `SessionManager` (in memory) is the model context: the agent's messages
+are its projection. The state dump stores its entries (`entries`), and a
+restart restores them, so a compaction or a context edit survives it. The dump
+also keeps `agentMessages` for a daemon built before pi 1.0, which restores
+from that field; this daemon reads it only when `entries` is absent.
+
+pi's own compaction is on. It runs on demand (`POST /session/:id/summarize`),
+when the context nears the model's window, and when a model request overflows
+it or a reply is cut by the length limit (pi then retries that request once;
+the failed attempt's error is withheld from the wire and lands on the message
+only when the recovery fails). The wire carries it in OpenCode's shape: a user
+message whose one part is `compaction` (`auto`, `overflow`), an assistant
+message flagged `summary` with the summary text or an error,
+`time.compacting` on the session while it runs, and `session.compacted`. The
+transcript keeps every message. A project's `settings.json` in the pi config
+dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
+Subagent child sessions have no `AgentSession` and do not compact.
+
+`GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
+dir, and the templates of pi packages) as slash commands.
+`POST /session/:id/command` runs one: it admits `/name arguments`, pi expands
+the template, and the user message on the wire becomes the expanded text, as
+on OpenCode. A command pi does not have is a 400. pi does not read OpenCode's
+`commands/` directory.
+
 Not supported by pi today (answered honestly, never silently): session rewind
-(`/session/:id/revert`, 501 `feature_not_supported`), slash commands
-(`/session/:id/command`), summarize/compaction, MCP/connector tools, todo
+(`/session/:id/revert`, 501 `feature_not_supported`), MCP/connector tools, todo
 tools, warm-seed capture, `ctx.ui` prompts from extensions. `/kortix/health` reports `harness: 'pi'`
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.
 
-## Config provider is a host service, not harness logic
+## Hosted tools
 
-`src/services/config-provider/` (the `git` / `prefer-s3` / `require-s3` project
-acquisition coordinator, #7221) stays outside `src/harness/`. It
-depends only on `src/lib/` (`config`, `git`, `logger`) and knows nothing about
-any harness. Both `open-code/boot.ts` and `pi/boot.ts` call
-`materializeProject(cfg, { bootMark, onSummary })` at the point where the cold
-boot acquires the workspace. `contract/boot-state.ts` carries the outcome:
-`configProvider` (reported in `/kortix/health` as `config_provider`) and
-`deferredHistoryBackfill`.
+A tool that is not a harness's own (`bash`, `read`, …) is written once, as a
+harness-neutral module, and the daemon runs it for whichever harness the box
+runs (`../services/tools/`):
+
+| Module | What |
+| --- | --- |
+| `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
+| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
+
+- **pi** loads them at `start()` and registers each as an `AgentTool`
+  (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release
+  that changes a project tool's declaration or a file in its module's folder
+  restarts the runtime in place (`pi/config-release.ts` `startOnlyFiles`).
+- **OpenCode** gets a plugin the daemon writes on every config compose
+  (`open-code/tool-bridge.ts`, `~/.config/kortix-tools.js` and its tool list
+  `kortix-tools.json`). Each tool is a stub that posts to the route above. Its
+  `args` are the JSON Schema properties (OpenCode's non-Zod plugin path) and
+  its `tool.definition` hook restores the exact schema, so optional arguments
+  stay optional. A name the served config dir defines in its own `tools/`
+  (the copies the template wrote before) keeps the project file.
+
+**Tool access.** `CompiledAgent.tools` (kortix.yaml `agents.<name>.tools`) maps
+a tool name to visible, with `*` for every tool not named; `toolAllowed`
+(`@kortix/api-contract/runtime-relay`) reads it. pi filters the active tools
+and denies a call to a hidden one, for the root and for a subagent (both
+agents' maps must allow it). OpenCode reads the map as permission rules
+(`open-code/tool-access.ts`): a removed tool is a `deny` after every other
+rule, an allowlist is `*: deny` first, then the rules of the allowed tools at
+the action they had; the compiled `tools` key is dropped, because OpenCode's
+own reading turns `true` into `allow` and lets the agent's `permission`
+re-open a removed tool.
+
+## The workspace and config providers are host services, not harness logic
+
+`src/services/workspace-provider/` (the `git` / `prefer-s3` / `require-s3`
+project acquisition, #7221) and `src/services/config-provider/` (the config
+release a boot needs) stay outside `src/harness/`. Each depends only on
+`src/lib/` and knows nothing about any harness or about the other: both read
+the S3 project snapshot through `src/lib/project-snapshot/`. The harness
+composes them. Both `open-code/boot.ts` and `pi/boot.ts` call
+`provideWorkspace(cfg, { bootMark, onSummary })` at the point where the cold
+boot acquires the workspace, then hand the checkout to the config release
+boot. The warm-seed adoption and monitor mode call the same function in `git`
+mode. `contract/boot-state.ts` carries the outcome: `workspaceProvider`
+(reported in `/kortix/health` as `config_provider`, its pre-rename wire name)
+and `deferredHistoryBackfill` (`backfillAfterHydration` for an S3 start).
 
 ## OpenCode instance guard
 

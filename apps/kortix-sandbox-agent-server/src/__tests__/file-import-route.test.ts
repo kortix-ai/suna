@@ -56,7 +56,6 @@ function config(overrides: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    compiledBootMode: 'off',
     workload: '',
     monitorsJson: '',
     monitorBoxEpoch: '',
@@ -160,7 +159,14 @@ describe('POST /file/import', () => {
     originalFetch = globalThis.fetch
     const warn = logger.warn
     warningSpy = spyOn(logger, 'warn').mockImplementation((message, context) => {
-      if (message !== '[files] attachment import failed') warn(message, context)
+      // Both lines are asserted or ignored below: the failed-import warn is the
+      // one a case caused, and the slow-request line is the box's own timing
+      // telemetry — a worker sandbox under load can push any handler past the
+      // 2 s wall threshold with single-digit CPU, which says nothing about this
+      // contract.
+      if (message !== '[files] attachment import failed' && message !== '[slow-request] handler exceeded threshold') {
+        warn(message, context)
+      }
     })
   })
 
