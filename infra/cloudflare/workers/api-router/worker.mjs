@@ -76,8 +76,19 @@ function originUnreachableResponse(isGateway, request, reason) {
 }
 
 function addSecurityHeaders(response) {
-  response.headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
-  response.headers.set('X-Content-Type-Options', 'nosniff');
+  const headers = response.headers;
+  headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
+  headers.set('X-Content-Type-Options', 'nosniff');
+  if (!headers.has('Referrer-Policy')) headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // JSON is never framed or rendered. HTML keeps the origin's own framing
+  // headers: the /v1/p/* preview proxy strips them on purpose so the web app
+  // can frame a sandbox page.
+  if ((headers.get('Content-Type') || '').includes('application/json')) {
+    headers.set('X-Frame-Options', 'DENY');
+    if (!headers.has('Content-Security-Policy')) {
+      headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    }
+  }
   return response;
 }
 

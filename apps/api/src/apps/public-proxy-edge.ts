@@ -57,7 +57,7 @@ export function appEdgeSignature(
   pathAndQuery: string,
   secret = edgeSecret(),
 ): string {
-  return edgeSignature(timestamp, host, method, pathAndQuery, secret);
+  return edgeSignature(timestamp, host, method, pathAndQuery, secret.split(',')[0]!.trim());
 }
 
 export function verifyAppEdgeRequest(

@@ -1066,4 +1066,26 @@ describe('api-router worker', () => {
       expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
     });
   });
+
+  describe('security headers', () => {
+    const call = (body, contentType) => {
+      globalThis.fetch = async () => new Response(body, { status: 200, headers: { 'Content-Type': contentType } });
+      return worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    };
+
+    test('a JSON response cannot be framed and names a referrer policy', async () => {
+      const response = await call('{}', 'application/json');
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; frame-ancestors 'none'");
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    });
+
+    test('an HTML response (a framed sandbox preview) keeps its own framing headers', async () => {
+      const response = await call('<p>hi</p>', 'text/html');
+      expect(response.headers.get('X-Frame-Options')).toBeNull();
+      expect(response.headers.get('Content-Security-Policy')).toBeNull();
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    });
+  });
 });

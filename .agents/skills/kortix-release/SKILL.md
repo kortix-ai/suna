@@ -404,3 +404,17 @@ no `vX.Y.Z` Release.
       return 404, and a gateway chat call gives the same answer as before.
    Rollback: remove the key from the blob and redeploy the API, then delete the
    worker secret. The gateway header is harmless.
+10. **One-time per env: dedicated App and preview edge secrets** (pentest
+    2026-10-13, M-5). Unset, `KORTIX_APPS_EDGE_SECRET` and
+    `KORTIX_PREVIEW_EDGE_SECRET` fall back to `API_KEY_SECRET`, so the master
+    key is also a Cloudflare Worker secret. The API accepts a comma-separated
+    `new,old` value, so the switch has no gap. Per env, for each of the two keys
+    (Worker secrets `<ENV>_EDGE_SECRET` on `apps-router` and `preview-router`):
+    1. Generate a random 32-byte value. Never print it.
+    2. Set the key to `<new>,<API_KEY_SECRET value>` in `kortix-<env>-env` and
+       `apps/api/.env.<env>`; redeploy the API.
+    3. `wrangler secret put <ENV>_EDGE_SECRET --env <worker env>` with `<new>` on
+       the matching Worker.
+    4. Verify an App host and a preview host still answer, then set the key to
+       `<new>` alone and redeploy the API.
+    Rollback: restore `<new>,<old>` (step 2) and put the old Worker secret back.
