@@ -2049,9 +2049,11 @@ export const SecretSchema = z.object({
   managed_by: z.literal('project_secret').nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
-  /** The caller's private override (value omitted), or null. Used today only by
-   *  the CODEX_AUTH_JSON per-user provider login. */
-  mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
+  /** The caller's private override (value omitted), or null. `status`: can the
+   *  server decrypt it? While `active`, it is the value the caller's sessions read. */
+  mine: z
+    .object({ active: z.boolean(), updated_at: z.string(), status: SecretValueStatusSchema.optional() })
+    .nullable(),
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
   can_manage_shared: z.boolean(),
@@ -2074,8 +2076,9 @@ export const SecretSchema = z.object({
   /** Can the caller's sessions use the shared value? False only when it is
    *  shared with specific people and the caller is not one of them. */
   usable: z.boolean().optional(),
-  /** Can the server decrypt the stored value: the shared value when one is
-   *  set, else the caller's own override. Never carries the value. */
+  /** Can the server decrypt the shared value? Absent when none is set
+   *  (`configured: false`). `mine.status` reports the caller's override. Never
+   *  carries the value. */
   status: SecretValueStatusSchema.optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;

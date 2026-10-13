@@ -16,8 +16,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * server-side only.
  */
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
-import { SecretUndecryptableError } from '../secrets/undecryptable';
+import { decryptNamedProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import {
@@ -54,15 +53,16 @@ interface OAuth2CredentialRuntime {
  * (which reads as "not connected").
  */
 function decryptCredential(row: CredentialRow, valueEnc: string): string {
-  try {
-    return decryptProjectSecret(row.projectId, valueEnc);
-  } catch {
-    const label = `The credential of connector ${row.slug}`;
-    throw new SecretUndecryptableError(
-      label,
-      `${label} cannot be decrypted with this server's encryption key. Reconnect the account or enter the credential again.`,
-    );
-  }
+  return decryptNamedProjectSecret(
+    row.projectId,
+    valueEnc,
+    `The credential of connector ${row.slug}`,
+    // A delegated login is redone through the OAuth application, which the
+    // same key encrypted: it has to be saved again before the sign-in starts.
+    row.kind === 'oauth2_delegated'
+      ? 'Save its OAuth application again, then reconnect the account.'
+      : 'Reconnect the account or enter the credential again.',
+  );
 }
 
 async function resolveCredentialRow(

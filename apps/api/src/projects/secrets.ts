@@ -316,8 +316,13 @@ export async function listResolvedProjectSecrets(
       identifier,
       key: chosen.name,
       // A value this server cannot decrypt fails the read with an error naming
-      // the identifier, so session start says which secret to enter again.
-      value: decryptNamedProjectSecret(projectId, chosen.valueEnc, `Project secret ${identifier}`),
+      // the identifier and whose value it is, so session start says which
+      // value to enter again.
+      value: decryptNamedProjectSecret(
+        projectId,
+        chosen.valueEnc,
+        chosen === slot.personal ? `Your own value of project secret ${identifier}` : `Project secret ${identifier}`,
+      ),
       strategy: policyRow.strategy ?? undefined,
       consumer: policyRow.consumer ?? undefined,
       egressPolicy: policyRow.egressPolicy ?? null,

@@ -9,9 +9,10 @@
 export class SecretUndecryptableError extends Error {
   constructor(
     readonly label: string,
-    message = `${label} cannot be decrypted with this server's encryption key. Re-enter its value.`,
+    /** What a person does about it: one sentence, appended to the message. */
+    remedy = 'Re-enter its value.',
   ) {
-    super(message);
+    super(`${label} cannot be decrypted with this server's encryption key. ${remedy}`);
     this.name = 'SecretUndecryptableError';
   }
 }

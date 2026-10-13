@@ -72,10 +72,15 @@ export function probeProjectSecret(projectId: string, valueEnc: string): SecretV
 }
 
 /** `decryptProjectSecret`, but a failure throws `SecretUndecryptableError` naming `label`. */
-export function decryptNamedProjectSecret(projectId: string, valueEnc: string, label: string): string {
+export function decryptNamedProjectSecret(
+  projectId: string,
+  valueEnc: string,
+  label: string,
+  remedy?: string,
+): string {
   try {
     return decryptProjectSecret(projectId, valueEnc);
   } catch {
-    throw new SecretUndecryptableError(label);
+    throw new SecretUndecryptableError(label, remedy);
   }
 }
