@@ -173,15 +173,19 @@ export function localizedAccountPaneMeta(tI18nComplete: UiTranslator) {
 /** `fluid`: the whole pane, Linear's members table — no centred column. */
 export type AccountPaneWidth = 'default' | 'wide' | 'full' | 'fluid';
 
+const WIDE_SECTIONS: readonly AccountSection[] = [
+  'groups',
+  'access-projects',
+  'roles',
+  'identity',
+  'help',
+  'audit',
+  'billing',
+];
+
 const PANE_WIDTH: Partial<Record<AccountSection, AccountPaneWidth>> = {
   members: 'fluid',
-  groups: 'wide',
-  'access-projects': 'wide',
-  roles: 'wide',
-  identity: 'wide',
-  help: 'wide',
-  audit: 'wide',
-  billing: 'wide',
+  ...Object.fromEntries(WIDE_SECTIONS.map((section) => [section, 'wide' as const])),
   transactions: 'full',
 };
 

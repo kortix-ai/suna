@@ -12,6 +12,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { deliverThroughQueue } from '../session-lifecycle';
 import {
+  clearOpenQuestions,
   getOpenQuestion,
   recordPendingQuestion,
   renderAnswerPrompt,
@@ -291,13 +292,23 @@ export function registerTurnQuestionsRoutes(): void {
 
       const runtimeRequestId = body.request_id?.trim();
       if (channel && runtimeRequestId) {
-        await releaseChannelQuestion({
+        const released = await releaseChannelQuestion({
           sessionId,
           requestId: runtimeRequestId,
           questionCount: questions.length,
           channel,
           posted: result.ok,
         });
+        // The runtime no longer waits on it: the thread reply arrives as a new
+        // turn. Unreachable keeps the row; the turn end closes it (KRTX-1739).
+        if (released !== 'unreachable') {
+          await clearOpenQuestions(sessionId, { requestId: runtimeRequestId }).catch((err) =>
+            logger.warn('[turn-question] released question not closed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
 
       if (!result.ok) {

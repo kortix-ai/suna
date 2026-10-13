@@ -2,8 +2,9 @@
 // LOG_FORMAT, parseLogStdout, decodeStatusChar) used by branches.ts and
 // merge.ts as well.
 
+import { existsSync } from 'node:fs';
 import { validateRef, validateSha } from '../git-ref';
-import { normalizeTreePath, refreshMirror, runGit } from './mirror';
+import { normalizeTreePath, refreshMirror, repoCachePath, runGit } from './mirror';
 import type {
   CommitDiff,
   GetCommitDiffOptions,
@@ -95,6 +96,13 @@ export async function resolveCommitSha(project: GitBackedProject, ref?: string):
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
   return resolveCommitShaAt(repoPath, treeRef);
+}
+
+/** `ref` as this replica's mirror holds it now: no refresh, no network. Null without a mirror. */
+export async function readMirrorCommitSha(project: GitBackedProject, ref?: string): Promise<string | null> {
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath)) return null;
+  return resolveCommitShaAt(repoPath, validateRef(ref || project.defaultBranch)).catch(() => null);
 }
 
 /**

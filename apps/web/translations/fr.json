@@ -1171,7 +1171,7 @@
         },
         "apps": {
           "name": "Applications",
-          "description": "Déployez des sites statiques, paquets JavaScript, Dockerfiles et images OCI vers des URL serverless stables, et exécutez des backends : une base de données, des fonctions serveur, des requêtes en temps réel, du stockage de fichiers, de la planification et de la recherche sur une machine toujours active."
+          "description": "Déployez des sites statiques, paquets JavaScript, Dockerfiles et images OCI vers des URL stables, et exécutez des backends : une base de données, des fonctions serveur, des requêtes en temps réel, du stockage de fichiers, de la planification et de la recherche sur une machine toujours active."
         },
         "monitors": {
           "name": "Moniteurs",
@@ -1228,6 +1228,10 @@
         "session_log": {
           "name": "Journal de session v2",
           "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
+        },
+        "session_log_restore": {
+          "name": "Restauration du journal de session",
+          "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
         }
       }
     },
@@ -1794,6 +1798,14 @@
       "pending": "Redémarrage…",
       "ownerOnly": "Seul le propriétaire de la session ou un responsable du projet peut redémarrer cette session."
     }
+  },
+  "sessionDelete": {
+    "description": "Supprime <name>{label}</name> et retire son sandbox. Vous pouvez restaurer la session pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
+    "bulkDescription": "Supprime chaque session sélectionnée et retire son sandbox. Vous pouvez restaurer chaque session pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
+    "restoring": "Restauration de la session…",
+    "undo": "Annuler",
+    "restored": "Session restaurée",
+    "restoreFailed": "Impossible de restaurer la session"
   },
   "modelSelector": {
     "search": "Rechercher des modèles",
@@ -6893,8 +6905,6 @@
       "line120JsxTextFailedToLoadSessions": "Impossible de charger les sessions",
       "line132JsxTextNoSessionsYet": "Aucune session pour le moment.",
       "line189JsxTextDeleteSession": "Supprimer la session ?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Cela détruira définitivement la branche et le sandbox pour",
-      "line193JsxTextThisActionCannotBeUndone": ". Cette action est irréversible.",
       "line312JsxAttrAriaLabelSessionActions": "Actions de session"
     },
     "componentsProjectsProjectSidebar": {
@@ -10767,6 +10777,7 @@
       "text2380f018cc45": "Rechercher des modèles…",
       "text23922935b1f8": "Connexion enregistrée",
       "text2395784386a5": "Choisir qui peut ouvrir",
+      "text239ee7bae236": "Un membre",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "Les sessions appellent la passerelle dans votre propre stack, via votre domaine ou tunnel. Kortix ne possède aucun identifiant sur ce chemin et n’y a aucune visibilité.",
       "text23b0caa9d34a": "Membre supprimé",
@@ -12040,6 +12051,7 @@
       "text48845bff334a": "Ignorer",
       "text4891f0add1ec": "Groupe détaché du projet",
       "text489314dd2a13": "Ce lien ne peut pas être ouvert.",
+      "text489b7ab47238": "par jour",
       "text48b2c90ba0f7": "T1 26",
       "text48b8f318d5d6": "gouvernance : ce à quoi chaque agent peut accéder",
       "text48bb9aa078f3": "Ce connecteur gère l’authentification via sa connexion de plateforme.",
@@ -14246,6 +14258,7 @@
       "text888f1dba5133": "Le calcul Sandbox est actuellement facturé au",
       "text889485d2bdde": "Explications quotidiennes de la plateforme et des fonctionnalités.",
       "text88a550e0f44e": "S’exécute sur",
+      "text88b1d1a67e34": "par mois",
       "text88b1dfafbd5f": "Facturé par",
       "text88c2105adecf": "Répondez à la question ci-dessus pour continuer.",
       "text88c45d9e526c": "Couleurs",
@@ -14336,6 +14349,7 @@
       "text8b624587552a": "Échec de l’émission du token",
       "text8b64afef1a24": "Rien de préparé pour le moment",
       "text8b728638c006": "perdra ce contournement. Chaque action repassera par les contrôles d’autorisation habituels.",
+      "text8b7811603173": "Rechercher des sessions ou coller un ID de session",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Téléversement",
       "text8b9965f7aaa5": "Ajoutez une stratégie d’accès",
@@ -15516,7 +15530,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "L’assemblage, pas le jugement.",
       "textac318011a661": "Charger les anciennes requêtes",
-      "textac371f652a2d": "Cette action détruit définitivement la branche et le sandbox de chaque session. Elle est irréversible.",
       "textac4059cfd550": "Chaque modification est versionnée, révisable et réversible",
       "textac454bda92f9": "Création du projet…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15784,7 +15797,6 @@
       "textb400f4160d8e": "Chargement du récapitulatif des coûts",
       "textb40f3be54b3e": "Choisissez une session",
       "textb4214ac48923": "Accès en lecture seule",
-      "textb427c3dec904": "par",
       "textb439f94567ff": "Abonnement activé",
       "textb4415e2f9e92": "Réessayez la demande d’audit de session.",
       "textb4518309c8a3": "et chaque autre session que vous démarrez, chacune sur sa propre machine",
@@ -16698,6 +16710,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "nom de l’attribut",
       "textcdbf6975e8a3": "Objectif",
+      "textcdca8801db76": "par semaine",
       "textcdcdff6eb6db": "les outils que vous avez écrits vous-même",
       "textcdd3dd706df5": "Panneau Create your own application avec l’option Non-gallery sélectionnée",
       "textcdd43080fef2": "Comparaison :",
@@ -19487,6 +19500,7 @@
       "texte7cd9e292007": "Indiquez ce que l'agent doit faire.",
       "textb67ba8d96c42": "Donnez un nom à ce déclencheur.",
       "text2b8e1487be3b": "Choisissez la session à utiliser.",
+      "text2b8fcd81df9b": "Réinitialisation le {value0}",
       "text473d5c3c6169": "Indiquez selon quoi regrouper les exécutions, pour que chaque conversation ait sa propre session.",
       "text8f4597a69c3c": "Chaque condition nécessite un champ et une valeur.",
       "text01bed311e7d0": "Toutes les applications",
@@ -19586,7 +19600,8 @@
       "text6f52b07880a0": "Prendre un instantané",
       "text91dc861375bc": "Politique de version mobile consultée",
       "texta37dd5ef6ef2": "Personnaliser la barre latérale",
-      "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar"
+      "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar",
+      "text2313fe21ea84": "Modifier {name}"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

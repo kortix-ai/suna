@@ -1171,7 +1171,7 @@
         },
         "apps": {
           "name": "Апликације",
-          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне serverless адресе и покрените бекенде: базу података, серверске функције, упите у реалном времену, складиште датотека, заказивање и претрагу на машини која стално ради."
+          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне адресе и покрените бекенде: базу података, серверске функције, упите у реалном времену, складиште датотека, заказивање и претрагу на машини која стално ради."
         },
         "monitors": {
           "name": "Надгледања",
@@ -1228,6 +1228,10 @@
         "session_log": {
           "name": "Log sesije v2",
           "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
+        },
+        "session_log_restore": {
+          "name": "Vraćanje iz loga sesije",
+          "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
         }
       }
     },
@@ -1794,6 +1798,14 @@
       "pending": "Поново покретање…",
       "ownerOnly": "Само власник сесије или менаџер пројекта може поново да покрене ову сесију."
     }
+  },
+  "sessionDelete": {
+    "description": "Брише <name>{label}</name> и уклања њен сандбок. Сесију можете да вратите у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
+    "bulkDescription": "Брише сваку изабрану сесију и уклања њен сандбок. Сваку сесију можете да вратите у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
+    "restoring": "Враћање сесије…",
+    "undo": "Опозови",
+    "restored": "Сесија је враћена",
+    "restoreFailed": "Враћање сесије није успело"
   },
   "modelSelector": {
     "search": "Претражи моделе",
@@ -6893,8 +6905,6 @@
       "line120JsxTextFailedToLoadSessions": "Учитавање сесија није успело",
       "line132JsxTextNoSessionsYet": "Још нема сесија.",
       "line189JsxTextDeleteSession": "Избрисати сесију?",
-      "line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox": "Ово ће трајно уништити грану и сандбок за",
-      "line193JsxTextThisActionCannotBeUndone": ". Ова радња се не може опозвати.",
       "line312JsxAttrAriaLabelSessionActions": "Акције сесије"
     },
     "componentsProjectsProjectSidebar": {
@@ -10767,6 +10777,7 @@
       "text2380f018cc45": "Претражи моделе…",
       "text23922935b1f8": "Веза је сачувана",
       "text2395784386a5": "Изаберите ко може да отвори",
+      "text239ee7bae236": "Члан",
       "text23ac944be61d": "userName",
       "text23ad3a862df5": "Сесије позивају мрежни пролаз унутар вашег стека, преко вашег домена или тунела. Kortix нема акредитив у том току нити увид у њега.",
       "text23b0caa9d34a": "Члан је уклоњен",
@@ -12040,6 +12051,7 @@
       "text48845bff334a": "Затвори",
       "text4891f0add1ec": "Група је одвојена од пројекта",
       "text489314dd2a13": "Овај линк није могуће отворити.",
+      "text489b7ab47238": "дневно",
       "text48b2c90ba0f7": "Q1 26",
       "text48b8f318d5d6": "управљање: чему сваки агент сме да приступи",
       "text48bb9aa078f3": "Овај конектор управља аутентификацијом преко своје платформске везе.",
@@ -14246,6 +14258,7 @@
       "text888f1dba5133": "Израчунавање у Sandbox-у се тренутно наплаћује по",
       "text889485d2bdde": "Свакодневна објашњења платформе и функција.",
       "text88a550e0f44e": "Покреће се на",
+      "text88b1d1a67e34": "месечно",
       "text88b1dfafbd5f": "Наплатио",
       "text88c2105adecf": "Одговорите на горње питање да бисте наставили.",
       "text88c45d9e526c": "Боје",
@@ -14336,6 +14349,7 @@
       "text8b624587552a": "Издавање токена није успело",
       "text8b64afef1a24": "Још ништа није припремљено",
       "text8b728638c006": "изгубиће ово заобилажење. Свака радња ће поново пролазити кроз уобичајене провере дозвола.",
+      "text8b7811603173": "Претражи сесије или налепи ID сесије",
       "text8b7d1a3187ab": "OpenAI",
       "text8b898ca34ce7": "Отпремање",
       "text8b9965f7aaa5": "Додајте access policy",
@@ -15516,7 +15530,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "Припрема, а не процена.",
       "textac318011a661": "Учитај старије захтеве",
-      "textac371f652a2d": "Овим се трајно уништавају грана и sandbox сваке сесије. Ова радња се не може опозвати.",
       "textac4059cfd550": "Свака измена је верзионисана, прегледна и реверзибилна",
       "textac454bda92f9": "Прављење пројекта…",
       "textac467df56e2a": "    connectors: [gmail-read]",
@@ -15784,7 +15797,6 @@
       "textb400f4160d8e": "Учитавање прегледа трошкова",
       "textb40f3be54b3e": "Изаберите сесију",
       "textb4214ac48923": "Приступ само за читање",
-      "textb427c3dec904": "по",
       "textb439f94567ff": "Претплата је активирана",
       "textb4415e2f9e92": "Поново покушајте са захтевом за ревизију сесије.",
       "textb4518309c8a3": "и сваку другу сесију коју покренете, сваку на сопственом рачунару",
@@ -16698,6 +16710,7 @@
       "textcdb0888ac9e8": "$ kortix init",
       "textcdbea4c4728c": "назив атрибута",
       "textcdbf6975e8a3": "Циљ",
+      "textcdca8801db76": "недељно",
       "textcdcdff6eb6db": "алати које сте сами написали",
       "textcdd3dd706df5": "Панел „Create your own application“ са изабраном опцијом Non-gallery",
       "textcdd43080fef2": "Поређење:",
@@ -19487,6 +19500,7 @@
       "texte7cd9e292007": "Наведите шта агент треба да уради.",
       "textb67ba8d96c42": "Дајте овом окидачу назив.",
       "text2b8e1487be3b": "Изаберите коју сесију користити.",
+      "text2b8fcd81df9b": "Ресетује се {value0}",
       "text473d5c3c6169": "Наведите по чему се групишу покретања, да би свака конверзација имала своју сесију.",
       "text8f4597a69c3c": "Сваки услов захтева поље и вредност.",
       "text01bed311e7d0": "Све апликације",
@@ -19586,7 +19600,8 @@
       "text6f52b07880a0": "Napravi snimak sada",
       "text91dc861375bc": "Политика издања за мобилне уређаје прегледана",
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
-      "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar"
+      "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
+      "text2313fe21ea84": "Измени {name}"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

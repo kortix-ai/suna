@@ -650,7 +650,7 @@ storeFlow(
       },
     );
     await ctx.step(
-      "deleting the session removes its stored bytes and denies subsequent reads",
+      "deleting the session denies every read and keeps its stored bytes for a restore until the retention purge",
       async () => {
         (
           await owner.request(
@@ -669,8 +669,10 @@ storeFlow(
             "SELECT count(*)::int AS count FROM storage.objects WHERE bucket_id='session-attachments' AND name=$1",
             [`${project.id}/${sessionId}/${attachmentId}`],
           );
-          if (result.rows[0].count !== 0)
-            throw new Error("Deleted session still owns attachment bytes");
+          // KRTX-1734: the session is restorable for 30 days, so its file is
+          // kept. The purge deletes it 37 days after the delete (SESS-51).
+          if (result.rows[0].count !== 1)
+            throw new Error(`a deleted session's file should stay until the purge, found ${result.rows[0].count}`);
         } finally {
           await db.end();
         }

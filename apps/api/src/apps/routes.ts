@@ -11,7 +11,7 @@ import {
   appSiteFiles,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
@@ -27,7 +27,7 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
 import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
-import { appVolumesSupported, destroyAppVolumes, listAppVolumes } from './volumes';
+import { chooseReleaseProvider, destroyAppVolumes, listAppVolumes } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -769,16 +769,27 @@ export function registerAppsRoutes(): void {
       const source = sourceFromWire(body.source);
       // A static site runs no machine: it has no release config.
       let releaseConfig = null;
+      let hostingProvider: string | null = body.provider ?? null;
       if (source.kind !== 'static') {
         const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
         if ('issues' in resolved) {
           return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
         }
         releaseConfig = resolved.config;
-        const provider = body.provider ?? config.getDefaultProvider();
-        if (releaseConfig.mounts.length > 0 && !appVolumesSupported(provider)) {
-          return c.json({ error: `Volumes need the platinum provider, not ${provider}.`, code: 'app_volumes_unsupported' }, 400);
+        const [latest] = await db.select({ provider: appDeployments.hostingProvider }).from(appDeployments)
+          .where(and(eq(appDeployments.appId, appId), isNotNull(appDeployments.hostingProvider)))
+          .orderBy(desc(appDeployments.version)).limit(1);
+        const choice = chooseReleaseProvider({
+          requested: body.provider,
+          hasMounts: releaseConfig.mounts.length > 0,
+          previous: config.ALLOWED_SANDBOX_PROVIDERS.find((name) => name === latest?.provider),
+          platinumEnabled: config.isPlatinumEnabled(),
+          platformDefault: config.getDefaultProvider(),
+        });
+        if (!choice.ok) {
+          return c.json({ error: `Volumes need the platinum provider, not ${choice.provider}.`, code: 'app_volumes_unsupported' }, 400);
         }
+        hostingProvider = choice.provider;
       }
       const deployment = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
@@ -787,7 +798,7 @@ export function registerAppsRoutes(): void {
         const version = Number(versionRow?.value ?? 0) + 1;
         const [row] = await tx.insert(appDeployments).values({
           appId, artifactId: artifact.artifactId, version, status: 'queued',
-          sourceKind: source.kind, hostingProvider: body.provider ?? null,
+          sourceKind: source.kind, hostingProvider,
           createdBy: loaded.userId,
           sourceSessionId: callerKortixSessionId(c),
           actorType: appDeploymentActorType(c),

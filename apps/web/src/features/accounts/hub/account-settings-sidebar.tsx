@@ -159,14 +159,12 @@ function SettingsNav() {
   // From `?accountId=`, the only place it lives. `useParams()` would be
   // meaningless: this sidebar renders over some other route.
   const accountId = useAccountPanelId();
-  const { sectionVisible, activeSection, canReadMembers } = useAccountHubSection(accountId);
-  const membersQuery = useAccountMembers(accountId, canReadMembers);
+  const { sectionVisible, activeSection } = useAccountHubSection(accountId);
+  const membersQuery = useAccountMembers(accountId);
 
-  // `members` is `[]` for a caller without `member.read` — the query never
-  // runs — and "0" beside Members on an account they are demonstrably a
-  // member of is a lie, not a placeholder.
-  const memberCount =
-    sectionVisible.members && !membersQuery.isLoading ? (membersQuery.data ?? []).length : null;
+  // The count of the people this caller sees: the whole directory with
+  // `member.read`, else the people they share access with. Hidden while loading.
+  const memberCount = membersQuery.isLoading ? null : (membersQuery.data ?? []).length;
 
   // The account list (no account picked) has no sections: the switcher above
   // and the list in the body are the whole page.

@@ -63,6 +63,8 @@
  *   harness block's `data` is the v1 part and passes through. On a native v2 record (no such
  *   ext, as the pi adapter writes), `toV1` skips `system` and `context` messages (an old
  *   client would draw them as user bubbles) and never passes a harness block's `data` through.
+ *   A native completed call's `state.metadata` is its display data (`result.details`, else the
+ *   `details` of its adapter's ext: pi), as the harness's own v1 part carries it.
  * - Output never aliases input: `fromV1` and `toV1` clone their input.
  */
 import type { KortixFilePart, KortixMessageInfo, KortixPart } from '../transcript';
@@ -201,6 +203,17 @@ const urlOf = (a: { url?: string; ref?: string }, c: Ctx) =>
 const textOf = (content: ToolResultContent[] | undefined) => (content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
 const head = (b: { id: string }, c: Ctx) => ({ id: b.id, ...(c.sessionID !== null && { sessionID: c.sessionID }), messageID: c.messageID });
 
+/**
+ * A native call's display data, the v1 `state.metadata` its harness part carries: `result.details`,
+ * else the `details` an adapter keeps in its own ext (pi: `ext.pi.data.details`). A `fromV1` call
+ * has neither; its metadata is in the v1 residual.
+ */
+const detailsOf = (b: ToolCallBlock): J => {
+  if (isObj(b.result?.details)) return b.result.details;
+  const own = Object.values(b.ext ?? {}).find((e) => e.version !== KORTIX_TRANSCRIPT_SCHEMA && isObj((e.data as J | undefined)?.details));
+  return own ? (own.data as J).details : {};
+};
+
 function toolState(b: ToolCallBlock, c: Ctx, base: J): J {
   const r = b.result;
   const input = b.input === null || b.input === undefined ? {} : { input: b.input };
@@ -215,7 +228,7 @@ function toolState(b: ToolCallBlock, c: Ctx, base: J): J {
   );
   const compacted = msOf(r?.cleared_at);
   return {
-    status: 'completed', ...input, output: textOf(r?.content), title: b.title ?? '', metadata: meta,
+    status: 'completed', ...input, output: textOf(r?.content), title: b.title ?? '', metadata: { ...detailsOf(b), ...meta },
     time: { start, end, ...(compacted !== undefined && { compacted }) },
     ...(atts.length && { attachments: atts }),
   };

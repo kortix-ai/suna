@@ -12,6 +12,8 @@ import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { actorOf } from '../iam/actor';
+import { visibleDirectory } from '../iam/directory-visibility';
 import { loadProjectForUser } from '../projects/surface';
 import { ensureAgentServiceAccount } from '../repositories/service-accounts';
 import { isUuid } from '../shared/validate';
@@ -813,7 +815,7 @@ drivesApp.openapi(
     path: '/{driveId}/principals',
     tags: ['drives'],
     summary: 'Who a folder can be shared with',
-    description: 'The account’s people and teams and the project’s agents.',
+    description: 'The account’s people and teams the caller may see, and the project’s agents.',
     ...auth,
     request: { params: DriveParams },
     responses: {
@@ -830,7 +832,13 @@ drivesApp.openapi(
   }),
   async (c) => {
     const { drive } = await loadDrive(c);
-    const { members, teams, agentNames } = await shareablePrincipals(drive);
+    const [principals, visible] = await Promise.all([
+      shareablePrincipals(drive),
+      visibleDirectory(await actorOf(c, drive.accountId)),
+    ]);
+    const { agentNames } = principals;
+    const members = principals.members.filter((id) => !visible.userIds || visible.userIds.has(id));
+    const teams = principals.teams.filter((t) => !visible.groupIds || visible.groupIds.has(t.id));
     const emails = await userEmails(members);
     const agents = [...new Set([...(await projectAgentNames(drive.projectId!)), ...agentNames].filter(Boolean))].sort();
     return c.json({
