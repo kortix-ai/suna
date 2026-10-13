@@ -762,6 +762,10 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   whose `input.items` is the carousel. `sessionLogAnsweredQuestionCall(call, answers, input?)`
   is a `question` call with answers the harness has not confirmed yet.
 - `sessionLogActivityText(turn, childMessages?)` is the activity line of a live turn.
+- `sessionLogRetrying(thread)` says whether the thread's last reply retries a provider
+  error (a turn's `retrying`), without grouping turns: the busy state a host passes
+  as `busy` reads it. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept block
+  turns as well as v1 turns, and `stepLabel` any session-log block.
 - `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
   prompt the thread has not placed; append it and name it in `held`.
 - `sessionLogThreadMetrics(thread, { pricing? })` is one thread's `cost` (the turns'

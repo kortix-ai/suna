@@ -2278,6 +2278,7 @@
     "sessionLogOfV1Rows",
     "sessionLogOpenCall",
     "sessionLogPromptMessage",
+    "sessionLogRetrying",
     "sessionLogShowGroupCall",
     "sessionLogThreadMetrics",
     "sessionLogTurnSegments",

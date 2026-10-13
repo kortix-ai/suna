@@ -17,6 +17,7 @@
  * - `sessionLogActivityText`: `getTurnStatus` (the activity line).
  * - `sessionLogCallStatus`: the per-call status rule (new: a closure-rule block is open on a live turn).
  * - `sessionLogPromptMessage`: the host's synthetic row for a queued inbox prompt.
+ * - `sessionLogRetrying`: `hasRetryingAssistantTurn` over a thread (the busy state's input).
  * - `sessionLogThreadMetrics`: a thread's cost, message counts and token totals (the context modal).
  * `getPermissionForTool(permissions, call.call_id)` and `getQuestionForTool` already take the
  * call id, so they serve a `ToolCallBlock` as they are.
@@ -39,6 +40,7 @@ export {
   sessionLogTurns,
   sessionLogCallStatus,
   sessionLogPromptMessage,
+  sessionLogRetrying,
   type SessionLogTurnsOptions,
   type SessionLogCallStatus,
   type SessionLogCompaction,

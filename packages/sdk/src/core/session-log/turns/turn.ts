@@ -288,12 +288,23 @@ const writesPlan = (d: Draft) => d.assistant.some((m) => m.blocks.some((b) => is
 const cache = new WeakMap<SessionLogMessage, { assistant: SessionLogMessage[]; key: string; pricing: ModelPricingLookup | undefined; heads: unknown; turn: SessionLogTurn }>();
 const NONE: readonly string[] = [];
 
+/**
+ * The thread's last reply is open and retries a provider error (`hasRetryingAssistantTurn`):
+ * `SessionLogTurn.retrying` of its turn, read without grouping turns, so a host can feed it to
+ * the busy state it then passes to {@link sessionLogTurns}. A native record carries no retry
+ * flag: false.
+ */
+export function sessionLogRetrying(thread: Pick<SessionLogThread, 'messages'>): boolean {
+  const reply = last(thread.messages, (m) => m.role === 'assistant');
+  return !!reply && hasRetryingAssistantTurn(v1RowsOf(reply));
+}
+
 /** The turns of `thread`, see the module header. */
 export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
   const held = new Set(options.held ?? NONE);
   const list = drafts(thread.messages, held);
   const lastReply = last(thread.messages, (m) => m.role === 'assistant');
-  const retrying = !!lastReply && hasRetryingAssistantTurn(v1RowsOf(lastReply));
+  const retrying = sessionLogRetrying(thread);
   const working = resolveWorkingTurn({
     turns: list.map((d) => ({
       userMessage: { info: { id: d.user.message_id } },
