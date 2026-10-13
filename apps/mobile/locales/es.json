@@ -138,6 +138,7 @@
     "browseAsGuest": "Navegar como invitado",
     "signOutFailed": "No se pudo cerrar sesión. Comprueba tu conexión e inténtalo de nuevo.",
     "signingOut": "Cerrando sesión…",
+    "ssoRequired": "Tu organización requiere inicio de sesión único. Continúa con SSO.",
     "mfa": {
       "title": "Verifica que eres tú",
       "enterCode": "Introduce el código de 6 dígitos de tu app de autenticación.",
