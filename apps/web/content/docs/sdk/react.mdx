@@ -329,7 +329,7 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 
 Rules that apply to several hooks:
 
-- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `project.gitops.push`, never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
+- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
 - The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs/work/sessions#notifications).
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`. The next read then comes from the new runtime.
 
