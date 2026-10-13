@@ -1,0 +1,17 @@
+{
+  "source_hash": "2e19b4b89e45746224df88ee1d08fcdaf411ac1a8df55261d4381de997c3961b",
+  "diff_files": [
+    "apps/api/src/projects/session-log-ingest.ts",
+    "packages/api-contract/src/__tests__/session-log-model-view.test.ts",
+    "packages/api-contract/src/session-log/model-view.ts"
+  ],
+  "diff_hash": "095cad8a957339814030d3263c3570ef76390a9e443f2eae6e9c404e9cd69fe7",
+  "head": "50f66a16b8d220e29e29187e19a9d5f147d359cd",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T15:53:15.521Z"
+}
