@@ -32,11 +32,12 @@ const withSource = (log: SessionLog, source: 'v1' | 'v2') => {
 /**
  * The session log of runtime session `threadId ?? root` while the session reads v1: the
  * `fromV1` view (`sessionLogOfV1Rows`) of the rows `useSessionMessages` renders. Null
- * without a runtime session id, and while the store holds no row for it.
+ * without a runtime session id, and while the store holds no row for it. `enabled: false`
+ * (a v2 log exists) reads no rows, so a v1 row change does not re-render the caller.
  */
-function useV1SessionLog(session: SessionMessagesSource, threadId?: string | null): SessionLog | null {
-  const native = threadId || session.runtimeSessionId || session.opencodeSessionId || null;
-  const rows = useSessionMessages({ ...session, runtimeSessionId: native });
+function useV1SessionLog(session: SessionMessagesSource, threadId: string | null | undefined, enabled: boolean): SessionLog | null {
+  const native = enabled ? threadId || session.runtimeSessionId || session.opencodeSessionId || null : null;
+  const rows = useSessionMessages({ ...session, runtimeSessionId: native, opencodeSessionId: null });
   return useMemo(() => (native && rows.length ? sessionLogOfV1Rows(session.sessionId, native, rows) : null), [session.sessionId, native, rows]);
 }
 
@@ -59,7 +60,7 @@ export function useSessionLog(session: SessionMessagesSource): (SessionLog & { s
     const log = state.sessionLogs[session.sessionId];
     return log ? selectSessionLog(log) : null;
   });
-  const v1 = useV1SessionLog(session);
+  const v1 = useV1SessionLog(session, undefined, !v2);
   return v2 ? withSource(v2, 'v2') : v1 ? withSource(v1, 'v1') : null;
 }
 
@@ -82,7 +83,7 @@ export function useSessionLogThread(
     // The v1 rows the log lacks (an optimistic send) show until the log's put replaces them.
     return thread && sessionLogThreadWithV1Rows(log, thread, selectSessionRows(state, thread.thread_id), (id) => state.optimisticEchoOf(thread.thread_id, id));
   });
-  const v1 = useV1SessionLog(session, threadId);
+  const v1 = useV1SessionLog(session, threadId, v2 === undefined);
   return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
 }
 
