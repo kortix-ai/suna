@@ -20,11 +20,18 @@ import {
   type SessionAccessFilter,
 } from './session-owner-filters';
 
-export function sessionOwnerLabel(session: ProjectSession): string {
+/**
+ * The owner column's label. A named owner renders verbatim; the fallbacks
+ * route through the catalog so they translate with the viewer's locale.
+ */
+export function sessionOwnerLabel(
+  session: ProjectSession,
+  tI18nComplete: UiTranslator,
+): string {
   if (session.owner_name) return session.owner_name;
   if (session.owner_email) return session.owner_email;
-  if (session.is_owner === true) return 'You';
-  return 'Unknown owner';
+  if (session.is_owner === true) return tI18nComplete.raw('text08b041935798');
+  return tI18nComplete.raw('text0b6a47661327');
 }
 
 export function sessionAccessMeta(
@@ -105,13 +112,13 @@ export function sessionDetailFields(
   // Trigger metadata is meaningless for a chat a person started; it exists only
   // once something fired the session.
   if (source.kind !== 'chat') {
-    push('Source', source.label);
-    push('Trigger', source.triggerSlug);
+    push(tI18nComplete.raw('text0e570ca6fabe'), source.label); // Source
+    push(tI18nComplete.raw('text8b9c643731c9'), source.triggerSlug); // Trigger
   }
 
-  push('Last activity', formatted.updated);
-  push('Created', formatted.created);
-  push('Owner', sessionOwnerLabel(session));
+  push(tI18nComplete.raw('text06475633ed3e'), formatted.updated); // Last activity
+  push(tI18nComplete.raw('textd70b9e24bca2'), formatted.created); // Created
+  push(tI18nComplete.raw('text4b1b8aa3608a'), sessionOwnerLabel(session, tI18nComplete)); // Owner
   push('Owner identity', session.owner_type ? OWNER_TYPE_LABELS[session.owner_type] : null);
   push('Owner ID', session.created_by, true);
   // "Can open" is the default; surfacing it on every row is noise.
@@ -142,6 +149,14 @@ export function sessionDetailFields(
   push('Root conversation ID', session.runtime_session_id ?? session.opencode_session_id, true);
 
   return fields;
+}
+
+/** The bulk-delete confirm button's label: "Delete 5", in the caller's locale. */
+export function bulkDeleteConfirmLabel(
+  selectedCount: number,
+  tI18nComplete: UiTranslator,
+): string {
+  return tI18nComplete('text8782b778c202', { value0: selectedCount });
 }
 
 /** A session can only be deleted when the viewer owns a live, undeleted record. */
