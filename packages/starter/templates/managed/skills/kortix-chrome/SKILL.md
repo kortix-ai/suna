@@ -81,7 +81,7 @@ asking*, *ask first* (your first `use` shows a prompt in Chrome and waits up to
 - **Denied or stopped** (`chrome_denied`): the user said no, or pressed Stop. Do
   not retry on your own. Ask the user. If they agree, run `kortix chrome use --ask`.
 - **Access off** (`chrome_access_off`): tell the user to switch the browser to
-  "Without asking" or "Ask first" in Kortix settings (Settings → Chrome extension), then wait.
+  "Without asking" or "Ask first" in Kortix settings (Settings → Kortix in Chrome), then wait.
 - **Timeout** (`chrome_consent_timeout`): nobody answered the prompt in Chrome.
   Tell the user to look at Chrome, then run `kortix chrome use --ask` again.
 - **`chrome_dial_failed`**: Chrome did not connect. Ask the user to check that
@@ -90,6 +90,10 @@ asking*, *ask first* (your first `use` shows a prompt in Chrome and waits up to
   `Auto-launch failed … No webSocketDebuggerUrl`): no browser is attached. It was
   released, the user pressed Stop, or Chrome closed. Run `kortix chrome use`;
   after a Stop it answers `chrome_denied`, so ask the user first.
+- **`kortix chrome` is unknown, or `/kortix/chrome/*` answers 404**: this sandbox
+  still runs an older Kortix runtime. It updates itself when the turn ends. Tell
+  the user in one line to send the request again, then stop. Do not inspect or
+  restart the daemon.
 </errors>
 
 <rules>
