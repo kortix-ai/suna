@@ -1797,6 +1797,8 @@
   },
   "sessionDelete": {
     "description": "Supprime <name>{label}</name> et retire son sandbox. Vous pouvez restaurer la session pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
+    "bulkDescription": "Supprime chaque session sélectionnée et retire son sandbox. Vous pouvez restaurer chaque session pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
+    "restoring": "Restauration de la session…",
     "undo": "Annuler",
     "restored": "Session restaurée",
     "restoreFailed": "Impossible de restaurer la session"
@@ -15521,7 +15523,6 @@
       "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "L’assemblage, pas le jugement.",
       "textac318011a661": "Charger les anciennes requêtes",
-      "textac371f652a2d": "Cette action détruit définitivement la branche et le sandbox de chaque session. Elle est irréversible.",
       "textac4059cfd550": "Chaque modification est versionnée, révisable et réversible",
       "textac454bda92f9": "Création du projet…",
       "textac467df56e2a": "    connectors: [gmail-read]",

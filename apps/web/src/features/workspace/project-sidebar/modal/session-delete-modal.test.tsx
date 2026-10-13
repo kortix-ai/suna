@@ -3,7 +3,7 @@
 // SDK, refreshes the session lists and, for the session the page had open,
 // goes back to it. These tests render the real modal and click the real Undo
 // button the toast carries.
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test';
 import { act, type ReactElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
@@ -21,7 +21,7 @@ for (const key of Object.getOwnPropertyNames(win)) {
 }
 
 type ToastCall = {
-  kind: 'success' | 'error';
+  kind: 'success' | 'error' | 'progress';
   message: string;
   options?: { id?: string; duration?: number; button?: ReactElement };
 };
@@ -30,6 +30,10 @@ const dismissed: unknown[] = [];
 mock.module('@/components/ui/toast', () => ({
   successToast: (message: string, options?: ToastCall['options']) => toasts.push({ kind: 'success', message, options }),
   errorToast: (message: string, options?: ToastCall['options']) => toasts.push({ kind: 'error', message, options }),
+  progressToast: (message: string, options?: ToastCall['options']) => {
+    toasts.push({ kind: 'progress', message, options });
+    return 'progress-toast';
+  },
   dismissToast: (id: unknown) => dismissed.push(id),
 }));
 
@@ -107,12 +111,41 @@ async function deleteThroughModal(): Promise<HTMLElement> {
   return dialog;
 }
 
-async function clickUndo(): Promise<void> {
-  const undo = toasts[0]?.options?.button;
-  if (!undo) throw new Error('the delete toast carries no Undo button');
-  const toast = mount(undo);
+/** Click the button a toast carries: Undo on the delete toast, Try again on a refusal. */
+async function clickToastButton(call: ToastCall | undefined): Promise<void> {
+  const button = call?.options?.button;
+  if (!button) throw new Error(`the toast carries no button: ${JSON.stringify(call)}`);
+  const toast = mount(button);
   await act(async () => (toast.querySelector('button') as HTMLButtonElement).click());
   await flush();
+}
+
+const clickUndo = () => clickToastButton(toasts[0]);
+const results = () => toasts.filter((call) => call.kind !== 'progress');
+
+/** Click Undo with fake timers, and run every restore retry the modal waits for. */
+async function clickUndoAndWaitOutRetries(): Promise<void> {
+  jest.useFakeTimers();
+  try {
+    const undo = mount(toasts[0]!.options!.button!);
+    await act(async () => (undo.querySelector('button') as HTMLButtonElement).click());
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        jest.advanceTimersByTime(20_000);
+        for (let tick = 0; tick < 10; tick += 1) await Promise.resolve();
+      });
+    }
+  } finally {
+    jest.useRealTimers();
+  }
+}
+
+/** What the API answers while the deleted session's old sandbox is still being removed. */
+function removalPending(): Error {
+  return Object.assign(
+    new Error("The deleted session's sandbox is still being removed. Try again in a minute."),
+    { status: 409, code: 'session_sandbox_removal_pending' },
+  );
 }
 
 beforeEach(() => {
@@ -162,9 +195,10 @@ describe('SessionDeleteModal', () => {
   test('Undo restores the session and refreshes the lists, and stays on the page', async () => {
     await deleteThroughModal();
     await clickUndo();
-    expect(dismissed).toEqual(['session-delete-undo-S1']);
+    expect(dismissed).toEqual(['session-delete-undo-S1', 'progress-toast']);
     expect(sdkCalls).toEqual(['delete P1/S1', 'restore P1/S1']);
-    expect(toasts[1]).toEqual({ kind: 'success', message: 'Session restored', options: undefined });
+    expect(toasts[1]).toMatchObject({ kind: 'progress', message: 'Restoring the session…' });
+    expect(toasts[2]).toEqual({ kind: 'success', message: 'Session restored', options: undefined });
     // Once for the delete, once for the restore.
     expect(invalidated).toEqual([
       ['project', 'P1', 'sessions'],
@@ -184,15 +218,20 @@ describe('SessionDeleteModal', () => {
 
   test('a refused Undo shows the server reason and leaves the session deleted', async () => {
     restoreAnswer = async () => {
-      throw new Error("The deleted session's sandbox is still being removed. Try again in a minute.");
+      throw Object.assign(new Error('This session was deleted more than 30 days ago.'), {
+        status: 410,
+        code: 'session_purged',
+      });
     };
     await deleteThroughModal();
     await clickUndo();
-    expect(toasts[1]).toEqual({
+    expect(sdkCalls).toEqual(['delete P1/S1', 'restore P1/S1']);
+    expect(results()[1]).toEqual({
       kind: 'error',
-      message: "The deleted session's sandbox is still being removed. Try again in a minute.",
+      message: 'This session was deleted more than 30 days ago.',
       options: undefined,
     });
+    expect(dismissed).toContain('progress-toast');
     expect(invalidated).toEqual([['project', 'P1', 'sessions']]);
     expect(events).toEqual(['deleted', 'open:false']);
     expect(pushes).toEqual([]);
@@ -204,6 +243,46 @@ describe('SessionDeleteModal', () => {
     };
     await deleteThroughModal();
     await clickUndo();
-    expect(toasts[1]).toMatchObject({ kind: 'error', message: 'Could not restore the session' });
+    expect(results()[1]).toMatchObject({ kind: 'error', message: 'Could not restore the session' });
+  });
+
+  // The old sandbox is usually still being removed right after the delete. Undo
+  // is the only restore in the web app, so that refusal must not end it.
+  test('Undo retries while the old sandbox is still being removed, then restores', async () => {
+    let attempts = 0;
+    restoreAnswer = async () => {
+      attempts += 1;
+      if (attempts < 3) throw removalPending();
+      return { ok: true };
+    };
+    await deleteThroughModal();
+    await clickUndoAndWaitOutRetries();
+    expect(sdkCalls).toEqual(['delete P1/S1', 'restore P1/S1', 'restore P1/S1', 'restore P1/S1']);
+    expect(results()[1]).toEqual({ kind: 'success', message: 'Session restored', options: undefined });
+    expect(invalidated).toHaveLength(2);
+  });
+
+  test('when the removal outlasts the retries, the refusal keeps a Try again button that restores', async () => {
+    restoreAnswer = async () => {
+      throw removalPending();
+    };
+    await deleteThroughModal();
+    await clickUndoAndWaitOutRetries();
+    const refusal = results()[1];
+    expect(refusal).toMatchObject({
+      kind: 'error',
+      message: "The deleted session's sandbox is still being removed. Try again in a minute.",
+      options: { id: 'session-delete-undo-S1' },
+    });
+    // The first attempt and four retries, ~30 s in all.
+    const tries = sdkCalls.filter((call) => call.startsWith('restore')).length;
+    expect(tries).toBe(5);
+    expect(invalidated).toHaveLength(1);
+
+    restoreAnswer = async () => ({ ok: true });
+    await clickToastButton(refusal);
+    expect(sdkCalls.filter((call) => call.startsWith('restore'))).toHaveLength(tries + 1);
+    expect(results().at(-1)).toEqual({ kind: 'success', message: 'Session restored', options: undefined });
+    expect(invalidated).toHaveLength(2);
   });
 });
