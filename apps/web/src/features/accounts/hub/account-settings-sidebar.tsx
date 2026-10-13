@@ -133,19 +133,17 @@ function SettingsNav() {
   // meaningless: this sidebar renders over some other route.
   const accountId = useAccountPanelId();
   const accountsQuery = useAccountsList();
-  const { sectionVisible, activeSection, canReadMembers } = useAccountHubSection(accountId);
-  const membersQuery = useAccountMembers(accountId, canReadMembers);
+  const { sectionVisible, activeSection } = useAccountHubSection(accountId);
+  const membersQuery = useAccountMembers(accountId);
 
   const accounts = useMemo(() => {
     const list = accountsQuery.data ?? [];
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [accountsQuery.data]);
 
-  // `members` is `[]` for a caller without `member.read` — the query never
-  // runs — and "0" beside Members on an account they are demonstrably a
-  // member of is a lie, not a placeholder.
-  const memberCount =
-    sectionVisible.members && !membersQuery.isLoading ? (membersQuery.data ?? []).length : null;
+  // The count of the people this caller sees: the whole directory with
+  // `member.read`, else the people they share access with. Hidden while loading.
+  const memberCount = membersQuery.isLoading ? null : (membersQuery.data ?? []).length;
 
   const sectionGroups = accountId
     ? navGroups
