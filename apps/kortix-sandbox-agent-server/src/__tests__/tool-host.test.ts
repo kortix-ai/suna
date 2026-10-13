@@ -242,4 +242,15 @@ describe('POST /kortix/tools/:name', () => {
     const thrown = await call('lookup_order', { args: { id: 'boom' }, agent: 'kortix' }, bridge())
     expect([thrown.status, await thrown.json()]).toEqual([422, { error: 'order service is down' }])
   })
+
+  // Pentest M-4: an unnamed agent skipped every tools map.
+  test('a call that names no agent is held to the default agent', async () => {
+    const restricted = { ...env(), KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'reader', agent: { reader: { tools: { '*': false, read: true } } } }) }
+    const unnamed = await createToolsRouter({ sandboxToken: TOKEN, projectTarget: root } as Config, restricted).request('/lookup_order', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...bridge() },
+      body: JSON.stringify({ args: { id: '1' } }),
+    })
+    expect([unnamed.status, await unnamed.json()]).toEqual([403, { error: 'agent reader may not use lookup_order' }])
+  })
 })

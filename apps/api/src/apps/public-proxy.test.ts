@@ -423,6 +423,15 @@ describe('Apps public edge', () => {
     )).toBe(true);
   });
 
+  test('an unsigned claim of a local App host is not an App request', () => {
+    // Pentest H-3: the local carve-out skips the edge signature, so a claimed
+    // `*.apps.localhost` sent to the public API routed into App dispatch unsigned.
+    const request = new Request('https://api.kortix.com/', {
+      headers: { 'x-kortix-app-host': 'aaaaaaaaaaaaaaaa.apps.localhost' },
+    });
+    expect(resolveAppRequest(request, new URL(request.url))).toBeNull();
+  });
+
   test('allows direct local development without Cloudflare headers', () => {
     const request = new Request('http://aaaaaaaaaaaaaaaa.apps.localhost:8008/');
     expect(verifyAppEdgeRequest(request, new URL(request.url), true)).toBe(true);

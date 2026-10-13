@@ -54,8 +54,17 @@ async function accessTokenAuthorizesRequest(
   return Boolean(token!.userId && await verifyUserAccess(app, token!.userId));
 }
 
-function safeAppReturnTo(value: string): string {
-  return value.startsWith('/') && !value.startsWith('//') ? value : '/';
+/**
+ * A same-origin path, or `/`. Browsers read `\` as `/` and drop tab, CR and LF,
+ * so `/\evil.example` and `/\t/evil.example` leave the origin: both are refused.
+ * Same rule as `safeReturnTo` in packages/sdk/src/node/auth.ts.
+ */
+export function safeAppReturnTo(value: string): string {
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return '/';
+  const base = 'https://return-to.invalid';
+  const resolved = URL.parse(value, base);
+  return resolved?.origin === base ? `${resolved.pathname}${resolved.search}${resolved.hash}` : '/';
 }
 
 function appAccessResponse(

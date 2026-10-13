@@ -43,9 +43,30 @@ export function isOAuthRefreshToken(token: string): boolean {
 /** Routes an identity-only token (no `kortix` scope) may still reach. */
 const IDENTITY_PROBE_PATHS = new Set(['/v1/accounts/me', '/v1/oauth/userinfo', '/v1/oauth/revoke']);
 
-export function oauthScopeAllowsPath(scopes: readonly string[], path: string): boolean {
-  if (scopes.includes(OAUTH_SCOPE_KORTIX)) return true;
-  return IDENTITY_PROBE_PATHS.has(path.replace(/\/+$/, ''));
+/**
+ * Writes no OAuth token may make, even with `kortix`: minting a credential that
+ * outlives the grant (PATs, CLI/App/SCIM tokens), sign-in and password state,
+ * and account deletion. An OAuth token is delegated: to a third-party client
+ * (open DCR) or to an App's own code acting as its viewer (pentest M-2). A
+ * grant the user revokes must not leave a PAT behind.
+ */
+const DELEGATED_WRITE_DENIED: readonly RegExp[] = [
+  /^\/v1\/auth(\/|$)/,
+  /^\/v1\/accounts\/tokens(\/|$)/,
+  /^\/v1\/accounts\/[^/]+\/iam\/(scim\/tokens|pat-policy)(\/|$)/,
+  /^\/v1\/projects\/[^/]+\/cli-token(\/|$)/,
+  /^\/v1\/projects\/[^/]+\/apps\/[^/]+\/token$/,
+  /^\/v1\/(billing\/)?account\/(request|cancel)-deletion$/,
+  /^\/v1\/tunnel\/connections\/[^/]+\/rotate-token$/,
+  /^\/v1\/platform\/github-app\/pat$/,
+];
+
+export function oauthScopeAllowsPath(scopes: readonly string[], path: string, method = 'GET'): boolean {
+  const p = path.replace(/\/+$/, '');
+  if (scopes.includes(OAUTH_SCOPE_KORTIX)) {
+    return method === 'GET' || method === 'HEAD' || !DELEGATED_WRITE_DENIED.some((re) => re.test(p));
+  }
+  return IDENTITY_PROBE_PATHS.has(p);
 }
 
 export interface OAuthAccessTokenValidation {

@@ -379,21 +379,28 @@ no `vX.Y.Z` Release.
    the three npm packages, the GitHub Release (24 assets), and Better Stack all
    verified on the new version.
 8. `:stable` moved only if the user explicitly asked for it this release.
-9. **One-time, release carrying #9272 (the `/internal/*` edge gate):** the
-   api-router worker ships inert until `INTERNAL_EDGE_KEY` is set. Do it per env,
-   in this order, after that release is live in the env. A wrong order breaks LLM
-   inference, because the gateway calls `/internal/gateway/*` through the public
-   API host.
+9. **One-time per env: the `/internal/*` edge key** (#9272, and the pentest
+   2026-10-13 fix that made the API enforce it too). Done on dev; staging and
+   prod are open until this runs. Two gates read the key: the api-router worker
+   (`INTERNAL_EDGE_KEY`, 404s a public caller) and the API itself
+   (`KORTIX_INTERNAL_EDGE_KEY`, 404s `/internal/gateway/*` without the header,
+   which also covers the public backend origins such as
+   `api-ecs-fargate.kortix.com` that skip the worker). The worker forwards the
+   header. Do it after a release carrying the pentest fix is live in the env,
+   in this order. A wrong order breaks LLM inference, because the gateway calls
+   `/internal/gateway/*` through the public API host.
    1. Generate a random 32-byte key. Never print it.
    2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
       `kortix-<env>-env` in its `blob_region` region (the **dotenvx-secrets**
       skill, "Which region to edit"; needs an MFA session) and to
       `apps/api/.env.<env>` with `dotenvx set`.
-   3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
-      gateway `GET /v1/models` with a PAT still returns 200.
-   4. Only then `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the
-      api-router worker, and redeploy the worker.
-   5. Verify: public `curl https://<api-host>/internal/gateway/authenticate`
-      returns 404 (the worker gate, not the app's 401), and a gateway chat call
-      gives the same answer as before.
-   Rollback: delete the worker secret. The gateway header is harmless.
+   3. Redeploy the GATEWAY only (new ECS deployment). Confirm it sends the
+      header: gateway `GET /v1/models` with a PAT still returns 200.
+   4. Redeploy the API. It now enforces the key.
+   5. `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the api-router
+      worker, and redeploy the worker.
+   6. Verify: `curl -X POST https://<api-host>/internal/gateway/authenticate`
+      and the same on `/%69nternal/...` and on the backend origin host all
+      return 404, and a gateway chat call gives the same answer as before.
+   Rollback: remove the key from the blob and redeploy the API, then delete the
+   worker secret. The gateway header is harmless.

@@ -1045,11 +1045,21 @@ describe('api-router worker', () => {
       expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
     });
 
-    test('gateway with the key is forwarded and the key is stripped', async () => {
+    test('gateway with the key is forwarded with the key, which the API checks again', async () => {
       const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
       expect(response.status).toBe(200);
-      expect(seen).toEqual([null]);
+      expect(seen).toEqual(['edge-key-1']);
     });
+
+    // The API routes the decoded path, so an encoded or case-shifted prefix is gated too.
+    test.each(['/%69nternal/gateway/refresh-credential', '/%49NTERNAL/gateway/x', '/Internal/gateway/x'])(
+      '%s without the key gets 404',
+      async (path) => {
+        const { response, seen } = await call(path);
+        expect(response.status).toBe(404);
+        expect(seen).toEqual([]);
+      },
+    );
 
     test('non-internal paths and an unset key are unaffected', async () => {
       expect((await call('/v1/health')).response.status).toBe(200);

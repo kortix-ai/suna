@@ -31,7 +31,13 @@ function appDirectEdgeMode(): boolean {
  */
 export function edgePublicHost(request: Request, url: URL): string {
   const claimedHost = appDirectEdgeMode() ? null : request.headers.get(EDGE_HOST_HEADER);
-  return (claimedHost || url.hostname).toLowerCase().replace(/\.$/, '');
+  const realHost = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (!claimedHost) return realHost;
+  const claimed = claimedHost.toLowerCase().replace(/\.$/, '');
+  // No edge fronts `*.apps.localhost`, and verifyAppEdgeRequest skips the
+  // signature for a local App. So a local App host is only ever the real Host:
+  // a claimed one would route any caller into App dispatch unsigned.
+  return resolveAppHost(claimed)?.local ? realHost : claimed;
 }
 
 export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
