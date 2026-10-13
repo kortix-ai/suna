@@ -241,7 +241,12 @@ function SessionContextModalBody({
   const thread = useSessionLogThread(source);
   const log = thread?.messages ?? NO_MESSAGES;
   const logSource = useSessionLog(source)?.source;
-  const v1Rows = useSessionMessages(source);
+  // Only the v1 explorer reads the v1 rows: on v2 (or with detached rows) a
+  // null runtime id reads none, so a streamed v1 row re-renders nothing here.
+  const readsV1Rows = logSource === 'v1' && !detachedRows;
+  const v1Rows = useSessionMessages(
+    readsV1Rows ? source : { ...source, runtimeSessionId: null, opencodeSessionId: null },
+  );
   const raw = useMemo(
     () => rawExplorerData(logSource, thread?.messages, detachedRows ?? v1Rows),
     [logSource, thread, detachedRows, v1Rows],

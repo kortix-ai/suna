@@ -17,6 +17,8 @@ import {
   type SessionLogMessage,
   type SessionLogThread,
   type SessionLogTurn,
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
   listSessionPrompts,
   projectSessionConnection,
   sessionLogOfV1Rows,
@@ -1706,8 +1708,8 @@ export function SessionChat({
     if (!thread && queuedSyntheticMessages.length === 0) return null;
     if (queuedSyntheticMessages.length === 0) return thread;
     const base = thread ?? {
-      schema: 'kortix.session/2' as const,
-      v: 1,
+      schema: SESSION_LOG_SCHEMA,
+      v: SESSION_LOG_MINOR,
       thread_id: sessionId,
       parent_thread_id: null,
       spawned_by: null,
