@@ -12,6 +12,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   period ends. A member budget counts its member's requests only. Use
   `spent_usd` for a budget meter, not `project_spend.cost`, which is
   month-to-date. Optional, absent on an older server. Additive (KRTX-1725).
+- `GatewayBudgetRow.subject_email`: the member's email for a member budget,
+  also when the member has no spend this month and so no entry in `members`.
+  `null` for a project budget. Optional, absent on an older server. Additive.
 
 ### Added (permissions)
 - `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine

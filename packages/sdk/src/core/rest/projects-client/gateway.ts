@@ -160,6 +160,12 @@ export interface GatewayBudgetRow {
   budget_id: string;
   scope: 'project' | 'member';
   subject_user_id: string | null;
+  /**
+   * The member's email, for a member budget. Set also when the member has no
+   * spend this month and so no entry in `members`. `null` for a project budget
+   * or an unknown user. Absent on a server older than KRTX-1725.
+   */
+  subject_email?: string | null;
   limit_usd: number;
   period: 'day' | 'week' | 'month';
   action: 'block' | 'warn';

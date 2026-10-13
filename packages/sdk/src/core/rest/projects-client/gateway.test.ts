@@ -130,6 +130,25 @@ test('getGatewayBudgets returns each budget with the spend of its own period and
   expect(row?.resets_at).toBe('2026-10-14T00:00:00.000Z');
 });
 
+test('getGatewayBudgets names a member budget\'s member, also one with no spend this month', async () => {
+  const budget = {
+    budget_id: 'B2',
+    scope: 'member',
+    subject_user_id: 'U1',
+    subject_email: 'quiet@example.test',
+    limit_usd: 10,
+    period: 'week',
+    action: 'block',
+    spent_usd: 9,
+  } satisfies GatewayBudgetRow;
+  nextResponse = {
+    status: 200,
+    body: { project_spend: { requests: 0, cost: 0 }, budgets: [budget], members: [] },
+  };
+  const [row] = (await getGatewayBudgets('P1')).budgets;
+  expect(row?.subject_email).toBe('quiet@example.test');
+});
+
 test('setGatewayBudget PUTs the budget input', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setGatewayBudget('P1', {
