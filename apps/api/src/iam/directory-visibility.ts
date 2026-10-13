@@ -9,11 +9,14 @@
 //   - the groups they are in, and every member of a group they can see.
 // An owner restores the full directory with a custom account role holding
 // `member.read` and `group.read`.
+import { roleAssignments } from '@kortix/db';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { db } from '../shared/db';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
 import type { Actor } from './actor';
 import { authorize, listAccessible } from './authorize';
 import { groupMemberRows, groupsForMemberRows } from './group-read';
-import { accountRoleMap, isAccountManagerRole, projectPrincipals } from './read-models';
+import { accountRoleMap, isAccountManagerRole } from './read-models';
 
 export interface VisibleDirectory {
   /** The member user ids the caller may see; null = every member. */
@@ -55,4 +58,25 @@ export async function visibleDirectory(actor: Actor): Promise<VisibleDirectory> 
     groupIds: groups.allowed ? null : groupIds,
     projectIds: projects.mode === 'none' ? new Set() : projectIds,
   };
+}
+
+/**
+ * Every user and group holding a live assignment on one of the projects: a
+ * project role, a custom role, or an object grant. Omit `projectIds` for every
+ * project of the account. Kept here, not in `read-models`: many unit tests mock
+ * that module with a fixed export list.
+ */
+function projectPrincipals(accountId: string, projectIds?: string[]) {
+  if (projectIds && projectIds.length === 0) return Promise.resolve([]);
+  const clauses = [
+    eq(roleAssignments.accountId, accountId),
+    eq(roleAssignments.scopeType, 'project'),
+    inArray(roleAssignments.principalType, ['user', 'group']),
+    or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
+  ];
+  if (projectIds) clauses.push(inArray(roleAssignments.scopeId, projectIds));
+  return db
+    .selectDistinct({ principalType: roleAssignments.principalType, principalId: roleAssignments.principalId })
+    .from(roleAssignments)
+    .where(and(...clauses));
 }

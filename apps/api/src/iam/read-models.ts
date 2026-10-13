@@ -343,34 +343,6 @@ export async function groupProjectGrants(filter: {
 }
 
 /**
- * Every user and group holding a live assignment on one of the projects: a
- * project role, a custom role, or an object grant. Omit `projectIds` for every
- * project of the account.
- */
-export async function projectPrincipals(
-  accountId: string,
-  projectIds?: string[],
-): Promise<Array<{ principalType: 'user' | 'group'; principalId: string }>> {
-  if (projectIds && projectIds.length === 0) return [];
-  const clauses = [
-    eq(roleAssignments.accountId, accountId),
-    eq(roleAssignments.scopeType, 'project'),
-    inArray(roleAssignments.principalType, ['user', 'group']),
-    live(),
-  ];
-  if (projectIds) clauses.push(inArray(roleAssignments.scopeId, projectIds));
-  return db
-    .selectDistinct({
-      principalType: roleAssignments.principalType,
-      principalId: roleAssignments.principalId,
-    })
-    .from(roleAssignments)
-    .where(and(...clauses)) as unknown as Promise<
-    Array<{ principalType: 'user' | 'group'; principalId: string }>
-  >;
-}
-
-/**
  * The legacy stores had ONE row per (principal, project); the canonical store
  * allows two (a member row and a manager row can coexist). Collapse to the
  * strongest so a read model never renders the same person twice, which is the
