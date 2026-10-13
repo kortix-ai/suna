@@ -32,7 +32,7 @@ else
   esac
   msg="${ROOT}: cannot read the tags of s3://${OLD_BUCKET}/${key}: ${out}"
 fi
-msg="${msg} Run the statemove copy-states.mjs ${group}, then deny-old-keys.mjs ${group}, and re-run."
+msg="${msg} Run infra/terraform/scripts/statemove/copy-states.mjs ${group}, then deny-old-keys.mjs ${group} (same folder), and re-run."
 
 if [ "$MODE" = warn ]; then
   echo "::warning title=Terraform state copy::${msg}"
