@@ -162,6 +162,7 @@ describe('POST .../log/restore', () => {
       ],
     } as never);
     expect(claimed.revs).toEqual({ ...revOf, msg_gone3: REV + 20 });
+    expect(claimed.seq_max).toEqual({ main: 4, ses_child: 1 });
     expect(claimed.blobs).toEqual([
       { message_id: 'msg_a1', block_id: 'prt_tool', ref: item.ref, bytes: 400_000, sha256: createHash('sha256').update(TOOL_OUTPUT).digest('hex') },
     ]);
@@ -194,9 +195,11 @@ describe('POST .../log/restore', () => {
     expect(misplaced.status).toBe(404);
   });
 
-  test('a log stored without a session patch or thread upserts still answers a valid SessionLog', async () => {
-    const puts = [{ rev: REV + 1, message: message('msg_b0', 'thr_unknown', 0) }];
+  test('a log stored without a session patch or thread upserts still answers a valid SessionLog; seq_max counts a tombstone', async () => {
+    const puts = [{ rev: REV + 1, message: message('msg_b0', 'thr_unknown', 0) }, { rev: REV + 2, message: message('msg_b5', 'thr_unknown', 5) }];
     expect((await journal(bare, { generation: 0, puts, tombstones: [], threads: [] })).status).toBe(200);
+    // The thread's last message is tombstoned: the next message must still number above it.
+    expect((await journal(bare, { generation: 0, puts: [], threads: [], tombstones: [{ message_id: 'msg_b5', rev: REV + 3 }] })).status).toBe(200);
     const res = await restore(bare);
     expect(res.status).toBe(200);
     const body = SessionLogRestoreSchema.parse(await res.json());
@@ -204,6 +207,7 @@ describe('POST .../log/restore', () => {
     expect(body.log.harness.current).toBe('opencode');
     expect(body.log.restore_grade).toBe('native');
     expect(body.log.threads).toEqual([expect.objectContaining({ thread_id: 'thr_unknown', parent_thread_id: null, messages: [puts[0]!.message] })] as never);
+    expect(body.seq_max).toEqual({ thr_unknown: 5 });
     expect(body.blobs).toEqual([]);
   });
 

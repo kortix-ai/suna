@@ -258,7 +258,8 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     expect(await noPin.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
     const noStore = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
     expect(await noStore.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
-    expect(await noStore.restore({} as SessionLog)).toEqual([])
+    // P6.3: a port without a restore target (binary, project directory) refuses to restore, as pi's does.
+    await expect(noStore.restore({} as SessionLog)).rejects.toThrow('needs a target')
   })
 })
 

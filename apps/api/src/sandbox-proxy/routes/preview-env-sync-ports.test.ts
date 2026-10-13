@@ -74,7 +74,7 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 mock.module('../../projects/lib/turn-start-convergence', () => ({
   // No database in this file; the real gate would wait out the driver's connect
   // timeout on every prompt. This suite is about the env-sync gate beside it.
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
