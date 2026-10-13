@@ -6,9 +6,11 @@ import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-
 
 /**
  * The project sidebar's navigation rows, in the order and with the visibility
- * the person chose in "Customize sidebar". Per browser, across projects: the
+ * the person chose in "Customize sidebar". Per account, across projects: the
  * sidebar is the same panel in every project, so one layout serves all of
- * them. A row a project does not offer (a flag is off, a permission is denied)
+ * them. localStorage is the instant first paint; the account's
+ * `user_metadata.sidebar_nav` is the source of truth
+ * (`customize-sidebar-modal.tsx` syncs it). A row a project does not offer (a flag is off, a permission is denied)
  * keeps its place here and simply does not render.
  */
 
@@ -72,6 +74,27 @@ export function normalizeSidebarNav(saved: unknown): SidebarNavEntry[] {
     if (!out.some((e) => e.id === entry.id)) out.splice(Math.min(index, out.length), 0, { ...entry });
   });
   return out;
+}
+
+/** The `user_metadata` key that carries the layout to every device the
+ *  account signs in on (web and desktop). */
+export const SIDEBAR_NAV_METADATA_KEY = 'sidebar_nav';
+
+export const sidebarNavKey = (items: readonly SidebarNavEntry[]) => JSON.stringify(items);
+
+/**
+ * The account's saved layout wins. With none saved, keep the local one and
+ * push it once if the person customized it before the layout synced.
+ */
+export function resolveSidebarNav(
+  remote: unknown,
+  local: readonly SidebarNavEntry[],
+): { items: SidebarNavEntry[]; push: boolean } {
+  if (Array.isArray(remote)) return { items: normalizeSidebarNav(remote), push: false };
+  return {
+    items: [...local],
+    push: sidebarNavKey(local) !== sidebarNavKey(SIDEBAR_NAV_DEFAULTS),
+  };
 }
 
 /** Moves one row up (`-1`) or down (`+1`); the keyboard path of the drag. */

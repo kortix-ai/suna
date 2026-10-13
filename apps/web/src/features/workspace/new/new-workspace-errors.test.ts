@@ -104,8 +104,9 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     expect(region).toContain('text-muted-foreground hover:text-foreground');
 
     // One user of the treatment left in this file: `Try again`. `Back to
-    // projects` moved into the shared `AccountTopBar` and is a back pill there
-    // (#9687); Log out moved into that bar's account menu.
+    // projects` moved into the shared `AccountTopBar` with the rest of the top
+    // row; since #9687 it is the shared back pill (components/ui/back-pill.tsx).
+    // Log out moved into that bar's account menu.
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
     expect(treatmentMatches).toHaveLength(1);
     const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');

@@ -523,7 +523,11 @@ flow(
   'INV-3',
   {
     domain: 'projects',
-    routes: ['GET /v1/account-invites/:inviteId'],
+    routes: [
+      'GET /v1/account-invites/:inviteId',
+      'POST /v1/account-invites/:inviteId/accept',
+      'POST /v1/account-invites/:inviteId/decline',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -555,6 +559,14 @@ flow(
         params: { inviteId: '00000000-0000-4000-a000-000000000000' },
       });
       r.status(404);
+    });
+    // A mangled invite link (`/invites/abc`) reached Postgres as a uuid and
+    // answered 500 (KRTX-1731).
+    await ctx.step('a malformed invite id → 404 on describe, accept and decline, never 500', async () => {
+      const params = { inviteId: 'not-a-uuid' };
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites/:inviteId', { params })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/account-invites/:inviteId/accept', {}, { params })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/account-invites/:inviteId/decline', {}, { params })).status(404);
     });
     await ctx.step('ANON cannot describe → 401', async () => {
       const r = await ctx.client
