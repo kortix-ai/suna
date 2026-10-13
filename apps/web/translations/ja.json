@@ -20052,6 +20052,7 @@
     "notFoundDescription": "削除されたか、リンクが正しくありません。",
     "backToConnectors": "コネクターに戻る",
     "installed": "{name} をインストールしました",
+    "installedSyncFailed": "{name} をインストールしました。Kortix はツールを読み込めませんでした: {error}",
     "newSession": "新しいセッション",
     "sections": "{name} のセクション",
     "noticeNoAccountTitle": "{name} にアカウントがありません",

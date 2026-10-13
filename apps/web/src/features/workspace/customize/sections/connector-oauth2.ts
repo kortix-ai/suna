@@ -6,7 +6,11 @@ import type {
   OAuth2TokenEndpointAuthMethod,
 } from '@kortix/sdk';
 
-import { connectorSyncErrorForSlug, createOnlyConnectorDraft } from './connector-connection-form';
+import {
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  isAuthChallenge,
+} from './connector-connection-form';
 
 export interface OAuth2CredentialForm {
   tokenUrl: string;
@@ -172,11 +176,23 @@ export async function createConnectorWithOptionalOAuth2(
       credential: ConnectionCredentialInput,
     ) => Promise<unknown>;
   },
-): Promise<{ syncError: string | null; credentialStored: boolean }> {
+): Promise<{
+  syncError: string | null;
+  credentialStored: boolean;
+  /** An MCP server asked for sign-in (401/403) and no credential was given. */
+  signInPending: boolean;
+}> {
   const created = await deps.createConnector(projectId, createOnlyConnectorDraft(draft));
   const syncError = connectorSyncErrorForSlug(created, draft.slug);
-  if (syncError) return { syncError, credentialStored: false };
-  if (!oauth2) return { syncError: null, credentialStored: false };
+  // An MCP server answers its first tools/list with 401 or 403 until someone
+  // signs in: the sign-in still to do, not a failure. An OAuth2 app credential
+  // IS that sign-in, so it is stored, and storing it re-syncs the tools.
+  const authChallenge =
+    syncError !== null && draft.provider === 'mcp' && isAuthChallenge(syncError);
+  if (syncError && !authChallenge) {
+    return { syncError, credentialStored: false, signInPending: false };
+  }
+  if (!oauth2) return { syncError: null, credentialStored: false, signInPending: authChallenge };
 
   try {
     await deps.setConnectorCredential(projectId, draft.slug, buildOAuth2CredentialInput(oauth2));
@@ -194,5 +210,5 @@ export async function createConnectorWithOptionalOAuth2(
     }
     throw credentialError;
   }
-  return { syncError: null, credentialStored: true };
+  return { syncError: null, credentialStored: true, signInPending: false };
 }

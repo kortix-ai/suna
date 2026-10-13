@@ -53,7 +53,19 @@ describe('connection creation controls', () => {
 
   test('surfaces connector synchronization errors after adding a connector', () => {
     expect(source).toContain('connectorSyncErrorForSlug(result, draft.slug)');
-    expect(source).toContain("tI18nHardcoded('i18nComplete.textd6a135de3872'");
+    expect(source).toContain("tConnectorPages('installedSyncFailed'");
+  });
+
+  // KRTX-2185: the custom form never leaves its modal open over a connector it
+  // already created. Every outcome opens the connector's page; a pending MCP
+  // sign-in (`createConnectorWithOptionalOAuth2` → `signInPending`) opens
+  // "Add account" there, with "Only you" preselected.
+  test('the custom form always hands off to the connector page', () => {
+    const form = source.slice(source.indexOf('export function CustomConnectorForm'));
+    const body = form.slice(0, form.indexOf('\nexport function '));
+    expect(body).toContain('onAdded(draft.slug, { addAccount: result.signInPending })');
+    expect(body).not.toContain('onAdded()');
+    expect(body).not.toContain('onAdded(draft.slug);');
   });
 
   // OAuth2-at-creation is offered unconditionally now (no more owner-strategy

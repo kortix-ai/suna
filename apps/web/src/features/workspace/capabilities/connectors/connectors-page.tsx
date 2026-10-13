@@ -661,12 +661,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 <CustomConnectorForm
                   projectId={projectId}
                   emailChannelEnabled={emailChannelEnabled}
-                  onAdded={(slug) => {
+                  onAdded={(slug, { addAccount }) => {
                     invalidate();
-                    if (slug) {
-                      setPanel(null);
-                      router.push(connectorHref(projectId, slug));
-                    }
+                    setPanel(null);
+                    router.push(connectorHref(projectId, slug, { addAccount }));
                   }}
                 />
               </ModalBody>

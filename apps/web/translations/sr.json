@@ -20052,6 +20052,7 @@
     "notFoundDescription": "Уклоњен је или је линк погрешан.",
     "backToConnectors": "Назад на конекторе",
     "installed": "{name} је инсталиран",
+    "installedSyncFailed": "{name} је инсталиран. Kortix није могао да учита алате: {error}",
     "newSession": "Нова сесија",
     "sections": "Одељци за {name}",
     "noticeNoAccountTitle": "{name} нема налог",

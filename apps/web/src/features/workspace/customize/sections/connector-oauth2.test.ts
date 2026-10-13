@@ -310,6 +310,87 @@ describe('createConnectorWithOptionalOAuth2', () => {
     expect(result).toEqual({
       syncError: 'sandbox unavailable',
       credentialStored: false,
+      signInPending: false,
+    });
+    expect(calls).toEqual(['create']);
+  });
+
+  // An MCP server answers its first tools/list with 401 or 403 until someone
+  // signs in. That is the sign-in still to do, not a failed connector.
+  const mcpDraft = { slug: 'linear-mcp', provider: 'mcp' as const, url: 'https://mcp.example.com' };
+  const answers401 = (calls: string[]) => ({
+    createConnector: async () => {
+      calls.push('create');
+      return {
+        ok: true,
+        sync: {
+          synced: 1,
+          errors: [{ slug: 'linear-mcp', error: 'MCP tools/list failed: HTTP 401' }],
+        },
+      };
+    },
+    deleteConnector: async () => {
+      calls.push('delete');
+    },
+    setConnectorCredential: async (_projectId: string, slug: string) => {
+      calls.push(`credential:${slug}`);
+    },
+  });
+
+  test('an MCP 401 with no credential to store is a pending sign-in, not a sync error', async () => {
+    const calls: string[] = [];
+    const result = await createConnectorWithOptionalOAuth2(
+      'project-1',
+      mcpDraft,
+      null,
+      answers401(calls),
+    );
+
+    expect(result).toEqual({ syncError: null, credentialStored: false, signInPending: true });
+    expect(calls).toEqual(['create']);
+  });
+
+  test('an MCP 401 still stores the OAuth2 app credential, which is the sign-in', async () => {
+    const calls: string[] = [];
+    const result = await createConnectorWithOptionalOAuth2(
+      'project-1',
+      mcpDraft,
+      SECRET_FORM,
+      answers401(calls),
+    );
+
+    expect(result).toEqual({ syncError: null, credentialStored: true, signInPending: false });
+    expect(calls).toEqual(['create', 'credential:linear-mcp']);
+  });
+
+  test('a 403 counts as the same pending sign-in', async () => {
+    const calls: string[] = [];
+    const deps = answers401(calls);
+    const result = await createConnectorWithOptionalOAuth2('project-1', mcpDraft, null, {
+      ...deps,
+      createConnector: async () => ({
+        ok: true,
+        sync: { synced: 1, errors: [{ slug: 'linear-mcp', error: 'HTTP 403 Forbidden' }] },
+      }),
+    });
+
+    expect(result).toEqual({ syncError: null, credentialStored: false, signInPending: true });
+  });
+
+  test('a 401 from a provider that is not MCP stays a sync error', async () => {
+    const calls: string[] = [];
+    const deps = answers401(calls);
+    const result = await createConnectorWithOptionalOAuth2(
+      'project-1',
+      { slug: 'linear-mcp', provider: 'openapi', spec: 'https://example.com/openapi.json' },
+      SECRET_FORM,
+      deps,
+    );
+
+    expect(result).toEqual({
+      syncError: 'MCP tools/list failed: HTTP 401',
+      credentialStored: false,
+      signInPending: false,
     });
     expect(calls).toEqual(['create']);
   });
