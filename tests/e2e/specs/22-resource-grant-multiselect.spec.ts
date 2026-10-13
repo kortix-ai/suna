@@ -139,7 +139,9 @@ test.describe('22 — Resource-grant multi-select', () => {
         ),
       );
       await page.getByRole('button', { name: 'Grant access', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
+      // Since #9750 the grant form opens in the account hub's split sheet: an
+      // <aside> named by its title (role complementary), not a modal dialog.
+      const dialog = page.getByRole('complementary', { name: 'Grant access', exact: true });
       await expect(dialog).toBeVisible();
 
       // Multi-select principals in the shared picker (each row is a toggle
@@ -247,7 +249,7 @@ test('grants an agent to everyone in the project from the same Grant access dial
     await dismissOnboarding(page);
 
     await page.getByRole('button', { name: 'Grant access', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
+    const dialog = page.getByRole('complementary', { name: 'Grant access', exact: true });
     await expect(dialog).toBeVisible();
 
     // Everyone in the project is a principal that holds agents, never a role:
