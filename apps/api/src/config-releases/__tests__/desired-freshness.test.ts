@@ -48,6 +48,7 @@ function deps(invalidated: string[]): DesiredReleaseDeps {
     ledger: new MemoryConfigReleaseLedger(),
     build: async () => RELEASE,
     resolveBase: async () => TIP,
+    readBase: async () => TIP,
     loadRoster: async () => ROSTER,
     invalidate: (projectId) => invalidated.push(projectId),
   };

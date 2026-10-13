@@ -13,7 +13,7 @@
  * make sessions unbootable nor read as up to date.
  */
 
-import { resolveCommitSha } from '../projects/git/commits';
+import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
 import { invalidateProjectMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import {
@@ -104,6 +104,8 @@ export interface DesiredReleaseDeps {
   ledger: ConfigReleaseLedger;
   build: typeof buildConfigRelease;
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
+  /** The base tip the mirror holds now, with no refresh; null when unknown. */
+  readBase: (project: GitBackedProject, ref: string) => Promise<string | null>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
   /** Drop the mirror's freshness stamp. Injectable so tests count the call. */
@@ -114,6 +116,7 @@ const defaultDeps: DesiredReleaseDeps = {
   ledger: dbConfigReleaseLedger,
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
+  readBase: readMirrorCommitSha,
   loadRoster: loadAgentRosterAtCommit,
   invalidate: invalidateProjectMirror,
 };
@@ -142,7 +145,7 @@ export async function resolveDesiredRelease(
   try {
     // A boot whose tip the mirror already holds: the fetch would prove only
     // what session create proved (p50 ~1 s on prod, 2026-10-13, on every boot).
-    const known = input.bootTip ? await deps.resolveBase(input.project, input.baseRef).catch(() => null) : null;
+    const known = input.bootTip ? await deps.readBase(input.project, input.baseRef).catch(() => null) : null;
     if (known && known === input.bootTip) {
       baseSha = known;
     } else {
