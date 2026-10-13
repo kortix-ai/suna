@@ -12,6 +12,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   credential is stored but the tools still fail to load. Absent for other
   providers and on older servers. Additive (KRTX-2185).
 
+### Added (session log reads, P5.5)
+- `getSessionLogPage(projectId, sessionId, query?)` and `session.log(query?)`
+  read one page of the stored session log (`GET /v1/projects/:p/sessions/:s/log`):
+  `SessionLogPage` for `{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`),
+  `null` on a 404 (no stored log, or no such thread). `SessionLogPage` and
+  `SessionLogPageQuery` are now public types. Additive.
+- `classifySessionLogMessage(message)`: `classifyTurn` of a session-log message
+  (`ClassifiedPart`s from its blocks, its `TurnError`). Transitional: it goes with
+  `ClassifiedPart`. Additive.
+- `findSessionAttachments` also reads session-log records: attachment blocks, a
+  harness block's v1 file part, text blocks and `show` tool-call blocks. Additive.
+
 ### Added (session readiness)
 - `session.ensureReady({ session })` takes the session's row when the caller
   already read it. A `running` row that names its sandbox and

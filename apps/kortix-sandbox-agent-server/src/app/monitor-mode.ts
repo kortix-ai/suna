@@ -53,7 +53,6 @@ export async function runMonitorMode(
       logger.error('[monitor] repo materialization failed', err)
     })
   }
-  bootMark('repo-materialized')
 
   const specs = parseMonitorSpecs(cfg.monitorsJson)
   // Fail LOUD and INERT, never crash-loop: the reconciler would just re-create
