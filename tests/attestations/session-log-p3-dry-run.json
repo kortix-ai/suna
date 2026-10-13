@@ -1,15 +1,18 @@
 {
-  "source_hash": "c90ab1cd2c579f6cf738b484ccb2f88c402e28ce5d4448e7975061e5e2622bc3",
+  "source_hash": "273ae3cfe10dd6d386167f5ee203a5796ed26860983ba194ed107cdf0682d145",
   "diff_files": [
-    "apps/api/scripts/session-log-backfill-dry.ts"
+    "apps/api/scripts/session-log-backfill-dry.ts",
+    "apps/api/src/__tests__/integration-session-log-backfill.test.ts",
+    "apps/api/src/projects/session-log-backfill.ts",
+    "apps/api/src/projects/session-log-capture.ts"
   ],
-  "diff_hash": "9c68db72c8c188fb2e90d1a99fa386910fb0b659c18fab5cae2b468215db9fcb",
-  "head": "aedd5b92b3f3d3dc5f3ac271774de8d62e6212e1",
+  "diff_hash": "61967c7392cd01740cec6def72653b4480439000ee69dbaaba94c9c56c041071",
+  "head": "d46cd600d1f0b4447c6cb906bb893dbe263ab1d5",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T14:20:39.858Z"
+  "at": "2026-10-13T14:51:12.523Z"
 }
