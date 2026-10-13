@@ -443,7 +443,7 @@ project sidebar. Each state differs in shape, not colour alone:
 | `stopped` | stopped, completed | Hollow ring, `size-2.5`, `border-[1.5px] border-muted-foreground` |
 | `starting` | queued, branching, provisioning | Ring `size-2.5` `border-[1.5px] border-kortix-yellow` with a `size-1` `bg-kortix-yellow` centre dot, opacity pulse 1 → 0.35 (800ms, ease-in-out, repeats). Static under reduced motion |
 | `failed` | failed | Diamond: `size-2 rotate-45 rounded-[1px] bg-destructive` |
-| `needs-you` | pending review (not reachable on mobile yet) | `size-2` `bg-kortix-blue` dot inside a `size-4` `bg-kortix-blue/20` halo |
+| `needs-you` | any status, while something waits on the user (`needsYouBySession`, `lib/session/needs-you.ts`): a `needs_you` review item, or an open agent question or connector approval from GET needs-input (`useSessionsNeedingInput`, polled every 30 s by `ProjectScreen` while focused; KRTX-1739). A question-only session reads "Waiting for your answer" and sorts last in the drawer's Needs you group | `size-2` `bg-kortix-blue` dot inside a `size-4` `bg-kortix-blue/20` halo |
 
 ## 8. Session transcript: the show card
 

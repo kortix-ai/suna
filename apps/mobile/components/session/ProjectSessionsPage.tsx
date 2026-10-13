@@ -57,6 +57,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { directSubsessions } from '@kortix/sdk';
+import { useSessionsNeedingInput } from '@kortix/sdk/react';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
@@ -148,7 +149,8 @@ interface SessionRowProps {
    *  a short connector elbow joins the status mark, indenting the label past the
    *  usual leading slot — the row's own tile stays full width. */
   nested?: boolean;
-  /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
+  /** What waits on the user in this session: review-inbox items, open agent
+   *  questions, approvals (`needsYouBySession`). > 0 marks it `needs-you`. */
   needsYouCount: number;
   /** Who started the run (`initiator`), after the title. */
   starter?: SessionStarter;
@@ -405,10 +407,16 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     useSessionFilterStore.getState().resetProject(projectId);
   }, [projectId]);
 
-  // Sessions that wait on the user, from the review inbox. ProjectScreen
-  // polls it; this reads the same query cache without a second poll.
+  // Sessions that wait on the user: the review inbox and GET needs-input, the
+  // sessions whose agent waits on a question (KRTX-1739). ProjectScreen, the
+  // project stack's layout, polls both while this route shows; this reads the
+  // same query caches without a second poll.
   const reviewItems = useReviewItems(projectId, { poll: false });
-  const needsYou = React.useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
+  const needsInput = useSessionsNeedingInput(projectId, { enabled: false });
+  const needsYou = React.useMemo(
+    () => needsYouBySession(reviewItems.data ?? [], needsInput.data),
+    [reviewItems.data, needsInput.data]
+  );
 
   // The status filter is client-side over the loaded rows (the server has no
   // status param); search and starter are the server's.
