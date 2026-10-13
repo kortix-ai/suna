@@ -1,0 +1,16 @@
+{
+  "source_hash": "4f519a91818f2aca182cac91fd3229110a6d4113009429798cb311cef13cbc7c",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/turn-events.ts"
+  ],
+  "diff_hash": "01d4f8620018cd01b2e6d7028724e9e43e1f805ddd1d5ebeb2c56fb3dcab3273",
+  "head": "8622d58b0bbb96bef337ed5c29fcdbb9e59d1835",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T12:48:43.064Z"
+}
