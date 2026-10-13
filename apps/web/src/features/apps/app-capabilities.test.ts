@@ -48,9 +48,8 @@ test('the detail modal takes its body and its capability items from app.capabili
   // An App without a preview never asks for an access session (the API answers 409).
   expect(detail).toContain('session: canAccess && preview');
   expect(view).toContain('session: canAccess && preview');
-  // Uses / used-by links in the header.
-  expect(detail).toContain('slugs={app.uses}');
-  expect(detail).toContain('slugs={app.used_by?.filter(');
+  // The header shows the App, not its wiring: no uses / used-by links, service chips or labels.
+  expect(detail).not.toMatch(/app\.uses|app\.used_by|AppServices|app\.labels/);
 });
 
 test('no App kind, instance tile, snapshot, credential or dashboard control remains in the Apps UI', () => {

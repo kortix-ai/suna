@@ -10,7 +10,7 @@ import {
 } from '@/stores/session-composer-handoff-store';
 
 import enMessages from '../../../translations/en.json';
-import type { MessageWithParts } from '@/ui';
+import { sessionLogOfV1Rows } from '@kortix/sdk';
 
 import { OptimisticTurn } from './optimistic-turn';
 import { UserMessage } from './turn/user-message';
@@ -129,10 +129,12 @@ describe('OptimisticTurn', () => {
     const settled = render(
       <UserMessage
         message={
-          {
-            info: { id: 'message-1', role: 'user' },
-            parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: interleaved }],
-          } as MessageWithParts
+          sessionLogOfV1Rows('session-1', 'ses_runtime', [
+            {
+              info: { id: 'message-1', role: 'user' },
+              parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: interleaved }],
+            } as never,
+          ]).threads[0]!.messages[0]!
         }
         sessionId="session-1"
         ownsPlan={false}

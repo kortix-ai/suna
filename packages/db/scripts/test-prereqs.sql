@@ -12,10 +12,11 @@
 --
 -- Then: pnpm migrate   (the storage migration self-skips when storage is absent).
 
--- Supabase roles
+-- Supabase roles. service_role has BYPASSRLS on Supabase; a test DB must match,
+-- or every RLS-enabled kortix table refuses its writes.
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon')          THEN CREATE ROLE anon NOLOGIN;          END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN;  END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF; END $$;
 
 -- Supabase installs pgcrypto in the `extensions` schema. Audit integrity and
 -- privacy functions qualify extensions.digest(), so the vanilla PostgreSQL

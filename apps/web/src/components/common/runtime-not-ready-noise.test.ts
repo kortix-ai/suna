@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
 // Locks the telemetry-side guard for the transient `RuntimeNotReadyError`
-// ("[opencode-sdk] Server URL not ready — sandbox is still loading") cluster.
+// ("[kortix-runtime] Server URL not ready — sandbox is still loading") cluster.
 // The throw is an expected, self-healing state on every session switch /
 // provisioning window; it must never page Better Stack. `app/error.tsx`
 // suppresses the global route-segment render case, but the throw can also be

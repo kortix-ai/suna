@@ -1,4 +1,5 @@
 import type { ToolPart } from '@/ui';
+import { toolCallBlock, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, it } from 'bun:test';
 import { deriveContext, deriveOutputs } from './derive-panels';
 
@@ -10,14 +11,14 @@ function part(
     output?: string;
     status?: 'completed' | 'running' | 'pending' | 'error';
   } = {},
-): ToolPart {
+): ToolCallBlock {
   const { status = 'completed', ...rest } = extra;
-  return {
+  return toolCallBlock({
     type: 'tool',
     tool,
     callID: `c-${tool}-${JSON.stringify(input)}-${JSON.stringify(extra)}`,
     state: { status, input, ...rest },
-  } as unknown as ToolPart;
+  } as unknown as ToolPart);
 }
 
 describe('deriveOutputs', () => {
@@ -538,7 +539,7 @@ describe('deriveContext', () => {
     expect(tools[0].kind).toBe('tool');
     expect(tools[0].label).toBe('Memory');
     // The chip opens to the call's own tool view, so the part must ride along.
-    expect(tools[0].parts).toHaveLength(1);
+    expect(tools[0].calls).toHaveLength(1);
     // A memory path is not a workspace file and memory is not a web source.
     expect(files).toEqual([]);
     expect(web).toEqual([]);
@@ -550,7 +551,7 @@ describe('deriveContext', () => {
       part('memory', { command: 'str_replace', path: '.kortix/memory/notes.md' }),
     ]);
     expect(tools).toHaveLength(1);
-    expect(tools[0].parts).toHaveLength(2);
+    expect(tools[0].calls).toHaveLength(2);
   });
 
   it('folds EVERY memory spelling into the one "Memory" row', () => {
@@ -568,7 +569,7 @@ describe('deriveContext', () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].label).toBe('Memory');
     // Every call rides on the one row, so its detail still shows all five.
-    expect(tools[0].parts).toHaveLength(5);
+    expect(tools[0].calls).toHaveLength(5);
   });
 
   it('labels a shell call "Terminal", never "Bash"', () => {
@@ -788,13 +789,13 @@ describe('deriveOutputs — a show whose items arrive as a JSON STRING', () => {
   });
 });
 
-function partOf(tool: string, callID: string, input: Record<string, unknown>): ToolPart {
-  return {
+function partOf(tool: string, callID: string, input: Record<string, unknown>): ToolCallBlock {
+  return toolCallBlock({
     type: 'tool',
     tool,
     callID,
     state: { status: 'completed', input },
-  } as unknown as ToolPart;
+  } as unknown as ToolPart);
 }
 
 describe('deriveOutputs — titles (W3)', () => {

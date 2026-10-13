@@ -28,7 +28,6 @@ function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' 
       name={person.name}
       email={person.email ?? ''}
       avatarUrl={person.avatar_url ?? null}
-      className="rounded-sm"
     />
   );
 }
@@ -101,7 +100,7 @@ export function SessionParticipantStack({
             ))}
             {more > 0 && (
               // `min-w-6 w-auto`: the tile grows with the count (+97), never under 24px.
-              <AvatarGroupCount className="h-6 w-auto min-w-6 px-1 text-xs tabular-nums">
+              <AvatarGroupCount className="h-6 w-auto min-w-6 px-1.5 text-xs tabular-nums">
                 +{more}
               </AvatarGroupCount>
             )}

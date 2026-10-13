@@ -233,6 +233,41 @@ Access rows use `py-2.5` (`shared/access/access-row.tsx`). Changes use `py-2`.
 
 Detail header: `text-2xl font-semibold tracking-tight` title; meta `Badge variant="outline" size="sm"`; toolbar `absolute top-4 right-4` with `ButtonGroup` + `Hint`.
 
+### Dropdown item with icon + title + description
+
+One recipe for every menu row that carries a glyph, a title and a one-line
+explanation (the "New ▾" menu on Agents, Skills, Connectors, Triggers and
+Secrets). Source: `RichRowBody` in
+`apps/web/src/features/workspace/capabilities/shared/new-entity-menu.tsx`;
+Paper "New menu · icon + title + description", V03 (Jay, 2026-10-13).
+
+```tsx
+<DropdownMenuContent align="end" className="w-76">            {/* 280px */}
+  <DropdownMenuItem className="items-start gap-2.5 py-1.5">   {/* px-2 rounded-sm from menuRow */}
+    <ChatCircleIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span className="text-foreground text-sm font-[550]">Create in chat</span>
+      <span className="text-muted-foreground mt-0.5 text-xs font-normal text-pretty">
+        An agent scaffolds it and opens a change request.
+      </span>
+    </span>
+  </DropdownMenuItem>
+</DropdownMenuContent>
+```
+
+- **First-line alignment, after `alert.tsx`.** `items-start` plus `mt-0.5` on the
+  16px glyph centres it on the title's first 20px line. Never `items-center`
+  (the glyph drifts to the middle of a two-line block) and never a bare
+  `items-start` (the glyph sits on the cap height).
+- **Two tiers.** Title `text-sm font-[550] text-foreground`, ink even before
+  hover; the row's own `text-foreground/80` and `font-medium` would make it read
+  lighter than the description's job. Description `text-xs text-muted-foreground
+  font-normal`, `mt-0.5` under the title.
+- **Width.** `w-76` (280px) lets a one-sentence description wrap at most once.
+  `w-64` wrapped after about 30 characters.
+- **Glyph.** Muted, `size-4`, no tile. Use the row's leading glyph, never a
+  second one at the end.
+
 ### Danger zone (settings)
 
 Neutral bordered row — no red panel fill:

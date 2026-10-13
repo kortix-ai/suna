@@ -5,6 +5,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (connector credential re-sync)
+- `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
+  connector the server re-reads the tools after the write: `sync` is that run
+  (`ConnectorSyncResult`), and a per-slug entry in `sync.errors` means the
+  credential is stored but the tools still fail to load. Absent for other
+  providers and on older servers. Additive (KRTX-2185).
+
+### Added (session readiness)
+- `session.ensureReady({ session })` takes the session's row when the caller
+  already read it. A `running` row that names its sandbox and
+  `runtime_session_id` is adopted without `POST /start`; any other row, or a row
+  of another session, falls through to `/start` as before. The Kortix CLI
+  passes it, so a one-shot `kortix sessions chat -p` on a running session saves
+  the 1.2–2.4 s `/start` round trip. Additive.
+
 ### Added (SSO and MFA remedies)
 - `configureKortix({ onAccessRemedy })` / `createKortix({ onAccessRemedy })`:
   called with `'sso_required'` or `'account_mfa_required'` when the API answers

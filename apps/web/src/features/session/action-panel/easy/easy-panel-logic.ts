@@ -5,7 +5,7 @@
 
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import type { BrowserRecent } from '@/stores/browser-recents-store';
-import type { PreviewPortProbe } from '@kortix/sdk';
+import type { PreviewPortProbe, ToolCallBlock } from '@kortix/sdk';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import type { RunOutcome } from '../shared/run-outcome';
@@ -16,8 +16,8 @@ import type { RunOutcome } from '../shared/run-outcome';
  * detail". Pulled out of the effect body so it's testable without mounting
  * `EasyPanel` (see `mode-gate.test.tsx`).
  */
-export function stepForCallId(steps: Step[], callId: string): Step | undefined {
-  return steps.find((s) => s.parts.some((p) => p.callID === callId));
+export function stepForCallId(steps: Step<ToolCallBlock>[], callId: string): Step<ToolCallBlock> | undefined {
+  return steps.find((s) => s.parts.some((c) => c.call_id === callId));
 }
 
 /**
@@ -30,11 +30,11 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
  * reads as "no focus, follow live".
  */
 export function focusIndexForCall(
-  parts: ReadonlyArray<{ callID?: string }>,
+  calls: ReadonlyArray<{ call_id?: string }>,
   callId: string | null | undefined,
 ): number {
   if (!callId) return -1;
-  return parts.findIndex((p) => p.callID === callId);
+  return calls.findIndex((c) => c.call_id === callId);
 }
 
 /**
