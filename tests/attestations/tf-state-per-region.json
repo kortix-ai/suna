@@ -1,35 +1,19 @@
 {
-  "source_hash": "547cc64c921daeaaa985a9b0f770a08b30785136be13c9a116a7ae62e9da5cae",
+  "source_hash": "4a067506d71970e45809789db8df587aeb3c66194f2d9011532b75e83e7b6b03",
   "diff_files": [
-    ".github/actions/state-copy-guard/action.yml",
+    ".agents/skills/kortix-release/SKILL.md",
     ".github/actions/state-copy-guard/guard.sh",
-    ".github/workflows/terraform-apply-global.yml",
-    ".github/workflows/terraform-apply.yml",
-    ".github/workflows/terraform-ci.yml",
-    "apps/mobile/components/session/__tests__/drawer-rows.test.ts",
-    "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
     "infra/terraform/README.md",
-    "infra/terraform/compliance-monitoring/backend.tf",
-    "infra/terraform/environments/dev-us-east-2/README.md",
-    "infra/terraform/environments/dev-us-east-2/backend.tf",
-    "infra/terraform/environments/dev-web-us-east-2/backend.tf",
-    "infra/terraform/environments/prod-web/backend.tf",
-    "infra/terraform/environments/prod/backend.tf",
-    "infra/terraform/environments/staging-eu-west-2/backend.tf",
-    "infra/terraform/environments/staging-web-eu-west-2/backend.tf",
-    "infra/terraform/examples/selfhost-ec2/backend.tf",
-    "infra/terraform/scripts/bootstrap-state.sh",
-    "infra/terraform/security-baseline/backend.tf",
-    "infra/terraform/security-baseline/terraform-state-use2.tf",
-    "tests/unit/terraform-state-copy-guard.test.ts"
+    "infra/terraform/scripts/statemove/copy-states.mjs",
+    "infra/terraform/scripts/statemove/deny-old-keys.mjs"
   ],
-  "diff_hash": "9ac1142f7bb6d5c038334167ce09fe3a7a81e9a06b28d6b943668434cf34ef29",
-  "head": "88f91ba467f31009d63b88fc59e5cef78d2f41bf",
+  "diff_hash": "3b810720deedebb2aece60db3b7a111b9d93e2d428a9d38423e589a5674dd978",
+  "head": "be51508cb84939c8861091924fdb0aa2d72350b7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-12T23:40:43.489Z"
+  "at": "2026-10-13T00:11:24.533Z"
 }
