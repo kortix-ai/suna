@@ -725,6 +725,13 @@ still v1:
   for rows a host reads without a `useSession` (a sub-agent's chat). One message
   per row object, kept while the row is unchanged. It goes away with the v1 rows.
 
+`getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
+reads one page of the stored session log (`SessionLogPage`: the session record,
+every thread head, a thread's newest messages by `seq`, `has_more`). `query` is
+`{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`). It answers while the
+sandbox is stopped, and is `null` when the session has no stored log yet.
+`findSessionAttachments` reads session-log records as well as v1 messages.
+
 `toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and
 `shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part.
 
@@ -766,6 +773,10 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   error (a turn's `retrying`), without grouping turns: the busy state a host passes
   as `busy` reads it. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept block
   turns as well as v1 turns, and `stepLabel` any session-log block.
+- `classifySessionLogMessage(message)` is `classifyTurn` of one session-log message:
+  its blocks as `ClassifiedPart`s and its error with the gateway's own sentence. A
+  host whose renderers take `ClassifiedPart`s renders a thread through it until the
+  v1 helpers go.
 - `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
   prompt the thread has not placed; append it and name it in `held`.
 - `sessionLogThreadMetrics(thread, { pricing? })` is one thread's `cost` (every reply's
