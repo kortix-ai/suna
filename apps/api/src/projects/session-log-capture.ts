@@ -10,7 +10,11 @@
  * - Records are `fromV1` of the mirror rows: thread, message and block ids
  *   (block id = part id), seq, residuals and the `kortix.transcript.v1` ext are
  *   exactly what `fromV1` gives. `harness` is the one the daemon reported in its
- *   runtime projection (`session_runtime_projections.harness`), else `opencode`.
+ *   runtime projection (`session_runtime_projections.harness`); else `pi` when the
+ *   mirror's root runtime id is pi-minted (`ses_pi` + 24 hex, `mintRootId` in kortixd
+ *   `harness/pi/message-id.ts`; an OpenCode id is `ses_` + 12 hex clock chars, so it
+ *   never starts with `ses_pi`); else `opencode`.
+ * - The log must pass `SessionLogSchema`. One that does not is not written (`invalid`).
  * - Only a message whose `content_hash` changed is written, at the next capture
  *   rev (1, 2, ... below `SESSION_LOG_CAPTURE_REV_LIMIT`). A stored message that
  *   `fromV1` no longer gives (the mirror removes rows only on a recorded rewind)
@@ -26,7 +30,7 @@
  * function so it writes exactly what the capture writes. `dry` stops before the
  * write and returns the batch it would write.
  */
-import { fromV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
+import { fromV1, SessionLogSchema, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
   projectSessions,
   sessionLogMessages,
@@ -46,13 +50,14 @@ const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' }
 /**
  * - `skipped`: the switch is off, a journal owns the log, there is no mirror, nothing changed,
  *   a newer mirror capture ran, or the capture revs are exhausted.
- * - `written`, or `dry` (nothing written): `log` is `fromV1` of the mirror, `batch` what was (would be) written.
- *   `harnessDefaulted`: no projection named `opencode` or `pi`, so the log took `opencode`.
+ * - `invalid`: `fromV1` of the mirror fails `SessionLogSchema`; nothing written.
+ * - `written`, or `dry` (nothing written): `log` is `fromV1` of the mirror rows `rows`, `batch` what was (would be) written.
+ *   `harnessFrom`: `projection`, `root` (no projection harness, a pi-minted root: `pi`), or `default` (`opencode`).
  * - `failed`: the apply path refused the batch (`status`), or something threw.
  */
 export type MirrorLogWrite =
-  | { outcome: 'skipped' }
-  | { outcome: 'written' | 'dry'; log: SessionLog; batch: SessionLogJournalRequest; harnessDefaulted: boolean }
+  | { outcome: 'skipped' | 'invalid' }
+  | { outcome: 'written' | 'dry'; log: SessionLog; rows: V1Row[]; batch: SessionLogJournalRequest; harnessFrom: 'projection' | 'root' | 'default' }
   | { outcome: 'failed'; status?: number };
 
 const SKIPPED = { outcome: 'skipped' } as const;
@@ -92,8 +97,15 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
     if (!read) return SKIPPED;
     const { s, rows, stored } = read;
 
-    const harnessDefaulted = s.harness !== 'pi' && s.harness !== 'opencode';
-    const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness: s.harness === 'pi' ? 'pi' : 'opencode' });
+    const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
+    const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
+    const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness });
+    const valid = SessionLogSchema.safeParse(log);
+    if (!valid.success) {
+      const issue = valid.error.issues[0];
+      logger.warn('[session-log] capture: fromV1 output fails SessionLogSchema; nothing written', { sessionId, path: issue?.path.join('.'), code: issue?.code });
+      return { outcome: 'invalid' };
+    }
     const { threads, ...session } = log;
     const byId = new Map(stored.map((r) => [r.id, r]));
     let rev = stored.reduce((max, r) => (r.rev < SESSION_LOG_CAPTURE_REV_LIMIT ? Math.max(max, r.rev) : max), 0);
@@ -111,7 +123,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       logger.warn('[session-log] capture revs exhausted; the capture writes no more v2 rows', { sessionId });
       return SKIPPED;
     }
-    if (options.dry) return { outcome: 'dry', log, batch, harnessDefaulted };
+    if (options.dry) return { outcome: 'dry', log, rows, batch, harnessFrom };
 
     const capturedAt = new Date(s.capturedAt!).getTime();
     const outcome = await writeCapturedSessionLog({ sessionId, projectId: s.projectId, accountId: s.accountId }, batch, async (tx) => {
@@ -127,7 +139,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       logger.warn('[session-log] capture write refused', { sessionId, status: outcome.status, body: outcome.body });
       return { outcome: 'failed', status: outcome.status };
     }
-    return { outcome: 'written', log, batch, harnessDefaulted };
+    return { outcome: 'written', log, rows, batch, harnessFrom };
   } catch (err) {
     logger.warn('[session-log] capture write failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
     return { outcome: 'failed' };

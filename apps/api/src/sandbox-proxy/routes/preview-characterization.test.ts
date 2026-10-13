@@ -89,7 +89,7 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/lib/turn-start-convergence', () => ({
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));

@@ -37,9 +37,10 @@
  * 409 and stops. Send `Accept-Encoding: gzip`: the answer is gzipped when it is over 1 kB.
  * - 200 `SessionLogRestore`: `generation` (the box journals under it from now on), `log` (every
  *   thread with its live messages in `seq` order, `in_context: false` ones included, tombstoned
- *   ones left out), `revs` (the stored `rev` of every message, tombstoned ones included: seed the
- *   journal's last rev with them) and `blobs` (each text the API stored by reference: the record
- *   holds its 16 kB preview; read the full text with `GET /v1/projects/:p/sessions/:s/attachments/<id>`,
+ *   ones left out), `revs` (the stored `rev` of every message, tombstoned ones included; any rev
+ *   at the claimed generation wins over them), `seq_max` (the highest seq of each thread,
+ *   tombstoned messages included: number new messages above it) and `blobs` (each text the
+ *   API stored by reference: the record holds its 16 kB preview; read the full text with `GET /v1/projects/:p/sessions/:s/attachments/<id>`,
  *   the id being the last segment of `ref`, and check `sha256`).
  * - 404 `SessionLogRestoreMissing`: the session has no stored log; nothing was claimed. Boot
  *   without a restore. A 404 with another body is an API that predates the route.
@@ -122,6 +123,8 @@ export const SessionLogRestoreSchema = z.object({
   generation: z.number().int().positive(),
   log: SessionLogSchema,
   revs: z.record(rev),
+  /** The highest seq each thread holds, tombstoned messages included; the box numbers new messages above it. Absent from an API before P6.2. */
+  seq_max: z.record(z.number().int().nonnegative()).optional(),
   blobs: z.array(SessionLogRestoreBlobSchema),
 });
 export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });

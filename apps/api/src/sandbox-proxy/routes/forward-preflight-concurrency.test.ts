@@ -1,13 +1,11 @@
 // R2 (the turn-latency spec (PR #7840) §3) — the turn-start pre-flight gates that
 // have no data dependency on each other must run CONCURRENTLY, not queue
-// behind each other. `forwardToSandbox`'s config-converge
-// (`convergeBeforeTurnStart`), model-catalog-converge
+// behind each other: `forwardToSandbox`'s model-catalog-converge
 // (`convergeModelCatalogForTurnStart`) and the first-attempt provider-ingress
-// resolve (`resolveSandboxIngress`) are exactly the three the spec names:
-// none of the three consumes another's return value before the upstream
-// fetch is built. This file asserts overlap directly with timed fakes — a
-// response-only assertion proves nothing about latency (see the task's
-// Verification section).
+// resolve (`resolveSandboxIngress`). And the config gate
+// (`convergeConfigIfBehind`) is not on the send path at all: it runs after a
+// turn ends (2026-10-13). This file asserts both with timed fakes — a
+// response-only assertion proves nothing about latency.
 //
 // `mock.module` is process-global; this file owns its module graph under
 // `bun test --isolate` (same convention as forward.test.ts, which this file
@@ -65,7 +63,7 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/lib/turn-start-convergence', () => ({
-  convergeBeforeTurnStart: async () => {
+  convergeConfigIfBehind: async () => {
     await hold('config-converge', GATE_DELAY_MS);
     return { decision: 'current', outcome: null, ms: GATE_DELAY_MS };
   },
@@ -134,7 +132,7 @@ afterAll(() => {
 });
 
 describe('forwardToSandbox — turn-start pre-flight runs concurrently (R2)', () => {
-  test('config-converge, model-catalog-converge and ingress overlap, not queue', async () => {
+  test('model-catalog-converge and ingress overlap, and the config gate never runs', async () => {
     const res = await forwardToSandbox(
       'sb-1',
       8000,
@@ -148,22 +146,15 @@ describe('forwardToSandbox — turn-start pre-flight runs concurrently (R2)', ()
     );
     expect(res.status).toBe(200);
 
-    // Sequential (today's shape) would read as three complete start/end pairs
-    // back to back: config-converge:start, config-converge:end,
-    // model-catalog-converge:start, model-catalog-converge:end, ingress:start,
-    // ingress:end — costing ~3×GATE_DELAY_MS. Concurrent means every gate's
-    // OWN start precedes every OTHER gate's end, which only an overlapping
-    // schedule can produce; a sequential one queues each start behind the
-    // previous end and fails these pairs. Event order, not wall clock: a
-    // wall-clock bound re-flaked under load on a busy runner (86 ms vs the 80
-    // ms bound) while the overlap held.
+    // Concurrent means each gate's OWN start precedes the OTHER gate's end,
+    // which only an overlapping schedule can produce. Event order, not wall
+    // clock: a wall-clock bound re-flaked under load on a busy runner.
     const startIdx = (label: string) => gateLog.indexOf(`${label}:start`);
     const endIdx = (label: string) => gateLog.indexOf(`${label}:end`);
-    for (const label of ['config-converge', 'model-catalog-converge', 'ingress']) {
-      expect(startIdx(label)).toBeGreaterThanOrEqual(0);
-    }
-    expect(startIdx('model-catalog-converge')).toBeLessThan(endIdx('config-converge'));
-    expect(startIdx('ingress')).toBeLessThan(endIdx('config-converge'));
+    expect(startIdx('model-catalog-converge')).toBeGreaterThanOrEqual(0);
     expect(startIdx('ingress')).toBeLessThan(endIdx('model-catalog-converge'));
+    expect(startIdx('model-catalog-converge')).toBeLessThan(endIdx('ingress'));
+    // The prompt never waits for a config convergence.
+    expect(startIdx('config-converge')).toBe(-1);
   });
 });
