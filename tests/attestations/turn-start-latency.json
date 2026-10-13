@@ -1,5 +1,5 @@
 {
-  "source_hash": "d93b441abd43085c6e7ee0bb7b61fd4e0283714eb4b9ed70ca1989efa46bea8e",
+  "source_hash": "7622c79803552f6aa1d956fc3a5969c91f451119b97a526f99e72653a7b980ec",
   "diff_files": [
     "apps/api/eslint-suppressions.json",
     "apps/api/scripts/prompt-latency-bench.ts",
@@ -40,13 +40,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/config-releases.flow.ts"
   ],
-  "diff_hash": "7a996130dbcc1474872cad0f50d750ec1d5776be08120d0851da7e9d73b76d23",
-  "head": "629712be49da6b207063f79d8ba3af17ad55ddd1",
+  "diff_hash": "934d079cbfe8b135000e4c7df9c148ac6ecf6b2f770d1cd57b21b8f2b8f57d65",
+  "head": "a14331553786d35c8bfeffecab216ee9a7e2dea8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T14:00:45.035Z"
+  "at": "2026-10-13T14:35:03.704Z"
 }
