@@ -92,10 +92,9 @@ export async function getSubscriptionInfo(accountId: string) {
       revenuecatPendingChangeType: creditAccounts.revenuecatPendingChangeType,
       revenuecatCancelledAt: creditAccounts.revenuecatCancelledAt,
       revenuecatCancelAtPeriodEnd: creditAccounts.revenuecatCancelAtPeriodEnd,
-      // Billing v2 — per-seat fields surfaced for the account-state response.
-      billingModel: creditAccounts.billingModel,
+      planMonthlyUsd: creditAccounts.planMonthlyUsd,
+      // Read only by `planMonthlyUsd()`'s fallback for a per-seat row not yet backfilled.
       seatCount: creditAccounts.seatCount,
-      seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
       // The JSONB override map. Selected because callers feed this row
       // straight to `resolveBillingFromRow` (account-state.ts:96); omitting it
@@ -138,6 +137,8 @@ export async function updateCreditAccount(
 const rotationColumns = {
   accountId: creditAccounts.accountId,
   tier: creditAccounts.tier,
+  planMonthlyUsd: creditAccounts.planMonthlyUsd,
+  seatCount: creditAccounts.seatCount,
   nextCreditGrant: creditAccounts.nextCreditGrant,
 };
 

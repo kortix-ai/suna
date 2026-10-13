@@ -90,14 +90,13 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       provider: creditAccounts.provider,
       planType: creditAccounts.planType,
       stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-      // Read by resolveBillingFromRow's per-seat self-heal (a live seat
-      // subscription outranks a stale non-paid `tier`). Not rendered.
       stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-      billingModel: creditAccounts.billingModel,
+      planMonthlyUsd: creditAccounts.planMonthlyUsd,
       seatCount: creditAccounts.seatCount,
       trialStatus: creditAccounts.trialStatus,
       trialTier: creditAccounts.trialTier,
       trialSeats: creditAccounts.trialSeats,
+      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
       trialStartedAt: creditAccounts.trialStartedAt,
       trialEndsAt: creditAccounts.trialEndsAt,
       trialNote: creditAccounts.trialNote,

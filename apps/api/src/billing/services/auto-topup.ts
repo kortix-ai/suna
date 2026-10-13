@@ -77,10 +77,8 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
   if (!account) throw new BillingError('Account not found');
 
   // Resolved plan, not the stored `credit_accounts.tier`. The row is already in
-  // hand, so this costs no extra read. A paying per-seat team whose stored tier
-  // is stale ('free') behaves as paid everywhere else and was refused auto-topup
-  // here; an account on an active trial of a paid plan is likewise paid for the
-  // trial window.
+  // hand, so this costs no extra read. An account on an active trial of a paid
+  // plan is paid for the trial window.
   const { plan } = await resolveAccountBilling(accountId, { row: account });
   if (!isPaidTier(plan.key)) {
     throw new BillingError('Auto-topup is only available for paid plans');

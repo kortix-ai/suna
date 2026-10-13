@@ -5,7 +5,7 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { onMemberRemoved } from '../../billing/services/seat-management';
+import { revokeYoloTokenForMember } from '../../billing/services/yolo-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { visibleDirectory } from '../../iam/directory-visibility';
@@ -411,11 +411,9 @@ export function registerMemberRoutes(): void {
         );
       });
 
-      // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
-      void onMemberRemoved(accountId, targetUserId).catch((err) =>
-        // No seat reconciler exists: a failure here leaves the Stripe seat count
-        // (and the member's YOLO token) wrong until the next member change.
-        logger.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: targetUserId, error: err instanceof Error ? err.message : String(err) }),
+      // A removed member's legacy gateway token stops working.
+      void revokeYoloTokenForMember(targetUserId, accountId).catch((err) =>
+        logger.error('[billing] YOLO token revoke FAILED after member removed', { accountId, userId: targetUserId, error: err instanceof Error ? err.message : String(err) }),
       );
       // Their personal drives in this account pass to an owner.
       await import('../../drives/service').then(({ releaseMemberDrives }) =>
@@ -581,11 +579,9 @@ export function registerMemberRoutes(): void {
         );
       });
 
-      // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
-      void onMemberRemoved(accountId, userId).catch((err) =>
-        // No seat reconciler exists: a failure here leaves the Stripe seat count
-        // (and the member's YOLO token) wrong until the next member change.
-        logger.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: userId, error: err instanceof Error ? err.message : String(err) }),
+      // A member who leaves loses their legacy gateway token.
+      void revokeYoloTokenForMember(userId, accountId).catch((err) =>
+        logger.error('[billing] YOLO token revoke FAILED after member left', { accountId, userId, error: err instanceof Error ? err.message : String(err) }),
       );
       // Their personal drives in this account pass to an owner.
       await import('../../drives/service').then(({ releaseMemberDrives }) =>

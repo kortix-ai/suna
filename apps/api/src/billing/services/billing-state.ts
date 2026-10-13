@@ -93,7 +93,6 @@ export interface BillingSnapshot {
   /** False when there is no `credit_accounts` row for the account at all. */
   exists: boolean;
   balance: number;
-  billingModel?: string | null;
   tier?: string | null;
   subscriptionId?: string | null;
   subscriptionStatus?: string | null;
@@ -190,9 +189,8 @@ export function hasLiveSubscription(snapshot: BillingSnapshot): boolean {
 /**
  * "Is this account on a plan?" — the single question every surface used to
  * answer for itself. True for any account that has ever had a subscription row
- * (a lapsed Team account is a customer with a billing problem, NOT a prospect)
- * and for any paid tier. Deliberately does NOT look at `billing_model`:
- * `per_seat` is set at migration time and survives cancellation.
+ * (a lapsed paid account is a customer with a billing problem, NOT a prospect)
+ * and for any paid tier.
  */
 function hasPlan(snapshot: BillingSnapshot): boolean {
   if (!snapshot.exists) return false;
@@ -247,7 +245,6 @@ export function billingSnapshotFromAccount(
   account:
     | {
         balance?: unknown;
-        billingModel?: string | null;
         tier?: string | null;
         stripeSubscriptionId?: string | null;
         stripeSubscriptionStatus?: string | null;
@@ -260,7 +257,6 @@ export function billingSnapshotFromAccount(
   return {
     exists: true,
     balance: Number(account.balance ?? 0) || 0,
-    billingModel: account.billingModel ?? null,
     tier: account.tier ?? null,
     subscriptionId: account.stripeSubscriptionId ?? null,
     subscriptionStatus: account.stripeSubscriptionStatus ?? null,

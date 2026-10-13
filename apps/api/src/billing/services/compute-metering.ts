@@ -29,7 +29,7 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   type ProviderName,
@@ -62,19 +62,13 @@ import {
 } from './entitlement-overrides';
 import { LEGACY_PAID_TIERS_UNMETERED, accountRowMetersCompute } from './tiers';
 
-/** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
-const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
-
 /**
- * SQL form of `accountRowMetersCompute()`: a metered model, or any row that is
- * not a legacy paid plan. `tier` is coalesced because `NULL NOT IN (...)` is
- * NULL, which would drop a row the TypeScript predicate meters.
+ * SQL form of `accountRowMetersCompute()`: any row that is not a legacy paid
+ * plan. `tier` is coalesced because `NULL NOT IN (...)` is NULL, which would
+ * drop a row the TypeScript predicate meters.
  */
 const accountRowMetersComputeSql = () =>
-  or(
-    inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
-    notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
-  );
+  notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]);
 
 // Match the project-maintenance cadence so active compute appears on Billing
 // without waiting for a stop hook or a full hour.
@@ -158,14 +152,10 @@ async function computeRateMultiplierFor(accountId: string): Promise<number> {
  * other account, free and trial included, pays for compute from its wallet.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
-  // if a credit_accounts row has a metered billing_model (stale data).
+  // Hard gate: self-hosted / billing-disabled deploys never meter compute.
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  // `accountRowMetersCompute`, NOT a check on `billing_model` alone. The column
-  // defaults to 'legacy', so a model-only gate hands free compute to every
-  // account that never completed a checkout — free accounts and admin trials.
-  // Only a legacy PAID plan is exempt. See tier-facts.ts.
+  // Only a stored legacy PAID plan is exempt. See tier-facts.ts.
   if (!accountRowMetersCompute(account)) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.

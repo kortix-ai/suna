@@ -60,9 +60,7 @@ export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
  */
 export const STRIPE_OWNED_FIELDS = [
   'tier',
-  'billingModel',
-  'seatCount',
-  'seatSubscriptionItemId',
+  'planMonthlyUsd',
   'stripeSubscriptionId',
   'stripeSubscriptionStatus',
   'billingCycleAnchor',
@@ -107,7 +105,7 @@ export const ADMIN_OWNED_FIELDS = [
   'entitlementOverrides',
   'trialStatus',
   'trialTier',
-  'trialSeats',
+  'trialMonthlyUsd',
   'trialStartedAt',
   'trialEndsAt',
   'trialNote',
@@ -117,13 +115,13 @@ export const ADMIN_OWNED_FIELDS = [
 /**
  * Provider-owned columns an admin MAY still write.
  *
- * Exactly one: `tier`. Support reassigns a plan by hand often enough
+ * The plan: `tier` and its monthly amount. Support reassigns a plan by hand often enough
  * (comped account, botched migration, refund) that removing the ability would
  * just push operators to raw SQL, which no cache invalidation or audit trail
  * observes. It is still never `'enterprise'` — that is an entitlement flag,
  * not a tier (see `assertTierIsNotEnterprise`).
  */
-export const ADMIN_ASSIGNABLE_FIELDS = ['tier'] as const;
+export const ADMIN_ASSIGNABLE_FIELDS = ['tier', 'planMonthlyUsd'] as const;
 
 const STRIPE_OWNED: ReadonlySet<string> = new Set(STRIPE_OWNED_FIELDS);
 const ADMIN_OWNED: ReadonlySet<string> = new Set(ADMIN_OWNED_FIELDS);
@@ -156,10 +154,10 @@ export type PinnableAccount = {
  *     refuses to create new ones (400), but existing rows still carry it and
  *     must not be downgraded by a webhook.
  *
- * A pinned account still reconciles every other provider fact —
- * `billing_model`, `seat_count`, subscription status, seat grants. Only `tier`
- * is off-limits, which is exactly the split a deal that is BOTH Enterprise
- * (entitlements) AND per-seat (billing) needs.
+ * A pinned account still reconciles every other provider fact — the monthly
+ * amount, subscription status, grants. Only `tier` is off-limits, which is
+ * exactly the split a deal that is BOTH Enterprise (entitlements) AND a credits
+ * subscription (billing) needs.
  */
 export function accountIsAdminPinned(account: PinnableAccount): boolean {
   if (!account) return false;

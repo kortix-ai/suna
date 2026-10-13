@@ -18,7 +18,7 @@ import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
 import { deleteMemberNotificationData } from '../notifications/cleanup';
-import { onMemberRemoved } from '../billing/services/seat-management';
+import { revokeYoloTokenForMember } from '../billing/services/yolo-tokens';
 import { db } from '../shared/db';
 import { scimMemberRow, scimMemberRows } from '../iam/membership-read';
 import { accountGroupIds, accountGroupsAmong, scimGroupIdsOfUser } from '../iam/group-read';
@@ -170,22 +170,9 @@ async function deprovisionMember(accountId: string, userId: string): Promise<str
   // KRTX-1742: the departed member's inbox and watcher rows of this account.
   await deleteMemberNotificationData(accountId, userId);
 
-  // RELEASE THE PAID SEAT.
-  //
-  // Removing the member row is not the whole offboarding: on a per-seat account
-  // the Stripe subscription quantity is what gets invoiced, and nothing else
-  // lowers it. The UI removal path has always called this (accounts/core/
-  // members.ts:549 and :704); SCIM never did, so an enterprise offboarding
-  // through its IdP — the automated channel we tell enterprises to use — kept
-  // paying $40/month for every departed employee, indefinitely. There is no
-  // periodic seat reconciler to catch it up.
-  //
-  // It also revokes the member's YOLO token, which SCIM likewise did not.
-  //
-  // Awaited, not fire-and-forget: `onMemberRemoved` catches its own errors and
-  // returns void, so it cannot fail the SCIM response, and awaiting makes the
-  // seat release deterministic rather than racing the reply.
-  await onMemberRemoved(accountId, userId);
+  // A deprovisioned member's legacy gateway token stops working. Awaited so a
+  // failure fails the SCIM call and the IdP retries it.
+  await revokeYoloTokenForMember(userId, accountId);
   // Their personal drives in this account pass to an owner.
   await import('../drives/service').then(({ releaseMemberDrives }) => releaseMemberDrives(accountId, userId));
 

@@ -21,25 +21,27 @@ import {
 } from './entitlement-overrides';
 import { invalidateCachedAccountTier } from './entitlements';
 import { type PlanRecord, resolvePlanRecord } from './plan-catalog';
-import { grantForSeats, isValidTier, MAX_SEATS_PER_ACCOUNT } from './tiers';
+import { isValidTier } from './tiers';
 import { wallet } from '../wallet';
 
 export const MAX_TRIAL_DURATION_DAYS = 365;
+
+/** Monthly credits (USD) of a trial issued before `trial_monthly_usd`, per legacy seat. */
+const LEGACY_TRIAL_USD_PER_SEAT = 25;
 
 /** Ledger type for credits granted as part of a trial (reporting cleanliness). */
 export const TRIAL_GRANT_LEDGER_TYPE = 'trial_grant';
 
 export type GrantTrialInput = {
   accountId: string;
-  /** Existing tier key the trial emulates (e.g. 'team' for BYOK, 'pro'/'enterprise'). */
+  /** Plan key the trial emulates: 'credits' or 'enterprise'. */
   tierKey: string;
-  seats: number;
   durationDays: number;
   note?: string | null;
   actorUserId?: string | null;
   /**
-   * Optional wallet grant, same unit as `wallet.grant` (USD credits: the free
-   * welcome grant is `2`, one per-seat month is `25`). Sandbox compute always
+   * Optional wallet grant per 30 days, same unit as `wallet.grant` (USD
+   * credits: the free welcome grant is `2`). Sandbox compute always
    * debits the wallet — even a BYOK trial needs compute credits to run
    * sessions — so the grant is part of the trial issue, explicit and audited,
    * never an implicit wallet-floor bypass.
@@ -50,20 +52,17 @@ export type GrantTrialInput = {
 export type TrialSnapshot = {
   status: string;
   tier: string | null;
-  seats: number | null;
+  monthlyUsd: number | null;
   startedAt: string | null;
   endsAt: string | null;
   note: string | null;
 };
 
 export function validateGrantTrialInput(
-  input: Pick<GrantTrialInput, 'tierKey' | 'seats' | 'durationDays' | 'creditGrant'>,
+  input: Pick<GrantTrialInput, 'tierKey' | 'durationDays' | 'creditGrant'>,
 ): string | null {
   if (!isValidTier(input.tierKey) || input.tierKey === 'none' || input.tierKey === 'free') {
     return `tier_key must be an existing paid tier, got "${input.tierKey}"`;
-  }
-  if (!Number.isInteger(input.seats) || input.seats < 1 || input.seats > MAX_SEATS_PER_ACCOUNT) {
-    return `seats must be an integer in [1, ${MAX_SEATS_PER_ACCOUNT}]`;
   }
   if (
     !Number.isInteger(input.durationDays) ||
@@ -80,13 +79,22 @@ export function validateGrantTrialInput(
   return null;
 }
 
+/** Credits (USD) the trial on this row grants every 30 days. */
+function trialMonthlyUsd(
+  row: { trialMonthlyUsd?: string | null; trialSeats?: number | null } | null | undefined,
+): number | null {
+  if (!row) return null;
+  if (row.trialMonthlyUsd != null) return Number(row.trialMonthlyUsd) || 0;
+  return row.trialSeats ? LEGACY_TRIAL_USD_PER_SEAT * row.trialSeats : null;
+}
+
 function trialSnapshotFromRow(
   row: Awaited<ReturnType<typeof getCreditAccount>>,
 ): TrialSnapshot {
   return {
     status: row?.trialStatus ?? TRIAL_STATUS.NONE,
     tier: row?.trialTier ?? null,
-    seats: row?.trialSeats ?? null,
+    monthlyUsd: trialMonthlyUsd(row),
     startedAt: row?.trialStartedAt ?? null,
     endsAt: row?.trialEndsAt ?? null,
     note: row?.trialNote ?? null,
@@ -151,11 +159,10 @@ export type GrantTemporaryAccessInput = {
   accountId: string;
   /** Plan key the account should behave as for the window (catalog key). */
   planKey: string;
-  seats: number;
   durationDays: number;
   actorUserId?: string | null;
   note?: string | null;
-  /** Wallet grant in USD credits. Defaults to `grantForSeats(seats)` ($25/seat). */
+  /** Wallet grant in USD credits, granted now and every 30 days. Defaults to 25. */
   creditGrant?: number;
   /** Audit-style label for the write-owner log line. */
   action?: string;
@@ -194,10 +201,9 @@ export type TemporaryAccessResult = {
 export async function grantTemporaryAccess(
   input: GrantTemporaryAccessInput,
 ): Promise<TemporaryAccessResult> {
-  const creditGrant = input.creditGrant ?? grantForSeats(input.seats);
+  const creditGrant = input.creditGrant ?? LEGACY_TRIAL_USD_PER_SEAT;
   const invalid = validateGrantTrialInput({
     tierKey: input.planKey,
-    seats: input.seats,
     durationDays: input.durationDays,
     creditGrant,
   });
@@ -221,7 +227,7 @@ export async function grantTemporaryAccess(
       // Legacy trial columns — one-release compatibility, see the doc block.
       trialStatus: TRIAL_STATUS.ACTIVE,
       trialTier: input.planKey,
-      trialSeats: input.seats,
+      trialMonthlyUsd: String(creditGrant),
       trialStartedAt: now.toISOString(),
       trialEndsAt: endsAtIso,
       trialNote: input.note?.slice(0, 2000) ?? null,
@@ -241,7 +247,7 @@ export async function grantTemporaryAccess(
       accountId: input.accountId,
       amount: creditGrant,
       kind: TRIAL_GRANT_LEDGER_TYPE,
-      description: `Trial grant: ${input.planKey} tier, ${input.seats} seats, ${input.durationDays} days`,
+      description: `Trial grant: ${input.planKey} plan, ${input.durationDays} days`,
       expiring: true,
       expiresAt: endsAtIso,
       key: null,
@@ -264,8 +270,7 @@ export async function grantTemporaryAccess(
  * A thin naming layer over `grantTemporaryAccess` — same window, same expiring
  * overrides, same legacy columns. Two differences, both to keep the existing
  * admin route's contract byte-identical:
- *   - the wallet grant stays OPT-IN (`credit_grant`, default 0) rather than
- *     defaulting to `grantForSeats(seats)`;
+ *   - the wallet grant stays OPT-IN (`credit_grant`, default 0);
  *   - the write is logged as `admin.account.trial.grant`.
  */
 export async function grantTrial(input: GrantTrialInput): Promise<{
@@ -279,7 +284,6 @@ export async function grantTrial(input: GrantTrialInput): Promise<{
   const { before, current, creditGranted } = await grantTemporaryAccess({
     accountId: input.accountId,
     planKey: input.tierKey,
-    seats: input.seats,
     durationDays: input.durationDays,
     note: input.note ?? null,
     actorUserId: input.actorUserId ?? null,
@@ -290,7 +294,7 @@ export async function grantTrial(input: GrantTrialInput): Promise<{
 }
 
 /**
- * Revoke a trial immediately. Keeps tier/seats/window on the row (audit trail);
+ * Revoke a trial immediately. Keeps tier/amount/window on the row (audit trail);
  * only the status changes, and `trialIsActive` fails on any non-'active' status.
  */
 export async function revokeTrial(accountId: string): Promise<{
@@ -368,7 +372,7 @@ export function trialMonthlyRegrant(
     accountId: string;
     startedAt: string | null;
     endsAt: string | null;
-    seats: number | null;
+    monthlyUsd: number | null;
   },
   now: Date,
 ): { monthIndex: number; amount: number; idempotencyKey: string } | null {
@@ -381,8 +385,7 @@ export function trialMonthlyRegrant(
   const monthIndex = Math.floor((now.getTime() - startedMs) / MS_PER_TRIAL_MONTH);
   if (monthIndex < 1) return null;
 
-  const seats = Math.max(1, trial.seats ?? 1);
-  const amount = grantForSeats(seats);
+  const amount = trial.monthlyUsd ?? 0;
   if (amount <= 0) return null;
 
   return {
@@ -393,9 +396,8 @@ export function trialMonthlyRegrant(
 }
 
 /**
- * Monthly credit re-grant for active trials. A trial's credit entitlement is
- * per-seat per-month (`grantForSeats`, $25/seat) — the issue-time `creditGrant`
- * covers month 1, and this sweep grants each subsequent 30-day boundary inside
+ * Monthly credit re-grant for active trials. A trial grants its
+ * `trial_monthly_usd` every 30 days — the issue-time `creditGrant` covers month 1, and this sweep grants each subsequent 30-day boundary inside
  * the trial window. Idempotent across runs: one ledger row per
  * (account, trial start, month index), through the wallet's grant key.
  * Called from the billing cron alongside sweepExpiredTrials.
@@ -407,6 +409,7 @@ export async function sweepTrialMonthlyGrants(now: Date = new Date()): Promise<n
       accountId: creditAccounts.accountId,
       trialTier: creditAccounts.trialTier,
       trialSeats: creditAccounts.trialSeats,
+      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
       trialStartedAt: creditAccounts.trialStartedAt,
       trialEndsAt: creditAccounts.trialEndsAt,
     })
@@ -426,18 +429,17 @@ export async function sweepTrialMonthlyGrants(now: Date = new Date()): Promise<n
         accountId: row.accountId,
         startedAt: row.trialStartedAt,
         endsAt: row.trialEndsAt,
-        seats: row.trialSeats,
+        monthlyUsd: trialMonthlyUsd(row),
       },
       now,
     );
     if (!plan) continue;
 
-    const seats = Math.max(1, row.trialSeats ?? 1);
     const result = await wallet.grant({
       accountId: row.accountId,
       amount: plan.amount,
       kind: TRIAL_GRANT_LEDGER_TYPE,
-      description: `Trial monthly re-grant: month ${plan.monthIndex + 1}, ${seats} seats (${row.trialTier ?? 'trial'})`,
+      description: `Trial monthly re-grant: month ${plan.monthIndex + 1} (${row.trialTier ?? 'trial'})`,
       expiring: true,
       expiresAt: row.trialEndsAt,
       key: { request: plan.idempotencyKey },
