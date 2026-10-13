@@ -795,6 +795,8 @@ an unattended run reaches only project-shared computers.
 `TUN-4` rpc `POST /tunnel/rpc/:tid`: missing method → 400; a capability not approved at pairing → 403 `computer_capability_not_approved`; an approved capability with no live agent → 503 with `x-kortix-upstream-status: 502` and code `-32004` (not connected); unknown → 404.
 `TUN-5` device auth (public) `POST /tunnel/device-auth` (non-UUID `project_id` → 400), `GET …/:code/status`; (auth) `GET …/:code/info` echoes `projectId`, `POST …/:code/approve|deny`; unknown code → 404; ANON info → 401.
 `TUN-7` the computer follows its owner: `POST …/:code/approve` without a project pairs the machine to the approver (`connectionId: null`); `GET /projects/:id/connections` on any project the owner opens lists the machine as their private account (label = machine name, `machine.access: null` until the agent reports one). `DELETE /tunnel/self` with the machine's own token (`Authorization: Bearer kortix_tnl_…`, `X-Tunnel-Id`) unpairs it (200, the account becomes `revoked`); a wrong token → 401.
+`TUN-8` a removed member's computer accounts end with the membership (KRTX-1722): a project manager pairs one machine privately (it lives in their personal account) and one shared with the project (it joins the team account); OWNER shares a machine too. `DELETE /accounts/:id/members/:userId` → 200. In `GET /projects/:id/connections` the shared machine's account is `revoked`, `is_default: false`, `metadata.revokedReason: owner_left`; OWNER's account stays `active`. `GET /accounts/:id/audit?action=member.offboarded` holds exactly one event for the member: `actor_user_id` OWNER, `metadata` `{reason: removed, computers_revoked: 2, reminders_disabled: 0}`. The member still lists both machines in `GET /tunnel/connections` and unpairs them (200).
+`TUN-9` the same contract when the member leaves: `POST /accounts/:id/leave` → 200, the event's `actor_user_id` is the member and `reason` is `left`.
 WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited (exercised by TUN-6).
 
 `TUN-6` — verified binary transfer
@@ -1452,6 +1454,8 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SCIM-14` Inactive users retain directory group assignments without retaining account access, including before first login. Changes made while inactive determine membership after reactivation. DELETE clears the directory assignments and explicit recreation does not restore them.
 
 `SCIM-15` provisions populated Entra default mappings: phone numbers, work addresses, preferred language, enterprise department, employee number, and manager. Create, GET, filtered PATCH, removal, atomic invalid-value rollback, ResourceTypes, and Schemas must preserve the same attributes.
+
+`SCIM-16` SCIM deactivation runs the offboarding of removal and leave (TUN-8, KRTX-1722). A member who manages a project pairs one machine privately and one shared with the project. `PATCH /Users/:userId` with `active: false` → 200. The shared machine's computer account is `revoked` with `metadata.revokedReason: owner_left`. Exactly one `member.offboarded` audit event names the member, `actor_user_id: null`, `reason: deprovisioned` and `computers_revoked: 2`. A repeated `active: false` → 200 and writes no second event. The member still lists and unpairs both machines.
 
 
 `SEC-7` A project manager creates a secret setup request. The public link validates its token and writes the submitted value once.
