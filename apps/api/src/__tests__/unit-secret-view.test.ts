@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { buildSecretView } from '../projects/lib/serializers';
+import { encryptProjectSecret } from '../projects/secrets/envelope';
 
 const OTHER = 'u-other';
 
@@ -122,5 +123,55 @@ describe('buildSecretView — identifier model', () => {
     });
     expect(v.system).toBe(true);
     expect(v.can_manage_shared).toBe(false);
+  });
+});
+
+describe('buildSecretView — status (KRTX-1719)', () => {
+  const PROJECT = '55555555-5555-4555-8555-555555555555';
+  const BROKEN = 'v1:broken:envelope:row';
+
+  test('a value this server decrypts is ok; the view never carries it', () => {
+    const v = buildSecretView({
+      identifier: 'STRIPE_KEY',
+      name: 'STRIPE_KEY',
+      shared: sharedRow({ projectId: PROJECT, valueEnc: encryptProjectSecret(PROJECT, 'synthetic-value') }),
+      canManageShared: true,
+    });
+    expect(v.status).toBe('ok');
+    expect(JSON.stringify(v)).not.toContain('synthetic-value');
+  });
+
+  test('a value this server cannot decrypt is undecryptable, not missing', () => {
+    const v = buildSecretView({
+      identifier: 'STRIPE_KEY',
+      name: 'STRIPE_KEY',
+      shared: sharedRow({ projectId: PROJECT, valueEnc: BROKEN }),
+      canManageShared: true,
+    });
+    expect(v.status).toBe('undecryptable');
+    expect(v.configured).toBe(true);
+  });
+
+  test('the shared value decides when both exist; an override alone decides by itself', () => {
+    const both = buildSecretView({
+      identifier: 'CODEX_AUTH_JSON',
+      name: 'CODEX_AUTH_JSON',
+      shared: sharedRow({
+        projectId: PROJECT,
+        identifier: 'CODEX_AUTH_JSON',
+        name: 'CODEX_AUTH_JSON',
+        valueEnc: encryptProjectSecret(PROJECT, 'synthetic-value'),
+      }),
+      personal: personalRow({ projectId: PROJECT, valueEnc: BROKEN }),
+      canManageShared: true,
+    });
+    expect(both.status).toBe('ok');
+    const mineOnly = buildSecretView({
+      identifier: 'CODEX_AUTH_JSON',
+      name: 'CODEX_AUTH_JSON',
+      personal: personalRow({ projectId: PROJECT, valueEnc: BROKEN }),
+      canManageShared: true,
+    });
+    expect(mineOnly.status).toBe('undecryptable');
   });
 });

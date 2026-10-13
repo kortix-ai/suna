@@ -631,6 +631,14 @@ describe('SecretSchema', () => {
     ).not.toThrow();
   });
 
+  test('status is ok or undecryptable, and optional for older servers', () => {
+    for (const status of ['ok', 'undecryptable'] as const) {
+      expect(SecretSchema.strict().parse(secretFixture({ status })).status).toBe(status);
+    }
+    expect(SecretSchema.strict().parse(secretFixture()).status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ status: 'missing' })).success).toBe(false);
+  });
+
   test('accepts the system git-auth secret shape', () => {
     expect(() =>
       SecretSchema.parse(

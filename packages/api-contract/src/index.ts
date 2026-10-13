@@ -1962,6 +1962,14 @@ export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
 export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
 export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
 
+/**
+ * Can the server decrypt the stored value? `undecryptable`: the server's
+ * encryption key (`API_KEY_SECRET`) changed after the value was written, or the
+ * stored row is damaged. The value is lost; a person must enter it again.
+ */
+export const SecretValueStatusSchema = z.enum(['ok', 'undecryptable']);
+export type SecretValueStatus = z.infer<typeof SecretValueStatusSchema>;
+
 export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
   z.object({ kind: z.literal('query'), name: z.string() }),
@@ -2066,6 +2074,9 @@ export const SecretSchema = z.object({
   /** Can the caller's sessions use the shared value? False only when it is
    *  shared with specific people and the caller is not one of them. */
   usable: z.boolean().optional(),
+  /** Can the server decrypt the stored value: the shared value when one is
+   *  set, else the caller's own override. Never carries the value. */
+  status: SecretValueStatusSchema.optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 

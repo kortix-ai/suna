@@ -40,6 +40,7 @@ import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './open
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { isWarmProjectSession } from './warm-sessions';
+import { probeProjectSecret } from '../secrets/envelope';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -578,6 +579,8 @@ export function buildSecretView(input: {
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
     requires_rotation: requiresRotation,
+    // One decrypt of the value this row edits; the plaintext is discarded.
+    status: probeProjectSecret(deliveryRow!.projectId, deliveryRow!.valueEnc),
   };
 }
 
