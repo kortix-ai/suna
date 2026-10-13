@@ -1,0 +1,34 @@
+{
+  "source_hash": "234bd3261b3a995c9aa1ec3adcb5187c0c7cf8b547c802474970c21adbe63f66",
+  "diff_files": [
+    "apps/api/src/shared/database-capacity.test.ts",
+    "apps/api/src/shared/database-capacity.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "infra/terraform/environments/prod-us-east-2-shadow/main.tf",
+    "infra/terraform/environments/prod/main.tf",
+    "infra/terraform/modules/ecs-api/main.tf",
+    "infra/terraform/modules/ecs-api/variables.tf",
+    "packages/db/src/connection-defaults.ts",
+    "tests/e2e/specs/20-workspace-switching.spec.ts",
+    "tests/e2e/specs/27-desktop-parity.spec.ts",
+    "tests/e2e/specs/30-session-transcript-history.spec.ts",
+    "tests/e2e/specs/free-tier-pricing-onboarding.spec.ts",
+    "tests/src/core/flow.ts",
+    "tests/src/fixtures/supabase.ts",
+    "tests/src/flows/agent-principals.flow.ts",
+    "tests/src/flows/config-releases.flow.ts",
+    "tests/src/flows/iam.flow.ts",
+    "tests/src/flows/llm-gateway.flow.ts",
+    "tests/src/flows/runtime-assets.flow.ts",
+    "tests/src/flows/sessions.flow.ts"
+  ],
+  "diff_hash": "e4403756226f76ca8c40dc9e6e8edd51cd3e7cc49dee9f98971dbdb89e81525d",
+  "head": "fbfb7cdbcffad963bca3729ba705b537d5da54de",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-12T03:37:49.241Z"
+}
