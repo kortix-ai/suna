@@ -6,6 +6,7 @@ import type {
   SecretDeliveryBlockedReason,
   SecretEgressPolicy,
   SecretSharePrincipal,
+  SecretValueStatus,
 } from './secrets';
 import {
   brokerProjectSecretRequest,
@@ -139,6 +140,24 @@ test("listProjectSecrets returns each value's audience and whether the caller ca
   const usable: boolean | undefined = item.usable;
   expect(sharedWith).toEqual([share]);
   expect(usable).toBe(false);
+});
+
+test('listProjectSecrets says which stored values the server can no longer decrypt', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        { identifier: 'OPENAI_API_KEY', configured: true, status: 'undecryptable' },
+        { identifier: 'STRIPE_KEY', configured: true, status: 'ok' },
+        { identifier: 'LEGACY_KEY', configured: true },
+      ],
+      required: [],
+      optional: [],
+    },
+  };
+  const res = await listProjectSecrets('P1');
+  const statuses: Array<SecretValueStatus | undefined> = res.items.map((item) => item.status);
+  expect(statuses).toEqual(['undecryptable', 'ok', undefined]);
 });
 
 test('upsertProjectSecret sends an explicit server consumer without a plaintext transition', async () => {

@@ -5,6 +5,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (undecryptable stored values)
+- `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
+  `'undecryptable'` when the server can no longer decrypt the stored value
+  (its encryption key changed, or the row is damaged). The value is lost;
+  re-enter it with `upsertProjectSecret` or `rotateAccountSecretResource`.
+  `SecretValueStatus` is the new public type. Optional: absent on older
+  servers. A connector call on such a credential fails with
+  `ConnectorCallError.code === 'credential_undecryptable'`. Additive
+  (KRTX-1719).
+
 ### Added (connector credential re-sync)
 - `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
   connector the server re-reads the tools after the write: `sync` is that run

@@ -14,6 +14,13 @@ export type SecretConsumer =
   | 'network';
 export type SecretDeliveryStatus = 'available' | 'unavailable' | 'disabled';
 export type SecretDeliveryBlockedReason = 'no_agent_grant';
+/**
+ * Can the server decrypt a stored value? `undecryptable`: the server's
+ * encryption key changed after the value was written, or the stored row is
+ * damaged. The value is lost; a person enters it again with the same write
+ * that set it.
+ */
+export type SecretValueStatus = 'ok' | 'undecryptable';
 export type SecretInjectionSlot =
   | { kind: 'header'; name: string; template?: string }
   | { kind: 'query'; name: string }
@@ -120,6 +127,10 @@ export interface ProjectSecret {
   /** False when the value is shared with specific people and the caller is not
    *  one of them. Absent on older servers. */
   usable?: boolean;
+  /** Can the server decrypt the stored value: the shared value when one is
+   *  set, else my own override. `undecryptable` means re-enter it with
+   *  `upsertProjectSecret`. Absent on older servers. */
+  status?: SecretValueStatus;
 }
 
 /** One principal a secret value is shared with. `agent`: `principal_id` is the
