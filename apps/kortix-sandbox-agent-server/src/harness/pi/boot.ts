@@ -1,13 +1,13 @@
 /**
  * The pi session boot.
  *
- * Same host steps as the OpenCode boot, in the same order — git identity,
- * egress shim, agent env file, proxy up FIRST, then the workspace, then the
- * runtime — with one difference that is the whole point: "start the runtime"
+ * The host steps — git identity, egress shim, agent env file, proxy up FIRST —
+ * then the config and the workspace in parallel, and the runtime on the config
+ * alone. "Start the runtime"
  * is building an in-process object (tens of milliseconds), not spawning and
  * probing a server. There is no early-spawn, no config-dir dance, no
- * bind-window and no readiness lottery. `pi-ready` follows `repo-materialized`
- * as fast as the model catalog reads from disk.
+ * bind-window and no readiness lottery. `pi-ready` follows the config release
+ * (`config-release-proven`), never the workspace checkout.
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -167,18 +167,27 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     }
   }
 
-  // Fresh-boot acquisition goes through the workspace provider
-  // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
+  // Two independent providers, started together:
+  //   - the config provider (config-release.ts) downloads the release pi
+  //     boots from, from S3 first, and never reads `/workspace`;
+  //   - the workspace provider (git | prefer-s3 | require-s3) checks out the
+  //     project for the agent's tools.
+  // pi starts on the config alone. The workspace gates turns, not the runtime:
+  // the readiness gate (service.ts) holds every turn until it lands.
+  const configReady = harness.releases.boot(bootMark)
   if (cfg.autoClone) bootState.workspaceReady = false
-  const checkout: Promise<string | null> = cfg.autoClone
+  const workspace: Promise<string | null> = cfg.autoClone
     ? provideWorkspace(cfg, {
-        bootMark,
         onSummary: (summary) => {
           bootState.workspaceProvider = summary
         },
       })
-        .then((result) => {
+        .then(async (result) => {
           if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
+          if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)
+          await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
+            logger.warn('[boot] repo-local git credential helper setup failed', { err: (err as Error).message })
+          })
           return null
         })
         .catch((err) => {
@@ -186,21 +195,15 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
           logger.error('[boot] repo materialization failed', err)
           return bootState.repoMaterializationError
         })
+        .finally(() => {
+          bootState.workspaceReady = true
+        })
     : Promise.resolve('this box does not clone the project')
 
-  // The config release the runtime starts on (config-release.ts): fetched,
-  // verified and sealed beside the checkout, or copied from the checkout when
-  // it is the release's commit. `lifecycle.start()` joins it.
-  void harness.releases.boot(bootMark, checkout)
-  await checkout
-  bootMark('repo-materialized')
-  if (cfg.autoClone && !bootState.repoMaterializationError) {
-    if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)
-    await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
-      logger.warn('[boot] repo-local git credential helper setup failed', { err: (err as Error).message })
-    })
-  }
-  bootState.workspaceReady = true
+  await configReady
+  // Releases off (an API from before they graduated, or no API): the working
+  // tree IS the config, so pi waits for it. The only wait on the workspace.
+  if (harness.releases.projectRoot() === undefined) await workspace
 
   try {
     await harness.lifecycle.start()
@@ -209,7 +212,6 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
   const runtime = harness.runtime()!
-  runtime.markWorkspaceReady()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
   convergeAfterReady(harness)
   // The reconcile floor: every 60 s the box re-checks its release and its
@@ -225,6 +227,8 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   })
   startRuntimeTruthTicker()
 
+  // Everything below runs in the project: hooks, the first turn.
+  await workspace
   if (bootState.repoMaterializationError) return
   runSandboxOnBoot(cfg)
 

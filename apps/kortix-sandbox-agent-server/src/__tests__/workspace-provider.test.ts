@@ -408,7 +408,6 @@ describe('provideWorkspace — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'slow'
-    const marks: string[] = []
     // Two-pass proof: while the server is pausing mid-body, the object is
     // accumulating in the private stage FILE and nothing has been extracted
     // yet — no byte reaches the tree before the whole object is verified.
@@ -417,7 +416,7 @@ describe('provideWorkspace — prefer-s3', () => {
       const entries = stageDirs(target)
       return { files: entries.filter((n) => n.endsWith('.tgz')), dirs: entries.filter((n) => !n.endsWith('.tgz')) }
     })
-    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg)
     const observed = await midway
 
     expect(result.provider).toBe('s3')
@@ -429,7 +428,7 @@ describe('provideWorkspace — prefer-s3', () => {
     expect(result.s3?.extractor).toBe('tar')
     expect(observed.files.length).toBe(1)
     expect(observed.dirs).toEqual([])
-    expect(marks).toContain('config-provider:s3:ok')
+    expect(result.summary.provider).toBe('s3')
     // Boot path: a valid partial clone with NO blobs yet (hydration still pending).
     expect(result.summary.hydration?.status).toBe('pending')
     expectPartialCloneConfig(target)
@@ -443,7 +442,6 @@ describe('provideWorkspace — prefer-s3', () => {
     expect(hydration.status).toBe('ok')
     expect(hydration.bytes).toBe(archive.blobs.bytes.byteLength)
     expect(result.summary.hydration?.status).toBe('ok')
-    expect(marks).toContain('config-provider:hydrate:ok')
     expect(packFiles(target).filter((n) => n.endsWith('.pack')).length).toBe(2)
     expect(packFiles(target).filter((n) => n.endsWith('.promisor')).length).toBe(2)
     expect(missingObjects(target)).toBe(0)
@@ -464,13 +462,11 @@ describe('provideWorkspace — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.blobsMode = 'missing'
-    const marks: string[] = []
-    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('s3')
     const hydration = await result.hydration!
     expect(hydration).toMatchObject({ status: 'failed', reason: 'missing', attempts: 1 })
     expect(result.summary.hydration?.status).toBe('failed')
-    expect(marks).toContain('config-provider:hydrate:failed')
     // Still a valid repository at the right commit, with blobs marked fetchable.
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
     expectPartialCloneConfig(target)
@@ -559,12 +555,10 @@ describe('provideWorkspace — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.descriptorStatus = 404
-    const marks: string[] = []
-    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.fallback).toMatchObject({ from: 's3', stage: 'descriptor', reason: 'missing', attempts: 1 })
     expect(result.summary).toMatchObject({ s3_attempted: true, s3_failed: true, s3_reason: 'missing', fallback: true, sha_matches: true, hydration: null })
-    expect(marks).toEqual(expect.arrayContaining(['config-provider:s3:failed:missing', 'config-provider:fallback', 'config-provider:git:fallback']))
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
     // No object download was ever attempted for a missing descriptor.
     expect(api.requests.filter((r) => r.path.startsWith('/tree/') || r.path.startsWith('/blobs/'))).toHaveLength(0)
@@ -638,12 +632,10 @@ describe('provideWorkspace — prefer-s3', () => {
   test('no pin (cache miss) is a Git-only start with the reason recorded — not an S3 attempt, not a fallback', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_PIN: '' })
-    const marks: string[] = []
-    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.fallback).toBeUndefined()
     expect(result.summary).toMatchObject({ s3_attempted: false, s3_failed: false, s3_skipped: true, s3_stage: 'precondition', s3_reason: 'no-pin', fallback: false })
-    expect(marks).toContain('config-provider:s3:skipped:no-pin')
     expect(api.requests).toHaveLength(0)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
@@ -694,11 +686,10 @@ describe('provideWorkspace — prefer-s3', () => {
     mkdirSync(target)
     git(root, 'clone', '-q', `file://${source.checkout}`, target)
     const cfg = makeConfig(api, target, archive.sha)
-    const marks: string[] = []
-    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.summary.s3_attempted).toBe(false)
-    expect(marks).toContain('config-provider:warm')
+    expect(typeof result.summary.timings.warm).toBe('number')
     expect(api.requests).toHaveLength(0)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })

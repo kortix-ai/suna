@@ -21,7 +21,7 @@ import {
 } from '@/services/config-provider/api-client'
 import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import { clearConfigReleaseNotice } from '@/services/config-provider/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
+import { obtainRelease } from '@/services/config-provider/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
@@ -209,19 +209,14 @@ async function bootCandidates(
       reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     } else {
       try {
-        // The checkout is the release when the box checked out its commit:
-        // wait for it only then. A box with no base pin (KORTIX_BASE_SHA unset)
-        // waits only for a release with no archive, which nothing else may
-        // hold yet; HEAD decides (obtain.ts). Any other boot builds the
-        // release meanwhile.
-        const checkout =
-          checkoutMayHold(cfg.baseSha, answer.descriptor) && (await input.workspace) === null ? cfg.projectTarget : null
+        // Downloaded on its own, while the workspace provider checks out the
+        // same commit: neither waits for the other (obtain.ts).
         const obtained = await obtainRelease({
           root,
           manifest,
           snapshot: answer.descriptor.snapshot,
           api,
-          workspace: checkout,
+          git: cfg,
           managedSkillsDir: input.managedSkillsDir,
           prepare: (staged) =>
             input.prepare

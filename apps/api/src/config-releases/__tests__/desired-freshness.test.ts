@@ -1,95 +1,22 @@
 /**
- * `resolveDesiredRelease`'s mirror-refresh contract (KRTX-629).
+ * `resolveDesiredRelease` never forces a mirror fetch (KRTX-629).
  *
- * Default: the freshness stamp is dropped, so resolving the base tip fetches.
- * `refreshProjectMirror: false` — what `GET /config` passes, because its own
- * etag compile refreshed the same mirror moments earlier IN THE SAME REQUEST —
- * must not drop the stamp again: that second drop made every read of the
- * polled route pay a second sequential `git fetch`.
- *
- * Every dep is injected, so these assert the DECISION, not the mirror.
+ * It ran `invalidateProjectMirror` on every call, so every descriptor request
+ * paid a `git fetch` (prod p50 1.07 s, 100k requests a day, 2026-10-13): on
+ * every boot's critical path and on every box's 60 s convergence tick. A base
+ * move Kortix makes or proxies already drops the stamp in every API process
+ * (`notifyBaseBranchMoved`), and the mirror refreshes itself after
+ * `KORTIX_GIT_REFRESH_INTERVAL_MS`.
  */
 import { describe, expect, test } from 'bun:test';
-import type { GitBackedProject } from '../../projects/git/types';
-import type { ConfigRelease } from '../builder';
-import { type DesiredReleaseDeps, resolveDesiredRelease } from '../desired';
-import { MemoryConfigReleaseLedger } from './fakes';
-import type { DeclaredAgentRoster } from '../session-agent';
 
-const PROJECT: GitBackedProject = {
-  projectId: '33333333-3333-4333-8333-333333333333',
-  repoUrl: '/tmp/repo.git',
-  defaultBranch: 'main',
-  manifestPath: 'kortix.yaml',
-  gitAuthToken: null,
-};
-const TIP = 'c'.repeat(40);
-const ROSTER: DeclaredAgentRoster = {
-  enabled: [],
-  defaultAgent: null,
-  readable: true,
-  governed: false,
-};
+const SRC = await Bun.file(new URL('../desired.ts', import.meta.url).pathname).text();
+const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
-const RELEASE: ConfigRelease = {
-  release_id: 'release',
-  source_commit: TIP,
-  config_dir: null,
-  config_tree_id: null,
-  archive: null,
-  files: null,
-  compiled_governance: '{}',
-  compiled_governance_etag: 'etag',
-  reason: null,
-};
-
-function deps(invalidated: string[]): DesiredReleaseDeps {
-  return {
-    ledger: new MemoryConfigReleaseLedger(),
-    build: async () => RELEASE,
-    resolveBase: async () => TIP,
-    loadRoster: async () => ROSTER,
-    invalidate: (projectId) => invalidated.push(projectId),
-  };
-}
-
-describe('resolveDesiredRelease decides when to refresh the mirror', () => {
-  test('the default refreshes exactly once, for this project', async () => {
-    const calls: string[] = [];
-    await resolveDesiredRelease(
-      { project: PROJECT, baseRef: 'main', sessionAgent: null, repositoryAccess: true },
-      deps(calls),
-    );
-    expect(calls).toEqual([PROJECT.projectId]);
-  });
-
-  test('refreshProjectMirror: false never invalidates — the caller just refreshed', async () => {
-    const calls: string[] = [];
-    await resolveDesiredRelease(
-      {
-        project: PROJECT,
-        baseRef: 'main',
-        sessionAgent: null,
-        repositoryAccess: true,
-        refreshProjectMirror: false,
-      },
-      deps(calls),
-    );
-    expect(calls).toEqual([]);
-  });
-
-  test('an explicit true refreshes like the default', async () => {
-    const calls: string[] = [];
-    await resolveDesiredRelease(
-      {
-        project: PROJECT,
-        baseRef: 'main',
-        sessionAgent: null,
-        repositoryAccess: true,
-        refreshProjectMirror: true,
-      },
-      deps(calls),
-    );
-    expect(calls).toEqual([PROJECT.projectId]);
+describe('resolveDesiredRelease reads the mirror as it is', () => {
+  test('nothing in it invalidates or force-refreshes the mirror', () => {
+    expect(code).not.toContain('invalidateProjectMirror');
+    expect(code).not.toContain('invalidate(');
+    expect(code).not.toMatch(/refreshMirror\([^)]*true/);
   });
 });
