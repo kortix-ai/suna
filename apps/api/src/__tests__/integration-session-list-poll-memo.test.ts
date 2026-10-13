@@ -19,7 +19,7 @@
  *  3. a different query key is never answered from another key's memo entry;
  *  4. once the window expires, the next poll computes again.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
@@ -98,6 +98,18 @@ const authHeader = (): Record<string, string> => ({
   Authorization: `Bearer ${token}`,
 });
 
+// Under the full run's parallel lanes (6 db suites at a time next to the
+// flows lane) the wall time between a seed and its repeat has been observed
+// at 3.3 s — past the 2 s TTL — where expiring is correct product behavior
+// (a fresh compute), not the fast path these tests pin. The memo reads
+// Date.now() in this process, so each memo-hit request pins the clock 1 s
+// into the past (inside the window, frozen) and afterEach restores the real
+// clock; the expiry test restores it explicitly before its wall-clock sleep.
+afterEach(() => setSystemTime());
+
+/** Freeze the clock 1 s back so a memo-hit request cannot race the TTL. */
+const pinClockInWindow = () => setSystemTime(new Date(Date.now() - 1_000));
+
 describe('session list poll memo', () => {
   test('an If-None-Match repeat within the window is a 304 that runs no DB ops', async () => {
     const first = await app.request(listUrl(), { headers: authHeader() });
@@ -106,6 +118,7 @@ describe('session list poll memo', () => {
     const firstOps = dbOpCount(first);
     expect(firstOps).toBeGreaterThan(0);
 
+    pinClockInWindow();
     const repeat = await app.request(listUrl(), {
       headers: { ...authHeader(), 'If-None-Match': etag },
     });
@@ -132,6 +145,7 @@ describe('session list poll memo', () => {
     expect(dbOpCount(other)).toBeGreaterThan(0);
     const otherEtag = requireEtag(other);
 
+    pinClockInWindow();
     const repeat = await app.request(listUrl('q=nomatch'), {
       headers: { ...authHeader(), 'If-None-Match': otherEtag },
     });
@@ -144,12 +158,16 @@ describe('session list poll memo', () => {
     expect(first.status).toBe(200);
     const etag = requireEtag(first);
 
+    pinClockInWindow();
     const within = await app.request(listUrl('q=expired'), {
       headers: { ...authHeader(), 'If-None-Match': etag },
     });
     expect(within.status).toBe(304);
     expect(dbOpCount(within)).toBeLessThanOrEqual(2);
 
+    // Expiry is measured on the real clock: the pin was 1 s back, so the
+    // 2.3 s wall sleep always pushes the entry past the 2 s TTL.
+    setSystemTime();
     await new Promise((resolve) => setTimeout(resolve, 2_300));
 
     const expired = await app.request(listUrl('q=expired'), {

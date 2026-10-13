@@ -17,7 +17,7 @@
  * authType 'supabase' — no accountId, no iamTokenId) and records what each
  * request left on the context after its handler ran.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { projectsApp } from '../projects/lib/app';
 import { registerProjectSessionsRoutes } from '../projects/routes/project-sessions';
@@ -77,6 +77,12 @@ afterAll(async () => {
 });
 
 describe('a memoized 304 keeps the computed path account binding', () => {
+  // Pin the clock inside the 2 s memo window before the repeat: under the
+  // full run's parallel lanes the wall time between the seed and the repeat
+  // can exceed the TTL, where a recompute binds the account too and the test
+  // would pass without exercising the replay at all.
+  afterEach(() => setSystemTime());
+
   test('the computed GET binds the account and the memoized 304 replays it', async () => {
     const first = await projectsApp.request(listUrl());
     expect(first.status).toBe(200);
@@ -85,6 +91,7 @@ describe('a memoized 304 keeps the computed path account binding', () => {
     // context, exactly as it does for every real browser-JWT poll.
     expect(seen[0]).toBe(ACCOUNT);
 
+    setSystemTime(new Date(Date.now() - 1_000));
     const repeat = await projectsApp.request(listUrl(), {
       headers: { 'If-None-Match': etag },
     });
