@@ -36,8 +36,11 @@ const password = "E2eConnectLanding123!";
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 const resultApi = createApiResultClient(apiBase);
-// No resolver answers `.test`, so the first sync of this server always fails.
-const unreachableMcp = "https://ke2e.kortix.test/mcp";
+// IANA's reserved example host: public https, so the create passes the
+// endpoint check, and it answers an MCP initialize with 405, so the first sync
+// fails for a reason other than sign-in. A host that never resolves (`.test`)
+// fails earlier: the endpoint check refuses the create itself (400).
+const unreachableMcp = "https://example.com/mcp";
 
 interface ConnectorList {
   connectors: Array<{ slug: string; status: string; lastError?: string | null }>;
@@ -48,6 +51,11 @@ test.describe("49 — Connector connect lands on the connector page", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("kortix:marko-welcome-dismissed", "1"));
+    // The founder welcome card can still mount over the account rows; close it
+    // whenever it is in the way of a click.
+    await page.addLocatorHandler(page.getByRole("complementary", { name: "Welcome from Marko" }), async (card) => {
+      await card.getByRole("button", { name: "Dismiss" }).click();
+    });
   });
 
   let user: AuthUser;
