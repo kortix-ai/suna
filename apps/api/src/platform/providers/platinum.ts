@@ -90,6 +90,30 @@ const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
 const START_CONFLICT_POLL_MS = 250;
 /**
+ * States in which Platinum is already bringing the box up for another caller.
+ * A /start that meets one joins it and waits for `running`, inside the restore
+ * budget. It used to give up after the 30 s stop grace: a resume that had to
+ * move hosts (S3 copy ~53 s) then failed every second caller (prod 2026-10-13).
+ */
+const START_IN_FLIGHT_STATES: ReadonlySet<string> = new Set([
+  'starting',
+  'resuming',
+  'restoring',
+  'migrating',
+  'pending',
+]);
+/**
+ * 503 codes Platinum answers with "retry later" while it moves a stopped box
+ * to another host. The S3 copy keeps warming the target, so the next /start
+ * finishes faster (prod 2026-10-13: copies of 53 s, 12 s, 4 s, then running).
+ */
+const START_RETRY_CODES: ReadonlySet<string> = new Set([
+  'relocation_fetch_timeout',
+  'relocation_failed',
+  'relocation_unavailable',
+]);
+export const START_RETRY_BACKOFF_MS = 2_000;
+/**
  * How long `stop()` waits for Platinum to confirm the VM actually powered
  * off, and the poll interval. Read per-call (not a module-load constant) so
  * tests can shrink both without an env var set before this module is first
@@ -766,6 +790,14 @@ export class PlatinumProvider implements SandboxProvider {
     let deadline = Date.now() + START_CONFLICT_GRACE_MS;
     const restoreDeadline = Date.now() + START_RESTORE_BUDGET_MS;
     let firstConflict: unknown = null;
+    // Renews the caller's lease while this call waits on Platinum. The first
+    // report is immediate, then one per START_PROGRESS_INTERVAL_MS.
+    let reportedAt = Number.NEGATIVE_INFINITY;
+    const progress = async () => {
+      if (!opts.onProgress || Date.now() - reportedAt < START_PROGRESS_INTERVAL_MS) return;
+      reportedAt = Date.now();
+      await opts.onProgress().catch(() => undefined);
+    };
     // true = the box is back on disk and gets a fresh /start. That /start
     // gets a fresh stop grace too: another waiter may win the race to it, and
     // this one must then see the box through `starting`, not fail at once.
@@ -795,18 +827,28 @@ export class PlatinumProvider implements SandboxProvider {
         if (await restored()) continue;
         return;
       } catch (error) {
-        // Platinum acknowledges stop before the VM always reaches `stopped`.
-        // An immediate user reopen can therefore race `stopping` and receive
-        // 409. Keep the provider call inside this adapter until the accepted
-        // stop settles, then retry start. The control plane remains stopped and
-        // unbilled until its separate provider-running confirmation succeeds.
         // The CALL gave up, not Platinum: a restore it started keeps going
         // server-side. Wait on the box's real state instead of failing the wake.
         if (error instanceof Error && error.name === 'TimeoutError' && Date.now() < restoreDeadline) {
           if (await restored()) continue;
           return;
         }
-        if (platinumHttp(error).status !== 409) throw error;
+        const http = platinumHttp(error);
+        if (
+          http.status === 503 &&
+          START_RETRY_CODES.has(String(http.code)) &&
+          Date.now() + START_RETRY_BACKOFF_MS < restoreDeadline
+        ) {
+          await progress();
+          await Bun.sleep(START_RETRY_BACKOFF_MS);
+          continue;
+        }
+        // Platinum acknowledges stop before the VM always reaches `stopped`.
+        // An immediate user reopen can therefore race `stopping` and receive
+        // 409. Keep the provider call inside this adapter until the accepted
+        // stop settles, then retry start. The control plane remains stopped and
+        // unbilled until its separate provider-running confirmation succeeds.
+        if (http.status !== 409) throw error;
         firstConflict ??= error;
       }
 
@@ -822,13 +864,19 @@ export class PlatinumProvider implements SandboxProvider {
           if (await restored()) continue attempt;
           return;
         }
-        if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
+        if (START_IN_FLIGHT_STATES.has(state)) {
+          if (Date.now() >= restoreDeadline) throw firstConflict;
+          await progress();
+        } else if (state !== 'stopping' || Date.now() >= deadline) {
           throw firstConflict;
         }
-        await Bun.sleep(START_CONFLICT_POLL_MS);
+        await Bun.sleep(Date.now() < deadline ? START_CONFLICT_POLL_MS : START_RESTORE_POLL_MS);
       }
 
-      if (Date.now() >= deadline) throw firstConflict;
+      // Back to stopped: the other caller's start failed or its stop settled.
+      // The box needs a /start of its own, inside the same budget.
+      if (Date.now() >= restoreDeadline) throw firstConflict;
+      deadline = Date.now() + START_CONFLICT_GRACE_MS;
     }
   }
 
