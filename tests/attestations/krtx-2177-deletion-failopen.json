@@ -1,5 +1,5 @@
 {
-  "source_hash": "74e3fe31838b0772fcbe19c2bce9357a8d973d09f43a26658696ee3067448894",
+  "source_hash": "7cbe3d1f7556360d58e678710eaebbedcbf62d3f0d3210d90f6f0ed1b1c5759e",
   "diff_files": [
     "apps/web/src/features/workspace/settings/tabs/profile-tab.container.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/profile-tab.test.tsx",
@@ -14,13 +14,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "73f8e1c200987184500f0985399d011b7b9ac568c71d1ec308ca7103e5892d8b",
-  "head": "43e96846d810159da75a0f7b4252ecfbfe2bfc05",
+  "diff_hash": "0712aee357ba6279ee11ca2872208e45f1da7b86b9fe0116975266662a55e5c5",
+  "head": "d417a6be300dc3147290bca09dace6ade8f43bf6",
   "passed": false,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "fail",
-    "db-suites": "pass"
+    "db-suites": "fail"
   },
-  "at": "2026-10-13T05:52:35.378Z"
+  "at": "2026-10-13T06:44:07.712Z"
 }
