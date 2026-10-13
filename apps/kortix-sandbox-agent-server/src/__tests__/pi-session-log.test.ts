@@ -23,6 +23,8 @@ import {
   type SessionLogMessage,
 } from '@kortix/api-contract/session-log'
 import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, type PiSessionSnapshot } from '@/harness/pi/session-log'
+import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
+import { mintRootId } from '@/harness/pi/message-id'
 import { resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
 
@@ -281,6 +283,60 @@ describe('the seq rule: monotonic per thread, never reused', () => {
     s.children[0]!.reply = { id: 'msg_c5', timestamp: ts(61) }
     expect(port.live(CHILD, 'msg_c5')).toEqual({ seq: 5, created_at: new Date(ts(61)).toISOString() })
     expect(port.live('ses_unknown', 'msg_new')).toBeNull()
+  })
+})
+
+describe('pi session-log restore (P6.2)', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+  const image = Buffer.from(PNG, 'base64')
+  const imageRef = `blob:${createHash('sha256').update(image).digest('hex')}`
+  /** The fixture as a box of session `session-pi-log` exports it: pi's root id is minted from the session id. */
+  const exported = () => {
+    const s = fixture()
+    s.rootId = mintRootId(s.sessionId)
+    return piSessionLog(s)
+  }
+  const restore = async (log: ReturnType<typeof exported>['log'], readAttachment = async (ref: string) => (ref === imageRef ? image : null)) => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-restore-'))
+    dirs.push(dir)
+    const result = await restorePiSessionLog(log, { stateDir: dir, sessionId: 'session-pi-log', cwd: '/workspace', readAttachment })
+    return { result, again: piSessionLog(readPiSnapshot(dir, 'session-pi-log', log.selection)!) }
+  }
+
+  test('round trip: export, restore into a fresh state dir, export again: the same records', async () => {
+    const { log } = exported()
+    const { result, again } = await restore(log)
+    const expected = structuredClone(log)
+    // The one difference: pi never received the PDF, so the log has its size, not its bytes; the restored v1 part has no url.
+    const pdf = expected.threads[0]!.messages[0]!.blocks[2] as { data: Record<string, unknown> }
+    pdf.data = { mime: 'application/pdf', filename: 'notes.pdf', url: '' }
+    expect(again.log).toEqual(expected)
+    expect(result.dropped).toEqual({})
+  })
+
+  test('the cursors restore returns hold the hash of every restored message: the next export sends nothing (C13)', async () => {
+    const { log } = exported()
+    const { result, again } = await restore(log)
+    expect(result.cursors.map((c) => c.thread_id)).toEqual(log.threads.map((t) => t.thread_id))
+    for (const c of result.cursors) {
+      const thread = again.log.threads.find((t) => t.thread_id === c.thread_id)!
+      expect(c.native_hashes).toEqual(Object.fromEntries(thread.messages.map((m) => [m.message_id, again.hashes.get(m.message_id)!])))
+      expect(c.last_seq).toBe(Math.max(...thread.messages.map((m) => m.seq)))
+    }
+  })
+
+  test('an image whose bytes cannot be read is dropped, and counted when the model would see it', async () => {
+    const { log } = exported()
+    // msg_a is before the compaction's cut point: the model does not see it, so nothing it sees is lost.
+    expect((await restore(log, async () => null)).result.dropped).toEqual({})
+    byId(log.threads[0]!.messages, 'msg_i').in_context = false
+    const { result, again } = await restore(log, async () => null)
+    expect(result.dropped).toEqual({ attachment: 1 })
+    // The store says what pi holds: the image is a file pi never received.
+    expect(again.log.threads[0]!.messages[0]!.blocks.map((b) => (b.type === 'harness' ? `${b.kind}:${(b.data as { mime: string }).mime}` : b.type))).toEqual(['text', 'undelivered_file:image/png', 'undelivered_file:application/pdf'])
   })
 })
 

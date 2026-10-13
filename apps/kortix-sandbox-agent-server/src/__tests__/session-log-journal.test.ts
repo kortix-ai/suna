@@ -26,6 +26,7 @@ import {
   JOURNAL_UNACKED_RETRIES,
   SessionLogJournal,
   resetSessionLogJournalForTests,
+  seedSessionLogRevs,
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
@@ -149,7 +150,7 @@ function fakeAdapter() {
         }
         cursors.push(cursor)
       }
-      return cursors
+      return { cursors, dropped: {} }
     },
     async fingerprint() {
       return sha(JSON.stringify([...native]))
@@ -333,7 +334,7 @@ describe('session-log journal', () => {
       pending: { questions: [], permissions: [] },
       threads: [{ schema: 'kortix.session/2', v: 1, thread_id: 'thr_root', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '2026-10-11T00:00:00.000Z', messages: [restored] }],
     }
-    const cursors = await fake.port.restore(log)
+    const { cursors } = await fake.port.restore(log)
     fake.put('n1', 2, 'new after restore')
     const journal = new SessionLogJournal(fake.port, { generation: 2, cursors })
 
@@ -358,6 +359,23 @@ describe('session-log journal', () => {
     expect(Number.isSafeInteger(after)).toBe(true)
     // A rev follows the clock (1000 per ms), so a later process starts above it too.
     expect(before!).toBeGreaterThanOrEqual((Date.now() - 60_000) * 1000)
+  })
+
+  test('seedSessionLogRevs (P6.2): after a restore, every rev this boot issues is above the revs the API stored', async () => {
+    const api = fakeApi()
+    // The box that wrote m1 ran an hour ahead of this one: its rev is above this clock.
+    const stored = { m1: (Date.now() + 3_600_000) * 1000, m2: 7 }
+    seedSessionLogRevs(stored)
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'edited after the restore')
+    fake.put('m2', 2, 'new content')
+    expect(await new SessionLogJournal(fake.port, { generation: 2 }).flush()).toBe(true)
+
+    const [m1] = revOf(api.received, 'm1')
+    const [m2] = revOf(api.received, 'm2')
+    expect(m1).toBeGreaterThan(stored.m1)
+    expect(m2).toBeGreaterThan(stored.m1)
+    expect(Number.isSafeInteger(m1)).toBe(true)
   })
 
   test('a 404 turns the journal off for this boot after one request', async () => {

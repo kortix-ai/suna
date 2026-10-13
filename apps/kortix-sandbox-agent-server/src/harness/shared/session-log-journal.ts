@@ -98,6 +98,16 @@ function nextRev(): number {
   return lastRev
 }
 
+/**
+ * After a restore (P6.1 `revs`, every stored message's rev, tombstones
+ * included): every rev this process issues from now on is above all of them,
+ * so a box whose clock runs behind the box that wrote the log never posts a
+ * rev the API ignores. One floor for all messages: above each one's rev.
+ */
+export function seedSessionLogRevs(revs: Readonly<Record<string, number>>): void {
+  for (const rev of Object.values(revs)) lastRev = Math.max(lastRev, rev)
+}
+
 export interface SessionLogJournalOptions {
   /** The session generation this box writes under. */
   generation: number

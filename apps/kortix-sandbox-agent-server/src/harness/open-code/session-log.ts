@@ -70,7 +70,7 @@ import {
 import type { KortixMessageInfo, KortixPart } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import type { SessionLogChanges, SessionLogPort } from '../contract/session-log'
+import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges, startSessionLogJournal } from '../shared/session-log-journal'
 import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
 import { isOffloadPlaceholder, opencodeDbPath } from './attachment-offload'
@@ -315,8 +315,8 @@ export function createOpenCodeSessionLogPort(options: {
      * the hash `openCodeSessionLog` computes for each message. Until then a box
      * restores nothing from the log: no cursors.
      */
-    async restore(_log: SessionLog): Promise<ExportCursor[]> {
-      return []
+    async restore(_log: SessionLog): Promise<SessionLogRestoreResult> {
+      return { cursors: [], dropped: {} }
     },
     async fingerprint(): Promise<string> {
       const store = read()

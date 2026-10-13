@@ -258,7 +258,7 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     expect(await noPin.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
     const noStore = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
     expect(await noStore.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
-    expect(await noStore.restore({} as SessionLog)).toEqual([])
+    expect(await noStore.restore({} as SessionLog)).toEqual({ cursors: [], dropped: {} })
   })
 })
 
