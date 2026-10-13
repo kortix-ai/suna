@@ -27,6 +27,7 @@ import {
 import { eq, inArray, sql } from 'drizzle-orm';
 import { createSessionAttachmentStore } from '../projects/lib/session-attachments';
 import { purgeSessionContent, SUBSCRIPTION_END_STATUSES } from '../projects/session-log-purge';
+import { restoreSession } from '../projects/session-lifecycle/restore-session';
 import { db } from '../shared/db';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
@@ -168,6 +169,33 @@ describe('a live or restored session', () => {
     expect(await tick(30)).toMatchObject({ sessions: 1 });
     expect(await rowsOf(bad.sessionId)).toEqual(ALL);
     expect(await rowsOf(due.sessionId)).toEqual(NONE);
+  });
+});
+
+describe('restoreSession and the purge', () => {
+  cleanup();
+  const restore = (c: { projectId: string; sessionId: string; accountId: string }, now: Date) =>
+    restoreSession({ projectId: c.projectId, sessionId: c.sessionId, accountId: c.accountId, now });
+
+  test('a session restored on day 29 keeps every row and object past day 37', async () => {
+    const project = await newProject('purge-restore-in-window');
+    const c = await seedContent(project, { deletedAt: day(0) });
+    expect(await restore(c, day(29))).toEqual({ ok: true });
+    expect(await tick(45)).toMatchObject({ sessions: 0, objects: 0 });
+    expect(await rowsOf(c.sessionId)).toEqual(ALL);
+    expect(objectsOf(c)).toBe(2);
+    expect(await bookkeeping(c.sessionId)).toBeUndefined();
+  });
+
+  test('after the day-30 purge a restore answers 410 at any clock, and the session stays deleted', async () => {
+    const project = await newProject('purge-restore-too-late');
+    const c = await seedContent(project, { deletedAt: day(0) });
+    expect(await tick(30)).toMatchObject({ sessions: 1 });
+    expect(await restore(c, day(30))).toMatchObject({ status: 410, code: 'session_purged' });
+    // The done marker decides, not the caller's clock.
+    expect(await restore(c, day(1))).toMatchObject({ status: 410, code: 'session_purged' });
+    const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, c.sessionId));
+    expect((row!.metadata as Record<string, unknown>).deletedAt).toBe(day(0).toISOString());
   });
 });
 

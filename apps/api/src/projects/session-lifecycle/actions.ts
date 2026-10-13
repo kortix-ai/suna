@@ -1,4 +1,3 @@
-import { sessionAttachmentStore } from '../lib/session-attachments';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
@@ -49,6 +48,7 @@ import {
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { prepareInitialSandboxTurn } from '../session-turn-ledger';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { claimInPlaceRestart } from './runtime-restart-claim';
 import { transitionSandbox, transitionSession } from './status-transitions';
 import {
@@ -74,7 +74,7 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
-}): Promise<{ ok: true } | { error: string; status: number }> {
+}): Promise<{ ok: true; restore_until: string } | { error: string; status: number }> {
   const { projectId, sessionId, accountId, userId } = input;
   const [sandbox] = await db
     .select()
@@ -109,9 +109,9 @@ export async function deleteSession(input: {
 
   if (!deleted) return { error: 'Not found', status: 404 };
 
-  await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
-    console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
-  });
+  // The session's stored files stay: a restore inside the window gets them
+  // back, and the retention purge deletes them 7 days after the window
+  // (session-log-purge.ts). Every read of a deleted session's files is refused.
 
   // Public links end with the session. `resolvePublicShare` already refuses a
   // tombstoned session (410); this makes the owner's share list say so too.
@@ -202,7 +202,7 @@ export async function deleteSession(input: {
     );
   });
 
-  return { ok: true };
+  return { ok: true, restore_until: sessionRestoreUntil(tombstone.deletedAt)!.toISOString() };
 }
 
 type RestartSessionInput = {

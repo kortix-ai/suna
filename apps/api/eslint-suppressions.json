@@ -2534,7 +2534,7 @@
   },
   "src/projects/session-lifecycle/actions.ts": {
     "no-console": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/session-lifecycle/actor.ts": {

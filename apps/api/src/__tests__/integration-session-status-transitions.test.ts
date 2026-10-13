@@ -78,6 +78,10 @@ const {
 } = await import('../projects/runtime-identity');
 const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
 const { deleteSession } = await import('../projects/session-lifecycle/actions');
+const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
+const { claimRetiredEphemeralRow, isRetiredEphemeralRow } = await import(
+  '../platform/services/ephemeral-sandbox'
+);
 const { stopSession } = await import('../projects/session-lifecycle/stop');
 const { beginSandboxTurn } = await import('../projects/sandbox-turn-lifecycle');
 const { transitionRuntime, transitionSandbox, transitionSession } = await import(
@@ -524,7 +528,7 @@ describe('in-place recovery (claim, then accept)', () => {
         accountId: project.account_id,
         userId: 'user-1',
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
 
     expect(await markInPlaceRuntimeRecoveryAccepted(claim!, 'running')).toBeNull();
     const { session, sandbox } = await read(f);
@@ -1022,7 +1026,7 @@ describe('delete (deleteSession)', () => {
     const f = await deleteFixture();
     onProviderRemove = async () => {};
 
-    expect(await runDelete(f)).toEqual({ ok: true });
+    expect(await runDelete(f)).toMatchObject({ ok: true });
 
     const { session, sandbox } = await read(f);
     expect(session.status).toBe('stopped');
@@ -1073,5 +1077,155 @@ describe('delete (deleteSession)', () => {
       providerStatus = 'stopped';
       onProviderRemove = async () => {};
     }
+  });
+
+  test('keeps the session row restorable for 30 days: it answers restore_until', async () => {
+    const f = await deleteFixture();
+    const before = Date.now();
+    const result = await runDelete(f);
+    if (!('ok' in result)) throw new Error(`delete refused: ${result.error}`);
+    const deletedAt = Date.parse((await read(f)).session.metadata.deletedAt as string);
+    expect(deletedAt).toBeGreaterThanOrEqual(before - 1);
+    expect(Date.parse(result.restore_until)).toBe(deletedAt + 30 * 86_400_000);
+    await waitForRemovalOutcome(f);
+  });
+});
+
+describe('restore (restoreSession)', () => {
+  const DAY_MS = 86_400_000;
+
+  async function deletedFixture(): Promise<Fixture> {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    await deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    // The delete's own removal attempt runs detached: wait for its verdict.
+    for (let i = 0; i < 100; i += 1) {
+      const { metadata } = (await read(f)).sandbox;
+      if ('providerRemovedAt' in metadata || 'providerRemovalAttempts' in metadata) return f;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('the provider removal never recorded an outcome');
+  }
+
+  const runRestore = (f: Fixture, now?: Date) =>
+    restoreSession({ projectId: project.project_id, sessionId: f.sessionId, accountId: project.account_id, now });
+
+  test('lifts the tombstone and leaves a retired row that the next open claims for a fresh box', async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+
+    expect(await runRestore(f)).toEqual({ ok: true });
+
+    const { session, sandbox } = await read(f);
+    expect(session.status).toBe('stopped');
+    expect(session.metadata).not.toHaveProperty('deletedAt');
+    expect(session.metadata).not.toHaveProperty('deletedBy');
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.external_id).toBeNull();
+    expect(sandbox.metadata.ephemeralRetiredExternalId).toBe(f.externalId);
+    expect(typeof sandbox.metadata.sessionRestoredAt).toBe('string');
+    expect(sandbox.metadata).not.toHaveProperty('providerRemovalPendingAt');
+    // The open path's retired-row branch: claim the row, then provision.
+    const row = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, f.sandboxId));
+    expect(isRetiredEphemeralRow(row[0]!)).toBe(true);
+    expect(await claimRetiredEphemeralRow(f.sandboxId)).not.toBeNull();
+    expect((await read(f)).sandbox).toBeUndefined();
+  });
+
+  test('a second restore, and a restore of a session that was never deleted, answer 409 session_not_deleted', async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+    expect(await runRestore(f)).toEqual({ ok: true });
+    expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_not_deleted' });
+
+    const live = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    expect(await runRestore(live)).toMatchObject({ status: 409, code: 'session_not_deleted' });
+    expect((await read(live)).sandbox.status).toBe('active');
+  });
+
+  test('an unknown session, and a session of another project, answer 404', async () => {
+    const f = await deletedFixture();
+    expect(
+      await restoreSession({ projectId: project.project_id, sessionId: crypto.randomUUID(), accountId: project.account_id }),
+    ).toEqual({ status: 404, error: 'Not found' });
+    expect(
+      await restoreSession({ projectId: crypto.randomUUID(), sessionId: f.sessionId, accountId: project.account_id }),
+    ).toEqual({ status: 404, error: 'Not found' });
+    expect(typeof (await read(f)).session.metadata.deletedAt).toBe('string');
+  });
+
+  test('past restore_until, or once the purge marker exists, answers 410 and changes nothing', async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+    const deletedAt = Date.parse((await read(f)).session.metadata.deletedAt as string);
+
+    expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS))).toMatchObject({ status: 410, code: 'session_purged' });
+    expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS - 1))).toEqual({ ok: true });
+
+    const purged = await deletedFixture();
+    await db.execute(sql`
+      insert into kortix.session_content_purges (session_id, project_id, account_id, reason, rows_purged_at)
+      values (${purged.sessionId}, ${project.project_id}::uuid, ${project.account_id}::uuid, 'session_deleted', now())`);
+    try {
+      expect(await runRestore(purged)).toMatchObject({ status: 410, code: 'session_purged' });
+      const { session, sandbox } = await read(purged);
+      expect(typeof session.metadata.deletedAt).toBe('string');
+      expect(sandbox.status).toBe('archived');
+    } finally {
+      await db.execute(sql`delete from kortix.session_content_purges where session_id = ${purged.sessionId}`);
+    }
+  });
+
+  test('a box the provider has not confirmed removed blocks the restore until it is gone', async () => {
+    providerStatus = 'stopped';
+    onProviderRemove = async () => {
+      throw new Error('sandbox is transitioning');
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const f = await deletedFixture();
+      expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+      let state = await read(f);
+      expect(typeof state.session.metadata.deletedAt).toBe('string');
+      expect(state.sandbox.status).toBe('archived');
+      expect(state.sandbox.external_id).toBe(f.externalId);
+      expect(typeof state.sandbox.metadata.providerRemovalPendingAt).toBe('string');
+
+      // The restore's own attempt is the retry: once the provider removes the box, it goes through.
+      onProviderRemove = async () => {};
+      expect(await runRestore(f)).toEqual({ ok: true });
+      state = await read(f);
+      expect(state.sandbox.external_id).toBeNull();
+      expect(state.sandbox.metadata).not.toHaveProperty('providerRemovalPendingAt');
+      expect(state.sandbox.metadata).not.toHaveProperty('providerRemovalAttempts');
+    } finally {
+      console.warn = warn;
+      onProviderRemove = async () => {};
+    }
+  });
+
+  test("takes an ephemeral session's state volume off the deletion queue", async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+    // What an ephemeral session records, and what its delete queues.
+    const own = `kss-${f.sessionId}`;
+    await db.execute(sql`
+      update kortix.project_sessions
+         set metadata = metadata || jsonb_build_object('ephemeral_state_volume', ${own}::text)
+       where session_id = ${f.sessionId}`);
+    await db.execute(sql`
+      insert into kortix.platinum_volume_deletions (volume_name, reason) values (${own}, 'session_deleted')
+      on conflict do nothing`);
+
+    expect(await runRestore(f)).toEqual({ ok: true });
+    const queued = rows(
+      await db.execute(sql`select volume_name from kortix.platinum_volume_deletions where volume_name = ${own}`),
+    );
+    expect(queued).toHaveLength(0);
   });
 });
