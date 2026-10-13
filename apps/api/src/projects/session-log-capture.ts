@@ -21,9 +21,12 @@
  * - The operator switch `SESSION_LOG_INGEST_ENABLED` gates this writer too.
  *
  * Never throws: the mirror is the user-facing store, and a failed v2 write is
- * only a log line.
+ * only a log line. The result says what happened, for the backfill of old
+ * sessions (P3.1, `session-log-backfill.ts`), which converts through this
+ * function so it writes exactly what the capture writes. `dry` stops before the
+ * write and returns the batch it would write.
  */
-import { fromV1, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
+import { fromV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
   projectSessions,
   sessionLogMessages,
@@ -40,9 +43,22 @@ import { SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSess
 
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
 
-export async function writeSessionLogFromMirror(sessionId: string): Promise<void> {
+/**
+ * - `skipped`: the switch is off, a journal owns the log, there is no mirror, nothing changed,
+ *   a newer mirror capture ran, or the capture revs are exhausted.
+ * - `written`, or `dry` (nothing written): `log` is `fromV1` of the mirror, `batch` what was (would be) written.
+ * - `failed`: the apply path refused the batch (`status`), or something threw.
+ */
+export type MirrorLogWrite =
+  | { outcome: 'skipped' }
+  | { outcome: 'written' | 'dry'; log: SessionLog; batch: SessionLogJournalRequest }
+  | { outcome: 'failed'; status?: number };
+
+const SKIPPED = { outcome: 'skipped' } as const;
+
+export async function writeSessionLogFromMirror(sessionId: string, options: { dry?: boolean } = {}): Promise<MirrorLogWrite> {
   try {
-    if (!config.SESSION_LOG_INGEST_ENABLED) return;
+    if (!options.dry && !config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
     const read = await db.transaction(async (tx) => {
       const [s] = await tx
         .select({
@@ -72,7 +88,7 @@ export async function writeSessionLogFromMirror(sessionId: string): Promise<void
         .where(eq(sessionLogMessages.sessionId, sessionId));
       return { s, rows: rows as unknown as V1Row[], stored };
     }, READ_ONLY);
-    if (!read) return;
+    if (!read) return SKIPPED;
     const { s, rows, stored } = read;
 
     const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness: s.harness === 'pi' ? 'pi' : 'opencode' });
@@ -88,11 +104,12 @@ export async function writeSessionLogFromMirror(sessionId: string): Promise<void
       batch.puts.push({ rev: ++rev, message: m });
     }
     for (const r of stored) if (!live.has(r.id) && !r.deletedAt) batch.tombstones.push({ message_id: r.id, rev: ++rev });
-    if (batch.puts.length === 0 && batch.tombstones.length === 0) return;
+    if (batch.puts.length === 0 && batch.tombstones.length === 0) return SKIPPED;
     if (rev >= SESSION_LOG_CAPTURE_REV_LIMIT) {
       logger.warn('[session-log] capture revs exhausted; the capture writes no more v2 rows', { sessionId });
-      return;
+      return SKIPPED;
     }
+    if (options.dry) return { outcome: 'dry', log, batch };
 
     const capturedAt = new Date(s.capturedAt!).getTime();
     const outcome = await writeCapturedSessionLog({ sessionId, projectId: s.projectId, accountId: s.accountId }, batch, async (tx) => {
@@ -103,10 +120,14 @@ export async function writeSessionLogFromMirror(sessionId: string): Promise<void
         .limit(1);
       return !!mirror && new Date(mirror.capturedAt).getTime() === capturedAt;
     });
-    if (outcome !== 'skipped' && outcome.status !== 200) {
+    if (outcome === 'skipped') return SKIPPED;
+    if (outcome.status !== 200) {
       logger.warn('[session-log] capture write refused', { sessionId, status: outcome.status, body: outcome.body });
+      return { outcome: 'failed', status: outcome.status };
     }
+    return { outcome: 'written', log, batch };
   } catch (err) {
     logger.warn('[session-log] capture write failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+    return { outcome: 'failed' };
   }
 }
