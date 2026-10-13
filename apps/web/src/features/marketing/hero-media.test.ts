@@ -1,116 +1,19 @@
-import { describe, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The hero's video sources are string literals pointing at files in `public/`.
- * Nothing links the two, so an encode that gets renamed or dropped fails
- * silently in dev — the poster keeps painting and the video simply never
- * plays. That is exactly how a dead `-1920.webm` reference survived a tier
- * being deleted, and how a light-only asset set survived a dark theme landing.
- *
- * These read the paths straight out of `hero-surfaces.tsx` rather than
- * importing it, because the module is a client component pulling in Phosphor,
- * next/image and the design system — none of which a file-existence check
- * needs. The source text is the contract.
+ * The hero's screenshots are string literals pointing at files in `public/`.
+ * Nothing links the two, so a renamed or dropped capture fails silently: the
+ * frame paints empty. Read the paths out of `hero.tsx` and require each file,
+ * and require both themes so a light-only capture cannot land.
  */
-
-const HERO = join(import.meta.dir, 'hero-surfaces.tsx');
+const HERO = join(import.meta.dir, 'hero.tsx');
 const PUBLIC = join(import.meta.dir, '../../../public');
 
-const source = readFileSync(HERO, 'utf8');
-
-/** Every `/media/...` literal the hero declares, in source order. */
-function mediaPaths(): string[] {
-  return [...source.matchAll(/'(\/media\/[^']+)'/g)].map((m) => m[1]);
-}
-
-describe('hero media', () => {
-  test('every referenced file exists in public/', () => {
-    const missing = mediaPaths().filter((p) => {
-      try {
-        return !statSync(join(PUBLIC, p)).isFile();
-      } catch {
-        return true;
-      }
-    });
-    expect(missing, `referenced but not on disk:\n${missing.join('\n')}`).toEqual([]);
-  });
-
-  test('no referenced file is empty', () => {
-    const empty = mediaPaths().filter((p) => {
-      try {
-        return statSync(join(PUBLIC, p)).size === 0;
-      } catch {
-        return false;
-      }
-    });
-    expect(empty).toEqual([]);
-  });
-
-  /**
-   * The whole point of the dark captures: a light-only set renders a bright
-   * rectangle on a dark page. If someone adds a light encode they have to add
-   * its dark twin, and this is what says so.
-   */
-  test('every light encode has a dark twin, and vice versa', () => {
-    const paths = mediaPaths();
-    const light = paths.filter((p) => !p.includes('-dark-'));
-    const dark = new Set(paths.filter((p) => p.includes('-dark-')));
-
-    const orphanedLight = light.filter((p) => {
-      // kortix-showcase-1920.mp4 -> kortix-showcase-dark-1920.mp4
-      const twin = p.replace(/\/(kortix-(?:showcase|cli))-/, '/$1-dark-');
-      return twin !== p && !dark.has(twin);
-    });
-    expect(orphanedLight, `light encodes with no dark twin:\n${orphanedLight.join('\n')}`).toEqual(
-      [],
-    );
-
-    const orphanedDark = [...dark].filter((p) => !light.includes(p.replace('-dark-', '-')));
-    expect(orphanedDark, `dark encodes with no light twin:\n${orphanedDark.join('\n')}`).toEqual(
-      [],
-    );
-  });
-
-  /**
-   * A `<video>` resolves its `<source>` list once, at load. The CLI panel keys
-   * its element on the resolved theme. The web panel server-renders both
-   * themes' sources behind `prefers-color-scheme` (so the video starts before
-   * hydration and one theme downloads) and remounts, keyed on the override,
-   * the moment the resolved theme disagrees with the OS or the OS flips.
-   */
-  test('the video elements remount when the theme leaves the OS query', () => {
-    expect(source).toContain('key={theme}');
-    expect(source).toContain("key={override ?? `system-${systemEpoch}`}");
-    expect(source).toContain("showcaseSources('dark', SYSTEM_DARK_MEDIA)");
-    // No literal colour-scheme query in markup: it must stay tied to the
-    // override logic above.
-    expect(source).not.toMatch(/media="\(prefers-color-scheme/);
-  });
-
-  /**
-   * The walkthrough poster is a real `<img>` in the server HTML — found by
-   * the preload scanner, fetched at high priority, both themes expressed as
-   * `<picture>` sources — and the web video must not also carry a `poster`,
-   * which would fetch it twice.
-   */
-  test('the web poster is a high-priority <picture> with both themes', () => {
-    const poster = source.slice(
-      source.indexOf('function ShowcasePoster'),
-      source.indexOf('const RETINA_MEDIA'),
-    );
-    expect(poster).toContain('<picture>');
-    expect(poster).toContain('fetchPriority="high"');
-    expect(poster).toContain('SHOWCASE_MEDIA.dark.poster');
-    expect(poster).toContain('SHOWCASE_MEDIA.dark.phonePoster');
-    expect(poster).toContain('SHOWCASE_MEDIA.light.phonePoster');
-    expect(poster).toContain('src={SHOWCASE_MEDIA.light.poster}');
-
-    const video = source.slice(
-      source.indexOf('function ShowcaseVideo'),
-      source.indexOf('const REDUCED_MOTION_QUERY'),
-    );
-    expect(video).not.toContain('poster=');
-  });
+test('every hero screenshot exists in public/, in both themes', () => {
+  const paths = [...readFileSync(HERO, 'utf8').matchAll(/src="(\/media\/[^"]+)"/g)].map((m) => m[1]);
+  expect(paths.some((p) => p.includes('-light.'))).toBe(true);
+  expect(paths.some((p) => p.includes('-dark.'))).toBe(true);
+  for (const p of paths) expect(statSync(join(PUBLIC, p)).size).toBeGreaterThan(10_000);
 });

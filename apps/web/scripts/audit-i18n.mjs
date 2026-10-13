@@ -951,8 +951,6 @@ function scanFile(file) {
           ['RANGES', 'sessionsConfig', 'accountsConfig', 'burnConfig'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/accounts/settings/branding-tab.tsx') &&
           catalogRoot === 'SLOTS') ||
-        (file === path.join(srcDir, 'features/marketing/hero-surfaces.tsx') &&
-          catalogRoot === 'SURFACES') ||
         (file ===
           path.join(
             srcDir,
@@ -1008,8 +1006,6 @@ function scanFile(file) {
           catalogRoot === 'DRAWER_SOCIALS') ||
         (file === path.join(srcDir, 'components/instance/config.ts') &&
           catalogRoot === 'INSTANCE_CONFIG') ||
-        (file === path.join(srcDir, 'features/marketing/connectors/policy-section.tsx') &&
-          ['TINT', 'DOT'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/marketing/landing/code-panels.tsx') &&
           catalogRoot === 'TOKEN_CLASS') ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&

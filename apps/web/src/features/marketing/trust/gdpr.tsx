@@ -13,7 +13,7 @@ const GDPR = (props: Props) => {
       xmlnsXlink="http://www.w3.org/1999/xlink"
       className="text-foreground size-full"
     >
-      <g clip-path="url(#clip0_4003_182)">
+      <g clipPath="url(#clip0_4003_182)">
         <path
           d="M200 0C310.457 0 400 89.5431 400 200C400 310.457 310.457 400 200 400C89.5431 400 0 310.457 0 200C0 89.5431 89.5431 0 200 0ZM200 50C117.157 50 50 117.157 50 200C50 282.843 117.157 350 200 350C282.843 350 350 282.843 350 200C350 117.157 282.843 50 200 50Z"
           fill="url(#paint0_linear_4003_182)"
@@ -243,9 +243,9 @@ const GDPR = (props: Props) => {
           width="246.071"
           height="326.066"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_182" />
         </filter>
@@ -256,9 +256,9 @@ const GDPR = (props: Props) => {
           width="246.071"
           height="326.066"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_182" />
         </filter>
@@ -269,9 +269,9 @@ const GDPR = (props: Props) => {
           width="250.197"
           height="344.505"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_182" />
         </filter>
@@ -282,9 +282,9 @@ const GDPR = (props: Props) => {
           width="456.833"
           height="445.987"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="46.875" result="effect1_foregroundBlur_4003_182" />
         </filter>
@@ -295,9 +295,9 @@ const GDPR = (props: Props) => {
           width="246.071"
           height="326.066"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="18.75" result="effect1_foregroundBlur_4003_182" />
         </filter>
@@ -317,8 +317,8 @@ const GDPR = (props: Props) => {
           y2="400"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" stop-opacity="0.2" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.02" />
+          <stop stopColor="currentColor" stopOpacity="0.2" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.02" />
         </linearGradient>
         <linearGradient
           id="paint1_linear_4003_182"
@@ -328,8 +328,8 @@ const GDPR = (props: Props) => {
           y2="350"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" stop-opacity="0" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.2" />
+          <stop stopColor="currentColor" stopOpacity="0" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.2" />
         </linearGradient>
         <linearGradient
           id="paint2_linear_4003_182"
@@ -339,8 +339,8 @@ const GDPR = (props: Props) => {
           y2="400"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" stop-opacity="0.64" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.12" />
+          <stop stopColor="currentColor" stopOpacity="0.64" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.12" />
         </linearGradient>
         <linearGradient
           id="paint3_linear_4003_182"
@@ -350,8 +350,8 @@ const GDPR = (props: Props) => {
           y2="350"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" stop-opacity="0" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.2" />
+          <stop stopColor="currentColor" stopOpacity="0" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.2" />
         </linearGradient>
         <linearGradient
           id="paint4_linear_4003_182"
@@ -361,8 +361,8 @@ const GDPR = (props: Props) => {
           y2="350"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" stop-opacity="0.24" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.64" />
+          <stop stopColor="currentColor" stopOpacity="0.24" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.64" />
         </linearGradient>
         <linearGradient
           id="paint5_linear_4003_182"
@@ -372,8 +372,8 @@ const GDPR = (props: Props) => {
           y2="232.256"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint6_linear_4003_182"
@@ -383,8 +383,8 @@ const GDPR = (props: Props) => {
           y2="232.256"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint7_linear_4003_182"
@@ -394,8 +394,8 @@ const GDPR = (props: Props) => {
           y2="232.256"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <linearGradient
           id="paint8_linear_4003_182"
@@ -405,8 +405,8 @@ const GDPR = (props: Props) => {
           y2="232.256"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="currentColor" />
-          <stop offset="1" stop-color="currentColor" stop-opacity="0.32" />
+          <stop stopColor="currentColor" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.32" />
         </linearGradient>
         <clipPath id="clip0_4003_182">
           <rect width="400" height="400" fill="currentColor" />
