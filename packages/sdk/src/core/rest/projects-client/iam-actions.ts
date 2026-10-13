@@ -77,11 +77,14 @@ export const PROJECT_ACTIONS = {
 export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS];
 
 /**
- * The trigger controls, one leaf each, in the order `useCans` should ask:
- * create (New trigger), fire (Run now), update (edit, Pause, Resume), delete.
- * Each is the leaf its route in `apps/api/src/projects/routes/triggers.ts` asserts.
+ * The leaves the trigger routes (`apps/api/src/projects/routes/triggers.ts`)
+ * assert, for one `useCans` probe: create (New trigger), fire (Run now),
+ * update (edit, Pause, Resume) and delete. Create, update and delete load the
+ * project for write first, so `project.write` is asked too. Fire loads it for
+ * read only.
  */
 export const TRIGGER_CONTROL_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
@@ -105,10 +108,11 @@ export function triggerControlsFrom(
   cans: Partial<Record<string, { allowed: boolean } | undefined>>,
 ): TriggerControls {
   const allowed = (action: ProjectAction) => cans[action]?.allowed === true;
+  const write = allowed(PROJECT_ACTIONS.PROJECT_WRITE);
   return {
-    canCreate: allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE),
+    canCreate: write && allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE),
     canFire: allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE),
-    canUpdate: allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE),
-    canDelete: allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE),
+    canUpdate: write && allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE),
+    canDelete: write && allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE),
   };
 }

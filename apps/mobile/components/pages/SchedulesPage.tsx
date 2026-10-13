@@ -6,12 +6,13 @@
  *
  * Mobile branding: PageHeader + PageContent chrome, bottom sheets, design tokens.
  *
- * Each control follows the leaf its trigger route asserts (KRTX-1720), from
+ * Each control follows the leaves its trigger route asserts (KRTX-1720), from
  * one `useCans` probe read through the SDK's `triggerControlsFrom` (the same
- * mapping web's Triggers and Agent pages use): + on project.trigger.create,
- * Fire now on project.trigger.fire, Pause/Resume and every edit (prompt,
- * agent, model) on project.trigger.update, Delete on project.trigger.delete.
- * An unresolved probe shows none of them.
+ * mapping web's Triggers and Agent pages use): + on project.write +
+ * project.trigger.create, Fire now on project.trigger.fire, Pause/Resume and
+ * every edit (prompt, agent, model) on project.write + project.trigger.update,
+ * Delete on project.write + project.trigger.delete. An unresolved probe shows
+ * none of them.
  */
 
 import React, { useMemo, useState } from 'react';

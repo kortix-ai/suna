@@ -11,9 +11,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`apps/api/src/iam/actions.ts`; a test fails when they differ). Pass them to
   `useCan` / `useCans` instead of spelling a leaf by hand (KRTX-1720).
 - `TRIGGER_CONTROL_ACTIONS`, `triggerControlsFrom(cans)` and `TriggerControls`:
-  the trigger controls a viewer gets, one leaf per route (create, fire,
-  update, delete). An unresolved probe gives no control. Web and mobile both
-  read them.
+  the trigger controls a viewer gets, from the leaves each trigger route
+  asserts: create, update and delete need `project.write` and their trigger
+  leaf, fire needs `project.trigger.fire`. An unresolved probe gives no
+  control. Web and mobile both read them.
 - `canManageBilling(state)` and `canOfferTopup(state)`: whether the caller may
   change billing, and whether to offer buying credits or auto top-up (the plan
   may buy credits AND the caller may change billing). Both return `false` while

@@ -4,12 +4,12 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-// Schedules (KRTX-1720): each control follows the leaf its trigger route
+// Schedules (KRTX-1720): each control follows the leaves its trigger route
 // asserts, from one `useCans` probe read through the SDK's
-// `triggerControlsFrom`. + on project.trigger.create, Fire now on
-// project.trigger.fire, Pause/Resume and every edit on project.trigger.update,
-// Delete on project.trigger.delete. Nothing shows while the probe is
-// unresolved. The page used to render every control with no check: a member
+// `triggerControlsFrom`. + on project.write + project.trigger.create, Fire now
+// on project.trigger.fire, Pause/Resume and every edit on project.write +
+// project.trigger.update, Delete on project.write + project.trigger.delete.
+// Nothing shows while the probe is unresolved. The page used to render every control with no check: a member
 // saw six controls and five answered 403.
 // Real: the page, the SDK leaf catalog and mapping, the schedule formatting.
 // Every other import is a stub.
@@ -167,24 +167,23 @@ function barButtons(): string[] {
 }
 const detailPickers = () => pickers.filter((p) => p.flush);
 
-const { PROJECT_TRIGGER_CREATE: CREATE, PROJECT_TRIGGER_FIRE: FIRE, PROJECT_TRIGGER_UPDATE: UPDATE, PROJECT_TRIGGER_DELETE: DELETE } = {
-  PROJECT_TRIGGER_CREATE: 'project.trigger.create',
-  PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
-  PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
-  PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
-} as const;
+const WRITE = 'project.write';
+const CREATE = 'project.trigger.create';
+const FIRE = 'project.trigger.fire';
+const UPDATE = 'project.trigger.update';
+const DELETE = 'project.trigger.delete';
 
 describe('Schedules controls', () => {
-  test('one probe of the four trigger leaves on this project', () => {
+  test('one probe of the trigger leaves on this project', () => {
     openAs({});
     expect(probes.at(-1)).toEqual({
       target: { projectId: 'proj-1' },
-      actions: [CREATE, FIRE, UPDATE, DELETE],
+      actions: [WRITE, CREATE, FIRE, UPDATE, DELETE],
     });
   });
 
   test('a manager gets +, Fire now, Pause, Delete and every editor', () => {
-    openAs({ [CREATE]: can(true), [FIRE]: can(true), [UPDATE]: can(true), [DELETE]: can(true) });
+    openAs({ [WRITE]: can(true), [CREATE]: can(true), [FIRE]: can(true), [UPDATE]: can(true), [DELETE]: can(true) });
     expect(typeof header.onAdd).toBe('function');
     expect(barButtons()).toEqual(['Fire now', 'Pause schedule', 'Delete schedule']);
     expect(typeof prompt.onEdit).toBe('function');
@@ -192,7 +191,7 @@ describe('Schedules controls', () => {
   });
 
   test('a built-in member (trigger.read + trigger.fire) gets Fire now and nothing else', () => {
-    openAs({ [CREATE]: can(false), [FIRE]: can(true), [UPDATE]: can(false), [DELETE]: can(false) });
+    openAs({ [WRITE]: can(false), [CREATE]: can(false), [FIRE]: can(true), [UPDATE]: can(false), [DELETE]: can(false) });
     expect(header.onAdd).toBeUndefined();
     expect(barButtons()).toEqual(['Fire now']);
     expect(prompt.onEdit).toBeUndefined();
@@ -200,7 +199,7 @@ describe('Schedules controls', () => {
   });
 
   test('a custom update-only role pauses and edits, with no +, no Fire now and no Delete', () => {
-    openAs({ [UPDATE]: can(true) });
+    openAs({ [WRITE]: can(true), [UPDATE]: can(true) });
     expect(header.onAdd).toBeUndefined();
     expect(barButtons()).toEqual(['Pause schedule']);
     expect(typeof prompt.onEdit).toBe('function');
@@ -208,6 +207,12 @@ describe('Schedules controls', () => {
     // Pause takes Fire now's full-width slot.
     const pause = tree.root.findAllByType('PinnedBar')[0].findAllByType('Button')[0];
     expect(pause.props.className).toContain('flex-1');
+  });
+
+  test('trigger.update without project.write offers no Pause: the route loads the project for write', () => {
+    openAs({ [UPDATE]: can(true), [FIRE]: can(true) });
+    expect(barButtons()).toEqual(['Fire now']);
+    expect(prompt.onEdit).toBeUndefined();
   });
 
   test('while the probe is unresolved, no control shows and no action bar draws (fail closed)', () => {

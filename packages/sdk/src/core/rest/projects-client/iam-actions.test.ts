@@ -27,9 +27,13 @@ describe('PROJECT_ACTIONS', () => {
 // KRTX-1720: every trigger control sat under one flag, derived from a
 // different leaf on each page. A member (trigger.read + trigger.fire) saw no
 // Run now; an update-only role saw Run now and Delete, and both answered 403.
+// Create, update and delete load the project for write before they assert
+// their trigger leaf (`loadProjectForUser(…, 'manage')` → project.write), so
+// each needs both. Fire loads it for read only.
 describe('triggerControlsFrom', () => {
-  test('probes the leaf each trigger route asserts', () => {
+  test('probes the leaves the trigger routes assert', () => {
     expect(TRIGGER_CONTROL_ACTIONS).toEqual([
+      'project.write',
       'project.trigger.create',
       'project.trigger.fire',
       'project.trigger.update',
@@ -49,12 +53,23 @@ describe('triggerControlsFrom', () => {
   });
 
   test('an update-only role edits and pauses, with no Run now and no Delete', () => {
-    expect(triggerControlsFrom({ [PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE]: allow(true) })).toEqual({
-      canCreate: false,
-      canFire: false,
-      canUpdate: true,
-      canDelete: false,
-    });
+    expect(
+      triggerControlsFrom({
+        [PROJECT_ACTIONS.PROJECT_WRITE]: allow(true),
+        [PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE]: allow(true),
+      }),
+    ).toEqual({ canCreate: false, canFire: false, canUpdate: true, canDelete: false });
+  });
+
+  test('a trigger leaf without project.write offers nothing the route would refuse', () => {
+    expect(
+      triggerControlsFrom({
+        [PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE]: allow(true),
+        [PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE]: allow(true),
+        [PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE]: allow(true),
+        [PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE]: allow(true),
+      }),
+    ).toEqual({ canCreate: false, canFire: true, canUpdate: false, canDelete: false });
   });
 
   test('a manager gets every control', () => {

@@ -156,7 +156,7 @@ Kortix has one grant record, the assignment: one principal (`user`, `group`, `se
 | `oauthClients.list` · `.get` · `.create` · `.update` · `.rotateSecret` · `.remove` | Sign in with Kortix clients. The secret is returned once, on create and on rotate. |
 | `can(accountId, userId, { action, resourceType?, resourceId? })` · `canBatch(accountId, userId, probes)` | Ask whether a principal may do one action · many, in one round trip, answers in input order. |
 
-Gate a control in your UI with `can` or `canBatch` on the action the route checks, not on a role name. `PROJECT_ACTIONS` (root export) names every project action the API answers about, for example `PROJECT_ACTIONS.PROJECT_GITOPS_MERGE` is `project.gitops.merge`. The API answers an unknown action with `400`. For triggers, probe `TRIGGER_CONTROL_ACTIONS` and pass the result to `triggerControlsFrom(cans)`: it returns `{ canCreate, canFire, canUpdate, canDelete }`, one flag per trigger route, each `false` until the probe allows it.
+Gate a control in your UI with `can` or `canBatch` on the action the route checks, not on a role name. `PROJECT_ACTIONS` (root export) names every project action the API answers about, for example `PROJECT_ACTIONS.PROJECT_GITOPS_MERGE` is `project.gitops.merge`. The API answers an unknown action with `400`. For triggers, probe `TRIGGER_CONTROL_ACTIONS` and pass the result to `triggerControlsFrom(cans)`: it returns `{ canCreate, canFire, canUpdate, canDelete }`, one flag per trigger route, each `false` until the probe allows it. Create, update and delete also need `project.write`, because their routes load the project for write first.
 
 ### `kortix.accountInvites`
 
