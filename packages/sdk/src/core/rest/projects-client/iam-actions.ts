@@ -1,3 +1,6 @@
+import type { ReviewVerdict } from './review';
+import { type ReviewItem, reviewItemTarget } from './review-items';
+
 /**
  * The project leaf actions the IAM engine answers about, one string per
  * permission a project route asserts. Ask `useCan` / `useCans` for the leaf the
@@ -115,4 +118,77 @@ export function triggerControlsFrom(
     canUpdate: write && allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE),
     canDelete: write && allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE),
   };
+}
+
+/**
+ * The leaves the change request and review routes assert, for one `useCans`
+ * probe (`change-requests.ts`, `change-request-actions.ts`, `review-items.ts`
+ * in `apps/api/src/projects/routes`). Each of those routes loads the project
+ * for write first, so `project.write` is asked too.
+ */
+export const REVIEW_CONTROL_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+  PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
+] as const;
+
+/** Which change request controls a viewer gets. */
+export interface ChangeRequestControls {
+  /** Open a change request (`POST /change-requests`): write + gitops.push. */
+  canOpen: boolean;
+  /** Merge one (`/merge`): write + gitops.merge. */
+  canMerge: boolean;
+  /** Close or reopen one (`/close`, `/reopen`): write. */
+  canClose: boolean;
+}
+
+/**
+ * The change request controls from a `useCans` result over
+ * `REVIEW_CONTROL_ACTIONS`. A control shows only on an explicit allow, so a
+ * probe that is still loading or failed shows nothing.
+ */
+export function changeRequestControlsFrom(
+  cans: Partial<Record<string, { allowed: boolean } | undefined>>,
+): ChangeRequestControls {
+  const allowed = (action: ProjectAction) => cans[action]?.allowed === true;
+  const write = allowed(PROJECT_ACTIONS.PROJECT_WRITE);
+  return {
+    canOpen: write && allowed(PROJECT_ACTIONS.PROJECT_GITOPS_PUSH),
+    canMerge: write && allowed(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE),
+    canClose: write,
+  };
+}
+
+/**
+ * Whether to offer `verdict` on `item` to a viewer whose `useCans` probe over
+ * `REVIEW_CONTROL_ACTIONS` answered `cans`. The verdict routes to the flow
+ * `reviewItemTarget` names:
+ *
+ * - Change request: approve merges it (`canMerge`). Changes, dismiss and reject
+ *   (close) need project.write + project.review.act: close asserts write only,
+ *   and it shows with review.act as the other verdicts do. No answer.
+ * - Connector call: approve or reject only. The API lets a project manager or
+ *   the person who launched the session decide, and sends that viewer the
+ *   call's arguments: `previewAuthorized` is false for anyone it would refuse.
+ * - Native item: project.write + project.review.act, for every verdict.
+ */
+export function reviewVerdictAllowed(
+  item: ReviewItem,
+  verdict: ReviewVerdict,
+  cans: Partial<Record<string, { allowed: boolean } | undefined>>,
+): boolean {
+  const target = reviewItemTarget(item.id);
+  if (target.type === 'connector_call') {
+    const call = item.kind === 'approval' ? item.detail.actions?.[0] : undefined;
+    return (verdict === 'approve' || verdict === 'reject') && call?.previewAuthorized !== false;
+  }
+  if (target.type === 'change_request') {
+    if (verdict === 'answer') return false;
+    if (verdict === 'approve') return changeRequestControlsFrom(cans).canMerge;
+  }
+  return (
+    cans[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true &&
+    cans[PROJECT_ACTIONS.PROJECT_REVIEW_ACT]?.allowed === true
+  );
 }

@@ -15,6 +15,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   asserts: create, update and delete need `project.write` and their trigger
   leaf, fire needs `project.trigger.fire`. An unresolved probe gives no
   control. Web and mobile both read them.
+- `REVIEW_CONTROL_ACTIONS`, `changeRequestControlsFrom(cans)` and
+  `ChangeRequestControls`: open a change request needs `project.write` +
+  `project.gitops.push`, merge needs `project.write` + `project.gitops.merge`,
+  close and reopen need `project.write`.
+- `reviewVerdictAllowed(item, verdict, cans)`: whether to offer a verdict on a
+  review item. Approving a change request merges it (`canMerge`); every other
+  change request and native verdict needs `project.write` +
+  `project.review.act`. A connector call offers approve and reject only, to
+  the viewer the API lets decide it (`previewAuthorized` is not `false`). Web
+  and mobile both read it.
 - `canManageBilling(state)` and `canOfferTopup(state)`: whether the caller may
   change billing, and whether to offer buying credits or auto top-up (the plan
   may buy credits AND the caller may change billing). Both return `false` while
