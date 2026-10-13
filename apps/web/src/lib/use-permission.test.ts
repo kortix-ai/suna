@@ -57,7 +57,6 @@ describe('no UI gate branches on a role label', () => {
     ['features/workspace/settings/tabs/sandbox-tab.tsx', 'PROJECT_SANDBOX_WRITE'],
     ['features/workspace/settings/tabs/snapshots-tab.tsx', 'PROJECT_SANDBOX_WRITE'],
     ['features/workspace/customize/sections/view/git-view.tsx', 'PROJECT_WRITE'],
-    ['components/projects/schedule-view.tsx', 'PROJECT_TRIGGER_UPDATE'],
     ['components/iam/access-projects-tab.tsx', 'PROJECT_MEMBERS_MANAGE'],
     // The "who can use it" grants moved from the agent detail aside to the
     // agent page's own section (Customize is agent-centric, 2026-09-01).
@@ -72,6 +71,16 @@ describe('no UI gate branches on a role label', () => {
       expect(source).toMatch(/useProjectCans?\(/);
     });
   }
+
+  // The Triggers page's pause-all gear reads `canUpdate` from the shared
+  // trigger controls (KRTX-1720): project.write + project.trigger.update, the
+  // leaves its route asserts, mapped once in `@kortix/sdk` for web and mobile.
+  test('components/projects/schedule-view.tsx gates pause-all on the trigger controls, not a role label', () => {
+    const code = stripComments(read('components/projects/schedule-view.tsx'));
+    expect(code).toContain('useTriggerControls(projectId).canUpdate');
+    expect(code).not.toContain("effective_project_role === 'manager'");
+    expect(read('components/projects/schedule/trigger-controls.ts')).toMatch(/useProjectCans\(/);
+  });
 
   test('the manager literal is gone from the CODE of every one of them', () => {
     for (const [file] of CONVERTED) {
