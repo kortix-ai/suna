@@ -33,7 +33,11 @@ import {
   type TextBlock,
   type ToolCallBlock,
 } from '../types';
+import { isV1Thread } from '../v1-view';
 import { messageOfBlock, v1RowsOf } from './v1-parts';
+
+/** The producer `fromV1` stamps on every message it converts. */
+const V1_IMPORT = 'kortix-v1-import';
 
 /** The turn's state: `pending` before a reply, else the last reply's `status` (`streaming` while a reply retries). */
 export type SessionLogTurnStatus = 'pending' | SessionLogMessage['status'];
@@ -117,8 +121,8 @@ function last<T>(list: readonly T[], test: (item: T) => boolean): T | undefined 
 }
 const isCall = (b: SessionLogBlock): b is ToolCallBlock => b.type === 'tool_call';
 const isOpen = (b: ToolCallBlock) => b.status === 'pending' || b.status === 'running';
-/** Closed by the harness, not by the tool (C2 closure rule): the call never ended. */
-const isClosedByRule = (b: ToolCallBlock) => b.status === 'error' && (b.result?.synthetic === true || b.result?.error?.code === 'interrupted');
+/** Closed by the harness, not by the tool (C2/F11 closure rule): the call never ended. Internal (not in the barrel). */
+export const isClosedByRule = (b: ToolCallBlock) => b.status === 'error' && (b.result?.synthetic === true || b.result?.error?.code === 'interrupted');
 
 /**
  * The status a tool call renders with. An open call (`pending`, `running`) and a call the
@@ -234,8 +238,26 @@ function errorOf(d: Draft): SessionLogTurnError | null {
   return { code: m.error.code, message: details?.message || unwrapError(error), ...(details && { details }), ...(raw !== undefined && { raw }) };
 }
 
-/** `getTurnCost` over one synthetic step-finish per reply that reports usage, so both layers price alike. */
-function costOf(replies: SessionLogMessage[], lookup?: ModelPricingLookup): TurnCostInfo | null {
+/**
+ * `getTurnCost` of the replies. A v1-derived message (`exact`: a `fromV1` thread, or a row
+ * `fromV1` converted) is priced over its own v1 parts, so the result is v1's to the token
+ * (OpenCode's `info.tokens` is not the sum of a multi-step reply's step-finish parts, and a
+ * reply with no step part and no price counts nothing). A native record carries no step
+ * totals: one synthetic step-finish per reply that reports usage prices it.
+ */
+function costOf(replies: SessionLogMessage[], exact: (m: SessionLogMessage) => boolean, lookup?: ModelPricingLookup): TurnCostInfo | null {
+  if (replies.length && replies.every(exact)) {
+    return getTurnCost(replies.flatMap((m) => v1RowsOf(m).flatMap((row) => row.parts.map((part) => ({ part, message: row })))), lookup) ?? null;
+  }
+  return usageCostOf(replies, lookup);
+}
+
+/**
+ * `getTurnCost` over one synthetic step-finish per message that reports usage: every reply's
+ * own `usage`, its `cost` as reported, else priced through the lookup. Internal: the thread
+ * metrics (a context modal's totals) price every reply this way.
+ */
+export function usageCostOf(replies: SessionLogMessage[], lookup?: ModelPricingLookup): TurnCostInfo | null {
   const parts = replies.flatMap((m) => {
     const u = m.usage;
     if (!u) return [];
@@ -275,12 +297,23 @@ const writesPlan = (d: Draft) => d.assistant.some((m) => m.blocks.some((b) => is
 const cache = new WeakMap<SessionLogMessage, { assistant: SessionLogMessage[]; key: string; pricing: ModelPricingLookup | undefined; heads: unknown; turn: SessionLogTurn }>();
 const NONE: readonly string[] = [];
 
+/**
+ * The thread's last reply is open and retries a provider error (`hasRetryingAssistantTurn`):
+ * `SessionLogTurn.retrying` of its turn, read without grouping turns, so a host can feed it to
+ * the busy state it then passes to {@link sessionLogTurns}. A native record carries no retry
+ * flag: false.
+ */
+export function sessionLogRetrying(thread: Pick<SessionLogThread, 'messages'>): boolean {
+  const reply = last(thread.messages, (m) => m.role === 'assistant');
+  return !!reply && hasRetryingAssistantTurn(v1RowsOf(reply));
+}
+
 /** The turns of `thread`, see the module header. */
 export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
   const held = new Set(options.held ?? NONE);
   const list = drafts(thread.messages, held);
   const lastReply = last(thread.messages, (m) => m.role === 'assistant');
-  const retrying = !!lastReply && hasRetryingAssistantTurn(v1RowsOf(lastReply));
+  const retrying = sessionLogRetrying(thread);
   const working = resolveWorkingTurn({
     turns: list.map((d) => ({
       userMessage: { info: { id: d.user.message_id } },
@@ -290,6 +323,8 @@ export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTur
     unrunTurnIds: held,
   });
   const anchor = last(list, writesPlan) ?? list[list.length - 1];
+  const v1Thread = isV1Thread(thread);
+  const exact = (m: SessionLogMessage) => v1Thread || m.producer.harness === V1_IMPORT;
   const heads = options.threads ?? [];
   const known = new Set(heads.map((h) => h.thread_id));
   return list.map((d) => {
@@ -311,7 +346,9 @@ export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTur
       blocks,
       status: retries ? 'streaming' : reply ? reply.status : d.user.kind === 'compaction' ? d.user.status : 'pending',
       error: errorOf(d),
-      cost: costOf(d.assistant, options.pricing),
+      // A prompt has no usage. A compaction's is its summary reply's (folded onto the marker), and a
+      // thread with no prompt heads its turn with a reply: both are priced like any reply.
+      cost: costOf([d.user, ...d.assistant], exact, options.pricing),
       compaction: compactionOf(d.user),
       threads,
       plan: d === anchor,

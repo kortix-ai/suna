@@ -113,6 +113,23 @@ function recoverStaleBundle(email: string): boolean {
   return true;
 }
 
+/**
+ * Whether a session is `email`'s SAML identity. Mirrors the API's
+ * `nonSsoIdentitySql` (apps/api/src/shared/auth-identity.ts): `is_sso_user`, an
+ * explicit `sso_provider_id`/`provider_id`, or an `sso:<id>` provider tag.
+ */
+function isSsoIdentityOf(
+  user: { email?: string | null; is_sso_user?: boolean; app_metadata?: Record<string, unknown> },
+  email: string,
+): boolean {
+  if ((user.email ?? '').trim().toLowerCase() !== email.trim().toLowerCase()) return false;
+  if (user.is_sso_user) return true;
+  const meta = user.app_metadata ?? {};
+  if (meta.sso_provider_id || meta.provider_id) return true;
+  const tags = [meta.provider, ...(Array.isArray(meta.providers) ? meta.providers : [])];
+  return tags.some((tag) => typeof tag === 'string' && tag.startsWith('sso:'));
+}
+
 /* ─── Small shared pieces ──────────────────────────────────────────────── */
 
 function PasswordInput({
@@ -1056,7 +1073,15 @@ function AuthContent() {
   const sessionExpired = isSessionExpired(session);
 
   const [forceForm, setForceForm] = useState(false);
-  const trustedUser = !!user && !sessionExpired && !forceForm;
+  // The app asked for SSO (`sso=1`), usually after the API refused its session
+  // with `sso_required` (KRTX-1716). Any session here other than this person's
+  // SSO identity is that refused one: handing it back looped the app. It is
+  // signed out on this browser, and SSO starts once that has finished — a
+  // sign-out also clears the PKCE verifier SSO stores.
+  const refusedForMobileSso = !!mobileSsoEmail && !!user && !isSsoIdentityOf(user, mobileSsoEmail);
+  const [mobileSsoCleared, setMobileSsoCleared] = useState(false);
+  const hasClearedForMobileSso = useRef(false);
+  const trustedUser = !!user && !sessionExpired && !forceForm && !refusedForMobileSso;
 
   // A failed sign-out says so, ONCE, on the document it lands on. The
   // sign-out ends on a document load to `/auth`, so `runSignOut` cannot raise
@@ -1091,6 +1116,13 @@ function AuthContent() {
       return;
     }
 
+    if (refusedForMobileSso) {
+      if (hasClearedForMobileSso.current) return;
+      hasClearedForMobileSso.current = true;
+      void supabase.auth.signOut({ scope: 'local' }).finally(() => setMobileSsoCleared(true));
+      return;
+    }
+
     if (!trustedUser) return;
 
     if (mobileCallbackState) {
@@ -1117,6 +1149,7 @@ function AuthContent() {
   }, [
     isLoading,
     mobileCallbackState,
+    refusedForMobileSso,
     returnUrl,
     router,
     session,
@@ -1165,7 +1198,9 @@ function AuthContent() {
         mobileCallbackState={mobileCallbackState}
         // Wait for the session check: an existing session goes to the app
         // through the handoff effect above, not through a fresh SSO round trip.
-        mobileSsoEmail={isLoading ? null : mobileSsoEmail}
+        mobileSsoEmail={
+          isLoading || (refusedForMobileSso && !mobileSsoCleared) ? null : mobileSsoEmail
+        }
       />
     </AuthFrame>
   );

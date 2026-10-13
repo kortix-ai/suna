@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { listFiles as globalListFiles } from '../files/client';
 import { ApiError } from '../http/api/errors';
 import { isConfigured } from '../http/config';
+import type { ProjectSession } from '../rest/projects-client/sessions';
 import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
@@ -997,6 +998,71 @@ test('ensureReady names the runtime session from runtime_session_id first', asyn
   const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
   expect(ready.runtimeSessionId).toBe('rs-neutral');
   expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
+function runningSessionRow(sessionId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: sessionId,
+    project_id: 'PROJ',
+    account_id: 'ACCT',
+    agent_name: 'agent',
+    status: 'running',
+    sandbox_id: 'sbx-row',
+    sandbox_provider: 'platinum',
+    sandbox_url: 'http://test.local/v1/p/sbx-row/8000',
+    runtime_session_id: 'rs-row',
+    opencode_session_id: 'rs-row',
+    metadata: {},
+    created_at: '2026-10-13T00:00:00.000Z',
+    updated_at: '2026-10-13T00:00:00.000Z',
+    ...overrides,
+  } as unknown as ProjectSession;
+}
+
+test('ensureReady adopts a running session row without calling /start', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-RUNNING')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-RUNNING') });
+  expect(startCalls).toEqual([]);
+  expect(ready.runtimeSessionId).toBe('rs-row');
+  expect(ready.sandboxId).toBe('sbx-row');
+});
+
+test('ensureReady never adopts the row of another session', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-MINE')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-SOMEONE-ELSE') });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.sandboxId).toBe('sb-start');
+});
+
+test('ensureReady still calls /start for a row that is not running', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-STOPPED')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-STOPPED', { status: 'stopped' }) });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.runtimeSessionId).toBe('rs-start');
 });
 
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {

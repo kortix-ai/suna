@@ -20,6 +20,7 @@ import { notifySessionEvent, turnEndPushType } from '../../notifications/session
 import { db } from '../../shared/db';
 import { turnEndNotificationContext } from '../lib/notification-recipients';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
+import { notifyTurnEnded } from '../lib/config-convergence-triggers';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
@@ -345,6 +346,11 @@ async function promoteAfterTurnEnd(
             error: error instanceof Error ? error.message : String(error),
           }),
         );
+      } else {
+        // Nothing was promoted, so the box is idle: converge its config now,
+        // while nobody waits, and the next turn runs it. A promoted prompt
+        // starts a turn right away; the queue's last turn end converges instead.
+        notifyTurnEnded(sessionId);
       }
     }
     console.info('[turn-stream] terminal turn settlement', {

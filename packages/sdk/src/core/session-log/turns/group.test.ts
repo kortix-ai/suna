@@ -7,7 +7,8 @@ import { describe, expect, test } from 'bun:test';
 import type { SessionPrompt } from '../../rest/projects-client/sessions';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage, type SessionLogThread, type ToolCallBlock } from '../types';
 import { COST_MARKUP } from '../../turns';
-import { sessionLogTurns, sessionLogCallStatus, sessionLogPromptMessage } from './index';
+import { sessionLogOfV1Rows } from '../v1-view';
+import { sessionLogTurns, sessionLogCallStatus, sessionLogPromptMessage, sessionLogRetrying } from './index';
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
 const PRODUCER = { harness: 'pi', harness_version: '1', adapter_version: '1' };
@@ -210,5 +211,26 @@ describe('liveness', () => {
     const retry = { status: 'error' as const, completed_at: null, error: { code: 'rate_limit', message: 'slow down' } };
     // A native record carries no isRetryable flag: its last open errored reply is not a retry.
     expect(sessionLogTurns(thread([user('u1'), reply('a1', 'u1', undefined, retry)])).map((t) => t.retrying)).toEqual([false]);
+  });
+});
+
+describe('sessionLogRetrying', () => {
+  const rows = (completed: boolean) => [
+    { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [{ id: 'prt_q', sessionID: 'ses', messageID: 'msg_u', type: 'text', text: 'go' }] },
+    {
+      info: {
+        id: 'msg_a', sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: completed ? { created: 2, completed: 3 } : { created: 2 },
+        error: { name: 'APIError', data: { message: 'Too Many Requests', statusCode: 429, isRetryable: true } },
+      },
+      parts: [{ id: 'prt_x', sessionID: 'ses', messageID: 'msg_a', type: 'text', text: 'x' }],
+    },
+  ];
+  test('the thread\'s last reply is open with a retryable error: the same answer the turn layer gives, without turns', () => {
+    const open = sessionLogOfV1Rows('kses', 'ses', rows(false) as never).threads[0]!;
+    expect(sessionLogRetrying(open)).toBe(true);
+    expect(sessionLogTurns(open).map((t) => t.retrying)).toEqual([true]);
+    const done = sessionLogOfV1Rows('kses', 'ses', rows(true) as never).threads[0]!;
+    expect(sessionLogRetrying(done)).toBe(false);
+    expect(sessionLogRetrying(thread([user('u1')]))).toBe(false);
   });
 });

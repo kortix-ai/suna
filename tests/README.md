@@ -10,7 +10,8 @@ single long-lived Bun worker retained 8.9 GiB during a full suite. Set
 runner with measured headroom. A detached suite continues after an agent turn
 ends; check and stop that process before retrying a memory-guarded turn.
 
-The default run executes six lanes concurrently:
+The default run has six lanes plus package quality. It runs only the lanes and
+packages the branch's diff can affect ([Diff-scoped default run](#diff-scoped-default-run)):
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
@@ -22,6 +23,40 @@ The default run executes six lanes concurrently:
 The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
 handlers.
+
+## Diff-scoped default run
+
+Plain `pnpm test` runs only what the branch's diff can affect
+(`tests/src/core/test-scope.ts`). The diff is every file that differs from the
+merge-base with `origin/dev`, uncommitted edits included.
+
+| Changed path | What runs |
+| --- | --- |
+| a file in a workspace package | that package, every package that depends on it (`pnpm --filter "...{dir}"`), and every package that imports it by relative path (`../../packages/x`) |
+| `.github/`, `.githooks/`, `infra/`, `tests/e2e/` | the packages whose files name that path |
+| `tests/src/flows/`, `tests/spec/`, `tests/migration/` | the REST/CLI flows and DB suites |
+| `.agents/`, `.claude/`, `tests/unit/`, a root `*.md` | only the always-on lanes |
+| anything else (root config, `pnpm-lock.yaml`, `scripts/`, `supabase/`, the runner itself, an app that is not a workspace package) | everything |
+
+- The runner unit tests, route coverage and worktree tests always run.
+- The flows and DB suites run when the scope reaches `apps/api`, `apps/cli`,
+  `apps/llm-gateway` or `packages/db`, or a flow path changed. Otherwise the
+  attestation records `db-suites=skipped-unaffected`.
+- The SDK lane runs when the scope reaches `packages/sdk`.
+- Package quality runs the publish checks, lint, typecheck and workspace tests
+  of the packages in scope only.
+
+A run also reuses lane groups (`core`, `packages`, `db-suites`) that already
+passed for the same diff: rerunning after a flake runs only the red groups. A
+merge of `origin/dev` that touches other files keeps the diff, so it keeps the
+reuse. A file that joins the diff or an edit to a changed file drops every
+reused group. Delete `tests/attestations/<branch>.json` to rerun everything on
+the same diff. The attestation hashes the working tree, so commit the tested
+edits as they are: a tested file that the commit leaves out makes it stale.
+
+`CI=1 pnpm test` runs the whole suite and reuses nothing. GitHub Actions sets
+`CI`, so the `Tests` run on every push to `dev` and the release lanes always
+run everything: they are the backstop for a dependency the scope cannot see.
 
 ## Commands
 

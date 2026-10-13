@@ -42,5 +42,8 @@ export type { Todo as SessionLogTodo, ToolKind as SessionLogToolKind } from './t
 
 // Transitional bridge for hosts that render blocks while their rows are v1 (`./tool-call.ts`).
 export { toolCallBlock, toolCallMetadata } from './tool-call';
+// The same bridge for rows a host reads without a `useSession` (a sub-agent's chat): the
+// `fromV1` live view `useSessionLogThread` serves on v1 (`./v1-view.ts`).
+export { sessionLogOfV1Rows } from './v1-view';
 // The block turn layer (`./turns`): the turn model a transcript renders blocks from.
 export * from './turns';

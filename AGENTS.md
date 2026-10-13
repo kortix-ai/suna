@@ -237,14 +237,29 @@ in before any non-trivial change. **Do not create a branch by reflex.**
 2. **Start a new canonical branch** only when the work is genuinely a new thing.
    Give it its own worktree: `pnpm worktree create --name <slug> --yes
    --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
-   only when the work needs migrations, destructive data work, schema drift, or
-   independent auth/storage state. See the **worktree** skill.
+   when the work needs migrations, destructive data work, or schema drift: it
+   copies the primary local database into the worktree's own database
+   (`kortix_wt_<slug>`, ~5 s, no extra containers). `--full-supabase` (a whole
+   Supabase stack, ~0.75 GB RAM) is only for independent auth/storage config.
+   See the **worktree** skill.
 3. **Never switch a worktree you did not create.** It belongs to one session and
    its canonical branch. The pre-commit hook refuses a commit on any other branch
    there (`scripts/check-worktree-branch.sh`). A throwaway probe branch goes in a
    private `git worktree add` in your scratchpad.
 4. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
    and investigating. Do not park feature work there.
+5. **Run `pnpm test` only from a worktree that has `.kortix-worktree.json`.** The
+   runner reads its ports from that marker. A bare `git worktree add` has none,
+   so its test stack takes the primary ports and talks to another session's
+   `pnpm dev` (2026-10-13: 156 flows failed with that stack's 503s).
+6. **Never kill a process you did not start.** Many sessions share this machine.
+   Kill by PID from your own process tree, or by a pattern that contains your
+   own worktree or scratchpad path. Never by a bare pattern such as
+   `pkill -f "bun test"`, and never in a loop. Need CPU? Lower your own
+   concurrency (`KE2E_API_WORKERS`, `KORTIX_DB_SUITE_WORKERS`) or ask the user.
+   2026-10-13: a guard loop that SIGTERMed every other session's `pnpm test`,
+   `tsc` and `vitest` every 20 s made 259 kills, and every suite on the machine
+   died with exit 143 and no failing test.
 
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
 stale-reference sweep, and the change that caused them all belong on the same
@@ -285,7 +300,8 @@ Never add a label by default or from automation. CI otherwise runs here:
 `tests/attestations/<branch>.json` on a green run (`/` and every char outside
 `[A-Za-z0-9._-]` become `-`; a detached HEAD writes `detached-<short-sha>.json`):
 `diff_files` + `diff_hash` (the files the PR itself changed —
-`git diff origin/dev...HEAD` — and their sha256, minus every attestation file),
+`git diff origin/dev...HEAD`, uncommitted edits included at write time — and
+their sha256, minus every attestation file),
 `source_hash` (full-tree fallback for a direct dev push), `head`, `passed`,
 per-lane results, `at`. The same write deletes every other file in
 `tests/attestations/` and the legacy `tests/test-attestation.json`. Commit
@@ -305,9 +321,13 @@ The attestation stays green after a merge of `origin/dev` that touches other
 files; it goes stale only when a file the PR itself changed is edited after the
 run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
 Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db`. That is the only skip, and it is not a pass: on `dev` the DB
-is gated after the merge (path-gated `DB Migrations`) and by the staging
-promote. The `packages` lane runs everywhere, including a Kortix factory
+`skipped-no-db`; a diff the flows and DB suites cannot read records
+`skipped-unaffected`. Neither skip is a pass: on `dev` the DB
+is gated after the merge (path-gated `DB Migrations`, every `Tests` lane) and
+by the staging promote. Plain `pnpm test` is diff-scoped: it runs the changed
+packages and their dependents, and reuses lane groups that already passed on
+the same diff (`tests/README.md`, "Diff-scoped default run"). `CI=1 pnpm test`
+runs everything. The `packages` lane runs everywhere, including a Kortix factory
 sandbox — it has no skip and must attest `pass`.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.

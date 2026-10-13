@@ -2,7 +2,7 @@
 // byte-identical, and proves it by SHA-256. Prints hashes, sizes and version ids only —
 // never state content. Temp files are 0600 and deleted.
 // usage: node infra/terraform/scripts/statemove/copy-states.mjs [--dry-run] <group...>
-//        groups: dev global staging prod (or "all")
+//        groups: dev global staging prod vps-demo (or "all")
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, chmodSync } from 'node:fs';
@@ -11,16 +11,19 @@ import { tmpdir } from 'node:os';
 const OLD = { bucket: 'kortix-terraform-state', region: 'us-west-2' };
 const EUW2 = { bucket: 'kortix-terraform-state-eu-west-2-935064898258', region: 'eu-west-2', kms: 'alias/kortix-terraform-state-eu-west-2' };
 const USE2 = { bucket: 'kortix-terraform-state-us-east-2-935064898258', region: 'us-east-2', kms: 'alias/kortix-terraform-state-us-east-2' };
+const USE1 = { bucket: 'kortix-terraform-state-us-east-1-935064898258', region: 'us-east-1', kms: 'alias/kortix-terraform-state-us-east-1' };
 const GROUPS = {
   dev: [['dev-us-east-2/ecs-api.tfstate', USE2], ['dev-us-east-2/ecs-web.tfstate', USE2]],
   global: [['security/baseline.tfstate', EUW2], ['security/compliance-monitoring.tfstate', EUW2]],
   staging: [['staging-eu-west-2/ecs-api.tfstate', EUW2], ['staging-eu-west-2/ecs-web.tfstate', EUW2]],
   prod: [['prod/ecs-api.tfstate', EUW2], ['prod/ecs-web.tfstate', EUW2]],
+  // External root: kortix-ai/kortix-vps-demo-infra (us-east-1).
+  'vps-demo': [['vps-demo/terraform.tfstate', USE1]],
 };
 const args = process.argv.slice(2);
 const dry = args.includes('--dry-run');
 const groups = args.filter((a) => a !== '--dry-run').flatMap((g) => (g === 'all' ? Object.keys(GROUPS) : [g]));
-if (!groups.length || groups.some((g) => !GROUPS[g])) { console.error('usage: node copy-states.mjs [--dry-run] dev|global|staging|prod|all ...'); process.exit(2); }
+if (!groups.length || groups.some((g) => !GROUPS[g])) { console.error('usage: node copy-states.mjs [--dry-run] dev|global|staging|prod|vps-demo|all ...'); process.exit(2); }
 
 // Credentials: AWS_PROFILE if set, else the `kortix` profile.
 const aws = (...a) => execFileSync('aws', [...a, '--profile', process.env.AWS_PROFILE || 'kortix', '--output', 'json'], { maxBuffer: 1 << 26 }).toString();

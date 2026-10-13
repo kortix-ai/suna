@@ -288,8 +288,9 @@ export function MemberAccessPanel({
   }
 
   return (
+    // No "‹ All members" here: the hub's breadcrumb bar reads
+    // Settings / <account> / Members / <member>, and Members is a link.
     <AccessDetailShell
-      back={{ label: tI18nComplete.raw('text3d6fe3e703f6'), onClick: onBack }}
       loading={membersQuery.isLoading}
       avatar={<UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />}
       title={memberLabel}

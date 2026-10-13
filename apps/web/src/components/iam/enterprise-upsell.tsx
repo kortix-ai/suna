@@ -9,22 +9,24 @@ import { useTranslations } from '@/i18n/use-translations';
 // 402 without the entitlement (requireEntitlement), so we never render controls
 // the backend would reject.
 //
-// Roles is NOT one of them and never was: `GET .../iam/roles` carries no
-// entitlement check, so the built-in roles are free content and `RolesTab`
-// gates only its own New role / Edit / Duplicate controls, with an inline
-// `InfoBanner` carrying `RBAC_UPSELL_MESSAGE`. The `roles` copy variant this
-// map used to hold was written but never rendered anywhere — deleted
-// 2026-08-18 rather than left as a second, contradictory gating story.
+// Roles joined them on 2026-10-13 (Jay): an account without the `rbac`
+// entitlement sees this card instead of the read-only built-in role list,
+// the disabled New role button and an info banner. One gated state, the
+// same on every Enterprise pane.
+//
+// `EnterpriseBadge` is the one plan tag: no lock glyph, a calm blue tint,
+// sentence-case sans text (the base `Badge` is mono uppercase).
 
-import { CheckIcon as Check, LockIcon as Lock } from '@phosphor-icons/react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { cn } from '@/lib/utils';
 
-type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding';
+type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding' | 'roles';
 
 const FEATURE_COPY: Record<
   UpsellFeature,
@@ -64,6 +66,16 @@ const FEATURE_COPY: Record<
       'SCIM keeps users and groups in sync, including offboarding',
     ],
   },
+  roles: {
+    title: 'Custom roles are an Enterprise feature',
+    blurb:
+      'Define roles of your own — pick exactly what a member may view and change — and hand them out from Members and Projects like the built-in ones.',
+    points: [
+      'Start from a built-in role and remove what you do not need',
+      'Assign a custom role on the account or on one project',
+      'See every capability a role grants before you assign it',
+    ],
+  },
   branding: {
     title: 'Branding is an Enterprise feature',
     blurb:
@@ -75,6 +87,16 @@ const FEATURE_COPY: Record<
     ],
   },
 };
+
+/** The plan tag for an Enterprise-only surface. No lock: the word is the signal. */
+export function EnterpriseBadge({ className }: { className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <Badge variant="info" size="sm" className={cn('font-sans tracking-normal', className)}>
+      {tI18nComplete.raw('text3fbe5ed156f1')}
+    </Badge>
+  );
+}
 
 interface EnterpriseUpsellProps {
   feature: UpsellFeature;
@@ -90,12 +112,9 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
   return (
     <section className="bg-popover rounded-md border">
       <div className="space-y-3 px-4 py-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="space-y-1.5">
+          <EnterpriseBadge />
           <h3 className="text-foreground text-sm font-medium">{copy.title}</h3>
-          <Badge variant="kortix" size="sm">
-            <Lock />
-            {tI18nComplete.raw('text3fbe5ed156f1')}
-          </Badge>
         </div>
         <p className="text-muted-foreground max-w-xl text-sm">{copy.blurb}</p>
         <ul className="space-y-1.5">

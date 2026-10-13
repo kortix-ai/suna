@@ -97,6 +97,12 @@ Set `clientVersion` to your app's name and version, for example
 Kortix writes it to request logs only. It grants nothing and never reaches the
 audit log, which records the credential `getToken` returned.
 
+Set `credentialHeader` when a backend proxy reads the credential from a custom
+header, for example `credentialHeader: 'x-app-reader-token'`. The SDK sends the
+raw token from `getToken` in that header and sends no `Authorization`. The `401`
+replay still calls `getToken` again. A header of the same name that a call sets
+itself wins.
+
 ## Headless sign-in
 
 `kortix.auth.*` signs people up and in through the Kortix API at `/v1/auth/*`.

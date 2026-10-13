@@ -1,6 +1,7 @@
 import '@/features/session/tool/tools/register';
 import { TurnLiveContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -28,7 +29,7 @@ const render = (part: ToolPart, turnLive: boolean) =>
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <TurnLiveContext.Provider value={turnLive}>
-          <ToolPartRenderer part={part} sessionId="s1" defaultOpen />
+          <ToolPartRenderer call={toolCallBlock(part)} sessionId="s1" defaultOpen />
         </TurnLiveContext.Provider>
       </NextIntlClientProvider>
     </QueryClientProvider>,

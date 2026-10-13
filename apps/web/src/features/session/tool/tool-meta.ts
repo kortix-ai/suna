@@ -1,7 +1,6 @@
 import { contextToolTrigger as sdkContextToolTrigger } from '@kortix/sdk';
 
 import type { UiTranslator } from '@/i18n/translator';
-import type { ToolPart } from '@/ui';
 
 /**
  * Moved to `@kortix/sdk` (`packages/sdk/src/core/turns/tools/tool-meta.ts`)
@@ -20,7 +19,7 @@ export {
  * The SDK's `contextToolTrigger` with this app's translated labels.
  */
 export function contextToolTrigger(
-  part: ToolPart,
+  part: Parameters<typeof sdkContextToolTrigger>[0],
   tI18nComplete: UiTranslator,
 ): {
   title: string;
