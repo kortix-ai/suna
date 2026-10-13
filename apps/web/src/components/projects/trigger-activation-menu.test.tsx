@@ -21,6 +21,7 @@ mock.module('@/lib/use-project-can', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { PROJECT_ACTIONS } = await import('@kortix/sdk');
+const { TooltipProvider } = await import('@/components/ui/tooltip');
 const { TriggerActivationMenu } = await import('./schedule-view');
 
 const { PROJECT_WRITE, PROJECT_TRIGGER_CREATE, PROJECT_TRIGGER_FIRE, PROJECT_TRIGGER_UPDATE } =
@@ -32,16 +33,16 @@ function render(next: Record<string, { allowed: boolean }>): string {
   leaves = next;
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <TriggerActivationMenu projectId="p1" />
+      <TooltipProvider>
+        <TriggerActivationMenu projectId="p1" />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
 
 describe('the pause-all gear', () => {
   test('a role with project.write + project.trigger.update gets the gear', () => {
-    expect(render(grant(PROJECT_WRITE, PROJECT_TRIGGER_UPDATE))).toContain(
-      'aria-label="Trigger settings"',
-    );
+    expect(render(grant(PROJECT_WRITE, PROJECT_TRIGGER_UPDATE))).toContain('Pause all');
   });
 
   test('project.trigger.update without project.write gets no gear: the route loads the project for write', () => {
