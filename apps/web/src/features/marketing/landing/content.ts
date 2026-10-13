@@ -22,7 +22,7 @@ import type { UiTranslator } from '@/i18n/translator';
  */
 export const hero = {
   title: 'The AI Operating System for AI-native companies',
-  sub: 'Agents that do real work across every team: on their own computers, in your tools, from one repo you own. Any model, your keys, self-hosted or cloud.',
+  sub: 'Agents that do real work across every team: on their own computers, in your tools, from one repo you own.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Book a demo',
   shot: { label: 'Kortix: an agent session with its plan, outputs and context' },
@@ -53,7 +53,7 @@ export const cta = {
   sub: 'Start with one job and grow from there.',
   trust: 'Open source · SSO, RBAC & on-prem · Any model, your keys · No lock-in',
   ctaPrimary: 'Get started',
-  ctaSecondary: 'Request demo',
+  ctaSecondary: 'Book a demo',
 } as const;
 
 /**

@@ -19750,7 +19750,15 @@
       "textc06f548e70ac": "Reestruturação nativa em IA",
       "text245c108762e2": "Sua equipe",
       "textaabe76f1f4ec": "Clientes",
-      "textfb04121eb646": "Cada sessão roda na própria máquina isolada. As credenciais dos conectores nunca entram nela, e o trabalho da sessão chega à main por meio de uma solicitação de mudança."
+      "textfb04121eb646": "Cada sessão roda na própria máquina isolada. As credenciais dos conectores nunca entram nela, e o trabalho da sessão chega à main por meio de uma solicitação de mudança.",
+      "text0cf892ae6cfd": "Agentes que fazem trabalho real em todas as equipes: nos seus próprios computadores, nas suas ferramentas, a partir de um repositório que é seu.",
+      "text5461243c8731": "Agendar uma conversa",
+      "text88b1d1a67e34": "por mês",
+      "text2d6248613e59": "Todas as histórias de clientes",
+      "textf149d8534427": "Agendar uma demo",
+      "text2204959f6129": "Ver o produto",
+      "text8557980ba384": "Ver o serviço",
+      "textb4b580a9ad8c": "Sobre nós"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

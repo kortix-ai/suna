@@ -19750,7 +19750,15 @@
       "textc06f548e70ac": "Ristrutturazione AI-native",
       "text245c108762e2": "Il tuo team",
       "textaabe76f1f4ec": "Clienti",
-      "textfb04121eb646": "Ogni sessione gira sulla propria macchina isolata. Le credenziali dei connettori non vi entrano mai, e il lavoro della sessione arriva su main tramite una richiesta di modifica."
+      "textfb04121eb646": "Ogni sessione gira sulla propria macchina isolata. Le credenziali dei connettori non vi entrano mai, e il lavoro della sessione arriva su main tramite una richiesta di modifica.",
+      "text0cf892ae6cfd": "Agenti che svolgono lavoro reale in ogni team: sui propri computer, nei tuoi strumenti, da un unico repo di tua proprietà.",
+      "text5461243c8731": "Prenota una call",
+      "text88b1d1a67e34": "al mese",
+      "text2d6248613e59": "Tutte le storie dei clienti",
+      "textf149d8534427": "Prenota una demo",
+      "text2204959f6129": "Scopri il prodotto",
+      "text8557980ba384": "Scopri il servizio",
+      "textb4b580a9ad8c": "Chi siamo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -19750,7 +19750,15 @@
       "textc06f548e70ac": "Restructuration native IA",
       "text245c108762e2": "Votre équipe",
       "textaabe76f1f4ec": "Clients",
-      "textfb04121eb646": "Chaque session tourne sur sa propre machine isolée. Les identifiants des connecteurs n’y entrent jamais, et le travail de la session arrive sur main par une demande de modification."
+      "textfb04121eb646": "Chaque session tourne sur sa propre machine isolée. Les identifiants des connecteurs n’y entrent jamais, et le travail de la session arrive sur main par une demande de modification.",
+      "text0cf892ae6cfd": "Des agents qui font un vrai travail dans chaque équipe : sur leurs propres ordinateurs, dans vos outils, depuis un seul dépôt qui vous appartient.",
+      "text5461243c8731": "Réserver un appel",
+      "text88b1d1a67e34": "par mois",
+      "text2d6248613e59": "Tous les témoignages clients",
+      "textf149d8534427": "Réserver une démo",
+      "text2204959f6129": "Voir le produit",
+      "text8557980ba384": "Voir le service",
+      "textb4b580a9ad8c": "À propos"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

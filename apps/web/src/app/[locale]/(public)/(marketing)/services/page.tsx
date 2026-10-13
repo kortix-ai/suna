@@ -1,7 +1,6 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
@@ -45,9 +44,6 @@ function TeamVisual(): ReactNode {
           </li>
         ))}
       </ul>
-      <div className="mt-6">
-        <GoalBar />
-      </div>
     </div>
   );
 }
@@ -76,22 +72,9 @@ export default function ServicesPage(): ReactNode {
       {/* ── the offer ─────────────────────────────────────────────────────── */}
       <section id="team" className={cn(SECTION, 'scroll-mt-20')}>
         <SectionHeader eyebrow={offer.eyebrow} title={offer.title} description={offer.note} />
-        <div className="mt-10 grid gap-4 lg:grid-cols-3">
-          <Reveal className="lg:col-span-1">
-            <div className="border-border bg-card flex h-full flex-col justify-between gap-8 rounded-sm border p-8">
-              <div>
-                <p className="text-foreground text-6xl font-medium tracking-tight tabular-nums">
-                  {offer.price}
-                </p>
-                <p className="text-muted-foreground mt-2 text-base">{offer.per}</p>
-              </div>
-              <Button size="lg" className="w-full active:scale-[0.97]" onClick={() => openDemo()}>
-                {offer.cta}
-              </Button>
-            </div>
-          </Reveal>
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
           {offer.roles.map((r, i) => (
-            <Reveal key={r.id} delay={0.04 * (i + 1)}>
+            <Reveal key={r.id} delay={0.04 * i}>
               <div className="border-border bg-card flex h-full flex-col gap-4 rounded-sm border p-8">
                 <p className="text-muted-foreground font-mono text-xs tracking-widest uppercase">
                   {`0${i + 1}`}
@@ -132,23 +115,21 @@ export default function ServicesPage(): ReactNode {
             ))}
           </ol>
         </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── the goal ──────────────────────────────────────────────────────── */}
-      <section id="goal" className={cn(SECTION, 'scroll-mt-20')}>
-        <SectionHeader eyebrow={goal.eyebrow} title={goal.title} description={goal.sub} />
-        <Reveal delay={0.06}>
-          <div className="border-border bg-card mt-10 rounded-sm border p-8">
-            <GoalBar />
-            <div className="mt-8 grid gap-8 sm:grid-cols-2">
+        <Reveal delay={0.1}>
+          <div id="goal" className="border-border bg-card mt-4 scroll-mt-20 rounded-sm border p-6 sm:p-8">
+            <p className="text-muted-foreground font-mono text-xs tracking-widest uppercase">{goal.eyebrow}</p>
+            <h3 className="text-foreground mt-3 text-2xl font-medium tracking-tight">{goal.title}</h3>
+            <p className="text-muted-foreground mt-2 max-w-2xl text-base leading-relaxed">{goal.sub}</p>
+            <div className="mt-8">
+              <GoalBar />
+            </div>
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
               {[goal.agents, goal.people].map((side) => (
                 <div key={side.label}>
                   <p className="text-foreground text-base font-medium">
                     {side.share}% {side.label}
                   </p>
-                  <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{side.body}</p>
+                  <p className="text-muted-foreground mt-1 text-sm leading-relaxed">{side.body}</p>
                 </div>
               ))}
             </div>

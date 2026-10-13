@@ -389,4 +389,13 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'memory/': 'textae3f53994b15',
   'skills/': 'textf1e8d760c12c',
   "Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request.": 'textfb04121eb646',
+  'Agents that do real work across every team: on their own computers, in your tools, from one repo you own.': 'text0cf892ae6cfd',
+  'Book a call': 'text5461243c8731',
+  'per month': 'text88b1d1a67e34',
+  'All customer stories': 'text2d6248613e59',
+  'Book a demo': 'textf149d8534427',
+  'See the product': 'text2204959f6129',
+  'See the service': 'text8557980ba384',
+  'About us': 'textb4b580a9ad8c',
+  'Customer stories': 'text8d0aa6d95144',
 };

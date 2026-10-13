@@ -19750,7 +19750,15 @@
       "textc06f548e70ac": "KI-native Umstrukturierung",
       "text245c108762e2": "Dein Team",
       "textaabe76f1f4ec": "Kunden",
-      "textfb04121eb646": "Jede Session läuft auf ihrer eigenen isolierten Maschine. Connector-Zugangsdaten gelangen nie dorthin, und die Arbeit einer Session erreicht main über einen Change Request."
+      "textfb04121eb646": "Jede Session läuft auf ihrer eigenen isolierten Maschine. Connector-Zugangsdaten gelangen nie dorthin, und die Arbeit einer Session erreicht main über einen Change Request.",
+      "text0cf892ae6cfd": "Agenten, die in jedem Team echte Arbeit erledigen: auf eigenen Computern, in deinen Tools, aus einem Repo, das dir gehört.",
+      "text5461243c8731": "Gespräch buchen",
+      "text88b1d1a67e34": "pro Monat",
+      "text2d6248613e59": "Alle Kundengeschichten",
+      "textf149d8534427": "Demo buchen",
+      "text2204959f6129": "Zum Produkt",
+      "text8557980ba384": "Zum Service",
+      "textb4b580a9ad8c": "Über uns"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

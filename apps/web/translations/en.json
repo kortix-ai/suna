@@ -19761,7 +19761,15 @@
       "textc06f548e70ac": "AI-native restructuring",
       "text245c108762e2": "Your team",
       "textaabe76f1f4ec": "Customers",
-      "textfb04121eb646": "Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request."
+      "textfb04121eb646": "Every session runs on its own isolated machine. Connector credentials never enter it, and session work reaches main through a change request.",
+      "text0cf892ae6cfd": "Agents that do real work across every team: on their own computers, in your tools, from one repo you own.",
+      "text5461243c8731": "Book a call",
+      "text88b1d1a67e34": "per month",
+      "text2d6248613e59": "All customer stories",
+      "textf149d8534427": "Book a demo",
+      "text2204959f6129": "See the product",
+      "text8557980ba384": "See the service",
+      "textb4b580a9ad8c": "About us"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

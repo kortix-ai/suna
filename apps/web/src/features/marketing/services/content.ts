@@ -39,7 +39,6 @@ export const offer = {
   price: '$20k',
   per: 'per month',
   note: 'Built on Kortix. Everything we build lives in a repo you own.',
-  cta: 'Book a call',
   fullTime: { label: 'Full time' },
   roles: [
     {
