@@ -59,6 +59,7 @@ import {
   MODELS_PAGE_TITLE,
   NATIVE_LLM_TABS,
   ProjectDefaultPicker,
+  ProviderSheetSplit,
   QUICK_LLM_TABS,
 } from '@/features/workspace/customize/sections/gateway-view';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -88,7 +89,16 @@ export function ProjectProviderModal({
           with every tab switch (3 key rows vs 34 model rows vs the Custom
           form). `lg:min-h` + `lg:max-h` clamp that `h-auto` to a constant.
           The unprefixed mobile sheet keeps its own `max-h-[90%]` cap. */}
-      <ModalContent className="flex h-(--provider-modal-h) w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 [--provider-modal-h:min(680px,calc(100dvh-2rem))] lg:max-h-(--provider-modal-h) lg:min-h-(--provider-modal-h) lg:max-w-4xl">
+      <ModalContent
+        // The default-model picker sits in the close button's own row, so the
+        // two share one centre line instead of the picker floating in the header.
+        // `lg:h-(…)` (not only min/max): the SplitSheet body below sizes with
+        // `h-full`, which needs a DEFINITE height — with `lg:h-auto` from the
+        // modal base it grew to its content and nothing could scroll.
+        closeButtonChildren={
+          canWrite && open ? <HeaderDefaultPicker projectId={projectId} /> : null
+        }
+        className="bg-background flex h-(--provider-modal-h) w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 [--provider-modal-h:min(680px,calc(100dvh-2rem))] lg:h-(--provider-modal-h) lg:max-h-(--provider-modal-h) lg:min-h-(--provider-modal-h) lg:max-w-4xl">
         <ProviderModalBody
           key={`${open}-${defaultTab ?? ''}`}
           projectId={projectId}
@@ -99,6 +109,18 @@ export function ProjectProviderModal({
       </ModalContent>
     </Modal>
   );
+}
+
+/** The project-default picker, only where the gateway's defaults chain exists. */
+function HeaderDefaultPicker({ projectId }: { projectId: string }) {
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  return isLlmGatewayEnabled(detailQuery.data?.project) ? (
+    <ProjectDefaultPicker projectId={projectId} />
+  ) : null;
 }
 
 /**
@@ -147,15 +169,12 @@ function ProviderModalBody({
           the one page-level control on the right. `pr-11` is the modal's close
           button — `absolute top-3 right-3` at `size-8`, so 44px of the right
           edge is spoken for and the picker has to stop short of it. */}
-      <ModalHeader className="shrink-0 gap-3 sm:flex-row sm:items-start sm:justify-between sm:pr-11">
-        <div className="space-y-1">
-          <ModalTitle className="text-base font-medium">{MODELS_PAGE_TITLE}</ModalTitle>
-          <ModalDescription>{MODELS_PAGE_DESCRIPTION}</ModalDescription>
-        </div>
-        {canWrite && llmGatewayEnabled ? <ProjectDefaultPicker projectId={projectId} /> : null}
+      <ModalHeader className="shrink-0 gap-0 px-5 pt-4 pr-64">
+        <ModalTitle className="text-base leading-8 font-medium">{MODELS_PAGE_TITLE}</ModalTitle>
+        <ModalDescription>{MODELS_PAGE_DESCRIPTION}</ModalDescription>
       </ModalHeader>
 
-      <div className="shrink-0 px-5 pt-5 pb-4">
+      <div className="shrink-0 px-5">
         <LlmTabStrip
           value={effectiveTab}
           tabs={llmGatewayEnabled ? QUICK_LLM_TABS : NATIVE_LLM_TABS}
@@ -169,17 +188,28 @@ function ProviderModalBody({
           under the heading instead of running into the modal's clipped edge —
           `LlmSections` carries no horizontal padding of its own, because on
           the page `CapabilityPageShell` supplies it. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <LlmSections
-          projectId={projectId}
-          tab={effectiveTab}
-          onTabChange={(next) => {
-            if (isQuickLlmTab(next)) setTab(next);
-          }}
-          canWrite={canWrite}
-          enabled={open}
-        />
-      </div>
+      <ProviderSheetSplit
+        projectId={projectId}
+        providerId={null}
+        onProviderChange={() => undefined}
+        canWrite={canWrite}
+        className="min-h-0 border-t"
+        contentClassName="bg-background"
+      >
+        <div className="h-full min-h-0 overflow-y-auto px-5 pt-4 pb-5">
+          <LlmSections
+            projectId={projectId}
+            tab={effectiveTab}
+            onTabChange={(next) => {
+              if (isQuickLlmTab(next)) setTab(next);
+            }}
+            canWrite={canWrite}
+            enabled={open}
+            onSelectProvider={() => undefined}
+            providersVariant="accordion"
+          />
+        </div>
+      </ProviderSheetSplit>
     </>
   );
 }

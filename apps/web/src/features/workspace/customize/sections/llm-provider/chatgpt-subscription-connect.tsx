@@ -45,19 +45,18 @@ const SUBSCRIPTIONS: Record<SubscriptionKind, { oauth: string; providerId: strin
 
 const providerLoginsKey = (projectId: string) => ['project-provider-oauth', projectId] as const;
 
-// Legacy ChatGPT subscription login. With pooled connections enabled this
-// component shows only an existing project login; new accounts use resources.
-export function ChatGptSubscriptionConnect({
+/**
+ * The sign-in state machine behind every subscription surface: the card below
+ * and the provider sheet (`features/providers/provider-sheet.tsx`). One copy,
+ * so a device-grant fix lands in both.
+ */
+export function useSubscriptionSignIn({
   projectId,
   onConnected,
-  accessSlot,
-  legacyOnly = false,
   kind = 'chatgpt',
 }: {
   projectId: string;
   onConnected: (providerId: string) => void;
-  accessSlot?: ReactNode;
-  legacyOnly?: boolean;
   kind?: SubscriptionKind;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -215,6 +214,37 @@ export function ChatGptSubscriptionConnect({
       ),
   });
 
+  return { subscription, copy, phase, challenge, error, connected, start: handleConnect, cancel: reset, disconnect };
+}
+
+// Legacy ChatGPT subscription login. With pooled connections enabled this
+// component shows only an existing project login; new accounts use resources.
+export function ChatGptSubscriptionConnect({
+  projectId,
+  onConnected,
+  accessSlot,
+  legacyOnly = false,
+  kind = 'chatgpt',
+}: {
+  projectId: string;
+  onConnected: (providerId: string) => void;
+  accessSlot?: ReactNode;
+  legacyOnly?: boolean;
+  kind?: SubscriptionKind;
+}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tPooled = useTranslations('pooledSecrets');
+  const {
+    subscription,
+    copy,
+    phase,
+    challenge,
+    error,
+    connected,
+    start: handleConnect,
+    cancel: reset,
+    disconnect,
+  } = useSubscriptionSignIn({ projectId, onConnected, kind });
   const waiting = phase === 'waiting';
   const action = subscriptionPrimaryAction({ connected, failed: !!error });
   if (legacyOnly && !connected) return null;

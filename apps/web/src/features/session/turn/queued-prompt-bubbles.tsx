@@ -16,7 +16,7 @@ export type QueuedPromptStatusState = QueuedPromptState | 'failed' | 'sending' |
 
 /** Ring tone for a queued bubble. `pending` covers waiting and sending, so a
  *  delivery retry that flips a row between them never changes the ring. */
-export type QueuedBubbleTone = 'pending' | 'held' | 'failed';
+type QueuedBubbleTone = 'pending' | 'held' | 'failed';
 
 export function queuedBubbleTone(
   state: QueuedPromptStatusState | null | undefined,

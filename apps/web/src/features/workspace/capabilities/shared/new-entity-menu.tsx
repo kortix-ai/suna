@@ -15,11 +15,12 @@ import type { ComponentType } from 'react';
 
 /**
  * One row of the New menu: icon, title, description (Paper "New menu" V03,
- * after `alert.tsx`). The 16px glyph takes `mt-0.5` so it centres on the
- * title's first 20px line, not on the whole block; the title is ink at 550,
- * the description one step down and muted, `mt-0.5` under it.
+ * after `alert.tsx`). The 16px glyph takes `mt-1 ml-0.5` so it sits level
+ * with the title's first line and in from the row edge, not up in the corner;
+ * the title is ink at 550, the description one step down and muted, `mt-0.5`
+ * under it.
  */
-const RICH_ROW_CLASS = 'items-start gap-2.5 py-1.5';
+const RICH_ROW_CLASS = 'items-start gap-2.5 py-2';
 
 function RichRowBody({
   icon: Glyph,
@@ -32,7 +33,7 @@ function RichRowBody({
 }) {
   return (
     <>
-      <Glyph className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+      <Glyph className="text-muted-foreground mt-1 ml-0.5 size-4 shrink-0" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-foreground text-sm font-[550]">{title}</span>
         {description ? (
