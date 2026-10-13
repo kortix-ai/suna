@@ -582,11 +582,13 @@
       "dangerZone": "Zona de peligro",
       "deleteAccount": "Eliminar cuenta",
       "deletionUnavailable": "La eliminación de cuentas no está disponible en esta implementación. Póngase en contacto con el soporte para cerrar su cuenta.",
+      "deletionStatusCheckFailed": "No se pudo confirmar si la eliminación de la cuenta está disponible.",
       "scheduledForDeletionOn": "Programado para su eliminación el {date}.",
       "scheduledForDeletion": "Programado para su eliminación.",
       "cancelBeforeDeletion": "Puedes cancelar en cualquier momento antes de esa fecha.",
       "deletionDescription": "Esto elimina todos los agentes, sesiones, secretos y suscripciones asociados a tu cuenta. No se puede deshacer.",
       "unavailable": "No disponible",
+      "retry": "Reintentar",
       "keepMyAccount": "Mantener mi cuenta",
       "deleteDialogTitle": "¿Eliminar tu cuenta?",
       "immediateWarning": "Esto elimina su cuenta de inmediato. No hay período de gracia ni forma de deshacerlo.",
@@ -1636,7 +1638,19 @@
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizar barra lateral",
+    "customizeSidebarDescription": "Arrastra los elementos entre los dos grupos.",
+    "resetSidebar": "Restablecer",
+    "reorderItem": "Reordenar {name}",
+    "reorderHint": "Arrastra para reordenar. O pulsa las flechas arriba y abajo; pasar de «Más» oculta el elemento de la barra lateral.",
+    "reorderAnnouncement": "{name}: {group}, posición {position} de {total}",
+    "more": "Más",
+    "inSidebar": "Barra lateral",
+    "underMore": "Más",
+    "sidebarEmpty": "Arrastra un elemento aquí para mostrarlo en la barra lateral.",
+    "moreEmpty": "Arrastra un elemento aquí para moverlo a Más.",
+    "moreCaption": "Los elementos en Más se abren desde el menú Más, bajo la navegación."
   },
   "dashboard": {
     "title": "Panel",
@@ -7907,7 +7921,11 @@
       "line267JsxTextCheckpointHistory": "Historial de versiones",
       "line285JsxTextCopyPath": "Copiar ruta",
       "line396JsxTextThisFolderIsEmpty": "Esta carpeta está vacía",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Todo lo que guarden tus agentes y los archivos de este proyecto aparecerán aquí."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Todo lo que guarden tus agentes y los archivos de este proyecto aparecerán aquí.",
+      "loadMoreItems": "Cargar más elementos",
+      "loadMoreFailed": "No se pudieron cargar más elementos. Inténtalo de nuevo.",
+      "partialSortNote": "Se muestran {value0} elementos. El orden se aplica cuando se cargan todos.",
+      "showingFirstItems": "Se muestran los primeros {value0} elementos"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Haz doble clic para editar la ruta",
@@ -7999,7 +8017,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Buscar archivos...",
       "line124JsxTextTypeToSearchFiles": "Escribe para buscar archivos...",
-      "line136JsxTextNoFilesFound": "No se encontraron archivos"
+      "line136JsxTextNoFilesFound": "No se encontraron archivos",
+      "searchContents": "Buscar en el contenido",
+      "firstMatches": "Se muestran las primeras {value0} coincidencias",
+      "searchContentsPlaceholder": "Buscar en el contenido de los archivos...",
+      "typeToSearchContents": "Escribe para buscar en el contenido de los archivos...",
+      "noMatchingLines": "No hay líneas coincidentes"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Ya existe un archivo o una carpeta con ese nombre",
@@ -9534,6 +9557,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "No se pudo enviar el correo. Vuelve a intentarlo en aproximadamente una hora.",
       "authRequestRateLimit": "Demasiadas solicitudes. Vuelve a intentarlo en unos minutos.",
+      "text0b6a47661327": "Propietario desconocido",
       "text1a9030082a20": "Crear habilidad",
       "text25ab55af92b1": "Carga del archivo adjunto iniciada",
       "text38e64d6a8162": "Confirma un SKILL.md en la rama predeterminada del proyecto. No hace falta modelo ni chat.",
@@ -9542,6 +9566,7 @@
       "text426699d5a8c0": "{count, plural, one {# carácter} other {# caracteres}}",
       "text40078a553439": "Bloque del archivo adjunto cargado",
       "text4c7f8000aabd": "Carga del archivo adjunto completada",
+      "text8782b778c202": "Eliminar {value0}",
       "text91420d2587c2": "Carga del archivo adjunto eliminada",
       "text3aab5b3be2b9": "Descriptor de archivo adjunto de ejecución resuelto",
       "text0005b85debac": "Paquete de sonido reproducido para eventos de sesión.",
@@ -11611,7 +11636,7 @@
       "text3e11e93e0f42": "Aprueba o rechaza la acción pendiente para continuar.",
       "text3e18e2dab6f2": "Negociación",
       "text3e26769ed36a": "Los propietarios y administradores tienen el rol de Manager en todos los proyectos.",
-      "text3e29ac703c2f": "Los miembros deben iniciar sesión con su proveedor de identidad; la opción de contraseña desaparece al activarlo y solo funcionará el proveedor de identidad.",
+      "text3e29ac703c2f": "Los miembros deben iniciar sesión con su proveedor de identidad. Al activarlo, se cierra la sesión de cada miembro de este dominio que haya iniciado sesión de otra forma, y eso puede incluirte a ti.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Marketplaces destacados enumerados",
       "text3e3d7edf97ee": "Acceso a repositorios",
@@ -19212,6 +19237,12 @@
       "servedModelInPlaceOf": "En lugar de",
       "servedModelBadge": "Ejecutándose en {model}",
       "servedModelBarDescription": "{requested} no respondió a la última solicitud",
+      "computerAwakeStays": "El entorno aislado sigue encendido mientras estés aquí · hasta {duration}",
+      "computerAwakeStops": "El entorno aislado se detiene en {duration}. Envía un mensaje para que siga encendido.",
+      "computerAwakeStopsSoon": "El entorno aislado se detiene pronto. Envía un mensaje para que siga encendido.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Solicitud de sesión en cola editada",
       "text52867b778586": "Un kortix.yaml.",
       "textd0dfd435b2f4": "Tu plantilla de IA, como código.",
@@ -19545,7 +19576,9 @@
       "text8d54763edcd8": "Sin montar",
       "textffeb0c99532f": "Instantáneas guardadas {value0} días",
       "text6f52b07880a0": "Tomar instantánea ahora",
-      "text91dc861375bc": "Política de versiones móviles consultada"
+      "text91dc861375bc": "Política de versiones móviles consultada",
+      "texta37dd5ef6ef2": "Personalizar barra lateral",
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20172,9 +20205,8 @@
     "calendarNextWeek": "Semana siguiente",
     "calendarPreviousMonth": "Mes anterior",
     "calendarNextMonth": "Mes siguiente",
-    "calendarAllWeek": "Toda la semana",
-    "calendarAllDay": "Todo el día",
-    "calendarEvery": "cada {period}",
+    "calendarMore": "+{count} más",
+    "calendarMoreOn": "{count, plural, one {# recordatorio más} other {# recordatorios más}} el {date}",
     "calendarSession": "Sesión",
     "calendarEmptyWeek": "Nada se ejecuta esta semana",
     "calendarEmptyDay": "Nada se ejecuta este día",

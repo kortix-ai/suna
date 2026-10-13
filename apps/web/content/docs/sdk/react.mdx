@@ -106,6 +106,7 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `status` | `SessionStatus` | The runtime status of the session. |
 | `working` | `WorkingProjection` | `{ state: 'idle' \| 'working', pendingDelivery?, source, turnId, since }`. The one working answer. |
 | `isBusy` | `boolean` | `working.state === 'working'`. |
+| `presenceAwake` | `{ until: Date, capAt: Date } \| null` | With `browserPresence`: `until` is when the sandbox stops after the latest presence renewal, and `capAt` is the time presence cannot keep it awake past. Read again every 5 minutes while the person is present, when a turn ends, when the control plane closes a turn, and when the sandbox becomes ready. `null` while the person is absent, for a person who may not start the session, once the session start reports the sandbox not ready, and from the start of a turn until the next renewal answers. |
 | `isSending` | `boolean` | A `send` request is in flight. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure. A new `send` clears it. |
 | `questions`, `permissions` | arrays | Open agent questions and tool-approval requests. A permission here is one tool approval, not an access-control permission. |
@@ -268,6 +269,8 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
   return <ol>{root.messages.map((m) => <li key={m.message_id}>{m.role}: {m.blocks.length} blocks</li>)}</ol>;
 }
 ```
+
+On v2, `useSessionLogThread` appends the v1 rows the log does not hold yet (an optimistic send) after the thread's messages, converted with `fromV1`, until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
 
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 

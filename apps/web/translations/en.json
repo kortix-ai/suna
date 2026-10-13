@@ -404,11 +404,13 @@
       "dangerZone": "Danger zone",
       "deleteAccount": "Delete account",
       "deletionUnavailable": "Account deletion isn't available on this deployment. Contact support to close your account.",
+      "deletionStatusCheckFailed": "Couldn't confirm whether account deletion is available.",
       "scheduledForDeletionOn": "Scheduled for deletion on {date}.",
       "scheduledForDeletion": "Scheduled for deletion.",
       "cancelBeforeDeletion": "You can cancel any time before then.",
       "deletionDescription": "This deletes every agent, session, secret, and subscription tied to your account. This cannot be undone.",
       "unavailable": "Unavailable",
+      "retry": "Retry",
       "keepMyAccount": "Keep my account",
       "deleteDialogTitle": "Delete your account?",
       "immediateWarning": "This deletes your account right away. There is no grace period and no way to undo it.",
@@ -1636,7 +1638,19 @@
       "tooMany": "A session has at most 20 labels."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Customize sidebar",
+    "customizeSidebarDescription": "Drag rows between the two groups.",
+    "resetSidebar": "Reset to default",
+    "reorderItem": "Reorder {name}",
+    "reorderHint": "Drag to reorder. Or press the up and down arrow keys; moving past More hides the row from the sidebar.",
+    "reorderAnnouncement": "{name}: {group}, position {position} of {total}",
+    "more": "More",
+    "inSidebar": "Sidebar",
+    "underMore": "More",
+    "sidebarEmpty": "Drag a row here to show it in the sidebar.",
+    "moreEmpty": "Drag a row here to move it under More.",
+    "moreCaption": "Rows under More open from the More menu, below the nav."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -7918,7 +7932,11 @@
       "line267JsxTextCheckpointHistory": "Version history",
       "line285JsxTextCopyPath": "Copy path",
       "line396JsxTextThisFolderIsEmpty": "This folder is empty",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here.",
+      "loadMoreItems": "Load more items",
+      "loadMoreFailed": "Could not load more items. Try again.",
+      "partialSortNote": "Showing {value0} items. Sorting applies once every item is loaded.",
+      "showingFirstItems": "Showing the first {value0} items"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-click to edit path",
@@ -8010,7 +8028,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Search files...",
       "line124JsxTextTypeToSearchFiles": "Type to search files...",
-      "line136JsxTextNoFilesFound": "No files found"
+      "line136JsxTextNoFilesFound": "No files found",
+      "searchContents": "Search contents",
+      "firstMatches": "Showing the first {value0} matches",
+      "searchContentsPlaceholder": "Search file contents...",
+      "typeToSearchContents": "Type to search file contents...",
+      "noMatchingLines": "No matching lines"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "A file or folder with that name already exists",
@@ -9545,6 +9568,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Could not send the email. Try again in about an hour.",
       "authRequestRateLimit": "Too many requests. Try again in a few minutes.",
+      "text0b6a47661327": "Unknown owner",
       "text1a9030082a20": "Create skill",
       "text25ab55af92b1": "Started attachment upload",
       "text38e64d6a8162": "Commits a SKILL.md to the project's default branch. No model or chat needed.",
@@ -9553,6 +9577,7 @@
       "text426699d5a8c0": "{count, plural, one {# character} other {# characters}}",
       "text40078a553439": "Uploaded attachment chunk",
       "text4c7f8000aabd": "Completed attachment upload",
+      "text8782b778c202": "Delete {value0}",
       "text91420d2587c2": "Removed attachment upload",
       "text3aab5b3be2b9": "Resolved runtime attachment descriptor",
       "text0005b85debac": "Sound pack played for session events.",
@@ -11622,7 +11647,7 @@
       "text3e11e93e0f42": "Approve or deny the pending action to continue.",
       "text3e18e2dab6f2": "Negotiation",
       "text3e26769ed36a": "Owners and admins are Manager on every project.",
-      "text3e29ac703c2f": "Members must sign in with your identity provider — the password option disappears the moment this is on, and only your identity provider works after that.",
+      "text3e29ac703c2f": "Members must sign in with your identity provider. Turning this on signs out every member on this domain who signed in another way, which can include you.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Listed featured marketplaces",
       "text3e3d7edf97ee": "Repository access",
@@ -19223,6 +19248,12 @@
       "servedModelInPlaceOf": "In place of",
       "servedModelBadge": "Running on {model}",
       "servedModelBarDescription": "{requested} did not answer the last request",
+      "computerAwakeStays": "Sandbox stays on while you're here · up to {duration}",
+      "computerAwakeStops": "Sandbox stops in {duration}. Send a message to keep it on.",
+      "computerAwakeStopsSoon": "Sandbox stops soon. Send a message to keep it on.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Edited a queued session prompt",
       "text52867b778586": "One kortix.yaml.",
       "textd0dfd435b2f4": "Your AI workforce, as code.",
@@ -19556,7 +19587,9 @@
       "text8d54763edcd8": "Not attached",
       "textffeb0c99532f": "Snapshots kept {value0} days",
       "text6f52b07880a0": "Snapshot now",
-      "text91dc861375bc": "Viewed mobile release policy"
+      "text91dc861375bc": "Viewed mobile release policy",
+      "texta37dd5ef6ef2": "Customize Sidebar",
+      "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20172,9 +20205,8 @@
     "calendarNextWeek": "Next week",
     "calendarPreviousMonth": "Previous month",
     "calendarNextMonth": "Next month",
-    "calendarAllWeek": "All week",
-    "calendarAllDay": "All day",
-    "calendarEvery": "every {period}",
+    "calendarMore": "+{count} more",
+    "calendarMoreOn": "{count, plural, one {# more reminder} other {# more reminders}} on {date}",
     "calendarSession": "Session",
     "calendarEmptyWeek": "Nothing fires this week",
     "calendarEmptyDay": "Nothing fires this day",

@@ -582,11 +582,13 @@
       "dangerZone": "危险区域",
       "deleteAccount": "删除帐户",
       "deletionUnavailable": "帐户删除在此部署中不可用。联系支持人员以关闭您的帐户。",
+      "deletionStatusCheckFailed": "无法确认账户删除功能是否可用。",
       "scheduledForDeletionOn": "计划于 {date} 删除。",
       "scheduledForDeletion": "预定删除。",
       "cancelBeforeDeletion": "您可以在此之前随时取消。",
       "deletionDescription": "这将删除与您的账户关联的所有智能体、会话、密钥和订阅。此操作无法撤销。",
       "unavailable": "不可用",
+      "retry": "重试",
       "keepMyAccount": "保留我的帐户",
       "deleteDialogTitle": "删除您的帐户？",
       "immediateWarning": "这会立即删除您的帐户。没有宽限期，也没有办法撤销。",
@@ -1636,7 +1638,19 @@
       "tooMany": "每个会话最多 20 个标签。"
     },
     "drive": "云盘",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "自定义侧边栏",
+    "customizeSidebarDescription": "在两个分组之间拖动项目。",
+    "resetSidebar": "恢复默认",
+    "reorderItem": "重新排序 {name}",
+    "reorderHint": "拖动以重新排序。也可按上下方向键；越过“更多”分隔线会将项目从侧边栏隐藏。",
+    "reorderAnnouncement": "{name}：{group}，第 {position} 位，共 {total} 位",
+    "more": "更多",
+    "inSidebar": "侧边栏",
+    "underMore": "更多",
+    "sidebarEmpty": "将项目拖到这里以在侧边栏中显示。",
+    "moreEmpty": "将项目拖到这里以移入“更多”。",
+    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。"
   },
   "dashboard": {
     "title": "仪表板",
@@ -7907,7 +7921,11 @@
       "line267JsxTextCheckpointHistory": "版本历史",
       "line285JsxTextCopyPath": "复制路径",
       "line396JsxTextThisFolderIsEmpty": "此文件夹为空",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。",
+      "loadMoreItems": "加载更多项目",
+      "loadMoreFailed": "无法加载更多项目。请重试。",
+      "partialSortNote": "显示 {value0} 个项目。全部加载后才会应用排序。",
+      "showingFirstItems": "显示前 {value0} 个项目"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "双击以编辑路径",
@@ -7999,7 +8017,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "搜索文件...",
       "line124JsxTextTypeToSearchFiles": "输入以搜索文件...",
-      "line136JsxTextNoFilesFound": "未找到文件"
+      "line136JsxTextNoFilesFound": "未找到文件",
+      "searchContents": "搜索内容",
+      "firstMatches": "显示前 {value0} 个匹配项",
+      "searchContentsPlaceholder": "搜索文件内容...",
+      "typeToSearchContents": "输入以搜索文件内容...",
+      "noMatchingLines": "没有匹配的行"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "已存在同名文件或文件夹",
@@ -9534,6 +9557,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "无法发送邮件。请在大约一小时后重试。",
       "authRequestRateLimit": "请求过多。请在几分钟后重试。",
+      "text0b6a47661327": "未知所有者",
       "text1a9030082a20": "创建技能",
       "text25ab55af92b1": "已开始上传附件",
       "text38e64d6a8162": "将 SKILL.md 提交到项目的默认分支。无需模型或聊天。",
@@ -9542,6 +9566,7 @@
       "text426699d5a8c0": "{count, plural, other {# 个字符}}",
       "text40078a553439": "已上传附件分块",
       "text4c7f8000aabd": "附件上传完成",
+      "text8782b778c202": "删除{value0}",
       "text91420d2587c2": "已移除附件上传",
       "text3aab5b3be2b9": "已解析运行时附件描述符",
       "text0005b85debac": "为会话事件播放声音包。",
@@ -11611,7 +11636,7 @@
       "text3e11e93e0f42": "请批准或拒绝待处理操作以继续。",
       "text3e18e2dab6f2": "谈判",
       "text3e26769ed36a": "所有者和管理员在每个项目中都是 Manager。",
-      "text3e29ac703c2f": "成员必须使用身份提供商登录——启用后密码选项会立即消失，此后只能使用身份提供商。",
+      "text3e29ac703c2f": "成员必须使用身份提供商登录。启用后，此域名下以其他方式登录的每位成员都会被登出，其中可能包括你。",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "已列出精选市场",
       "text3e3d7edf97ee": "仓库访问权限",
@@ -19212,6 +19237,12 @@
       "servedModelInPlaceOf": "替代",
       "servedModelBadge": "正在使用 {model}",
       "servedModelBarDescription": "{requested} 未响应上一个请求",
+      "computerAwakeStays": "你在此页面时，沙盒保持开启 · 最多 {duration}",
+      "computerAwakeStops": "沙盒将在 {duration}后停止。发送一条消息以保持开启。",
+      "computerAwakeStopsSoon": "沙盒即将停止。发送一条消息以保持开启。",
+      "computerAwakeHoursMinutes": "{hours} 小时 {minutes} 分钟",
+      "computerAwakeHours": "{hours} 小时",
+      "computerAwakeMinutes": "{minutes} 分钟",
       "text414cc580557b": "已编辑排队中的会话提示",
       "text52867b778586": "一个 kortix.yaml。",
       "textd0dfd435b2f4": "你的 AI 团队，以代码定义。",
@@ -19545,7 +19576,9 @@
       "text8d54763edcd8": "未挂载",
       "textffeb0c99532f": "快照保留 {value0} 天",
       "text6f52b07880a0": "立即创建快照",
-      "text91dc861375bc": "已查看移动端发布策略"
+      "text91dc861375bc": "已查看移动端发布策略",
+      "texta37dd5ef6ef2": "自定义侧边栏",
+      "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20172,9 +20205,8 @@
     "calendarNextWeek": "下一周",
     "calendarPreviousMonth": "上个月",
     "calendarNextMonth": "下个月",
-    "calendarAllWeek": "整周",
-    "calendarAllDay": "全天",
-    "calendarEvery": "每 {period}",
+    "calendarMore": "还有 {count} 个",
+    "calendarMoreOn": "{date} 还有 {count, plural, other {# 个提醒}}",
     "calendarSession": "会话",
     "calendarEmptyWeek": "本周没有触发",
     "calendarEmptyDay": "这一天没有触发",

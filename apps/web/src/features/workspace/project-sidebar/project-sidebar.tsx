@@ -16,19 +16,15 @@ import {
 } from '@/components/ui/sidebar';
 import { NotificationBell } from '@/features/notifications/notification-bell';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
-import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
-import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from '@/features/workspace/project-sidebar/footer/project-mcp-nav';
 import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
-import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
-import { ProjectRemindersNavItem } from './footer/project-reminders-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { CustomizeSidebarModal } from '@/features/workspace/project-sidebar/customize-sidebar-modal';
+import { ProjectNavItems } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
-import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
@@ -224,7 +220,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </div>
         </div>
       </SidebarHeader>
-      <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
+      {/* One icon lane for every row (Jay, 2026-10-12). Session rows inset
+          their status mark by `px-2`; the menu-button recipe insets by
+          `px-3`, which put the nav and footer icons ~3.7px right of the
+          session marks. `pl-2` here puts every icon at the same x, and its
+          centre on the workspace avatar's centre in the header above
+          (header `p-2` + switcher `px-1` + half of the `size-6` tile). Left
+          side only: right padding still clears trailing badges. */}
+      <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden [&_[data-sidebar=menu-button]]:pl-2">
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
@@ -249,8 +252,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 )}
               </SidebarMenuItem>
 
-              <ProjectCustomizeNavItem />
-              <ProjectAppsNavItem />
+              {/* Customize, Apps, Review, Reminders, Files: order and
+                  visibility come from "Customize sidebar". They moved up here
+                  from the footer (Jay, 2026-10-12) to keep the footer short. */}
+              <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
 
@@ -260,13 +265,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
           <SidebarGroup className="mt-auto">
             <SidebarMenu className="gap-1">
+              {/* Status only, then the two connect rows (Jay, 2026-10-12).
+                  Navigation lives in the top group. The ChatGPT connect row
+                  left the sidebar: it stays in Settings → Connected. */}
               <ProjectSandboxAlert projectId={projectId} />
-              <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
-              <ProjectRemindersNavItem />
-              <ProjectFilesNavItem />
-              <ProjectChatGptConnectNavItem projectId={projectId} />
               {/* Connect MCP over Connect your computer: one block, 1px seam,
                   inner corners rounded-sm. Either row can be absent (dismissed,
                   or a paired computer), so the corners come from the siblings
@@ -299,6 +303,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       onOpenChange={setComputerConnectOpen}
     />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
+    <CustomizeSidebarModal projectId={projectId} />
     </>
   );
 }

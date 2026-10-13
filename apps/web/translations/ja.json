@@ -582,11 +582,13 @@
       "dangerZone": "危険地帯",
       "deleteAccount": "アカウントを削除する",
       "deletionUnavailable": "この展開ではアカウントの削除は利用できません。アカウントを閉鎖するにはサポートにお問い合わせください。",
+      "deletionStatusCheckFailed": "アカウント削除が利用可能か確認できませんでした。",
       "scheduledForDeletionOn": "{date}に削除予定。",
       "scheduledForDeletion": "削除予定。",
       "cancelBeforeDeletion": "それまではいつでもキャンセルできます。",
       "deletionDescription": "これにより、アカウントに関連付けられたすべてのエージェント、セッション、シークレット、サブスクリプションが削除されます。この操作は元に戻せません。",
       "unavailable": "利用不可",
+      "retry": "リトライ",
       "keepMyAccount": "アカウントを維持してください",
       "deleteDialogTitle": "アカウントを削除しますか?",
       "immediateWarning": "これにより、アカウントがすぐに削除されます。猶予期間はなく、元に戻す方法もありません。",
@@ -1636,7 +1638,19 @@
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
     },
     "drive": "ドライブ",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "サイドバーをカスタマイズ",
+    "customizeSidebarDescription": "2つのグループ間で項目をドラッグします。",
+    "resetSidebar": "デフォルトに戻す",
+    "reorderItem": "{name} を並べ替え",
+    "reorderHint": "ドラッグして並べ替えます。上下の矢印キーでも移動でき、「その他」の区切りを越えるとサイドバーから非表示になります。",
+    "reorderAnnouncement": "{name}：{group}、{total} 件中 {position} 番目",
+    "more": "その他",
+    "inSidebar": "サイドバー",
+    "underMore": "その他",
+    "sidebarEmpty": "ここに項目をドラッグするとサイドバーに表示されます。",
+    "moreEmpty": "ここに項目をドラッグすると「その他」に移動します。",
+    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -7907,7 +7921,11 @@
       "line267JsxTextCheckpointHistory": "バージョン履歴",
       "line285JsxTextCopyPath": "パスをコピー",
       "line396JsxTextThisFolderIsEmpty": "このフォルダーは空です",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。",
+      "loadMoreItems": "さらに読み込む",
+      "loadMoreFailed": "さらに読み込めませんでした。もう一度お試しください。",
+      "partialSortNote": "{value0} 件を表示しています。すべて読み込むと並べ替えが適用されます。",
+      "showingFirstItems": "最初の {value0} 件を表示しています"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "ダブルクリックしてパスを編集",
@@ -7999,7 +8017,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "ファイルを検索...",
       "line124JsxTextTypeToSearchFiles": "入力してファイルを検索...",
-      "line136JsxTextNoFilesFound": "ファイルが見つかりません"
+      "line136JsxTextNoFilesFound": "ファイルが見つかりません",
+      "searchContents": "内容を検索",
+      "firstMatches": "最初の {value0} 件の一致を表示しています",
+      "searchContentsPlaceholder": "ファイルの内容を検索...",
+      "typeToSearchContents": "入力してファイルの内容を検索...",
+      "noMatchingLines": "一致する行がありません"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "その名前のファイルまたはフォルダーはすでに存在します",
@@ -9534,6 +9557,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "メールを送信できませんでした。約1時間後にもう一度お試しください。",
       "authRequestRateLimit": "リクエストが多すぎます。数分後にもう一度お試しください。",
+      "text0b6a47661327": "不明なオーナー",
       "text1a9030082a20": "スキルを作成",
       "text25ab55af92b1": "添付ファイルのアップロードを開始しました",
       "text38e64d6a8162": "プロジェクトのデフォルトブランチに SKILL.md をコミットします。モデルもチャットも不要です。",
@@ -9542,6 +9566,7 @@
       "text426699d5a8c0": "{count, plural, other {# 文字}}",
       "text40078a553439": "添付ファイルのチャンクをアップロードしました",
       "text4c7f8000aabd": "添付ファイルのアップロードが完了しました",
+      "text8782b778c202": "{value0} を削除",
       "text91420d2587c2": "添付ファイルのアップロードを削除しました",
       "text3aab5b3be2b9": "ランタイム添付ファイル記述子を解決しました",
       "text0005b85debac": "セッションイベントで再生されるサウンドパック。",
@@ -11611,7 +11636,7 @@
       "text3e11e93e0f42": "続行するには保留中のアクションを承認または拒否してください。",
       "text3e18e2dab6f2": "交渉",
       "text3e26769ed36a": "オーナーと管理者は、すべてのプロジェクトでManagerです。",
-      "text3e29ac703c2f": "メンバーはIdPでサインインする必要があります。オンにするとパスワードの選択肢は表示されなくなり、それ以降はIdPのみが使用されます。",
+      "text3e29ac703c2f": "メンバーはIdPでサインインする必要があります。オンにすると、このドメインで別の方法でサインインしたメンバー全員がサインアウトされます。あなた自身も含まれる場合があります。",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "注目のマーケットプレイスを一覧表示しました",
       "text3e3d7edf97ee": "リポジトリアクセス",
@@ -19212,6 +19237,12 @@
       "servedModelInPlaceOf": "代替元",
       "servedModelBadge": "{model} で実行中",
       "servedModelBarDescription": "{requested} は直前のリクエストに応答しませんでした",
+      "computerAwakeStays": "このページにいる間、サンドボックスは起動したままです · 最大 {duration}",
+      "computerAwakeStops": "サンドボックスは {duration}後に停止します。起動したままにするにはメッセージを送信してください。",
+      "computerAwakeStopsSoon": "サンドボックスはまもなく停止します。起動したままにするにはメッセージを送信してください。",
+      "computerAwakeHoursMinutes": "{hours}時間{minutes}分",
+      "computerAwakeHours": "{hours}時間",
+      "computerAwakeMinutes": "{minutes}分",
       "text414cc580557b": "キューに入ったセッションプロンプトを編集しました",
       "text52867b778586": "kortix.yaml ひとつ。",
       "textd0dfd435b2f4": "AI の労働力を、コードとして。",
@@ -19545,7 +19576,9 @@
       "text8d54763edcd8": "未マウント",
       "textffeb0c99532f": "スナップショットを {value0} 日保持",
       "text6f52b07880a0": "今すぐスナップショット",
-      "text91dc861375bc": "モバイルのリリースポリシーを表示しました"
+      "text91dc861375bc": "モバイルのリリースポリシーを表示しました",
+      "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
+      "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20172,9 +20205,8 @@
     "calendarNextWeek": "次の週",
     "calendarPreviousMonth": "前の月",
     "calendarNextMonth": "次の月",
-    "calendarAllWeek": "週全体",
-    "calendarAllDay": "終日",
-    "calendarEvery": "{period}ごと",
+    "calendarMore": "他 {count} 件",
+    "calendarMoreOn": "{date} の他 {count, plural, other {# 件のリマインダー}}",
     "calendarSession": "セッション",
     "calendarEmptyWeek": "今週の実行予定はありません",
     "calendarEmptyDay": "この日の実行予定はありません",

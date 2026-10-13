@@ -206,6 +206,35 @@ describe('AppHostingProvider', () => {
     expect(events).toEqual(['wake', 'status:stopped', 'status:unknown', 'status:running', 'appd']);
   });
 
+  test('a box whose start failed is recovered in place once, then wakes', async () => {
+    const events: string[] = [];
+    const statuses = ['removed', 'removed', 'unknown', 'running'] as const;
+    let statusIndex = 0;
+    const runtime = {
+      ensureRunning: async () => { events.push('wake'); },
+      getStatus: async () => statuses[Math.min(statusIndex++, statuses.length - 1)]!,
+      recoverInPlace: async () => { events.push('recover'); return 'recovering'; },
+      ensureAppRuntimeStarted: async () => { events.push('appd'); },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await hosting.ensureRunning('platinum', 'box-1');
+
+    expect(events).toEqual(['wake', 'recover', 'appd']);
+  });
+
+  test('a box that cannot be recovered in place fails the wake', async () => {
+    const runtime = {
+      ensureRunning: async () => {},
+      getStatus: async () => 'removed',
+      recoverInPlace: async () => 'unavailable',
+      ensureAppRuntimeStarted: async () => {},
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await expect(hosting.ensureRunning('platinum', 'box-1')).rejects.toThrow('entered removed while waking');
+  });
+
   test('treats an already stopped provider runtime as an idempotent stop', async () => {
     const events: string[] = [];
     const runtime = {

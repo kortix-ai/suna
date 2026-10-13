@@ -29,9 +29,11 @@ import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { SsoRequiredSignOut } from '@/components/auth/SsoRequiredSignOut';
 import { PastedTextSheet } from '@/components/files/PastedTextSheet';
 import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
+import { reportAccessRemedy } from '@/lib/auth/sso-required';
 import { authRedirect } from '@/lib/auth/mfa';
 import {
   GlobalUpgradeSheet,
@@ -107,6 +109,8 @@ createKortix({
     // A 401 may mean the login ended: the monitor checks once (COR-144).
     if ((error as { status?: unknown } | null)?.status === 401) reportUnauthorized();
   },
+  // 403 `sso_required` from an SDK REST call: `SsoRequiredSignOut` signs out (KRTX-1716).
+  onAccessRemedy: reportAccessRemedy,
 });
 
 // React Query has no DOM in React Native: without these listeners every query
@@ -584,6 +588,14 @@ export default function RootLayout() {
                                     name="accounts/[id]"
                                     options={{ fullScreenGestureEnabled: true }}
                                   />
+                                  {/* An invite (KRTX-1731): replaced in from `index`
+                                      (the first screen at boot) or pushed from the
+                                      switcher sheet. Accept resets the stack to the
+                                      project it lands in. */}
+                                  <Stack.Screen
+                                    name="invites/[id]"
+                                    options={{ animation: bootAnimation }}
+                                  />
                                 </Stack>
                               </AuthProtection>
                             </View>
@@ -595,6 +607,7 @@ export default function RootLayout() {
                             <PortalHost />
                             <OfflineBanner />
                             <SessionEndedDialog />
+                            <SsoRequiredSignOut />
                             <PushNotificationsBridge />
                           </ThemeProvider>
                         </BottomSheetModalProvider>

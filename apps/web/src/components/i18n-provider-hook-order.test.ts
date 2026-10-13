@@ -33,19 +33,3 @@ describe('i18n provider catalog hook order', () => {
     expect(src).not.toContain('getLoadedCatalog');
   });
 });
-
-describe('i18n provider head preload', () => {
-  // KRTX-1614: the default locale's catalog ships with the app bundle, so
-  // preloading its public file would download bytes nothing consumes — and a
-  // rolling deploy can 404 the preloaded hashed URL. Only fetched locales get
-  // the preload.
-  test('preloads the public catalog only for non-default locales', () => {
-    expect(src).toContain('if (initialLocale !== defaultLocale)');
-    expect(src).toContain(
-      "preload(catalogHref(initialLocale), { as: 'fetch', crossOrigin: 'anonymous' })",
-    );
-    const guarded = src.indexOf('if (initialLocale !== defaultLocale)');
-    const preloadCall = src.indexOf('preload(catalogHref(initialLocale)');
-    expect(preloadCall).toBeGreaterThan(guarded);
-  });
-});

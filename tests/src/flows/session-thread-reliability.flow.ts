@@ -25,6 +25,7 @@
  * reachable from an external client, so SESS-23 observes its effect only
  * through the transcript.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow, harnessFlow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import {
@@ -881,6 +882,21 @@ harnessFlow(
     await ctx.step('a long turn runs', async () => {
       await sendPrompt(ctx, projectId, sessionId, `Run the shell command "sleep 90" with your bash tool, then reply with the word LONG${stamp}.`);
       await waitForTurn(ctx, projectId, sessionId, (turn) => turn.turns.some((t) => t.state === 'active'), `a running turn in ${sessionId}`);
+      // An active turn is not yet a long one: a model that answers without the
+      // tool ends the turn at once, the next prompt is then delivered as a turn of
+      // its own, and "queued behind the running turn" has nothing to prove. Wait
+      // for the bash call itself to be in flight.
+      await waitFor(
+        async () => (await readTranscript(ctx, projectId, sessionId)).messages,
+        {
+          until: (messages) =>
+            messages.some((m) => m.role === 'assistant' && (m.tools ?? []).some((t) => t.tool === 'bash' && (t.status === 'running' || t.status === 'pending'))),
+          timeoutMs: 120_000,
+          intervalMs: 2_000,
+          description: `the sleep command to be running in ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
     });
 
     let ids: string[] = [];
@@ -910,13 +926,20 @@ harnessFlow(
       }
     });
 
+    // A queued row can reach the live turn at a step boundary before Stop lands
+    // (its inbox row shows `attempts: 1` while still `waiting`), and the model may
+    // answer it there. That answer belongs to the aborted turn, not to the batch.
+    // Only assistant messages that appear after the release count against it.
+    const beforeRelease = new Set(
+      (await readTranscript(ctx, projectId, sessionId)).messages.filter((m) => m.role === 'assistant').map((m) => m.id),
+    );
     await ctx.step('Resume releases both as one batch: one turn answers both, parented on the second', async () => {
       (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts/hold', { held: false }, { params })).status(200);
       const messages = await waitForAssistantText(ctx, projectId, sessionId, batch);
       const first = messages.find((m) => m.role === 'user' && m.text.includes(alpha));
       const second = messages.find((m) => m.role === 'user' && m.text.includes(batch));
       if (!first?.id || !second?.id) throw new Error(`a batch prompt is missing from the transcript: ${JSON.stringify({ first, second })}`);
-      const answeredFirst = messages.filter((m) => m.role === 'assistant' && m.parent_id === first.id);
+      const answeredFirst = messages.filter((m) => m.role === 'assistant' && m.parent_id === first.id && !beforeRelease.has(m.id));
       if (answeredFirst.length > 0) {
         throw new Error(`the first batch row ran a turn of its own on ${harness}: ${JSON.stringify(answeredFirst.map((m) => m.text))}`);
       }

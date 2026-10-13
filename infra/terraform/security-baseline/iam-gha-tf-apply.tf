@@ -2,32 +2,30 @@
 # kortix-gha-tf-apply-{dev,staging,prod,global} — the OIDC roles that
 # .github/workflows/terraform-apply.yml assumes to run `terraform apply` in CI.
 #
-# WHY: before these existed, deploy-prod-us-east-2-shadow.yml was the only
-# workflow in the repository that applied Terraform. Every other root was
-# applied by hand, so merged infrastructure could sit unapplied indefinitely —
-# on 2026-08-10 two merged compliance PRs (#6295, #6344) did exactly that.
+# WHY: before these existed, one workflow (the retired us-east-2 prod shadow
+# deploy) applied Terraform. Every other root was applied by hand, so merged
+# infrastructure could sit unapplied indefinitely — on 2026-08-10 two merged
+# compliance PRs (#6295, #6344) did exactly that.
 #
 # TRUST: the GitHub environment is part of the OIDC subject, so a workflow that
-# does not declare `environment: <name>` cannot assume the matching role. This
-# is the same containment the prod-use2 bootstrap role uses
-# (iam-gha-prod-use2-terraform.tf). The environment name alone is not enough,
-# because it says nothing about which branch ran: terraform-apply.yml therefore
-# refuses to mint credentials unless the checked-out commit is reachable from
-# its required `trusted_branch` (dev -> dev, staging -> staging, prod -> prod,
-# infra-global -> dev). Set the matching deployment-branch restriction on each
-# environment as well.
+# does not declare `environment: <name>` cannot assume the matching role. The
+# environment name alone is not enough, because it says nothing about which
+# branch ran: terraform-apply.yml therefore refuses to mint credentials unless
+# the checked-out commit is reachable from its required `trusted_branch`
+# (dev -> dev, staging -> staging, prod -> prod, infra-global -> dev). Set the
+# matching deployment-branch restriction on each environment as well.
 #
-# PERMISSIONS: PowerUserAccess plus a narrow inline IAM grant, matching the
-# prod-use2 role. PowerUserAccess covers everything a root builds (VPC, ECS,
-# ALB, KMS, S3, ACM, WAF, Lambda, CloudWatch, autoscaling, DynamoDB state lock)
-# and excludes IAM, Organizations, and Account. The env roles get IAM write on
-# their own `kortix-<env>-*` task and execution roles only.
+# PERMISSIONS: PowerUserAccess plus a narrow inline IAM grant. PowerUserAccess
+# covers everything a root builds (VPC, ECS, ALB, KMS, S3, ACM, WAF, Lambda,
+# CloudWatch, autoscaling, DynamoDB state lock) and excludes IAM, Organizations,
+# and Account. The env roles get IAM write on their own `kortix-<env>-*` task
+# and execution roles only.
 # ════════════════════════════════════════════════════════════════════════════
 
 locals {
   # environment name => IAM role-name prefix the root is allowed to manage.
-  # environments/dev + dev-web create kortix-dev-*, kortix-dev-web-*,
-  # kortix-dev-gateway-*; staging and prod follow the same shape.
+  # environments/dev-us-east-2 + dev-web-us-east-2 create kortix-dev-use2-*;
+  # staging (kortix-staging-euw2-*) and prod follow the same shape.
   gha_tf_apply_envs = {
     dev     = "kortix-dev-"
     staging = "kortix-staging-"
@@ -99,6 +97,8 @@ resource "aws_iam_role_policy" "gha_tf_apply_iam" {
           "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:ListAttachedRolePolicies",
+          # The AWS provider lists instance profiles before DeleteRole.
+          "iam:ListInstanceProfilesForRole",
           "iam:ListRolePolicies",
           "iam:PassRole",
           "iam:PutRolePolicy",
@@ -225,6 +225,9 @@ resource "aws_iam_role_policy" "gha_tf_apply_global_iam" {
           "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:ListAttachedRolePolicies",
+          # The AWS provider lists instance profiles before DeleteRole; without
+          # it Terraform Apply Global run 38291035787 could not delete a role.
+          "iam:ListInstanceProfilesForRole",
           "iam:ListRolePolicies",
           "iam:ListRoleTags",
           "iam:PassRole",

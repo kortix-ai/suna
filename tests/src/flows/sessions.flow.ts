@@ -1338,11 +1338,18 @@ flow(
     });
 
     await ctx.step('using the session drops the marker', async () => {
-      const r = await owner.post(
+      // A claim needs a placed box. On Platinum the sandbox row gets its
+      // region a few seconds after /warm, and until then the claim is 409.
+      const claim = () => owner.post(
         '/v1/projects/:projectId/sessions/warm/claim',
         { session_id: warmSessionId },
         { params: { projectId: p.id } },
       );
+      let r = await claim();
+      for (let attempt = 0; r.statusCode === 409 && attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        r = await claim();
+      }
       r.status(200).body().has('$.session_id', warmSessionId);
       if ((r.json<any>().metadata ?? {}).warm !== undefined) {
         throw new Error('The warm marker survived first use');
@@ -1390,19 +1397,30 @@ flow(
     // must drop the marker (listing the row) and stamp last_activity_at (so
     // the just-started session sorts as the newest, not at its create time).
     await ctx.step('adopting via POST /start drops the marker and stamps activity', async () => {
-      const start = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/start',
-        {},
-        { params: { projectId: p.id, sessionId: replacementId } },
-      );
-      start.status(200);
-
-      const visible = await owner.get('/v1/projects/:projectId/sessions', {
-        params: { projectId: p.id },
-        query: { scope: 'visible' },
-      });
-      visible.status(200);
-      const row = sessionRows(visible).find((s: any) => s.session_id === replacementId);
+      // Adoption needs a placed box, like the claim above. Until the Platinum
+      // sandbox row has its region, /start answers 200 `stage: provisioning`
+      // with `sandbox: null` and keeps the marker (session-runtime.ts, the
+      // warmSessionPlacement 'pending' branch). The browser re-polls /start;
+      // so does this step, until the listed row has lost the marker.
+      const startAndRead = async () => {
+        const start = await owner.post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          { params: { projectId: p.id, sessionId: replacementId } },
+        );
+        start.status(200);
+        const visible = await owner.get('/v1/projects/:projectId/sessions', {
+          params: { projectId: p.id },
+          query: { scope: 'visible' },
+        });
+        visible.status(200);
+        return sessionRows(visible).find((s: any) => s.session_id === replacementId);
+      };
+      let row = await startAndRead();
+      for (let attempt = 0; row && (row.metadata ?? {}).warm !== undefined && attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        row = await startAndRead();
+      }
       if (!row) {
         throw new Error('An adopted warm session is still hidden from the visible session list');
       }
@@ -2356,8 +2374,13 @@ flow(
         (await put(owner, { tab_id: tabId, active: true }, 'ses_unknown')).status(404);
       });
 
-      await ctx.step('active=true stores one lease that expires in the future; renewing keeps one row', async () => {
-        (await put(owner, { tab_id: tabId, active: true })).status(200).body().has('$.ok', true);
+      await ctx.step('active=true stores one lease that expires in the future; renewing keeps one row; with no computer, no awake window', async () => {
+        (await put(owner, { tab_id: tabId, active: true }))
+          .status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.awake_until', null)
+          .has('$.awake_cap_at', null);
         (await put(owner, { tab_id: tabId, active: true })).status(200);
         const rows = await leases();
         if (rows.length !== 1 || new Date(rows[0].expires_at).getTime() <= Date.now()) {
@@ -2374,13 +2397,32 @@ flow(
           [sandboxId, sessionId, project.accountId, project.id],
         );
         await db.query("UPDATE kortix.session_sandboxes SET deadline_at = now() + interval '1 minute' WHERE sandbox_id = $1::uuid", [sandboxId]);
-        (await put(owner, { tab_id: tabId, active: true })).status(200);
+        const res = (await put(owner, { tab_id: tabId, active: true })).status(200);
         const { rows } = await db.query(
-          'SELECT extract(epoch from (deadline_at - now()))::int AS secs FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid',
+          'SELECT extract(epoch from (deadline_at - now()))::int AS secs, (extract(epoch from deadline_at) * 1000)::float8 AS deadline_ms FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid',
           [sandboxId],
         );
         const minutes = Number(rows[0]?.secs) / 60;
         if (!(minutes > 10 && minutes <= 16)) throw new Error(`deadline is ${minutes.toFixed(1)} min away, expected the 15-min idle grace`);
+        // KRTX-1729: the response says until when, for the composer's line.
+        const body = res.json<{ awake_until: string | null; awake_cap_at: string | null }>();
+        const until = Date.parse(body.awake_until ?? '');
+        const capAt = Date.parse(body.awake_cap_at ?? '');
+        if (Math.abs(until - Number(rows[0]?.deadline_ms)) > 1) {
+          throw new Error(`awake_until ${body.awake_until} is not the stored deadline`);
+        }
+        // No turn yet: the cap is 2 h after the computer started, which was just now.
+        const capHours = (capAt - Date.now()) / 3_600_000;
+        if (!(capHours > 1.9 && capHours <= 2.01)) throw new Error(`awake_cap_at ${body.awake_cap_at} is not 2 h after the run start`);
+      });
+
+      await ctx.step('an absent report reads back no awake window; the next present report reads it again', async () => {
+        (await put(owner, { tab_id: tabId, active: false }))
+          .status(200)
+          .body()
+          .has('$.awake_until', null)
+          .has('$.awake_cap_at', null);
+        (await put(owner, { tab_id: tabId, active: true })).status(200).body().exists('$.awake_until');
       });
 
       await ctx.step('active=false clears the lease', async () => {

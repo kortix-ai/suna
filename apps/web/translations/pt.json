@@ -582,11 +582,13 @@
       "dangerZone": "Zona de perigo",
       "deleteAccount": "Excluir conta",
       "deletionUnavailable": "A exclusão da conta não está disponível nesta implantação. Entre em contato com o suporte para encerrar sua conta.",
+      "deletionStatusCheckFailed": "Não foi possível confirmar se a exclusão da conta está disponível.",
       "scheduledForDeletionOn": "Programado para exclusão em {date}.",
       "scheduledForDeletion": "Programado para exclusão.",
       "cancelBeforeDeletion": "Você pode cancelar a qualquer momento antes disso.",
       "deletionDescription": "Isto exclui todos os agentes, sessões, segredos e assinaturas vinculados à sua conta. Não é possível desfazer.",
       "unavailable": "Indisponível",
+      "retry": "Tentar novamente",
       "keepMyAccount": "Manter minha conta",
       "deleteDialogTitle": "Excluir sua conta?",
       "immediateWarning": "Isso exclui sua conta imediatamente. Não há período de carência e não há como desfazê-lo.",
@@ -1636,7 +1638,19 @@
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personalizar barra lateral",
+    "customizeSidebarDescription": "Arraste os itens entre os dois grupos.",
+    "resetSidebar": "Restaurar padrão",
+    "reorderItem": "Reordenar {name}",
+    "reorderHint": "Arraste para reordenar. Ou use as setas para cima e para baixo; passar de «Mais» oculta o item da barra lateral.",
+    "reorderAnnouncement": "{name}: {group}, posição {position} de {total}",
+    "more": "Mais",
+    "inSidebar": "Barra lateral",
+    "underMore": "Mais",
+    "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
+    "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
+    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação."
   },
   "dashboard": {
     "title": "Painel",
@@ -7907,7 +7921,11 @@
       "line267JsxTextCheckpointHistory": "Histórico de versões",
       "line285JsxTextCopyPath": "Copiar caminho",
       "line396JsxTextThisFolderIsEmpty": "Esta pasta está vazia",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui.",
+      "loadMoreItems": "Carregar mais itens",
+      "loadMoreFailed": "Não foi possível carregar mais itens. Tente novamente.",
+      "partialSortNote": "Mostrando {value0} itens. A ordenação se aplica quando todos os itens forem carregados.",
+      "showingFirstItems": "Mostrando os primeiros {value0} itens"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Clique duas vezes para editar o caminho",
@@ -7999,7 +8017,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Pesquisar arquivos...",
       "line124JsxTextTypeToSearchFiles": "Digite para pesquisar arquivos...",
-      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado"
+      "line136JsxTextNoFilesFound": "Nenhum arquivo encontrado",
+      "searchContents": "Pesquisar no conteúdo",
+      "firstMatches": "Mostrando as primeiras {value0} correspondências",
+      "searchContentsPlaceholder": "Pesquisar no conteúdo dos arquivos...",
+      "typeToSearchContents": "Digite para pesquisar no conteúdo dos arquivos...",
+      "noMatchingLines": "Nenhuma linha correspondente"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Já existe um arquivo ou uma pasta com esse nome",
@@ -9534,6 +9557,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",
       "authRequestRateLimit": "Muitas solicitações. Tente novamente em alguns minutos.",
+      "text0b6a47661327": "Proprietário desconhecido",
       "text1a9030082a20": "Criar habilidade",
       "text25ab55af92b1": "Envio do anexo iniciado",
       "text38e64d6a8162": "Faz commit de um SKILL.md no branch padrão do projeto. Não precisa de modelo nem de chat.",
@@ -9542,6 +9566,7 @@
       "text426699d5a8c0": "{count, plural, one {# caractere} other {# caracteres}}",
       "text40078a553439": "Bloco do anexo enviado",
       "text4c7f8000aabd": "Envio do anexo concluído",
+      "text8782b778c202": "Excluir {value0}",
       "text91420d2587c2": "Envio do anexo removido",
       "text3aab5b3be2b9": "Descritor de anexo do runtime resolvido",
       "text0005b85debac": "Pacote de som reproduzido para eventos de sessão.",
@@ -11611,7 +11636,7 @@
       "text3e11e93e0f42": "Aprove ou negue a ação pendente para continuar.",
       "text3e18e2dab6f2": "Negociação",
       "text3e26769ed36a": "Proprietários e administradores são Gerentes em todos os projetos.",
-      "text3e29ac703c2f": "Os membros devem entrar com seu provedor de identidade — a opção de senha desaparece assim que isso é ativado, e depois somente seu provedor de identidade funciona.",
+      "text3e29ac703c2f": "Os membros devem entrar com seu provedor de identidade. Ao ativar isso, todo membro deste domínio que entrou de outra forma é desconectado, o que pode incluir você.",
       "text3e2a105fd278": "  \"default_agent\": \"kortix\",",
       "text3e3a2ec6ee78": "Marketplaces em destaque listados",
       "text3e3d7edf97ee": "Acesso ao repositório",
@@ -19212,6 +19237,12 @@
       "servedModelInPlaceOf": "No lugar de",
       "servedModelBadge": "Executando em {model}",
       "servedModelBarDescription": "{requested} não respondeu à última solicitação",
+      "computerAwakeStays": "O sandbox fica ligado enquanto você estiver aqui · até {duration}",
+      "computerAwakeStops": "O sandbox para em {duration}. Envie uma mensagem para mantê-lo ligado.",
+      "computerAwakeStopsSoon": "O sandbox para em breve. Envie uma mensagem para mantê-lo ligado.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Prompt da sessão na fila editado",
       "text52867b778586": "Um kortix.yaml.",
       "textd0dfd435b2f4": "Sua força de trabalho de IA, como código.",
@@ -19545,7 +19576,9 @@
       "text8d54763edcd8": "Não montado",
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
       "text6f52b07880a0": "Criar snapshot agora",
-      "text91dc861375bc": "Política de versão móvel visualizada"
+      "text91dc861375bc": "Política de versão móvel visualizada",
+      "texta37dd5ef6ef2": "Personalizar barra lateral",
+      "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegação sidebar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20172,9 +20205,8 @@
     "calendarNextWeek": "Próxima semana",
     "calendarPreviousMonth": "Mês anterior",
     "calendarNextMonth": "Próximo mês",
-    "calendarAllWeek": "Semana toda",
-    "calendarAllDay": "Dia todo",
-    "calendarEvery": "a cada {period}",
+    "calendarMore": "+{count} mais",
+    "calendarMoreOn": "{count, plural, one {Mais # lembrete} other {Mais # lembretes}} em {date}",
     "calendarSession": "Sessão",
     "calendarEmptyWeek": "Nada é disparado nesta semana",
     "calendarEmptyDay": "Nada é disparado neste dia",

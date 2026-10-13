@@ -52,13 +52,19 @@ printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check
 # touches packages/db must have db-suites=pass: verify-attestation.mjs rejects the
 # skip. This hook is the ONLY enforcement: the attestation is an unsigned local
 # file, no CI job reads it, and `git push --no-verify` bypasses it. It catches a
-# forgotten run, not a forged one. Deletions, tags, and scratch/* branches are exempt.
+# forgotten run, not a forged one. Deletions, tags, and scratch/*, promote/* and
+# release/* branches are exempt.
 root=$(cd "$(dirname "$0")/.." && pwd)
 bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
   # (no `case` here: macOS /bin/sh 3.2 misparses it inside $(...))
   [ "${remote_ref#refs/heads/}" != "$remote_ref" ] || continue
   [ "${remote_ref#refs/heads/scratch/}" = "$remote_ref" ] || continue
+  # promote/* and release/* carry a dev or staging SHA unchanged. CI runs every
+  # lane on that SHA (tests.yml on dev, the staging pull request, the release
+  # gate), so a local re-run only re-proves it: 12-20 min per promotion round.
+  [ "${remote_ref#refs/heads/promote/}" = "$remote_ref" ] || continue
+  [ "${remote_ref#refs/heads/release/}" = "$remote_ref" ] || continue
   strict=""
   [ "$remote_ref" = refs/heads/dev ] && strict="--strict"
   node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" \

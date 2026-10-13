@@ -203,9 +203,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           ? tI18nComplete.raw('textfb93c43856a8')
           : tI18nComplete.raw('textb97d0d8acd14'),
       );
-      queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6d0137714cf5')),
+    // A 500 `sso_sign_out_failed` comes after the save committed: refetch on
+    // error too, so the switch shows the stored state.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] }),
   });
 
   // DNS proof that the account controls its primary domain. Until it passes,
@@ -213,11 +215,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   // inert (the API ignores it), so the toggle below cannot be turned on.
   const verifyDomainMutation = useMutation({
     mutationFn: () => verifySsoDomain(accountId),
-    onSuccess: () => {
-      successToast(tDomain('verifiedToast'));
-      queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
-    },
+    onSuccess: () => successToast(tDomain('verifiedToast')),
     onError: (err: Error) => errorToast(err.message || tDomain('failedToast')),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] }),
   });
   const domainVerified = provider?.domain_verified !== false;
 
@@ -323,7 +323,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                   {tI18nComplete.raw('textae030e046fcf')}
                 </dt>
                 <dd className="mt-1">
-                  <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-xs">
+                  <code className="bg-muted/60 text-foreground rounded-sm px-1.5 py-0.5 font-mono text-xs">
                     {provider.group_claim_name}
                   </code>
                 </dd>
@@ -493,7 +493,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                         >
                           {m.claim_value}
                         </code>
-                        <ArrowRight className="text-muted-foreground/50 size-3.5 shrink-0" />
+                        <ArrowRight className="text-muted-foreground size-3.5 shrink-0" />
                         <Badge variant="outline" size="sm" className="max-w-[42%] min-w-0 truncate">
                           {m.group_name}
                         </Badge>
@@ -764,7 +764,7 @@ function EditProviderDialog({
               type="checkbox"
               checked={autoCreate}
               onChange={(e) => setAutoCreate(e.target.checked)}
-              className="border-border accent-primary mt-0.5 size-3.5 rounded"
+              className="border-border accent-primary mt-0.5 size-3.5 rounded-sm"
               disabled={mutation.isPending}
             />
             <span>
@@ -780,7 +780,7 @@ function EditProviderDialog({
               type="checkbox"
               checked={autoProvision}
               onChange={(e) => setAutoProvision(e.target.checked)}
-              className="border-border accent-primary mt-0.5 size-3.5 rounded"
+              className="border-border accent-primary mt-0.5 size-3.5 rounded-sm"
               disabled={mutation.isPending}
             />
             <span>

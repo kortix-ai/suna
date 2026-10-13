@@ -11,6 +11,7 @@ import {
 } from '@/features/workspace/project-layout/sidebar-opener';
 import { cn } from '@/lib/utils';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * THE sidebar opener. One control, one file, every surface.
@@ -62,9 +63,10 @@ export function SidebarToggle({
   const sidebar = useOptionalSidebar();
   // Must be called before the early return — and it already covers `!sidebar`.
   const show = useShowPageSidebarOpener();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!sidebar || !show) return null;
 
-  const label = sidebarOpenerLabel(sidebar);
+  const label = sidebarOpenerLabel(sidebar, tI18nComplete);
   // Peek is the collapsed-only hover flyout. Wiring it while the panel is
   // docked open would arm a flyout for a panel that is already on screen.
   const collapsed = sidebar.state === 'collapsed';

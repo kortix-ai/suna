@@ -9,7 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, fulfillRewrittenJson, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 
@@ -537,19 +537,18 @@ test.describe('18 — Kortix Apps UI', () => {
         ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment }] } }) : route.continue());
 
       // Deny only Apps write/deploy probes, leaving project navigation intact.
+      const denied = ['project.app.write', 'project.app.deploy'];
       await page.route('**/effective?*', async (route) => {
         if (route.request().method() === 'OPTIONS') return route.fallback();
-        const response = await route.fetch();
-        const body = await response.json();
-        if (['project.app.write', 'project.app.deploy'].includes(new URL(route.request().url()).searchParams.get('action') ?? '')) body.allowed = false;
-        await route.fulfill({ response, json: body });
+        const action = new URL(route.request().url()).searchParams.get('action') ?? '';
+        await fulfillRewrittenJson(route, (body) => (denied.includes(action) ? { ...body, allowed: false } : body));
       });
       await page.route('**/effective:batch', async (route) => {
         if (route.request().method() === 'OPTIONS') return route.fallback();
-        const response = await route.fetch();
-        const body = await response.json();
-        body.results = body.results.map((result: { action: string; allowed: boolean }) => ['project.app.write', 'project.app.deploy'].includes(result.action) ? { ...result, allowed: false } : result);
-        await route.fulfill({ response, json: body });
+        await fulfillRewrittenJson(route, (body) => ({
+          ...body,
+          results: body.results.map((result: { action: string; allowed: boolean }) => denied.includes(result.action) ? { ...result, allowed: false } : result),
+        }));
       });
       await page.reload({ waitUntil: 'domcontentloaded' });
       await seededCard.click();
