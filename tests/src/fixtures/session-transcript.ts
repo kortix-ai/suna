@@ -1,7 +1,13 @@
 import { gzipSync } from 'node:zlib';
-import { fromV1, type V1Row } from '@kortix/api-contract/session-log';
+import * as sessionLogContract from '@kortix/api-contract/session-log';
+import type { V1Row } from '@kortix/api-contract/session-log';
 import { Client } from 'pg';
 import type { Env } from '../core/env';
+
+// Playwright loads the package as CommonJS, where its re-exported names sit on `default`;
+// Bun reads them from the namespace.
+const { fromV1 } =
+  (sessionLogContract as { default?: typeof sessionLogContract }).default ?? sessionLogContract;
 
 type SavedMessage = {
   info: { id: string; role: string; time: { created: number; completed?: number } } & Record<string, unknown>;
