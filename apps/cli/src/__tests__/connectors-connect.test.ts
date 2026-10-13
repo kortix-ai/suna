@@ -39,7 +39,11 @@ beforeEach(() => {
     requests.push({ url: String(input), method: init?.method ?? 'GET', body });
     return new Response(
       JSON.stringify(
-        String(input).endsWith('/connect-requests')
+        String(input).endsWith('/revoke')
+          ? { ok: true }
+          : String(input).endsWith('/connections') && (init?.method ?? 'GET') === 'GET'
+          ? { connections: [{ connection_id: '11111111-1111-4111-8111-111111111111', status: 'revoked' }] }
+          : String(input).endsWith('/connect-requests')
           ? { url: 'https://kortix.test/connect/req_1', app: 'github', expires_at: '2026-10-08T12:00:00Z' }
           : String(input).endsWith('/connect/finalize')
           ? {
@@ -387,6 +391,11 @@ describe('kortix connectors connections', () => {
         url: `https://api.test/v1/projects/project-1/connections/${connectionId}/revoke`,
         method: 'PUT',
         body: {},
+      },
+      {
+        url: 'https://api.test/v1/projects/project-1/connections',
+        method: 'GET',
+        body: undefined,
       },
       {
         url: `https://api.test/v1/projects/project-1/connections/${connectionId}/activate`,
