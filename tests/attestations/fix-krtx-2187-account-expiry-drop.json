@@ -1,0 +1,16 @@
+{
+  "source_hash": "7aa5f513ff236d9554d7a7a79967566b4607c5b6bcccf45216f428e0beffe903",
+  "diff_files": [
+    "apps/web/src/features/workspace/shared/access/access-dialog.test.ts",
+    "apps/web/src/features/workspace/shared/access/access-dialog.tsx"
+  ],
+  "diff_hash": "99f67f5f505ad5915f1c472d2a0c60ef797d8962f50751d418cd5d493ea9a1e7",
+  "head": "04152d85ff0512dd14681975ea7d4b8b6dbb8b9e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-13T01:10:37.252Z"
+}
