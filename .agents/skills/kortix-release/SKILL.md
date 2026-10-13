@@ -69,8 +69,8 @@ forward on `dev`, or revert the culprit after 1 hour.
 
 ### Step 2 — promote the newest green dev SHA
 
-Find the newest `dev` SHA with a green `Tests` run and push it unchanged to a
-dedicated branch. Open a PR into `staging` as an ordinary two-parent merge
+Find the newest `dev` SHA with a green `Tests` run and push it to a dedicated
+branch (unchanged, or as a merge into `staging` on a conflict; see below). Open a PR into `staging` as an ordinary two-parent merge
 commit (never squash — squashing a promotion PR would rewrite the SHAs the
 release notes and migration cost analysis were verified against). The
 pre-push hook skips `promote/*`: CI already tested the SHA.
@@ -91,12 +91,25 @@ gh pr create --repo kortix-ai/suna --base staging --head "promote/dev-$SHA10" \
 If no green run exists, `dev` is red: fix `dev` first (the red run's commit
 comment names the failing lanes and suspects). Do not promote a red SHA.
 
-The promotion is conflict-free only while `origin/staging` is an ancestor of
-`dev`. Check it before you push: `git merge-base --is-ancestor origin/staging
-origin/dev`. A hotfix merged straight into `staging` breaks that. Merge
-`origin/staging` back into `dev` through a PR the same day the hotfix lands,
-then promote a green SHA after that merge. A conflicting promotion PR runs no
-workflow at all: GitHub builds no merge ref (2026-10-13, #9701).
+`staging` always holds commits `dev` lacks: each promotion's merge commit, the
+VERSION bump, and any hotfix. `dev` takes only squash merges, so `staging` never
+becomes an ancestor of `dev`. GitHub merges the promotion PR cleanly unless one
+of those staging-only changes conflicts with `dev`. A conflicting promotion PR
+runs no workflow at all: GitHub builds no merge ref (2026-10-13, #9701). Check
+with `git merge-tree --write-tree origin/staging "$SHA"` before you push. On a
+conflict, build the branch as a merge instead:
+
+```bash
+git switch --detach origin/staging
+git merge --no-ff -m "Merge dev $SHA10 into staging" "$SHA"   # resolve every file toward $SHA
+git diff --quiet "$SHA" && echo "tree == $SHA"                # must print; remove leftovers until it does
+git push origin "HEAD:refs/heads/promote/dev-$SHA10"
+```
+
+The tree then equals the green dev SHA's tree, so the dev run tested exactly
+what ships; the PR's lanes run again because its head SHA differs. When a hotfix
+lands on `staging`, squash-merge its content into `dev` the same day, so the
+fix also ships in every later promotion.
 
 ### Step 3 — the staging PR is the gate
 

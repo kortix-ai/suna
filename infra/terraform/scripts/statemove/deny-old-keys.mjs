@@ -3,8 +3,9 @@
 // usage: node infra/terraform/scripts/statemove/deny-old-keys.mjs <group...> | --show | --remove
 //        groups: dev global staging prod
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const BUCKET = 'kortix-terraform-state';
 const SID = 'DenyWritesToMovedTerraformState';
@@ -19,8 +20,9 @@ const aws = (...a) => execFileSync('aws', [...a, '--profile', process.env.AWS_PR
 let policy;
 try { policy = JSON.parse(JSON.parse(aws('s3api', 'get-bucket-policy', '--bucket', BUCKET)).Policy); }
 catch (e) { if (!String(e.stderr).includes('NoSuchBucketPolicy')) throw e; policy = { Version: '2012-10-17', Statement: [] }; }
-const backup = `${tmpdir()}/kortix-terraform-state-policy.${Date.now()}.json`;
-writeFileSync(backup, JSON.stringify(policy, null, 1));
+// A fresh 0700 directory: a predictable name in the shared temp dir can be pre-created or symlinked.
+const backup = join(mkdtempSync(join(tmpdir(), 'kortix-terraform-state-policy-')), 'policy.json');
+writeFileSync(backup, JSON.stringify(policy, null, 1), { mode: 0o600 });
 console.log(`previous bucket policy saved to ${backup}`);
 const args = process.argv.slice(2);
 const others = policy.Statement.filter((s) => s.Sid !== SID);
