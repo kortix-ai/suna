@@ -58,6 +58,10 @@ export interface ReviewActions {
   /** Start a real session from the blocked Change Request head branch. */
   recoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
   recoveringCrId?: string | null;
+  /** `false` hides a change's merge action ("Ship it"): the merge route
+   *  asserts project.write + project.gitops.merge (KRTX-1720). Absent (the
+   *  prototype inbox) keeps it. */
+  canMerge?: boolean;
 }
 
 /** A muted bordered panel — the friendly content surface. */
@@ -246,7 +250,7 @@ function ApprovalActionRow({
             <dl className="border-border/60 mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t pt-2 text-xs">
               {args.map((a) => (
                 <div key={a.key} className="col-span-2 grid grid-cols-subgrid">
-                  <dt className="text-muted-foreground/70 font-mono">{a.key}</dt>
+                  <dt className="text-muted-foreground font-mono">{a.key}</dt>
                   <dd className="text-foreground truncate font-mono" title={a.value}>
                     {a.value}
                   </dd>
@@ -254,13 +258,11 @@ function ApprovalActionRow({
               ))}
             </dl>
           )}
-          <div className="text-muted-foreground/70 mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+          <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="font-mono">
               {action.connector} · {action.action}
             </span>
-            <span className="text-muted-foreground/40">
-              {tI18nComplete.raw('text3b9453dad42b')}
-            </span>
+            <span>{tI18nComplete.raw('text3b9453dad42b')}</span>
             <span>{action.policySource}</span>
           </div>
         </div>
@@ -430,7 +432,7 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
             {d.files.map((f) => (
               <div key={f.path} className="flex items-center gap-2 text-xs">
                 <span className="text-foreground truncate font-mono">{f.path}</span>
-                {f.note && <span className="text-muted-foreground/60">— {f.note}</span>}
+                {f.note && <span className="text-muted-foreground">— {f.note}</span>}
               </div>
             ))}
           </div>
@@ -618,6 +620,8 @@ function ActionBar({
   // change · output · batch
   const secondaryLabel = item.secondaryAction;
   const hasConflicts = item.kind === 'change' && conflicts.length > 0;
+  // Ship it on a change merges it. Without the merge leaf it would answer 403.
+  const showPrimary = item.kind !== 'change' || actions.canMerge !== false;
 
   return (
     <div className="flex items-center gap-2">
@@ -646,7 +650,7 @@ function ActionBar({
           )}
           {tI18nComplete.raw('text30afafe4c16e')}
         </Button>
-      ) : (
+      ) : showPrimary ? (
         <Button
           size="sm"
           // Ready to ship reads as success. Only high risk keeps the brake.
@@ -660,7 +664,7 @@ function ActionBar({
           {checkingConflicts ? <Loading className="size-3.5 shrink-0" /> : null}
           {checkingConflicts ? tI18nComplete.raw('textec963ffc911b') : item.primaryAction}
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

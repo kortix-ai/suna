@@ -327,6 +327,9 @@ function KeyboardHelp({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
+/** How long the prototype's Undo toast stays up: a display time, not motion. */
+const UNDO_TOAST_MS = 6000;
+
 export function ReviewCenter({
   initialItems,
   onAct,
@@ -340,6 +343,7 @@ export function ReviewCenter({
   isFetched,
   isError,
   sessionLabels,
+  canMerge,
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
   initialItems?: ReviewItem[];
@@ -366,6 +370,8 @@ export function ReviewCenter({
   isError?: boolean;
   /** sessionId → human name, for the per-session filter + group headers. */
   sessionLabels?: Record<string, string>;
+  /** Connected mode: `false` hides a change's merge action ("Ship it"). */
+  canMerge?: boolean;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const segments = useMemo(
@@ -532,7 +538,7 @@ export function ReviewCenter({
     setItems(next);
     const toastFn = tone === 'info' ? infoToast : successToast;
     toastFn(message, {
-      duration: 6000,
+      duration: UNDO_TOAST_MS,
       button: (
         <Button
           variant="outline"
@@ -590,6 +596,7 @@ export function ReviewCenter({
     openSession: onOpenSession,
     recoverChange: onRecoverChange,
     recoveringCrId,
+    canMerge,
     connected,
     pendingId,
     pendingDecision,

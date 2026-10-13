@@ -50,15 +50,23 @@ import { ReviewCenter } from './review-center';
  */
 const PREFETCH_LIMIT = 8;
 
+/** How long the merge-conflict toast with its Resolve button stays up: a
+ *  display time, not motion. */
+const CONFLICT_TOAST_MS = 10_000;
+
 export function ReviewCenterConnected({
   projectName,
   canAct = true,
+  canMerge = true,
 }: {
   projectName: string;
   // When false (a review.read-only role), withhold the act handlers so the
   // ReviewCenter renders its inbox read-only — no mutation UI that would 403.
   // Defaults to true to preserve behavior for callers that don't gate.
   canAct?: boolean;
+  // When false, a change request offers no merge ("Ship it"): the merge route
+  // asserts project.write + project.gitops.merge, not review.act (KRTX-1720).
+  canMerge?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ctx = useProjectContext();
@@ -172,6 +180,7 @@ export function ReviewCenterConnected({
     const crId = crChangeRequestId(id);
     if (crId) {
       if (verdict === 'approve') {
+        if (!canMerge) return;
         merge.mutate(crId, {
           onSuccess: () => {
             successToast(tI18nComplete.raw('text0cad31cba248'));
@@ -185,7 +194,7 @@ export function ReviewCenterConnected({
               if (item?.kind === 'change') {
                 errorToast(tI18nComplete.raw('text3923e8556e27'), {
                   description: tI18nComplete.raw('text3d33bdd92001'),
-                  duration: 10_000,
+                  duration: CONFLICT_TOAST_MS,
                   button: (
                     <Button size="sm" onClick={() => recoverChange(item, conflicts)}>
                       {tI18nComplete.raw('texte8a1fa10c8d2')}
@@ -290,6 +299,7 @@ export function ReviewCenterConnected({
       onRefresh={() => void refetch()}
       recoveringCrId={startingCrId}
       onRecoverChange={recoverChange}
+      canMerge={canMerge}
       onOpenSession={(sessionId) => {
         // "See progress" only VIEWS the session — feedback delivery goes through
         // the backend now. Clear any stale queued prompt so navigating can't
