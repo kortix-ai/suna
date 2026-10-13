@@ -1,15 +1,13 @@
 {
-  "source_hash": "0b8ca1de151e6e3d6ad10e6f9eef6ce45a0dacda23b91c2a9cbaebd0e9858405",
-  "diff_files": [
-    "pnpm-workspace.yaml"
-  ],
-  "diff_hash": "c12b97f232bc68598df44cc676991ad2c5653bfa89c1059500f2fe2f10d9abe6",
-  "head": "0be40b65fce7a686315249185d12ecbefe6805b7",
+  "source_hash": "8f8e6cfc5c959b1968938d85fe865a4d2ab04f298196980e1659f07748cd62fb",
+  "diff_files": [],
+  "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "head": "81bb1b575ccfc4761633c407121a68a187de9f39",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-13T18:36:44.953Z"
+  "at": "2026-10-13T20:39:00.322Z"
 }
