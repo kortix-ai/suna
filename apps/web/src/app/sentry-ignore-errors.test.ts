@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 
 // Locks the SDK-level gate for the transient `RuntimeNotReadyError` cluster
-// (Kortix Frontend prod): `[opencode-sdk] Server URL not ready — sandbox is
+// (Kortix Frontend prod): `[kortix-runtime] Server URL not ready — sandbox is
 // still loading`. `app/error.tsx` handles the global route-segment render
 // case, but the throw also reaches Sentry via `<ClientErrorBoundary>`,
 // `route-error`/`system-fault`, the network branch of `error-handler`, and
