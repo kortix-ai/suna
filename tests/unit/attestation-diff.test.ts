@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -280,6 +280,30 @@ describe('diff-scoped runs and lane reuse', GIT_TIMEOUT, () => {
     // A partial write on a changed diff starts over instead of keeping the old lanes.
     expect(run(dir, 'write', 'packages=pass').status).toBe(0);
     expect(status(dir).lanes).toEqual({ packages: 'pass' });
+  });
+
+  it('l: a same-size edit in the same second as the last index write is still a change (git racy-entry check)', () => {
+    const dir = initRepo();
+    // Pin every stat field git compares: one whole-second mtime, ctime ignored,
+    // same size, same inode. Only git's racy-entry check (index mtime <= entry
+    // mtime) can then see the edit, so a scratch index must keep that mtime.
+    const second = Math.floor(Date.now() / 1000) - 10;
+    git(dir, 'config', 'core.trustctime', 'false');
+    git(dir, 'checkout', '-q', '-b', 'pr', 'dev');
+    writeFileSync(join(dir, 'pr.txt'), 'v1\n');
+    utimesSync(join(dir, 'pr.txt'), second, second);
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-qm', 'pr change');
+    expect(run(dir, 'write', ...GREEN).status).toBe(0);
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-qm', 'attest');
+    expect(status(dir).lanes).toEqual({ core: 'pass', packages: 'pass', 'db-suites': 'pass' });
+    writeFileSync(join(dir, 'pr.txt'), 'v2\n');
+    utimesSync(join(dir, 'pr.txt'), second, second);
+    utimesSync(join(dir, '.git', 'index'), second, second);
+    expect(status(dir).lanes).toEqual({});
+    // Real git agrees (its own racy check); it runs last because it rewrites the index.
+    expect(git(dir, 'status', '--porcelain', 'pr.txt')).toBe(' M pr.txt\n');
   });
 
   it('k: on dev (no PR diff) status reports null files', () => {
