@@ -133,8 +133,8 @@ export function AccountPaneSkeleton({ withTitle = false }: { withTitle?: boolean
             {rows.map((row, i) => (
               <div key={i} className="flex items-center gap-4 px-4 py-4">
                 <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className={cn('h-3.5 rounded-sm', row.title)} />
-                  <Skeleton className={cn('h-3 rounded-sm', row.body)} />
+                  <Skeleton className={cn('h-3.5 rounded-sm', row.titleWidth)} />
+                  <Skeleton className={cn('h-3 rounded-sm', row.bodyWidth)} />
                 </div>
                 <Skeleton className={cn('shrink-0 rounded-md', row.control)} />
               </div>
@@ -148,15 +148,15 @@ export function AccountPaneSkeleton({ withTitle = false }: { withTitle?: boolean
 
 /** Two sections like General and Security: a field row, then toggle and
  *  input rows, with title widths that vary like real copy. */
-const SKELETON_SECTIONS: Array<Array<{ title: string; body: string; control: string }>> = [
+const SKELETON_SECTIONS: Array<Array<{ titleWidth: string; bodyWidth: string; control: string }>> = [
   [
-    { title: 'w-28', body: 'w-72', control: 'h-8 w-16' },
-    { title: 'w-32', body: 'w-24', control: 'h-8 w-14' },
+    { titleWidth: 'w-28', bodyWidth: 'w-72', control: 'h-8 w-16' },
+    { titleWidth: 'w-32', bodyWidth: 'w-24', control: 'h-8 w-14' },
   ],
   [
-    { title: 'w-52', body: 'w-80', control: 'h-5 w-9 rounded-full' },
-    { title: 'w-44', body: 'w-64', control: 'h-8 w-24' },
-    { title: 'w-28', body: 'w-72', control: 'h-8 w-24' },
-    { title: 'w-48', body: 'w-80', control: 'h-5 w-9 rounded-full' },
+    { titleWidth: 'w-52', bodyWidth: 'w-80', control: 'h-5 w-9 rounded-full' },
+    { titleWidth: 'w-44', bodyWidth: 'w-64', control: 'h-8 w-24' },
+    { titleWidth: 'w-28', bodyWidth: 'w-72', control: 'h-8 w-24' },
+    { titleWidth: 'w-48', bodyWidth: 'w-80', control: 'h-5 w-9 rounded-full' },
   ],
 ];
