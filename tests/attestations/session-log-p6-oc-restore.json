@@ -1,5 +1,5 @@
 {
-  "source_hash": "82872e006e6a5dd391b6c81c914cf14d1b8fbe723f2896b4410f3a646a8ef22e",
+  "source_hash": "7d241150c0264c3716d0693d10867e7dfda2864f43d8fffc49571bd325f78519",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/helpers/fake-model.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/helpers/opencode-box.ts",
@@ -13,13 +13,13 @@
     "apps/kortix-sandbox-agent-server/src/harness/pi/session-log-restore.ts",
     "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-restore.ts"
   ],
-  "diff_hash": "acc6f2c26dd6b6b1ac135eec64ca1d3ce640f56be9972c61d054b15a992cb93b",
-  "head": "e7bf7c67b01dce5deb4bf097e4a0284cf5492c57",
+  "diff_hash": "e1ed22f5aeb0986da47f3e3423d6e60b32e2e6a7e6fae62f1b6311fd8c8ddc7c",
+  "head": "23f01badc1f9ca7e56d69eb809aaaec0cf41f46c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-13T15:27:00.941Z"
+  "at": "2026-10-13T16:29:40.865Z"
 }
