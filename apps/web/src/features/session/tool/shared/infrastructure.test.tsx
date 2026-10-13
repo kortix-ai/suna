@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { toolCallBlock } from '@kortix/sdk';
+import type { ToolPart } from '@/ui';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -556,9 +558,7 @@ describe('BasicTool inline surface — activate context vs defaultOpen', () => {
 // the same verdict or the two surfaces disagree about what exists. ───────────
 describe('shouldShowToolPartInActionsPanel — empty show', () => {
   const showPart = (status: string, input: Record<string, unknown>) =>
-    ({ tool: 'show', state: { status, input } }) as unknown as Parameters<
-      typeof shouldShowToolPartInActionsPanel
-    >[0];
+    toolCallBlock({ type: 'tool', tool: 'show', callID: 'c', state: { status, input } } as unknown as ToolPart);
 
   test('drops a settled show that handed nothing over', () => {
     expect(shouldShowToolPartInActionsPanel(showPart('completed', { type: 'markdown' }))).toBe(
@@ -578,10 +578,9 @@ describe('shouldShowToolPartInActionsPanel — empty show', () => {
 
   test('leaves every other tool alone', () => {
     expect(
-      shouldShowToolPartInActionsPanel({
-        tool: 'bash',
-        state: { status: 'completed', input: {} },
-      } as unknown as Parameters<typeof shouldShowToolPartInActionsPanel>[0]),
+      shouldShowToolPartInActionsPanel(
+        toolCallBlock({ type: 'tool', tool: 'bash', callID: 'c', state: { status: 'completed', input: {} } } as unknown as ToolPart),
+      ),
     ).toBe(true);
   });
 });
