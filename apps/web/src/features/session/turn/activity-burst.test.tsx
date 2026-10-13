@@ -2,6 +2,7 @@ import '@/features/session/tool/tools/register';
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import type { Part, ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import {
   FilesIcon,
   PencilSimpleIcon,
@@ -21,7 +22,7 @@ import {
   sameActivityGroupStepProps,
 } from './activity-burst';
 import { ActivityStep, iconFor } from './activity-step';
-import { isAnsweredQuestionPart } from './answered-question-step';
+import { isAnsweredQuestionCall } from './answered-question-step';
 import { mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
 import { WorkFoldContext } from './turn-work-accordion';
@@ -122,9 +123,8 @@ describe('ActivityGroupStep', () => {
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <ChainOfThoughtStep open={open}>
             <ActivityGroupStep
-              step={groupOf(input)}
+              step={{ ...groupOf(input), parts: groupOf(input).parts.map(toolCallBlock) }}
               sessionId="session-1"
-              running={false}
               disableNavigation
             />
           </ChainOfThoughtStep>
@@ -275,9 +275,8 @@ describe('sameActivityGroupStepProps', () => {
   };
 
   const props = (step: ReturnType<typeof freshGroup>) => ({
-    step,
+    step: { ...step, parts: step.parts.map(toolCallBlock) },
     sessionId: 'session-1',
-    running: false,
     disableNavigation: true,
   });
 
@@ -319,13 +318,12 @@ describe('sameActivityGroupStepProps', () => {
     expect(sameActivityGroupStepProps(props(a), props(b))).toBe(false);
   });
 
-  test('sessionId, running, and disableNavigation are each load-bearing', () => {
+  test('sessionId and disableNavigation are each load-bearing', () => {
     const a = freshGroup();
     const b = freshGroup();
     expect(sameActivityGroupStepProps({ ...props(a), sessionId: 'session-2' }, props(b))).toBe(
       false,
     );
-    expect(sameActivityGroupStepProps({ ...props(a), running: true }, props(b))).toBe(false);
     expect(sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b))).toBe(
       false,
     );
@@ -1118,14 +1116,14 @@ describe('chain rail', () => {
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <ChainOfThoughtStep>
             <ToolPartRenderer
-              part={
+              call={toolCallBlock(
                 tool('1', 'bash', {
                   status: 'completed',
                   output: 'total 28',
                   input: { command: 'ls -la' },
                   time: { start: 1, end: 2 },
-                }) as never
-              }
+                }),
+              )}
               sessionId="session-1"
               defaultOpen={defaultOpen}
               disableNavigation
@@ -1158,24 +1156,24 @@ describe('step family glyphs', () => {
   test('a read row leads with the read mark, not a generic page', () => {
     // The row says WHICH kind of work it was; the chip inside it still says
     // which kind of file (see attachment-icon.test.ts).
-    expect(iconFor(tool('1', 'read', { status: 'completed' }))).toBe(ReadCvLogoIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'read', { status: 'completed' })))).toBe(ReadCvLogoIcon);
   });
 
   test('a skills row leads with the stacked-pages mark', () => {
     // It had no entry at all, so it fell through to the generic `StackIcon`
     // fallback — the mark every unrecognised tool gets.
-    expect(iconFor(tool('1', 'skill', { status: 'completed' }))).toBe(FilesIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'skill', { status: 'completed' })))).toBe(FilesIcon);
   });
 
   test('the other families are untouched', () => {
-    expect(iconFor(tool('1', 'write', { status: 'completed' }))).toBe(PencilSimpleIcon);
-    expect(iconFor(tool('2', 'bash', { status: 'completed' }))).toBe(TerminalWindowIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'write', { status: 'completed' })))).toBe(PencilSimpleIcon);
+    expect(iconFor(toolCallBlock(tool('2', 'bash', { status: 'completed' })))).toBe(TerminalWindowIcon);
   });
 
   test('an unrecognised tool still gets the generic fallback', () => {
     // The fallback must stay reachable — that is what makes the named entries
     // above meaningful rather than decorative.
-    expect(iconFor(tool('1', 'some_unknown_mcp_tool', { status: 'completed' }))).toBe(StackIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'some_unknown_mcp_tool', { status: 'completed' })))).toBe(StackIcon);
   });
 });
 
@@ -1273,7 +1271,7 @@ describe('chain alignment', () => {
     // 1.75rem = size-4 icon (16px) + the overridden gap-3 (12px) = pl-7.
     const markup = wrap(
       <ChainOfThoughtStep>
-        <ActivityStep part={bashPart} sessionId="session-1" running={false} disableNavigation />
+        <ActivityStep call={toolCallBlock(bashPart as ToolPart)} sessionId="session-1" disableNavigation />
       </ChainOfThoughtStep>,
     );
     // Classes arrive HTML-escaped in static markup.
@@ -1287,9 +1285,8 @@ describe('chain alignment', () => {
     const markup = wrap(
       <ChainOfThoughtStep>
         <ActivityStep
-          part={bashPart}
+          call={toolCallBlock(bashPart as ToolPart)}
           sessionId="session-1"
-          running={false}
           bare
           disableNavigation
         />
@@ -1304,7 +1301,7 @@ describe('chain alignment', () => {
     const markup = wrap(
       <ChainOfThoughtStep>
         <ToolPartRenderer
-          part={bashPart as never}
+          call={toolCallBlock(bashPart as ToolPart)}
           sessionId="session-1"
           defaultOpen
           disableNavigation
@@ -1382,10 +1379,10 @@ describe('answered question step', () => {
 
   test('a question without answers stays off the answered-question row', () => {
     expect(
-      isAnsweredQuestionPart(
-        tool('q', 'question', { status: 'running', input: { questions: [{ question: 'x' }] } }),
+      isAnsweredQuestionCall(
+        toolCallBlock(tool('q', 'question', { status: 'running', input: { questions: [{ question: 'x' }] } })),
       ),
     ).toBe(false);
-    expect(isAnsweredQuestionPart(answered('q'))).toBe(true);
+    expect(isAnsweredQuestionCall(toolCallBlock(answered('q')))).toBe(true);
   });
 });

@@ -11,8 +11,10 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { MessageWithParts } from '@/ui';
-import { useState } from 'react';
+import type { MessageWithParts, ToolPart } from '@/ui';
+import { useEffect, useState } from 'react';
+import { toolCallBlock } from '@kortix/sdk';
+import { useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 
 /**
  * /debug/tools
@@ -1006,12 +1008,21 @@ const EASY_PARTS = [
 /**
  * Easy mode takes no props any more — it reads the derived outputs/context/
  * apps from `SessionPanelProvider`, which in the real app is mounted at
- * `SessionLayout` above both panel surfaces. So the debug fixtures feed the
- * PROVIDER and the panel renders whatever it finds there.
+ * `SessionLayout` above both panel surfaces, and reads the session log of the
+ * runtime session (`useSessionLogThread`). So the debug fixtures feed the
+ * STORE, the provider reads them back as blocks, and the panel renders
+ * whatever it finds there.
  *
- * `AdvancedPanel` is untouched by that split and still takes props directly,
- * which is why only the Easy call sites are wrapped.
+ * `AdvancedPanel` takes the thread's messages directly, so its fixture reads
+ * the same log back from the store.
  */
+function useFixtureThread(sessionId: string, messages: MessageWithParts[]) {
+  useEffect(() => {
+    useSessionStateStore.getState().hydrate(sessionId, messages);
+  }, [sessionId, messages]);
+  return useSessionLogThread({ projectId: '', sessionId: '', runtimeSessionId: sessionId })?.messages;
+}
+
 function EasyFixture({
   sessionId,
   messages,
@@ -1021,12 +1032,22 @@ function EasyFixture({
   messages: MessageWithParts[];
   isSessionBusy?: boolean;
 }) {
+  useFixtureThread(sessionId, messages);
   return (
-    <SessionPanelProvider sessionId={sessionId} messages={messages} isSessionBusy={isSessionBusy}>
+    <SessionPanelProvider sessionId={sessionId} isSessionBusy={isSessionBusy}>
       <EasyPanel />
     </SessionPanelProvider>
   );
 }
+
+function AdvancedFixture({ sessionId, messages }: { sessionId: string; messages: MessageWithParts[] }) {
+  return <AdvancedPanel sessionId={sessionId} messages={useFixtureThread(sessionId, messages)} />;
+}
+
+/** Every row of every group, as one assistant message: the Advanced stepper's fixture. */
+const ALL_ROWS_MESSAGES: MessageWithParts[] = [
+  { info: { id: 'm1', role: 'assistant' }, parts: GROUPS.flatMap((g) => g.rows.map((r) => r.node)) } as any,
+];
 
 const EASY_MESSAGES: MessageWithParts[] = [
   {
@@ -1559,7 +1580,7 @@ function PanelDetailFixture({
     <div data-panel-fixture={fixture}>
       <div className="text-muted-foreground/60 mb-2 font-mono text-xs">{label}</div>
       <div className="border-border bg-popover w-[420px] rounded-md border p-4 shadow">
-        <ToolParts parts={parts as any} sessionId={fixture} summary={summary} />
+        <ToolParts calls={(parts as ToolPart[]).map(toolCallBlock)} sessionId={fixture} summary={summary} />
       </div>
     </div>
   );
@@ -1617,7 +1638,7 @@ export default function DebugToolsPage() {
               {tI18nHardcoded.raw('i18nComplete.text9f088dbebd6c')}
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
-              <AdvancedPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+              <AdvancedFixture sessionId="debug-easy" messages={EASY_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1661,7 +1682,7 @@ export default function DebugToolsPage() {
               {tI18nHardcoded.raw('i18nComplete.text03748cd6138a')}
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
-              <AdvancedPanel sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
+              <AdvancedFixture sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1790,15 +1811,7 @@ export default function DebugToolsPage() {
           {tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}
         </h2>
         <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-md border">
-          <AdvancedPanel
-            sessionId="debug"
-            messages={[
-              {
-                info: { id: 'm1', role: 'assistant' },
-                parts: GROUPS.flatMap((g) => g.rows.map((r) => r.node)),
-              } as any,
-            ]}
-          />
+          <AdvancedFixture sessionId="debug" messages={ALL_ROWS_MESSAGES} />
         </div>
       </div>
 
@@ -1843,7 +1856,7 @@ export default function DebugToolsPage() {
                     </div>
                     <div className="border-border/40 bg-card/30 rounded-md border px-4 py-3">
                       <ToolPartRenderer
-                        part={row.node as any}
+                        call={toolCallBlock(row.node as any)}
                         sessionId="debug"
                         disableNavigation
                       />

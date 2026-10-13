@@ -66,7 +66,7 @@ import {
   shouldShowToolPart,
   unwrapError,
 } from '@/ui';
-import { groupShowSegments, isAbortError, splitTurnWork, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, toolKind } from '@kortix/sdk';
+import { groupShowSegments, isAbortError, splitTurnWork, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, toolCallBlock, toolKind } from '@kortix/sdk';
 
 const NOOP_PERMISSION_REPLY = async () => {};
 
@@ -234,7 +234,7 @@ export function FixtureTurn({
       const visible = segment.parts.filter(shouldShowToolPart);
       if (visible.length === 0) return null;
       return visible.length === 1 ? (
-        <ToolPartRenderer key={visible[0].id} part={visible[0]} sessionId={sessionId} />
+        <ToolPartRenderer key={visible[0].id} call={toolCallBlock(visible[0])} sessionId={sessionId} />
       ) : (
         <ShowGroupRenderer key={visible[0].id} parts={visible} sessionId={sessionId} />
       );
@@ -244,7 +244,7 @@ export function FixtureTurn({
       return (
         <ToolPartRenderer
           key={segment.part.id}
-          part={segment.part}
+          call={toolCallBlock(segment.part)}
           sessionId={sessionId}
           permission={getPermissionForTool(permissions, segment.part.callID)}
           onPermissionReply={NOOP_PERMISSION_REPLY}

@@ -104,6 +104,12 @@ const { runtimeSessionId, runtimeUrl, sandboxId } = await s.ensureReady({ readyT
 - The default deadline is 180 s. Pass `readyTimeoutMs` to wait longer.
 - It throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'` at the deadline, or at once on a terminal `failed` or `stopped` answer.
 - Concurrent calls for one session share one start request. A second call on a ready handle returns at once.
+- Pass `session`, the session's row from `sessions.get()` or `sessions.list()`, when you already have it. A `running` row that names its sandbox and `runtime_session_id` is used as is, without a start request. Any other row, or the row of another session, changes nothing.
+
+```ts
+const row = await kortix.projects.sessions.get(projectId, sessionId);
+const { runtimeSessionId } = await s.ensureReady({ session: row });
+```
 
 Which methods ready the session for you:
 
