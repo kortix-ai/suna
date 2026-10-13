@@ -20,7 +20,7 @@ import { getTurnStatus } from '../../turns/state';
 import { parseQuestionAnswersFromOutput } from '../../turns/tools/question-helpers';
 import { toolCallBlock, toolPartOf } from '../tool-call';
 import type { SessionLogBlock, SessionLogMessage, TextBlock, ToolCallBlock } from '../types';
-import type { SessionLogTurn } from './turn';
+import { isClosedByRule, type SessionLogTurn } from './turn';
 import { blockOf, messageOfBlock, partOf, partsOf, v1RowsOf } from './v1-parts';
 
 export type SessionLogSegment =
@@ -133,8 +133,7 @@ const reopened = new WeakMap<ToolCallBlock, ToolCallBlock>();
  * renderer's memos hold. `sessionLogCallStatus(call, turn.live)` says whether it is interrupted.
  */
 export function sessionLogOpenCall(call: ToolCallBlock): ToolCallBlock {
-  const closed = call.status === 'error' && (call.result?.synthetic === true || call.result?.error?.code === 'interrupted');
-  if (!closed) return call;
+  if (!isClosedByRule(call)) return call;
   let open = reopened.get(call);
   if (!open) {
     const { result: _result, ...rest } = call;

@@ -121,8 +121,8 @@ function last<T>(list: readonly T[], test: (item: T) => boolean): T | undefined 
 }
 const isCall = (b: SessionLogBlock): b is ToolCallBlock => b.type === 'tool_call';
 const isOpen = (b: ToolCallBlock) => b.status === 'pending' || b.status === 'running';
-/** Closed by the harness, not by the tool (C2 closure rule): the call never ended. */
-const isClosedByRule = (b: ToolCallBlock) => b.status === 'error' && (b.result?.synthetic === true || b.result?.error?.code === 'interrupted');
+/** Closed by the harness, not by the tool (C2/F11 closure rule): the call never ended. Internal (not in the barrel). */
+export const isClosedByRule = (b: ToolCallBlock) => b.status === 'error' && (b.result?.synthetic === true || b.result?.error?.code === 'interrupted');
 
 /**
  * The status a tool call renders with. An open call (`pending`, `running`) and a call the

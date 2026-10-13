@@ -20,7 +20,10 @@ import { selectSessionLog, selectSessionLogThread } from '../core/session-log/st
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { useFeatureFlag } from './use-feature-flag';
 import { selectSessionRows } from './session-transcript-subscription';
-import { useSessionMessages, type SessionMessagesOptions, type SessionMessagesSource } from './use-session-messages';
+import { usePacedStoreValue, useSessionMessages, type SessionMessagesOptions, type SessionMessagesSource } from './use-session-messages';
+
+/** The unpaced selector's answer while `throttleMs` paces the thread. */
+const PACED = Symbol('paced');
 
 const sourced = new WeakMap<SessionLog, SessionLog & { source: 'v1' | 'v2' }>();
 const withSource = (log: SessionLog, source: 'v1' | 'v2') => {
@@ -70,21 +73,28 @@ export function useSessionLog(session: SessionMessagesSource): (SessionLog & { s
  * thread is the `fromV1` view of that runtime session's rows. On v2 the v1 store rows the log
  * does not hold yet (an optimistic send) follow the thread's messages as `fromV1` messages,
  * until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
- * the store holds no row of that runtime session (v1). `options.throttleMs` paces the v1 rows
- * as {@link useSessionMessages} paces them (a transcript reads a streaming turn at most once per window).
+ * the store holds no row of that runtime session (v1). `options.throttleMs` paces the thread on
+ * both paths as {@link useSessionMessages} paces the v1 rows: a transcript reads a streaming turn
+ * at most once per window (leading and trailing edge; the last change always lands).
  */
 export function useSessionLogThread(
   session: SessionMessagesSource,
   threadId?: string | null,
   options?: SessionMessagesOptions,
 ): SessionLogThread | null {
-  const v2 = useSyncStore((state) => {
+  const throttleMs = options?.throttleMs && options.throttleMs > 0 ? options.throttleMs : 0;
+  const select = (state: ReturnType<typeof useSyncStore.getState>) => {
     const log = state.sessionLogs[session.sessionId];
     if (!log) return undefined;
     const thread = selectSessionLogThread(log, threadId);
     // The v1 rows the log lacks (an optimistic send) show until the log's put replaces them.
     return thread && sessionLogThreadWithV1Rows(log, thread, selectSessionRows(state, thread.thread_id), (id) => state.optimisticEchoOf(thread.thread_id, id));
-  });
+  };
+  // Unpaced: a plain store subscription. Paced: the selector is constant, and the paced
+  // value delivers the thread on its own schedule, as `useSessionMessages` paces the v1 rows.
+  const live = useSyncStore((state) => (throttleMs ? PACED : select(state)));
+  const paced = usePacedStoreValue(select, `${session.sessionId}/${threadId ?? ''}`, throttleMs);
+  const v2 = live === PACED ? paced : live;
   const v1 = useV1SessionLog(session, threadId, v2 === undefined, options);
   return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
 }
