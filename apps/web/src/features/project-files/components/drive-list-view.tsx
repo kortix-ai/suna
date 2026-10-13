@@ -327,6 +327,11 @@ interface DriveListViewProps {
   clipboardOperation?: string;
   isDirDownloading: (path: string) => boolean;
   readOnly?: boolean;
+  /**
+   * The rows keep the server's name order (a partly loaded folder): the
+   * column headers do not sort and show no arrow.
+   */
+  sortDisabled?: boolean;
 }
 
 export function DriveListView({
@@ -350,6 +355,7 @@ export function DriveListView({
   clipboardOperation,
   isDirDownloading,
   readOnly = false,
+  sortDisabled = false,
 }: DriveListViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
@@ -373,7 +379,7 @@ export function DriveListView({
   };
 
   const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortBy !== field) return null;
+    if (sortDisabled || sortBy !== field) return null;
     return sortOrder === 'asc' ? (
       <ArrowUp className="ml-1 size-3" />
     ) : (
@@ -389,6 +395,7 @@ export function DriveListView({
             <TableHead>
               <Button
                 onClick={() => handleHeaderClick('name')}
+                disabled={sortDisabled}
                 variant="transparent"
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
@@ -399,6 +406,7 @@ export function DriveListView({
             <TableHead>
               <Button
                 onClick={() => handleHeaderClick('type')}
+                disabled={sortDisabled}
                 variant="transparent"
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >

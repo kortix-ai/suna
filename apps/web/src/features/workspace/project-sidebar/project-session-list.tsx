@@ -13,7 +13,7 @@ import {
   sessionSource,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -1238,13 +1238,7 @@ function ProjectSessionRow({
       </span>
 
       {childCount > 0 && (
-        <Badge
-          variant="transparent"
-          size="tabular"
-          className="bg-sidebar-row-control/60 text-muted-foreground"
-        >
-          {childCount}
-        </Badge>
+        <CountBadge count={childCount} />
       )}
 
       {spawnedCount > 0 && onToggleSpawned && (

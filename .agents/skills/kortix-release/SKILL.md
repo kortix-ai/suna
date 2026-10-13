@@ -1,12 +1,12 @@
 ---
 name: kortix-release
-description: "How to cut a Kortix production release — the versioning philosophy (when patch vs minor vs major) and the exact flow: promote CURRENT main to staging, let the staging PR's checks be the gate, fix forward on main until it is green, then run Promote to Production and deploy + verify prod. Load WHENEVER the user wants to release, promote, cut/ship a version, publish a release, bump the version, or asks why a promotion is stuck. Load it too whenever another skill or doc needs to describe the release/promotion flow — this file is the one place it is written out in full."
+description: "How to cut a Kortix production release — the versioning philosophy (when patch vs minor vs major) and the exact flow: promote the newest dev SHA with a green Tests run to staging, let the staging PR's checks be the gate, fix forward on dev until it is green, then run Promote to Production and deploy + verify prod. Load WHENEVER the user wants to release, promote, cut/ship a version, publish a release, bump the version, or asks why a promotion is stuck. Load it too whenever another skill or doc needs to describe the release/promotion flow — this file is the one place it is written out in full."
 ---
 
 # Kortix Release
 
 How a clean, accurate production release happens. Three parts: **what version**
-(the bump philosophy), **how staging gets a candidate** (promote current `main`,
+(the bump philosophy), **how staging gets a candidate** (promote the newest green `dev` SHA,
 fix forward until the staging PR is green), and **how prod gets it** (promote →
 deploy → verify). The release notes you write become the GitHub Release, which
 is exactly what the public **`/changelog`** page renders — so they must reflect
@@ -19,27 +19,30 @@ reverse direction). The version source of truth is the root **`VERSION`** file;
 This file is the single source of truth for the promotion flow. `AGENTS.md`
 (`CLAUDE.md`), `.agents/skills/contributing/SKILL.md`, and
 `.agents/skills/testing/SKILL.md` state only their own slice — what CI runs on
-a PR into `main` versus into `staging` — and point here for the rest.
+a PR into `dev` versus into `staging` — and point here for the rest.
 
-## 0. Golden rule — prod ships ONLY from staging; staging always takes CURRENT main
+## 0. Golden rule — prod ships ONLY from staging; staging takes the newest GREEN dev SHA
 
 **The only normal way to change prod is: get a candidate onto `staging`, then
 run Promote to Production (`staging` → reviewed release PR → `prod`).** Never
 `git push …:prod`, never open a manual PR into `prod`, never cherry-pick onto
 `prod`.
 
-**Promoting to staging always means promoting `origin/main`'s current HEAD —
-not a hand-picked "last green" commit.** `main` runs no CI on its own PRs by
-default (the **contributing** and **testing** skills), so `main` is red more
-often than not; waiting for a green push run before promoting stalls releases
-for hours and chases a moving target. Instead: promote current main now, let
-the staging pull request's own checks be the gate, and fix forward on `main`
-until those checks pass. This replaced a "wait for a green main SHA, promote,
-find it broke anyway, re-promote" loop that cost a full day on 2026-09-28/29
-(see the **learnings** ledger entry dated 2026-09-29 for the incident).
+**Promoting to staging means promoting the newest `dev` SHA whose `Tests` run
+on `dev` is green.** Every push to `dev` runs all ten `Tests` lanes (since
+2026-10-12). Runs queue, so a run starts about every 25 minutes and tests the
+`dev` HEAD of that moment. Do not wait for a particular SHA: take the newest
+green one. Until 2026-10-12 the rule was "promote current HEAD and fix forward",
+because nothing tested `dev`. That loop cost half of all release delay over
+v0.13.45 to v0.13.56 (49 of 96 hours): every UI break merged to `dev` surfaced
+only on the staging pull request, and each one cost a full promotion round
+(4 rounds for v0.13.56). A green `dev` run is now the check before staging.
 
-`main` is dev. It can move fast and can temporarily be broken. `staging` is the
-production candidate branch. Production promotion always reads from `staging`.
+`dev` is the dev trunk. It can move fast and can temporarily be broken. A red
+`dev` blocks the next promotion until someone fixes it forward; the run
+comments the failing lanes and the suspect commits on the red commit.
+`staging` is the production candidate branch. Production promotion always
+reads from `staging`.
 
 ## 1. Versioning philosophy — what bump?
 
@@ -56,50 +59,67 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 
 ## 2. The flow (do this every time)
 
-### Step 1 — trunk stays fast
+### Step 1 — `dev` tests every merge
 
-`main` takes PRs with no required CI: the developer's own box is the pre-merge
-check (the **testing** skill, "your machine is the pre-merge gate"). A person
-may add the `test` label for one explicit six-lane run (the **contributing**
-skill). A daily `schedule` runs the `Tests` lanes on `main` as a **non-blocking trunk
-signal** (a push does not), and an automated "repair main" pass opens fix-forward PRs
-(`fix(...): repair main after <sha> (...)`) when that scheduled run is red. **Neither
-the scheduled run nor the repair pass blocks a promotion** — do not wait for either
-before Step 2.
+`dev` takes PRs with no required CI: the developer's own box is the pre-merge
+check (the **testing** skill, "your machine is the pre-merge gate"). After the
+merge, the push to `dev` runs every `Tests` lane (`.github/workflows/tests.yml`).
+A red run blocks nothing on `dev`, but it blocks the next promotion: fix it
+forward on `dev`, or revert the culprit after 1 hour.
 
-### Step 2 — promote current main
+### Step 2 — promote the newest green dev SHA
 
-Take `origin/main` HEAD as-is. Push it to a dedicated branch and open a PR into
-`staging` as an ordinary two-parent merge commit (never squash — squashing a
-promotion PR would rewrite the SHAs the release notes and migration cost
-analysis were verified against):
+Find the newest `dev` SHA with a green `Tests` run and push it unchanged to a
+dedicated branch. Open a PR into `staging` as an ordinary two-parent merge
+commit (never squash — squashing a promotion PR would rewrite the SHAs the
+release notes and migration cost analysis were verified against). The
+pre-push hook skips `promote/*`: CI already tested the SHA.
 
 ```bash
 cd suna || exit 1
-git fetch origin main
-SHA="$(git rev-parse origin/main)"; SHA10="${SHA:0:10}"
-git push origin "origin/main:refs/heads/promote/main-$SHA10"
-gh pr create --repo kortix-ai/suna --base staging --head "promote/main-$SHA10" \
-  --title "Promote main $SHA10 to staging" \
-  --body "Promotes current main $SHA to staging for the next release. This PR's checks are the gate: anything red is fixed on main and this promotion is refreshed until every check passes."
+SHA="$(gh run list --repo kortix-ai/suna --workflow tests.yml --branch dev --status success \
+  --limit 20 --json headSha,event --jq '[.[] | select(.event == "push" or .event == "schedule")][0].headSha')"
+[ -n "$SHA" ] || { echo "No green Tests run on dev: fix dev first."; exit 1; }
+SHA10="${SHA:0:10}"
+git fetch origin dev
+git push origin "$SHA:refs/heads/promote/dev-$SHA10"
+gh pr create --repo kortix-ai/suna --base staging --head "promote/dev-$SHA10" \
+  --title "Promote dev $SHA10 to staging" \
+  --body "Promotes dev $SHA, the newest dev SHA with a green Tests run, to staging for the next release."
 ```
 
-**Do not wait for main's push run (Step 1) to be green first.** Open this PR
-against whatever `origin/main` HEAD is right now.
+If no green run exists, `dev` is red: fix `dev` first (the red run's commit
+comment names the failing lanes and suspects). Do not promote a red SHA.
+
+The promotion is conflict-free only while `origin/staging` is an ancestor of
+`dev`. Check it before you push: `git merge-base --is-ancestor origin/staging
+origin/dev`. A hotfix merged straight into `staging` breaks that. Merge
+`origin/staging` back into `dev` through a PR the same day the hotfix lands,
+then promote a green SHA after that merge. A conflicting promotion PR runs no
+workflow at all: GitHub builds no merge ref (2026-10-13, #9701).
 
 ### Step 3 — the staging PR is the gate
 
-The PR into `staging` runs the full ten-lane `Tests` suite (`core`,
-`browser-1`…`browser-8`, `packages`) plus CodeQL (`Analyze
+The PR into `staging` runs `Tests`, `CI`, CodeQL (`Analyze
 javascript-typescript`), Trivy filesystem scan, gitleaks, the `packages/db`
 migration gates (`Migrations are sequential`, `Migration files are well-formed`,
 `Applies cleanly to a fresh DB`, `Schema matches migrations`, `Squawk
 (zero-downtime lint) on new migrations`, `Migrations are immutable`),
 `translation catalogs keep key order`, `committed .env profiles are encrypted`,
 API typecheck, frontend build, sandbox-agent build, and the Terraform/Checkov
-scanners. None of these is configured as a GitHub *required* check on
-`staging` — **you enforce it by reading the PR, not by relying on a merge
-block.**
+scanners.
+
+`Tests` starts with `reuse dev verdict`. When the PR's head SHA already has a
+green `Tests` run on `dev`, the ten lanes skip and the job summary links that
+run: the lanes test the head SHA, so the dev run is the same proof. The other
+workflows still run (CodeQL is the long pole, about 15 min). A hotfix branch
+has no dev run, so its lanes run.
+
+None of these is configured as a GitHub *required* check on `staging` —
+**you enforce it by reading the PR, not by relying on a merge block.**
+A failed `Tests` run on this PR reruns its failed jobs once automatically
+(`rerun-failed-once.yml`) and names them on the PR; a job that passes on the
+rerun is a flake to fix or quarantine.
 
 Merge only when **all** of these hold:
 
@@ -108,7 +128,15 @@ Merge only when **all** of these hold:
 - every review thread is resolved — `staging`'s branch protection sets
   `required_conversation_resolution: true`, so GitHub blocks the merge button
   on an open thread (a CodeQL finding included) until you resolve or reply to it;
-- Step 5's migration cost pass is done for every new migration in the diff.
+- Step 5's migration cost pass is done for every new migration in the diff;
+- **one time, until the per-region Terraform state move finishes:** if
+  `origin/staging` does not yet contain #9693 (the state move) and this
+  promotion does, run right before the merge:
+  `AWS_PROFILE=kortix node infra/terraform/scripts/statemove/copy-states.mjs staging`
+  (every line `OK ... kms=yes tagged`), then
+  `node infra/terraform/scripts/statemove/deny-old-keys.mjs staging`. Without it,
+  Deploy Staging stops at "Check the regional state copy". Delete this bullet
+  once staging's state is in eu-west-2.
 
 **Never merge a staging PR with a pending or failing check "because it'll
 probably pass."** A shard that never starts (bootstrap failure) gives no
@@ -116,19 +144,18 @@ signal either way — treat it as failing, not as passing-by-omission.
 
 ### Step 4 — fix forward, then refresh the promotion
 
-Every red check is fixed **at the root, on `main`** — never by patching the
-promotion branch directly, and never by weakening the check. Use one PR per
-round of fixes:
+Every red check is fixed **at the root, on `dev`** — never by patching the
+promotion branch directly, and never by weakening the check:
 
-1. Branch off `main`, fix the failure test-first, open a PR into `main`, add the
-   `test` label, and merge only on six green lanes (the **contributing** skill).
-   See [references/fix-forward-traps.md](references/fix-forward-traps.md) for the
+1. Branch off `dev`, fix the failure test-first, open a PR into `dev`, and
+   merge it verified (the **contributing** skill). See
+   [references/fix-forward-traps.md](references/fix-forward-traps.md) for the
    traps that most often produce this kind of PR.
-2. Once `main` has the fix, **open a fresh promotion**: a new
-   `promote/main-<sha10>` branch and PR at the new `origin/main` HEAD. Close the
-   stale promotion PR with a one-line comment pointing at the new PR number —
-   do not force-push a promotion branch to a new SHA; a promotion PR's SHA is
-   part of its own audit trail.
+2. Wait for a green `Tests` run on `dev` that includes the fix, then **open a
+   fresh promotion** of that SHA (Step 2). Close the stale promotion PR with a
+   one-line comment pointing at the new PR number — do not force-push a
+   promotion branch to a new SHA; a promotion PR's SHA is part of its own
+   audit trail.
 3. Repeat until the staging PR is fully green.
 
 ### Step 5 — cost every new migration against prod, before merging
@@ -201,8 +228,11 @@ EOF
 later dispatch **updates the branch in place** (pushes the new content, keeps
 the same PR). **It does not rewrite an already-open release PR's title or
 body** — if the version, title, or notes need to change after the PR exists,
-edit them by hand with `gh pr edit`. Approve the `tests-release.yml` run it
-triggers on that PR.
+edit them by hand with `gh pr edit`. It then dispatches `tests-release.yml` on
+the release branch itself (`expected_sha` = the release source SHA). Do not
+approve the pull request run that GitHub holds for the bot-opened PR: the
+dispatched run already reports `full suite + quality gates` on the same head
+SHA, and approving the held run tests staging twice at once.
 
 ### Step 8 — release gate triage
 
@@ -213,18 +243,34 @@ ran in `us-west-2` and its database in `eu-west-2`, so the owner decision of
 release gate as **environmental**. Since 2026-10-06 both run in `eu-west-2`, so
 that cross-region reason no longer holds: confirm with the owner before you
 classify a timeout as environmental. Every other failure is fixed on
-`main` and re-promoted through Steps 2–7 (a new staging SHA means the release
-PR must be re-dispatched too). Rerun a failed job once; a shard that
-never gets past its own bootstrap gives no signal, so rerun it rather than
-reading it as a pass or a fail.
+`dev` and re-promoted through Steps 2–7 (a new staging SHA means the release
+PR must be re-dispatched too). A failed gate run reruns its failed jobs once by
+itself (`rerun-failed-once.yml`) and names them on the release PR. A job that
+fails twice is real. A job that passes on the rerun is a flake: fix it or
+quarantine it (the **testing** skill) in the same release cycle. A shard that
+never gets past its own bootstrap gives no signal: it is rerun like any other.
 
 ### Step 9 — prod
 
-Merge the release PR:
+**One time, until the per-region Terraform state move finishes:** if
+`origin/prod` does not yet contain #9693 and this release does, first run
+`AWS_PROFILE=kortix node infra/terraform/scripts/statemove/copy-states.mjs prod`
+(every line `OK ... kms=yes tagged`), then
+`node infra/terraform/scripts/statemove/deny-old-keys.mjs prod`. Without it,
+Deploy Prod stops at "Check the regional state copy". Delete this paragraph
+once prod's state is in eu-west-2.
+
+Merge the release PR once `full suite + quality gates` is green on its head
+SHA:
 
 ```bash
-gh pr merge <release-pr> --repo kortix-ai/suna --merge --admin
+gh pr merge <release-pr> --repo kortix-ai/suna --merge
 ```
+
+Never add `--admin` to merge over a red or missing gate unless the owner
+approves that exact release in the conversation. Over v0.13.45 to v0.13.56, 9 of
+12 releases merged that way, and a gate that is bypassed by habit stops
+catching anything.
 
 Confirm a `Deploy Prod` run exists for that merge SHA and succeeds, then verify
 every surface on the new version:
@@ -262,7 +308,7 @@ debugging one from scratch: out-of-order migration timestamps, stale
 `mock.module` stubs after a refactor, source-anchor tests after a file move,
 unintentional i18n catalog reordering, a stale `learnings/MEMORY.md`, and a
 CodeQL alert in old code that a large diff surfaced for the first time — fix a
-real finding on `main`; dismiss a *proven* false positive on GitHub with a
+real finding on `dev`; dismiss a *proven* false positive on GitHub with a
 written, evidence-backed justification, never silently.
 
 ## 4. Gotchas (hard-won)
@@ -277,22 +323,22 @@ written, evidence-backed justification, never silently.
 - **VERSION is the source of truth**; the version field in `/v1/health` is stamped by
   deploy-prod's task-def, not baked into the image.
 - **A promotion PR is not a normal PR.** Do not squash it, do not push new
-  commits onto it to "fix" a failure — fix on `main` and open a fresh promotion
+  commits onto it to "fix" a failure — fix on `dev` and open a fresh promotion
   (Step 4). Squashing or force-pushing it breaks the SHA trail the migration
   cost pass and the release notes were verified against.
 
 ## 5. Undo a bad / premature release
 
 If a release was cut by mistake (and not yet truly published — i.e. no ECS roll / no
-real Release), remove it cleanly. `main` is protected from force-push, so revert there.
+real Release), remove it cleanly. `dev` is protected from force-push, so revert there.
 ```bash
 git push origin :refs/tags/vX.Y.Z                       # delete the tag
 git push -f origin <prev-release-sha>:refs/heads/prod    # reset prod to the prior release
-git revert --no-edit <version-bump-commit>               # put main VERSION back; then push
+git revert --no-edit <version-bump-commit>               # put dev VERSION back; then push
 gh release delete vX.Y.Z --repo kortix-ai/suna           # only if a Release was actually cut
 # cancel any deploy-prod the prod reset triggered
 ```
-Verify: tag gone, `prod` VERSION = prior, `main` VERSION = prior, api-prod unchanged,
+Verify: tag gone, `prod` VERSION = prior, `dev` VERSION = prior, api-prod unchanged,
 no `vX.Y.Z` Release.
 
 > Note: `prod` branch protection is `allow_force_pushes:false` + `enforce_admins:true`,
@@ -302,10 +348,10 @@ no `vX.Y.Z` Release.
 
 ## Checklist
 
-1. `origin/main` HEAD promoted as-is to `promote/main-<sha10>` → PR into `staging`
-   (ordinary merge, never squash). Not waiting for main's push run to be green.
+1. The newest `dev` SHA with a green `Tests` run promoted as-is to
+   `promote/dev-<sha10>` → PR into `staging` (ordinary merge, never squash).
 2. Every staging-PR check finished and passed; every review thread resolved.
-   Red checks fixed on `main`, then the promotion refreshed (new branch, new
+   Red checks fixed on `dev`, then the promotion refreshed (new branch, new
    PR, stale one closed with a pointer) — repeated until green.
 3. Every new migration in the diff costed read-only against prod before merge.
 4. Staging PR merged; `staging-api`, `gateway-staging`, and `staging.kortix.com`
@@ -313,8 +359,8 @@ no `vX.Y.Z` Release.
 5. `git log $PREV..origin/staging` read in full; title + notes written in
    kortix-voice, accurate to that log.
 6. `promote.yml` run with title + notes; release PR merged into `prod` with
-   `--merge --admin`; environmental release-gate failures (staging cross-region
-   latency) classified in a PR comment, everything else fixed on `main` and
+   `--merge` on a green gate (`--admin` only with the owner's explicit OK); environmental release-gate failures (staging cross-region
+   latency) classified in a PR comment, everything else fixed on `dev` and
    re-promoted.
 7. `Deploy Prod` confirmed for the merge SHA; api/gateway/frontend `/health`,
    the three npm packages, the GitHub Release (24 assets), and Better Stack all
@@ -327,8 +373,8 @@ no `vX.Y.Z` Release.
    API host.
    1. Generate a random 32-byte key. Never print it.
    2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
-      `kortix-<env>-env` in its primary region (the **dotenvx-secrets** skill,
-      "Which region to edit"; needs an MFA session) and to
+      `kortix-<env>-env` in its `blob_region` region (the **dotenvx-secrets**
+      skill, "Which region to edit"; needs an MFA session) and to
       `apps/api/.env.<env>` with `dotenvx set`.
    3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
       gateway `GET /v1/models` with a PAT still returns 200.

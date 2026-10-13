@@ -247,7 +247,13 @@ function FolderAccessForm({
           ? restrictedLabel
           : t('resultAdmins')
         : t('resultSpecific', { count: draft.named.length });
-  const namedMemberIds = draft.named.filter((n) => n.type === 'user').map((n) => n.id);
+  // Already listed, plus you and the folder's owner: picking yourself
+  // changes nothing (the person sharing and the owner keep their access).
+  const pickerExcludedUserIds = [
+    ...draft.named.filter((n) => n.type === 'user').map((n) => n.id),
+    ...(user?.id ? [user.id] : []),
+    ...(current.owner ? [current.owner.principalId] : []),
+  ];
 
   return (
     <>
@@ -360,7 +366,7 @@ function FolderAccessForm({
                     scope={{ kind: 'project', projectId }}
                     selection="multi"
                     kinds={['member', 'group', 'agent']}
-                    excludeUserIds={namedMemberIds}
+                    excludeUserIds={pickerExcludedUserIds}
                     value={EMPTY_PRINCIPAL_SELECTION}
                     onChange={onPick}
                     disabled={locked}

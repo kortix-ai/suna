@@ -223,7 +223,12 @@ export function extractTurnIdentity(
 export interface SandboxTurnStart extends SandboxTurnIdentity {
   token: string;
 }
-export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_message' | 'no_box';
+export type RuntimeTurnAdoption =
+  | 'adopted'
+  | 'identity_bound'
+  | 'open_turn_exists'
+  | 'known_message'
+  | 'no_box';
 /**
  * Apply terminal evidence. A retryable error is not terminal. When both sides
  * know the OpenCode user message ID, a delayed event may clear only that turn.

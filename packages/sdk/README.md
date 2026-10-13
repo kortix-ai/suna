@@ -698,12 +698,64 @@ session-log types, and a test fails when the two differ. See the
 
 `@kortix/sdk/react` adds `useSessionLog(session)` and
 `useSessionLogThread(session, threadId?)`: the log of a session `useSession`
-owns, or `null` while the session reads v1. A session reads the log only when
-the runtime lists `session.log.v2`, the project flag `session_log` is on, and
-the API holds a log for an OpenCode session; every other session reads v1. The v1
-hooks (`useSessionMessages`, `useSession().messages`) return the same rows
+owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
+reads only when the runtime lists `session.log.v2`, the project flag
+`session_log` is on, and the API holds a log for an OpenCode session. Every
+other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+conversion of the v1 rows, with the turn that runs kept open. Pass the session's
+`runtimeSessionId`; without it, or before the first row, they return `null`. The
+v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
 either way. See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).
+
+Two transitional functions bridge a host that renders blocks while its rows are
+still v1:
+
+- `toolCallBlock(part)`: the `ToolCallBlock` of a v1 tool part, the block
+  `fromV1` builds for it. An open call stays open; a call that streams its input
+  has the text so far as its `input`. One block per part object. It goes away in
+  the SDK major that removes the v1 rows.
+- `toolCallMetadata(call)`: the harness's display metadata of a tool call, the
+  whole `state.metadata` of the v1 part it came from (bash `command`, read
+  `loaded`, task `sessionId`, edit `filediff`). It stays until the session-log
+  schema carries display metadata of its own.
+
+`toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and
+`shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part.
+
+### Block turns
+
+The root entry also exports the turn model over session-log blocks, the one a
+transcript renders a thread from. It replaces the v1 turn helpers over
+`MessageWithParts` (`groupMessagesIntoTurns`, `collectTurnParts`,
+`getTurnStatus`, `getTurnError`, `getTurnCost`, `findLastTextPart`,
+`getShellModePart`, `isAttachment`, `segmentTurn`, `groupShowSegments`,
+`splitTurnWork`, `mergeBurstSteps`, `compactionTurnInfo`, `resolveWorkingTurn`,
+`hasRetryingAssistantTurn`), which stay until the next major.
+
+- `sessionLogTurns(thread, options?)` returns one `SessionLogTurn` per user message:
+  `user`, `assistant` (the replies, by `reply_to` then order), `blocks`, and the
+  derived fields `status`, `error`, `cost`, `compaction`, `threads`, `plan`,
+  `shell`, `response`, `attachments`, `live`, `queued` and `retrying`, computed
+  once. Options: `busy` (the session works), `liveMessageId` (the working
+  projection's turn), `held` (the prompts the inbox still holds, in queue
+  order), `threads` (the session's threads, for `threads`), `pricing`. A turn
+  keeps its identity while its messages and derived fields do. A message out
+  of context (a failed attempt) keeps its turn.
+- `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
+  and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
+  the settled-turn fold, and the rows of a burst.
+- `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
+  or one the closure rule closed, is `running` or `pending` on a live turn and
+  `interrupted` on any other.
+- `sessionLogActivityText(turn, childMessages?)` is the activity line of a live turn.
+- `sessionLogPromptMessage(prompt, threadId)` is the user message of a queued inbox
+  prompt the thread has not placed; append it and name it in `held`.
+- A pending permission or question matches a call by `call.call_id`
+  (`getPermissionForTool`, `getQuestionForTool`).
+
+Both layers give one answer for a record converted from v1: the SDK's test
+suite compares them on every golden fixture.
 
 ## Kortix as a Backend (server-side)
 

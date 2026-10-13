@@ -1632,7 +1632,19 @@
       "tooMany": "Une session a au plus 20 libellés."
     },
     "drive": "Drive",
-    "repo": "Repo"
+    "repo": "Repo",
+    "customizeSidebar": "Personnaliser la barre latérale",
+    "customizeSidebarDescription": "Faites glisser les éléments d'un groupe à l'autre.",
+    "resetSidebar": "Rétablir par défaut",
+    "reorderItem": "Déplacer {name}",
+    "reorderHint": "Faites glisser pour réorganiser. Ou utilisez les flèches haut et bas ; dépasser « Plus » masque l'élément de la barre latérale.",
+    "reorderAnnouncement": "{name} : {group}, position {position} sur {total}",
+    "more": "Plus",
+    "inSidebar": "Barre latérale",
+    "underMore": "Plus",
+    "sidebarEmpty": "Déposez un élément ici pour l'afficher dans la barre latérale.",
+    "moreEmpty": "Déposez un élément ici pour le placer dans Plus.",
+    "moreCaption": "Les éléments dans Plus s'ouvrent depuis le menu Plus, sous la navigation."
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -7903,7 +7915,11 @@
       "line267JsxTextCheckpointHistory": "Historique des versions",
       "line285JsxTextCopyPath": "Copier le chemin",
       "line396JsxTextThisFolderIsEmpty": "Ce dossier est vide",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tout ce que vos agents enregistrent et les fichiers de ce projet apparaîtront ici."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tout ce que vos agents enregistrent et les fichiers de ce projet apparaîtront ici.",
+      "loadMoreItems": "Charger plus d’éléments",
+      "loadMoreFailed": "Impossible de charger plus d’éléments. Réessayez.",
+      "partialSortNote": "{value0} éléments affichés. Le tri s’applique une fois tous les éléments chargés.",
+      "showingFirstItems": "Affichage des {value0} premiers éléments"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-cliquez pour modifier le chemin",
@@ -7995,7 +8011,12 @@
     "featuresProjectFilesComponentsFileSearch": {
       "line109JsxAttrPlaceholderSearchFiles": "Rechercher des fichiers...",
       "line124JsxTextTypeToSearchFiles": "Saisissez pour rechercher des fichiers...",
-      "line136JsxTextNoFilesFound": "Aucun fichier trouvé"
+      "line136JsxTextNoFilesFound": "Aucun fichier trouvé",
+      "searchContents": "Rechercher dans le contenu",
+      "firstMatches": "Affichage des {value0} premiers résultats",
+      "searchContentsPlaceholder": "Rechercher dans le contenu des fichiers...",
+      "typeToSearchContents": "Saisissez pour rechercher dans le contenu des fichiers...",
+      "noMatchingLines": "Aucune ligne correspondante"
     },
     "featuresProjectFilesComponentsFileTreeItem": {
       "line229JsxTextAFileOrFolderWithThatNameAlready": "Un fichier ou un dossier portant ce nom existe déjà",
@@ -19208,6 +19229,12 @@
       "servedModelInPlaceOf": "À la place de",
       "servedModelBadge": "Exécuté sur {model}",
       "servedModelBarDescription": "{requested} n’a pas répondu à la dernière requête",
+      "computerAwakeStays": "Le bac à sable reste allumé tant que vous êtes là · jusqu’à {duration}",
+      "computerAwakeStops": "Le bac à sable s’arrête dans {duration}. Envoyez un message pour le garder allumé.",
+      "computerAwakeStopsSoon": "Le bac à sable s’arrête bientôt. Envoyez un message pour le garder allumé.",
+      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
+      "computerAwakeHours": "{hours} h",
+      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Invite de session en file d’attente modifiée",
       "text52867b778586": "Un seul kortix.yaml.",
       "textd0dfd435b2f4": "Vos équipes IA, sous forme de code.",
@@ -19541,7 +19568,9 @@
       "text8d54763edcd8": "Non monté",
       "textffeb0c99532f": "Instantanés conservés {value0} jours",
       "text6f52b07880a0": "Prendre un instantané",
-      "text91dc861375bc": "Politique de version mobile consultée"
+      "text91dc861375bc": "Politique de version mobile consultée",
+      "texta37dd5ef6ef2": "Personnaliser la barre latérale",
+      "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20168,9 +20197,8 @@
     "calendarNextWeek": "Semaine suivante",
     "calendarPreviousMonth": "Mois précédent",
     "calendarNextMonth": "Mois suivant",
-    "calendarAllWeek": "Toute la semaine",
-    "calendarAllDay": "Toute la journée",
-    "calendarEvery": "toutes les {period}",
+    "calendarMore": "+{count} de plus",
+    "calendarMoreOn": "{count, plural, one {# rappel de plus} other {# rappels de plus}} le {date}",
     "calendarSession": "Session",
     "calendarEmptyWeek": "Rien ne se déclenche cette semaine",
     "calendarEmptyDay": "Rien ne se déclenche ce jour-là",

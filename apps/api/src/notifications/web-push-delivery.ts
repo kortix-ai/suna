@@ -1,11 +1,11 @@
 // Web Push delivery for one recipient (KRTX-1742): every browser the user
-// subscribed from, while its sign-in lives. An account that requires MFA
-// gets no push on a browser that registered at aal1. The notifier calls this
+// subscribed from, while its sign-in lives. A browser that registered at aal1
+// gets an account's push only where the app lets that sign-in in: an account
+// that requires MFA holds it back, except for the account's super admins
+// (`mfa-gate.ts`, the rule `authorize` applies). The notifier calls this
 // through `liveNotifierDeps().sendWebPush`.
-import { eq } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
-import { db } from '../shared/db';
 import { clip, INBOX_BODY_MAX_CHARS, INBOX_TITLE_MAX_CHARS } from './inbox-store';
+import { mfaWithheldAccounts } from './mfa-gate';
 import type { NotificationPushContent } from './push-payload';
 import { getVapidKeyPair } from './vapid-keys';
 import { sendWebPushMessage, type PushFetch } from './web-push';
@@ -41,20 +41,15 @@ export function webPushMessageBody(content: NotificationPushContent): WebPushMes
   };
 }
 
-async function accountRequiresMfa(accountId: string): Promise<boolean> {
-  const [row] = await db.select({ mfaRequired: accounts.mfaRequired }).from(accounts).where(eq(accounts.accountId, accountId));
-  return row?.mfaRequired === true;
-}
-
 export async function sendWebPushToUser(
   input: WebPushDeliveryInput,
   deps: { fetch?: PushFetch } = {},
 ): Promise<{ sent: number }> {
   const subscriptions = await listDeliverableWebPushSubscriptions(input.userId);
   if (subscriptions.length === 0) return { sent: 0 };
-  const targets = (await accountRequiresMfa(input.accountId))
-    ? subscriptions.filter((row) => row.aal === 'aal2')
-    : subscriptions;
+  const aal1Withheld = subscriptions.some((row) => row.aal !== 'aal2')
+    && (await mfaWithheldAccounts(input.userId, [input.accountId], { mfaAal: 'aal1' })).has(input.accountId);
+  const targets = aal1Withheld ? subscriptions.filter((row) => row.aal === 'aal2') : subscriptions;
   if (targets.length === 0) return { sent: 0 };
 
   const vapid = await getVapidKeyPair();

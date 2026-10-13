@@ -140,6 +140,17 @@ export function childApps(apps: App[], app: App, canAdmin = true): App[] {
  * Its primary service is `access: admins` (a backend's admin dashboard): only
  * project admins can open it, so nobody else is shown a card or tab for it.
  */
+/**
+ * The App whose live preview a card shows: the App itself, or, when it hides
+ * its own (`display.preview: none`), its first tab the viewer may open (a
+ * backend's dashboard). Null: the card shows an icon.
+ */
+export function cardPreviewApp(apps: App[], app: App, canAdmin = true): App | null {
+  if (app.display?.preview !== 'none') return app;
+  const first = childApps(apps, app, canAdmin)[0];
+  return first && appCan(first, 'preview') && first.viewer_can_access !== false ? first : null;
+}
+
 export function appAdminsOnly(app: App): boolean {
   return app.services?.find((service) => service.name === 'http')?.access === 'admins';
 }

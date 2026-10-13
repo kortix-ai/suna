@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
-import { isV1Thread } from '../core/session-log/v1-view';
+import { isV1Thread, sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
 import {
   fetchFirstSessionLogPage,
   loadSessionLogPage,
@@ -19,38 +19,71 @@ import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { selectSessionLog, selectSessionLogThread } from '../core/session-log/store';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { useFeatureFlag } from './use-feature-flag';
+import { selectSessionRows } from './session-transcript-subscription';
+import { useSessionMessages, type SessionMessagesSource } from './use-session-messages';
+
+const sourced = new WeakMap<SessionLog, SessionLog & { source: 'v1' | 'v2' }>();
+const withSource = (log: SessionLog, source: 'v1' | 'v2') => {
+  let out = sourced.get(log);
+  if (!out) sourced.set(log, (out = { ...log, source }));
+  return out;
+};
 
 /**
- * The session log (`kortix.session/2`) of a session a `useSession` hook owns:
- * every thread, its messages by `seq`, and their blocks. `null` while the
- * session reads v1, which is every session until the runtime lists
- * `session.log.v2`, the project flag `session_log` is on, and the API serves
- * the log. The v1 hooks (`useSessionMessages`, `useSession().messages`) read
- * the same records through `toV1`, so a host renders either.
- *
- * Read-only: it starts no request. The record keeps its identity until the
- * session log changes.
+ * The session log of runtime session `threadId ?? root` while the session reads v1: the
+ * `fromV1` view (`sessionLogOfV1Rows`) of the rows `useSessionMessages` renders. Null
+ * without a runtime session id, and while the store holds no row for it.
  */
-export function useSessionLog(session: { projectId: string; sessionId: string }): SessionLog | null {
-  return useSyncStore((state) => {
-    const log = state.sessionLogs[session.sessionId];
-    return log ? selectSessionLog(log) : null;
-  });
+function useV1SessionLog(session: SessionMessagesSource, threadId?: string | null): SessionLog | null {
+  const native = threadId || session.runtimeSessionId || session.opencodeSessionId || null;
+  const rows = useSessionMessages({ ...session, runtimeSessionId: native });
+  return useMemo(() => (native && rows.length ? sessionLogOfV1Rows(session.sessionId, native, rows) : null), [session.sessionId, native, rows]);
 }
 
 /**
- * One thread of {@link useSessionLog}, with its messages: the root thread when
- * `threadId` is omitted, a sub-agent's thread by its id. `null` while the
- * session reads v1 or the thread is unknown.
+ * The session log (`kortix.session/2`) of a session a `useSession` hook owns: every thread,
+ * its messages by `seq`, and their blocks. `source` names where it came from:
+ *  - `'v2'`: the API's session log, once the runtime lists `session.log.v2`, the project flag
+ *    `session_log` is on, and the API serves the log. The v1 hooks (`useSessionMessages`,
+ *    `useSession().messages`) read the same records through `toV1`.
+ *  - `'v1'`: before that, the `fromV1` conversion of the v1 rows `useSessionMessages` renders
+ *    for `runtimeSessionId`: one root thread whose id is the runtime session id. The turn that
+ *    runs stays open (`fromV1` with `live: true`). Null without a `runtimeSessionId`, and
+ *    while the store holds no row for it.
+ *
+ * Read-only: it starts no request. The record keeps its identity until the session log (v2)
+ * or the rows (v1) change, and a v1 message keeps its identity while its row is unchanged.
+ */
+export function useSessionLog(session: SessionMessagesSource): (SessionLog & { source: 'v1' | 'v2' }) | null {
+  const v2 = useSyncStore((state) => {
+    const log = state.sessionLogs[session.sessionId];
+    return log ? selectSessionLog(log) : null;
+  });
+  const v1 = useV1SessionLog(session);
+  return v2 ? withSource(v2, 'v2') : v1 ? withSource(v1, 'v1') : null;
+}
+
+/**
+ * One thread of {@link useSessionLog}, with its messages: the root thread when `threadId` is
+ * omitted, a sub-agent's thread by its id. On v1 a thread id is a runtime session id, and the
+ * thread is the `fromV1` view of that runtime session's rows. On v2 the v1 store rows the log
+ * does not hold yet (an optimistic send) follow the thread's messages as `fromV1` messages,
+ * until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
+ * the store holds no row of that runtime session (v1).
  */
 export function useSessionLogThread(
-  session: { projectId: string; sessionId: string },
+  session: SessionMessagesSource,
   threadId?: string | null,
 ): SessionLogThread | null {
-  return useSyncStore((state) => {
+  const v2 = useSyncStore((state) => {
     const log = state.sessionLogs[session.sessionId];
-    return log ? selectSessionLogThread(log, threadId) : null;
+    if (!log) return undefined;
+    const thread = selectSessionLogThread(log, threadId);
+    // The v1 rows the log lacks (an optimistic send) show until the log's put replaces them.
+    return thread && sessionLogThreadWithV1Rows(log, thread, selectSessionRows(state, thread.thread_id), (id) => state.optimisticEchoOf(thread.thread_id, id));
   });
+  const v1 = useV1SessionLog(session, threadId);
+  return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
 }
 
 /** Only a page of a `fromV1` thread is read as v2 (`isV1Thread`). */

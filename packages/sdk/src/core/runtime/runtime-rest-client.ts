@@ -512,9 +512,11 @@ export function fetchEventTransport(fetchFn: typeof fetch = globalThis.fetch): R
     }
     if (!response.body) throw new Error('No body in SSE response');
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    // Bun 1.4 rejects `cancel()` with an AbortError once the request signal has
+    // aborted, so the promise needs a handler or it surfaces as unhandled.
     const cancel = () => {
       try {
-        void reader.cancel();
+        reader.cancel().catch(() => {});
       } catch {
         // already released
       }
