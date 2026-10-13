@@ -103,7 +103,9 @@ test('provider and model access persists, keeps credentials, and updates control
       }
     }
 
-    await page.locator('[data-provider-row="openai"]').getByRole('button', { name: /models$/ }).click();
+    // Since #9801 the Models tab lists every provider's models in its own group;
+    // the provider row has no per-provider models shortcut.
+    await page.getByRole('tab', { name: 'Models', exact: true }).click();
     await expect(page.locator('button[role=tab]').filter({ hasText: /^Models$/ })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveCount(0);
     await expect(page.locator('[data-model-id^="openai/"]').first()).toBeVisible();
@@ -125,7 +127,7 @@ test('provider and model access persists, keeps credentials, and updates control
     await expect(page.locator('[data-provider-access="openai"]').getByText('Disabled', { exact: true })).toBeVisible();
     expect(await api(session.access_token, 'GET', `${base}/secrets`)).toEqual(beforeSecrets);
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: true });
-    await page.locator('[data-provider-row="openai"]').getByRole('button', { name: /models$/ }).click();
+    await page.getByRole('tab', { name: 'Models', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveCount(0);
     const hiddenRow = page.locator('[data-model-id="openai/gpt-4o-mini"]');
     await expect(hiddenRow.getByText('Hidden from picker', { exact: true })).toBeVisible();
