@@ -7,8 +7,8 @@ import { logger } from '../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { requireFeatureFlag } from '../feature-flags/gate';
-import { ensureBootModePolicyFresh, volumesEnabledForFresh } from '../platform/services/boot-mode-setting';
+import { featureDisabledBody, requireFeatureFlag } from '../feature-flags/gate';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -202,9 +202,13 @@ async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
   const userId = callerId(c);
   const projectId = drive.projectId!;
   if (!(await mayUseProject(c, projectId, 'read'))) fail(404, 'Files not found');
-  // Volumes off for the organization: Files is not part of its product. The
-  // files stay on the volume and come back when Volumes is turned on again.
-  if (!(await volumesEnabledForFresh(drive.accountId))) fail(403, 'Files is not enabled for this organization.', 'feature_disabled');
+  // Volumes off for the project: nothing new is written to Files. Reads stay
+  // open, so a file a session already wrote under /drives still opens in its
+  // transcript; the Files page itself is gated on GET /v1/drives?projectId=.
+  if (c.req.method !== 'GET' && !(await projectFeatureFlagEnabled(projectId, 'drives'))) {
+    const { error } = featureDisabledBody('drives');
+    fail(403, error, 'feature_disabled');
+  }
   const [projectMember, admin, groupIds] = await Promise.all([
     mayUseProject(c, projectId, 'session'),
     mayUseProject(c, projectId, 'write'),
@@ -350,12 +354,6 @@ drivesApp.use('*', combinedAuth);
 // A session's folders reach it as mounts; its sandbox token has no reason to
 // browse the project's Files over the API.
 drivesApp.use('*', rejectSandboxTokens);
-// Files is gated on the Volumes policy; read it fresh so an instance with a
-// stale or cold cache never answers "not enabled" right after a flip.
-drivesApp.use('*', async (_c, next) => {
-  await ensureBootModePolicyFresh();
-  await next();
-});
 drivesApp.use('*', async (c, next) => {
   if (c.get('authType') === 'pat' && c.get('sessionId')) fail(403, 'Session tokens cannot access Files');
   await next();
@@ -378,7 +376,7 @@ drivesApp.openapi(
     if (!projectId || !isUuid(projectId)) fail(400, 'projectId is required');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) fail(404, 'Project not found');
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives', loaded.row.accountId);
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
     if (gate) return gate;
     const drive = await ensureProjectDrive(loaded.row.accountId, projectId);
     const caller = await callerOn(c, drive);

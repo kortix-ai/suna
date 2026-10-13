@@ -10,6 +10,7 @@ import { projects, projectSessions } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isPlatinumConfigured } from '../../shared/platinum';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import {
   parseSessionBootRecord,
   resolveBootMode,
@@ -23,8 +24,6 @@ export {
   bootModePolicy,
   refreshBootModePolicy,
   saveBootModePolicy,
-  volumesEnabledFor,
-  volumesFor,
   __setBootModePolicyForTests,
 } from './boot-mode-setting';
 
@@ -33,7 +32,7 @@ export const SESSION_BOOT_KEY = 'bootMode';
 
 /**
  * KORTIX_EPHEMERAL_SANDBOXES=off: no new volume boxes. An operator emergency
- * override, not the product switch (that is Volumes, Admin → Volumes).
+ * override, not the product switch (that is the project's Stateless sessions flag).
  */
 export function envVolumeOff(): boolean {
   const raw = (config.KORTIX_EPHEMERAL_SANDBOXES ?? '').trim().toLowerCase();
@@ -42,23 +41,24 @@ export function envVolumeOff(): boolean {
 
 /** The mode a new box of this project's session asks for on `provider`. */
 export async function resolveProjectBootMode(input: {
-  accountId?: string | null;
   projectId: string;
   provider: string;
+  /** The project row's metadata, when the caller holds it (saves one read). */
   projectMetadata?: unknown;
 }): Promise<BootModeDecision> {
   const volumeProvider = input.provider === 'platinum' && isPlatinumConfigured();
-  let accountId = input.accountId ?? null;
-  if (volumeProvider && !accountId) {
+  let metadata = input.projectMetadata;
+  if (volumeProvider && metadata === undefined) {
     const [row] = await db
-      .select({ accountId: projects.accountId })
+      .select({ metadata: projects.metadata })
       .from(projects)
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
-    accountId = row?.accountId ?? null;
+    metadata = row?.metadata ?? null;
   }
   return resolveBootMode(bootModePolicy().policy, {
-    accountId: accountId ?? '',
+    volumes: resolveFeatureFlag(metadata, 'volumes'),
+    stateless: resolveFeatureFlag(metadata, 'stateless_sessions'),
     volumeProvider,
     envVolumeOff: envVolumeOff(),
   });

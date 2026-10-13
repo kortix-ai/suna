@@ -355,8 +355,7 @@ flow(
 
     const gate = async (host: string, pathAndQuery: string, withCookie = true) => {
       const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
-        // The real Host names a local App: since the 2026-10-13 pentest fix an
-        // `x-kortix-app-host` claim of `*.apps.localhost` is ignored (#9749).
+        // The real Host header, as the APP-10 gate above: the API never trusts an `x-kortix-app-host` claim (#9749).
         headers: { accept: "application/json", host: `${host}:${new URL(apiOrigin).port}`, ...(withCookie && cookie ? { cookie } : {}) },
         redirect: "manual",
       });

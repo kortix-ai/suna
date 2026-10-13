@@ -4,7 +4,9 @@ import {
   listConnections,
   reconcileConnection,
   reconcileMemberConnection,
+  renameConnection,
   type AdminConnector,
+  type Connection,
 } from '@kortix/sdk';
 import { useProjectAccountId } from '@kortix/sdk/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -25,7 +27,9 @@ import { useTranslations } from '@/i18n/use-translations';
 /**
  * Add one account to a connector. The connector profile is the project's; the
  * ACCOUNT carries who may use it: only the caller, everyone in the project, or
- * picked people and groups (`NewAccountDraft`).
+ * picked people and groups (`NewAccountDraft`). A shared account on a
+ * connector whose only shared account is the empty one made with it reuses
+ * that one (`emptyProjectSlot`), so it stays the connector's default.
  *
  * Then sign it in at once:
  * - a managed provider (Composio, Pipedream) runs its hosted Connect Link;
@@ -65,11 +69,28 @@ export function useAddAccount({
       if (draft.audience === 'private') {
         return reconcileMemberConnection(projectId, { connector_alias: connector.slug, label });
       }
-      const connection = await reconcileConnection(projectId, {
-        connector_alias: connector.slug,
-        owner_type: 'project',
-        label,
-      });
+      // The empty shared account the server made with the connector IS the
+      // project's account: sign that one in. A second unpinned shared account
+      // leaves the connector with no default, so its sign-in never loads the
+      // tools. Read the list fresh: someone may have signed the slot in since.
+      const { data } = await connectionsQuery.refetch();
+      const rows = connectorConnectionRows(data?.connections, connector.slug);
+      const slot = emptyProjectSlot(connector, rows);
+      // The proposed name numbers past the slot itself ("<name> 2"): the slot
+      // keeps its name unless the user typed one of their own.
+      const proposal = proposeAccountLabel(
+        displayName,
+        rows.map((row) => row.label),
+      );
+      const connection = !slot
+        ? await reconcileConnection(projectId, {
+            connector_alias: connector.slug,
+            owner_type: 'project',
+            label,
+          })
+        : label === slot.label || label === proposal
+          ? slot
+          : await renameConnection(projectId, slot.connection_id, label);
       if (draft.audience === 'members') {
         await grantConnectionAccess(
           accountId ?? '',
@@ -136,4 +157,18 @@ export function useAddAccount({
   };
 
   return { submit, pending, proposedLabel };
+}
+
+/**
+ * The connector's empty shared account: the row the server made with the
+ * connector (`metadata.default_slot` `'project'`), never signed in, and the
+ * only shared account. Older servers send no `authorized`: no slot then. A
+ * connector that needs no credential (`requestAuthType` `'none'`) has none:
+ * its first account already works.
+ */
+function emptyProjectSlot(connector: AdminConnector, rows: readonly Connection[]): Connection | null {
+  if (connector.requestAuthType === 'none') return null;
+  const shared = rows.filter((row) => row.owner_type === 'project');
+  const slot = shared.length === 1 ? shared[0]! : null;
+  return slot?.authorized === false && slot.metadata?.default_slot === 'project' ? slot : null;
 }

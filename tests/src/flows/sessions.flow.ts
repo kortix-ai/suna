@@ -1417,7 +1417,10 @@ flow(
         return sessionRows(visible).find((s: any) => s.session_id === replacementId);
       };
       let row = await startAndRead();
-      for (let attempt = 0; row && (row.metadata ?? {}).warm !== undefined && attempt < 60; attempt++) {
+      // Since #9695 a warm session is hidden from the visible list until the
+      // marker drops, so a provisioning adoption first reads as no row at all:
+      // keep polling while the row is hidden too.
+      for (let attempt = 0; (!row || (row.metadata ?? {}).warm !== undefined) && attempt < 60; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 2_000));
         row = await startAndRead();
       }
