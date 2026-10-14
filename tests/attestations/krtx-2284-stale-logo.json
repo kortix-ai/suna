@@ -1,16 +1,27 @@
 {
-  "source_hash": "0cfa22acf29ee7733ef582f18fa6df2939f4b263a08216bd0398565c78404a3b",
+  "source_hash": "f3e6385e441f534eae13001ce8de4f5cc220a4052df7aada4a13a238670c80fb",
   "diff_files": [
+    "apps/web/src/app/[locale]/(public)/(marketing)/design-system/page.tsx",
     "apps/web/src/app/[locale]/game-of-life/game-of-life.test.tsx",
-    "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx"
+    "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx",
+    "apps/web/src/features/workspace/customize/sections/llm-provider/custom-provider-form.clipboard.test.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
   ],
-  "diff_hash": "dc113f02aa4ee7af4a8dca97002b81af1e45ef04b060c3a991de512b0471364a",
-  "head": "59cfbd1db1be13a0abf9c98e7fbfeb6ec681cd36",
-  "passed": false,
+  "diff_hash": "ac84518939470a8ff790d040116ae60ed232df75a4e7bf913586c2993c8d45c9",
+  "head": "d0364732a8424c40d1a82ca92d840452532eb69e",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T18:56:37.907Z"
+  "at": "2026-10-14T22:05:01.996Z"
 }
