@@ -97,6 +97,17 @@ describe('switchPreflight: the loss report of a harness switch', () => {
     ]);
   });
 
+  test('reasoning: OpenCode showed another model\'s reasoning as text, pi drops it (lost); the next model\'s own reasoning survives both ways', () => {
+    const think = (id: string, model: string): SessionLogMessage =>
+      msg('r', 'assistant', [{ type: 'reasoning', id, text: 'thinking' }], { model: { provider: 'kortix', model } });
+    const reasoning = (harness: string) =>
+      log(harness, [thread('r', null, [think('a', 'glm-5.3-flash'), think('b', 'other-model'), { ...think('c', 'other-model'), in_context: false }])], {
+        selection: { agent: null, model: { provider: 'kortix', model: 'glm-5.3-flash' } },
+      });
+    expect(switchPreflight(reasoning('opencode'), 'pi').losses).toEqual([{ feature: 'reasoning_replay', detail: 'other_model', used: 1, status: 'lost' }]);
+    expect(switchPreflight(reasoning('pi'), 'opencode').losses).toEqual([]);
+  });
+
   test('every golden log gives a report the wire schema accepts, to each harness', () => {
     const dir = join(import.meta.dir, 'fixtures', 'session-log');
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.v2.json'))) {

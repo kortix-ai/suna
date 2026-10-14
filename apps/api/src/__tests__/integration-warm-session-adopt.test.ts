@@ -131,6 +131,20 @@ describe('dropWarmSessionMarkerOnAdopt', () => {
     expect(after.metadata).toEqual({ source: 'ui' });
   });
 
+  // A `genui` flag change retires warm sessions by tombstoning them with the
+  // marker kept (projects/session-lifecycle/actions.ts retireWarmProjectSessions).
+  // The adoption CAS must refuse that row, or a racing adopt revives it.
+  test('a tombstoned warm session is not adopted — the marker and timestamps stay', async () => {
+    const sessionId = await seed({ warm: true, deletedAt: '2026-08-17T09:00:00.000Z' });
+    const before = await rowOf(sessionId);
+
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
+
+    const after = await rowOf(sessionId);
+    expect(after.metadata.warm).toBe(true);
+    expect(after.updatedAt?.getTime()).toBe(before.updatedAt?.getTime());
+  });
+
   test('idempotent — a second call finds no marker left and never re-stamps', async () => {
     const sessionId = await seed({ warm: true });
 

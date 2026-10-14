@@ -39,7 +39,7 @@ export type ModelView = ModelViewItem[];
  *  - `reasoning_replay: 'same_model'` (default): an assistant message whose `model` has the same
  *    provider and model keeps its reasoning in the item's `reasoning`; any other reasoning is dropped
  *    (a message without a `model` counts as another model);
- *  - `'lowers_to_text'` (pi, OpenCode v1 and v2): same as above, but another model's reasoning stays
+ *  - `'lowers_to_text'` (OpenCode v1 and v2): same as above, but another model's reasoning stays
  *    in place as assistant text, in block order;
  *  - `'none'`: no reasoning is replayed.
  * Use the target harness's `CapabilityFeatures.reasoning_replay`. `api` names the wire dialect for

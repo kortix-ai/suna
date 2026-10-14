@@ -23,8 +23,11 @@ export function bindProjectOperationsReview(projectId: string) {
 
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
     review: {
+      /** One page of the inbox. Walk the rest with `next_cursor` → `cursor`. */
       list: (params?: Parameters<typeof P.listReviewItems>[1]) =>
         P.listReviewItems(projectId, params),
+      /** The needs-you counts, in total and by session. For a badge, not the list. */
+      summary: () => P.getReviewSummary(projectId),
       get: (reviewItemId: string) => P.getReviewItem(projectId, reviewItemId),
       submit: (input: Parameters<typeof P.submitReviewItem>[1]) =>
         P.submitReviewItem(projectId, input),

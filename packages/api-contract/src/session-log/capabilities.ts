@@ -18,8 +18,12 @@
  *   (lowered or emulated), `lost` when it cannot write it.
  * - Runtime controls (`RuntimeCapability`): `lost` when the target harness does not serve the
  *   control the session used (MCP tools, a rewind, a slash command, a steer, a manual compaction).
- * Not reported: `reasoning_replay` (reasoning blocks are display only; C3 decides their replay),
- * `session.shell` (a shell turn leaves no mark in the log), `session.fork` and `session.attach`.
+ * - Reasoning (`reasoning_replay`, the `modelView` rule): an in-context assistant reasoning block of
+ *   the model the session selects next (`detail: same_model`; no selection counts as that model) is
+ *   replayed unless the harness says `none`; another model's (`other_model`) only as text by
+ *   `lowers_to_text`. A line when the target no longer shows what the source showed.
+ * Not reported: `session.shell` (a shell turn leaves no mark in the log), `session.fork` and
+ * `session.attach`.
  */
 import { RUNTIME_CAPABILITIES, type RuntimeCapability } from '../runtime-relay';
 import type { AdapterCapabilities, CapabilityFeatures, SessionLog, SessionLogBlock } from './types';
@@ -31,7 +35,7 @@ const PI_NATIVE: CapabilityFeatures = {
   compaction: ['summary_first_tail'],
   subagents: 'sync', // the Kortix `task` tool runs a child agent in process
   todos: false,
-  reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
+  reasoning_replay: 'same_model', // reasoning.ts drops another model's thinking; pi-ai would replay it as text
   freeform_tool_input: false,
 };
 export const PI_CAPABILITIES: AdapterCapabilities = {
@@ -115,6 +119,11 @@ export function switchPreflight(log: SessionLog, to: SessionLogHarness): Session
   const children = log.threads.filter((t) => t.parent_thread_id !== null);
   const mode = children.some((t) => t.interactions?.length) ? 'async' : 'sync';
   feature('subagents', children.length, (f) => SUBAGENT_ORDER.indexOf(f.subagents) >= SUBAGENT_ORDER.indexOf(mode), mode);
+  const next = log.selection?.model;
+  const reasoning = blocks.filter(({ m, b }) => b.type === 'reasoning' && m.role === 'assistant' && m.in_context && b.text.trim());
+  const same = reasoning.filter(({ m }) => !next || (m.model?.provider === next.provider && m.model?.model === next.model)).length;
+  feature('reasoning_replay', same, (f) => f.reasoning_replay !== 'none', 'same_model');
+  feature('reasoning_replay', reasoning.length - same, (f) => f.reasoning_replay === 'lowers_to_text', 'other_model');
   feature('todos', calls.filter((c) => c.kind === 'todo').length || (log.todos?.length ?? 0), (f) => f.todos);
 
   // ponytail: `mcp` is the log's tool kind, a name rule (`fromV1`: an unknown name with `_`), so a hosted

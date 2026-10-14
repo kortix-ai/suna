@@ -227,10 +227,10 @@ export class ObjectStore {
 
   private async resolveBody(body: ObjectBody): Promise<{ Body: PutObjectCommandInput['Body']; ContentLength?: number }> {
     if (typeof body === 'string' || Buffer.isBuffer(body)) return { Body: body };
-    // Whole-file Buffer, not `createReadStream`: on the API image's Bun
-    // (`BUN_VERSION=1.2`, 1.2.23) a PutObject with a Node ReadStream body
-    // never completes and pins a core (scripts/project-snapshot-s3-probe.ts
-    // reproduces it; a Buffer body of the same bytes finishes in ~30 ms).
+    // Whole-file Buffer, not `createReadStream`: on Bun 1.2.23 (the API image
+    // until 2026-10-14) a PutObject with a Node ReadStream body never completes
+    // and pins a core (scripts/project-snapshot-s3-probe.ts reproduces it; a
+    // Buffer body of the same bytes finishes in ~30 ms).
     // ponytail: archives are capped by the caller (512 MiB for snapshots,
     // 4 MiB for config archives) and are single-digit MB in practice; switch
     // to @aws-sdk/lib-storage multipart if that ceiling is ever approached.

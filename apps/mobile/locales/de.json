@@ -1162,6 +1162,7 @@
     "title": "Konto",
     "preferences": "Einstellungen",
     "sounds": "Töne",
+    "richAnswers": "Erweiterte Antworten",
     "workspace": "Arbeitsbereich",
     "accounts": "Konten",
     "help": "Hilfe",
@@ -1198,6 +1199,17 @@
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+  },
+  "genui": {
+    "chartTapHint": "Tippen, um einen Wert zu lesen",
+    "map": "Karte",
+    "mapUnavailable": "Karte nicht verfügbar",
+    "openImage": "Bild öffnen",
+    "openMap": "Karte öffnen",
+    "pick": "Empfehlung",
+    "pieFocus": "{{label}} macht {{percent}} % der Summe aus",
+    "pieOfTotal": "{{value}} von {{total}}",
+    "showData": "Daten anzeigen"
   },
   "updateRequired": {
     "title": "Update erforderlich",

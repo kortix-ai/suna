@@ -120,7 +120,7 @@ export const SANDBOX_TRANSITIONS = {
   /**
    * `restoreSession`: the archived row of a deleted session whose box the
    * provider confirmed removed. It gives up its external id and becomes a
-   * retired row (`isRetiredEphemeralRow`), which the next open claims for a
+   * retired row (`isRetiredSandboxRow`), which the next open claims for a
    * fresh box from the session branch.
    */
   restore: { from: ['archived'], to: 'stopped' },

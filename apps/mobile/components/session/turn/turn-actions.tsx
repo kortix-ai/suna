@@ -19,6 +19,7 @@ import { View } from 'react-native';
 import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -77,7 +78,8 @@ function CopyResponseButton({ response }: { response: string }) {
   );
 
   const handleCopy = React.useCallback(async () => {
-    await Clipboard.setStringAsync(response);
+    // A generative UI block pastes as its markdown, not as OpenUI source.
+    await Clipboard.setStringAsync(genuiToMarkdown(response));
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), COPIED_MS);

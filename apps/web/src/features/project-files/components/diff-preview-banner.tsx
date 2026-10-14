@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/alert';
 import Loading from '@/components/ui/loading';
 import { DiffStat } from '@/components/ui/status';
-import { MinusIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import type { VersionDiffPreview } from '../api/change-requests';
 
 interface DiffPreviewBannerProps {
@@ -65,9 +64,6 @@ export function DiffPreviewBanner({ loading, error, preview, className }: DiffPr
   if (error) {
     return (
       <Alert variant="destructive" className={className}>
-        <AlertMedia>
-          <WarningCircleIcon className="size-4" />
-        </AlertMedia>
         <AlertContent>
           <AlertTitle>
             {tHardcodedUi.raw(
@@ -85,9 +81,6 @@ export function DiffPreviewBanner({ loading, error, preview, className }: DiffPr
   if (preview.is_same_ref) {
     return (
       <Alert variant="warning" className={className}>
-        <AlertMedia>
-          <MinusIcon className="size-4" />
-        </AlertMedia>
         <AlertContent>
           <AlertDescription>
             {tHardcodedUi.raw(
@@ -102,9 +95,6 @@ export function DiffPreviewBanner({ loading, error, preview, className }: DiffPr
   if (preview.is_up_to_date || preview.files_changed === 0) {
     return (
       <Alert variant="warning" className={className}>
-        <AlertMedia>
-          <MinusIcon className="size-4" />
-        </AlertMedia>
         <AlertContent>
           <AlertDescription>
             {tHardcodedUi.raw(

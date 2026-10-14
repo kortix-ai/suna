@@ -12,7 +12,7 @@ import { CheckCircleIcon, GitDiffIcon, PlusIcon, XCircleIcon } from '@phosphor-i
 
 import type { ChangeRequest, ChangeRequestStatus } from '../api/change-requests';
 import { useProjectContext } from '../context';
-import { useChangeRequests, usePrefetchChangeRequest } from '../hooks/use-change-requests';
+import { useChangeRequestPages, usePrefetchChangeRequest } from '../hooks/use-change-requests';
 import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
 import { OpenChangeRequestDialog } from './open-change-request-dialog';
 import {
@@ -87,6 +87,7 @@ interface ChangeRequestsPanelProps {
  */
 export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPanelProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
   const defaultBranch = ctx?.defaultBranch ?? '';
@@ -94,13 +95,21 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [openDialogShown, setOpenDialogShown] = useState(false);
 
-  const { data, isLoading, error } = useChangeRequests(status, {
+  const {
+    data,
+    isLoading,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useChangeRequestPages(status, {
     enabled: open,
     refetchInterval: open ? 6_000 : undefined,
   });
   const prefetch = usePrefetchChangeRequest();
 
-  const crs = useMemo(() => data?.change_requests ?? [], [data]);
+  const crs = useMemo(() => data?.pages.flatMap((page) => page.change_requests) ?? [], [data]);
   const groups = useMemo(() => groupByDate(crs, tsFromCr), [crs]);
   const total = crs.length;
 
@@ -231,6 +240,23 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
                 ))}
               </div>
             ))}
+            {hasNextPage && (
+              <div className="flex justify-center pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                >
+                  {/* A failed page keeps the rows above it; the button is the retry. */}
+                  {isFetchingNextPage
+                    ? tSidebar('loadingMore')
+                    : isFetchNextPageError
+                      ? tSidebar('retry')
+                      : tSidebar('loadMore')}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </ReviewPanel>

@@ -2,7 +2,13 @@
 
 import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 import { qk } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
 import {
   createChangeRequest,
   fetchChangeRequest,
@@ -71,11 +77,13 @@ const versionDiffKeys = {
  *
  * Scans every status bucket (`open` / `merged` / `closed` / `all`), because the
  * panel's filter decides which list is populated and a CR can be reached from
- * more than one of them.
+ * more than one of them. The panel's own entry is paged (`useChangeRequestPages`,
+ * `{ pages, pageParams }`) and sits in the same scope, so both shapes count.
  */
+type ChangeRequestList = { change_requests: ChangeRequest[] };
 export type CachedListEntry = readonly [
   readonly unknown[],
-  { change_requests: ChangeRequest[] } | undefined,
+  ChangeRequestList | InfiniteData<ChangeRequestList> | undefined,
 ];
 
 /**
@@ -93,7 +101,12 @@ export function findCachedChangeRequest(
 ): { cr: ChangeRequest; key: readonly unknown[] } | undefined {
   if (!crId) return undefined;
   for (const [key, data] of entries) {
-    const cr = data?.change_requests.find((row) => row.cr_id === crId);
+    const rows = !data
+      ? []
+      : 'pages' in data
+        ? data.pages.flatMap((page) => page.change_requests)
+        : data.change_requests;
+    const cr = rows.find((row) => row.cr_id === crId);
     if (cr) return { cr, key };
   }
   return undefined;
@@ -106,7 +119,7 @@ function cachedChangeRequest(
 ): { data: ChangeRequestDetailResponse; updatedAt: number } | undefined {
   if (!projectId || !crId) return undefined;
   const hit = findCachedChangeRequest(
-    qc.getQueriesData<{ change_requests: ChangeRequest[] }>({
+    qc.getQueriesData<CachedListEntry[1]>({
       queryKey: changeRequestKeys.listScope(projectId),
     }),
     crId,
@@ -148,15 +161,47 @@ export function usePrefetchChangeRequest() {
   };
 }
 
-export function useChangeRequests(
+/**
+ * How many open change requests the count badge and the command palette read
+ * (one shared entry). `CountBadge` shows 99+ above 99, so 100 rows keep the
+ * badge exact while the read stays bounded (KRTX-2316).
+ */
+export const OPEN_CHANGE_REQUESTS_LIMIT = 100;
+
+/** The key and read of that shared entry. Every reader spreads this: a reader
+ *  with its own `queryFn` and no limit writes a 50-row page over the others. */
+export const openChangeRequestListQuery = (projectId: string) => ({
+  queryKey: changeRequestKeys.list(projectId, 'open'),
+  queryFn: () => fetchChangeRequests(projectId, 'open', { limit: OPEN_CHANGE_REQUESTS_LIMIT }),
+});
+
+/** The open change requests the count badge reads (`OPEN_CHANGE_REQUESTS_LIMIT`). */
+export function useOpenChangeRequestList(options?: { refetchInterval?: number }) {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  return useQuery<{ change_requests: ChangeRequest[] }>({
+    ...openChangeRequestListQuery(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+/**
+ * One status of the project's change requests, a page (50) at a time: the
+ * panel loads the next with `fetchNextPage` while `hasNextPage` is true.
+ */
+export function useChangeRequestPages(
   status: ChangeRequestStatus | 'all' = 'all',
   options?: { enabled?: boolean; refetchInterval?: number },
 ) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
-  return useQuery<{ change_requests: ChangeRequest[] }>({
-    queryKey: changeRequestKeys.list(projectId, status),
-    queryFn: () => fetchChangeRequests(projectId, status),
+  return useInfiniteQuery({
+    queryKey: [...changeRequestKeys.list(projectId, status), 'pages'],
+    queryFn: ({ pageParam }) => fetchChangeRequests(projectId, status, { cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: Boolean(projectId) && options?.enabled !== false,
     staleTime: 5_000,
     refetchInterval: options?.refetchInterval,
