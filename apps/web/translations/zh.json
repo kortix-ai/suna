@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "断开 OpenCode Go",
     "opencodeGoFailed": "无法连接 OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "无法解密",
+      "hint": "Kortix 无法解密已保存的值。加密密钥已更改，或该值已损坏。管理此项目的任何人都可以重新输入。",
+      "reenter": "重新输入值",
+      "dialog": "Kortix 无法解密已保存的值。请重新输入后保存。",
+      "keyHint": "Kortix 无法解密此 API 密钥。服务器的加密密钥已更改，或已保存的密钥已损坏。在其所有者或账户管理员重新输入之前，Kortix 不会使用它。",
+      "loginHint": "Kortix 无法解密此登录。服务器的加密密钥已更改，或已保存的登录已损坏。在其所有者重新连接之前，Kortix 不会使用它。",
+      "reenterKey": "重新输入密钥",
+      "mineHint": "Kortix 无法解密您为此密钥设置的个人值。您的会话会读取它而不是共享值，因此在您删除它之前会话会失败。",
+      "deleteMine": "删除我的值",
+      "mineDeleted": "值已删除",
+      "mineDeleteError": "无法删除您的值。请重试。"
+    }
+  },
   "useCases": {
     "headline": "驱动公司运转的循环"
   },
@@ -10870,6 +10885,7 @@
       "text265e52a33b53": "将 userName 设置为 Kortix 用于关联的 email：打开“Attribute Mapping”区域（与身份验证页面分开），在“PingOne Directory”列展开“Username”，选择“Email Address”。然后在连接的首选项/操作中设置“User Identifier” = userName，以及“User Filter Expression” = `userName eq \"%s\"`。这是 PingOne 失败的首要原因——默认使用内部用户名，而不是 email。",
       "text266240ec402c": "计费模式",
       "text2672651736ac": "- 工作只能通过变更请求进入 main",
+      "text2677201ed3eb": "已完成成员离职处理",
       "text267d2e1cb01e": "任何采用 AI 的公司最重要的问题：能否替换模型，而不丢失已经建立的组织专业知识？这是评估 AI 平台的主权性清单。",
       "text268bc1833e83": "谢谢",
       "text268f14bbfe11": "诊断",

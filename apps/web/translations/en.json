@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Disconnect OpenCode Go",
     "opencodeGoFailed": "Failed to connect OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Undecryptable",
+      "hint": "Kortix cannot decrypt the stored value. The encryption key changed, or the value is damaged. Anyone who manages this project can enter it again.",
+      "reenter": "Re-enter value",
+      "dialog": "Kortix cannot decrypt the stored value. Enter it again to save.",
+      "keyHint": "Kortix cannot decrypt this API key. The server's encryption key changed, or the stored key is damaged. Kortix does not use it until its owner or an account admin enters it again.",
+      "loginHint": "Kortix cannot decrypt this login. The server's encryption key changed, or the stored login is damaged. Kortix does not use it until its owner reconnects it.",
+      "reenterKey": "Re-enter key",
+      "mineHint": "Kortix cannot decrypt your own value of this secret. Your sessions read it in place of the shared value, so they fail until you delete it.",
+      "deleteMine": "Delete my value",
+      "mineDeleted": "Value deleted",
+      "mineDeleteError": "Could not delete your value. Try again."
+    }
+  },
   "useCases": {
     "headline": "The loops that run a company"
   },
@@ -10881,6 +10896,7 @@
       "text265e52a33b53": "Set userName to the email Kortix correlates on: open the \"Attribute Mapping\" section (separate from the auth screen), in the \"PingOne Directory\" column expand \"Username\" and select \"Email Address\". Then in the connection’s preferences/actions set \"User Identifier\" = userName and \"User Filter Expression\" = `userName eq \"%s\"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.",
       "text266240ec402c": "Billing model",
       "text2672651736ac": "- Work reaches main only through a change request",
+      "text2677201ed3eb": "Offboarded a member",
       "text267d2e1cb01e": "The most important question for any company adopting AI: can you switch out the model without losing the institutional expertise you have built? A sovereignty checklist for evaluating your AI platform.",
       "text268bc1833e83": "Thank you",
       "text268f14bbfe11": "Diagnostics",

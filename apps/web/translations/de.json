@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "OpenCode Go trennen",
     "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Nicht entschlüsselbar",
+      "hint": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Der Schlüssel hat sich geändert, oder der Wert ist beschädigt. Jeder, der dieses Projekt verwaltet, kann ihn neu eingeben.",
+      "reenter": "Wert neu eingeben",
+      "dialog": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Geben Sie ihn erneut ein, um zu speichern.",
+      "keyHint": "Kortix kann diesen API-Schlüssel nicht entschlüsseln. Der Verschlüsselungsschlüssel des Servers hat sich geändert, oder der gespeicherte Schlüssel ist beschädigt. Kortix verwendet ihn erst wieder, wenn sein Besitzer oder ein Konto-Admin ihn neu eingibt.",
+      "loginHint": "Kortix kann diese Anmeldung nicht entschlüsseln. Der Verschlüsselungsschlüssel des Servers hat sich geändert, oder die gespeicherte Anmeldung ist beschädigt. Kortix verwendet sie erst wieder, wenn ihr Besitzer sie neu verbindet.",
+      "reenterKey": "Schlüssel neu eingeben",
+      "mineHint": "Kortix kann Ihren eigenen Wert dieses Geheimnisses nicht entschlüsseln. Ihre Sitzungen lesen ihn statt des gemeinsamen Werts und schlagen fehl, bis Sie ihn löschen.",
+      "deleteMine": "Meinen Wert löschen",
+      "mineDeleted": "Wert gelöscht",
+      "mineDeleteError": "Ihr Wert konnte nicht gelöscht werden. Versuchen Sie es erneut."
+    }
+  },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
   },
@@ -10870,6 +10885,7 @@
       "text265e52a33b53": "Setzen Sie userName auf die E-Mail-Adresse, die Kortix verwendet: Öffnen Sie „Attribute Mapping“ (getrennt vom Authentifizierungsbildschirm), erweitern Sie in der Spalte „PingOne Directory“ den Eintrag „Username“ und wählen Sie „Email Address“. Setzen Sie anschließend in den Einstellungen/Aktionen der Verbindung „User Identifier“ = userName und „User Filter Expression“ = `userName eq \"%s\"`. Eine falsche Einstellung ist der häufigste PingOne-Fehler – standardmäßig wird der interne Benutzername statt der E-Mail verwendet.",
       "text266240ec402c": "Abrechnungsmodell",
       "text2672651736ac": "- Arbeit erreicht main nur über einen Change Request",
+      "text2677201ed3eb": "Offboarding eines Mitglieds durchgeführt",
       "text267d2e1cb01e": "Die wichtigste Frage für jedes Unternehmen, das KI einführt: Kannst du das Modell austauschen, ohne die institutionelle Expertise zu verlieren, die du aufgebaut hast? Eine Souveränitäts-Checkliste zur Bewertung deiner KI-Plattform.",
       "text268bc1833e83": "Vielen Dank",
       "text268f14bbfe11": "Diagnose",

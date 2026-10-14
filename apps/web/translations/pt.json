@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Desconectar OpenCode Go",
     "opencodeGoFailed": "Não foi possível conectar o OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Não decifrável",
+      "hint": "O Kortix não consegue decifrar o valor salvo. A chave de criptografia mudou ou o valor está danificado. Qualquer pessoa que gerencie este projeto pode inseri-lo novamente.",
+      "reenter": "Inserir o valor novamente",
+      "dialog": "O Kortix não consegue decifrar o valor salvo. Insira-o novamente para salvar.",
+      "keyHint": "O Kortix não consegue decifrar esta chave de API. A chave de criptografia do servidor mudou ou a chave salva está danificada. O Kortix não a usa até que o proprietário ou um administrador da conta a insira novamente.",
+      "loginHint": "O Kortix não consegue decifrar este login. A chave de criptografia do servidor mudou ou o login salvo está danificado. O Kortix não o usa até que o proprietário o reconecte.",
+      "reenterKey": "Inserir a chave novamente",
+      "mineHint": "O Kortix não consegue decifrar o seu próprio valor deste segredo. As suas sessões o leem no lugar do valor compartilhado e falham até que você o exclua.",
+      "deleteMine": "Excluir meu valor",
+      "mineDeleted": "Valor excluído",
+      "mineDeleteError": "Não foi possível excluir o seu valor. Tente novamente."
+    }
+  },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
   },
@@ -10870,6 +10885,7 @@
       "text265e52a33b53": "Defina userName como o e-mail usado pelo Kortix para fazer a correlação: abra a seção \"Attribute Mapping\" (separada da tela de autenticação); na coluna \"PingOne Directory\", expanda \"Username\" e selecione \"Email Address\". Depois, nas preferências/ações da conexão, defina \"User Identifier\" = userName e \"User Filter Expression\" = `userName eq \"%s\"`. Errar essa configuração é a principal causa de falhas no PingOne — o padrão usa o nome de usuário interno, não o e-mail.",
       "text266240ec402c": "Modelo de cobrança",
       "text2672651736ac": "- O trabalho só chega à main por uma change request",
+      "text2677201ed3eb": "Desligamento de membro concluído",
       "text267d2e1cb01e": "A pergunta mais importante para qualquer empresa que adota IA: você pode trocar o modelo sem perder a experiência institucional que construiu? Um checklist de soberania para avaliar sua plataforma de IA.",
       "text268bc1833e83": "Obrigado",
       "text268f14bbfe11": "Diagnóstico",

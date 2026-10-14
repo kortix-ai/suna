@@ -40,6 +40,7 @@ import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
 } from '../projects/secrets';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { reconcileEventSubscriptions } from '../projects/surface';
@@ -155,6 +156,7 @@ export function catalogPersistenceState(
 export function mcpCatalogCredentialError(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
   if (
+    error instanceof SecretUndecryptableError ||
     /^OAuth2 token request failed \([1-5][0-9]{2}\): [A-Za-z0-9_.-]{1,128}$/.test(message) ||
     message === 'OAuth2 token response has no access_token' ||
     message === 'Invalid stored OAuth2 credential'

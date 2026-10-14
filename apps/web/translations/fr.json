@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Déconnecter OpenCode Go",
     "opencodeGoFailed": "Impossible de connecter OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Indéchiffrable",
+      "hint": "Kortix ne peut pas déchiffrer la valeur enregistrée. La clé de chiffrement a changé ou la valeur est endommagée. Toute personne qui gère ce projet peut la saisir à nouveau.",
+      "reenter": "Saisir à nouveau la valeur",
+      "dialog": "Kortix ne peut pas déchiffrer la valeur enregistrée. Saisissez-la à nouveau pour enregistrer.",
+      "keyHint": "Kortix ne peut pas déchiffrer cette clé API. La clé de chiffrement du serveur a changé ou la clé enregistrée est endommagée. Kortix ne l'utilise plus tant que son propriétaire ou un administrateur du compte ne l'a pas saisie à nouveau.",
+      "loginHint": "Kortix ne peut pas déchiffrer cette connexion. La clé de chiffrement du serveur a changé ou la connexion enregistrée est endommagée. Kortix ne l'utilise plus tant que son propriétaire ne l'a pas reconnectée.",
+      "reenterKey": "Saisir à nouveau la clé",
+      "mineHint": "Kortix ne peut pas déchiffrer votre propre valeur de ce secret. Vos sessions la lisent à la place de la valeur partagée et échouent tant que vous ne l'avez pas supprimée.",
+      "deleteMine": "Supprimer ma valeur",
+      "mineDeleted": "Valeur supprimée",
+      "mineDeleteError": "Impossible de supprimer votre valeur. Réessayez."
+    }
+  },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
   },
@@ -10870,6 +10885,7 @@
       "text265e52a33b53": "Définissez userName sur l’adresse email utilisée par Kortix : ouvrez la section « Attribute Mapping » (distincte de l’écran d’authentification), dans la colonne « PingOne Directory », développez « Username » et sélectionnez « Email Address ». Dans les préférences/actions de la connexion, définissez ensuite « User Identifier » = userName et « User Filter Expression » = `userName eq \"%s\"`. Une erreur ici est la cause n°1 des échecs PingOne — la valeur par défaut est le nom d’utilisateur interne, pas l’adresse email.",
       "text266240ec402c": "Modèle de facturation",
       "text2672651736ac": "- Le code n’atteint main que via une demande de modification",
+      "text2677201ed3eb": "Départ d’un membre traité",
       "text267d2e1cb01e": "La question la plus importante pour toute entreprise qui adopte l’IA : pouvez-vous remplacer le modèle sans perdre l’expertise institutionnelle acquise ? Une checklist de souveraineté pour évaluer votre plateforme IA.",
       "text268bc1833e83": "Merci",
       "text268f14bbfe11": "Diagnostics",

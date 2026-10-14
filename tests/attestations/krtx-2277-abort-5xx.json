@@ -1,5 +1,5 @@
 {
-  "source_hash": "fb85f732d9b8dd304c9d389d60679e8c99708a82af3a6bd9888b9804735f032f",
+  "source_hash": "4f03f6a62dd03a8a5bae90a42f35f8898b15baaac91fb210b79ce754d2f80c4f",
   "diff_files": [
     "apps/api/src/__tests__/unit-proxy-abort-completion-suppression.test.ts",
     "apps/api/src/http-middleware.ts",
@@ -11,12 +11,12 @@
     "apps/api/src/sandbox-proxy/request-log-suppression.ts"
   ],
   "diff_hash": "16bb660605209c4a52d496cd065e7b09b7211821141b4722064455073cb4f28f",
-  "head": "b52123f158ed09c091eb3d961f335bdd55530df4",
+  "head": "d4c2d82fe3d0b3bef2c3e4ee9ebfe46a84758881",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T08:43:45.749Z"
+  "at": "2026-10-14T08:44:28.902Z"
 }
