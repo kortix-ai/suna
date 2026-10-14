@@ -19,7 +19,9 @@ import { sessionSandboxes } from '@kortix/db';
  * open ledger row `runtime_gone`, drop the turn authority the dead runtime held,
  * and redeliver each prompt those turns carried. `hold:false` on a wake —
  * the box is up and someone is looking — so the interrupted work continues by
- * itself; `MAX_PROMPT_REDELIVERIES` in redelivery.ts bounds any loop.
+ * itself; `MAX_PROMPT_REDELIVERIES` in redelivery.ts bounds any loop. A prompt
+ * whose turn already wrote a reply goes out as a continuation, not again
+ * (`findInterruptedTurn`, KRTX-1732).
  */
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -46,6 +48,8 @@ export interface RuntimeRestartRecoveryDeps {
     turnToken: string;
     endReason: 'runtime_gone';
     hold: boolean;
+    /** Always true here: every caller saw the runtime start again. */
+    resumable: boolean;
   }) => Promise<PromptRedelivery>;
   log?: (message: string, meta: Record<string, unknown>) => void;
 }
@@ -123,6 +127,9 @@ export async function recoverTurnsAfterRuntimeRestart(
         turnToken: turn.token,
         endReason: 'runtime_gone',
         hold: input.hold ?? false,
+        // The runtime restarted under this turn, and nobody asked it to: the
+        // drain continues a turn the restart cut short (KRTX-1732).
+        resumable: true,
       });
       redeliveries.push({ token: turn.token, outcome });
     } catch (err) {
