@@ -19677,6 +19677,12 @@
     "approvalPage": {
       "title": "{connector} のアクションを承認"
     },
+    "approvalWaiting": {
+      "byManager": "このプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "byName": "{name} またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "byOwner": "このセッションを開始した人またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "copyLink": "承認リンクをコピー"
+    },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",
       "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",

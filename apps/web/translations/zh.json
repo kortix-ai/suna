@@ -19677,6 +19677,12 @@
     "approvalPage": {
       "title": "批准 {connector} 操作"
     },
+    "approvalWaiting": {
+      "byManager": "等待管理此项目的人批准或拒绝此次调用。",
+      "byName": "等待 {name} 或管理此项目的人批准或拒绝此次调用。",
+      "byOwner": "等待启动此会话的人或管理此项目的人批准或拒绝此次调用。",
+      "copyLink": "复制审批链接"
+    },
     "secretIntakeWithheld": {
       "title": "已保存，但 {agent} 暂时无法读取",
       "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",

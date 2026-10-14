@@ -1235,5 +1235,10 @@
     "wrongAccountBody": "This invite is addressed to a different account. You're signed in as {{email}}.",
     "signOutAndContinue": "Sign out and continue",
     "backToProjects": "Back to projects"
+  },
+  "approvals": {
+    "waitingManagers": "Anyone who manages this project can approve or deny it.",
+    "waitingTitle": "Waiting on approval",
+    "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
   }
 }

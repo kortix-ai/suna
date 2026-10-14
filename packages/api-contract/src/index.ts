@@ -1776,6 +1776,13 @@ export const SessionAuditActionSchema = z.object({
   at: z.string(),
   resolved_at: z.string().nullable(),
   approval_url: z.string().nullable(),
+  /** True only on an unresolved row the CALLER may approve or deny: the verdict
+   *  `POST /approvals/:executionId` enforces (KRTX-1724). False on every other row. */
+  can_resolve: z.boolean(),
+  /** Who decides an unresolved row, as a class: `managers` for a session
+   *  started with an API token or a service account (`origin: 'backend'`),
+   *  else `managers_and_launcher`. Null on every settled row. */
+  resolvers: z.enum(['managers', 'managers_and_launcher']).nullable(),
 });
 export type SessionAuditAction = z.infer<typeof SessionAuditActionSchema>;
 

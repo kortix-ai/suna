@@ -267,6 +267,17 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SMTP_ADMIN_EMAIL: ['supabase-auth'],
   SMTP_SENDER_NAME: ['supabase-auth'],
   SAML_PRIVATE_KEY: ['supabase-auth'],
+  // The auth behavior flags (SHARED_AUTH_DEFAULTS). GoTrue reads them only
+  // through Compose interpolation, so only a recreate applies a new value.
+  // The API also reads ENABLE_EMAIL_AUTOCONFIRM: while it is on, a password
+  // email proves nothing (KRTX-1715). Both must restart on one value.
+  DISABLE_SIGNUP: ['supabase-auth'],
+  ENABLE_EMAIL_SIGNUP: ['supabase-auth'],
+  ENABLE_EMAIL_AUTOCONFIRM: ['supabase-auth', 'kortix-api'],
+  ENABLE_ANONYMOUS_USERS: ['supabase-auth'],
+  ENABLE_PHONE_SIGNUP: ['supabase-auth'],
+  ENABLE_PHONE_AUTOCONFIRM: ['supabase-auth'],
+  ADDITIONAL_REDIRECT_URLS: ['supabase-auth'],
 
   // Agent sandbox — all three interchangeable providers
   DAYTONA_API_KEY: ['kortix-api'],
