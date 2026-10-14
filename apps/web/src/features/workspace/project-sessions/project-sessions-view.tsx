@@ -63,6 +63,7 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  cachedSessionsScope,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -132,7 +133,7 @@ const SKELETON_ROW_WIDTHS = ['w-56', 'w-40', 'w-64', 'w-44', 'w-72', 'w-36', 'w-
  */
 function SessionListSkeleton() {
   return (
-    <div className="space-y-2 pt-4" aria-hidden>
+    <div className="space-y-2 pt-4" aria-hidden data-testid="session-list-skeleton">
       {SKELETON_ROW_WIDTHS.map((width) => (
         <div key={width} className="bg-popover flex items-center gap-3 rounded-md border px-3 py-2">
           <Skeleton className="size-8 shrink-0 rounded-sm py-0" />
@@ -284,6 +285,13 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   // 'visible' scope — the same list the sidebar shows. The request waits for
   // the probe so a manager does not fetch both scopes.
   const manage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  const listFilters = {
+    // Top-level sessions only; spawned sessions load under their parent.
+    parent: 'root',
+    startedBy: startedBy === 'all' ? undefined : startedBy,
+    q: searchQuery || undefined,
+    labels: labelFilters.length > 0 ? labelFilters : undefined,
+  } as const;
   const sessionsQuery = useProjectSessions(projectId, {
     enabled: !manage.isLoading,
     // 'project' scope: the manager-only lifecycle inventory — a
@@ -292,12 +300,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     // sessions the manager cannot open. It MUST carry its own scope segment in
     // the key (see qk.project.sessionsPaged' doc comment). Sharing the
     // default-scope key here is the exact bug this file existed to fix.
-    scope: manage.allowed ? 'project' : 'visible',
-    // Top-level sessions only; spawned sessions load under their parent.
-    parent: 'root',
-    startedBy: startedBy === 'all' ? undefined : startedBy,
-    q: searchQuery || undefined,
-    labels: labelFilters.length > 0 ? labelFilters : undefined,
+    // The probe is not kept across a reload: until it answers, the page shows
+    // the scope this user's restored cache holds, and fetches nothing.
+    scope: manage.isLoading
+      ? (cachedSessionsScope(queryClient, projectId, listFilters) ?? 'visible')
+      : manage.allowed
+        ? 'project'
+        : 'visible',
+    ...listFilters,
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)

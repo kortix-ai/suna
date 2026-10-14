@@ -18,7 +18,6 @@ import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import {
   SubAgentActivity,
   SubAgentStatusBanner,
-  subAgentCalls,
   useSubAgentThread,
 } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -28,6 +27,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useContext, useMemo, useState } from 'react';
 
 import { cleanWorkerOutput } from '@/features/session/tool/shared/agent-helpers';
+import { subAgentCalls } from '@kortix/sdk';
 
 export function AgentSpawnTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

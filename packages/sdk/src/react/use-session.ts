@@ -1083,7 +1083,8 @@ export interface UseSessionOptions {
    * When `false`: `messages`/`diffs`/`todos` are empty arrays, `status` is the
    * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions` stay
    * live (populated by SSE via the still-active event stream, just without the
-   * self-heal poll backstop), and `replayStartStash` is force-disabled (it reads
+   * self-heal poll backstop), the session log (v2) is still negotiated, so
+   * `useSessionLogThread` serves the log's records, and `replayStartStash` is force-disabled (it reads
    * the now-empty chat state, so it would never fire correctly). Everything the
    * boot/lifecycle fields need — `start`/`switch`/`runtimePhase`/`sandbox`/`stage`/
    * `runtimeSessionId` — is unaffected.
@@ -1511,8 +1512,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
   // 5a. The session log (v2) when negotiated; until then a no-op and the
-  // transcript below stays the only source (`use-session-log.ts`).
-  useSessionLogSync(projectId, sessionId, { enabled: transcriptHistoryEnabled });
+  // transcript below stays the only source (`use-session-log.ts`). Also without
+  // the chat engine: a host that reads its own transcript renders the log's
+  // threads (`useSessionLogThread`).
+  useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
@@ -1577,9 +1580,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     streamConnected,
-    // Until the saved-history read answers with a copy, the session-open
-    // bundle's copy of the same mirror may paint (`undefined` = read it).
-    mirror: transcriptHistory.envelope ?? undefined,
+    // The saved-history read above is this open's ONE transcript read: its
+    // copy, or `null` while it runs and when it found none. Never `undefined`,
+    // which would make the sync layer read the same window again (KRTX-189).
+    mirror: transcriptHistory.envelope,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification

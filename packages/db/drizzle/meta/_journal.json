@@ -1062,8 +1062,22 @@
     {
       "idx": 151,
       "version": "7",
-      "when": 1791982867899,
-      "tag": "20261014130107_credit_accounts_plan_monthly_usd",
+      "when": 1791993644874,
+      "tag": "20261014160044_config_release_heads",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1791998157484,
+      "tag": "20261014171557_base_tip_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792002975909,
+      "tag": "20261014183615_credit_accounts_plan_monthly_usd",
       "breakpoints": true
     }
   ]

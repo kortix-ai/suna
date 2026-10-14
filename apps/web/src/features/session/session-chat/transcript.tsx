@@ -312,6 +312,22 @@ export function messageAborted(message: SessionLogMessage): boolean {
 }
 
 /**
+ * The prompts a Stop stranded: the newest turn that got a reply ended by abort, and these
+ * prompts came after it with no reply. The runtime holds them; nothing runs them until the
+ * next send. A reply counts when `messages` (the whole thread) holds it, so a turn whose only
+ * reply the transcript hides (a failed attempt out of context) ran, and is not stranded.
+ */
+export function strandedPromptIds(turns: readonly SessionLogTurn[], messages: readonly SessionLogMessage[] | undefined): Set<string> {
+  const answered = new Set<string>();
+  for (const m of messages ?? []) if (m.role === 'assistant' && m.reply_to) answered.add(m.reply_to);
+  const newest = turns.findLastIndex((t) => t.assistant.length > 0 || answered.has(t.id));
+  if (newest < 0 || newest === turns.length - 1) return new Set();
+  const last = turns[newest].assistant.at(-1);
+  if (!last || !messageAborted(last)) return new Set();
+  return new Set(turns.slice(newest + 1).map((t) => t.id));
+}
+
+/**
  * What a turn's error row shows. An abort renders nothing — but an abort is the
  * EFFECT of whatever stopped the turn. `turnEndNotice` (SDK) decides whether the
  * control plane has something to say about THIS turn and what kind; this only

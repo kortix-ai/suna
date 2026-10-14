@@ -90,28 +90,28 @@ function QuestionAnswerBlock({ question, index, answers }: { question: ParsedQue
   );
 }
 
-export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, hasActiveQuestion }: ToolProps) {
+export function QuestionTool({ call, sessionId, defaultOpen, forceOpen, locked, hasActiveQuestion }: ToolProps) {
   const palette = useTurnPalette();
   const { colorScheme } = useColorScheme();
   const primary = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { chain } = useToolRowVariant();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const pendingQuestions = usePendingQuestions(hasActiveQuestion === undefined ? sessionId : undefined);
-  const pendingForCall = pendingQuestions.some((q) => q.tool?.callID === part.callID);
+  const pendingForCall = pendingQuestions.some((q) => q.tool?.callID === call.call_id);
   const active = hasActiveQuestion ?? pendingForCall;
 
   const questions = useMemo(() => parseQuestionsInput(input.questions), [input.questions]);
   const answers = useMemo(
-    () => resolveQuestionAnswers(toToolView(part).answers, output, questions.length),
-    [part, output, questions.length],
+    () => resolveQuestionAnswers(toToolView(call).answers, output, questions.length),
+    [call, output, questions.length],
   );
   const trigger = questionTrigger({ total: questions.length, answers, hasActiveQuestion: active });
   const type = chain ? TURN_TYPE.rowSm : TURN_TYPE.xs;
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       trigger={
         <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>
           <Text variant="muted" style={[type, { flexShrink: 0, fontFamily: FONT_MEDIUM, color: palette.foreground }]}>

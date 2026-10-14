@@ -83,8 +83,8 @@ export function useSessionLogRecord(session: Pick<SessionMessagesSource, 'sessio
  * One thread of {@link useSessionLog}, with its messages: the root thread when `threadId` is
  * omitted, a sub-agent's thread by its id. On v1 a thread id is a runtime session id, and the
  * thread is the `fromV1` view of that runtime session's rows. On v2 the v1 store rows the log
- * does not hold yet (an optimistic send) follow the thread's messages as `fromV1` messages,
- * until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
+ * does not hold yet join the thread's messages as `fromV1` messages, placed by time (an older
+ * page before them, an optimistic send after them), until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
  * the store holds no row of that runtime session (v1). `options.throttleMs` paces the thread on
  * both paths as {@link useSessionMessages} paces the v1 rows: a transcript reads a streaming turn
  * at most once per window (leading and trailing edge; the last change always lands).

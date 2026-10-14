@@ -79,8 +79,7 @@ import type { SessionEntry, SessionHeader } from '@earendil-works/pi-coding-agen
 import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
-  type AdapterCapabilities,
-  type CapabilityFeatures,
+  PI_CAPABILITIES,
   type ExportCursor,
   type SessionLog,
   type SessionLogBlock,
@@ -150,29 +149,8 @@ export const PI_NO_RESULT = 'No result provided'
 const DIALECT: Record<string, string> = { 'openai-completions': 'openai-chat', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages' }
 const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', task: 'task', question: 'question', web_search: 'web_search' }
 
-const native: CapabilityFeatures = {
-  tool_error_channel: false, // openai-chat role:tool has no is_error
-  attachments: { user: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], tool_result: false },
-  compaction: ['summary_first_tail'],
-  subagents: 'sync', // the Kortix `task` tool runs a child agent in process
-  todos: false,
-  reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
-  freeform_tool_input: false,
-}
-/**
- * `harness_versions` and `schema_minors` name what the oracle suites (`pi-session-log-restore.test.ts`,
- * `pi-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
- * fails when the pin (package.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
- */
-export const PI_CAPABILITIES: AdapterCapabilities = {
-  harness: 'pi',
-  harness_versions: '1.0.3',
-  schema_minors: [1],
-  dialects: ['openai-chat'],
-  native,
-  // A tool-result image becomes a follow-up user turn; a layout compaction is rendered as entries.
-  rendered: { ...native, attachments: { ...native.attachments, tool_result: true }, compaction: ['summary_first_tail', 'layout'] },
-}
+/** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
+export { PI_CAPABILITIES }
 
 // ── native shapes (pi's types are wider than what this reads) ─────────────
 type J = Record<string, any>

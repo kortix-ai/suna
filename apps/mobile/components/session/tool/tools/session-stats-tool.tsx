@@ -13,13 +13,13 @@ import type { ToolProps } from '../shared/types';
 
 const NO_ARGS: string[] = [];
 
-export function SessionStatsTool({ part, defaultOpen, forceOpen }: ToolProps) {
-  const output = partOutput(part);
+export function SessionStatsTool({ call, defaultOpen, forceOpen }: ToolProps) {
+  const output = partOutput(call);
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={StackIcon}
       trigger={{ title: 'Session Stats', subtitle: '', args: NO_ARGS }}
       defaultOpen={defaultOpen}

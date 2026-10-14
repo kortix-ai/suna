@@ -1,5 +1,5 @@
 {
-  "id": "a798925b-d56e-4fc3-b75f-7bead64e7a32",
+  "id": "f2c34786-bfc5-4b6e-a4ab-1ba7bce5b917",
   "prevId": "82fbe2f5-62b8-446d-bc1b-79282a871aa9",
   "version": "7",
   "dialect": "postgresql",
@@ -6998,6 +6998,97 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.config_release_heads": {
+      "name": "config_release_heads",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref": {
+          "name": "ref",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "release_id": {
+          "name": "release_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_commit": {
+          "name": "source_commit",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "config_tree_id": {
+          "name": "config_tree_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descriptor_key": {
+          "name": "descriptor_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roster": {
+          "name": "roster",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "config_release_heads_project_id_projects_project_id_fk": {
+          "name": "config_release_heads_project_id_projects_project_id_fk",
+          "tableFrom": "config_release_heads",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "config_release_heads_project_id_ref_pk": {
+          "name": "config_release_heads_project_id_ref_pk",
+          "columns": [
+            "project_id",
+            "ref"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.config_releases": {
       "name": "config_releases",
       "schema": "kortix",
@@ -9595,12 +9686,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "plan_monthly_usd": {
-          "name": "plan_monthly_usd",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "billing_model": {
           "name": "billing_model",
           "type": "text",
@@ -9670,12 +9755,6 @@
         "trial_seats": {
           "name": "trial_seats",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trial_monthly_usd": {
-          "name": "trial_monthly_usd",
-          "type": "numeric(12, 2)",
           "primaryKey": false,
           "notNull": false
         },

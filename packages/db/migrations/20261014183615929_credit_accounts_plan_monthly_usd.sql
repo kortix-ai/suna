@@ -21,7 +21,8 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
--- IF NOT EXISTS: this file was first committed as 20261013230949437; a database
--- that ran that name already has both columns.
+-- IF NOT EXISTS: this file was first committed under earlier timestamps
+-- (20261013230949437, 20261014130107914); a database that ran one of them
+-- already has both columns.
 ALTER TABLE "kortix"."credit_accounts" ADD COLUMN IF NOT EXISTS "plan_monthly_usd" numeric(12, 2);--> statement-breakpoint
 ALTER TABLE "kortix"."credit_accounts" ADD COLUMN IF NOT EXISTS "trial_monthly_usd" numeric(12, 2);
