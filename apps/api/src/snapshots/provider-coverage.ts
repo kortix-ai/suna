@@ -119,8 +119,8 @@ type RoutedCoverage = Pick<SandboxTemplateProviderCoverage, 'provider' | 'availa
 
 /**
  * Collapse per-provider truth into the legacy single-state field without lying:
- * a pinned project follows its selected provider; Automatic is `active` only
- * when every enabled provider it may route to is launch-ready.
+ * a pinned project follows its selected provider; Automatic is `active` when
+ * an enabled provider holds the image. Per-provider coverage keeps the gaps visible.
  */
 export function resolveRoutedTemplateState(
   coverage: readonly RoutedCoverage[],
@@ -134,7 +134,7 @@ export function resolveRoutedTemplateState(
 
   const states = coverage.filter((item) => item.available).map((item) => item.state);
   if (states.length === 0) return 'missing';
-  if (states.every((state) => state === 'active')) return 'active';
+  if (states.some((state) => state === 'active')) return 'active';
   if (states.some((state) => state === 'building')) return 'building';
   if (states.some((state) => state === 'removing')) return 'removing';
   if (states.some((state) => state === 'build_failed')) return 'build_failed';
