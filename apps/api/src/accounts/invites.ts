@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountInvitations,
@@ -7,7 +7,9 @@ import {
   accounts,
   projects,
 } from '@kortix/db';
+import type { Context } from 'hono';
 import type { AppEnv } from '../types';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
@@ -61,13 +63,49 @@ function normalizeEmail(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
 }
 
+/** The caller's email for invite matching, and whether Auth proved it. */
+interface CallerInviteEmail {
+  email: string;
+  proven: boolean;
+}
+
 /**
  * The caller's email for invite matching: the Auth row's email, and only when
  * it proves ownership (see iam/email-trust.ts). An SSO identity whose IdP has
  * not verified the email's domain matches no invite.
+ *
+ * While Auth auto-confirms sign-ups, a password email is unproven: whoever
+ * signed up first holds the address (KRTX-1715). It still matches an invite a
+ * person sent (`invited_by` set), which the invitee accepts in person; sign-in
+ * never claims it. It does not match an invite the account's IdP pushed through
+ * SCIM (`invited_by` null): nobody shares that invite, and the directory's
+ * groups ride on it. That person signs in with single sign-on instead.
  */
-async function callerInviteEmail(c: any): Promise<string> {
-  return trustedEmailForUser(c.get('userId') as string | undefined);
+async function callerInviteEmail(c: any): Promise<CallerInviteEmail> {
+  const userId = c.get('userId') as string | undefined;
+  const email = await trustedEmailForUser(userId, { allowAutoconfirmed: true });
+  const proven = !email || !config.ENABLE_EMAIL_AUTOCONFIRM || (await trustedEmailForUser(userId)) === email;
+  return { email, proven };
+}
+
+function addressedToCaller(caller: CallerInviteEmail, invite: { email: string; invitedBy: string | null }): boolean {
+  return caller.email === invite.email.toLowerCase() && (caller.proven || invite.invitedBy !== null);
+}
+
+/** 403 for an accept or decline of an invite not addressed to the caller. */
+function refuseInvite(c: Context<AppEnv>, caller: CallerInviteEmail, invite: { email: string }) {
+  if (caller.email === invite.email.toLowerCase()) {
+    return c.json(
+      {
+        error:
+          'Your identity provider manages this invite, and this instance does not confirm email addresses. Sign in with single sign-on to join.',
+        code: 'email_unconfirmed',
+      },
+      403,
+    );
+  }
+  return unverifiedSsoEmail(c, invite)
+    ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
 }
 
 /** 403 for a caller whose token names the invite's email but cannot prove it. */
@@ -283,8 +321,8 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-    const callerEmail = await callerInviteEmail(c);
-    if (!callerEmail) return c.json({ invites: [] });
+    const caller = await callerInviteEmail(c);
+    if (!caller.email) return c.json({ invites: [] });
 
     const rows = await db
       .select({ invite: accountInvitations, accountName: accounts.name })
@@ -292,9 +330,10 @@ accountInvitesRouter.openapi(
       .leftJoin(accounts, eq(accounts.accountId, accountInvitations.accountId))
       .where(
         and(
-          sql`lower(${accountInvitations.email}) = ${callerEmail}`,
+          sql`lower(${accountInvitations.email}) = ${caller.email}`,
           isNull(accountInvitations.acceptedAt),
           gt(accountInvitations.expiresAt, new Date()),
+          caller.proven ? undefined : isNotNull(accountInvitations.invitedBy),
         ),
       )
       .orderBy(accountInvitations.createdAt);
@@ -340,7 +379,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = await callerInviteEmail(c);
+  const caller = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
   // Not a uuid: no invite has it, and Postgres would reject the cast (500).
   if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
@@ -354,7 +393,7 @@ accountInvitesRouter.openapi(
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
 
   const expired = isExpired(invite);
-  const emailMatchesCaller = callerEmail === invite.email.toLowerCase();
+  const emailMatchesCaller = addressedToCaller(caller, invite);
 
   if (!emailMatchesCaller) {
     return c.json({
@@ -420,7 +459,7 @@ accountInvitesRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const callerEmail = await callerInviteEmail(c);
+  const caller = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
   // Not a uuid: no invite has it, and Postgres would reject the cast (500).
   if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
@@ -433,10 +472,7 @@ accountInvitesRouter.openapi(
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
 
-  if (callerEmail !== invite.email.toLowerCase()) {
-    return unverifiedSsoEmail(c, invite)
-      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
-  }
+  if (!addressedToCaller(caller, invite)) return refuseInvite(c, caller, invite);
 
   const alreadyAccepted = !!invite.acceptedAt;
   if (alreadyAccepted && invite.acceptedByUserId && invite.acceptedByUserId !== userId) {
@@ -569,7 +605,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = await callerInviteEmail(c);
+  const caller = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
   // Not a uuid: no invite has it, and Postgres would reject the cast (500).
   if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
@@ -586,10 +622,7 @@ accountInvitesRouter.openapi(
     return c.json({ error: 'Invite has already been accepted' }, 409);
   }
 
-  if (callerEmail !== invite.email.toLowerCase()) {
-    return unverifiedSsoEmail(c, invite)
-      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
-  }
+  if (!addressedToCaller(caller, invite)) return refuseInvite(c, caller, invite);
 
   await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));
 

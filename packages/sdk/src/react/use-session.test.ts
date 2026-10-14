@@ -71,6 +71,7 @@ import {
   hasStartGivenUp,
   markDispatchedForPartIds,
   nextInconclusiveSince,
+  presenceReturnReopensSession,
   rejectQuestion,
   resolveSendOptions,
   resolveSessionRuntimeUrl,
@@ -1415,5 +1416,27 @@ describe('resolveSendOptions', () => {
     expect(resolveSendOptions(none, { directory: '/workspace/x' })).toEqual({
       directory: '/workspace/x',
     });
+  });
+});
+
+describe('presenceReturnReopensSession', () => {
+  test("a returning human releases this tab's own stop hold", () => {
+    expect(presenceReturnReopensSession(true, 'stopped')).toBe(true);
+    expect(presenceReturnReopensSession(true, null)).toBe(true);
+  });
+
+  test('a returning human re-opens a poll that died on a dormant answer', () => {
+    // The idle reaper and a Stop from any other host land here: the cached
+    // terminal-`stopped` answer stopped the poll, and without this the only
+    // ways back were an explicit Restart or a page remount.
+    expect(presenceReturnReopensSession(false, 'stopped')).toBe(true);
+  });
+
+  test('a live, waking or failed session is untouched by a return', () => {
+    expect(presenceReturnReopensSession(false, 'ready')).toBe(false);
+    expect(presenceReturnReopensSession(false, 'starting')).toBe(false);
+    expect(presenceReturnReopensSession(false, 'failed')).toBe(false);
+    expect(presenceReturnReopensSession(false, null)).toBe(false);
+    expect(presenceReturnReopensSession(false, undefined)).toBe(false);
   });
 });

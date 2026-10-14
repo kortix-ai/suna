@@ -27,6 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
 import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
@@ -39,12 +40,14 @@ import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
+import { foreignReasoningExtension, withoutForeignReasoning } from './reasoning'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
 import type { PiSessionSnapshot } from './session-log'
+import { flushSessionLogJournal } from '../shared/session-log-journal'
 
 export type { CompiledAgent }
 
@@ -254,16 +257,6 @@ export interface PiDump {
 
 export const piDumpPath = (stateDir: string, sessionId: string) => join(stateDir, `${sessionId}.json`)
 
-/** The root id a dump names, or null when there is none. ponytail: parses the whole dump once more at start; read a side file if boot time shows it. */
-function dumpRootId(path: string): string | null {
-  try {
-    const rootId = (JSON.parse(readFileSync(path, 'utf8')) as { rootId?: unknown }).rootId
-    return typeof rootId === 'string' && rootId ? rootId : null
-  } catch {
-    return null
-  }
-}
-
 /** The reply `agent` streams now, as the session-log snapshot names it. */
 function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): { id: string; timestamp: number } | null {
   const message = agent?.state.streamingMessage
@@ -276,10 +269,11 @@ function decodeDataUrl(url: string): { mime: string; data: string } | null {
 }
 
 export class PiRuntime {
-  readonly rootId: string
+  /** `ses_pi<sha>` of the session, or the root a restored dump names (adopted at `start`). */
+  rootId: string
   readonly transcript = new TranscriptStore()
-  readonly permissions: PermissionBroker
-  readonly questions: QuestionBroker
+  permissions!: PermissionBroker
+  questions!: QuestionBroker
   readonly createdAt: number
   updatedAt: number
   title: string
@@ -372,16 +366,20 @@ export class PiRuntime {
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
-    // A restored store (session-log-restore.ts) names the log's root, so a session keeps one root across harnesses.
-    this.rootId = dumpRootId(piDumpPath(opts.cfg.piStateDir, opts.sessionId)) ?? mintRootId(opts.sessionId)
+    this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
     this.title = 'New session'
+    this.bindRoot()
+    void this.prefetchProjectBundle()
+  }
+
+  /** The brokers publish under the root id. */
+  private bindRoot(): void {
     this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
     })
-    void this.prefetchProjectBundle()
   }
 
   /**
@@ -450,6 +448,13 @@ export class PiRuntime {
     this.state = 'starting'
     this.startError = null
     const startedAt = this.now()
+    // A restored store (session-log-restore.ts) names the log's root, so a session keeps one root
+    // across harnesses. Read here, not in the constructor: the boot restores after it built the runtime.
+    const dump = this.readDump()
+    if (dump?.rootId && dump.rootId !== this.rootId) {
+      this.rootId = dump.rootId
+      this.bindRoot()
+    }
     try {
       const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, prebuiltRoot] = await Promise.all([
         import('./model'),
@@ -495,14 +500,14 @@ export class PiRuntime {
       this.instructions = this.loadInstructions()
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
-      const restored = this.restore()
+      const restored = this.restore(dump)
       // pi's session store is the model context: the agent's messages are its projection.
       const sessionManager = coding.SessionManager.inMemory(this.workspace, undefined, restored?.entries && restored.header ? [restored.header, ...restored.entries] : restored?.entries)
       if (restored && !restored.entries) for (const message of restored.agentMessages) sessionManager.appendMessage(message as never)
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          withoutForeignReasoning((model, context, options) => this.models!.models.streamSimple(model, context, options)),
           () => this.sampling(this.compiledAgent(), this.selected!),
         ),
         convertToLlm,
@@ -539,7 +544,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
+        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -1082,6 +1087,9 @@ export class PiRuntime {
     this.publishSessionUpdated()
     this.publish({ type: 'session.compacted', properties: { sessionID } })
     this.persist()
+    // P2.12: a compaction between turns (`compact()`) has no turn end to flush the
+    // session log, so the stored summary goes now. One inside a turn waits for its end.
+    if (event.result && !this.active) void flushSessionLogJournal()
   }
 
   /** The session row changed (`time.compacting`). */
@@ -1258,7 +1266,7 @@ export class PiRuntime {
     })
     const agent = new core.Agent({
       streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        withoutForeignReasoning((m, context, options) => this.models!.models.streamSimple(m, context, options)),
         () => this.sampling(this.compiled?.agent?.[input.agent], selected),
       ),
       toolExecution: 'sequential',
@@ -1543,7 +1551,8 @@ export class PiRuntime {
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
-      return skills
+      // The kortix-genui system skill exists only while the project's `genui` flag is on.
+      return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []
@@ -1854,11 +1863,19 @@ export class PiRuntime {
     }
   }
 
-  private restore(): PiDump | null {
+  /** The dump on disk, parsed once per start; null when there is none or it does not parse. */
+  private readDump(): PiDump | null {
     try {
-      if (!existsSync(this.dumpPath())) return null
-      const dump = JSON.parse(readFileSync(this.dumpPath(), 'utf8')) as PiDump
-      if (dump.version !== 1 || dump.rootId !== this.rootId) return null
+      return existsSync(this.dumpPath()) ? (JSON.parse(readFileSync(this.dumpPath(), 'utf8')) as PiDump) : null
+    } catch (err) {
+      logger.warn('[pi] transcript dump does not parse; starting empty', { err: (err as Error).message })
+      return null
+    }
+  }
+
+  private restore(dump: PiDump | null): PiDump | null {
+    try {
+      if (!dump || dump.version !== 1 || dump.rootId !== this.rootId) return null
       this.transcript.load(dump.transcript)
       for (const message of dump.transcript) this.clock.observe(message.info.id as string)
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)

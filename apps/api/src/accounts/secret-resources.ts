@@ -1,10 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { SecretValueStatusSchema } from '@kortix/api-contract';
 import { accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
 import { accountMemberRow } from '../iam/membership-read';
-import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../secrets/account-resource';
+import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject, probeAccountSecret, secretUsableInProject } from '../secrets/account-resource';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
@@ -22,6 +23,8 @@ const View = z.object({
   needs_reauth_at: z.string().nullable(),
   created_by: z.string(), created_at: z.string(), updated_at: z.string(),
   granted_user_ids: z.array(z.string()), can_use: z.boolean(),
+  /** Can the server decrypt the stored value? Never carries the value. */
+  status: SecretValueStatusSchema,
 });
 const Create = z.object({
   project_id: z.string().uuid().optional(),
@@ -55,6 +58,7 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
     needs_reauth_at: row.needsReauthAt?.toISOString() ?? null,
     created_by: row.createdBy, created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
     granted_user_ids: grants.map((grant) => grant.userId),
+    status: probeAccountSecret(row.accountId, row.valueEnc),
     can_use: row.projectId
       ? secretUsableInProject(row, row.projectId, grants.some((grant) => grant.userId === actorId)) &&
         await memberMayReadProject(row.accountId, row.projectId, actorId)

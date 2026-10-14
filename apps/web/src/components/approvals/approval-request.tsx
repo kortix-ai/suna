@@ -6,7 +6,8 @@ import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix'
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import { CheckCircleIcon, ClockIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import type { SessionAuditAction } from '@kortix/sdk';
 import { useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
@@ -19,6 +20,9 @@ const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
   second: 'numeric',
 });
 
+/** Who may decide a call, as the API names it (`resolvers`, KRTX-1724). */
+export type ApprovalResolvers = NonNullable<SessionAuditAction['resolvers']>;
+
 export interface ApprovalRequestData {
   action: string;
   risk: string | null;
@@ -30,6 +34,13 @@ export interface ApprovalRequestData {
    *  read-only members). Changes only the wording — the call is unreviewable
    *  either way, but "nothing was recorded" would be a lie here. */
   previewAuthorized?: boolean;
+  /** False when the VIEWER may not approve or deny the call (`can_resolve`,
+   *  KRTX-1724): the card then says who decides instead of offering a
+   *  decision the API answers with 403. */
+  canResolve?: boolean;
+  /** Who decides the call, for a viewer who may not (`resolvers`). Null or
+   *  absent: the plain wording. */
+  resolvers?: ApprovalResolvers | null;
   /** The agent's own description of the call's effect (`--reason`). Shown as
    *  unverified: the parameters stay the evidence. */
   approvalContext?: string | null;
@@ -82,6 +93,9 @@ interface ApprovalRequestProps {
   /** The host renders Approve / Deny itself (the Review Center puts them in
    *  the page header). The card then shows only the call. */
   hideDecision?: boolean;
+  /** Who besides a project manager may decide, for a viewer who may not
+   *  (`request.canResolve === false`). Null: the plain wording. */
+  resolverName?: string | null;
   className?: string;
 }
 
@@ -341,6 +355,47 @@ export function ApprovalUnreviewableNotice({
 }
 
 /**
+ * Who decides a call, in one sentence, for a viewer who may not (KRTX-1724).
+ * A session started with an API token or a service account is decided by
+ * managers only (`resolvers: 'managers'`). Otherwise the person who started
+ * it decides too: `resolverName` names them when it is known.
+ */
+export function useApprovalWaitingText(
+  resolvers?: ApprovalResolvers | null,
+  resolverName?: string | null,
+): string {
+  const t = useTranslations('hardcodedUi.approvalWaiting');
+  if (resolvers === 'managers') return t('byManager');
+  return resolverName ? t('byName', { name: resolverName }) : t('byOwner');
+}
+
+/** Shown in place of the decision to a viewer who may not decide the call. */
+export function ApprovalWaitingNotice({
+  resolverName,
+  resolvers,
+  dense = false,
+  className,
+}: DenseProp & {
+  resolverName?: string | null;
+  resolvers?: ApprovalResolvers | null;
+  className?: string;
+}) {
+  const text = useApprovalWaitingText(resolvers, resolverName);
+  return (
+    <p
+      className={cn(
+        'text-muted-foreground flex items-start gap-1.5 text-xs text-pretty',
+        dense ? '' : 'border-border border-t px-4 py-3',
+        className,
+      )}
+    >
+      <ClockIcon className="mt-px size-3.5 shrink-0" />
+      {text}
+    </p>
+  );
+}
+
+/**
  * The only two decisions on offer, everywhere. Deliberately no "allow for
  * session" / "always allow": a decision applies to exactly the call that asked
  * for it — a one-click waiver would pre-authorise later calls with entirely
@@ -427,12 +482,14 @@ export function ApprovalRequest({
   outcome = null,
   error = null,
   hideDecision = false,
+  resolverName = null,
   className,
 }: ApprovalRequestProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reviewComplete = request.reviewComplete !== false;
   const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
-  const actionable = request.pending && onDecision;
+  const waiting = request.pending && outcome === null && request.canResolve === false;
+  const actionable = request.pending && !waiting && onDecision;
   const resolved = !request.pending || outcome !== null;
   const resolutionLabel = resolvedLabel(request, outcome);
   const resolutionTone = resolvedTone(resolutionLabel);
@@ -508,6 +565,10 @@ export function ApprovalRequest({
           busyDecision={busyDecision}
           approvable={reviewable}
         />
+      ) : null}
+
+      {waiting ? (
+        <ApprovalWaitingNotice resolverName={resolverName} resolvers={request.resolvers} />
       ) : null}
     </section>
   );

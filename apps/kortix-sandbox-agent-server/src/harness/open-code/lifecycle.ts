@@ -122,13 +122,14 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
-import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
+import { bootLinkPath, isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
+import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
-import { SKILLS_DIR } from './project-layout'
+import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -617,7 +618,9 @@ export async function buildOpencodeConfigContent(
   // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
   // OpenCode tool: the tools a capability covers get its rule (E9).
   // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
-  // a Kortix project: every permission block denies them.
+  // a Kortix project: every permission block denies them. (The kortix-genui
+  // skill is not handled here: a project's `"*": "allow"` outranks a skill deny,
+  // so kortixd withholds its files instead, `syncFlaggedManagedSkills`.)
   out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
   if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
     for (const agent of Object.values(out.agent as Record<string, unknown>)) {
@@ -1772,7 +1775,7 @@ export async function detectOpencodeBinary(
   return null
 }
 
-async function resolveOpencodeCwd(cfg: Config): Promise<string> {
+export async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   try {
     const project = await stat(cfg.projectTarget)
     if (project.isDirectory()) return cfg.projectTarget
@@ -1948,6 +1951,77 @@ export interface OpencodeLifecycleOptions {
   readOpenTurn?: (baseUrl: string) => Promise<string | null>
 }
 
+/**
+ * Kill every `opencode serve` a previous daemon left on this box's ports.
+ *
+ * OpenCode runs in its own process group (spawnChild), so a daemon that dies
+ * without its shutdown path (SIGKILL, the OOM killer, a panic) leaves it
+ * running and holding the port. The supervisor relaunches the daemon in
+ * seconds, and every OpenCode the new daemon spawns exits with EADDRINUSE:
+ * health stays `starting` until the API parks the session (dev 2026-10-13,
+ * three times). A process on our ports with our exact `serve` arguments is
+ * that orphan. Called once per lifecycle, before its first spawn, so it never
+ * sees an OpenCode this daemon owns; our own children and group are skipped
+ * anyway. The port wait is a bind, the only reliable "free" check.
+ */
+async function reapOrphanedOpencode(ports: readonly number[]): Promise<void> {
+  // A `ps` stuck on a D-state process's /proc entry must not stall the boot: it is killed at
+  // 2 s, and the wait ends at 2.5 s even when something it left still holds its stdout.
+  let table: string | null
+  try {
+    const ps = Bun.spawn(['ps', '-ww', '-eo', 'pid=,ppid=,pgid=,args='], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+      env: process.env,
+      timeout: 2_000,
+      killSignal: 'SIGKILL',
+    })
+    table = await Promise.race([
+      Promise.all([new Response(ps.stdout).text(), ps.exited]).then(([text]) => (ps.signalCode ? null : text)),
+      Bun.sleep(2_500).then(() => null),
+    ])
+  } catch (err) {
+    logger.warn('[opencode] could not list processes; orphan check skipped', { err: (err as Error).message })
+    return
+  }
+  if (table === null) {
+    logger.warn('[opencode] ps did not answer in time; orphan check skipped')
+    return
+  }
+  const rows = table
+    .split('\n')
+    .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/))
+    .filter((row): row is RegExpMatchArray => row !== null)
+  const ownGroup = rows.find((row) => Number(row[1]) === process.pid)?.[3]
+  const parentOf = new Map(rows.map((row) => [row[1], Number(row[2])]))
+  const groups = new Map<number, string>()
+  for (const [, , ppid, pgid, args] of rows) {
+    // Our child, our group, or a group our child leads (a launcher that forks the server).
+    if (Number(ppid) === process.pid || pgid === ownGroup || Number(pgid) <= 1) continue
+    if (parentOf.get(pgid!) === process.pid) continue
+    if (ports.some((port) => args!.endsWith(` serve --port ${port} --hostname 127.0.0.1`))) groups.set(Number(pgid), args!)
+  }
+  if (groups.size === 0) return
+  for (const [pgid, args] of groups) {
+    logger.warn('[opencode] killing an OpenCode a previous daemon left on its port', { pgid, args })
+    try {
+      process.kill(-pgid, 'SIGKILL')
+    } catch {}
+  }
+  const deadline = Date.now() + 5_000
+  const bindable = (port: number) => {
+    try {
+      Bun.serve({ port, hostname: '127.0.0.1', fetch: () => new Response() }).stop(true)
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (const port of ports) {
+    while (!bindable(port) && Date.now() < deadline) await Bun.sleep(50)
+  }
+}
+
 export function createOpencodeLifecycle(
   cfg: Config,
   projectEnv?: ProjectEnvStore,
@@ -1996,6 +2070,7 @@ export function createOpencodeLifecycle(
   let opencodeCwd = cfg.workspace
   const startupMark = options.onStartupMark ?? (() => {})
   let binaryResolutionPromise: Promise<string | null> | null = null
+  let orphansReaped = false
 
   async function resolveBinaryPath(): Promise<string | null> {
     if (!binaryResolutionPromise) {
@@ -2076,6 +2151,13 @@ export function createOpencodeLifecycle(
     const served = await readBootLinkTarget()
     const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
     const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
+    // A config release is staged once and reused from disk without the overlay step, so the
+    // kortix-genui skill is made to match the `genui` flag here, where the overlay lands
+    // (`managedOverlayRoot`, as the assets service resolves it), before OpenCode reads it.
+    if (served && projectRoot) {
+      const skillsDir = join(managedOverlayRoot(served, projectRoot), 'skills')
+      await syncFlaggedManagedSkills(skillsDir, { env: baseEnv, unseal: isInReleaseStore(skillsDir) })
+    }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
@@ -2739,6 +2821,10 @@ export function createOpencodeLifecycle(
     async start() {
       stopping = false
       state = 'starting'
+      if (!orphansReaped) {
+        orphansReaped = true
+        await reapOrphanedOpencode([currentCfg.opencodeInternalPort, currentCfg.opencodeStandbyPort])
+      }
       const bin = await resolveBinaryPath()
       if (!bin) {
         logger.warn('[opencode] binary not found; daemon will continue, opencode reports as starting')

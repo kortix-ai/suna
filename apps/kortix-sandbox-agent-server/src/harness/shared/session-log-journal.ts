@@ -84,6 +84,7 @@ import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
+import { carryHarness, type HarnessCarry } from './session-log-boot'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
 export const JOURNAL_ACK_TIMEOUT_MS = 3_000
@@ -103,6 +104,10 @@ export interface SessionLogJournalOptions {
   generation: number
   /** Cursors `restore` returned; empty on a box that restored nothing. */
   cursors?: readonly ExportCursor[]
+  /** Set on every session patch this journal sends: a partial restore's notice (D3, `session-log-boot.ts`). */
+  session?: SessionLogSessionPatch
+  /** The restored harness history (P7.1, `carryHarness` in `session-log-boot.ts`): replaces the adapter's one-entry history. */
+  harness?: HarnessCarry
   /** Test seams. */
   maxBatchBytes?: number
   retryMs?: number
@@ -321,8 +326,10 @@ export class SessionLogJournal {
       threads.push(thread)
     }
     if (changes.session) {
-      this.session = { ...this.session, ...changes.session }
-      sessionLogEventBus().publish('log.state', { generation: this.options.generation, session: changes.session } satisfies SessionLogStateEvent)
+      const session = { ...changes.session, ...this.options.session }
+      if (changes.session.harness) session.harness = carryHarness(this.options.harness, changes.session.harness)
+      this.session = { ...this.session, ...session }
+      sessionLogEventBus().publish('log.state', { generation: this.options.generation, session } satisfies SessionLogStateEvent)
     }
     for (const thread of threads) sessionLogEventBus().publish('log.thread', thread, thread.thread_id)
     for (const event of messages) sessionLogEventBus().publish('log.message', event, 'message' in event ? event.message.thread_id : undefined)

@@ -17389,6 +17389,34 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_project_sessions_project_live": {
+          "name": "idx_project_sessions_project_live",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "(\"kortix\".\"project_sessions\".\"metadata\" ? 'deletedAt') is not true",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {

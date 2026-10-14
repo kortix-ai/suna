@@ -2,16 +2,13 @@
  * Files (`/v1/drives`). Maps to spec §10b (DRIVE-1, DRIVE-2). A team account
  * with OWNER as owner and a plain member who works in the project. Files is
  * not a toggle of its own: it follows the project's `volumes` flag, which the
- * project admin turns on with `PATCH /projects/:id/features`. The boot-mode
- * policy holds no per-organization switch. Writes need drive storage; on a
+ * project admin turns on with `PATCH /projects/:id/features`. Writes need drive storage; on a
  * target without it every write answers 503 `drive_storage_unavailable`,
  * which DRIVE-1 asserts instead of the file lifecycle.
  */
 import { flow } from '../core/flow';
 import type { FlowContext, Principal } from '../core/types';
-import { asPlatformAdmin } from '../fixtures/enterprise-demo';
 
-type Policy = { volumes?: { orgs?: Record<string, boolean> }; orgs?: Record<string, unknown> } & Record<string, unknown>;
 
 /**
  * Each API process caches membership for up to 15 s. Poll until 12 reads in
@@ -42,8 +39,6 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
-      'GET /v1/admin/api/boot-modes',
-      'PUT /v1/admin/api/boot-modes',
       'GET /v1/drives',
       'GET /v1/drives/:driveId/files',
       'GET /v1/drives/:driveId/files/content',
@@ -95,26 +90,6 @@ flow(
       await ctx.step('Files is not a project toggle: the features route refuses it → 400', async () => {
         (await owner.patch('/v1/projects/:projectId/features', { feature: 'drives', enabled: true }, { params: { projectId: project.id } })).status(400);
         (await owner.get('/v1/drives', listFiles)).status(403);
-      });
-
-      await ctx.step('the account OWNER cannot read the boot-mode policy → 403', async () => {
-        (await owner.get('/v1/admin/api/boot-modes')).status(403);
-      });
-
-      await ctx.step('the boot-mode policy has no per-organization Volumes: an entry for this organization is dropped and turns nothing on', async () => {
-        const admin = asPlatformAdmin(ctx);
-        const current = (await admin.get('/v1/admin/api/boot-modes')).status(200).json<{ policy: Policy }>().policy;
-        const saved = (await admin.put('/v1/admin/api/boot-modes', {
-          ...current,
-          volumes: { enabled: true, percent: 100, orgs: { [team.id]: true } },
-          orgs: { [team.id]: { mode: 'volume', standardFallback: true } },
-        }))
-          .status(200)
-          .json<{ policy: Policy }>().policy;
-        if (Object.keys(saved.volumes?.orgs ?? {}).length || Object.keys(saved.orgs ?? {}).length) {
-          throw new Error(`the policy kept per-organization entries: ${JSON.stringify(saved)}`);
-        }
-        (await owner.get('/v1/drives', listFiles)).status(403).body().has('$.code', 'feature_disabled');
       });
 
       await ctx.step("the project admin turns the project's Volumes on → Files → 200", async () => {

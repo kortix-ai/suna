@@ -86,6 +86,15 @@ The sandbox is ready when `/start` answers `stage: 'ready'`. The hook runs no se
 
 Saved history is the transcript copy the API writes at each turn end. The first window holds the newest 40 messages, at most 1,000,000 characters. `loadOlder()` reads older windows, also while the sandbox is off. Live messages then reconcile into it by message id.
 
+An open reads the first window once. The session-open snapshot (`GET …/snapshot`) carries it, and `useSession` waits up to 2 s for a snapshot in flight. A slower or failed snapshot leaves the read to `GET …/transcript?shape=sync&history=true`. `useSession` passes that answer to its `useSessionSync` as `mirror`. If you mount a second `useSessionSync` for the root conversation next to `useSession`, pass `mirror: null` so it does not read the window a second time. Omit `mirror` in two cases, so that the hook makes the one read itself:
+
+- Next to `useSession({ chatEngine: false })`. That `useSession` makes no saved-history read.
+- On a `savedChild` hook. It reads the sub-agent's own window, which the open does not read.
+
+To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It makes the same read and returns `{ envelope, empty }`. Pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws.
+
+The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the snapshot asks for no window (`?transcript=0`), and the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
+
 To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the child's saved window from the parent session. The device keeps no copy of it.
 
 ### Returns
@@ -257,7 +266,7 @@ More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#cust
 
 ### Read the session log
 
-`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?, options?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. `options.throttleMs` paces the v1 rows as `useSessionMessages` paces them (a transcript reads a streaming turn at most once per window). Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?, options?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. `options.throttleMs` paces the v1 rows as `useSessionMessages` paces them (a transcript reads a streaming turn at most once per window). Pass the whole `useSession` result. Both start no request: `useSession` loads the log. `useSessionLog` changes with every message; to read session fields (`restore_grade`, `grade_counts`, `harness`, `ext`) use `useSessionLogRecord(session)`: the session record without threads, null while the session reads v1, unchanged through message puts and deltas, so its consumer re-renders only on a page or a session patch.
 
 ```tsx
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
@@ -277,14 +286,15 @@ A session reads the log only when all of these are true. Otherwise it reads v1, 
 1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
 2. The project flag `session_log` is `true`.
 3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
-4. The session's thread was converted from v1 (OpenCode). A pi session reads v1.
+
+Both harnesses read v2: an OpenCode thread (converted from v1) and a pi thread (written natively).
 
 An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
 
 - The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
-- The API does not relay `schema` yet; that is the remaining step. Until it does, the stream keeps the v1 frames, and a turn in progress streams through them as before.
+- The API relays `schema=v2`: a runtime that lists `session.log.v2` streams its own `log.*` frames, and the API converts the v1 frames of an older runtime.
 
-A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. A session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. In a thread converted from v1 (OpenCode) the rows are exact. A pi thread's rows carry what its blocks map, with a tool call's `details` as `state.metadata`; render its blocks (`sessionLogTurns`) for the full record. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
 
 ## Hooks
 
@@ -388,6 +398,7 @@ export function adoptDeviceCaches(queryClient: QueryClient, userId: string) {
 - On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
 - The saved-copy store keeps only copies the server sent at a turn end, never the live transcript. A stopped turn cannot come back as a running one.
 - A full, corrupt or missing store never throws. The app then opens from the server, as without the store.
+- `isPersistableQueryKey` never keeps a permission probe (`useCan`). When a probe's answer picks a query key, read the entry the restored cache holds until the probe answers. The web Sessions page does this for its manager-only `scope: 'project'` list.
 
 ## Sign-out and identity changes
 

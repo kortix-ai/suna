@@ -236,6 +236,20 @@ describe('parsePlacementTip', () => {
     ]);
     expect(parsePlacementTip({})).toBeNull();
   });
+
+  test('marks a user message that holds an automatic compaction, and only that', () => {
+    const tip = parsePlacementTip([
+      { info: { id: 'msg_auto', role: 'user' }, parts: [{ id: 'prt_a', type: 'compaction', auto: true }] },
+      { info: { id: 'msg_manual', role: 'user' }, parts: [{ id: 'prt_m', type: 'compaction', auto: false }] },
+      { info: { id: 'msg_text', role: 'user' }, parts: [{ id: 'prt_t', type: 'text', text: 'hi', synthetic: true }] },
+    ]);
+    expect(tip?.map((message) => [message.id, message.autoCompaction === true])).toEqual([
+      ['msg_auto', true],
+      ['msg_manual', false],
+      ['msg_text', false],
+    ]);
+    expect(tip?.[0]?.partIds).toEqual(['prt_a']);
+  });
 });
 
 // Only the first case writes the process-wide skew registry, under its own

@@ -15,7 +15,8 @@ export {
   releaseInboxHold,
   retryInboxPrompt,
 } from './inbox-rows';
-export { deleteSession, restartSession } from './actions';
+export { deleteSession, restartSession, retireWarmProjectSessions } from './actions';
+export { restoreSession } from './restore-session';
 export { stopSession } from './stop';
 export { reconcileUndeliveredPrompts } from './undelivered-prompts';
 export { confirmInboxPromptConsumed, reconcileForwardedPrompts } from './consumption';

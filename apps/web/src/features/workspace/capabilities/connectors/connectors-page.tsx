@@ -189,7 +189,7 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
 const SCOPE_DESCRIPTION: Record<ConnectorScope, string> = {
   all: 'Give agents access to outside tools and data.',
   connected: 'Give agents access to outside tools and data.',
-  channels: 'Reach your agent from the tools your team already uses.',
+  channels: 'Talk to your agents from the apps your team uses.',
 };
 
 /** `?scope=` is user-editable text; anything that is not a scope is All. */

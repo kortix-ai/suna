@@ -28,8 +28,12 @@ import type { SessionLogChanges } from '@/harness/contract/session-log'
 import { loadConfig } from '@/harness/harness'
 import { requirePiConfig } from '@/harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
-import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES } from '@/harness/pi/session-log'
-import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
+import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, PI_VERSION } from '@/harness/pi/session-log'
+import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
+import { reconcileSessionLog } from '@/harness/shared/session-log-boot'
+import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { fakeSessionLogApi } from './helpers/fake-session-log-api'
+import { WIRE_MESSAGE_ID, mintWireMessageId } from '@kortix/sdk/wire-message-id'
 import type { PiRuntime } from '@/harness/pi/runtime'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { startFakeModel, type Step } from './helpers/fake-model'
@@ -94,13 +98,18 @@ function freshBox(sessionId: string) {
     KORTIX_PROJECT_ID: 'proj-pi-restore',
     KORTIX_PI_TURN_RETRY_BASE_MS: '5',
   }
-  const start = async () => {
-    const service = createPiHarnessService(requirePiConfig(loadConfig(env)), undefined, { env })
-    services.push(service)
-    await service.lifecycle.start()
-    return service.runtime()!
+  /** Built, not started: the boot builds the service before its reconcile restores. */
+  const service = () => {
+    const s = createPiHarnessService(requirePiConfig(loadConfig(env)), undefined, { env })
+    services.push(s)
+    return s
   }
-  return { workspace, stateDir: join(workspace, '.state'), start }
+  const start = async () => {
+    const s = service()
+    await s.lifecycle.start()
+    return s.runtime()!
+  }
+  return { workspace, stateDir: join(workspace, '.state'), service, start }
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
@@ -189,7 +198,8 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     expect(JSON.stringify(sent[log.threads[0]!.thread_id])).toContain('[interrupted]')
   }, 60_000)
 
-  test('reasoning: another model\'s is lowered to assistant text; the same model\'s stays reasoning', async () => {
+  test('reasoning (C3, P7.3): another model\'s never reaches the request as text', async () => {
+    expect(PI_CAPABILITIES.native.reasoning_replay).toBe('same_model')
     for (const same of [false, true]) {
       const log = load('golden')
       const root = log.threads[0]!
@@ -199,12 +209,110 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
       await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null })
       const rt = await box.start()
       const [body] = await turn(rt, 'x', [{ text: 'OK' }])
-      const reply = (body!.messages as Array<{ role: string; content: unknown }>).find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('Done.'))
-      // pi-ai joins the lowered thinking and the text with no separator.
-      expect(reply?.content).toBe(same ? 'Done.' : 'The file exists now.Done.')
+      const reply = (body!.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('Done.'))
+      expect(reply?.content).toBe('Done.')
+      // The fixture's thinking has no signature: pi-ai sends no reasoning field for it, on the same model either.
+      expect(JSON.stringify(body)).not.toContain('The file exists now.')
       expect(oracle(log, root.thread_id, rt, 'x', body!).diffs).toEqual([])
       for (const service of services.splice(0)) await service.lifecycle.stop()
     }
+  }, 60_000)
+
+  test('reasoning (P7.3): a live model switch drops the first model\'s reasoning; back on the first model it returns as reasoning', async () => {
+    const OTHER = 'other-model'
+    const rt = await freshBox('sess-pi-model-switch').start()
+    await turn(rt, 'first', [{ thinking: 'THOUGHT-A', text: 'answer-a' }])
+    const on = async (modelID: string, text: string) => {
+      model.script([{ text: `on ${modelID}` }])
+      const before = model.bodies.length
+      expect(await rt.admit({ text, files: [], model: { providerID: 'kortix', modelID } }).done).toBe('completed')
+      const body = model.bodies[before]!
+      const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+      const root = log.threads.find((t) => t.parent_thread_id === null)!
+      // The view of the log before this prompt: drop the turn it just added.
+      const prior = structuredClone(log)
+      const thread = prior.threads.find((t) => t.thread_id === root.thread_id)!
+      const turns = thread.messages.filter((m) => m.kind === 'turn').sort((a, b) => a.seq - b.seq)
+      const cut = new Set(turns.slice(-2).map((m) => m.message_id))
+      thread.messages = thread.messages.filter((m) => !cut.has(m.message_id))
+      return { body, check: oracle(prior, root.thread_id, rt, text, body) }
+    }
+    const other = await on(OTHER, 'second')
+    expect(rt.selectedModel()!.modelID).toBe(OTHER)
+    expect(JSON.stringify(other.body)).not.toContain('THOUGHT-A')
+    expect(other.check.diffs).toEqual([])
+    const back = await on(MODEL_ID, 'third')
+    const replay = (back.body.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && m.content === 'answer-a')
+    expect(replay?.reasoning_content).toBe('THOUGHT-A')
+    expect(back.check.diffs).toEqual([])
+    // The restore keeps the same model's reasoning and its signature: a fresh box replays it as reasoning.
+    const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+    const box = freshBox(log.session_id)
+    expect((await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async () => null })).dropped).toEqual({})
+    const [restored] = await turn(await box.start(), 'fourth', [{ text: 'OK' }])
+    const again = (restored!.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && m.content === 'answer-a')
+    expect(again?.reasoning_content).toBe('THOUGHT-A')
+  }, 60_000)
+
+  /** One root turn on `modelID`; returns the request bodies it sent. */
+  async function turnOn(rt: PiRuntime, modelID: string, text: string, steps: Step[]) {
+    model.script(steps)
+    const before = model.bodies.length
+    expect(await rt.admit({ text, files: [], model: { providerID: 'kortix', modelID } }).done).toBe('completed')
+    return model.bodies.slice(before)
+  }
+
+  test('reasoning (P7.3): a compaction on another model summarizes no reasoning of the first; on the same model it does', async () => {
+    for (const summarizer of ['other-model', MODEL_ID]) {
+      const rt = await freshBox(`sess-pi-compact-${summarizer}`).start()
+      await turnOn(rt, MODEL_ID, 'first', [{ thinking: 'THOUGHT-A', text: 'answer-a' }])
+      await turnOn(rt, summarizer, 'second', [{ text: 'answer-b' }])
+      model.script([{ text: 'SUMMARY-P73' }])
+      const before = model.bodies.length
+      rt.compact()
+      await waitFor(() => rt.idle())
+      const sent = JSON.stringify(model.bodies.slice(before))
+      expect(sent).toContain('<conversation>')
+      expect(sent).toContain('answer-a')
+      if (summarizer === MODEL_ID) expect(sent).toContain('THOUGHT-A')
+      else expect(sent).not.toContain('THOUGHT-A')
+      for (const service of services.splice(0)) await service.lifecycle.stop()
+    }
+  }, 60_000)
+
+  test('reasoning (P7.3): a sub-agent resumed on another model gets no reasoning of its first model', async () => {
+    const rt = await freshBox('sess-pi-child-switch').start()
+    const first = await turnOn(rt, MODEL_ID, 'spawn a helper', [
+      { tool: 'task', args: { description: 'helper', prompt: 'think, then answer', subagent_type: 'general' } },
+      { thinking: 'CHILD-THOUGHT', text: 'child answer' },
+      { text: 'parent done' },
+    ])
+    const taskId = JSON.stringify(first.at(-1)).match(/task_id: ([A-Za-z0-9_-]+)/)?.[1]
+    expect(taskId).toBeTruthy()
+    const resumed = await turnOn(rt, 'other-model', 'resume the helper', [
+      { tool: 'task', args: { description: 'helper', prompt: 'again', subagent_type: 'general', task_id: taskId } },
+      { text: 'child again' },
+      { text: 'parent again' },
+    ])
+    const child = JSON.stringify(resumed[1])
+    expect(child).toContain('child answer')
+    expect(child).not.toContain('CHILD-THOUGHT')
+  }, 60_000)
+
+  test('reasoning (P7.3): a restored message of the same gateway model without `api` keeps its reasoning (modelView compares provider and model)', async () => {
+    const log = load('golden')
+    const root = log.threads[0]!
+    root.messages.find((m) => m.kind === 'compaction')!.in_context = false // msg_g03 is visible
+    const g03 = root.messages.find((m) => m.message_id === 'msg_g03')!
+    g03.model = { provider: 'kortix', model: MODEL_ID } // a v1 or OpenCode-converted log has no api
+    for (const b of g03.blocks) if (b.type === 'reasoning') b.ext = { pi: { version: PI_VERSION, data: { thinkingSignature: 'reasoning_content' } } }
+    const box = freshBox(log.session_id)
+    await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null })
+    const rt = await box.start()
+    const [body] = await turn(rt, 'x', [{ text: 'OK' }])
+    const reply = (body!.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && m.content === 'Done.')
+    expect(reply?.reasoning_content).toBe('The file exists now.')
+    expect(oracle(log, root.thread_id, rt, 'x', body!).diffs).toEqual([])
   }, 60_000)
 })
 
@@ -334,6 +442,53 @@ describe('a pi session recorded here, restored into a fresh box', () => {
   }, 60_000)
 })
 
+describe('P2.10 and P2.12 on the real pi runtime', () => {
+  afterEach(() => resetSessionLogJournalForTests())
+
+  test('P2.10: reasoning tokens, a call title and a child context message time reach the log', async () => {
+    const rt = await freshBox('sess-pi-p2-10').start()
+    await turn(rt, 'spawn a helper', [
+      { tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general' } },
+      { tool: 'bash', args: { command: 'printf sub > sub.txt' }, reasoning: 7 },
+      { text: 'child wrote sub.txt', reasoning: 19 },
+      { text: 'parent done' },
+    ])
+    const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+    const [root, child] = log.threads
+    const childMessages = child!.messages
+    expect(childMessages.filter((m) => m.role === 'assistant').map((m) => m.usage?.reasoning)).toEqual([7, 19])
+    expect(root!.messages.filter((m) => m.role === 'assistant').map((m) => m.usage?.reasoning)).toEqual([0, 0])
+    const bash = childMessages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'bash')
+    expect(bash).toMatchObject({ status: 'complete', title: 'bash' })
+    const context = childMessages.find((m) => m.kind === 'context')!
+    expect(Date.parse(context.created_at)).toBe(Date.parse(child!.created_at))
+    expect(Date.parse(context.created_at)).toBeGreaterThan(Date.parse('2020-01-01T00:00:00Z'))
+  }, 60_000)
+
+  test('P2.12: a manual compaction reaches the journal when pi stores it, without another turn', async () => {
+    const sessionId = 'sess-pi-p2-12'
+    const box = freshBox(sessionId)
+    const api = fakeSessionLogApi({ session_id: sessionId, threads: [] } as unknown as SessionLog, { projectId: 'proj-pi-restore', stateDir: join(box.workspace, '.runtime') })
+    try {
+      const rt = await box.start()
+      expect(startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), { generation: 0, cursors: [] })).not.toBeNull()
+      await turn(rt, 'list the files', [{ tool: 'bash', args: { command: 'ls' } }, { text: 'listed' }])
+      // As the turn end does (`relayTurnEnd`).
+      expect(await flushSessionLogJournal()).toBe(true)
+      const compactions = () => api.stored().threads.flatMap((t) => t.messages).filter((m) => m.kind === 'compaction')
+      expect(compactions()).toEqual([])
+      model.script([{ text: 'SUMMARY-P2-12: one listing.' }])
+      rt.compact()
+      // No turn and no flush from here: the compaction must reach the API on its own.
+      await waitFor(() => compactions().length === 1)
+      expect(compactions()[0]!.blocks[0]).toMatchObject({ type: 'compaction', trigger: 'manual' })
+      expect((compactions()[0]!.blocks[0] as { summary: string }).summary).toContain('SUMMARY-P2-12')
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+})
+
 /** What the API holds after the journal posts `changes` on top of `log` (puts replace by id, tombstones remove, new threads join). */
 function applyJournal(log: SessionLog, changes: SessionLogChanges): SessionLog {
   const out = structuredClone(log)
@@ -386,7 +541,10 @@ describe('the seq floor (P6.2 review)', () => {
     const box = freshBox(log.session_id)
     const result = await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null }, { [root!.thread_id]: 50, [child!.thread_id]: 40 })
     const rt = await box.start()
-    await turn(rt, 'root turn', [{ text: 'root answer' }])
+    // The floor entry (`kortix.seq-floor`) is in the store, and the model never sees it.
+    expect(JSON.stringify(readFileSync(join(box.stateDir, `${log.session_id}.json`), 'utf8'))).toContain('kortix.seq-floor')
+    const [body] = await turn(rt, 'root turn', [{ text: 'root answer' }])
+    expect(oracle(log, root!.thread_id, rt, 'root turn', body!).diffs).toEqual([])
     await turn(rt, 'resume', [{ tool: 'task', args: { description: 'resume', prompt: 'child turn', subagent_type: 'general', task_id: child!.thread_id } }, { text: 'child answer' }, { text: 'parent answer' }])
     const changes = await createPiSessionLogPort(() => rt.sessionLogSnapshot()).changes(result.cursors)
     const fresh = (thread: string) => changes.messages.filter((m) => m.message.thread_id === thread && !(m.message.message_id in result.cursors.find((c) => c.thread_id === thread)!.native_hashes)).map((m) => m.message.seq)
@@ -394,5 +552,166 @@ describe('the seq floor (P6.2 review)', () => {
     expect(Math.min(...fresh(root!.thread_id))).toBeGreaterThan(60)
     expect(fresh(child!.thread_id).length).toBeGreaterThan(0)
     expect(Math.min(...fresh(child!.thread_id))).toBeGreaterThan(40)
+  }, 60_000)
+})
+
+describe('the boot reconcile on pi (P6.4)', () => {
+  const PROJECT = 'proj-pi-restore'
+  /** golden, its image stored by the API (a `kortix-attachment://` object the box reads). */
+  const storedImage = () => {
+    const log = load('golden')
+    const image = log.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!.blocks.find((b) => b.type === 'attachment') as { ref: string }
+    image.ref = `kortix-attachment://${PROJECT}/${log.session_id}/img-1`
+    return log
+  }
+  const objects = new Map([['img-1', FIXTURE_PNG]])
+  /** The port the boot reconciles with: pi's dump at rest, before the runtime starts. */
+  const probe = (box: ReturnType<typeof freshBox>, sessionId: string) =>
+    createPiSessionLogPort(() => readPiSnapshot(box.stateDir, sessionId), { stateDir: box.stateDir, sessionId, cwd: box.workspace })
+  const restores = (api: ReturnType<typeof fakeSessionLogApi>) => api.calls.filter((c) => c === 'POST log/restore').length
+  afterEach(() => resetSessionLogJournalForTests())
+
+  test('no native state: the box restores before pi starts, pi adopts the log root, the next request equals modelView; after a restart the store is current at the persisted generation', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const box = freshBox(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime'), objects })
+    try {
+      // As `runPi`: the service exists before the reconcile writes the dump.
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))!
+      expect(api.calls).toEqual(['GET log/manifest', 'POST log/restore', 'GET attachments/img-1'])
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toBeUndefined()
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      expect(rt.rootId).toBe(rootId)
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+      const [body] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+      expect(oracle(log, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
+      expect(JSON.stringify(body)).toContain(`data:image/png;base64,${FIXTURE_PNG.toString('base64')}`)
+      expect(await flushSessionLogJournal()).toBe(true)
+      // At the claimed generation; the restored records are skipped by hash, the new turn is sent.
+      expect(new Set(api.journal.map((b) => b.generation))).toEqual(new Set([1]))
+      const sent = api.journal.flatMap((b) => b.puts.map((p) => p.message.message_id))
+      expect(sent.filter((id) => log.threads.some((t) => t.messages.some((m) => m.message_id === id)))).toEqual([])
+      expect(sent.length).toBeGreaterThanOrEqual(2)
+      // P7.1: the log's harness (`fixture`) stays in the history, and pi serves the session from the first root seq after the restore.
+      const floor = Math.max(...log.threads[0]!.messages.map((m) => m.seq))
+      expect(boot.harness).toEqual({ history: log.harness.history, from_seq: floor + 1, at: expect.any(String) })
+      expect(api.journal.find((b) => b.session?.harness)?.session?.harness).toEqual({
+        current: 'pi',
+        history: [...log.harness.history, { harness: 'pi', version: PI_VERSION, from_seq: floor + 1, at: boot.harness!.at }],
+      })
+
+      // A daemon restart: the store holds the log and the turn; nothing is restored.
+      await service.lifecycle.stop()
+      resetSessionLogJournalForTests()
+      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toEqual({ generation: 1, cursors: [], harness: boot.harness })
+      expect(restores(api)).toBe(1)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
+  test('stale native state (a store from before the last turns) is restored; native ahead (a turn not yet journaled) is kept', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const box = freshBox(log.session_id)
+    const older = structuredClone(log)
+    older.threads[0]!.messages = older.threads[0]!.messages.slice(0, -2)
+    await restorePiSessionLog(older, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async () => FIXTURE_PNG })
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime'), objects })
+    try {
+      expect((await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))?.generation).toBe(1)
+      expect(restores(api)).toBe(1)
+      const service = box.service()
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      const [body] = await turn(rt, 'Anything else?', [{ text: 'UNSENT-ANSWER' }])
+      expect(oracle(log, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
+      // That turn never reached the API (no journal ran): the store is ahead of the log.
+      await service.lifecycle.stop()
+      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toMatchObject({ generation: 1, cursors: [] })
+      expect(restores(api)).toBe(1)
+      const again = await box.start()
+      expect(JSON.stringify(again.transcript.all())).toContain('UNSENT-ANSWER')
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
+  test('the note sorts in place for display: after the restored history, before the next turn (a pi session with wire ids)', async () => {
+    // The SDK's display order (packages/sdk core/turns/grouping.ts). A computed specifier keeps the
+    // daemon's typecheck off the SDK's DOM-typed modules; bun resolves it at run time.
+    const grouping: string = join(import.meta.dir, '../../../../packages/sdk/src/core/turns/grouping.ts')
+    const { compareMessagesForDisplay } = (await import(grouping)) as { compareMessagesForDisplay: (a: { info: { id: string } }, b: { info: { id: string } }) => number }
+    const sessionId = 'sess-pi-restore-order'
+    const recorded = freshBox(sessionId)
+    const rtA = await recorded.start()
+    await turn(rtA, 'first question', [{ text: 'first answer' }])
+    await turn(rtA, 'second question', [{ tool: 'bash', args: { command: 'echo hi' } }, { text: 'second answer' }])
+    const log = piSessionLog(rtA.sessionLogSnapshot()!).log
+    // As a converted log that lost an image carries it: the restore is partial and adds a note.
+    Object.assign(log, { restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
+    const box = freshBox(sessionId)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime') })
+    try {
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, sessionId), { retryMs: 1 }))!
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+      await turn(rt, 'a later question', [{ text: 'a later answer' }])
+      expect(await flushSessionLogJournal()).toBe(true)
+      const stored = api.stored()
+      const note = stored.threads[0]!.messages.find((m) => m.blocks.some((b) => b.id === 'prt_kortix_restore_g1'))!
+      expect(note.origin).toBe('notification')
+      expect(note.message_id).toMatch(WIRE_MESSAGE_ID)
+      // The web order: the stored log as v1 rows, sorted the way every host sorts a transcript.
+      const rows = toV1(stored).rows.filter((r) => (r.info as { sessionID?: string }).sessionID === stored.threads[0]!.thread_id || stored.threads[0]!.messages.some((m) => m.message_id === r.info.id))
+      const order = [...rows].sort(compareMessagesForDisplay as never).map((r) => String(r.info.id))
+      const bySeq = [...stored.threads[0]!.messages].sort((a, b) => a.seq - b.seq).map((m) => m.message_id)
+      expect(order).toEqual(bySeq.filter((id) => order.includes(id)))
+      const later = stored.threads[0]!.messages.find((m) => m.role === 'user' && m.blocks.some((b) => b.type === 'text' && b.text === 'a later question'))!
+      expect(order.indexOf(note.message_id)).toBeGreaterThan(order.indexOf(log.threads[0]!.messages.at(-1)!.message_id))
+      expect(order.indexOf(note.message_id)).toBeLessThan(order.indexOf(later.message_id))
+      // The next client prompt, minted as the SDK mints it (above the transcript it reads), sorts after the note.
+      const client = mintWireMessageId({ after: [note.message_id] })
+      expect(compareMessagesForDisplay({ info: { id: note.message_id } }, { info: { id: client } })).toBeLessThan(0)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
+  test('a partial restore (D3): the agent gets a note in its next request and the log, the user a partial session patch', async () => {
+    // golden as stored: its image is a `blob:` the box cannot read, so the restore drops it.
+    const log = load('golden')
+    const rootId = log.threads[0]!.thread_id
+    const box = freshBox(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime') })
+    try {
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))!
+      expect(boot.session).toEqual({ restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 }, ext: { kortix: { version: '1', data: { restore: { generation: 1, dropped: { attachment: 1 }, truncated: 0 } } } } })
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+      expect(await flushSessionLogJournal()).toBe(true)
+      // The journal sent the note (as pi holds it) and the notice; nothing else.
+      expect(api.journal.flatMap((b) => b.puts.map((p) => p.message.blocks[0]?.id))).toEqual(['prt_kortix_restore_g1'])
+      expect(api.journal[0]!.session).toMatchObject({ restore_grade: 'partial', grade_counts: { attachment: 1 } })
+      const note = api.stored().threads[0]!.messages.at(-1)!
+      expect(note).toMatchObject({ role: 'user', origin: 'notification', in_context: true, seq: 15, blocks: [{ id: 'prt_kortix_restore_g1' }] })
+      // modelView of the stored log, which now holds the note, is the next request, but for the image the box could not read.
+      const expected = structuredClone(api.stored())
+      const g04 = expected.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!
+      g04.blocks = g04.blocks.filter((b) => b.type !== 'attachment')
+      const [body] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+      expect(JSON.stringify(body)).toContain('Kortix: this session was restored from its saved session log. Some earlier content could not be restored: 1 attachment.')
+      expect(oracle(expected, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
+    } finally {
+      api.stop()
+    }
   }, 60_000)
 })

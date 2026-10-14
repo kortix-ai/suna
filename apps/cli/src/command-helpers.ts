@@ -491,7 +491,7 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
-const SESSION_UUID_RE =
+export const SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expand a short session-id prefix against the project's session list,

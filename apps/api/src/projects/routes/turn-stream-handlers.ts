@@ -9,6 +9,7 @@
 import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
 import {
@@ -44,6 +45,25 @@ import {
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
+
+/** Text relayed to Slack/Teams. Generative UI blocks become markdown first. */
+export function relayAnswerText(raw: string | undefined): string {
+  return genuiToMarkdown((raw ?? '').trim());
+}
+
+/**
+ * The 400 body for text that cannot be relayed, or null. A non-empty answer whose generative UI
+ * renders to nothing is refused: the raw OpenUI source must never reach Slack or Teams.
+ */
+export function relayTextRejection(
+  raw: string | undefined,
+  text: string,
+): { error: 'text is required'; reason?: 'genui_block_unrenderable' } | null {
+  if (text) return null;
+  return raw?.trim()
+    ? { error: 'text is required', reason: 'genui_block_unrenderable' }
+    : { error: 'text is required' };
+}
 
 /** The only surface these handlers use from the Hono context. */
 export interface RelayResponder {
@@ -114,10 +134,17 @@ export function claimInitialTurn(
   if (typeof messageId !== 'string' || !messageId.trim()) {
     return c.json({ ok: true, initial_turn: null, ...pin });
   }
+  // Harness context stored beside the prompt at create (e.g. the CLI's worker
+  // contract); an older daemon ignores the field and keeps its old shape.
+  const context =
+    typeof turnStreamMetadata.initial_context === 'string'
+      ? turnStreamMetadata.initial_context
+      : undefined;
   return c.json({
     ok: true,
     initial_turn: {
       prompt,
+      ...(context ? { context } : {}),
       turn_token: turnToken,
       message_id: messageId,
     },
@@ -588,12 +615,13 @@ export async function relayContent(
   body: TurnStreamBody,
   sessionId: string,
 ): Promise<Response> {
-  const text = (body.text ?? '').trim();
-  if (!text) {
-    return c.json({ error: 'text is required' }, 400);
+  const text = relayAnswerText(body.text);
+  const rejection = relayTextRejection(body.text, text);
+  if (rejection) {
+    return c.json(rejection, 400);
   }
 
-  const detail = body.detail?.trim() || undefined;
+  const detail = relayAnswerText(body.detail) || undefined;
   const outputForPrev = body.output?.trim() || undefined;
   const sourcesForPrev = Array.isArray(body.sources)
     ? body.sources

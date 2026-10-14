@@ -17,12 +17,14 @@
  * - every burst is this line, even ONE call ("Completed 1 step"): web shows
  *   those bare, mobile never expands a step inline (Jay, 2026-09-24);
  * - thinking never shows: `burstView` drops reasoning parts;
- * - a burst that merges to nothing (plumbing only) renders nothing.
+ * - a burst that merges to nothing (plumbing only) renders nothing;
+ * - under an opened "Worked for" row (`inFold`) the settled line names the
+ *   work instead ("Ran 9 commands, read 2 files · 1 failed", `burstWorkLabel`).
  */
 
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
-import type { Part } from '@kortix/sdk';
+import { burstWorkLabel, type Part } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CaretRightIcon } from '@/lib/icons';
@@ -45,6 +47,8 @@ interface ActivityBurstProps {
   onOpenFile?: (path: string) => void;
   toDisplayPath?: (path: string) => string;
   onPermissionReply?: (requestId: string, reply: PermissionReply) => void;
+  /** Under an opened "Worked for" row: the line names the work (`burstWorkLabel`), not the step count. */
+  inFold?: boolean;
 }
 
 function ActivityBurstImpl({
@@ -55,6 +59,7 @@ function ActivityBurstImpl({
   onOpenFile,
   toDisplayPath,
   onPermissionReply,
+  inFold = false,
 }: ActivityBurstProps) {
   const palette = useTurnPalette();
   const { parts } = segment;
@@ -72,6 +77,8 @@ function ActivityBurstImpl({
 
   const openSheet = useCallback(() => useActivitySheetStore.getState().show(parts, view, context), [parts, view, context]);
 
+  const title = useMemo(() => (inFold && !view.running ? burstWorkLabel(parts) : view.title), [inFold, view, parts]);
+
   if (view.hidden) return null;
 
   return (
@@ -83,11 +90,11 @@ function ActivityBurstImpl({
     >
       {view.running ? (
         <TextShimmer variant="muted" tone="muted" style={[TURN_TYPE.sm, TABULAR]} numberOfLines={1}>
-          {view.title}
+          {title}
         </TextShimmer>
       ) : (
         <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.sm, TABULAR, { flexShrink: 1, color: palette.muted70 }]}>
-          {view.title}
+          {title}
         </Text>
       )}
       <CaretRightIcon size={TURN_SPACE.caret} color={palette.muted40} />
@@ -107,6 +114,7 @@ export const ActivityBurst = memo(
     a.onOpenFile === b.onOpenFile &&
     a.toDisplayPath === b.toDisplayPath &&
     a.onPermissionReply === b.onPermissionReply &&
+    a.inFold === b.inFold &&
     samePartsList(a.segment.parts, b.segment.parts),
 );
 ActivityBurst.displayName = 'ActivityBurst';

@@ -1,6 +1,6 @@
 {
   "id": "362b2390-897c-4149-b9f2-fadec982f822",
-  "prevId": "474e4dae-b23c-40be-b1d5-94fd3617f9e6",
+  "prevId": "82fbe2f5-62b8-446d-bc1b-79282a871aa9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17036,6 +17036,34 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_sessions_project_live": {
+          "name": "idx_project_sessions_project_live",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "(\"kortix\".\"project_sessions\".\"metadata\" ? 'deletedAt') is not true",
           "concurrently": false,
           "method": "btree",
           "with": {}

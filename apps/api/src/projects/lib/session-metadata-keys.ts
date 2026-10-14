@@ -36,6 +36,8 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Titles (`projects/session-title-generate.ts`). Renames use `body.name`.
   'name',
   'title_source',
+  // The initial turn's harness context, server-read by the initial-turn claim.
+  'initial_context',
   // Agents as principals (spec 2026-09-22 §2.3): the mint reads these to decide
   // `on_behalf_of`. A client that could set `spawned_by_session` would inherit
   // another session's human; one that could forge the cleared stamp is harmless
@@ -58,18 +60,6 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
-  // Persistent machine (`platform/services/persistent-machine.ts`): set from
-  // the `persistent_machine` body field at create, and decides how the box
-  // boots, stops and is reset.
-  'persistent_machine',
-  // Ephemeral sessions (`platform/services/ephemeral-sandbox.ts`): the state
-  // volume the session's boxes mount and the session delete removes, and the
-  // box generation that keys Platinum's create dedup. Boot modes
-  // (`boot-mode-store.ts`): the session's boot record, which picks the next
-  // box's mode and its fallbacks.
-  'ephemeral_state_volume',
-  'ephemeral_generation',
-  'bootMode',
 ] as const;
 
 /**

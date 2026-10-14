@@ -2586,7 +2586,7 @@ harnessFlow(
       };
 
       let first = '';
-      await ctx.step('the box runs the release over the cap, built from its own checkout with no download', async () => {
+      await ctx.step('the box runs the release over the cap, from the project snapshot or its own git fetch, never the API archive', async () => {
         const release = await waitFor(releaseOf, {
           until: (rel) => Boolean(rel) && rel.source === 'release' && rel.proven === true && rel.running_release_id === rel.desired_release_id,
           timeoutMs: 180_000,
@@ -2596,7 +2596,12 @@ harnessFlow(
         if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
         first = String(release.running_release_id);
         const transport = await materialized(first);
-        if (transport !== 'workspace') throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the checkout`);
+        // Since #9770 the config provider never reads /workspace. A release over
+        // the archive cap comes from the S3 project snapshot when one is built,
+        // else from a depth-1 git fetch of the release commit.
+        if (transport !== 'snapshot' && transport !== 'git') {
+          throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the project snapshot or a git fetch`);
+        }
       });
 
       await ctx.step('the runtime serves the agent of that release', async () => {
@@ -2604,7 +2609,7 @@ harnessFlow(
         if (description !== markerA) throw new Error(`the kortix agent's description is ${JSON.stringify(description)}, not the release's`);
       });
 
-      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot', async () => {
+      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot or a git fetch', async () => {
         await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerB) }, 'next release over the cap');
         // The snapshot is built in the background; the box retries once a minute until it is ready.
         const release = await waitFor(releaseOf, {
@@ -2615,7 +2620,12 @@ harnessFlow(
         });
         if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
         const transport = await materialized(String(release.running_release_id));
-        if (transport !== 'snapshot') throw new Error(`the new release was materialized from ${transport}, not the project snapshot`);
+        // #9770: the box converges as soon as the base moves. The snapshot of the
+        // new commit is built in the background, so the box takes a depth-1 git
+        // fetch when it is not ready yet. Never the API archive: it is over the cap.
+        if (transport !== 'snapshot' && transport !== 'git') {
+          throw new Error(`the new release was materialized from ${transport}, not the project snapshot or a git fetch`);
+        }
       });
 
       await ctx.step('the runtime serves the agent of the new release, and a turn runs on it', async () => {

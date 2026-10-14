@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadEnv } from "../../src/core/env";
 import { createDatabaseSession } from "../../src/fixtures/database-project";
+import { seedSessionTranscript } from "../../src/fixtures/session-transcript";
 import { runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
@@ -302,15 +303,17 @@ for (const runtime of runtimes) {
         await expect(hub).toBeVisible();
         const hubRow = hub.locator(".kx-overlay-sidebar-titlebar");
         const back = hubRow.getByRole("button", { name: /Back to app/i });
-        const search = hubRow.getByRole("button", { name: /Search/i });
+        // Since #9750 the hub titlebar is Back to app + account switcher on the
+        // left and the sidebar collapse trigger on the right (no search button).
+        const collapse = hubRow.getByRole("button", { name: /Toggle Sidebar/i });
         await expect(back).toBeVisible();
-        await expect(search).toBeVisible();
+        await expect(collapse).toBeVisible();
         expect(
           await hubRow.evaluate((row) => getComputedStyle(row).justifyContent),
         ).toBe(desktop ? "flex-end" : "space-between");
         const backBox = (await back.boundingBox())!;
-        const searchBox = (await search.boundingBox())!;
-        expect(backBox.x + backBox.width).toBeLessThan(searchBox.x);
+        const collapseBox = (await collapse.boundingBox())!;
+        expect(backBox.x + backBox.width).toBeLessThan(collapseBox.x);
         if (!desktop) {
           const rowBox = (await hubRow.boundingBox())!;
           expect(backBox.x - rowBox.x).toBeLessThan(24);
@@ -859,6 +862,8 @@ for (const runtime of runtimes) {
         pooledResource = { accountId, secretId: key.secret_id };
         await resize(720, 480);
         await page.goto(`${baseURL}/projects/${project.id}/customize/models`);
+        // Since #9801 a provider's keys open in its sheet; below 48rem it covers the list.
+        await page.locator('[data-provider-row="anthropic"]').click();
         const providerKeys = page.getByRole('region', { name: 'Anthropic API keys' });
         await expect(providerKeys.getByText('Desktop pooled key')).toBeVisible();
         const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
@@ -957,76 +962,59 @@ for (const runtime of runtimes) {
           });
           const rootId = `ses_${sessionId.replaceAll("-", "")}`;
           const now = Date.now() - 60_000;
-          await runDatabaseSql(
-            "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
-            [sessionId, rootId],
-            databaseUrl,
-          );
-          await runDatabaseSql(
-            "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
-            [sessionId, accounts[0].account_id, project.id],
-            databaseUrl,
-          );
-          await runDatabaseSql(
-            "INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)",
-            [sessionId, project.id, accounts[0].account_id, rootId],
-            databaseUrl,
-          );
-          for (const role of ["user", "assistant"] as const) {
-            const id =
-              role === "user"
-                ? "msg_000000000000000000000001"
-                : "msg_000000000000000000000002";
-            const info = {
-              id,
-              sessionID: rootId,
-              role,
-              agent: "kortix",
-              time: {
-                created: now,
-                ...(role === "assistant" ? { completed: now + 1 } : {}),
-              },
-              ...(role === "user"
-                ? { model: { providerID: "kortix", modelID: "openai/gpt-5.5" } }
-                : {
-                    parentID: "msg_000000000000000000000001",
-                    providerID: "kortix",
-                    modelID: "openai/gpt-5.5",
-                    mode: "build",
-                    cost: 0,
-                    tokens: {
-                      input: 0,
-                      output: 0,
-                      reasoning: 0,
-                      cache: { read: 0, write: 0 },
-                    },
-                    finish: "stop",
-                    path: { cwd: "/workspace", root: "/workspace" },
-                  }),
-            };
-            const parts = [
-              {
-                id: `prt_queue_${role}`,
-                sessionID: rootId,
-                messageID: id,
-                type: "text",
-                text: role === "user" ? "Previous prompt" : "Previous response",
-              },
-            ];
-            await runDatabaseSql(
-              "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-              [
-                sessionId,
-                id,
-                rootId,
-                role,
-                new Date(now),
-                JSON.stringify(info),
-                JSON.stringify(parts),
-              ],
-              databaseUrl,
-            );
-          }
+          // The web run keeps its history in the session log (the project's
+          // `session_log` flag on); the desktop run keeps the v1 mirror, so this
+          // live-chat journey covers both stores.
+          await seedSessionTranscript(loadEnv(), {
+            projectId: project.id,
+            accountId: accounts[0].account_id,
+            sessionId,
+            messages: () =>
+              (["user", "assistant"] as const).map((role) => {
+                const id =
+                  role === "user"
+                    ? "msg_000000000000000000000001"
+                    : "msg_000000000000000000000002";
+                const info = {
+                  id,
+                  sessionID: rootId,
+                  role,
+                  agent: "kortix",
+                  time: {
+                    created: now,
+                    ...(role === "assistant" ? { completed: now + 1 } : {}),
+                  },
+                  ...(role === "user"
+                    ? { model: { providerID: "kortix", modelID: "openai/gpt-5.5" } }
+                    : {
+                        parentID: "msg_000000000000000000000001",
+                        providerID: "kortix",
+                        modelID: "openai/gpt-5.5",
+                        mode: "build",
+                        cost: 0,
+                        tokens: {
+                          input: 0,
+                          output: 0,
+                          reasoning: 0,
+                          cache: { read: 0, write: 0 },
+                        },
+                        finish: "stop",
+                        path: { cwd: "/workspace", root: "/workspace" },
+                      }),
+                };
+                const parts = [
+                  {
+                    id: `prt_queue_${role}`,
+                    sessionID: rootId,
+                    messageID: id,
+                    type: "text",
+                    text: role === "user" ? "Previous prompt" : "Previous response",
+                  },
+                ];
+                return { info, parts };
+              }),
+            ...(!desktop && { log: { bearer: auth.access_token } }),
+          });
           // Keep the cached conversation mounted. The local test sandbox has
           // no provider behind it, so a real /start eventually marks it stopped.
           // Prompt acceptance and read-back still use the real API below.
@@ -2782,17 +2770,14 @@ nativeBrowserTest?.(
       await centeredInBand(sidebarRow);
       await centeredInBand(breadcrumbRow);
       await centeredInBand(breadcrumbRow.getByRole("navigation", { name: "breadcrumb" }));
+      // Since #9750 the hub titlebar carries no search button.
       const back = sidebarRow.getByRole("button", { name: /Back to app/i });
-      const search = sidebarRow.getByRole("button", { name: /Search/i });
       const collapse = sidebarRow.getByRole("button", { name: "Toggle Sidebar" });
-      for (const control of [back, search, collapse]) {
+      for (const control of [back, collapse]) {
         await expect(control).toBeVisible();
         await centeredInBand(control);
         await clearsLights(control);
       }
-      await search.click();
-      await expect(main.locator('[data-slot="command-input"]')).toBeVisible();
-      await main.keyboard.press("Escape");
       await collapse.click();
       await expect(breadcrumbRow).toHaveAttribute("data-sidebar-collapsed", "");
       const reopen = breadcrumbRow.getByRole("button", { name: "Toggle Sidebar" });

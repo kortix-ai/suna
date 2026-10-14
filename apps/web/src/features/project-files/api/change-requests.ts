@@ -17,6 +17,7 @@ import {
   reopenChangeRequest,
   requestChangesOnChangeRequest,
   type ChangeRequest,
+  type ListChangeRequestsOptions,
   type ChangeRequestDetailResponse,
   type ChangeRequestDiffResponse,
   type ChangeRequestMergePreview,
@@ -37,10 +38,11 @@ export type {
   VersionDiffPreview,
 };
 
+/** One page of change requests (default 50); `next_cursor` continues it. */
 export async function fetchChangeRequests(
   projectId: string,
   status?: ChangeRequestStatus | 'all',
-  options?: { originSessionId?: string },
+  options?: ListChangeRequestsOptions,
 ) {
   return listChangeRequests(projectId, status, options);
 }

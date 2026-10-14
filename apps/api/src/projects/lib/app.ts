@@ -7,6 +7,7 @@ import {
   SecretSchema as ContractSecretSchema,
   SessionCreateInputSchema as ContractSessionCreateInputSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
+  SessionDeleteResultSchema as ContractSessionDeleteResultSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
@@ -27,6 +28,9 @@ export const projectsApp = makeOpenApiApp<AppEnv>();
 
 export const projectWebhooksApp = makeOpenApiApp<AppEnv>();
 
+/** `/v1/sessions`: one session by id, in any project (routes/project-sessions.ts). */
+export const sessionsApp = makeOpenApiApp<AppEnv>();
+
 // ─── Reusable OpenAPI schemas (these power the docs, not runtime response
 // validation). Core project-domain surfaces come from @kortix/api-contract —
 // the shared wire contract — while large/dynamic shapes are still modeled
@@ -41,6 +45,8 @@ export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi
 export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.openapi('SessionCreateAccepted');
 
 export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
+
+export const SessionDeleteResultSchema = ContractSessionDeleteResultSchema.openapi('SessionDeleteResult');
 
 export const WarmProjectSessionResultSchema =
   ContractWarmProjectSessionResultSchema.openapi('WarmProjectSessionResult');

@@ -137,6 +137,9 @@ describe('the reused repair settles runtime_gone and requeues the prompt', () =>
         turnToken: 'tok-1',
         endReason: 'runtime_gone',
         hold: false,
+        // A config swap is not a stop anybody asked for: the drain may
+        // continue the turn it cut short (KRTX-1732).
+        resumable: true,
       },
     ]);
     expect(result.lost).toHaveLength(1);

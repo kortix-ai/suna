@@ -241,7 +241,7 @@ describe('the built-in member role reads no directory', () => {
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
     expect(PROJECT_LEAVES.length).toBe(49);
-    // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261013210000001).
+    // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261014190000001).
     expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was

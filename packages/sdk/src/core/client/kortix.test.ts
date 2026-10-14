@@ -242,6 +242,11 @@ test('session(projectId, sessionId).cost binds project scope without starting th
   expect(last().method).toBe('GET');
 });
 
+test('session(...).restore takes the deleted session out of the trash', async () => {
+  await kortix.session('PID123', 'SID456').restore();
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/sessions/SID456/restore' });
+});
+
 test('project(id).session(sid) is the same session handle', async () => {
   await kortix.project('PA').session('SB').get();
   expect(last().url).toContain('/projects/PA/sessions/SB');
@@ -357,6 +362,9 @@ test('project(id).review hits the review-items endpoints', async () => {
   await kortix.project('PID123').review.submit({ kind: 'output', title: 'Result' });
   expect(last().url).toContain('/projects/PID123/review/items');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').review.summary();
+  expect(last().url).toContain('/projects/PID123/review/summary');
 });
 
 test('project(id).approvals hits the approvals inbox endpoints', async () => {
@@ -747,6 +755,14 @@ test('session(...).transcript hits the compact transcript endpoint with limit/ch
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
   expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');
   expect(last().method).toBe('GET');
+});
+
+// KRTX-2316: the list is one page; the facade passes the status and the cursor.
+test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
+  await kortix.project('PID123').changeRequests.list();
+  expect(last().url).toMatch(/\/projects\/PID123\/change-requests$/);
+  await kortix.project('PID123').changeRequests.list('all', { limit: 100, cursor: '51' });
+  expect(last().url).toContain('/projects/PID123/change-requests?status=all&limit=100&cursor=51');
 });
 
 test('project(id).changeRequests.requestChanges hits the request-changes endpoint', async () => {

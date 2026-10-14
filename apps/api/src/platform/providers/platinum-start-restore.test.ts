@@ -222,6 +222,18 @@ test('a relocation Platinum asks to retry is retried until the box starts', asyn
   expect(events).toEqual(['POST 503', 'POST 503', 'POST 200']);
 }, 15_000);
 
+// The box's own host is full. Capacity frees as other boxes stop, so the wake
+// waits for it instead of parking the session stopped on the first refusal.
+test('a host-saturated 503 is retried until the host has room', async () => {
+  starts = [
+    { status: 503, state: 'stopped', code: 'capacity' },
+    { status: 503, state: 'stopped', code: 'capacity' },
+    ok('starting'),
+  ];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 503', 'POST 503', 'POST 200']);
+}, 15_000);
+
 test('a 503 that is not a retry-later relocation fails the start at once', async () => {
   starts = [{ status: 503, state: 'stopped', code: 'relocation_snapshot_unavailable' }];
   const error = await (await provider()).start('sbx_1').then(

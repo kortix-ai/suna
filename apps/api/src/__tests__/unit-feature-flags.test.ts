@@ -25,7 +25,7 @@ function findCatalogFlag(key: string) {
 /** Registered but deliberately not offered as a toggle — see "Hidden flags" in
  *  the registry header. */
 // Flags derived from the project's Volumes flag are hidden too, but are not
-// choices of their own: they are covered by platform/services/boot-mode.test.ts.
+// choices of their own: they are covered by integration-volumes-feature-flag.test.ts.
 const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden && !f.derivedFrom).map((f) => f.key);
 
 describe('registry ↔ contract', () => {
@@ -334,14 +334,20 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: apps (it gates every App kind) and session_log (the v2 session-log rollout)', () => {
-    expect(HIDDEN_KEYS).toEqual(['apps', 'session_log']);
+  test('only internal-only surfaces are hidden: apps (it gates every App kind), session_log (the v2 session-log rollout) and session_log_restore (the boot restore from the session log)', () => {
+    expect(HIDDEN_KEYS).toEqual(['apps', 'session_log', 'session_log_restore']);
   });
 
   test('session_log is a behavioral flag that defaults off', () => {
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log');
     expect(def?.enforcement).toBe('behavioral');
     expect(resolveFeatureFlag({}, 'session_log')).toBe(false);
+  });
+
+  test('session_log_restore is a behavioral flag that defaults off', () => {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log_restore');
+    expect(def?.enforcement).toBe('behavioral');
+    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(false);
   });
 
   for (const key of HIDDEN_KEYS) {

@@ -296,6 +296,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-computer',
       'kortix-connectors',
       'kortix-drives',
+      'kortix-genui',
       'kortix-harness-refinement',
       'kortix-marketplace',
       'kortix-memory',

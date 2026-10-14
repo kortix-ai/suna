@@ -1,6 +1,10 @@
 'use client';
 
-import type { ApprovalDecisionValue } from '@/components/approvals/approval-request';
+import {
+  type ApprovalDecisionValue,
+  type ApprovalResolvers,
+  useApprovalWaitingText,
+} from '@/components/approvals/approval-request';
 import { ApprovalDecisionPanel } from '@/components/setup-links/approval-decision';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
 import { useTranslations } from '@/i18n/use-translations';
@@ -18,7 +22,8 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
   const executionId = connectorCallId(item.id);
   const call = item.kind === 'approval' ? item.detail.actions?.[0] : undefined;
   if (!executionId || !call) return null;
-  const pending = item.status === 'needs_you';
+  // `waiting`: still pending, on someone else's decision (KRTX-1724).
+  const pending = item.status === 'needs_you' || item.status === 'waiting';
   return {
     kind: 'approval',
     project_id: '',
@@ -53,21 +58,30 @@ export function ApprovalDecisionModal({
   onDecision,
   onOpenSession,
   onClose,
+  resolvers = null,
 }: {
   details: ApprovalLinkDetails | null;
   previewAuthorized?: boolean;
+  /** Who decides the call, for a viewer who may not (KRTX-1724). */
+  resolvers?: ApprovalResolvers | null;
   busyDecision: ApprovalDecisionValue | null;
   onDecision?: (decision: ApprovalDecisionValue, note?: string) => void;
   onOpenSession?: () => void;
   onClose: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const waitingText = useApprovalWaitingText(resolvers);
+  // The panel's own rule: a pending call with no decision on offer waits on
+  // someone else, so the dialog is not announced as a request to this viewer.
+  const waiting = details?.pending === true && !onDecision;
   return (
     <Modal open={details !== null} onOpenChange={(open) => !open && onClose()}>
       <ModalContent className="lg:h-auto lg:max-h-[85svh] lg:max-w-md">
-        <ModalTitle className="sr-only">{tI18nComplete.raw('text1862f81ed9d6')}</ModalTitle>
+        <ModalTitle className="sr-only">
+          {waiting ? tI18nComplete.raw('textdb0e960b68b5') : tI18nComplete.raw('text1862f81ed9d6')}
+        </ModalTitle>
         <ModalDescription className="sr-only">
-          {tI18nComplete.raw('text32c6817c8380')}
+          {waiting ? waitingText : tI18nComplete.raw('text32c6817c8380')}
         </ModalDescription>
         {details ? (
           <div className="px-6 pt-8 pb-6">
@@ -79,6 +93,7 @@ export function ApprovalDecisionModal({
               onDecision={onDecision}
               onOpenSession={onOpenSession}
               previewAuthorized={previewAuthorized}
+              resolvers={resolvers}
               markOnMobile
             />
           </div>

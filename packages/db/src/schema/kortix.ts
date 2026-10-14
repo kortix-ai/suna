@@ -1135,6 +1135,15 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_parent')
       .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.parentSessionId} is not null`),
+    // The `visible`-scope session list page: live rows only, in list order, so
+    // a project with thousands of soft-deleted sessions newer than its live
+    // ones still serves a page from the head of the index. The predicate is
+    // spelled exactly as `liveSessionSql` in
+    // apps/api/src/projects/lib/session-list.ts: the planner matches a partial
+    // index only on the same expression.
+    index('idx_project_sessions_project_live')
+      .on(table.projectId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`(${table.metadata} ? 'deletedAt') is not true`),
     // Served the retired per-END-USER Kortix-as-a-Backend session cap (COUNT
     // of one origin_ref's live sessions); no query reads it now. Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
     // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
@@ -2649,7 +2658,7 @@ export const sessionContentPurges = kortixSchema.table(
     sessionId: text('session_id').primaryKey(),
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    // Which window fired: the session's own delete, or its account's subscription end.
+    // Which window fired: the session's own delete, or its account's closure (`subscription_ended`, D6b).
     reason: text('reason').notNull(),
     rowsPurgedAt: timestamp('rows_purged_at', { withTimezone: true }).defaultNow().notNull(),
     objectsPurgedAt: timestamp('objects_purged_at', { withTimezone: true }),
@@ -2669,11 +2678,11 @@ export const sessionContentPurges = kortixSchema.table(
 );
 
 /**
- * When the purge first saw an account's subscription dead (Stripe status
- * `canceled`, `unpaid` or `incomplete_expired` on `credit_accounts`).
- * `credit_accounts` keeps no end date, so the purge records its first sight:
- * the end is dated at most one tick late, never early. The purge deletes the
- * row when the subscription is live again, which restarts the clock.
+ * UNUSED since decision D6b (2026-10-14): an account closure, read from
+ * `account_deletion_requests`, is the only subscription end, and that table keeps
+ * its own date. P2.8 recorded here the first sight of a dead Stripe status; that
+ * path never ran (its status set was empty) and is gone. A later release drops the
+ * table, after no running API version names it.
  */
 export const accountSubscriptionEnds = kortixSchema.table(
   'account_subscription_ends',
@@ -7187,7 +7196,7 @@ export const jobQueue = kortixSchema.table(
 // below), issues scoped S3 credentials, and indexes every finished item (one
 // manifest) into the timeline tables. The timeline tables that grow with
 // recorded time (frames, actions, audio) are RANGE-partitioned by month on
-// their event time (migration 20261013210000000_capture); drizzle-kit has no syntax
+// their event time (migration 20261014190000000_capture); drizzle-kit has no syntax
 // for that, so they are declared here as their parents.
 
 /**

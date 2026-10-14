@@ -45,7 +45,7 @@ const fakes: Record<string, Record<string, unknown>> = {
     useCoveringRoute: () => openSession,
   },
   '@/lib/projects/hooks': { useProjectSessionsPaged: () => paged },
-  '@/lib/review/use-review': { useReviewItems: () => review },
+  '@/lib/review/use-review': { useReviewNeedsYou: () => review },
   '@kortix/sdk/react': {
     useSessionsNeedingInput: (_projectId: string, options: unknown) => {
       needsInputOptions = options;
@@ -72,7 +72,7 @@ const fakes: Record<string, Record<string, unknown>> = {
 };
 const route = { projectId: 'p-1', openDrawer() {}, newSession() {}, openSessionActions() {}, isDrawerOpen: false };
 const openSession = () => {};
-const review = { data: [] };
+const review = { total: 0, items: [] };
 const needsInput: { data?: { total: number; sessions: Record<string, number> } } = {};
 let needsInputOptions: unknown;
 // Real: the list logic under test. Everything else is a stub.
