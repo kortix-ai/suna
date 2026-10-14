@@ -767,6 +767,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'HEAD /v1/runtime-assets/entrypoint': { action: 'runtime.entrypoint.check', title: 'Checked the sandbox entrypoint' },
   'GET /v1/runtime-assets/managed-skills': { action: 'runtime.managed_skills.download', title: 'Downloaded managed skills' },
   'GET /v1/runtime-assets/manifest': { action: 'runtime.manifest.read', title: 'Checked sandbox runtime-asset versions' },
+  'GET /v1/sessions/:sessionId': 'GET /v1/projects/:projectId/sessions/:sessionId',
   'GET /v1/setup-links/connectors/:token': { action: 'connector.setup_link.read', title: 'Opened connector setup link' },
   'POST /v1/setup-links/connectors/:token/finalize': { action: 'connector.setup_link.finalize', title: 'Finished connector setup-link authorization' },
   'POST /v1/setup-links/connectors/:token/start': { action: 'connector.setup_link.start', title: 'Started connector setup-link authorization' },

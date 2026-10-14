@@ -1390,6 +1390,85 @@ flow(
 );
 
 /**
+ * SESS-52 — one session by id, in any project (KRTX-2316). A client that holds
+ * only a session id (the SDK's `restartSandbox(id)`) reads it here instead of
+ * walking every project's first sessions page. The answer is the project
+ * route's own, for every caller. Local profile: database sessions.
+ */
+flow(
+  'SESS-52',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (visibility: 'private' | 'project') => {
+      const id = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility,
+      });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    // The private session first: the two after it are newer, so it is past a 2-row page.
+    const privateId = await seed('private');
+    const sharedId = await seed('project');
+    await seed('private');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const byId = '/v1/sessions/:sessionId';
+    const inProject = '/v1/projects/:projectId/sessions/:sessionId';
+
+    await ctx.step('the first 2-row page of the list does not hold the oldest session', async () => {
+      const rows = (await owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query: { limit: '2' } }))
+        .status(200)
+        .json<Array<{ session_id: string }>>();
+      if (rows.some((row) => row.session_id === privateId)) throw new Error('the oldest session is on the first page');
+    });
+
+    await ctx.step('the owner reads it by id → 200 with its project_id, the project route`s body', async () => {
+      const r = await owner.get(byId, { params: { sessionId: privateId } });
+      r.status(200).body().has('$.session_id', privateId).has('$.project_id', project.id).schema(ProjectSessionSchema);
+      const same = (await owner.get(inProject, { params: { projectId: project.id, sessionId: privateId } })).status(200).json();
+      if (JSON.stringify(r.json()) !== JSON.stringify(same)) throw new Error('the two routes answered different bodies');
+    });
+
+    await ctx.step('a project member reads a project-visible session by id → 200', async () => {
+      (await ctx.client.as(member).get(byId, { params: { sessionId: sharedId } }))
+        .status(200)
+        .body()
+        .has('$.project_id', project.id);
+    });
+
+    await ctx.step('the member never receives the owner`s private session → 404, as on the project route', async () => {
+      (await ctx.client.as(member).get(byId, { params: { sessionId: privateId } })).status(404);
+      (await ctx.client.as(member).get(inProject, { params: { projectId: project.id, sessionId: privateId } })).status(404);
+    });
+
+    await ctx.step('an unknown id → 404, a malformed id → 400, no token → 401', async () => {
+      (await owner.get(byId, { params: { sessionId: crypto.randomUUID() } })).status(404);
+      (await owner.get(byId, { params: { sessionId: 'not-a-session' } })).status(400);
+      (await ctx.client.as(ctx.P.ANON).get(byId, { params: { sessionId: sharedId } })).status(401);
+    });
+
+    await ctx.step('a deleted session is gone by id → 404', async () => {
+      (await owner.del(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(200);
+      (await owner.get(byId, { params: { sessionId: sharedId } })).status(404);
+    });
+  },
+);
+
+/**
  * SESS-17 — session preview candidates (projects/routes/public-shares.ts). A
  * human-friendly fallback list of preview ports/paths for a session; the
  * frontend passes its own active tab when it has one. Same visibility gate as

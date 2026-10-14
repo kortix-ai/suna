@@ -745,6 +745,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "HEAD|v1|runtime-assets|entrypoint",
   "GET|v1|runtime-assets|managed-skills",
   "GET|v1|runtime-assets|manifest",
+  "GET|v1|sessions|:sessionId",
   "GET|v1|setup-links|connectors|:token",
   "POST|v1|setup-links|connectors|:token|finalize",
   "POST|v1|setup-links|connectors|:token|start",

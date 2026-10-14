@@ -14,15 +14,18 @@ import {
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
+import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import type { AppEnv } from '../../types';
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, sql } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionDeleteResultSchema, SessionSchema, projectsApp } from '../lib/app';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned, sessionProjectId } from '../lib/access';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionDeleteResultSchema, SessionSchema, projectsApp, sessionsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -63,6 +66,81 @@ function serverManagedSessionMetadataKey(
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const metadata = value as Record<string, unknown>;
   return keys.find((key) => hasOwn(metadata, key)) ?? null;
+}
+
+/**
+ * One session read by id: the body and the access check of
+ * `GET /v1/projects/:projectId/sessions/:sessionId`. The account-scoped
+ * `GET /v1/sessions/:sessionId` answers through it too, so the two routes
+ * cannot disagree on who may read a session.
+ */
+async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessionId: string) {
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  // A soft-deleted session is gone for a read-by-id, exactly as it is for the
+  // default list. `deleteSession` only stamps `metadata.deletedAt`
+  // (session-lifecycle/actions.ts), and this loader never looked at it, so a
+  // deleted session stayed readable by id — and `serializeSession` reported it
+  // as `deleted_at: null` here, because only the list passes that context. Use
+  // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
+  // hides the row). `scope=project` on the LIST deliberately keeps tombstones
+  // for managers; that path is untouched.
+  if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+  // The same owner resolution the list uses: without it a read-by-id reported
+  // owner_type 'unknown' and no owner name for the very session the list named.
+  const owner = visible.row.createdBy
+    ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
+    : undefined;
+  return c.json(serializeSession(visible.row, {
+    grants: visible.grants,
+    viewerId: loaded.userId,
+    canManageProject: visible.canManageProject,
+    ownerIsMachine: visible.ownerIsMachine,
+    ownerEmail: owner?.email ?? null,
+    ownerName: owner?.name ?? null,
+    ownerAvatarUrl: owner?.avatarUrl ?? null,
+    ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
+  }), 200);
+}
+
+/**
+ * `GET /v1/sessions/:sessionId`: one session by id, in whichever project holds
+ * it. A client that has only the id (an SDK `restartSandbox(id)`) reads it here
+ * instead of listing every project's sessions (KRTX-2316). The answer is the
+ * project route's own (`sessionReadResponse`): an unknown id, a session the
+ * caller may not see and a deleted one are all `404`. A project-scoped token is
+ * refused before this handler (`enforceTokenProjectScope`: no project in the path).
+ */
+export function registerSessionLookupRoutes(): void {
+  sessionsApp.use('/*', supabaseAuth);
+
+  sessionsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{sessionId}',
+      tags: ['sessions'],
+      summary: 'Get a session by id, in any project',
+      ...auth,
+      request: {
+        params: z.object({ sessionId: z.string() }),
+      },
+      responses: {
+        200: json(SessionSchema, 'The session. `project_id` names its project.'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const projectId = await sessionProjectId(sessionId);
+      if (!projectId) return c.json({ error: 'Not found' }, 404);
+      return sessionReadResponse(c, projectId, sessionId);
+    },
+  );
 }
 
 export function registerProjectSessionsRoutes(): void {
@@ -387,40 +465,9 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    // A soft-deleted session is gone for a read-by-id, exactly as it is for the
-    // default list. `deleteSession` only stamps `metadata.deletedAt`
-    // (session-lifecycle/actions.ts), and this loader never looked at it, so a
-    // deleted session stayed readable by id — and `serializeSession` reported it
-    // as `deleted_at: null` here, because only the list passes that context. Use
-    // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
-    // hides the row). `scope=project` on the LIST deliberately keeps tombstones
-    // for managers; that path is untouched.
-    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-    // The same owner resolution the list uses: without it a read-by-id reported
-    // owner_type 'unknown' and no owner name for the very session the list named.
-    const owner = visible.row.createdBy
-      ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
-      : undefined;
-    return c.json(serializeSession(visible.row, {
-      grants: visible.grants,
-      viewerId: loaded.userId,
-      canManageProject: visible.canManageProject,
-      ownerIsMachine: visible.ownerIsMachine,
-      ownerEmail: owner?.email ?? null,
-      ownerName: owner?.name ?? null,
-      ownerAvatarUrl: owner?.avatarUrl ?? null,
-      ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
-    }));
+    return sessionReadResponse(c, c.req.param('projectId'), sessionId);
   },
   );
 
