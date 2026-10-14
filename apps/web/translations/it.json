@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Disconnetti OpenCode Go",
     "opencodeGoFailed": "Impossibile connettere OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Non decifrabile",
+      "hint": "Kortix non riesce a decifrare il valore salvato. La chiave di cifratura è cambiata o il valore è danneggiato. Chiunque gestisca questo progetto può reinserirlo.",
+      "reenter": "Reinserisci il valore",
+      "dialog": "Kortix non riesce a decifrare il valore salvato. Reinseriscilo per salvare.",
+      "keyHint": "Kortix non riesce a decifrare questa chiave API. La chiave di cifratura del server è cambiata o la chiave salvata è danneggiata. Kortix non la usa finché il suo proprietario o un amministratore dell'account non la reinserisce.",
+      "loginHint": "Kortix non riesce a decifrare questo accesso. La chiave di cifratura del server è cambiata o l'accesso salvato è danneggiato. Kortix non lo usa finché il suo proprietario non lo riconnette.",
+      "reenterKey": "Reinserisci la chiave",
+      "mineHint": "Kortix non riesce a decifrare il tuo valore di questo segreto. Le tue sessioni lo leggono al posto del valore condiviso, quindi non funzionano finché non lo elimini.",
+      "deleteMine": "Elimina il mio valore",
+      "mineDeleted": "Valore eliminato",
+      "mineDeleteError": "Impossibile eliminare il tuo valore. Riprova."
+    }
+  },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"
   },

@@ -1473,6 +1473,7 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
 
   const changedKeys: string[] = [];
   const previousEmailUrl = env.EMAIL_URL ?? '';
+  const previousApiKeySecret = env.API_KEY_SECRET ?? '';
 
   // `env set KEY` (no '=') — prompt interactively for exactly one key.
   if (args.length === 1 && !args[0]!.includes('=')) {
@@ -1505,6 +1506,15 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     }
   }
 
+  if (
+    changedKeys.includes('API_KEY_SECRET') &&
+    previousApiKeySecret !== '' &&
+    env.API_KEY_SECRET !== previousApiKeySecret
+  ) {
+    const stop = await confirmApiKeySecretChange(flags);
+    if (stop !== null) return stop;
+  }
+
   // EMAIL_URL is the one email setting; everything else it implies (the GoTrue
   // send-email hook, its shared secret, the sender identity, and the auth
   // behavior flags) is derived here rather than typed by the operator.
@@ -1518,6 +1528,27 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
   }
   return restartServicesForKeys(flags.instance, env, changedKeys);
+}
+
+/**
+ * `env set API_KEY_SECRET=<new>` loses every stored credential: the same loss
+ * `env rotate` refuses (KRTX-1719). Warn, then require a yes at the prompt or
+ * `--yes` (the `uninstall` pattern). Returns the exit code to stop with, or
+ * null to go on. Nothing is written before it returns.
+ */
+async function confirmApiKeySecretChange(flags: GlobalFlags): Promise<number | null> {
+  process.stderr.write(`${status.warn(`API_KEY_SECRET is ${NON_ROTATABLE_GENERATED_REASONS.API_KEY_SECRET}`)}\n`);
+  if (shouldPrompt(flags)) {
+    if (await confirm('Replace API_KEY_SECRET anyway?', false)) return null;
+    process.stderr.write(`${status.err('API_KEY_SECRET is unchanged. Nothing was written.')}\n`);
+    return 1;
+  }
+  if (flags.yes) return null;
+  process.stderr.write(
+    `${status.err('Refusing to change API_KEY_SECRET non-interactively without --yes.')}\n` +
+      `  ${C.dim}Pass ${C.reset}${C.cyan}--yes${C.reset}${C.dim} to confirm. Nothing was written.${C.reset}\n`,
+  );
+  return 2;
 }
 
 // Generated secrets whose rotation cascades into a derived value elsewhere in
@@ -2044,7 +2075,8 @@ const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
  *  `KEY (Category label)`. */
 const REQUIRED_SECRET_LABELS: Record<string, string> = {
   OPENROUTER_API_KEY: 'OpenRouter API key (LLM)',
-  POSTGRES_PASSWORD: 'Postgres password (auto-generated — regenerate via `env rotate`)',
+  POSTGRES_PASSWORD:
+    'Postgres password (auto-generated — the database roles keep the value from the first start, so restore that value; `env rotate` refuses it)',
   SUPABASE_JWT_SECRET: 'Supabase JWT secret (auto-generated — regenerate via `env rotate`)',
   SUPABASE_ANON_KEY: 'Supabase anon key (auto-generated, derived from the JWT secret)',
   SUPABASE_SERVICE_ROLE_KEY: 'Supabase service role key (auto-generated, derived from the JWT secret)',

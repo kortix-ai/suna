@@ -1988,6 +1988,14 @@ export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
 export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
 export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
 
+/**
+ * Can the server decrypt the stored value? `undecryptable`: the server's
+ * encryption key (`API_KEY_SECRET`) changed after the value was written, or the
+ * stored row is damaged. The value is lost; a person must enter it again.
+ */
+export const SecretValueStatusSchema = z.enum(['ok', 'undecryptable']);
+export type SecretValueStatus = z.infer<typeof SecretValueStatusSchema>;
+
 export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
   z.object({ kind: z.literal('query'), name: z.string() }),
@@ -2067,9 +2075,11 @@ export const SecretSchema = z.object({
   managed_by: z.literal('project_secret').nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
-  /** The caller's private override (value omitted), or null. Used today only by
-   *  the CODEX_AUTH_JSON per-user provider login. */
-  mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
+  /** The caller's private override (value omitted), or null. `status`: can the
+   *  server decrypt it? While `active`, it is the value the caller's sessions read. */
+  mine: z
+    .object({ active: z.boolean(), updated_at: z.string(), status: SecretValueStatusSchema.optional() })
+    .nullable(),
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
   can_manage_shared: z.boolean(),
@@ -2092,6 +2102,10 @@ export const SecretSchema = z.object({
   /** Can the caller's sessions use the shared value? False only when it is
    *  shared with specific people and the caller is not one of them. */
   usable: z.boolean().optional(),
+  /** Can the server decrypt the shared value? Absent when none is set
+   *  (`configured: false`). `mine.status` reports the caller's override. Never
+   *  carries the value. */
+  status: SecretValueStatusSchema.optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 

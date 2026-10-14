@@ -112,6 +112,20 @@ describe('beginOptimisticProjectSecretSave', () => {
     });
   });
 
+  test('a new value clears the undecryptable state; a policy-only save keeps it', () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(QUERY_KEY, response([secret({ status: 'undecryptable' })]));
+    const edit = input({ identifier: 'EXAMPLE_TOKEN', name: 'EXAMPLE_TOKEN' });
+
+    beginOptimisticProjectSecretSave(queryClient, QUERY_KEY, edit);
+    expect(queryClient.getQueryData<ProjectSecretsResponse>(QUERY_KEY)?.items[0]?.status).toBe(
+      'undecryptable',
+    );
+
+    beginOptimisticProjectSecretSave(queryClient, QUERY_KEY, { ...edit, valueChanged: true });
+    expect(queryClient.getQueryData<ProjectSecretsResponse>(QUERY_KEY)?.items[0]?.status).toBe('ok');
+  });
+
   test('preserves the legacy bare-array cache shape', () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData<ProjectSecret[]>(QUERY_KEY, [secret()]);

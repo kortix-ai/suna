@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Disconnect OpenCode Go",
     "opencodeGoFailed": "Failed to connect OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Undecryptable",
+      "hint": "Kortix cannot decrypt the stored value. The encryption key changed, or the value is damaged. Anyone who manages this project can enter it again.",
+      "reenter": "Re-enter value",
+      "dialog": "Kortix cannot decrypt the stored value. Enter it again to save.",
+      "keyHint": "Kortix cannot decrypt this API key. The server's encryption key changed, or the stored key is damaged. Kortix does not use it until its owner or an account admin enters it again.",
+      "loginHint": "Kortix cannot decrypt this login. The server's encryption key changed, or the stored login is damaged. Kortix does not use it until its owner reconnects it.",
+      "reenterKey": "Re-enter key",
+      "mineHint": "Kortix cannot decrypt your own value of this secret. Your sessions read it in place of the shared value, so they fail until you delete it.",
+      "deleteMine": "Delete my value",
+      "mineDeleted": "Value deleted",
+      "mineDeleteError": "Could not delete your value. Try again."
+    }
+  },
   "useCases": {
     "headline": "The loops that run a company"
   },

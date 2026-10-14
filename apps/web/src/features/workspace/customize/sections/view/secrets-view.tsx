@@ -107,6 +107,7 @@ import {
   type SecretDeliveryStrategy,
   type SecretEgressPolicy,
   type SecretInjectionSlot,
+  deletePersonalProjectSecret,
   deleteProjectSecret,
   getProjectDetail,
   grantSecretToAgent,
@@ -168,6 +169,7 @@ import {
 } from './secret-optimistic-cache';
 
 import { AudienceBadge } from './audience-badge';
+import { UndecryptableValue } from './undecryptable-value';
 import { audienceVisibility } from './connector-connections';
 import {
   type SecretAudienceDraft,
@@ -210,6 +212,11 @@ export interface SecretRow {
   sharedWith: ConnectionShare[];
   /** False when it is shared with specific people and the viewer is not one of them. */
   usable: boolean;
+  /** Kortix can no longer decrypt the shared value (`status: 'undecryptable'`). */
+  undecryptable: boolean;
+  /** The viewer's own active override, which their sessions read, cannot be
+   *  decrypted (`mine.status: 'undecryptable'`). */
+  mineUndecryptable: boolean;
 }
 
 type SecretSavePlan = {
@@ -231,6 +238,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tSecrets = useI18nTranslations('secrets');
   const queryClient = useQueryClient();
   const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
@@ -290,6 +298,17 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const removeShared = useMutation({
     mutationFn: (identifier: string) => deleteProjectSecret(projectId, identifier),
     onSuccess: refreshSecretsAndProviders,
+  });
+  // The viewer's own override is addressed by its key. Its value is already
+  // lost, so deleting it needs no confirmation: sessions then read the shared value.
+  const deleteMine = useMutation({
+    mutationFn: (key: string) => deletePersonalProjectSecret(projectId, key),
+    onSuccess: () => {
+      refreshSecretsAndProviders();
+      successToast(tSecrets('undecryptable.mineDeleted'));
+    },
+    onError: (error) =>
+      errorToast(error instanceof Error && error.message ? error.message : tSecrets('undecryptable.mineDeleteError')),
   });
 
   const filtered = useMemo(() => {
@@ -453,8 +472,10 @@ export function SecretsView({ projectId }: { projectId: string }) {
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
+                      deletingMine={deleteMine.isPending && deleteMine.variables === row.key}
                       onEdit={() => openEdit(row)}
                       onDelete={() => setDeleteRow(row)}
+                      onDeleteMine={() => deleteMine.mutate(row.key)}
                     />
                   ))}
                 </TableBody>
@@ -669,6 +690,8 @@ export function buildRows(
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
     sharedWith: item.shared_with ?? [],
     usable: item.usable ?? true,
+    undecryptable: item.status === 'undecryptable',
+    mineUndecryptable: Boolean(item.mine?.active && item.mine.status === 'undecryptable'),
   });
 
   const rows: SecretRow[] = [];
@@ -700,6 +723,8 @@ export function buildRows(
       deliveryBlockedReason: null,
       sharedWith: [],
       usable: true,
+      undecryptable: false,
+      mineUndecryptable: false,
     });
   }
 
@@ -773,28 +798,33 @@ function SecretTableRow({
   canManage,
   viewerId,
   busy,
+  deletingMine,
   onEdit,
   onDelete,
+  onDeleteMine,
 }: {
   row: SecretRow;
   llmGatewayEnabled: boolean;
   canManage: boolean;
   viewerId: string | null;
   busy: boolean;
+  deletingMine: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onDeleteMine: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSharing = useI18nTranslations('accessSharing');
+  const tSecrets = useI18nTranslations('secrets');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
 
+  // No row tint for an unset required secret: the orange asterisk carries that
+  // state, and a status hue belongs on the mark (color.md, Accents and status).
   return (
-    <TableRow
-      className={cn(row.requirement === 'required' && !row.configured && 'bg-kortix-orange/[0.04]')}
-    >
+    <TableRow>
       {/* The identifier and its marks share one line — the cell used to stack
           three blocks (identifier, → key, a badge row), so a five-row table
           read as fifteen. `→ key` still gets its own muted line, but only on
@@ -811,7 +841,20 @@ function SecretTableRow({
         </div>
       </TableCell>
       <TableCell className="text-muted-foreground max-w-[160px] align-middle text-xs whitespace-nowrap">
-        {statusLabel(row)}
+        {/* The viewer's own override first: it is what their sessions read, and
+            only they can delete it. A broken shared value shows once it is gone. */}
+        {row.mineUndecryptable ? (
+          <UndecryptableValue
+            hint={tSecrets('undecryptable.mineHint')}
+            actionLabel={tSecrets('undecryptable.deleteMine')}
+            onAction={onDeleteMine}
+            pending={deletingMine}
+          />
+        ) : row.undecryptable ? (
+          <UndecryptableValue onAction={canManageShared ? onEdit : undefined} />
+        ) : (
+          statusLabel(row)
+        )}
       </TableCell>
       <TableCell className="max-w-[220px] align-middle whitespace-normal">
         <div className="flex flex-col items-start gap-1">
@@ -982,6 +1025,7 @@ function SecretDialog({
   const viewerId = useAuth().user?.id ?? null;
   const accountId = useProjectAccountId(projectId);
   const tSharing = useI18nTranslations('accessSharing');
+  const tSecrets = useI18nTranslations('secrets');
   const projectName =
     useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
       .data?.project?.name ?? '';
@@ -1047,7 +1091,8 @@ function SecretDialog({
     setAudience(audienceDraftFrom(row?.sharedWith ?? [], viewerId));
   };
 
-  const requiresValue = !row?.configured;
+  // A value Kortix cannot decrypt is lost: saving without a new one would keep it broken.
+  const requiresValue = !row?.configured || Boolean(row?.undecryptable);
   const enforcedPolicy = buildEnforcedPolicy({
     hosts,
     legacyInject,
@@ -1444,7 +1489,11 @@ function SecretDialog({
                   ) : null}
                 </InputGroup>
                 {row?.configured ? (
-                  <FieldDescription>{tI18nComplete.raw('text51b5970e84eb')}</FieldDescription>
+                  <FieldDescription>
+                    {row.undecryptable
+                      ? tSecrets('undecryptable.dialog')
+                      : tI18nComplete.raw('text51b5970e84eb')}
+                  </FieldDescription>
                 ) : null}
               </Field>
 

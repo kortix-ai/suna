@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "断开 OpenCode Go",
     "opencodeGoFailed": "无法连接 OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "无法解密",
+      "hint": "Kortix 无法解密已保存的值。加密密钥已更改，或该值已损坏。管理此项目的任何人都可以重新输入。",
+      "reenter": "重新输入值",
+      "dialog": "Kortix 无法解密已保存的值。请重新输入后保存。",
+      "keyHint": "Kortix 无法解密此 API 密钥。服务器的加密密钥已更改，或已保存的密钥已损坏。在其所有者或账户管理员重新输入之前，Kortix 不会使用它。",
+      "loginHint": "Kortix 无法解密此登录。服务器的加密密钥已更改，或已保存的登录已损坏。在其所有者重新连接之前，Kortix 不会使用它。",
+      "reenterKey": "重新输入密钥",
+      "mineHint": "Kortix 无法解密您为此密钥设置的个人值。您的会话会读取它而不是共享值，因此在您删除它之前会话会失败。",
+      "deleteMine": "删除我的值",
+      "mineDeleted": "值已删除",
+      "mineDeleteError": "无法删除您的值。请重试。"
+    }
+  },
   "useCases": {
     "headline": "驱动公司运转的循环"
   },
