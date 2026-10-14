@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import type { Part } from '@kortix/sdk';
+import { blocksOf } from '@/lib/testing/session-log';
 
 const choices = new Map<string, boolean>();
 let owned = false;
@@ -18,7 +19,7 @@ mock.module('@/components/ui/text', () => ({ Text: Box }));
 mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: Shimmer }));
 mock.module('@/lib/icons', () => ({ CaretRightIcon: Box }));
 mock.module('@/components/session/tool/shared/styles', () => ({ TURN_SPACE: { gap2: 2, caret: 14 }, TURN_TYPE: { sm: {} }, useTurnPalette: () => ({ muted70: 'gray', muted40: 'gray' }) }));
-mock.module('@/lib/session/activity-sheet-store', () => ({ useActivitySheetStore: Object.assign((select: (state: { sheet: unknown }) => boolean) => select({ sheet: owned ? ({ partIds: [] } as never) : null } as never), { getState: () => ({ show() {}, sync() {} }) }) }));
+mock.module('@/lib/session/activity-sheet-store', () => ({ useActivitySheetStore: Object.assign((select: (state: { sheet: unknown }) => boolean) => select({ sheet: owned ? ({ blockIds: [] } as never) : null } as never), { getState: () => ({ show() {}, sync() {} }) }) }));
 mock.module('@/lib/session/activity-sheet', () => ({ ownsBurst: () => owned }));
 
 let ActivityBurst: typeof import('./activity-burst').ActivityBurst;
@@ -34,14 +35,14 @@ const plumbing: Part = { type: 'tool', id: 'plumbing-1', sessionID: 's', message
 const call: Part = { type: 'tool', id: 'call-1', sessionID: 's', messageID: 'm', callID: 'c2', tool: 'bash', state: { status: 'completed', input: { command: 'ls' }, output: 'ok', title: 'ls', metadata: {}, time: { start: 1, end: 2 } } } as unknown as Part;
 
 function render(parts: Part[]) {
-  return create(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts }, turnLive: false }));
+  return create(React.createElement(ActivityBurst, { segment: { kind: 'burst', blocks: blocksOf(parts) }, turnLive: false }));
 }
 
 describe('ActivityBurst thinking', () => {
   test('a reasoning-only burst renders nothing, live or settled', () => {
     for (const turnLive of [false, true]) {
       let tree: ReturnType<typeof create>;
-      act(() => { tree = create(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts: [thought] }, turnLive, isTrailing: turnLive })); });
+      act(() => { tree = create(React.createElement(ActivityBurst, { segment: { kind: 'burst', blocks: blocksOf([thought]) }, turnLive, isTrailing: turnLive })); });
       expect(tree!.toJSON()).toBeNull();
       act(() => tree!.unmount());
     }

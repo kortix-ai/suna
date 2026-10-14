@@ -4,7 +4,6 @@ import {
   Alert,
   AlertContent,
   AlertDescription,
-  AlertMedia,
   AlertTitle,
 } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +30,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectBranch, ProjectSession } from '@kortix/sdk';
-import { StackIcon as Layers, WarningIcon } from '@phosphor-icons/react';
+import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
@@ -241,9 +240,6 @@ export function OpenChangeRequestDialog({
           <>
             <ModalBody className="space-y-3 pt-0">
               <Alert variant="warning">
-                <AlertMedia>
-                  <WarningIcon className="size-4" />
-                </AlertMedia>
                 <AlertContent>
                   <AlertTitle>
                     {tHardcodedUi.raw(
@@ -363,9 +359,6 @@ export function OpenChangeRequestDialog({
                 // One sentence, so it is a description and not a title:
                 // `AlertTitle` is `line-clamp-1` and would eat the second half.
                 <Alert variant="warning">
-                  <AlertMedia>
-                    <WarningIcon className="size-4" />
-                  </AlertMedia>
                   <AlertContent>
                     <AlertDescription>
                       {tHardcodedUi.raw(

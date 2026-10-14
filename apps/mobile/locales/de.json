@@ -1162,6 +1162,7 @@
     "title": "Konto",
     "preferences": "Einstellungen",
     "sounds": "Töne",
+    "richAnswers": "Erweiterte Antworten",
     "workspace": "Arbeitsbereich",
     "accounts": "Konten",
     "help": "Hilfe",
@@ -1199,6 +1200,17 @@
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
   },
+  "genui": {
+    "chartTapHint": "Tippen, um einen Wert zu lesen",
+    "map": "Karte",
+    "mapUnavailable": "Karte nicht verfügbar",
+    "openImage": "Bild öffnen",
+    "openMap": "Karte öffnen",
+    "pick": "Empfehlung",
+    "pieFocus": "{{label}} macht {{percent}} % der Summe aus",
+    "pieOfTotal": "{{value}} von {{total}}",
+    "showData": "Daten anzeigen"
+  },
   "updateRequired": {
     "title": "Update erforderlich",
     "body": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App, um fortzufahren.",
@@ -1233,5 +1245,10 @@
     "wrongAccountBody": "Diese Einladung ist an ein anderes Konto gerichtet. Du bist als {{email}} angemeldet.",
     "signOutAndContinue": "Abmelden und fortfahren",
     "backToProjects": "Zurück zu den Projekten"
+  },
+  "approvals": {
+    "waitingManagers": "Eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen.",
+    "waitingTitle": "Wartet auf Genehmigung",
+    "waitingWho": "Die Person, die diese Sitzung gestartet hat, oder eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen."
   }
 }

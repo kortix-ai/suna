@@ -106,7 +106,7 @@ function ForgotPasswordContent() {
 export default function ForgotPassword() {
   const t = useTranslations('auth.passwordReset');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={t('loading')} />}>
+    <Suspense fallback={<ConnectingScreen minimal title={t('loading')} />}>
       <ForgotPasswordContent />
     </Suspense>
   );

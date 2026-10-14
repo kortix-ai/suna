@@ -89,6 +89,11 @@ export async function resolveProjectPrincipal(
   if (!userId) return null;
   const tokenProjectId = c.get('tokenProjectId') as string | undefined;
   let accountId = c.get('accountId') as string | undefined;
+  let projectRow: {
+    repoUrl: string;
+    defaultBranch: string;
+    manifestPath: string;
+  } | undefined;
 
   if (tokenProjectId) {
     // Project-scoped (session) token: enforceTokenProjectScope already guaranteed
@@ -97,13 +102,27 @@ export async function resolveProjectPrincipal(
     // PAT row from one account from being labeled with another account's project
     // id and then used on the project-explicit Connector gateway.
     if (tokenProjectId !== projectId) return null;
+    // ONE projects read answers both the account binding and the grant
+    // reconcile's git columns: the row lands here, the reconcile takes it
+    // from the hint below instead of re-selecting it. Same request, same
+    // freshness as the account_id this branch already read.
     const [project] = await db
-      .select({ accountId: projects.accountId })
+      .select({
+        accountId: projects.accountId,
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        manifestPath: projects.manifestPath,
+      })
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!project || !accountId || project.accountId !== accountId) return null;
     accountId = project.accountId;
+    projectRow = {
+      repoUrl: project.repoUrl,
+      defaultBranch: project.defaultBranch,
+      manifestPath: project.manifestPath,
+    };
   } else {
     // User token (PAT/JWT, no pinned project): verify project access. Throws 403
     // if the user isn't a member — treat that as an unauthorized principal.
@@ -111,6 +130,13 @@ export async function resolveProjectPrincipal(
       const access = await loadProjectForUser(c, projectId, 'read');
       if (!access?.row) return null;
       accountId = access.row.accountId; // the PROJECT's account owns its connectors
+      // The access gate just loaded the whole row; hand its git columns to the
+      // reconcile below so a human-token /call also skips the second read.
+      projectRow = {
+        repoUrl: access.row.repoUrl,
+        defaultBranch: access.row.defaultBranch,
+        manifestPath: access.row.manifestPath,
+      };
     } catch (err) {
       if (err instanceof HTTPException && err.status === 403) return null;
       throw err;
@@ -133,6 +159,9 @@ export async function resolveProjectPrincipal(
           // (already normalized) grant here — the same row the reconcile
           // would otherwise re-read by session id.
           storedGrant: storedAgentGrant,
+          // The projects row this resolver just loaded above — the same row
+          // the reconcile would otherwise re-read for its git columns.
+          projectRow,
         })
       : Promise.resolve(storedAgentGrant),
     sessionChannelConnectorSlugs(projectId, sessionIdentity.sessionId),

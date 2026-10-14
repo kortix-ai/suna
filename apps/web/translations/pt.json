@@ -688,6 +688,8 @@
       "themeDescription": "Escolha a aparência do Kortix neste dispositivo.",
       "conversationDensity": "Densidade da conversa",
       "conversationDensityDescription": "Escolha quantos detalhes o agente mostra na conversa enquanto trabalha.",
+      "richAnswers": "Respostas enriquecidas",
+      "richAnswersDescription": "Mostra comparações, tabelas, gráficos e mapas como elementos visuais nas respostas. Quando desativado, as respostas mostram o mesmo conteúdo como texto.",
       "wallpaper": "Papel de parede",
       "wallpaperDescription": "O fundo da sua área de trabalho.",
       "defaultWallpaper": "Padrão",
@@ -1208,6 +1210,10 @@
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
         },
+        "genui": {
+          "name": "UI generativa",
+          "description": "O agente pode responder com cartões, comparações, gráficos, mapas e abas em vez de textos longos."
+        },
         "reminders": {
           "name": "Lembretes",
           "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona a página Lembretes, o indicador de lembretes da sessão e `kortix remind`."
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Arquivos compartilhados e sessões em volumes para este projeto."
-        },
-        "stateless_sessions": {
-          "name": "Sessões sem estado",
-          "description": "Um computador novo a cada retomada; só arquivos e chat são mantidos. Requer Volumes ativado."
+          "description": "Arquivos compartilhados para este projeto."
         },
         "drives": {
           "name": "Drive",
           "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Sandboxes efémeras",
-          "description": "Uma sessão parada mantém os ficheiros e a conversa num volume e liberta o seu computador. Ao reativá-la arranca um computador novo com a imagem mais recente. Os processos em execução não sobrevivem a uma paragem."
         },
         "session_log": {
           "name": "Registo de sessão v2",
@@ -1905,6 +1903,26 @@
       "commandsAndActions": "Comandos e ações",
       "toUse": "para usar",
       "use": "Usar"
+    },
+    "history": {
+      "restoreTitle": "Parte do conteúdo anterior não pôde ser restaurada",
+      "restoreMissing": "Faltando: {items}.",
+      "restoreAgent": "O agente sabe o que está faltando.",
+      "restoreDismiss": "Fechar o aviso de restauração",
+      "missingAttachment": "{count, plural, one {# anexo} other {# anexos}}",
+      "missingText": "{count, plural, one {# texto longo} other {# textos longos}}",
+      "missingToolInput": "{count, plural, one {# entrada de ferramenta} other {# entradas de ferramenta}}",
+      "missingToolResult": "{count, plural, one {# resultado de ferramenta} other {# resultados de ferramenta}}",
+      "missingCutPoint": "{count, plural, one {# ponto de compactação} other {# pontos de compactação}}",
+      "missingOther": "{count, plural, one {# outro item} other {# outros itens}}",
+      "restoreNote": "Sessão restaurada a partir do histórico salvo",
+      "harnessSwitch": "Continuou com {harness}",
+      "showOutOfContext": "Mostrar mensagens fora do contexto",
+      "fullTextPreview": "{count, plural, one {Um texto longo mostra aqui seus primeiros 16 kB.} other {# textos longos mostram aqui seus primeiros 16 kB.}}",
+      "fullTextShow": "Mostrar o texto completo ({size})",
+      "fullTextDownload": "Baixar o texto completo ({size})",
+      "fullTextError": "Não foi possível carregar o texto completo.",
+      "fullTextRetry": "Tentar novamente"
     }
   },
   "agents": {
@@ -5755,7 +5773,6 @@
       "line175JsxTextOpenInTabInstead": "Abrir em uma aba"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "Runtime degradado",
       "line422JsxTextCouldnAposTStart": "Não foi possível iniciar",
       "line469JsxTextIsStopped": "está parado",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "Abra uma nova sessão ou volte aos projetos para continuar.",
@@ -10902,7 +10919,6 @@
       "text26eb1bc45b53": "Negado por padrão",
       "text26ecc76c0ce9": "Excluir este token?",
       "text26ee1166df63": "As alterações serão aplicadas ao próximo prompt.",
-      "text26f0dd993530": "Tentando novamente automaticamente",
       "text27042f4e6eca": "direita",
       "text270ba743dc3c": "Agendamentos Cron e webhooks assinados iniciam sessões Kortix sem ninguém presente. Cada gatilho informa qual agente executará a tarefa, carrega um template de prompt e entrega o trabalho por uma solicitação de mudança aprovada por uma pessoa.",
       "text271189ae389a": "Hora de início",
@@ -11852,7 +11868,6 @@
       "text429bbfa117e2": "App móvel",
       "text429be41120e9": "Execute o projeto sem sair da conversa.",
       "text429ffbbaa586": "Conexão fácil",
-      "text42b3d52014ba": "Workspace offline",
       "text42b8d7c5357a": "O sandbox não confirmou o recarregamento",
       "text42bcffb92597": "Visualizar como este membro",
       "text42bd94c06205": "Status (ponto, badge, diff)",
@@ -15253,7 +15268,6 @@
       "texta4a83d949891": "Falha ao compactar a sessão",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init transforma qualquer diretório em um Kortix. kortix ship coloca tudo no ar. A partir daí, é um único repo que você controla — versionado, comparável por diff e aprimorado por si mesmo, uma alteração revisada por vez.",
-      "texta4c128e48978": "O host está acessível, mas o runtime principal do workspace está falhando nas solicitações. Reinicie o runtime ou a carga de trabalho para recuperar os serviços.",
       "texta4c297b580ad": "- Cobre atrasados e escale após 30 dias",
       "texta4c7fa51a957": "Nenhuma branch encontrada",
       "texta4c9215859a8": "Membro do projeto removido",
@@ -17143,7 +17157,6 @@
       "textd938438f232e": "Autenticação do webhook",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack desconectado",
-      "textd94a83e48b64": "Não foi possível acessar este workspace. Volte para os projetos e abra ou crie outra sessão.",
       "textd952c0d7b0b0": "Injetada no momento da chamada",
       "textd95934d15292": "Pesquise entre mais de 5.000 APIs, servidores MCP e apps OAuth",
       "textd96a37fc02f0": "Substituir senha",
@@ -17535,7 +17548,6 @@
       "texte478b984a2d9": "Leia o tracker como ele realmente é — issues, estados, links e comentários — e grave o resultado organizado onde você permitir. O tracker continua sendo o sistema de registro; o agente não é um segundo tracker.",
       "texte47b85588c7c": "Qualquer IdP que use \"{value0}\" perderá o acesso imediatamente. Isso não pode ser desfeito – você precisará criar um novo token para se reconectar.",
       "texte47c8bae740d": "Copiar chave",
-      "texte48034ba91dd": "Serviços do workspace indisponíveis",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "Opções avançadas → Personalizar o nome da reivindicação de grupo",
       "texte4a075134e2b": "Nenhum requisito especial — este item funciona por conta própria.",
@@ -19677,75 +19689,16 @@
     "approvalPage": {
       "title": "Aprovar uma ação do {connector}"
     },
+    "approvalWaiting": {
+      "byManager": "Aguardando alguém que gerencia este projeto aprovar ou negar a chamada.",
+      "byName": "Aguardando {name} ou alguém que gerencia este projeto aprovar ou negar a chamada.",
+      "byOwner": "Aguardando a pessoa que iniciou esta sessão ou alguém que gerencia este projeto aprovar ou negar a chamada.",
+      "copyLink": "Copiar link de aprovação"
+    },
     "secretIntakeWithheld": {
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Imagem",
-      "modeImageDetail": "Apenas a imagem da sessão.",
-      "modeImageRequested": "Imagem pedida: {count}",
-      "modeArtifacts": "Imagem + artefactos",
-      "modeArtifactsDetail": "Mais o volume de artefactos de arranque para o runtime mais recente.",
-      "modeArtifactsRequested": "Imagem + artefactos pedidos: {count}",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Computador efémero, estado da sessão num volume, mais artefactos.",
-      "modeVolumeRequested": "Volume pedido: {count}",
-      "reasonSessionVolume": "Volume da sessão",
-      "reasonArtifactsVolume": "Volume de artefactos",
-      "reasonVolumeMount": "Montagem de volume",
-      "reasonTimeout": "Tempo esgotado",
-      "reasonBootHealth": "O computador nunca ficou pronto",
-      "reasonOther": "Outro",
-      "fallBackToTheImage": "Recorrer à imagem",
-      "fallBackToImage": "Recurso à imagem",
-      "saved": "Modos de arranque guardados",
-      "saveFailed": "Não foi possível guardar os modos de arranque",
-      "title": "Modos de arranque",
-      "description": "Como arrancam as novas sessões de um projeto com os volumes ligados e que recuos tomam. Os volumes e as sessões sem estado são feature flags do projeto e não se definem aqui. As alterações chegam a todos os processos da API em 30 segundos.",
-      "discard": "Descartar",
-      "save": "Guardar",
-      "off": "Desligado",
-      "bootModeTitle": "Modo de arranque",
-      "bootModeDescription": "Como arrancam as novas sessões de um projeto com os volumes ligados. Um projeto com as sessões sem estado ligadas arranca num volume.",
-      "defaultModeTitle": "Modo predefinido",
-      "killSwitchTitle": "Interruptor de emergência: arrancar todas as novas sessões a partir da imagem",
-      "killSwitchDetail": "Sobrepõe-se a todos os modos de uma só vez; Ficheiros e os drives ficam como estão. Uma sessão cujos ficheiros já estão num volume mantém o seu volume.",
-      "killSwitchLabel": "Interruptor de emergência",
-      "last24HoursTitle": "Últimas 24 horas",
-      "last24HoursDescription": "Sessões que arrancaram em cada modo e os recursos alternativos que usaram. Contadas no fornecedor de volumes.",
-      "columnFallback": "Recurso alternativo",
-      "columnReason": "Motivo",
-      "columnCount": "Contagem",
-      "columnLatestError": "Último erro",
-      "noFallbacks": "Nenhum recurso alternativo nas últimas 24 horas.",
-      "countsUnavailable": "Contagens indisponíveis: {error}",
-      "unknownError": "erro desconhecido",
-      "fallbackTitle": "Recurso alternativo",
-      "fallbackDescription": "Uma sessão cujos arranques continuam a falhar desce um nível, uma vez por sessão; fica no modo que atingiu. Uma sessão cujos ficheiros já estão num volume nunca o abandona.",
-      "after": "após",
-      "failedBoots": "arranques falhados",
-      "volumeAttemptsLabel": "Tentativas com volume",
-      "artifactsAttemptsLabel": "Tentativas com artefactos",
-      "lastStepNote": "(ligado, a menos que o modo predefinido desligue o último passo)",
-      "whereModesApplyTitle": "Onde os modos se aplicam",
-      "whereModesApplyDescription": "Os fornecedores e os interruptores de implementação vêm do ambiente do servidor. O volume de artefactos pode ser definido aqui; vazio, usa o do ambiente.",
-      "volumeProviderTitle": "Fornecedor de volumes: {provider}",
-      "volumeProviderConfigured": "Configurado. As sessões nele arrancam no modo que a sua regra escolhe.",
-      "volumeProviderNotConfigured": "Não configurado: todas as sessões arrancam a partir da imagem.",
-      "ready": "Pronto",
-      "otherProvidersTitle": "Outros fornecedores: {providers}",
-      "otherProvidersDriveSync": "Arrancam sempre a partir da imagem. Os drives chegam-lhes através da sincronização de drives.",
-      "otherProvidersNoDriveSync": "Arrancam sempre a partir da imagem. A sincronização de drives está desligada, por isso os projetos com drive ficam no fornecedor de volumes.",
-      "imageOnly": "Só imagem",
-      "artifactsVolumeTitle": "Volume de artefactos",
-      "artifactsVolumeSet": "As sessões em Imagem + artefactos ou Volume montam {source}.",
-      "artifactsVolumeFromEnvironment": "As sessões em Imagem + artefactos ou Volume montam {source} (do ambiente).",
-      "artifactsVolumeNone": "Nenhum definido: os modos com artefactos arrancam como se houvesse apenas a imagem.",
-      "artifactsVolumeLabel": "Volume de artefactos e etiqueta",
-      "ephemeralSandboxesOff": "{variable} está desligado nesta implementação: as sessões sem estado arrancam com Imagem + artefactos.",
-      "nothingSaved": "Ainda nada guardado: os projetos com os volumes ligados arrancam a partir da imagem."
     }
   },
   "projectOnboarding": {
@@ -20202,7 +20155,8 @@
     "verified": "Verificado",
     "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
     "noFactorTitle": "Configure a autenticação de dois fatores",
-    "noFactorDescription": "Esta ação exige autenticação de dois fatores. Adicione um app autenticador em Configurações → Segurança e tente novamente."
+    "noFactorDescription": "Esta ação exige autenticação de dois fatores. Adicione um app autenticador em Configurações → Segurança e tente novamente.",
+    "setUp": "Configurar autenticador"
   },
   "connectorPages": {
     "install": "Instalar",
@@ -20766,5 +20720,23 @@
     "you": "Você",
     "manageFolderAccess": "Gerenciar acesso",
     "viewFolderAccess": "Ver acesso"
+  },
+  "genui": {
+    "showData": "Mostrar dados",
+    "openImage": "Abrir imagem",
+    "viewAllImages": "Ver todas ({count})",
+    "pieFocus": "{label} é {percent}% do total",
+    "pieOfTotal": "{value} de {total}",
+    "directions": "Rotas",
+    "call": "Ligar",
+    "website": "Site",
+    "label": "Rótulo",
+    "value": "Valor",
+    "map": "Mapa",
+    "zoomIn": "Aumentar zoom",
+    "zoomOut": "Diminuir zoom",
+    "mapTwoFingers": "Use dois dedos para mover o mapa",
+    "pick": "Escolha",
+    "convertFailed": "Não foi possível preparar a transcrição. Tente novamente."
   }
 }

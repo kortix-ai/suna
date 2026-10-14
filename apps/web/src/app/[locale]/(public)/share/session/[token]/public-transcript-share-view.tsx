@@ -128,8 +128,9 @@ function TranscriptMessage({ message }: { message: PublicSessionTranscriptMessag
       >
         {/* `untrusted`: an anonymous visitor reads this. Remote images wait
             for a click, so opening the link sends no request to a host the
-            conversation chose, and agent setup links stay plain links. */}
-        <UnifiedMarkdown content={message.text} trust="untrusted" />
+            conversation chose, and agent setup links stay plain links. The
+            agent's replies render generative UI, as in the session. */}
+        <UnifiedMarkdown content={message.text} trust="untrusted" genui={!isUser} />
       </div>
     </div>
   );

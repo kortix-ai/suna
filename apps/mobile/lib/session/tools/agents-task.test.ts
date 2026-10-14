@@ -1,9 +1,9 @@
+import { subAgentCalls } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import type { ToolPart } from '@kortix/sdk';
+import { sessionLogOfV1Rows, type ToolPart } from '@kortix/sdk';
 
 import {
   childLastActivity,
-  childSessionToolParts,
   describeChildStep,
   taskRowModel,
 } from './agents-task';
@@ -42,20 +42,24 @@ const CHILD_MESSAGES = [
 
 const INPUT = { subagent_type: 'explorer', description: 'Find the bug' };
 
-describe('childSessionToolParts', () => {
-  test('collects assistant tool parts and drops hidden tools', () => {
-    const parts = childSessionToolParts(CHILD_MESSAGES);
-    expect(parts.map((p) => p.callID)).toEqual(['child-1', 'child-2']);
+/** The child's thread as the SDK's block view serves it on v1 (`fromV1` of its rows). */
+const CHILD_THREAD = sessionLogOfV1Rows('kortix-session', CHILD_SESSION_ID, CHILD_MESSAGES as never).threads[0]!;
+
+describe('subAgentCalls', () => {
+  test('collects assistant tool calls and drops hidden tools', () => {
+    const calls = subAgentCalls(CHILD_THREAD);
+    expect(calls.map((c) => c.call_id)).toEqual(['child-1', 'child-2']);
   });
 
-  test('no child messages → no steps', () => {
-    expect(childSessionToolParts(undefined)).toEqual([]);
+  test('no child thread → no steps', () => {
+    expect(subAgentCalls(null)).toEqual([]);
+    expect(subAgentCalls({ ...CHILD_THREAD, messages: [] })).toEqual([]);
   });
 });
 
 describe('describeChildStep / childLastActivity', () => {
   test('a step reads "Title · subtitle"', () => {
-    const parts = childSessionToolParts(CHILD_MESSAGES);
+    const parts = subAgentCalls(CHILD_THREAD);
     expect(describeChildStep(parts[1])).toBe('Glob · **/*.ts');
     expect(childLastActivity(parts)).toBe('Glob · **/*.ts');
   });
@@ -66,14 +70,14 @@ describe('describeChildStep / childLastActivity', () => {
 });
 
 describe('taskRowModel — the row expands in place', () => {
-  const steps = childSessionToolParts(CHILD_MESSAGES);
+  const steps = subAgentCalls(CHILD_THREAD);
 
   test('the trigger keeps its title, description subtitle and step badge', () => {
     const model = taskRowModel({
       status: 'completed',
       input: INPUT,
       childSessionId: CHILD_SESSION_ID,
-      childToolParts: steps,
+      childCalls: steps,
     });
     expect(model.title).toBe('Agent · explorer');
     expect(model.subtitle).toBe('Find the bug');
@@ -88,7 +92,7 @@ describe('taskRowModel — the row expands in place', () => {
       status: 'running',
       input: INPUT,
       childSessionId: CHILD_SESSION_ID,
-      childToolParts: steps,
+      childCalls: steps,
     });
     expect(model.subtitle).toBe('Glob · **/*.ts');
     // A running call does not count its steps yet.
@@ -96,7 +100,7 @@ describe('taskRowModel — the row expands in place', () => {
   });
 
   test('running with no steps yet → the description', () => {
-    const model = taskRowModel({ status: 'pending', input: INPUT, childSessionId: CHILD_SESSION_ID, childToolParts: [] });
+    const model = taskRowModel({ status: 'pending', input: INPUT, childSessionId: CHILD_SESSION_ID, childCalls: [] });
     expect(model.subtitle).toBe('Find the bug');
   });
 
@@ -105,7 +109,7 @@ describe('taskRowModel — the row expands in place', () => {
       status: 'running',
       input: INPUT,
       childSessionId: CHILD_SESSION_ID,
-      childToolParts: [],
+      childCalls: [],
     });
     expect(model.hasInlineSteps).toBe(false);
     expect(model.rowOpensSession).toBe(true);
@@ -113,7 +117,7 @@ describe('taskRowModel — the row expands in place', () => {
   });
 
   test('no child session — no body, no action, nothing to open', () => {
-    const model = taskRowModel({ status: 'completed', input: INPUT, childSessionId: undefined, childToolParts: [] });
+    const model = taskRowModel({ status: 'completed', input: INPUT, childSessionId: undefined, childCalls: [] });
     expect(model.title).toBe('Agent · explorer');
     expect(model.hasInlineSteps).toBe(false);
     expect(model.rowOpensSession).toBe(false);
@@ -121,17 +125,17 @@ describe('taskRowModel — the row expands in place', () => {
   });
 
   test('the full view carries the row own title', () => {
-    const model = taskRowModel({ status: 'completed', input: INPUT, childSessionId: CHILD_SESSION_ID, childToolParts: steps });
+    const model = taskRowModel({ status: 'completed', input: INPUT, childSessionId: CHILD_SESSION_ID, childCalls: steps });
     expect(model.sessionTitle).toBe('Agent · explorer: Find the bug');
   });
 
   test('no subagent_type → general; no description → first prompt line, then title', () => {
-    expect(taskRowModel({ status: 'completed', input: {}, childToolParts: [] }).title).toBe('Agent · general');
+    expect(taskRowModel({ status: 'completed', input: {}, childCalls: [] }).title).toBe('Agent · general');
     expect(
-      taskRowModel({ status: 'completed', input: { prompt: '\n  Look at auth\nmore' }, childToolParts: [] }).subtitle,
+      taskRowModel({ status: 'completed', input: { prompt: '\n  Look at auth\nmore' }, childCalls: [] }).subtitle,
     ).toBe('Look at auth');
-    expect(taskRowModel({ status: 'completed', input: { title: 'Titled' }, childToolParts: [] }).subtitle).toBe('Titled');
-    expect(taskRowModel({ status: 'completed', input: {}, childToolParts: [] }).subtitle).toBeUndefined();
-    expect(taskRowModel({ status: 'completed', input: {}, childToolParts: [] }).sessionTitle).toBe('Agent · general');
+    expect(taskRowModel({ status: 'completed', input: { title: 'Titled' }, childCalls: [] }).subtitle).toBe('Titled');
+    expect(taskRowModel({ status: 'completed', input: {}, childCalls: [] }).subtitle).toBeUndefined();
+    expect(taskRowModel({ status: 'completed', input: {}, childCalls: [] }).sessionTitle).toBe('Agent · general');
   });
 });

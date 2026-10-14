@@ -64,6 +64,7 @@ i18n-audit.json
 public/pdfium/
 public/react-docx/
 public/react-xlsx/
+public/maplibre/
 public/emojibase/
 public/i18n/
 

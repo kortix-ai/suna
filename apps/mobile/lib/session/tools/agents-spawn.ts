@@ -8,7 +8,7 @@
  * `textc65feb0006ea` "Worker · {value0}{value1}", `textb581fd88ea24` ": {value0}".
  */
 
-import { cleanWorkerOutput, parseJsonFailure, type ParsedJsonFailure, type ToolPart } from '@kortix/sdk';
+import { cleanWorkerOutput, parseJsonFailure, type ParsedJsonFailure, type ToolCallBlock } from '@kortix/sdk';
 import { capitalizeWords } from '@kortix/shared';
 import { firstMeaningfulLine, getAgentCardLabel } from '@/lib/session/tool-part-accessors';
 import { childLastActivity, describeChildStep, stepsBadge } from './agents-task';
@@ -39,12 +39,12 @@ export function agentSpawnModel({
   status,
   input,
   output,
-  childToolParts,
+  childCalls,
 }: {
   status: string;
   input: Record<string, unknown>;
   output: string;
-  childToolParts: readonly ToolPart[];
+  childCalls: readonly ToolCallBlock[];
 }): AgentSpawnModel {
   const description = getAgentCardLabel(input);
   const verification = firstMeaningfulLine(input.verification_condition, 120);
@@ -52,17 +52,17 @@ export function agentSpawnModel({
   const isCompleted = status === 'completed';
   const cleanedOutput = cleanWorkerOutput(output);
   const spawnFailure = isCompleted ? parseJsonFailure(output) : null;
-  const lastActivity = childLastActivity(childToolParts);
+  const lastActivity = childLastActivity(childCalls);
 
   const body: AgentSpawnModel['body'] =
     isCompleted && spawnFailure
       ? 'failure'
-      : verification || (isCompleted && (cleanedOutput || childToolParts.length > 0))
+      : verification || (isCompleted && (cleanedOutput || childCalls.length > 0))
         ? 'card'
         : 'none';
 
-  const showSteps = isCompleted && !cleanedOutput && childToolParts.length > 0;
-  const moreSteps = showSteps ? Math.max(0, childToolParts.length - 3) : 0;
+  const showSteps = isCompleted && !cleanedOutput && childCalls.length > 0;
+  const moreSteps = showSteps ? Math.max(0, childCalls.length - 3) : 0;
 
   return {
     title: 'Spawn agent',
@@ -71,12 +71,12 @@ export function agentSpawnModel({
     isRunning,
     isCompleted,
     subtitle: isRunning ? (lastActivity ?? description) : spawnFailure ? 'failed' : description || undefined,
-    badge: stepsBadge(status, childToolParts.length),
+    badge: stepsBadge(status, childCalls.length),
     spawnFailure,
     cleanedOutput,
     body,
     recentSteps: showSteps
-      ? childToolParts.slice(-3).map((tp) => ({ id: tp.id, label: describeChildStep(tp) }))
+      ? childCalls.slice(-3).map((tp) => ({ id: tp.id, label: describeChildStep(tp) }))
       : [],
     moreSteps,
     moreLabel: moreSteps > 0 ? `+${moreSteps} more` : undefined,
@@ -99,11 +99,11 @@ export interface SessionSpawnModel {
 export function sessionSpawnModel({
   status,
   input,
-  childToolParts,
+  childCalls,
 }: {
   status: string;
   input: Record<string, unknown>;
-  childToolParts: readonly ToolPart[];
+  childCalls: readonly ToolCallBlock[];
 }): SessionSpawnModel {
   const agentName = capitalizeWords((input.agent as string) || 'kortix');
   const description = (input.description as string) || '';
@@ -112,7 +112,7 @@ export function sessionSpawnModel({
   const label = description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '';
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
-  const lastActivity = childLastActivity(childToolParts);
+  const lastActivity = childLastActivity(childCalls);
 
   return {
     agentName,
@@ -121,7 +121,7 @@ export function sessionSpawnModel({
     subtitle: isRunning ? (lastActivity ?? label) : label || undefined,
     isRunning,
     isCompleted,
-    stepsLabel: isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined,
+    stepsLabel: isCompleted && childCalls.length > 0 ? `${childCalls.length} steps` : undefined,
     sessionTitle: `Worker · ${agentName}${label ? `: ${label}` : ''}`,
   };
 }

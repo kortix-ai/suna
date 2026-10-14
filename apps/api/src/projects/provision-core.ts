@@ -815,6 +815,11 @@ async function seedProvisionedRepo(
           ),
       });
       seeded = true;
+      // The seed is the base branch's first commit: publish its config release
+      // before the first session asks (config-releases/publish.ts).
+      void import('./lib/config-convergence-triggers')
+        .then((triggers) => triggers.notifyBaseBranchMoved(row.projectId, provisioned.defaultBranch, 'seed'))
+        .catch(() => {});
 
       // Mirror the seeded manifest's declared default agent into
       // project.metadata (see defaultAgentFromSeedFiles in ../seed-files.ts)

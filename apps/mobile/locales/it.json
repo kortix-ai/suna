@@ -1162,6 +1162,7 @@
     "title": "Account",
     "preferences": "Preferenze",
     "sounds": "Suoni",
+    "richAnswers": "Risposte arricchite",
     "workspace": "Area di lavoro",
     "accounts": "Account",
     "help": "Aiuto",
@@ -1199,6 +1200,17 @@
     "showMoreSubsessionsLabel_one": "Mostra {{count}} altra sotto-sessione di {{title}}",
     "showMoreSubsessionsLabel_other": "Mostra altre {{count}} sotto-sessioni di {{title}}"
   },
+  "genui": {
+    "chartTapHint": "Tocca per leggere un valore",
+    "map": "Mappa",
+    "mapUnavailable": "Mappa non disponibile",
+    "openImage": "Apri immagine",
+    "openMap": "Apri mappa",
+    "pick": "Consigliato",
+    "pieFocus": "{{label}} è il {{percent}}% del totale",
+    "pieOfTotal": "{{value}} su {{total}}",
+    "showData": "Mostra dati"
+  },
   "updateRequired": {
     "title": "Aggiornamento necessario",
     "body": "Questa versione di Kortix non è più supportata. Aggiorna l'app per continuare.",
@@ -1233,5 +1245,10 @@
     "wrongAccountBody": "Questo invito è indirizzato a un altro account. Hai effettuato l'accesso come {{email}}.",
     "signOutAndContinue": "Esci e continua",
     "backToProjects": "Torna ai progetti"
+  },
+  "approvals": {
+    "waitingManagers": "Chi gestisce questo progetto può approvare o rifiutare la chiamata.",
+    "waitingTitle": "In attesa di approvazione",
+    "waitingWho": "La persona che ha avviato questa sessione o chi gestisce questo progetto può approvare o rifiutare la chiamata."
   }
 }

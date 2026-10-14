@@ -7,29 +7,20 @@
  * "Agent · {value0}{value1}", `textb581fd88ea24` ": {value0}".
  */
 
-import { getChildSessionToolParts, getToolInfo, type ToolPart } from '@kortix/sdk';
+import { getToolInfo, type ToolCallBlock } from '@kortix/sdk';
 import { firstMeaningfulLine, partInput } from '@/lib/session/tool-part-accessors';
 
-type MessageWithPartsLike = Parameters<typeof getChildSessionToolParts>[0][number];
-
-const NO_PARTS: ToolPart[] = [];
-
-/** A child session's visible tool parts, in order (web `getChildSessionToolParts`). */
-export function childSessionToolParts(messages: readonly unknown[] | undefined): ToolPart[] {
-  if (!messages || messages.length === 0) return NO_PARTS;
-  return getChildSessionToolParts(messages as readonly MessageWithPartsLike[]) as unknown as ToolPart[];
-}
 
 /** "Title · subtitle" for one child step (web `info.title + (info.subtitle ? ' · ' + … : '')`). */
-export function describeChildStep(part: ToolPart): string {
-  const info = getToolInfo(part.tool, partInput(part) as Record<string, any>);
+export function describeChildStep(call: ToolCallBlock): string {
+  const info = getToolInfo(call.name, partInput(call) as Record<string, any>);
   return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
 }
 
 /** The sub-agent's latest step, or `null` before it has one. */
-export function childLastActivity(parts: readonly ToolPart[]): string | null {
-  if (parts.length === 0) return null;
-  return describeChildStep(parts[parts.length - 1]);
+export function childLastActivity(calls: readonly ToolCallBlock[]): string | null {
+  if (calls.length === 0) return null;
+  return describeChildStep(calls[calls.length - 1]);
 }
 
 /** Web badge: a settled call counts its steps. */
@@ -57,19 +48,19 @@ export function taskRowModel({
   status,
   input,
   childSessionId,
-  childToolParts,
+  childCalls,
 }: {
   status: string;
   input: Record<string, unknown>;
   childSessionId?: string;
-  childToolParts: readonly ToolPart[];
+  childCalls: readonly ToolCallBlock[];
 }): TaskRowModel {
   const subagentType = (input.subagent_type as string) || 'general';
   const description =
     (input.description as string) || firstMeaningfulLine(input.prompt) || firstMeaningfulLine(input.title, 80);
   const isRunning = status === 'running' || status === 'pending';
-  const lastActivity = childLastActivity(childToolParts);
-  const hasInlineSteps = Boolean(childSessionId) && childToolParts.length > 0;
+  const lastActivity = childLastActivity(childCalls);
+  const hasInlineSteps = Boolean(childSessionId) && childCalls.length > 0;
   const title = `Agent · ${subagentType}`;
 
   return {
@@ -77,7 +68,7 @@ export function taskRowModel({
     description,
     title,
     subtitle: isRunning ? (lastActivity ?? description) : description || undefined,
-    badge: stepsBadge(status, childToolParts.length),
+    badge: stepsBadge(status, childCalls.length),
     hasInlineSteps,
     rowOpensSession: Boolean(childSessionId) && !hasInlineSteps,
     showFullViewAction: Boolean(childSessionId),

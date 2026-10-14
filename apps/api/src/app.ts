@@ -45,7 +45,7 @@ import { oauthApp } from './oauth';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
+import { projectWebhooksApp, projectsApp, registerAllProjectRoutes, registerSessionLookupRoutes, sessionsApp } from './projects';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
@@ -174,6 +174,8 @@ import { tokenIssuerApp } from './apps/token-issuer-routes';
 app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+registerSessionLookupRoutes();
+app.route('/v1/sessions', sessionsApp); // GET /v1/sessions/:sessionId — one session by id, in any project
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
 // It answers its own 401 with an OAuth challenge, so no auth middleware here.
 // dispatchInProcess takes the assembled app as its second argument (it

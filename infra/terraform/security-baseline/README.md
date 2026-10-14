@@ -17,7 +17,9 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
   `kortix-root-login-failures` delivers to the same topic (DCF-90)
 - EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
-- AWS Backup vault + daily plan + selection + service role (DCF-99)
+- AWS Backup vault, daily plan, selection and service role in eu-west-2 (DCF-99).
+  The plan backs up the eu-west-2 Terraform state bucket and keeps 35 days.
+  It ran in us-west-2 on the old lock table until 2026-10-14.
 - VPC Flow Logs delivery role (DCF-406). `compliance-monitoring` adds flow logs
   for the dev (us-east-2) and staging (eu-west-2) VPCs. The us-west-2 log group
   and its CMK were removed on 2026-10-12 with the last us-west-2 VPC.

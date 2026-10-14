@@ -132,6 +132,8 @@ export interface FakeApi {
   descriptorRequests: Array<{ body: unknown; authorization: string | null; path: string }>
   archiveRequests: Array<{ authorization: string | null; path: string }>
   storageRequests: Array<{ authorization: string | null; path: string }>
+  /** Store objects by path (a published descriptor), served before any archive. */
+  storageObjects: Map<string, Buffer>
   /** What the next descriptor request answers. */
   respond: (next: { status?: number; json?: unknown }) => void
   /** Archives by config tree ID. */
@@ -149,6 +151,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     descriptorRequests: [] as FakeApi['descriptorRequests'],
     archiveRequests: [] as FakeApi['archiveRequests'],
     storageRequests: [] as FakeApi['storageRequests'],
+    storageObjects: new Map<string, Buffer>(),
     archives: new Map<string, Buffer>(),
     redirectToStorage: false,
     archiveOverride: null as { status: number; json: unknown } | null,
@@ -158,6 +161,8 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     fetch(req) {
       const url = new URL(req.url)
       state.storageRequests.push({ authorization: req.headers.get('authorization'), path: url.pathname })
+      const object = state.storageObjects.get(url.pathname)
+      if (object) return new Response(object)
       const tree = url.pathname.split('/').pop()!
       const body = state.archives.get(tree)
       return body ? new Response(body) : new Response('missing', { status: 404 })
@@ -205,6 +210,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     respond: (value) => {
       next = value
     },
+    storageObjects: state.storageObjects,
     archives: state.archives,
     get redirectToStorage() {
       return state.redirectToStorage
@@ -243,4 +249,23 @@ export const FEATURE_DISABLED = {
 export function serveRelease(api: FakeApi, release: BuiltRelease): void {
   if (release.descriptor.config_tree_id) api.archives.set(release.descriptor.config_tree_id, release.archive)
   api.respond({ status: 200, json: release.descriptor })
+}
+
+/**
+ * Publish `release` in the fake store, as the API does when a base ref moves,
+ * and return the `KORTIX_CONFIG_RELEASE` value session create signs for it.
+ */
+export function publishRelease(api: FakeApi, release: BuiltRelease, opts: { expiresInMs?: number } = {}): string {
+  const id = release.descriptor.release_id!
+  const tree = release.descriptor.config_tree_id!
+  api.storageObjects.set(`/releases/${id}.json`, Buffer.from(JSON.stringify(release.descriptor)))
+  api.archives.set(tree, release.archive)
+  const env = {
+    release_id: id,
+    source_commit: release.descriptor.source_commit,
+    descriptor_url: `${api.storageUrl}/releases/${id}.json?X-Amz-Signature=signed`,
+    archive_url: `${api.storageUrl}/signed/${tree}?X-Amz-Signature=signed`,
+    expires_at: new Date(Date.now() + (opts.expiresInMs ?? 900_000)).toISOString(),
+  }
+  return Buffer.from(JSON.stringify(env)).toString('base64')
 }

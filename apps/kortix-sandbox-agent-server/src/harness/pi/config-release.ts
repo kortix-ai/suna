@@ -55,6 +55,7 @@ import {
   writeConfigReleaseNotice,
 } from '@/services/config-provider/notice'
 import { obtainRelease, type ReleaseTransport } from '@/services/config-provider/obtain'
+import { readPublishedRelease } from '@/services/config-provider/published'
 import {
   ConvergeBusyError,
   deliverGovernance,
@@ -289,12 +290,17 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   }
 
   /** Put a release on this box from the first source that holds it (obtain.ts). */
-  const materialize = (manifest: ReleaseManifest, descriptor: ConfigReleaseDescriptor): Promise<{ dir: string; transport: ReleaseTransport }> =>
+  const materialize = (
+    manifest: ReleaseManifest,
+    descriptor: ConfigReleaseDescriptor,
+    signedArchive?: Promise<Buffer>,
+  ): Promise<{ dir: string; transport: ReleaseTransport }> =>
     obtainRelease({
       root,
       manifest,
       snapshot: descriptor.snapshot,
       api,
+      signedArchive,
       git: cfg,
       managedSkillsDir: options.managedSkillsDir,
     })
@@ -314,13 +320,16 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   // ── Boot ─────────────────────────────────────────────────────────────────
 
   async function chooseBootConfig(mark?: (label: string) => void): Promise<void> {
-    // 1. The descriptor request decides whether this boot runs a release.
-    let descriptor: ConfigReleaseDescriptor | null = null
-    let disabled: string | null = api
+    // 1. The release this boot runs: the one the API published and signed at
+    //    session create (no API call), else the descriptor request.
+    const published = await readPublishedRelease(cfg.configRelease)
+    let descriptor: ConfigReleaseDescriptor | null = published?.descriptor ?? null
+    if (published) mark?.('config-release-published')
+    let disabled: string | null = api || published
       ? null
       : 'this box has no API to ask (KORTIX_API_URL, KORTIX_PROJECT_ID, KORTIX_SESSION_ID or KORTIX_TOKEN is unset)'
     const reasons: string[] = []
-    if (api) {
+    if (api && !published) {
       try {
         descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs, baseSha: cfg.baseSha })
         mark?.('config-release-fetched')
@@ -382,7 +391,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           await quarantineRelease(root, desiredId, problem)
         } else {
           try {
-            const { dir, transport } = await materialize(manifest, descriptor)
+            const { dir, transport } = await materialize(manifest, descriptor, published?.archive)
             mark?.(`config-release-${transport}`)
             await useRelease(desiredId, desiredId, manifest, dir, reasons, null)
             mark?.('config-release-proven')

@@ -1162,6 +1162,7 @@
     "title": "账户",
     "preferences": "偏好设置",
     "sounds": "声音",
+    "richAnswers": "丰富回答",
     "workspace": "工作区",
     "accounts": "账户",
     "help": "帮助",
@@ -1199,6 +1200,17 @@
     "showMoreSubsessionsLabel_one": "再显示 {{title}} 的 {{count}} 个子会话",
     "showMoreSubsessionsLabel_other": "再显示 {{title}} 的 {{count}} 个子会话"
   },
+  "genui": {
+    "chartTapHint": "点按查看数值",
+    "map": "地图",
+    "mapUnavailable": "地图不可用",
+    "openImage": "打开图片",
+    "openMap": "打开地图",
+    "pick": "推荐",
+    "pieFocus": "{{label}} 占总数的 {{percent}}%",
+    "pieOfTotal": "{{total}} 中的 {{value}}",
+    "showData": "显示数据"
+  },
   "updateRequired": {
     "title": "需要更新",
     "body": "此版本的 Kortix 已不再受支持。请更新应用以继续使用。",
@@ -1233,5 +1245,10 @@
     "wrongAccountBody": "此邀请发给的是另一个账户。你当前以 {{email}} 登录。",
     "signOutAndContinue": "退出并继续",
     "backToProjects": "返回项目"
+  },
+  "approvals": {
+    "waitingManagers": "管理此项目的人可以批准或拒绝此次调用。",
+    "waitingTitle": "等待批准",
+    "waitingWho": "启动此会话的人或管理此项目的人可以批准或拒绝此次调用。"
   }
 }

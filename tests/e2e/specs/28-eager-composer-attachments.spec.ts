@@ -82,6 +82,27 @@ async function dispatchFileEvent(
   );
 }
 
+// A file dragged over the page outside every drop zone, as the page sees it.
+// The browser opens an uncancelled file drop in the tab (leaving the page and
+// its unsent attachments), so the page must cancel both events and show the
+// "no drop" cursor. A synthetic event runs the page's handlers but never the
+// browser's default, which is why this asserts the cancel itself.
+async function strayFileDrop(
+  page: Page,
+): Promise<{ dragoverCancelled: boolean; dropCancelled: boolean; dropEffect: string }> {
+  return page.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["stray"], "stray.txt", { type: "text/plain" }));
+    const fire = (type: "dragover" | "drop") =>
+      !document.body.dispatchEvent(
+        new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }),
+      );
+    const dragoverCancelled = fire("dragover");
+    const dropEffect = transfer.dropEffect;
+    return { dragoverCancelled, dropCancelled: fire("drop"), dropEffect };
+  });
+}
+
 test("28 — eager composer uploads before Send and reuses handles after refusal", async ({
   page,
 }, testInfo) => {
@@ -356,6 +377,17 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     await expect(
       page.locator('li > div[aria-busy="true"]:has([title="picker.png"])'),
     ).toHaveCount(0, { timeout: 30_000 });
+
+    // A file dropped outside the composer is refused: the tab stays on the
+    // project and keeps its attachment, instead of opening the file.
+    const projectUrl = page.url();
+    expect(await strayFileDrop(page)).toEqual({
+      dragoverCancelled: true,
+      dropCancelled: true,
+      dropEffect: "none",
+    });
+    await expect(page).toHaveURL(projectUrl);
+    await expect(page.locator('img[alt="picker.png"]')).toBeVisible();
 
     failUploads = true;
     await page.locator("input[type=file]").setInputFiles({
