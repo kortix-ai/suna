@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 interface ConfirmDialogProps {
@@ -51,14 +52,18 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   onConfirm,
   isPending,
   confirmVariant = 'default',
   confirmIcon,
   confirmDisabled,
 }: ConfirmDialogProps) {
+  // The defaults are the viewer's language: an English literal here put
+  // "Cancel" under every translated dialog that passed no label (KRTX-2326).
+  const t = useTranslations('common');
+  const confirmText = confirmLabel ?? t('confirm');
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="sm:max-w-md" overlayClassName="bg-black/25 backdrop-blur-sm">
@@ -69,7 +74,7 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>{cancelLabel ?? t('cancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
@@ -79,7 +84,7 @@ export function ConfirmDialog({
             className={cn(buttonVariants({ variant: confirmVariant, size: 'sm' }), 'gap-1.5')}
           >
             {confirmIcon}
-            {isPending ? `${confirmLabel}…` : confirmLabel}
+            {isPending ? `${confirmText}…` : confirmText}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
