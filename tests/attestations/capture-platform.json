@@ -1,5 +1,5 @@
 {
-  "source_hash": "981860df55fb96898630db0355483a6f6e289df6437739dbd4ae8ba6a3be096c",
+  "source_hash": "fc90d7bde005f6aaa435df7be0205da5d6dfff38d60fa369159f65a0e63fd0a9",
   "diff_files": [
     ".agents/skills/genui/SKILL.md",
     ".agents/skills/kortix-capture/SKILL.md",
@@ -24,7 +24,6 @@
     "apps/api/src/__tests__/integration-iam-role-catalog-parity.test.ts",
     "apps/api/src/__tests__/integration-job-queue.test.ts",
     "apps/api/src/__tests__/unit-account-id-param.test.ts",
-    "apps/api/src/__tests__/unit-genui-relay.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
     "apps/api/src/accounts/index.ts",
     "apps/api/src/app.ts",
@@ -57,6 +56,7 @@
     "apps/api/src/iam/denial-message.ts",
     "apps/api/src/mcp/cli.ts",
     "apps/api/src/middleware/auth-scope.ts",
+    "apps/api/src/middleware/cors.test.ts",
     "apps/api/src/middleware/request-deadline.ts",
     "apps/api/src/notifications/inbox-read.ts",
     "apps/api/src/notifications/notification-email.ts",
@@ -64,8 +64,8 @@
     "apps/api/src/notifications/push-payload.ts",
     "apps/api/src/object-store/s3.ts",
     "apps/api/src/projects/lib/sessions.error-docs.test.ts",
-    "apps/api/src/projects/review-items.ts",
     "apps/api/src/projects/session-log-switch.ts",
+    "apps/api/src/sandbox-proxy/ws-wake-policy.test.ts",
     "apps/api/src/shared/job-queue.ts",
     "apps/api/src/workers/capture-health-worker.ts",
     "apps/api/src/workers/capture-worker.ts",
@@ -294,11 +294,6 @@
     "apps/desktop-electron/README.md",
     "apps/desktop-electron/electron-builder.yml",
     "apps/desktop-electron/src/nav-rules.js",
-    "apps/kortix-sandbox-agent-server/src/__tests__/genui.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/pi/runtime.ts",
-    "apps/kortix-sandbox-agent-server/src/lib/config/genui.ts",
-    "apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui.ts",
-    "apps/kortix-sandbox-agent-server/src/services/skills/managed-skills.ts",
     "apps/mobile/app/(settings)/notifications.tsx",
     "apps/mobile/components/notifications/notification-settings.test.tsx",
     "apps/mobile/lib/notifications/inbox.test.ts",
@@ -444,13 +439,11 @@
     "tests/src/flows/notifications.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "2c2ffa82b0dd58ddde16b575dd3188582b21f349a013b00e56536baa4e95cc30",
-  "head": "a85cf83ac4dcda0e2710682bc79e3aa34e87e97b",
-  "passed": true,
+  "diff_hash": "35402e018c407a5408c8f6d1675880d2d3bd45b42443fea4f5377651cb9babaa",
+  "head": "4845ea2e0ebd43fd2944ffd81a80615bbe0925ff",
+  "passed": false,
   "lanes": {
-    "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "fail"
   },
-  "at": "2026-10-14T22:40:05.141Z"
+  "at": "2026-10-14T23:08:41.679Z"
 }
