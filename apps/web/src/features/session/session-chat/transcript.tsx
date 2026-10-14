@@ -1709,8 +1709,8 @@ function TurnSegment({
 }
 
 /** What the turn says: the completion announce, the streaming text, and
- *  either the inline text-and-questions flow or the settled response. */
-function TurnAssistantBlock(
+ *  either the inline text-and-questions flow or the settled response. Exported for its test. */
+export function TurnAssistantBlock(
   props: Pick<SessionTurnProps, 'turn'> & {
     model: TurnModelState;
     answered: TurnAnsweredState;
@@ -1732,11 +1732,6 @@ function TurnAssistantBlock(
     </div>
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
-    {working && !hasSteps && !shouldUseInlineContent && response && (
-      <div className="min-w-0 text-sm">
-        <ThrottledMarkdown content={response} isStreaming />
-      </div>
-    )}
       {shouldUseInlineContent ? (
         <TurnInlineContent working={working} parts={inlineContentParts!} />
       ) : (
@@ -1779,13 +1774,10 @@ function TurnInlineContent({
             if (item.type === 'text') {
               const isStreaming = idx === lastTextIdx;
               const text = isStreaming ? item.block.text : item.block.text.trim();
+              // One component across the turn's end, so the generative UI blocks in the text keep their state.
               return (
                 <div key={item.id} className="min-w-0 text-sm">
-                  {isStreaming ? (
-                    <ThrottledMarkdown content={text} isStreaming />
-                  ) : (
-                    <SandboxUrlDetector content={text} isStreaming={false} genui />
-                  )}
+                  <ThrottledMarkdown content={text} isStreaming={isStreaming} response />
                 </div>
               );
             }
@@ -1815,7 +1807,14 @@ function TurnSettledResponse({
 }) {
   return (
       <>
-        {/* Response section for text-only turns (no tools/steps content) */}
+        {/* Response text for text-only turns (no tools/steps content). One element from the first streamed
+            word to the settled turn, so the generative UI blocks in it do not remount when the turn ends. */}
+        {!hasSteps && response && (working || !commandForTurn) ? (
+          <div className={working ? 'min-w-0 text-sm' : 'text-sm'}>
+            <ThrottledMarkdown content={response} isStreaming={working} response />
+          </div>
+        ) : null}
+        {/* A command's output settles into its card. */}
         {!working &&
           !hasSteps &&
           response &&
@@ -1844,11 +1843,7 @@ function TurnSettledResponse({
               </div>
               <CodeBlockEndpoints content={response} />
             </div>
-          ) : (
-            <div className="text-sm">
-              <SandboxUrlDetector content={response} isStreaming={false} genui />
-            </div>
-          ))}
+          ) : null)}
 
         {/* Answered question parts — shown after the response text only when
 				    NONE of the upstream renderers fire. The steps section above is

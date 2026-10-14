@@ -6,6 +6,7 @@ import { memo, useMemo } from 'react';
 
 import { openGenuiFence } from '@/components/markdown/code/genui-fence';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 
 import { useStreamingCadence } from './streaming-cadence';
 
@@ -91,9 +92,16 @@ export function holdBackTableHeader(text: string): string {
 function ThrottledMarkdownImpl({
   content,
   isStreaming,
+  response = false,
 }: {
   content: string;
   isStreaming: boolean;
+  /**
+   * The turn's answer text. Settled, it renders as `SandboxUrlDetector` does (system tags stripped,
+   * no table-row trim), so the transcript keeps this one component across the turn's end and the
+   * generative UI blocks in it do not remount.
+   */
+  response?: boolean;
 }) {
   // `useStreamingCadence` reveals the text at the speed it arrives instead of
   // one network chunk at a time. When the turn ends it drains the last of the
@@ -110,8 +118,10 @@ function ThrottledMarkdownImpl({
     () =>
       streaming
         ? closeUnterminatedCodeFence(holdBackFenceOpener(holdBackTableHeader(pacedContent)))
-        : trimIncompleteTableRow(pacedContent),
-    [pacedContent, streaming],
+        : response
+          ? stripKortixSystemTags(pacedContent)
+          : trimIncompleteTableRow(pacedContent),
+    [pacedContent, streaming, response],
   );
   // Nothing revealed yet: render nothing rather than the empty-content notice.
   if (streaming && !displayContent) return null;
