@@ -446,7 +446,7 @@ put replace the whole record.
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
 set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message). A live put is published:
+reacts to a non-streaming assistant message or compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
