@@ -1514,7 +1514,8 @@ flow(
           await member.del("/v1/projects/:projectId/apps/:appId", { params: app() }),
         ];
         refusals.forEach((response) => response.status(403));
-        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body().has("$.volumes[0].size_gb", 20);
+        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body()
+          .has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 30);
       });
 
       await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {
