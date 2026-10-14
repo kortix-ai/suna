@@ -81,9 +81,10 @@ export async function machinesCommand(rest: string[], options: ContextOptions, j
   return 0;
 }
 
-/** `kortix apps scale count <app> <n> [--process <group>]` · `kortix apps scale show <app>`. */
+/** `kortix apps scale count <app> <n> [--process <group>] [--new-volumes]` · `kortix apps scale show <app>`. */
 export async function scaleCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
   const group = takeFlagValue(rest, ['--process', '--group']) ?? 'app';
+  const newVolumes = takeFlagBool(rest, ['--new-volumes']);
   const [action, target, countArg] = positionals(rest);
   if (action !== 'count' && action !== 'show') return fail('scale needs "count <app> <n>" or "show <app>"');
   if (!target) return fail(`scale ${action} needs an App id or slug`);
@@ -96,7 +97,7 @@ export async function scaleCommand(rest: string[], options: ContextOptions, json
   const result = await scoped(ctx, async () => {
     const app = await resolveApp(ctx.apps, target);
     if (action === 'show') return { scale: app.scale ?? {}, machines: await ctx.apps.machines.list(app.app_id) };
-    return ctx.apps.scale(app.app_id, { [group]: count! });
+    return ctx.apps.scale(app.app_id, { [group]: count! }, { newVolumes });
   });
   if (json) {
     emitJson(result);
@@ -135,12 +136,13 @@ export async function execCommand(rest: string[], command: string[], options: Co
 
 function volumeLines(volumes: AppVolume[]): string {
   if (volumes.length === 0) return `  ${dim('No volumes.')}\n`;
-  let out = row([['VOLUME', 10], ['NAME', 14], ['GROUP', 10], ['SIZE', 8], ['ATTACHED', 10], ['STATUS', 10], ['SNAPSHOTS', 10]]);
+  let out = row([['VOLUME', 10], ['NAME', 14], ['GROUP', 10], ['USED', 10], ['SIZE', 8], ['ATTACHED', 10], ['STATUS', 10], ['SNAPSHOTS', 10]]);
   for (const volume of volumes) {
     out += row([
       [volume.volume_id.slice(0, 8), 10],
       [volume.name, 14],
       [volume.process_group, 10],
+      [volume.used_bytes == null ? '-' : `${(volume.used_bytes / 1024 ** 3).toFixed(1)} GB`, 10],
       [`${volume.size_gb} GB`, 8],
       [volume.attached ? 'yes' : 'no', 10],
       [volume.status, 10],
@@ -157,17 +159,18 @@ function pickVolume(volumes: AppVolume[], id: string): AppVolume {
 }
 
 /**
- * `kortix apps volumes ls|create|extend|destroy|fork|snapshots|snapshot|restore`:
- *   ls <app> · create <app> <name> --size <gb> [--process g] · extend <app> <vol> --size <gb>
+ * `kortix apps volumes ls|create|set|destroy|fork|snapshots|snapshot|restore`:
+ *   ls <app> · create <app> <name> --size <gb> [--process g] · set <app> <vol> --retention <days>
  *   destroy <app> <vol> --yes · fork <app> <vol> <new-name> [--snapshot id]
  *   snapshots <app> <vol> · snapshot <app> <vol> · restore <app> <vol> <snapshot-id>
  */
 export async function volumesCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
   const size = positiveInteger(takeFlagValue(rest, ['--size', '--size-gb']), '--size');
+  const retention = positiveInteger(takeFlagValue(rest, ['--retention']), '--retention');
   const group = takeFlagValue(rest, ['--process', '--group']);
   const snapshotFlag = takeFlagValue(rest, ['--snapshot']);
   const yes = takeFlagBool(rest, ['--yes', '-y']);
-  const VOLUME_ACTIONS = ['ls', 'list', 'create', 'extend', 'destroy', 'rm', 'fork', 'snapshots', 'snapshot', 'restore'];
+  const VOLUME_ACTIONS = ['ls', 'list', 'create', 'set', 'extend', 'destroy', 'rm', 'fork', 'snapshots', 'snapshot', 'restore'];
   const words = positionals(rest);
   // `kortix apps volumes <app>` lists, like `machines`.
   const [action, target, third, fourth] = words[0] && VOLUME_ACTIONS.includes(words[0]) ? words : ['ls', ...words];
@@ -186,10 +189,16 @@ export async function volumesCommand(rest: string[], options: ContextOptions, js
         const volume = await ctx.apps.volumes.create(app.app_id, { name: third, size_gb: size, ...(group ? { process_group: group } : {}) });
         return { data: volume, text: `  ${status.ok(`created ${volume.name} (${volume.size_gb} GB)`)}\n` };
       }
+      case 'set': {
+        if (!third || !retention) throw new Error('volumes set needs a volume and --retention <days>');
+        const volume = await ctx.apps.volumes.update(app.app_id, pickVolume(volumes, third).volume_id, { snapshot_retention_days: retention });
+        return { data: volume, text: `  ${status.ok(`${volume.name} keeps daily snapshots ${volume.snapshot_retention_days} days`)}\n` };
+      }
       case 'extend': {
+        // A volume has the fixed size Platinum allots; the API refuses more (volume_fixed_size).
         if (!third || !size) throw new Error('volumes extend needs a volume and --size <gb>');
         const volume = await ctx.apps.volumes.update(app.app_id, pickVolume(volumes, third).volume_id, { size_gb: size });
-        return { data: volume, text: `  ${status.ok(`${volume.name} is now ${volume.size_gb} GB`)}\n` };
+        return { data: volume, text: `  ${status.ok(`${volume.name} is ${volume.size_gb} GB`)}\n` };
       }
       case 'destroy':
       case 'rm': {

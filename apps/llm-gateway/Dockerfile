@@ -19,7 +19,10 @@
 # next gateway change and then blocked that deploy. If you add a @kortix/* dep to
 # the gateway or any package it pulls in, add its COPY to BOTH stages here.
 
-ARG BUN_VERSION=1.2
+# The gateway runs on the same Bun as every test lane (`bun-version` in
+# .github/workflows/tests.yml). tests/unit/image-bun.test.ts fails when the two
+# differ.
+ARG BUN_VERSION=1.4.3
 
 # ---- Deps Stage ----
 # A MINIMAL synthetic workspace (only the gateway + its two packages) so we don't
