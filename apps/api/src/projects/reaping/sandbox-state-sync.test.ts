@@ -83,7 +83,7 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-mock.module('../../sandbox-proxy', () => ({
+mock.module('../../sandbox-proxy/provider', () => ({
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },

@@ -74,7 +74,7 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
+mock.module('../sandbox-proxy/provider', () => ({
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },

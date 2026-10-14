@@ -27,7 +27,9 @@ let createSessionCalls = 0;
 
 const app = new OpenAPIHono<AppEnv>();
 mock.module('../lib/app', () => ({ projectsApp: app }));
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId,
     row: {
@@ -58,7 +60,9 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => gatewayOn,
 }));
+const realSessionLifecycle = await import('../session-lifecycle');
 mock.module('../session-lifecycle', () => ({
+  ...realSessionLifecycle,
   createSession: async () => {
     createSessionCalls += 1;
     return {

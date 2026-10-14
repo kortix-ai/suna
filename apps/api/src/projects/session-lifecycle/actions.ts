@@ -28,7 +28,7 @@ import {
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateProviderCache } from '../../sandbox-proxy/provider';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
