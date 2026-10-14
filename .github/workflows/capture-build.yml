@@ -88,7 +88,13 @@ jobs:
       - name: Engine protocol, library and enrollment tests
         run: |
           cargo test --release --features capture-engine --test capture_engine_protocol
-          cargo test --release --features capture-engine --lib
+          # memory::action_exclusions::tests::a_new_exclusion_applies_without_a_new_session
+          # is timing-based and failed once on a loaded Linux runner: rerun the library
+          # tests once and warn, so a real failure still fails the job.
+          cargo test --release --features capture-engine --lib || {
+            echo "::warning::library tests failed once; rerunning to tell a timing flake from a real failure"
+            cargo test --release --features capture-engine --lib
+          }
           cargo test --release --features capture-engine --test enrollment
           cargo test --release --features capture-engine --test capture_format
       - name: Tray tests (Linux AppIndicator)
@@ -822,7 +828,8 @@ jobs:
           python3 scripts/install_privacy_runtime.py --platform linux-x86_64 --destination target/release
           installer/linux/build-deb.sh "$TAG" target/release "$RUNNER_TEMP/kortix-capture_${TAG}_amd64.deb" 2>&1 | tee "$EV/build.txt"
           dpkg-deb --contents "$RUNNER_TEMP/kortix-capture_${TAG}_amd64.deb" | grep -v "/skill" | tee "$EV/deb-files.txt"
-          readelf -d target/release/kortix-capture | grep NEEDED | tee "$EV/needed.txt\
+          readelf -d target/release/kortix-capture | grep NEEDED | tee "$EV/needed.txt"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: capture-installer-linux

@@ -70,13 +70,13 @@
       <Directory Id="MachineKortixFolder" Name="Kortix">
         <Component Id="MachineKortixFolderAcl" Guid="*" Bitness="always64">
           <CreateFolder>
-            <util:PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
+            <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
           </CreateFolder>
         </Component>
         <Directory Id="MachineCaptureFolder" Name="Capture">
           <Component Id="MachineCaptureFolderAcl" Guid="*" Bitness="always64">
             <CreateFolder>
-              <util:PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
+              <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
             </CreateFolder>
           </Component>
         </Directory>
