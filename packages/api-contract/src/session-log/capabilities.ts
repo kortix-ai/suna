@@ -10,24 +10,30 @@
  * `HARNESS_RUNTIME_CAPABILITIES` is what each harness lists in `GET /kortix/health` `capabilities`
  * (OpenCode lists `session.steer` only on 1.18.15 or later; the pinned version is later).
  *
- * `switchPreflight(log, to)` is the loss report of a switch to `to`: one line for each feature the
- * session used that `to` handles worse than the harness that wrote it. A feature the source
- * harness also lacked is no loss (the model never had it). A log whose harness has no manifest
- * (a converted log, `kortix-v1-import`) counts every feature as native at the source.
+ * `switchPreflight(log, to, ctx)` is the report of a switch to `to`:
+ * - `available` / `reason`: the switch can happen. `same_harness`: the log already runs on `to`.
+ *   `llm_gateway_off`: pi has no model path without the project's `llm_gateway` flag.
+ * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on, so the new
+ *   box restores the log. Off: the new box starts without the conversation, and `losses` starts
+ *   with a `history` line (every live message).
+ * - `unsupported`: everything the source harness handles that `to` handles worse, used or not:
+ *   model features of the manifests and runtime controls (`HARNESS_RUNTIME_CAPABILITIES`).
+ * - `losses`: the `unsupported` lines the log shows in use, with counts. A feature the source
+ *   harness also lacked is in neither list. A log whose harness has no manifest (a converted log,
+ *   `kortix-v1-import`) counts every feature as native at the source.
  * - Model features (`CapabilityFeatures`): `degraded` when the target only renders the feature
- *   (lowered or emulated), `lost` when it cannot write it.
- * - Runtime controls (`RuntimeCapability`): `lost` when the target harness does not serve the
- *   control the session used (MCP tools, a rewind, a slash command, a steer, a manual compaction).
+ *   (lowered or emulated), `lost` when it cannot write it. Runtime controls are `lost`.
+ * - Use counted for controls: MCP tool calls, a rewind (reverted or deleted messages), a slash
+ *   command, a steer, a manual compaction. A control the log cannot show (shell, fork, attach,
+ *   config) or an MCP server never called is only in `unsupported`.
  * - Reasoning (`reasoning_replay`, the `modelView` rule): an in-context assistant reasoning block of
  *   the model the session selects next (`detail: same_model`; no selection counts as that model) is
  *   replayed unless the harness says `none`; another model's (`other_model`) only as text by
  *   `lowers_to_text`. A line when the target no longer shows what the source showed.
- * Not reported: `session.shell` (a shell turn leaves no mark in the log), `session.fork` and
- * `session.attach`.
  */
 import { RUNTIME_CAPABILITIES, type RuntimeCapability } from '../runtime-relay';
 import type { AdapterCapabilities, CapabilityFeatures, SessionLog, SessionLogBlock } from './types';
-import type { SessionLogHarness, SessionLogSwitchPreflight, SwitchLoss } from './wire';
+import type { SessionLogHarness, SessionLogSwitchPreflight, SwitchGap, SwitchLoss } from './wire';
 
 const PI_NATIVE: CapabilityFeatures = {
   tool_error_channel: false, // openai-chat role:tool has no is_error
@@ -81,44 +87,66 @@ export const HARNESS_RUNTIME_CAPABILITIES: Record<SessionLogHarness, readonly Ru
 
 type Level = 0 | 1 | 2; // none, rendered, native
 const SUBAGENT_ORDER = ['none', 'sync', 'async'] as const;
+const COMPACTION_KINDS = ['summary_first_tail', 'layout', 'text_tail', 'opaque'] as const;
 type Has = (features: CapabilityFeatures) => boolean;
+/** `table[key]` for an own key only: a journaled `harness.current` such as `constructor` is no harness. */
+const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
 
-/** The loss report of switching the session `log` describes to the harness `to`. */
-export function switchPreflight(log: SessionLog, to: SessionLogHarness): SessionLogSwitchPreflight {
+/** What the API knows besides the log (`POST …/log/switch-preflight`). */
+export type SwitchContext = {
+  /** The project's `llm_gateway` flag: pi has no model path without it. */
+  llmGateway: boolean;
+  /** The project's `session_log_restore` flag and the operator switch: the new box restores the log. */
+  restore: boolean;
+  /** Tombstoned messages: OpenCode deletes the messages a rewind reverts. */
+  deletedMessages?: number;
+};
+
+/** The switch report of the session `log` on the harness `to`. */
+export function switchPreflight(log: SessionLog, to: SessionLogHarness, ctx: SwitchContext): SessionLogSwitchPreflight {
   const from = log.harness?.current ?? 'unknown';
-  const source: AdapterCapabilities | undefined = ADAPTER_CAPABILITIES[from as SessionLogHarness];
+  const source = own(ADAPTER_CAPABILITIES, from);
   const target = ADAPTER_CAPABILITIES[to];
   const level = (caps: AdapterCapabilities | undefined, has: Has): Level => (!caps || has(caps.native) ? 2 : has(caps.rendered) ? 1 : 0);
   const losses: SwitchLoss[] = [];
+  const unsupported: SwitchGap[] = [];
+  /** `useDetail` names what the log used (MCP tool names); it is no gap of its own. */
+  const gap = (feature: string, used: number, status: SwitchLoss['status'], detail?: string, useDetail = detail) => {
+    unsupported.push({ feature, ...(detail && { detail }), status });
+    if (used > 0) losses.push({ feature, ...(useDetail && { detail: useDetail }), used, status });
+  };
   const feature = (name: string, used: number, has: Has, detail?: string) => {
     const at = level(target, has);
-    if (used > 0 && at < level(source, has)) losses.push({ feature: name, ...(detail && { detail }), used, status: at === 1 ? 'degraded' : 'lost' });
+    if (at < level(source, has)) gap(name, used, at === 1 ? 'degraded' : 'lost', detail);
   };
-  const control = (name: RuntimeCapability, used: number, detail?: string) => {
-    const served = (h: string) => (HARNESS_RUNTIME_CAPABILITIES[h as SessionLogHarness] ?? RUNTIME_CAPABILITIES).includes(name);
-    if (used > 0 && served(from) && !served(to)) losses.push({ feature: name, ...(detail && { detail }), used, status: 'lost' });
-  };
+  const served = (h: string) => own(HARNESS_RUNTIME_CAPABILITIES, h) ?? RUNTIME_CAPABILITIES;
 
   const messages = log.threads.flatMap((t) => t.messages);
   const blocks = messages.flatMap((m) => m.blocks.map((b) => ({ m, b })));
   const calls = blocks.flatMap(({ b }) => (b.type === 'tool_call' ? [b] : []));
-  const tally = <K extends string>(keys: K[]) => {
-    const counts = new Map<K, number>();
-    for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+  const count = <T>(items: T[], key: (item: T) => string) => {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(key(item), (counts.get(key(item)) ?? 0) + 1);
     return counts;
   };
 
   feature('tool_error_channel', calls.filter((c) => c.result?.is_error).length, (f) => f.tool_error_channel);
   feature('freeform_tool_input', calls.filter((c) => c.input_format === 'text').length, (f) => f.freeform_tool_input);
-  const userMimes = blocks.flatMap(({ m, b }) => (m.role === 'user' && b.type === 'attachment' ? [b.mime] : []));
-  for (const [mime, used] of tally(userMimes)) feature('attachments.user', used, (f) => f.attachments.user.includes(mime), mime);
+  const userMimes = count(blocks.flatMap(({ m, b }) => (m.role === 'user' && b.type === 'attachment' ? [b.mime] : [])), (mime) => mime);
+  const knownMimes = Object.values(ADAPTER_CAPABILITIES).flatMap((c) => [...c.native.attachments.user, ...c.rendered.attachments.user]);
+  for (const mime of [...new Set([...knownMimes, ...userMimes.keys()])].sort()) {
+    feature('attachments.user', userMimes.get(mime) ?? 0, (f) => f.attachments.user.includes(mime), mime);
+  }
   const resultAttachments = calls.flatMap((c) => [...(c.result?.content ?? []), ...(c.result?.model_content ?? [])]).filter((c) => c.type === 'attachment');
   feature('attachments.tool_result', resultAttachments.length, (f) => f.attachments.tool_result);
-  const compactions = blocks.flatMap(({ b }) => (b.type === 'compaction' ? [compactionKind(b)] : []));
-  for (const [kind, used] of tally(compactions)) feature('compaction', used, (f) => f.compaction.includes(kind), kind);
+  const compactions = count(blocks.flatMap(({ b }) => (b.type === 'compaction' ? [b] : [])), compactionKind);
+  for (const kind of COMPACTION_KINDS) feature('compaction', compactions.get(kind) ?? 0, (f) => f.compaction.includes(kind), kind);
   const children = log.threads.filter((t) => t.parent_thread_id !== null);
-  const mode = children.some((t) => t.interactions?.length) ? 'async' : 'sync';
-  feature('subagents', children.length, (f) => SUBAGENT_ORDER.indexOf(f.subagents) >= SUBAGENT_ORDER.indexOf(mode), mode);
+  const async = children.some((t) => t.interactions?.length);
+  for (const mode of ['sync', 'async'] as const) {
+    const used = (mode === 'async') === async ? children.length : 0;
+    feature('subagents', used, (f) => SUBAGENT_ORDER.indexOf(f.subagents) >= SUBAGENT_ORDER.indexOf(mode), mode);
+  }
   const next = log.selection?.model;
   const reasoning = blocks.filter(({ m, b }) => b.type === 'reasoning' && m.role === 'assistant' && m.in_context && b.text.trim());
   const same = reasoning.filter(({ m }) => !next || (m.model?.provider === next.provider && m.model?.model === next.model)).length;
@@ -129,14 +157,24 @@ export function switchPreflight(log: SessionLog, to: SessionLogHarness): Session
   // ponytail: `mcp` is the log's tool kind, a name rule (`fromV1`: an unknown name with `_`), so a hosted
   // tool both harnesses serve can be counted; `detail` names the tools. Exact when exports mark MCP calls.
   const mcp = calls.filter((c) => c.kind === 'mcp');
-  control('session.mcp', mcp.length, [...new Set(mcp.map((c) => c.name))].sort().join(', '));
-  control('session.rewind', messages.filter((m) => m.hidden_reason === 'reverted').length);
-  control('session.commands', messages.filter((m) => m.origin === 'command').length);
-  control('session.steer', messages.filter((m) => m.origin === 'steer').length);
-  const manual = blocks.filter(({ b }) => b.type === 'compaction' && b.trigger === 'manual');
-  control('session.compact', manual.length);
+  const used: Partial<Record<RuntimeCapability, [number, string?]>> = {
+    'session.mcp': [mcp.length, [...new Set(mcp.map((c) => c.name))].sort().join(', ')],
+    // A rewind hides messages (pi) or deletes them (OpenCode); a retract deletes one too.
+    'session.rewind': [messages.filter((m) => m.hidden_reason === 'reverted').length + (ctx.deletedMessages ?? 0)],
+    'session.commands': [messages.filter((m) => m.origin === 'command').length],
+    'session.steer': [messages.filter((m) => m.origin === 'steer').length],
+    'session.compact': [blocks.filter(({ b }) => b.type === 'compaction' && b.trigger === 'manual').length],
+  };
+  for (const name of RUNTIME_CAPABILITIES) {
+    if (!served(from).includes(name) || served(to).includes(name)) continue;
+    const [n = 0, detail] = used[name] ?? [];
+    gap(name, n, 'lost', undefined, detail || undefined);
+  }
 
-  return { session_id: log.session_id, from, to, losses };
+  // No restore: the new box starts without the conversation, the largest loss of all.
+  if (!ctx.restore && messages.length > 0) losses.unshift({ feature: 'history', used: messages.length, status: 'lost' });
+  const reason = from === to ? 'same_harness' : to === 'pi' && !ctx.llmGateway ? 'llm_gateway_off' : null;
+  return { session_id: log.session_id, from, to, available: reason === null, reason, restores: ctx.restore, losses, unsupported };
 }
 
 function compactionKind(b: Extract<SessionLogBlock, { type: 'compaction' }>): CapabilityFeatures['compaction'][number] {

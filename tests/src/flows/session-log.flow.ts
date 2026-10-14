@@ -425,7 +425,7 @@ flow(
   {
     domain: "sessions",
     requires: ["database"],
-    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, `POST ${PREFLIGHT}`],
+    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, "PUT /v1/admin/api/projects/:id/features", `POST ${PREFLIGHT}`],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
@@ -462,20 +462,37 @@ flow(
         })), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
       });
 
-      await ctx.step("preflight to pi → 200: the todos, the PDF, the MCP tool and the rewind are lost; the sub-agent is not listed (pi runs it natively)", async () => {
+      const losses = [
+        { feature: "attachments.user", detail: "application/pdf", used: 1, status: "lost" },
+        { feature: "todos", used: 1, status: "lost" },
+        { feature: "session.rewind", used: 1, status: "lost" },
+        { feature: "session.mcp", detail: "github_search", used: 1, status: "lost" },
+      ];
+      const unsupported = [
+        { feature: "attachments.user", detail: "application/pdf", status: "lost" },
+        { feature: "reasoning_replay", detail: "other_model", status: "lost" },
+        { feature: "todos", status: "lost" },
+        ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
+      ];
+
+      await ctx.step("restore off, gateway off: preflight to pi → 200 not available (llm_gateway_off), and the whole history (4 live messages) is the first loss", async () => {
+        await setFeatureAsOperator(ctx, project.id, "llm_gateway", false);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
-          session_id: sessionId, from: "opencode", to: "pi",
-          losses: [
-            { feature: "attachments.user", detail: "application/pdf", used: 1, status: "lost" },
-            { feature: "todos", used: 1, status: "lost" },
-            { feature: "session.mcp", detail: "github_search", used: 1, status: "lost" },
-            { feature: "session.rewind", used: 1, status: "lost" },
-          ],
+          session_id: sessionId, from: "opencode", to: "pi", available: false, reason: "llm_gateway_off", restores: false,
+          losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,
         });
       });
 
-      await ctx.step("preflight to opencode (the same harness) → 200 with no loss; the read claimed nothing (a journal batch at generation 0 → 200)", async () => {
-        (await preflight("opencode")).status(200).body().has("$.losses", []);
+      await ctx.step("restore and gateway on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
+        await setFeatureAsOperator(ctx, project.id, "llm_gateway", true);
+        await setFeatureAsOperator(ctx, project.id, "session_log_restore", true);
+        (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
+          session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: true, losses, unsupported,
+        });
+      });
+
+      await ctx.step("preflight to opencode (the same harness) → 200 not available (same_harness), no loss; the read claimed nothing (a journal batch at generation 0 → 200)", async () => {
+        (await preflight("opencode")).status(200).body().has("$.available", false).has("$.reason", "same_harness").has("$.losses", []).has("$.unsupported", []);
         (await box.post(JOURNAL, batch(0, [{ rev: REV + 5, message: message("msg_u3", 3) }]), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
       });
 
@@ -483,6 +500,8 @@ flow(
         (await preflight("pi", ctx.client.as(ctx.P.NONMEMBER))).status(403);
       });
     } finally {
+      await setFeatureAsOperator(ctx, project.id, "session_log_restore", null).catch(() => {});
+      await setFeatureAsOperator(ctx, project.id, "llm_gateway", null).catch(() => {});
       await close();
     }
   },

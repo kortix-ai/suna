@@ -10,6 +10,7 @@ import {
   type SessionLogBlock,
   type SessionLogMessage,
   type SessionLogThread,
+  type SwitchGap,
 } from '../session-log';
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
@@ -47,23 +48,34 @@ function openCodeSession(): SessionLog {
   return log('opencode', [root, child], { todos: [{ content: 'ship', status: 'pending' }] });
 }
 
+const OK = { llmGateway: true, restore: true };
+/** Everything OpenCode handles that pi lacks, used or not. */
+const OPENCODE_TO_PI: SwitchGap[] = [
+  { feature: 'attachments.user', detail: 'application/pdf', status: 'lost' },
+  // OpenCode shows another model's reasoning as text; pi drops it.
+  { feature: 'reasoning_replay', detail: 'other_model', status: 'lost' },
+  { feature: 'todos', status: 'lost' },
+  ...['session.rewind', 'session.fork', 'session.mcp', 'session.todo', 'session.shell', 'session.attach', 'session.config'].map((feature): SwitchGap => ({ feature, status: 'lost' })),
+];
+
 describe('switchPreflight: the loss report of a harness switch', () => {
   test('OpenCode → pi lists the todos, the PDF, the MCP tools and the rewind; the sub-agent is native on pi', () => {
-    const report = switchPreflight(openCodeSession(), 'pi');
+    const report = switchPreflight(openCodeSession(), 'pi', OK);
     expect(report).toEqual({
-      session_id: 'ses_synthetic', from: 'opencode', to: 'pi',
+      session_id: 'ses_synthetic', from: 'opencode', to: 'pi', available: true, reason: null, restores: true,
       losses: [
         { feature: 'attachments.user', detail: 'application/pdf', used: 1, status: 'lost' },
         { feature: 'todos', used: 1, status: 'lost' },
-        { feature: 'session.mcp', detail: 'github_search', used: 2, status: 'lost' },
         { feature: 'session.rewind', used: 1, status: 'lost' },
+        { feature: 'session.mcp', detail: 'github_search', used: 2, status: 'lost' },
       ],
+      unsupported: OPENCODE_TO_PI,
     });
     expect(SessionLogSwitchPreflightSchema.parse(report)).toEqual(report);
   });
 
   test('OpenCode → OpenCode and pi → OpenCode lose nothing', () => {
-    expect(switchPreflight(openCodeSession(), 'opencode').losses).toEqual([]);
+    expect(switchPreflight(openCodeSession(), 'opencode', OK).losses).toEqual([]);
     const pi = log('pi', [
       thread('ses_pi1', null, [
         msg('ses_pi1', 'user', [{ type: 'attachment', id: 'i', mime: 'image/png', ref: 'blob:y', bytes: 1, sha256: 'b'.repeat(64) }], { origin: 'steer' }),
@@ -71,14 +83,14 @@ describe('switchPreflight: the loss report of a harness switch', () => {
       ]),
       thread('child', 'ses_pi1', []),
     ]);
-    expect(switchPreflight(pi, 'opencode').losses).toEqual([]);
+    expect(switchPreflight(pi, 'opencode', OK).losses).toEqual([]);
   });
 
   test('a feature the source harness also lacked is no loss; a converted log counts every feature as native at the source', () => {
     const failed = call('e1', 'bash', 'shell', { status: 'error', result: { content: [{ type: 'text', text: 'boom' }], is_error: true } });
     const threads = () => [thread('r', null, [msg('r', 'assistant', [failed])])];
-    expect(switchPreflight(log('opencode', threads()), 'pi').losses).toEqual([]);
-    expect(switchPreflight(log('kortix-v1-import', threads()), 'pi').losses).toEqual([{ feature: 'tool_error_channel', used: 1, status: 'lost' }]);
+    expect(switchPreflight(log('opencode', threads()), 'pi', OK).losses).toEqual([]);
+    expect(switchPreflight(log('kortix-v1-import', threads()), 'pi', OK).losses).toEqual([{ feature: 'tool_error_channel', used: 1, status: 'lost' }]);
   });
 
   test('a lowered feature is degraded; async sub-agents and a freeform input are lost', () => {
@@ -88,7 +100,7 @@ describe('switchPreflight: the loss report of a harness switch', () => {
     const opaque: SessionLogBlock = { type: 'compaction', id: 'o', summary: null, opaque: true, first_kept_message_id: null };
     const root = thread('r', null, [msg('r', 'assistant', [image, freeform, layout, opaque])]);
     const child = thread('a', 'r', [], { interactions: [{ message_id: 'msg_x', call_id: 'c', op: 'spawn' }] });
-    expect(switchPreflight(log('codex', [root, child]), 'opencode').losses).toEqual([
+    expect(switchPreflight(log('codex', [root, child]), 'opencode', OK).losses).toEqual([
       { feature: 'freeform_tool_input', used: 1, status: 'lost' },
       { feature: 'attachments.tool_result', used: 1, status: 'degraded' },
       { feature: 'compaction', detail: 'layout', used: 1, status: 'degraded' },
@@ -104,15 +116,41 @@ describe('switchPreflight: the loss report of a harness switch', () => {
       log(harness, [thread('r', null, [think('a', 'glm-5.3-flash'), think('b', 'other-model'), { ...think('c', 'other-model'), in_context: false }])], {
         selection: { agent: null, model: { provider: 'kortix', model: 'glm-5.3-flash' } },
       });
-    expect(switchPreflight(reasoning('opencode'), 'pi').losses).toEqual([{ feature: 'reasoning_replay', detail: 'other_model', used: 1, status: 'lost' }]);
-    expect(switchPreflight(reasoning('pi'), 'opencode').losses).toEqual([]);
+    expect(switchPreflight(reasoning('opencode'), 'pi', OK).losses).toEqual([{ feature: 'reasoning_replay', detail: 'other_model', used: 1, status: 'lost' }]);
+    expect(switchPreflight(reasoning('pi'), 'opencode', OK).losses).toEqual([]);
+  });
+
+  test('unsupported lists what the target lacks before any use: a session that never called its MCP servers', () => {
+    const fresh = log('opencode', [thread('r', null, [msg('r', 'user', [{ type: 'text', id: 't', text: 'hi' }])])]);
+    const report = switchPreflight(fresh, 'pi', OK);
+    expect(report.losses).toEqual([]);
+    expect(report.unsupported).toEqual(OPENCODE_TO_PI);
+    expect(switchPreflight(log('pi', []), 'opencode', OK).unsupported).toEqual([]);
+  });
+
+  test('the verdict: the same harness and pi without the gateway are not available; no restore loses the whole history first', () => {
+    const session = openCodeSession();
+    expect(switchPreflight(session, 'opencode', OK)).toMatchObject({ available: false, reason: 'same_harness', losses: [] });
+    expect(switchPreflight(session, 'pi', { llmGateway: false, restore: true })).toMatchObject({ available: false, reason: 'llm_gateway_off' });
+    const noRestore = switchPreflight(session, 'pi', { llmGateway: true, restore: false });
+    expect(noRestore).toMatchObject({ available: true, reason: null, restores: false });
+    expect(noRestore.losses[0]).toEqual({ feature: 'history', used: 5, status: 'lost' });
+    expect(switchPreflight(log('opencode', []), 'pi', { llmGateway: true, restore: false }).losses).toEqual([]);
+  });
+
+  test('deleted messages count as a rewind; a harness name that is an Object key is no manifest', () => {
+    const fresh = () => [thread('r', null, [msg('r', 'user', [{ type: 'text', id: 't', text: 'hi' }])])];
+    expect(switchPreflight(log('opencode', fresh()), 'pi', { ...OK, deletedMessages: 3 }).losses).toEqual([{ feature: 'session.rewind', used: 3, status: 'lost' }]);
+    const report = switchPreflight(log('constructor', fresh()), 'pi', OK);
+    expect(report.from).toBe('constructor');
+    expect(SessionLogSwitchPreflightSchema.parse(report)).toEqual(report);
   });
 
   test('every golden log gives a report the wire schema accepts, to each harness', () => {
     const dir = join(import.meta.dir, 'fixtures', 'session-log');
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.v2.json'))) {
       const fixture = JSON.parse(readFileSync(join(dir, file), 'utf8')) as SessionLog;
-      for (const to of ['pi', 'opencode'] as const) SessionLogSwitchPreflightSchema.parse(switchPreflight(fixture, to));
+      for (const to of ['pi', 'opencode'] as const) SessionLogSwitchPreflightSchema.parse(switchPreflight(fixture, to, OK));
     }
   });
 });

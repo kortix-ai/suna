@@ -25,8 +25,13 @@ box. A new box of the session re-reads the selection, so a change of the flag or
 of `runtime:` switches an existing session's harness at its next new box. With
 `session_log_restore` on, that box restores the log into the new harness and
 records the switch in `harness.history` ("Harness history, a switch" below).
-`POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) lists what
-the session would lose on the other harness before that happens.
+`POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
+before that happens: whether the switch can happen (`available`, `reason`:
+`same_harness`, or `llm_gateway_off` for pi), whether the new box restores the
+log (`restores`; off, `losses` starts with `history`), what the session uses
+that the target handles worse (`losses`) and everything the target lacks, used
+or not (`unsupported`). The contract is `switchPreflight` in
+`@kortix/api-contract/session-log` (`capabilities.ts`).
 
 ## Ownership
 

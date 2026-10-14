@@ -307,11 +307,17 @@ SessionLogStateEventSchema = {
   session: SessionLogSessionPatchSchema
 }
 
+SessionLogSwitchGapSchema = {
+  feature: string(min1)
+  detail: string(min1) | absent
+  status: enum(degraded | lost)
+}
+
 SessionLogSwitchLossSchema = {
   feature: string(min1)
   detail: string(min1) | absent
-  used: number(int)(min0)
   status: enum(degraded | lost)
+  used: number(int)(min0)
 }
 
 SessionLogSwitchPreflightRequestSchema = {
@@ -322,7 +328,11 @@ SessionLogSwitchPreflightSchema = {
   session_id: string
   from: string
   to: SessionLogHarnessSchema
+  available: boolean
+  reason: enum(same_harness | llm_gateway_off) | null
+  restores: boolean
   losses: array(SessionLogSwitchLossSchema)
+  unsupported: array(SessionLogSwitchGapSchema)
 }
 
 SessionLogThreadSchema = {

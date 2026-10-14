@@ -37,7 +37,6 @@ import {
   SessionLogRestoreSchema,
   SessionLogSwitchPreflightRequestSchema,
   SessionLogSwitchPreflightSchema,
-  switchPreflight,
   type SessionLogJournalRequest,
 } from '@kortix/api-contract/session-log';
 import type { Context } from 'hono';
@@ -52,7 +51,8 @@ import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { ingestSessionLogJournal, readSessionLogManifest, type SessionLogScope } from '../session-log-ingest';
 import { readSessionLogPage } from '../session-log-read';
-import { claimSessionLog, readSessionLog } from '../session-log-restore';
+import { claimSessionLog } from '../session-log-restore';
+import { sessionLogSwitchPreflight } from '../session-log-switch';
 import { resolveSessionBinding } from './lib/route-bindings';
 
 const MAX_GZIP_BYTES = 2 * 1024 * 1024;
@@ -97,14 +97,18 @@ async function readJournalBody(c: Context<AppEnv>): Promise<BodyRead> {
   }
 }
 
-/** The session read gate of `GET …/transcript`: null when the caller may read the session, else the response. */
-async function sessionReadGate(c: Context<AppEnv>, projectId: string, sessionId: string): Promise<Response | null> {
+/** The session read gate of `GET …/transcript`: the project row when the caller may read the session, else the response. */
+async function sessionReadGate(
+  c: Context<AppEnv>,
+  projectId: string,
+  sessionId: string,
+): Promise<{ denied: Response } | { denied: null; projectMetadata: unknown }> {
   const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
-  if (binding.kind === 'error') return binding.response;
+  if (binding.kind === 'error') return { denied: binding.response };
   const { loaded } = binding;
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-  return visible ? null : c.json({ error: 'Not found' }, 404);
+  return visible ? { denied: null, projectMetadata: loaded.row.metadata } : { denied: c.json({ error: 'Not found' }, 404) };
 }
 
 export function registerSessionLogRoutes(): void {
@@ -232,8 +236,8 @@ export function registerSessionLogRoutes(): void {
         return c.json({ error: 'Invalid thread' }, 400);
       }
 
-      const denied = await sessionReadGate(c, projectId, sessionId);
-      if (denied) return denied as never;
+      const gate = await sessionReadGate(c, projectId, sessionId);
+      if (gate.denied) return gate.denied as never;
 
       const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
       if (!page) return c.json({ error: 'No session log for this session' }, 404);
@@ -250,8 +254,10 @@ export function registerSessionLogRoutes(): void {
       summary: 'List what a session would lose on another harness',
       description:
         'Read only: claims nothing, changes nothing. Body `{ to: "pi" | "opencode" }`. Answers `SessionLogSwitchPreflight`: ' +
-        'one line for each feature the stored session log uses that `to` renders worse than the harness that wrote it ' +
-        '(`degraded`: lowered or emulated; `lost`), and each runtime control the session used that `to` does not serve. ' +
+        '`available` and `reason` (`same_harness`, `llm_gateway_off`: a switch that cannot happen is still a 200), ' +
+        '`restores` (the project restores session logs; false puts a `history` line first in `losses`), ' +
+        '`losses` (each feature or runtime control the stored log uses that `to` handles worse, with counts; `degraded`: ' +
+        'lowered or emulated, `lost`) and `unsupported` (everything the source harness handles that `to` handles worse, used or not). ' +
         'The capability manifests are `PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`). ' +
         'Session read permission, the `GET .../log` gate. 404 when the session has no stored log.',
       ...auth,
@@ -264,11 +270,11 @@ export function registerSessionLogRoutes(): void {
     async (c) => {
       const { projectId, sessionId } = c.req.valid('param');
       const { to } = c.req.valid('json');
-      const denied = await sessionReadGate(c, projectId, sessionId);
-      if (denied) return denied as never;
-      const log = await readSessionLog(sessionId);
-      if (!log) return c.json({ error: 'No session log for this session' }, 404);
-      return c.json(switchPreflight(log, to), 200);
+      const gate = await sessionReadGate(c, projectId, sessionId);
+      if (gate.denied) return gate.denied as never;
+      const report = await sessionLogSwitchPreflight({ sessionId, projectMetadata: gate.projectMetadata, to });
+      if (!report) return c.json({ error: 'No session log for this session' }, 404);
+      return c.json(report, 200);
     },
   );
 }

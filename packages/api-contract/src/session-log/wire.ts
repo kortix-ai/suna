@@ -48,9 +48,11 @@
  *
  * Switch preflight (P7.1): `POST /v1/projects/:p/sessions/:s/log/switch-preflight`, body
  * `{ to: 'pi' | 'opencode' }`, the caller's session read permission (the `GET …/log` gate). Read
- * only: it claims nothing and changes nothing. 200 `SessionLogSwitchPreflight`: the loss report of
- * a switch of the stored log to `to` (`switchPreflight`, `capabilities.ts`). 404 when the session
- * has no stored log.
+ * only: it claims nothing and changes nothing. 200 `SessionLogSwitchPreflight`: whether the switch
+ * can happen (`available`, `reason`) and restores the log (`restores`), what the session would lose
+ * (`losses`) and everything `to` lacks (`unsupported`) (`switchPreflight`, `capabilities.ts`). A
+ * switch that cannot happen is still a 200, so a client can show why. 404 when the session has no
+ * stored log.
  *
  * `rev` is monotonic per message across daemon boots, not a per-boot counter: the daemon
  * issues `max(Date.now() * 1000, last + 1)`, a safe integer that needs a `bigint` column. The
@@ -138,27 +140,40 @@ export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_se
 /** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
 export const SessionLogHarnessSchema = z.enum(['pi', 'opencode']);
 export const SessionLogSwitchPreflightRequestSchema = z.object({ to: SessionLogHarnessSchema });
-/** One line of the loss report (`switchPreflight` in `capabilities.ts`). */
-export const SessionLogSwitchLossSchema = z.object({
-  /** A `CapabilityFeatures` path (`todos`, `attachments.user`, `compaction`, ...) or a `RuntimeCapability` (`session.mcp`, ...). */
+/** One thing the target harness handles worse than the source harness (`switchPreflight` in `capabilities.ts`). */
+export const SessionLogSwitchGapSchema = z.object({
+  /** A `CapabilityFeatures` path (`todos`, `attachments.user`, `compaction`, ...), a `RuntimeCapability` (`session.mcp`, ...), or `history` (no restore). */
   feature: z.string().min(1),
-  /** The mime type, compaction kind, sub-agent mode or tool names the line is about. */
+  /** The mime type, compaction kind, sub-agent mode, reasoning kind or tool names the line is about. */
   detail: z.string().min(1).optional(),
-  /** How many records of the log use it. */
-  used: z.number().int().positive(),
   /** `degraded`: the target writes it by lowering or emulating. `lost`: the target cannot write or serve it. */
   status: z.enum(['degraded', 'lost']),
+});
+/** A gap the log shows in use. */
+export const SessionLogSwitchLossSchema = SessionLogSwitchGapSchema.extend({
+  /** How many records of the log use it (`history`: live messages). */
+  used: z.number().int().positive(),
 });
 export const SessionLogSwitchPreflightSchema = z.object({
   session_id: z.string(),
   /** `harness.current` of the stored log. */
   from: z.string(),
   to: SessionLogHarnessSchema,
+  /** False when the switch cannot happen; `reason` says why. */
+  available: z.boolean(),
+  /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
+  reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
+  /** The new box restores the log (`session_log_restore` on). False: it starts without the conversation (`losses` begins with `history`). */
+  restores: z.boolean(),
+  /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),
+  /** Everything the source harness handles that `to` handles worse, used or not (an MCP server never called, shell, fork). */
+  unsupported: z.array(SessionLogSwitchGapSchema),
 });
 
 export type SessionLogPut = z.infer<typeof SessionLogPutSchema>;
 export type SessionLogHarness = z.infer<typeof SessionLogHarnessSchema>;
+export type SwitchGap = z.infer<typeof SessionLogSwitchGapSchema>;
 export type SwitchLoss = z.infer<typeof SessionLogSwitchLossSchema>;
 export type SessionLogSwitchPreflight = z.infer<typeof SessionLogSwitchPreflightSchema>;
 export type SessionLogTombstone = z.infer<typeof SessionLogTombstoneSchema>;

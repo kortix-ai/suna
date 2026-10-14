@@ -62,20 +62,6 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
   });
 }
 
-/**
- * The stored log as a `SessionLog`, without a claim, or null when the session has none (the switch
- * preflight, P7.1). One read-only snapshot (repeatable read): no lock, no claim, no write.
- */
-export async function readSessionLog(sessionId: string): Promise<SessionLog | null> {
-  return db.transaction(
-    async (tx) => {
-      const [log] = await tx.select().from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId));
-      return log ? ((await readWholeLog(tx, log)).log as SessionLog) : null;
-    },
-    { isolationLevel: 'repeatable read', accessMode: 'read only' },
-  );
-}
-
 async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
   const sessionId = log.sessionId;
   const threads = await tx
