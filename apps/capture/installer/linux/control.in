@@ -1,0 +1,15 @@
+Package: kortix-capture
+Version: @VERSION@
+Architecture: amd64
+Section: utils
+Priority: optional
+Maintainer: Kortix
+Homepage: https://kortix.com
+Depends: libc6, systemd, util-linux, libglib2.0-bin, libx11-6, libxtst6, libxi6, libxrandr2, libxss1, libxcb1, libxdo3, libgtk-3-0t64 | libgtk-3-0, libayatana-appindicator3-1, libwebkit2gtk-4.1-0, ffmpeg, tesseract-ocr
+Recommends: libnotify-bin
+Description: Kortix Capture: records screen and actions, for you or your organization
+ Records the screen (with text search), keyboard and mouse actions of an X11
+ session and uploads them to the Kortix account the person signs in with, or
+ that the organization enrolls the computer with. This package installs the
+ recorder, the machine service kortix-capture-machine.service, and a user
+ unit that runs in every session once /etc/kortix/capture.json exists.

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Upgrade: stop the running daemon and agents before the files change.
+# Their configuration (config.json, MDM profile) and the people's libraries stay.
+/bin/launchctl bootout system/ai.kortix.capture.machine >/dev/null 2>&1
+for uid in $(/usr/bin/dscl . -list /Users UniqueID | /usr/bin/awk '$2 >= 500 { print $2 }'); do
+  /bin/launchctl bootout "gui/$uid/ai.kortix.capture.agent" >/dev/null 2>&1
+done
+exit 0

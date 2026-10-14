@@ -1,10 +1,10 @@
 /**
  * The reader side of the Kortix Capture format, schema 2 (the desktop app's
- * only contract: kortix-ai/capture `apps/recorder/docs/capture-format.md`).
+ * only contract: .agents/skills/kortix-capture/references/capture-format.md).
  * Pure functions: key layout, manifest / policy / status shapes, and the
  * line parsers for frames, actions and audio transcripts. The JSON Schemas
- * and the fixture bucket of the contract are vendored, pinned to one engine
- * commit, in tests/fixtures/capture-format-v2. Kortix reads schema 2 only
+ * and the fixture bucket of the contract live with the app, in apps/capture/schemas
+ * and apps/capture/fixtures/capture-format-v2. Kortix reads schema 2 only
  * (every Kortix prefix is written by a schema-2 engine); unknown fields are
  * ignored.
  */

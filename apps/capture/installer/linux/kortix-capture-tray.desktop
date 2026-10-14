@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kortix Capture
+Comment=Shows whether Kortix Capture records, and lets you sign in
+Exec=/usr/bin/kortix-capture tray --autostart
+Icon=kortix-capture
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

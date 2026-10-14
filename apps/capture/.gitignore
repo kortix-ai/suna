@@ -1,0 +1,90 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+target/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local development settings
+.env
+.env.local
+
+# Logs
+*.log
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+node_modules/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# macOS specific
+.DS_Store
+
+# Windows specific
+Thumbs.db
+
+# PyInstaller
+build/
+dist/
+
+.prompts/
+**/.prompts/
+**/__pycache__/
+
+# Environment variables
+.env
+.env.local
+
+log/
+**.jsonl
+!fixtures/processor/windows_notepad_select_delete_raw_slice.jsonl
+!fixtures/processor/tray_20260517_screenshot_sync_raw_slice.jsonl
+!fixtures/processor/scroll_session_raw_slice.jsonl
+# The format's synthetic bucket (tests/capture_format.rs) is committed whole.
+!fixtures/capture-format-v2/**/*.jsonl
+tests/manual_recording_contracts/raw_data/
+
+.aider*
+
+dist*/
+artifacts/debug-cloud-pull/
+artifacts/downloaded-recordings/
+artifacts/reprocessed-recordings/
+artifacts/recording-review/
+artifacts/pii-local/
+artifacts/pii-dataset/
+artifacts/daytona-windows-a11y-computer-use-probe/
+artifacts/daytona-windows-cloud-resume/
+artifacts/daytona-windows-update/
+artifacts/*.zip
+artifacts/*_inspect/

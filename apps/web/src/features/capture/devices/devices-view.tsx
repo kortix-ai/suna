@@ -56,7 +56,7 @@ import { deviceStatus, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, StatusLabel } from './device-status-ui';
 import { RolloutModal, WaitingComputers } from './rollout';
 
-/** Kortix Capture's installers, one per OS (/download/capture/<os> → the newest capture-v* Release). */
+/** Kortix Capture's installers, one per OS (/download/capture/<os> → the newest vX.Y.Z Release). */
 const CAPTURE_DOWNLOADS = [
   { os: 'windows', file: '.msi' },
   { os: 'macos', file: '.pkg' },

@@ -1,0 +1,36 @@
+Kortix Capture: third-party notices
+
+Kortix Capture is licensed under the Elastic License 2.0, the LICENSE at the
+root of this repository. It links the components below, each under its own
+license. Every Rust crate it builds in is listed with its license by:
+
+  cargo metadata --format-version 1 --locked | jq -r '.packages[] | "\(.name) \(.version) \(.license)"'
+
+The permissive crates (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0,
+Unlicense, 0BSD, CC0) need only their copyright notices, which each crate
+carries in its source. The components with other terms:
+
+Mozilla Public License 2.0 (file-level copyleft). Kortix Capture uses these
+crates unmodified, as dependencies. Their source is at the URL given, at the
+version in Cargo.lock:
+  - cssparser 0.37.0, cssparser-macros 0.7.1   https://github.com/servo/rust-cssparser
+  - selectors 0.38.0                           https://github.com/servo/stylo
+  - dtoa-short 0.3.5                           https://github.com/upsuper/dtoa-short
+  - option-ext 0.2.0                           https://github.com/soc/option-ext
+
+Boost Software License 1.0:
+  - clipboard-win 5.4.1, error-code 3.4.0      https://github.com/DoumanAsh
+  - ryu 1.0.23 (Apache-2.0 OR BSL-1.0; used under Apache-2.0)
+
+Dual-licensed with LGPL-2.1-or-later as one option:
+  - r-efi 5.3.0, 6.0.0 (MIT OR Apache-2.0 OR LGPL-2.1-or-later; used under MIT)
+
+ONNX Runtime 1.23.2, MIT License, Copyright (c) Microsoft Corporation.
+  The installers bundle the runtime library. Its license text and third-party
+  notices ship beside it as privacy-runtime-notices.txt
+  (scripts/install_privacy_runtime.py).
+
+The on-device privacy model is downloaded at first use from
+https://huggingface.co/openai/privacy-filter (pinned revision, see
+src/memory/privacy_model.rs). It is not part of this repository or the
+installers; its license is the one published with the model.

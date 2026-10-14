@@ -6,7 +6,7 @@ import { getLatestCaptureRelease, pickCaptureAsset } from '@/features/marketing/
 
 /**
  * Kortix Capture installer redirector: /download/capture/windows → the .msi,
- * /macos → the .pkg, /linux → the .deb of the newest `capture-v*` Release.
+ * /macos → the .pkg, /linux → the .deb of the newest vX.Y.Z Release that carries them.
  * Kortix Capture is its own app, installed apart from the Kortix app. A release without its
  * installers, or a platform it does not ship for, lands on the install docs.
  */

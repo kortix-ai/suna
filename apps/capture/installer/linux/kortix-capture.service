@@ -1,0 +1,16 @@
+[Unit]
+Description=Kortix Capture (this session)
+Documentation=https://kortix.com
+# The organization's rollout only: without /etc/kortix/capture.json people sign in from the tray.
+ConditionPathExists=/etc/kortix/capture.json
+
+[Service]
+# `agent` is `service run --managed`: it records once the machine service has enrolled this
+# person, and runs the tray with the organization's notice.
+ExecStart=/usr/bin/kortix-capture agent
+Restart=always
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

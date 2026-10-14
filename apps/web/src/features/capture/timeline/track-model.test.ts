@@ -1,4 +1,4 @@
-// Ported from kortix-ai/capture apps/recorder/ui/memory/timeline.test.mjs: the web track
+// Ported from apps/capture/ui/memory/timeline.test.mjs: the web track
 // must fold, lay out, color, jump and glide exactly like the desktop one.
 import { describe, expect, test } from 'bun:test';
 import {

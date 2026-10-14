@@ -9,9 +9,8 @@
  * CAP-3, whose agent session (the one edge where Capture meets a project) needs
  * one to run in.
  *
- * Request and response bodies are the engine's (kortix-ai/capture at the commit
- * in tests/fixtures/capture-format-v2/SOURCE.json) and are validated against its
- * vendored JSON Schemas; the device data is its vendored fixture bucket.
+ * Request and response bodies are the engine's (apps/capture) and are validated against its
+ * JSON Schemas (apps/capture/schemas); the device data is its fixture bucket.
  *
  * The local profile's capture store is Supabase Storage's S3 endpoint, which
  * has no STS: `POST /v1/capture/credentials` answers 503 there (CAP-1 asserts

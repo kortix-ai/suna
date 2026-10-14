@@ -26,7 +26,7 @@ const { captureCredentialIssuer, deviceSessionPolicy } = await import('./credent
 const PREFIX = 'orgs/11111111-1111-4111-8111-111111111111/projects/22222222-2222-4222-8222-222222222222';
 const DEVICE = '33333333-3333-4333-8333-333333333333';
 const schema = JSON.parse(
-  readFileSync(join(import.meta.dir, '../../../../tests/fixtures/capture-format-v2/schemas/issuer-credentials.schema.json'), 'utf8'),
+  readFileSync(join(import.meta.dir, '../../../capture/schemas/issuer-credentials.schema.json'), 'utf8'),
 );
 
 test('the issued credentials match the engine’s issuer-credentials schema and name the device’s folder', async () => {

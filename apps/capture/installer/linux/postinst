@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+mkdir -p /etc/kortix /var/lib/kortix/capture
+chmod 755 /etc/kortix /var/lib/kortix /var/lib/kortix/capture
+# The user unit runs in every session of every user (it starts only when /etc/kortix/capture.json exists).
+systemctl --global enable kortix-capture.service >/dev/null 2>&1 || true
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+  systemctl enable kortix-capture-machine.service >/dev/null 2>&1 || true
+  systemctl restart kortix-capture-machine.service || true
+  # An upgrade stopped the agent in every logged-in person's session (prerm): start it again.
+  if [ -f /etc/kortix/capture.json ]; then
+    for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+      systemctl --machine="$user@.host" --user start kortix-capture.service >/dev/null 2>&1 || true
+    done
+  fi
+fi
+exit 0

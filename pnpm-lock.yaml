@@ -328,6 +328,8 @@ importers:
         specifier: 8.70.0
         version: 8.70.0(eslint@9.39.5)(typescript@5.9.3)
 
+  apps/capture: {}
+
   apps/cli:
     dependencies:
       '@kortix/llm-catalog':
