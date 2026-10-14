@@ -350,7 +350,7 @@ To bump a harness or the minor:
    `pnpm install`. OpenCode: `runtime-versions.json`; the oracle downloads the
    npm platform package of the new version once into
    `~/.kortix/opencode/<version>/` (60 MB, about 2 s).
-2. Run the oracle suites: `bun run test session-log` in this app (8 files, 141
+2. Run the oracle suites: `bun run test session-log` in this app (8 files, 145
    tests, about 2 min on a laptop): both adapters' export and restore against
    the real harness and the mock LLM (`helpers/fake-model.ts`, dummy key,
    isolated home), the golden and recorded logs, the boot, the journal, the
@@ -409,7 +409,8 @@ in `subscriberCount`. The journal's v1 listener is a tap too. The
 The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
 (the store is at rest: the stream gets the session and its threads before the
-first turn streams), at each turn end and at the daemon stop. The delta frames
+first turn streams), at each turn end, when pi stores a compaction between
+turns, and at the daemon stop. The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
@@ -504,7 +505,11 @@ them dirty until apps/api acknowledges `(message_id, rev)`.
 
 Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
 orphan path through `relayTurnEnd`, OpenCode's normal turn end through
-`relayTurnEndToApi`. The memory-guard turn end does not flush. The daemon
+`relayTurnEndToApi`. pi also flushes it when it stores a compaction between
+turns (`compact()`, `/session/:id/summarize`, P2.12): that compaction has no
+turn end, and it ends after the summarize request returns, so without this
+flush the log got it only at the next turn end. A compaction inside a turn
+(threshold, overflow) waits for the turn's end. The memory-guard turn end does not flush. The daemon
 shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
 Each flush waits at most 3 s, or until the first failed post; a batch not
 acknowledged by then keeps retrying in the background. A provider stop is not

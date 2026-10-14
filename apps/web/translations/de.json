@@ -1905,6 +1905,26 @@
       "commandsAndActions": "Befehle und Aktionen",
       "toUse": "zur Verwendung",
       "use": "Verwenden"
+    },
+    "history": {
+      "restoreTitle": "Einige frühere Inhalte konnten nicht wiederhergestellt werden",
+      "restoreMissing": "Fehlt: {items}.",
+      "restoreAgent": "Der Agent weiß, was fehlt.",
+      "restoreDismiss": "Hinweis zur Wiederherstellung schließen",
+      "missingAttachment": "{count, plural, one {# Anhang} other {# Anhänge}}",
+      "missingText": "{count, plural, one {# langer Text} other {# lange Texte}}",
+      "missingToolInput": "{count, plural, one {# Tool-Eingabe} other {# Tool-Eingaben}}",
+      "missingToolResult": "{count, plural, one {# Tool-Ergebnis} other {# Tool-Ergebnisse}}",
+      "missingCutPoint": "{count, plural, one {# Komprimierungspunkt} other {# Komprimierungspunkte}}",
+      "missingOther": "{count, plural, one {# weiteres Element} other {# weitere Elemente}}",
+      "restoreNote": "Sitzung aus gespeichertem Verlauf wiederhergestellt",
+      "harnessSwitch": "Weiter mit {harness}",
+      "showOutOfContext": "Nachrichten außerhalb des Kontexts anzeigen",
+      "fullTextPreview": "{count, plural, one {Ein langer Text zeigt hier seine ersten 16 kB.} other {# lange Texte zeigen hier ihre ersten 16 kB.}}",
+      "fullTextShow": "Vollständigen Text anzeigen ({size})",
+      "fullTextDownload": "Vollständigen Text herunterladen ({size})",
+      "fullTextError": "Der vollständige Text konnte nicht geladen werden.",
+      "fullTextRetry": "Erneut versuchen"
     }
   },
   "agents": {
