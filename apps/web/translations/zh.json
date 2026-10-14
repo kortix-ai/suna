@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "主题",
       "themeDescription": "选择 Kortix 在此设备上的外观。",
+      "moreThemes": "更多主题…",
       "conversationDensity": "对话密度",
       "conversationDensityDescription": "选择智能体工作时在对话中显示多少细节。",
       "richAnswers": "丰富回答",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "默认",
       "themes": {
         "light": "浅色",
+        "pureLight": "纯白",
         "dark": "深色",
-        "system": "跟随系统"
+        "pureDark": "纯黑",
+        "system": "跟随系统",
+        "kortix": "Kortix",
+        "lightThemes": "浅色主题",
+        "darkThemes": "深色主题",
+        "search": "搜索主题…",
+        "noResults": "未找到主题"
       },
       "densities": {
         "normal": {
@@ -7277,6 +7285,8 @@
       "tokensIn": "输入令牌",
       "tokensOut": "输出令牌",
       "treeMessages": "条消息",
+      "subAgentsLoaded": "已加载 {loaded}/{total} 个子代理",
+      "loadAll": "全部加载",
       "detailInput": "输入令牌",
       "detailOutput": "输出令牌",
       "detailReasoning": "推理令牌",
@@ -19188,6 +19198,10 @@
       "text8295f9d4861b": "已设置账户 SSO 域名验证",
       "text7beaff63a7d3": "已下载项目配置归档",
       "text5176d59f25fd": "已解析会话配置发布",
+      "text64ad7399fb9e": "纯白主题",
+      "texte6ebf219f591": "主题 浅色模式 纯白",
+      "textc433363f9a4e": "纯黑主题",
+      "textbc9543239440": "主题 深色模式 纯黑",
       "text273c48dbf3b9": "已注册推送通知设备",
       "textbb666ddf7a57": "已移除推送通知设备",
       "text397ab5aecbbf": "已转发会话权限请求",
@@ -20744,5 +20758,21 @@
     "mapTwoFingers": "使用双指移动地图",
     "pick": "推荐",
     "convertFailed": "无法准备对话记录。请重试。"
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix 移动版",
+    "badge": "新",
+    "title": "Kortix，现已登陆手机",
+    "description": "你的项目、会话和智能体，随时随地都在。在办公桌前开始的工作，在哪儿都能继续推进。",
+    "feature": {
+      "sessions": "从上次停下的地方继续",
+      "sessionsDescription": "网页上的每个会话，都已在手机上就绪。",
+      "notifications": "一完成就知道",
+      "notificationsDescription": "会话完成或需要你回复时，推送通知你。",
+      "dictation": "说出来，直接发送",
+      "dictationDescription": "口述提示词，不用打字。"
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }

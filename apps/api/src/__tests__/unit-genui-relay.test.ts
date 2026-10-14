@@ -31,20 +31,15 @@ describe('relayTextRejection', () => {
     expect(relayTextRejection(undefined, '')).toEqual({ error: 'text is required' });
     expect(relayTextRejection('   ', '')).toEqual({ error: 'text is required' });
   });
-  test('a settled block-only answer that cannot render relays the one-line note, never the raw source', () => {
-    // The SDK renders a settled block with no valid root as the unavailable note on every
-    // non-UI surface (packages/sdk/src/genui/markdown.ts), so the note is what Slack and
-    // Teams get. `genui_block_unrenderable` stays the guard for a conversion that yields ''.
+  test('a block-only answer with nothing valid relays the SDK note, never the raw source', () => {
     const raw = '```openui\nroot = Stack([missing])\n```';
     const text = relayAnswerText(raw);
     expect(text).toBe('*This content could not be displayed.*');
-    expect(text).not.toContain('root =');
+    expect(text).not.toContain('openui');
     expect(relayTextRejection(raw, text)).toBeNull();
   });
-  test('a block whose conversion yields nothing is rejected, never relayed raw', () => {
-    // A settled block always renders the note or content; '' means the conversion failed,
-    // and the refusal keeps the raw OpenUI source off Slack and Teams.
-    expect(relayTextRejection('```openui\nroot = Stack([b])\nb = Badge("x")\n```', '')).toEqual({
+  test('a non-empty answer that renders to empty text is rejected as unrenderable', () => {
+    expect(relayTextRejection('```openui\n```', '')).toEqual({
       error: 'text is required',
       reason: 'genui_block_unrenderable',
     });

@@ -18,6 +18,7 @@ import {
 } from '@kortix/api-contract/session-log';
 import { sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
 import { asc, eq, sql } from 'drizzle-orm';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';

@@ -90,9 +90,6 @@ mock.module('../llm-gateway/models/picker', () => ({
 const realDefaultModel = await import('../llm-gateway/resolution/default-model');
 mock.module('../llm-gateway/resolution/default-model', () => ({ ...realDefaultModel, isModelServableForAccount: async () => true }));
 const realAccess = await import('../projects/lib/access');
-// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
-// export it omits, and the missing name surfaces as a SyntaxError in whatever
-// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../projects/lib/access', () => ({ ...realAccess, lookupEmailsByUserIds: async () => new Map() }));
 mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: 'AGENTS-PICKER' }] }) }));
 mock.module('../channels/teams/stop', () => ({ stopTeamsTurn: async () => ({ stopped: false, notice: '' }) }));
