@@ -214,7 +214,7 @@ test('31 — session header renders every config release state from GET /config'
 
     // The session header mounts with the chat. Saved transcript history
     // paints the chat before the sandbox is ready, as in journey 30.
-    await seedSessionTranscript(env, { projectId, accountId, sessionId });
+    await seedSessionTranscript(env, { projectId, accountId, sessionId, log: { bearer: auth.access_token } });
 
     await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
     await selectAccountForUi(page, accountId);

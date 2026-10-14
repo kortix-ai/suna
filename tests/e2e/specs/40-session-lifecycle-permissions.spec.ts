@@ -143,7 +143,7 @@ test('40 — a member sees no session lifecycle action the server would refuse',
       userId: owner.id,
       visibility: 'project',
     });
-    await seedSessionTranscript(env, { projectId, accountId, sessionId });
+    await seedSessionTranscript(env, { projectId, accountId, sessionId, log: { bearer: ownerAuth.access_token } });
     await runDatabaseSql(
       "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
       [sessionId],
