@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
-      "text2313fe21ea84": "{name} bearbeiten"
+      "text2313fe21ea84": "{name} bearbeiten",
+      "textf1f1770ed74e": "Button-Gruppe",
+      "text99bddc5e28c5": "Horizontal",
+      "text4be355905d2d": "Vertikal",
+      "text1b32f628c206": "E-Mail verbinden",
+      "text19e6d0fd0d7a": "Member sitzen 1px auseinander. Die äußeren Ecken behalten den Button-Radius; Ecken, die an einen Nachbarn grenzen, rundet die Gruppe auf 4px ab. Funktioniert mit jeder Button-Variante, horizontal oder"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

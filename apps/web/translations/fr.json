@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "Politique de version mobile consultée",
       "texta37dd5ef6ef2": "Personnaliser la barre latérale",
       "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar",
-      "text2313fe21ea84": "Modifier {name}"
+      "text2313fe21ea84": "Modifier {name}",
+      "textf1f1770ed74e": "Groupe de boutons",
+      "text99bddc5e28c5": "Horizontal",
+      "text4be355905d2d": "Vertical",
+      "text1b32f628c206": "Connecter un e-mail",
+      "text19e6d0fd0d7a": "Les membres sont espacés de 1px. Les coins extérieurs conservent le rayon du bouton ; les coins qui touchent un voisin s’arrondissent à 4px. Fonctionne avec chaque variante de Button, horizontal ou"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

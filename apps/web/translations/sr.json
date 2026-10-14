@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "Политика издања за мобилне уређаје прегледана",
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
       "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
-      "text2313fe21ea84": "Измени {name}"
+      "text2313fe21ea84": "Измени {name}",
+      "textf1f1770ed74e": "Група дугмади",
+      "text99bddc5e28c5": "Хоризонтално",
+      "text4be355905d2d": "Вертикално",
+      "text1b32f628c206": "Повежи е-пошту",
+      "text19e6d0fd0d7a": "Чланови седе 1px удаљено. Спољашњи углови задржавају пречник дугмета; углови који додирују суседа скупљају се на 4px. Ради са сваком варијантом дугмета, хоризонтално или"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

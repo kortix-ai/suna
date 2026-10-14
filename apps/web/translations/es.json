@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "Política de versiones móviles consultada",
       "texta37dd5ef6ef2": "Personalizar barra lateral",
       "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar",
-      "text2313fe21ea84": "Editar {name}"
+      "text2313fe21ea84": "Editar {name}",
+      "textf1f1770ed74e": "Grupo de botones",
+      "text99bddc5e28c5": "Horizontal",
+      "text4be355905d2d": "Vertical",
+      "text1b32f628c206": "Conectar correo",
+      "text19e6d0fd0d7a": "Los miembros están separados 1px. Las esquinas exteriores conservan el radio del botón; las esquinas que tocan un vecino se reducen a 4px. Funciona con todas las variantes de Button, horizontal o"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

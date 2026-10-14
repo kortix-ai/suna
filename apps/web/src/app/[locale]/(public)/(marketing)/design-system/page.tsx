@@ -1786,10 +1786,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-button-group" className="mb-12">
-                  <ComponentLabel>Button Group</ComponentLabel>
+                  <ComponentLabel>{tI18nComplete.raw('textf1f1770ed74e')}</ComponentLabel>
                   <ComponentDesc>
-                    Members sit 1px apart. Outer corners keep the button radius; corners that face
-                    a neighbour shrink to 4px. Works with every Button variant, horizontal or{' '}
+                    {tI18nComplete.raw('text19e6d0fd0d7a')}{' '}
                     <code className="bg-muted rounded-sm px-1 font-mono text-xs">
                       orientation=&quot;vertical&quot;
                     </code>
@@ -1799,20 +1798,20 @@ export default function BrandPage() {
                     <div className="space-y-6">
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          Horizontal
+                          {tI18nComplete.raw('text99bddc5e28c5')}
                         </p>
                         <div className="flex flex-wrap items-center gap-4">
                           {(['secondary', 'muted', 'ghost', 'outline', 'default'] as const).map(
                             (variant) => (
                               <ButtonGroup key={variant}>
                                 <Button variant={variant} size="sm">
-                                  Day
+                                  {tI18nComplete.raw('text8f2364e11b8b')}
                                 </Button>
                                 <Button variant={variant} size="sm">
-                                  Week
+                                  {tI18nComplete.raw('texte78041ab51a8')}
                                 </Button>
                                 <Button variant={variant} size="sm">
-                                  Month
+                                  {tI18nComplete.raw('text310ca503ef36')}
                                 </Button>
                               </ButtonGroup>
                             ),
@@ -1821,27 +1820,43 @@ export default function BrandPage() {
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          Icons
+                          {tI18nComplete.raw('texteae96e02bbc4')}
                         </p>
                         <div className="flex flex-wrap items-center gap-4">
                           {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
                             <ButtonGroup key={variant}>
-                              <Button variant={variant} size="icon-sm" aria-label="Search">
+                              <Button
+                                variant={variant}
+                                size="icon-sm"
+                                aria-label={tI18nComplete.raw('text49c266baaaa7')}
+                              >
                                 <Search />
                               </Button>
-                              <Button variant={variant} size="icon-sm" aria-label="Copy">
+                              <Button
+                                variant={variant}
+                                size="icon-sm"
+                                aria-label={tI18nComplete.raw('texte21f935f11d7')}
+                              >
                                 <Copy />
                               </Button>
-                              <Button variant={variant} size="icon-sm" aria-label="Delete">
+                              <Button
+                                variant={variant}
+                                size="icon-sm"
+                                aria-label={tI18nComplete.raw('texte2d0a54968ea')}
+                              >
                                 <Trash2 />
                               </Button>
                             </ButtonGroup>
                           ))}
                           <ButtonGroup>
                             <Button variant="secondary" size="sm">
-                              <Plus /> New
+                              <Plus /> {tI18nComplete.raw('text18fdd549b2ed')}
                             </Button>
-                            <Button variant="secondary" size="icon-sm" aria-label="More options">
+                            <Button
+                              variant="secondary"
+                              size="icon-sm"
+                              aria-label={tI18nComplete.raw('textbc79cdffbaa8')}
+                            >
                               <ChevronsUpDown />
                             </Button>
                           </ButtonGroup>
@@ -1849,22 +1864,22 @@ export default function BrandPage() {
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          Vertical
+                          {tI18nComplete.raw('text4be355905d2d')}
                         </p>
                         <div className="flex flex-wrap items-start gap-6">
                           {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
                             <ButtonGroup key={variant} orientation="vertical" className="w-60">
                               <Button variant={variant} className="justify-start">
-                                <Mail /> Connect email
+                                <Mail /> {tI18nComplete.raw('text1b32f628c206')}
                                 <Badge variant="new" className="ml-auto">
-                                  New
+                                  {tI18nComplete.raw('text18fdd549b2ed')}
                                 </Badge>
                               </Button>
                               <Button variant={variant} className="justify-start">
-                                <Users /> Invite members
+                                <Users /> {tI18nComplete.raw('texte85663498c96')}
                               </Button>
                               <Button variant={variant} className="justify-start">
-                                <Settings /> Settings
+                                <Settings /> {tI18nComplete.raw('text74a883a037bc')}
                               </Button>
                             </ButtonGroup>
                           ))}

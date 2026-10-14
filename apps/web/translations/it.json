@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "Criteri di versione mobile visualizzati",
       "texta37dd5ef6ef2": "Personalizza barra laterale",
       "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar",
-      "text2313fe21ea84": "Modifica {name}"
+      "text2313fe21ea84": "Modifica {name}",
+      "textf1f1770ed74e": "Gruppo di pulsanti",
+      "text99bddc5e28c5": "Orizzontale",
+      "text4be355905d2d": "Verticale",
+      "text1b32f628c206": "Connetti email",
+      "text19e6d0fd0d7a": "I membri distano 1px. Gli angoli esterni mantengono il raggio del pulsante; gli angoli che toccano un vicino si riducono a 4px. Funziona con ogni variante di Button, orizzontale o"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

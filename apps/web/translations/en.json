@@ -19662,7 +19662,12 @@
       "text91dc861375bc": "Viewed mobile release policy",
       "texta37dd5ef6ef2": "Customize Sidebar",
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
-      "text2313fe21ea84": "Edit {name}"
+      "text2313fe21ea84": "Edit {name}",
+      "textf1f1770ed74e": "Button Group",
+      "text99bddc5e28c5": "Horizontal",
+      "text4be355905d2d": "Vertical",
+      "text1b32f628c206": "Connect email",
+      "text19e6d0fd0d7a": "Members sit 1px apart. Outer corners keep the button radius; corners that face a neighbour shrink to 4px. Works with every Button variant, horizontal or"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
