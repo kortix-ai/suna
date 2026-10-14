@@ -18,6 +18,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { toolKind } from '@kortix/sdk';
 import { useMemo } from 'react';
 
 export function GrepTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -32,14 +33,17 @@ export function GrepTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     getDirectory((input.path as string) || (streamingInput.path as string)) || undefined;
   const args: string[] = [];
   const grepPattern = (input.pattern || streamingInput.pattern) as string | undefined;
-  const grepInclude = (input.include || streamingInput.include) as string | undefined;
+  const grepInclude = (input.include || input.glob || streamingInput.include) as string | undefined;
   if (grepPattern) args.push('pattern=' + String(grepPattern));
   if (grepInclude) args.push('include=' + String(grepInclude));
 
   const grepResult = useMemo(() => parseGrepOutput(output), [output]);
   const hasResults = !!grepResult;
   const isError = status === 'completed' && isErrorOutput(output);
-  const isNoResults = !hasResults && !isError && status === 'completed' && !!output;
+  // Another harness's grep output (a Claude Code `Grep`) is not the format the parser
+  // reads: it falls through to the plain output instead of reading as "no matches".
+  const isNoResults =
+    !hasResults && !isError && status === 'completed' && !!output && toolKind(call.name) === 'grep';
 
   return (
     <BasicTool

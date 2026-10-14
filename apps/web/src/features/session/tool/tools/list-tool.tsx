@@ -19,6 +19,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
 import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { toolKind } from '@kortix/sdk';
 import { useCallback, useContext, useMemo } from 'react';
 
 const NO_PATHS: string[] = [];
@@ -38,7 +39,10 @@ export function ListTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It sat
   // in the body, so every re-render re-parsed a listing that had not changed.
   const errored = useMemo(() => isErrorOutput(output), [output]);
-  const isNoResults = !hasResults && status === 'completed' && !!output && !errored;
+  // Another harness's listing (a Claude Code `LS` tree) is not the format the parser
+  // reads: it falls through to the plain output instead of reading as an empty folder.
+  const isNoResults =
+    !hasResults && status === 'completed' && !!output && !errored && toolKind(call.name) === 'list';
 
   const handleFileClick = useCallback(
     (fp: string) => openFileWithList(fp, filePaths ?? NO_PATHS),

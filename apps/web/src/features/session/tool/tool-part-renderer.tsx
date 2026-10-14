@@ -209,7 +209,7 @@ function ToolPartRendererImpl({
     );
   }
 
-  const RegisteredComponent = ToolRegistry.get(call.name);
+  const RegisteredComponent = ToolRegistry.get(call.name, call.kind);
   const forceOpen = !!permission || !!question;
   const isLocked = !!permission || !!question;
 

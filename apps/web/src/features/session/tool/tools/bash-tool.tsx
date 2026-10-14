@@ -373,8 +373,11 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const indent = useToolIndent();
+  // Codex sends `cmd` (`exec_command`) or an argv array (`shell`).
   const rawCommand =
-    (input.command as string) ||
+    (typeof input.command === 'string' && input.command) ||
+    (Array.isArray(input.command) && input.command.join(' ')) ||
+    (input.cmd as string) ||
     (metadata.command as string) ||
     (streamingInput.command as string) ||
     '';
