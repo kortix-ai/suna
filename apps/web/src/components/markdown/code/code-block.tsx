@@ -21,6 +21,7 @@ interface HighlightResult {
   language: string;
   theme: CodeThemeName;
   html: string;
+  unbounded: boolean;
 }
 
 export function HighlightedCode({
@@ -60,7 +61,8 @@ export function HighlightedCode({
     if (highlightSync(target, language, theme, opts)) return; // rendered synchronously below
     let alive = true;
     highlightAsync(target, language, theme, opts).then((html) => {
-      if (alive && html) setResult({ code: target, language, theme, html });
+      if (alive && html)
+        setResult({ code: target, language, theme, html, unbounded: !!opts.unbounded });
     });
     return () => {
       alive = false;
@@ -74,7 +76,11 @@ export function HighlightedCode({
     target === null
       ? null
       : (highlightSync(target, language, theme, opts) ??
-        (result && result.code === target && result.language === language && result.theme === theme
+        (result &&
+        result.code === target &&
+        result.language === language &&
+        result.theme === theme &&
+        result.unbounded === !!unbounded
           ? result.html
           : null));
 
