@@ -592,7 +592,7 @@ export async function runGitCapture(
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
 
-function refreshIntervalMs() {
+export function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }

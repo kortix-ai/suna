@@ -657,6 +657,13 @@ export function tokenRejectedLine(
 }
 
 /** Print an HTTP error in a consistent style + return exit code 1. */
+/** The `issues` a refusal lists (`app_config_invalid`, …), one indented `path: message` line each. */
+function issueLines(err: unknown): string {
+  const issues = (err as { details?: { issues?: unknown } } | null)?.details?.issues;
+  if (!Array.isArray(issues)) return '';
+  return issues.map((issue: { path?: string; message?: string }) => `    ${issue.path ? `${issue.path}: ` : ''}${issue.message ?? ''}\n`).join('');
+}
+
 export function surfaceApiError(err: unknown): number {
   // The feature-flag gate is actionable on its own — never let it fall through
   // to the generic 403 "you may not have permission" prose, which sends the
@@ -689,7 +696,7 @@ export function surfaceApiError(err: unknown): number {
     }
     return 1;
   }
-  process.stderr.write(`${status.err((err as Error).message)}\n`);
+  process.stderr.write(`${status.err((err as Error).message)}\n${issueLines(err)}`);
   return 1;
 }
 
