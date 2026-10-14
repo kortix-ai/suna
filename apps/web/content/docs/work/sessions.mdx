@@ -222,6 +222,31 @@ A stopped session wakes when it gets:
 
 On Platinum with the account's **Volumes** switch on, an ephemeral session keeps its files and conversation on a volume when it stops, and a wake boots a new sandbox. See [Sandboxes & previews](/docs/work/runtime#persistent-and-ephemeral-machines).
 
+### When the sandbox stops during a turn
+
+The provider can stop a sandbox while a turn runs, and a runtime restart (for example, to apply a config change) ends the running turn. Nobody asked for either. After a provider stop the turn ends with the reason "The sandbox stopped unexpectedly while this turn was running." Kortix then gives the work back once:
+
+| What the turn did before the stop | What Kortix sends |
+| --- | --- |
+| The agent did not answer the message | The same message again. |
+| The agent started an answer and did not finish it | One continuation message: `[auto-recovery] The previous turn was interrupted at <time> UTC. <reason> Continue from where you left off. Do not repeat steps that already completed.` The original message is not sent again. |
+| The agent finished its answer | Nothing. |
+
+When it goes out:
+
+- **A session people use.** The message waits in the queue, held, so the stopped sandbox stays stopped. Select **Resume** above the composer (web) or **Send now** on the message (mobile), or send any message. From the CLI: `kortix sessions queue <session_id> release`. A session's first turn has no queued message, so Kortix puts a held continuation in the queue of the person who created the session.
+- **A `trigger`, `schedule` or `system` session, or a worker session another session started.** At once. Each sandbox recovers at most 2 times per rolling hour; after that the message waits, held.
+- **A runtime restart on a sandbox that runs again.** At once.
+
+When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn."
+
+Kortix never continues a turn that someone ended: the Stop button, `kortix sessions stop`, or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry.
+
+Limits:
+
+- A session on the pi harness keeps the running turn in memory until the turn ends. After a provider stop the cut-off answer is gone, so Kortix sends the original message again.
+- A sandbox that stops between two steps of a turn leaves a finished answer, so Kortix sends nothing. Send a message to continue.
+
 ## When a session sleeps
 
 Kortix stops a sandbox when nothing keeps it awake. Each event below keeps the sandbox for a set time. The longest one wins.
