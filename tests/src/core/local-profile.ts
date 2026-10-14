@@ -70,6 +70,8 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
     // The local API verifies Stripe webhooks with this same literal
     // (local-stack.ts), so a flow can deliver a validly signed event.
     KE2E_STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
+    // The local API boots with this address on its operator allowlist (local-stack.ts).
+    KE2E_PLATFORM_ADMIN_EMAIL: LOCAL_PLATFORM_ADMIN_EMAIL,
     KE2E_LIVE_CONFIRM: "local",
     KE2E_LOCAL_BILLING_ENABLED: "1",
     KE2E_CAP_DAYTONA: "0",
@@ -148,3 +150,11 @@ export const LOCAL_STRIPE_WEBHOOK_SECRET = 'whsec_local_flow_runner_disabled';
  * beyond this machine.
  */
 export const LOCAL_GATEWAY_INTERNAL_TOKEN = 'local-flow-runner-gateway-internal-token';
+
+/**
+ * The one address the local API's self-host operator allowlist
+ * (`KORTIX_PLATFORM_ADMIN_EMAILS`) names. No principal gets it: only `ADM-25`
+ * creates an identity with it, to prove the allowlist matches a password
+ * identity and never an SSO one (KRTX-1715).
+ */
+export const LOCAL_PLATFORM_ADMIN_EMAIL = 'allowlisted-operator@ke2e.kortix.test';
