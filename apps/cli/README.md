@@ -16,7 +16,7 @@ makes an initial commit.
 ```sh
 kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
-kortix ship                  # create the cloud project (first run) + push your code
+kortix ship                  # push to linked/default project; create when neither exists
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
 
@@ -117,7 +117,8 @@ chore: init kortix project
 ```
 
 Then it's yours. Add a remote, push, open in your coding agent of choice —
-or run `kortix ship` to create the cloud project and push in one step.
+or run `kortix ship` to push to the linked project or saved host default. With neither,
+ship creates the cloud project and pushes in one step.
 
 ## Self-host
 
