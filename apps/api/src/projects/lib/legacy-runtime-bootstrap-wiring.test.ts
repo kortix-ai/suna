@@ -230,6 +230,59 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(scheduled).toBe(0);
   });
 
+  // Dev 2026-10-14: three deploys, three idle boxes answered `starting` for
+  // 122-390 s. Each box held a `current` check from before the deploy, so the
+  // repair the guarantee scheduled returned `skipped-recent-check` and never
+  // ran; the stall ended only when the daemon swapped itself.
+  test('a box with a recent current check: proceed — the repair would skip it, so never report repairing', async () => {
+    let scheduled = 0;
+    const metadata = { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [] } };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      { ...row('sb-recent-current'), metadata },
+      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('proceed');
+    expect(outcome.classification?.klass).toBe('stale');
+    expect(scheduled).toBe(0);
+  });
+
+  test('a current check older than the 6 h TTL still repairs', async () => {
+    let scheduled = 0;
+    const metadata = { legacyRuntimeCheck: { at: '2026-09-26T17:00:00.000Z', klass: 'current', staleReasons: [] } };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      { ...row('sb-old-current'), metadata },
+      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+
+  test('a box already staged on this build (Daytona/E2B): proceed — it converges at its next start', async () => {
+    let scheduled = 0;
+    const metadata = {
+      legacyRuntimeBootstrap: { state: 'staged', attempts: 1, manifestBuild: 1790538288, lastAttemptAt: '2026-09-26T23:00:00.000Z' },
+    };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      { ...row('sb-staged'), provider: 'daytona', metadata },
+      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('proceed');
+    expect(outcome.retry?.status).toBe('staged');
+    expect(scheduled).toBe(0);
+  });
+
   test('the guarantee kill switch fails open and never even reads the classification', async () => {
     process.env.LEGACY_RUNTIME_BOOTSTRAP = 'off';
     try {

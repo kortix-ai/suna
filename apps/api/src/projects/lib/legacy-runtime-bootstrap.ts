@@ -669,6 +669,29 @@ function readCheck(metadata: Record<string, unknown> | null | undefined): Legacy
   };
 }
 
+/** A `current` verdict younger than {@link LEGACY_CHECK_TTL_MS}: an unforced bootstrap skips the box. */
+function recentCurrentCheck(check: LegacyCheckRecord | null, nowMs: number): boolean {
+  if (check?.klass !== 'current') return false;
+  const atMs = Date.parse(check.at);
+  return Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS;
+}
+
+/**
+ * Would an unforced bootstrap of this box, run now, return without touching
+ * it? True for a recent `current` check and for a box already staged on this
+ * manifest build. The open guarantee asks this before it reports `repairing`:
+ * a repair that will not run must not hold a serving box in `starting`.
+ */
+export function bootstrapWouldSkip(
+  metadata: Record<string, unknown> | null | undefined,
+  currentManifestBuild: number | null,
+  nowMs: number,
+): boolean {
+  if (recentCurrentCheck(readCheck(metadata), nowMs)) return true;
+  const record = readRecord(metadata);
+  return record?.state === 'staged' && record.manifestBuild === currentManifestBuild;
+}
+
 export function opencodeIdle(status: Record<string, unknown> | null): boolean {
   if (!status) return false;
   return Object.keys(status).length === 0;
@@ -839,11 +862,8 @@ async function probeRuntimeForBootstrap(
       return { result: { outcome: 'skipped-in-progress' } };
     }
   }
-  if (!input.force && check && check.klass === 'current') {
-    const atMs = Date.parse(check.at);
-    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
-      return { result: { outcome: 'skipped-recent-check' } };
-    }
+  if (!input.force && recentCurrentCheck(check, nowMs)) {
+    return { result: { outcome: 'skipped-recent-check' } };
   }
 
   const health = await deps.fetchHealth();

@@ -21,6 +21,7 @@ import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,
+  bootstrapWouldSkip,
   classifyDaemonHealth,
   describeLegacyBootstrapRetry,
   opencodeIdle,
@@ -489,6 +490,17 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'proceed', classification };
   }
 
+  const manifestBuild = await deps.manifestBuild();
+  if (bootstrapWouldSkip(row.metadata, manifestBuild, deps.now())) {
+    // The scheduled repair would return without touching the box: a
+    // `current` check from before this deploy (6 h TTL), or an agent already
+    // staged for this build. Reporting `repairing` held idle, serving boxes in
+    // `starting` for 122-390 s after each dev deploy on 2026-10-14, until the
+    // daemon swapped itself. Serve the box; the daemon converges at its idle
+    // boundary, and the reaper repairs it once the check expires.
+    return { action: 'proceed', classification, retry: describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now()) };
+  }
+
   const status = await deps.fetchOpencodeStatus();
   if (!opencodeIdle(status)) {
     // A live turn owns this box. Relaunching would kill it. The reaper's own
@@ -497,7 +509,6 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'defer_turn_running', classification };
   }
 
-  const manifestBuild = await deps.manifestBuild();
   const retry = describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now());
   if (retry.status === 'exhausted') {
     return { action: 'exhausted', classification, retry };
