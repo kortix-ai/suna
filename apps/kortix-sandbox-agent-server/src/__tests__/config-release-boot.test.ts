@@ -22,6 +22,7 @@ import {
   materializeRelease,
   readBootConfigPointer,
   readBootLinkTarget,
+  readBootReleaseRoot,
   readQuarantine,
   releaseDir,
   type ReleaseManifest,
@@ -285,6 +286,33 @@ describe('the desired release is what the box runs', () => {
     expect(run.starts).toBe(1)
     expect(await readBootLinkTarget(store)).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect(api.archiveRequests.length).toBe(1)
+  })
+
+  // Project tools load from the release root (`readBootReleaseRoot`), not from
+  // the config dir: a tools-only release (an agent without repository access)
+  // has no OpenCode config dir and serves the image default.
+  test('the served release is recorded as the project tool root, with or without an OpenCode config dir', async () => {
+    await boot()
+    expect(await readBootReleaseRoot(store)).toBe(releaseDir(store, release.descriptor.release_id!))
+
+    resetConfigReleaseStateForTests()
+    const toolsOnly = mkdtempSync(join(root, 'tools-only-'))
+    initRepo(toolsOnly)
+    write(toolsOnly, 'tools/lookup_order.ts', 'export default {}\n')
+    const built = buildRelease(toolsOnly, commitAll(toolsOnly, 'tools'), null, { governance: GOV })
+    serveRelease(api, built)
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir: defaultDir, source: 'release', releaseId: built.descriptor.release_id })
+    expect(await readBootReleaseRoot(store)).toBe(releaseDir(store, built.descriptor.release_id!))
+    expect(existsSync(join(releaseDir(store, built.descriptor.release_id!), 'tools/lookup_order.ts'))).toBe(true)
+  })
+
+  test('a governance-only release records no project tool root', async () => {
+    await boot()
+    resetConfigReleaseStateForTests()
+    api.respond({ status: 200, json: { ...release.descriptor, release_id: 'b'.repeat(64), config_tree_id: null, archive: null, files: null, reason: 'repository access withheld' } })
+    await boot()
+    expect(await readBootReleaseRoot(store)).toBeNull()
   })
 
   test('an intact copy from an earlier boot is reused without a download', async () => {

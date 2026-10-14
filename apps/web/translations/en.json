@@ -508,6 +508,7 @@
     "appearance": {
       "theme": "Theme",
       "themeDescription": "Choose how Kortix looks on this device.",
+      "moreThemes": "More themes…",
       "conversationDensity": "Conversation density",
       "conversationDensityDescription": "How much detail the agent shows in the conversation while it works.",
       "richAnswers": "Rich answers",
@@ -517,8 +518,15 @@
       "defaultWallpaper": "Default",
       "themes": {
         "light": "Light",
+        "pureLight": "Pure light",
         "dark": "Dark",
-        "system": "System"
+        "pureDark": "Pure dark",
+        "system": "System",
+        "kortix": "Kortix",
+        "lightThemes": "Light themes",
+        "darkThemes": "Dark themes",
+        "search": "Search themes…",
+        "noResults": "No themes found"
       },
       "densities": {
         "normal": {
@@ -19201,6 +19209,10 @@
       "text8295f9d4861b": "Set account SSO domain verification",
       "text7beaff63a7d3": "Downloaded project config archive",
       "text5176d59f25fd": "Resolved session config release",
+      "text64ad7399fb9e": "Pure Light Theme",
+      "texte6ebf219f591": "theme light mode pure white",
+      "textc433363f9a4e": "Pure Dark Theme",
+      "textbc9543239440": "theme dark mode pure black",
       "text273c48dbf3b9": "Registered push notification device",
       "textbb666ddf7a57": "Removed push notification device",
       "text397ab5aecbbf": "Relayed session permission request",
@@ -20746,5 +20758,21 @@
     "mapTwoFingers": "Use two fingers to move the map",
     "pick": "Pick",
     "convertFailed": "Could not prepare the transcript. Try again."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobile",
+    "badge": "New",
+    "title": "Kortix, now on your phone",
+    "description": "Your projects, sessions and agents, wherever you are. Start the work at your desk and keep it moving from anywhere.",
+    "feature": {
+      "sessions": "Pick up where you left off",
+      "sessionsDescription": "Every session from the web, ready on your phone.",
+      "notifications": "Know the moment it's done",
+      "notificationsDescription": "A push when a session finishes or needs your answer.",
+      "dictation": "Say it, send it",
+      "dictationDescription": "Dictate a prompt instead of typing it."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }

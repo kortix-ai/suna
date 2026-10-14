@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Design",
       "themeDescription": "Wählen Sie das Erscheinungsbild von Kortix auf diesem Gerät.",
+      "moreThemes": "Weitere Designs…",
       "conversationDensity": "Gesprächsdichte",
       "conversationDensityDescription": "Legt fest, wie viele Details der Agent während seiner Arbeit im Gespräch zeigt.",
       "richAnswers": "Erweiterte Antworten",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Standard",
       "themes": {
         "light": "Hell",
+        "pureLight": "Reines Hell",
         "dark": "Dunkel",
-        "system": "System"
+        "pureDark": "Reines Dunkel",
+        "system": "System",
+        "kortix": "Kortix",
+        "lightThemes": "Helle Designs",
+        "darkThemes": "Dunkle Designs",
+        "search": "Designs suchen…",
+        "noResults": "Keine Designs gefunden"
       },
       "densities": {
         "normal": {
@@ -19190,6 +19198,10 @@
       "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt",
       "text7beaff63a7d3": "Projekt-Konfigurationsarchiv heruntergeladen",
       "text5176d59f25fd": "Config-Release der Sitzung aufgelöst",
+      "text64ad7399fb9e": "Reines helles Design",
+      "texte6ebf219f591": "Design hell Modus rein weiß",
+      "textc433363f9a4e": "Reines dunkles Design",
+      "textbc9543239440": "Design dunkel Modus rein schwarz",
       "text273c48dbf3b9": "Gerät für Push-Benachrichtigungen registriert",
       "textbb666ddf7a57": "Gerät für Push-Benachrichtigungen entfernt",
       "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet",
@@ -20746,5 +20758,21 @@
     "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
     "pick": "Empfehlung",
     "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobil",
+    "badge": "Neu",
+    "title": "Kortix, jetzt auf deinem Smartphone",
+    "description": "Deine Projekte, Sessions und Agenten, wo immer du bist. Starte die Arbeit am Schreibtisch und bring sie von überall voran.",
+    "feature": {
+      "sessions": "Mach da weiter, wo du aufgehört hast",
+      "sessionsDescription": "Jede Session aus dem Web, bereit auf deinem Smartphone.",
+      "notifications": "Sofort wissen, wann es fertig ist",
+      "notificationsDescription": "Eine Push-Nachricht, wenn eine Session fertig ist oder deine Antwort braucht.",
+      "dictation": "Sag es, schick es ab",
+      "dictationDescription": "Diktiere einen Prompt, statt ihn zu tippen."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }
