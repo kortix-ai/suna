@@ -1918,8 +1918,13 @@ export const ChangeRequestSchema = z.object({
 });
 export type ChangeRequest = z.infer<typeof ChangeRequestSchema>;
 
-/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. */
-export const ChangeRequestListSchema = z.object({ change_requests: z.array(ChangeRequestSchema) });
+/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. One
+ *  page, newest first; `next_cursor` is the next page's `cursor`, null on the
+ *  last page. */
+export const ChangeRequestListSchema = z.object({
+  change_requests: z.array(ChangeRequestSchema),
+  next_cursor: z.string().nullable(),
+});
 export type ChangeRequestList = z.infer<typeof ChangeRequestListSchema>;
 
 // ─── Accounts ───────────────────────────────────────────────────────────────

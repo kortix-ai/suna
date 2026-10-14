@@ -606,6 +606,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/review/items': { action: 'review.item.create', title: 'Submitted review item' },
   'GET /v1/projects/:projectId/review/items/:reviewItemId': { action: 'review.item.read', title: 'Viewed review item' },
   'POST /v1/projects/:projectId/review/items/:reviewItemId/act': { action: 'review.item.resolve', title: 'Resolved review item' },
+  'GET /v1/projects/:projectId/review/summary': { action: 'review.summary.read', title: 'Viewed review counts' },
   'GET /v1/projects/:projectId/runtime/prompt-attachments/:attachmentId': { action: 'runtime.prompt_attachment.read', title: 'Resolved runtime attachment descriptor' },
   'GET /v1/projects/:projectId/sandbox-health': { action: 'sandbox.health.read', title: 'Viewed sandbox health' },
   'PATCH /v1/projects/:projectId/sandbox-provider': { action: 'project.sandbox_provider.update', title: 'Updated sandbox provider' },

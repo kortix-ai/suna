@@ -4,6 +4,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import {
+  CHANGE_REQUEST_LIST_MAX_LIMIT,
+  decodeChangeRequestCursor,
   getCrById,
   getNextCrNumber,
   listChangeRequestsForProject,
@@ -95,6 +97,8 @@ export function registerChangeRequestsRoutes(): void {
       path: '/{projectId}/change-requests',
       tags: ['change-requests'],
       summary: 'List change requests of a project',
+      description:
+        'One page, newest number first. `limit` defaults to 50; above 500 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -121,27 +125,34 @@ export function registerChangeRequestsRoutes(): void {
       // actually opened. This scopes that at the source.
       const originSessionId = normalizeString(c.req.query('origin_session_id'));
 
-      // `limit` is opt-in: omitted keeps the historical unbounded behavior every
-      // existing caller (the panel, the open-CR badge, `kortix cr list`) already
-      // depends on. A caller that adopts it gets a bounded, capped page.
+      // One keyset page, newest number first (KRTX-1727). `limit` defaults to
+      // CHANGE_REQUEST_LIST_DEFAULT_LIMIT; above the ceiling answers 400.
+      // `next_cursor` continues the list; null means the last page.
       // normalizeString answers null for an absent param: test nullish, or
       // every plain list is refused as "Invalid limit" (Number(null) is 0).
       const rawLimit = normalizeString(c.req.query('limit'));
       let limit: number | undefined;
       if (rawLimit != null) {
         limit = Number(rawLimit);
-        if (!Number.isInteger(limit) || limit < 1) {
-          return c.json({ error: 'Invalid limit' }, 400);
+        if (!Number.isInteger(limit) || limit < 1 || limit > CHANGE_REQUEST_LIST_MAX_LIMIT) {
+          return c.json(
+            { error: `limit must be an integer from 1 to ${CHANGE_REQUEST_LIST_MAX_LIMIT}` },
+            400,
+          );
         }
       }
+      const rawCursor = normalizeString(c.req.query('cursor'));
+      const cursor = rawCursor ? decodeChangeRequestCursor(rawCursor) : null;
+      if (rawCursor && cursor == null) return c.json({ error: 'Invalid cursor' }, 400);
 
-      const change_requests = await listChangeRequestsForProject(projectId, {
-        status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
-        originSessionId: originSessionId ?? undefined,
-        limit,
-      });
-
-      return c.json({ change_requests });
+      return c.json(
+        await listChangeRequestsForProject(projectId, {
+          status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
+          originSessionId: originSessionId ?? undefined,
+          limit,
+          cursor: cursor ?? undefined,
+        }),
+      );
     },
   );
 

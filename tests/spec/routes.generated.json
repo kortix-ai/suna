@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 792,
+  "count": 793,
   "routes": [
     {
       "method": "GET",
@@ -2329,6 +2329,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/review/summary"
     },
     {
       "method": "GET",

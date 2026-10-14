@@ -584,6 +584,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|review|items",
   "GET|v1|projects|:projectId|review|items|:reviewItemId",
   "POST|v1|projects|:projectId|review|items|:reviewItemId|act",
+  "GET|v1|projects|:projectId|review|summary",
   "GET|v1|projects|:projectId|runtime|prompt-attachments|:attachmentId",
   "GET|v1|projects|:projectId|sandbox-health",
   "PATCH|v1|projects|:projectId|sandbox-provider",
