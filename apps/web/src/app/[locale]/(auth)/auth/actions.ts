@@ -235,7 +235,10 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   );
 
   if (error) {
-    return authFailure(error, 'Could not send the link', tI18nComplete);
+    return {
+      ...authFailure(error, 'Could not send the link', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
   }
 
   // Hand the PKCE verifier to the browser in the RESULT, not only as a
