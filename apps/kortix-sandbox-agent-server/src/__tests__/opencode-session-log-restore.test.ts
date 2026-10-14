@@ -589,9 +589,14 @@ describe('one import for every thread: the store equals one import per thread', 
           Object.fromEntries(Object.entries(r).filter(([k]) => !drop.includes(k)).map(([k, v]) => [k, typeof v === 'string' && /^[[{]/.test(v) ? JSON.parse(v) : v])),
         )
       return {
-        sessions: read('SELECT * FROM session ORDER BY id', ['time_updated']),
+        sessions: read('SELECT * FROM session ORDER BY id', []),
         messages: read('SELECT * FROM message ORDER BY session_id, time_created, id', ['time_updated']),
         parts: read('SELECT * FROM part ORDER BY session_id, message_id, id', ['time_updated', 'time_created']),
+        // Every other table keyed by session: its row count per session.
+        keyed: Object.fromEntries(
+          (db.query("SELECT m.name FROM sqlite_master m WHERE m.type = 'table' AND m.name NOT IN ('session', 'message', 'part') AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'session_id')").all() as Array<{ name: string }>)
+            .map(({ name }) => [name, db.query(`SELECT session_id, count(*) AS n FROM "${name}" GROUP BY session_id ORDER BY session_id`).all()]),
+        ),
       }
     } finally {
       db.close()
@@ -658,6 +663,23 @@ describe('one import for every thread: the store equals one import per thread', 
     db.close()
     expect(rows(b.dbPath)).not.toEqual(each)
   }, 90_000)
+
+  test('a row left on the holding session fails the restore before the delete could cascade it; the store keeps no root', async () => {
+    const log = load('opencode')
+    const b = box(log.session_id)
+    const target = { bin, cwd: b.workspace, env: b.env, dbPath: b.dbPath, sessionId: log.session_id, statePath: b.statePath }
+    await restoreOpenCodeSessionLog(log, target)
+    // The holding session's id (see importSessions); a trigger gives it a todo, a row the move does not know.
+    const hold = `ses_${createHash('sha256').update(`hold\0${b.native(log.threads[0]!.thread_id)}`).digest('hex').slice(0, 26)}`
+    const db = new Database(b.dbPath)
+    db.run(`CREATE TRIGGER leftover AFTER INSERT ON session WHEN NEW.id = '${hold}' BEGIN INSERT INTO todo (session_id, content, status, priority, position, time_created, time_updated) VALUES (NEW.id, 'x', 'pending', 'low', 0, 0, 0); END`)
+    db.close()
+    await expect(restoreOpenCodeSessionLog(log, target)).rejects.toThrow('the restore left 1 row(s) of todo on the holding session')
+    const after = rows(b.dbPath)
+    expect(after.sessions.map((s) => s.id)).toEqual([hold])
+    expect(new Set(after.messages.map((m) => m.session_id))).toEqual(new Set([hold]))
+    expect(after.keyed.todo).toEqual([{ session_id: hold, n: 1 }])
+  }, 60_000)
 
   test('4 threads: the next request of every thread equals modelView', async () => {
     const log = fourThreads()

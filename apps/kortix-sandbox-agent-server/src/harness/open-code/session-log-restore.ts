@@ -10,11 +10,14 @@
  * decoders validate every row, every id is kept, and the session is keyed to the
  * project of the directory it runs in (`cwd`: the project id is re-keyed to the
  * box's). One transaction then gives each thread its session row (the holding
- * row with the thread's id, parent, slug, title, permission and creation time),
- * moves the thread's messages and parts to it, and deletes the holding row. The
- * store ends identical to one import per thread (`opencode-session-log-restore.test.ts`
- * compares them row by row), at one process start instead of one per thread
- * plus `--version` (~0.76 s each on a box). The restore first removes
+ * row with the thread's id, parent, slug, title, permission, creation and update
+ * times), moves the thread's messages and parts to it, and deletes the holding
+ * row. A row of any table still keyed to the holding session fails the restore
+ * before that delete, which would cascade it away. The store's rows equal one
+ * import per thread except the write times (a message's `time_updated`, a part's
+ * times): `opencode-session-log-restore.test.ts` compares them row by row. It
+ * costs one process start instead of one per thread plus `--version` (about 2 s
+ * each on a 2-vCPU Platinum box). The restore first removes
  * every session from the store, so the store holds exactly the log. A running
  * OpenCode (a warm seed) needs no stop: it reads sessions from the store per
  * request, also a session it served before the restore
@@ -463,14 +466,22 @@ async function importSessions(target: OpenCodeRestoreTarget, files: J[], dir: st
     const insert = db.query(`INSERT INTO session (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
     const moveMessage = db.query('UPDATE message SET session_id = ?1 WHERE id = ?2 AND session_id = ?3')
     const moveParts = db.query('UPDATE part SET session_id = ?1 WHERE message_id = ?2 AND session_id = ?3')
+    const tables = db
+      .query("SELECT m.name FROM sqlite_master m WHERE m.type = 'table' AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'session_id')")
+      .all() as Array<{ name: string }>
     db.transaction(() => {
       for (const { info, messages } of files) {
-        const own: J = { ...row, id: info.id, parent_id: info.parentID ?? null, slug: info.slug, title: info.title, permission: info.permission ? JSON.stringify(info.permission) : null, time_created: info.time.created }
+        const own: J = { ...row, id: info.id, parent_id: info.parentID ?? null, slug: info.slug, title: info.title, permission: info.permission ? JSON.stringify(info.permission) : null, time_created: info.time.created, time_updated: info.time.updated }
         insert.run(...cols.map((c) => own[c]))
         for (const m of messages as J[]) {
           moveMessage.run(info.id, m.info.id, hold)
           moveParts.run(info.id, m.info.id, hold)
         }
+      }
+      // A row still keyed to the holding session would go with it (ON DELETE CASCADE): refuse instead.
+      for (const { name } of tables) {
+        const left = (db.query(`SELECT count(*) AS n FROM "${name}" WHERE session_id = ?`).get(hold) as { n: number }).n
+        if (left) throw new Error(`the restore left ${left} row(s) of ${name} on the holding session`)
       }
       db.run('DELETE FROM session WHERE id = ?', [hold])
     })()
