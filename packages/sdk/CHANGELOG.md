@@ -5,6 +5,28 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session-log follow-ups)
+- `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
+  inline and which it downloads. The smallest fill the 1 MiB inline budget;
+  only the rest download. Before, a host could only download every text of a
+  turn over 1 MiB in all.
+- `hasRuntimeConfirmedMessage(sessionID, messageID)`
+  (`@kortix/sdk/internal/sync-store`): the store holds the message from a
+  runtime read or a live event, not only from a saved copy.
+
+### Fixed (session-log follow-ups)
+- `useSessionSync` stops offering the saved copy's older pages once the
+  runtime holds the saved window's oldest message and has no older page of
+  its own: `hasOlder` is `false` when the whole history is loaded. Before,
+  the "earlier messages" control stayed after the runtime had answered
+  everything (web and mobile). A box that lost its state still pages its
+  saved history.
+- `toToolView` reads Claude Code edits: `old_string` / `new_string`, the
+  `edits[]` of a `MultiEdit` (blocks joined in order), and a `NotebookEdit`'s
+  `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
+  `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
+  `file-edit` view model reads the same blocks.
+
 ### Added (block readers a host draws a tool call with)
 - `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),
   `toolCallRawOutput(call)` (a completed call's text, one string per call
