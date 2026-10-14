@@ -1084,6 +1084,26 @@ describe('delete (deleteSession)', () => {
     }
   });
 
+  // KRTX-2316: a delete that bumped `updated_at` moved every tombstone to the
+  // head of the session list order, above the owner's live sessions.
+  test('keeps the session’s place in the list: `updated_at` is unchanged', async () => {
+    const f = await deleteFixture();
+    await db.execute(sql`
+      update kortix.project_sessions set updated_at = '2026-09-01T12:00:00.123456Z'
+       where session_id = ${f.sessionId}`);
+
+    expect(await runDelete(f)).toMatchObject({ ok: true });
+
+    const [row] = rows(
+      await db.execute(sql`
+        select to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') as updated_at, metadata
+          from kortix.project_sessions where session_id = ${f.sessionId}`),
+    );
+    expect(row!.updated_at).toBe('2026-09-01T12:00:00.123456');
+    expect(typeof (row!.metadata as Row).deletedAt).toBe('string');
+    await waitForRemovalOutcome(f);
+  });
+
   test('keeps the session row restorable for 30 days: it answers restore_until', async () => {
     const f = await deleteFixture();
     const before = Date.now();
