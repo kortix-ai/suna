@@ -123,7 +123,8 @@ import {
 } from '@/services/sandbox-env/secret-capabilities'
 import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
-import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
+import { bootLinkPath, isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
+import { removeWithheldManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
@@ -2151,6 +2152,11 @@ export function createOpencodeLifecycle(
     const served = await readBootLinkTarget()
     const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
     const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
+    // The `genui` flag is boot-only, but a config release is staged once and reused: a kortix-genui
+    // copy an older daemon injected there would survive. A skill deny cannot hide it (the project's
+    // `"*": "allow"` outranks it), so the copy goes before OpenCode reads the dir.
+    const servedSkills = await realpath(join(bootLinkPath(), 'skills')).catch(() => null)
+    if (servedSkills) await removeWithheldManagedSkills(servedSkills, { env: baseEnv, unseal: isInReleaseStore(servedSkills) })
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
