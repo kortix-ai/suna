@@ -50,6 +50,17 @@ test('a success response passes the action result through', async () => {
   if (outcome.ok) expect(outcome.result.success).toBe(true);
 });
 
+test('a server failure keeps the message, so the page can show it and re-enable the form', async () => {
+  globalThis.fetch = (async () =>
+    Response.json({ message: 'Reset mail is unavailable' }, { status: 500 })) as unknown as typeof fetch;
+  const outcome = await submitAuthForm('/api/auth/forgot-password', formData());
+  expect(outcome.ok).toBe(false);
+  if (!outcome.ok) {
+    expect(outcome.reason).toBe('server');
+    expect(outcome.message).toBe('Reset mail is unavailable');
+  }
+});
+
 test('a network failure maps to the network reason, not a thrown error', async () => {
   globalThis.fetch = (async () => {
     throw new TypeError('fetch failed');
