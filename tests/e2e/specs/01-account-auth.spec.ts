@@ -48,8 +48,11 @@ async function requestEmailAuthentication(page: Page, email: string) {
   for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
     const formRequest = page
       .waitForRequest(
+        // The email-link default posts to the send-code route (#9773); the
+        // password-only path posts the auth server action.
         (request) =>
-          request.method() === "POST" && new URL(request.url()).pathname === "/auth",
+          request.method() === "POST" &&
+          ["/auth", "/api/auth/send-code"].includes(new URL(request.url()).pathname),
         { timeout: 2_000 },
       )
       .then(() => true)
@@ -60,7 +63,7 @@ async function requestEmailAuthentication(page: Page, email: string) {
       await expect(continueButton).toBeEnabled();
     }
   }
-  expect(submitted, "the hydrated auth form sends POST /auth").toBe(true);
+  expect(submitted, "the hydrated auth form submits the email").toBe(true);
   await expect(
     page.getByRole("heading", { name: "Check your email" }),
   ).toBeVisible();
