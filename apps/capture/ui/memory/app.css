@@ -205,6 +205,9 @@ mark { background: color-mix(in oklab, var(--foreground) 22%, transparent); colo
 .btn.danger:hover { background: color-mix(in oklab, var(--destructive) 10%, transparent); }
 .note { padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); margin: calc(var(--spacing) * 2) 0; border-radius: var(--radius-md); background: var(--muted); color: var(--muted-foreground); font-size: var(--text-xs); line-height: var(--text-xs-line-height); text-wrap: pretty; }
 .note.ok { color: var(--foreground); }
+.note.warn { color: var(--foreground); border: 1px solid color-mix(in oklab, var(--destructive) 35%, transparent); }
+.note.warn strong { display: block; margin-bottom: calc(var(--spacing) * 1); }
+.note .actions .btn:first-child { margin-left: 0; }
 .note .btn { margin-left: calc(var(--spacing) * 2); }
 .key-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: calc(var(--spacing) * 2); }
 .key-box .mono { color: var(--foreground); overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }

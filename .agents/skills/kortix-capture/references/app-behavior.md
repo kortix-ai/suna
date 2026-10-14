@@ -566,18 +566,21 @@ one installer per OS:
 
 ### A person installs it for themselves
 
-Kortix Capture is local-first. It records on this computer, and the window is a timeline
-and search over those recordings. No account is needed.
+Kortix Capture records on this computer from the moment it is installed, and the window is a
+timeline and search over those recordings. Sync to Kortix is the default.
 
-- **First launch.** The welcome screen says what the app does and has one button, "Start
-  recording". It installs the 24/7 service, asks macOS for Screen Recording, and closes when
-  recording starts. "Connect to Kortix" is an optional second choice.
-- **Sync** has three settings, under Settings, Sync: **Off** (the default; nothing leaves
-  the computer), **Kortix** ("Sign in with Kortix", the device-code login), or **Your S3
-  bucket** (endpoint, bucket, region, folder, access key; the secret is write-only).
-  Changing the destination never needs the recording stopped. Only recordings made after the
-  change go to the new destination; earlier ones stay on this computer (`local_only` in the
-  database). Signing out of Kortix turns sync off, keeps the recordings, and keeps recording.
+- **First launch.** Recording starts at install, in the background. The first window asks the
+  person to sign in with Kortix; signing in turns sync on. Two quiet exits: "Use your own S3
+  bucket" and "Skip. Keep recordings on this computer".
+- **Sync**, under Settings, shows where recordings go now: the Kortix account and the person
+  signed in, the S3 bucket, or, when sync is off, one sentence and "Sign in with Kortix".
+  Changing it is under Advanced, Sync destination: **Kortix**, **Your S3 bucket** (endpoint,
+  bucket, region, folder, access key; the secret is write-only) or **Off**. Choosing Off, or
+  "Sign out", asks first ("Stop syncing?": new recordings stay only on this computer, with no
+  backup); nothing changes until the person confirms. Changing the destination never needs
+  the recording stopped. Only recordings made after the change go to the new destination;
+  earlier ones stay on this computer (`local_only` in the database). Signing out of Kortix
+  turns sync off, keeps the recordings, and keeps recording.
 - **Menu bar / tray.** Status line, sync line, "Open Kortix Capture", "Settings…", the
   pauses (1 hour, until tomorrow, until resumed) or "Resume". There is no Quit. A managed
   computer shows the organization and has no pauses.

@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,neverRows,privacyControls,keepHint,lastHour,DESTINATIONS,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,neverRows,privacyControls,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, neverRows, privacyControls, keepHint, lastHour, DESTINATIONS, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, neverRows, privacyControls, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -25,8 +25,17 @@ assert.equal(forgetRange('', '2026-10-01T09:00'), null);
 assert.deepEqual(pathPatch('audio.enabled', true), { audio: { enabled: true } });
 assert.deepEqual(deepMerge({ a: { b: 1, c: 2 }, l: [1] }, { a: { b: 3 }, l: [2] }), { a: { b: 3, c: 2 }, l: [2] });
 
-// Sync: three destinations, Off first.
-assert.deepEqual(DESTINATIONS.map(([k]) => k), ['off', 'kortix', 's3']);
+// Sync: three destinations, Kortix first (the default), Off last.
+assert.deepEqual(DESTINATIONS.map(([k]) => k), ['kortix', 's3', 'off']);
+// The Sync section shows the destination that is on; Off offers the Kortix sign-in.
+assert.equal(syncShown({ destination: 'off' }), 'kortix');
+assert.equal(syncShown(undefined), 'kortix');
+assert.equal(syncShown({ destination: 's3' }), 's3');
+assert.equal(syncPanel({}, { destination: 'off' }, syncShown({ destination: 'off' }), {}, null).kind, 'kortix-out');
+// Turning sync off or signing out asks first: no one-click path to Off.
+assert.ok(!/act\('\/api\/sync\/off'\)[^;]*\n?[^;]*dataset\.dest/.test(src));
+assert.match(src, /to === 'off' && syncData\?\.view\?\.destination !== 'off'\) draft\.confirmOff = 'off'/);
+assert.match(src, /case 'kortix-signout': draft\.confirmOff = 'signout'/);
 const offView = { destination: 'off' }, kortixView = { destination: 'kortix' }, s3View = { destination: 's3' };
 // A managed computer shows the organization and no controls.
 assert.deepEqual(syncPanel({ managed: true }, kortixView, 'off', { account_name: 'Example Org' }, null),

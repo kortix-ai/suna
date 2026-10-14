@@ -620,9 +620,13 @@ function deepMerge(dst, src) {
   return dst;
 }
 /* ---- sync: pure ----
-   Sync has three settings: Off (the default), Kortix, or your own S3 bucket. The server owns the
-   words of the status line (`view` in /api/sync); these helpers decide which controls show. */
-const DESTINATIONS = [['off', 'Off'], ['kortix', 'Kortix'], ['s3', 'Your S3 bucket']];
+   Sync has three settings: Kortix (the default), your own S3 bucket, or Off. The server owns the
+   words of the status line (`view` in /api/sync); these helpers decide which controls show.
+   The Sync section shows where recordings go; changing it is under Advanced, and turning
+   sync off or signing out asks first. */
+const DESTINATIONS = [['kortix', 'Kortix'], ['s3', 'Your S3 bucket'], ['off', 'Off']];
+/* What the Sync section shows: the destination that is on now. Off offers the Kortix sign-in. */
+const syncShown = (view) => (!view || view.destination === 'off' ? 'kortix' : view.destination);
 /* What the Sync section shows for the destination the person picked.
    `app` is /api/app, `view` is /api/sync `view`, `kortix` is /api/sync status.kortix, `job` the sign-in job.
    kind: managed | off | kortix-wait | kortix-in | kortix-out | s3 */
@@ -1695,11 +1699,14 @@ chipEl.onclick = async () => {
    sees is one short sentence; the detail is in the log. */
 const settingsEl = $('#settings');
 let settingsData = null, syncData = null, saveTimer = 0, pending = {}, livePoll = 0;
-const draft = { forget: null, audioDevices: null, dest: null, s3: null, issuer: '', syncError: '', busy: '' };
+const draft = { forget: null, audioDevices: null, dest: null, s3: null, issuer: '', syncError: '', syncErrorAdv: false, confirmOff: null, busy: '' };
 
 async function openSettings(dest, section) {
   draft.dest = dest || null;
   draft.syncError = '';
+  draft.confirmOff = null;
+  // A destination to set up (onboarding's "your own S3 bucket") lives under Advanced.
+  if (dest) { draft.adv = true; section = 'sync-dest'; }
   closePop();
   searchEl.hidden = true;
   settingsEl.hidden = false;
@@ -1738,7 +1745,7 @@ async function refreshLive() {
     const j = sync.jobs?.connect;
     if (was?.running && j && !j.running) {
       if (j.ok) { draft.syncError = ''; toast('Signed in. Sync is on.'); await loadSettings(); }
-      else if (j.error) { draft.syncError = j.error; paintSync(); }
+      else if (j.error) { draft.syncError = j.error; draft.syncErrorAdv = false; paintSync(); }
     }
   } catch (e) { console.error(e); }
 }
@@ -1795,49 +1802,65 @@ const s3Draft = () => {
     access_key_id: syncData?.credentials?.access_key_id || '', secret_access_key: '' };
   return draft.s3;
 };
-/* The Sync section: pick where recordings go, then only the fields for that choice. */
+/* The Sync section says where recordings go, and offers the Kortix sign-in while sync is off.
+   Advanced holds the destination picker, the S3 form and Sign out. */
 function paintSync() {
   const box = $('#sync-box');
   if (!box || !syncData || !appData) return;
   const view = syncData.view || { destination: 'off', line: 'Off', tone: 'off' };
-  if (!draft.dest) draft.dest = view.destination;
+  if (!draft.dest) draft.dest = syncShown(view);
   const kortix = syncData.status?.kortix || {};
   const job = syncData.jobs?.connect;
-  const panel = syncPanel(appData, view, draft.dest, kortix, job);
-  const chosen = appData.managed ? view.destination : draft.dest;
-  const seg = appData.managed ? '' : `<div class="seg" role="radiogroup" aria-label="Where recordings go">${DESTINATIONS.map(([k, n]) =>
-    `<button type="button" role="radio" aria-checked="${chosen === k}" data-dest="${k}" class="${chosen === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  const errHtml = (adv) => (draft.syncError && draft.syncErrorAdv === adv ? `<div class="note err">${esc(draft.syncError)}</div>` : '');
+  const main = syncPanel(appData, view, syncShown(view), kortix, job);
   let inner = '';
-  switch (panel.kind) {
-    case 'managed': inner = `<div class="row"><div class="lab">${esc(panel.title)}<small>${esc(panel.sub)}</small></div></div>`; break;
-    case 'off': inner = `<p class="hint">${esc(panel.sub)}</p>`; break;
-    case 'kortix-wait': inner = `<div class="row"><div class="lab">Waiting for approval in your browser<small>${panel.code ? `Code <span class="mono">${esc(panel.code)}</span>. Check it matches, then approve.` : 'Starting sign-in...'}</small></div>${panel.code ? '<button class="btn" id="kortix-approve">Open approval page</button>' : ''}</div>`; break;
-    case 'kortix-in': inner = `<div class="row"><div class="lab">${esc(panel.title)}${panel.sub ? `<small>${esc(panel.sub)}</small>` : ''}</div><button class="btn" id="kortix-signout" data-confirm="Sign out">Sign out</button></div>`; break;
-    case 'kortix-out': inner = `${panel.sub ? `<p class="hint">${esc(panel.sub)}</p>` : ''}
+  switch (main.kind) {
+    case 'managed': inner = `<div class="row"><div class="lab">${esc(main.title)}<small>${esc(main.sub)}</small></div></div>`; break;
+    case 'kortix-wait': inner = `<div class="row"><div class="lab">Waiting for approval in your browser<small>${main.code ? `Code <span class="mono">${esc(main.code)}</span>. Check it matches, then approve.` : 'Starting sign-in...'}</small></div>${main.code ? '<button class="btn" id="kortix-approve">Open approval page</button>' : ''}</div>`; break;
+    case 'kortix-in': inner = `<div class="row"><div class="lab">${esc(main.title)}${main.sub ? `<small>${esc(main.sub)}</small>` : ''}</div></div>`; break;
+    case 'kortix-out': inner = `${view.destination === 'off' ? `<p class="hint">Sync is off. Recordings are only on this ${PC}, with no copy anywhere else.</p>` : main.sub ? `<p class="hint">${esc(main.sub)}</p>` : ''}
       ${appData.default_issuer_missing ? field('kortix-issuer', 'Kortix address', draft.issuer, { ph: 'https://kortix.example.com' }) : ''}
       <div class="actions"><button class="btn primary" id="kortix-connect">Sign in with Kortix</button></div>`; break;
-    case 's3': {
-      const f = s3Draft();
-      inner = `<div class="form">
-          ${field('s3-endpoint', 'Endpoint', f.endpoint, { ph: 'https://s3.us-east-1.amazonaws.com' })}
-          ${field('s3-bucket', 'Bucket', f.bucket)}
-          ${field('s3-region', 'Region', f.region)}
-          ${field('s3-prefix', 'Folder', f.prefix)}
-          ${field('s3-key', 'Access key ID', f.access_key_id)}
-          ${field('s3-secret', 'Secret access key', f.secret_access_key, { type: 'password', ph: syncData.credentials?.saved ? 'Saved. Leave blank to keep it.' : '' })}
-        </div>
-        <div class="actions"><button class="btn primary" id="s3-save"${draft.busy === 's3' ? ' disabled' : ''}>${draft.busy === 's3' ? 'Testing...' : 'Save and test'}</button></div>`;
-      break;
-    }
+    case 's3': inner = `<div class="row"><div class="lab">${esc(view.line || 'Your S3 bucket')}</div></div>`; break;
   }
-  const showSwitch = !appData.managed && chosen !== 'off';
-  const key = [panel.kind, chosen, panel.title || '', panel.sub || '', panel.code || '', draft.busy, !!syncData.credentials?.saved, appData.default_issuer_missing].join('|');
-  setKeyed(box, key, seg + inner + (showSwitch ? `<p class="hint small">${esc(syncData.switch_rule || '')}</p>` : '') + '<div id="sync-err"></div>');
-  const err = $('#sync-err', box);
-  if (err) setHtml(err, draft.syncError ? `<div class="note err">${esc(draft.syncError)}</div>` : '');
+  const mainKey = [main.kind, main.title || '', main.sub || '', main.code || '', view.destination, view.line || '', appData.default_issuer_missing, draft.syncErrorAdv ? '' : draft.syncError].join('|');
+  setKeyed(box, mainKey, inner + errHtml(false));
   // The status line follows the destination that is on now.
   const on = view.destination !== 'off';
   setHtml($('#sync-status'), on ? `<span class="status-dot ${view.tone === 'ok' ? 'live' : view.tone === 'error' ? 'err' : ''}"></span>${esc(view.line)}` : '');
+
+  const adv = $('#sync-adv');
+  if (!adv) return;
+  if (appData.managed) { setKeyed(adv, 'managed', ''); return; }
+  const chosen = draft.dest;
+  const seg = `<div class="seg" role="radiogroup" aria-label="Where recordings go">${DESTINATIONS.map(([k, n]) =>
+    `<button type="button" role="radio" aria-checked="${chosen === k}" data-dest="${k}" class="${chosen === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  let body = '';
+  if (draft.confirmOff) {
+    body = `<div class="note warn"><strong>${draft.confirmOff === 'signout' ? 'Sign out and stop syncing?' : 'Stop syncing?'}</strong>
+      New recordings stay only on this ${PC}. Nothing is backed up, and they are gone when this ${PC} is lost or reset.
+      <div class="actions"><button class="btn" id="sync-keep">Keep syncing</button><button class="btn danger" id="sync-stop">${draft.confirmOff === 'signout' ? 'Sign out' : 'Stop syncing'}</button></div></div>`;
+  } else if (chosen === 's3') {
+    const f = s3Draft();
+    body = `<div class="form">
+        ${field('s3-endpoint', 'Endpoint', f.endpoint, { ph: 'https://s3.us-east-1.amazonaws.com' })}
+        ${field('s3-bucket', 'Bucket', f.bucket)}
+        ${field('s3-region', 'Region', f.region)}
+        ${field('s3-prefix', 'Folder', f.prefix)}
+        ${field('s3-key', 'Access key ID', f.access_key_id)}
+        ${field('s3-secret', 'Secret access key', f.secret_access_key, { type: 'password', ph: syncData.credentials?.saved ? 'Saved. Leave blank to keep it.' : '' })}
+      </div>
+      <div class="actions"><button class="btn primary" id="s3-save"${draft.busy === 's3' ? ' disabled' : ''}>${draft.busy === 's3' ? 'Testing...' : 'Save and test'}</button></div>`;
+  } else if (chosen === 'kortix') {
+    body = appData.signed_in
+      ? row('Sign out of Kortix', 'Stops sync. Recording continues.', '<button class="btn" id="kortix-signout">Sign out</button>')
+      : '<p class="hint">Sign in under Sync, above.</p>';
+  } else {
+    body = `<p class="hint">Recordings stay on this ${PC}.</p>`;
+  }
+  const rule = chosen !== 'off' && !draft.confirmOff ? `<p class="hint small">${esc(syncData.switch_rule || '')}</p>` : '';
+  const advKey = [chosen, draft.confirmOff || '', !!appData.signed_in, draft.busy, !!syncData.credentials?.saved, draft.syncErrorAdv ? draft.syncError : ''].join('|');
+  setKeyed(adv, advKey, `<div class="row stack"><div class="lab">Sync destination<small>Where recordings go.</small></div></div>${seg}${body}${rule}${errHtml(true)}`);
 }
 /* The status line and the pause control: repainted by the poll. */
 function paintRecording() {
@@ -1914,6 +1937,7 @@ function renderSettings() {
       ${row('Logs', '', '<button class="btn" id="open-logs">Open logs</button>')}
 
       <details class="adv"${draft.adv ? ' open' : ''}><summary>Advanced</summary>
+        <div id="sec-sync-dest"><div id="sync-adv"></div></div>
         ${pc.local ? row('Privacy controls<small>Off hides these controls. What is set keeps applying.</small>', '', sw('experimental.privacy_controls', !!s.experimental?.privacy_controls, ' aria-label="Privacy controls"')) : ''}
         ${row('Capture interval', '', `<span>${num('interval_ms', s.interval_ms, { min: 0.5, step: 0.5, type: 'float', scale: 1000 })} s</span>`)}
         ${row('Screenshot size', 'Screenshots are scaled down to fit, never up.',
@@ -2020,9 +2044,10 @@ settingsEl.addEventListener('click', async (e) => {
   if (b.dataset.dest) {
     const to = b.dataset.dest;
     draft.syncError = '';
-    if (to === 'off' && syncData?.view?.destination !== 'off') {
-      if (await act('/api/sync/off')) { toast('Sync is off. Recordings stay on this ' + PC + '.'); draft.dest = null; await loadSettings(); }
-    } else { draft.dest = to; paintSync(); }
+    // Turning sync off asks first; nothing changes until "Stop syncing".
+    if (to === 'off' && syncData?.view?.destination !== 'off') draft.confirmOff = 'off';
+    else { draft.confirmOff = null; draft.dest = to; }
+    paintSync();
     return;
   }
   if (b.dataset.confirm && !armed(b)) return;
@@ -2044,17 +2069,27 @@ settingsEl.addEventListener('click', async (e) => {
       break;
     }
     case 'kortix-connect':
-      draft.syncError = '';
+      draft.syncError = ''; draft.syncErrorAdv = false;
       if (await act('/api/kortix/connect', { issuer: draft.issuer.trim() }, true)) refreshLive();
       else { draft.syncError = actError; paintSync(); }
       break;
     case 'kortix-approve': post({ cmd: 'open_url', url: syncData.jobs.connect?.progress?.approve_url }); break;
-    case 'kortix-signout':
-      if (await act('/api/app/signout')) { toast('Signed out. Sync is off and recording continues.'); draft.dest = null; draft.syncError = ''; await loadSettings(); }
+    case 'kortix-signout': draft.confirmOff = 'signout'; paintSync(); break;
+    case 'sync-keep': draft.confirmOff = null; paintSync(); break;
+    case 'sync-stop': {
+      const signout = draft.confirmOff === 'signout';
+      draft.confirmOff = null;
+      if (await act(signout ? '/api/app/signout' : '/api/sync/off')) {
+        toast(signout ? 'Signed out. Sync is off and recording continues.' : 'Sync is off. Recordings stay on this ' + PC + '.');
+        draft.dest = null; draft.syncError = '';
+        await loadSettings();
+      } else paintSync();
       break;
+    }
     case 's3-save': {
       const f = s3Draft();
       const bad = s3Check(f, !!syncData.credentials?.saved);
+      draft.syncErrorAdv = true;
       if (bad) { draft.syncError = bad; paintSync(); break; }
       draft.syncError = ''; draft.busy = 's3'; paintSync();
       const sameEndpoint = (settingsData.settings.sync?.s3?.endpoint || '') === f.endpoint.trim();
