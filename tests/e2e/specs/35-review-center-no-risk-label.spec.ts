@@ -68,6 +68,29 @@ test.describe('35 — Review Center shows no risk label', () => {
 
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, account.account_id);
+
+      // KRTX-2316: the always-mounted sidebar polls the needs-you counts, never
+      // the inbox list or the whole change-request history. The one list read
+      // allowed is the shell's idle prefetch of the Review tab's first page.
+      const reads: string[] = [];
+      page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname.includes(`/projects/${project.id}/`)) reads.push(url.pathname + url.search);
+      });
+      const summaryRead = page.waitForResponse(
+        (response) => response.url().includes(`/projects/${project.id}/review/summary`),
+        { timeout: 60_000 },
+      );
+      await page.goto(`/projects/${project.id}`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+      const summary = await (await summaryRead).json();
+      expect(summary).toEqual({ needs_you_total: 1, needs_you_by_session: {} });
+      await expect(page.getByRole('link', { name: /Review\s*1/ })).toBeVisible({ timeout: 60_000 });
+      const listReads = reads.filter((read) => read.includes('/review/items'));
+      expect(listReads.length).toBeLessThanOrEqual(1);
+      for (const read of listReads) expect(read).toContain('segment=needs_you');
+      expect(reads.filter((read) => read.includes('/change-requests') && read.includes('status=all'))).toEqual([]);
+
       await page.goto(`/projects/${project.id}/review`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
