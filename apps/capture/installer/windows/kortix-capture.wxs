@@ -57,7 +57,11 @@
     <CustomAction Id="WriteEnrollmentToken" FileRef="KortixCaptureExe"
                   ExeCommand="machine configure --token &quot;[ENROLLMENT_TOKEN]&quot;"
                   Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
+    <!-- A personal install, interactive: open the window once, on onboarding. A silent install
+         and an install with IT's URL and token are preconfigured and open nothing. -->
+    <CustomAction Id="LaunchApp" FileRef="KortixCaptureExe" ExeCommand="app" Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
     <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND UILevel &gt;= 4 AND NOT KORTIX_URL AND NOT ENROLLMENT_TOKEN" />
       <Custom Action="WriteEnrollmentToken" After="WriteRegistryValues"
               Condition="KORTIX_URL AND ENROLLMENT_TOKEN AND NOT (REMOVE~=&quot;ALL&quot;)" />
     </InstallExecuteSequence>

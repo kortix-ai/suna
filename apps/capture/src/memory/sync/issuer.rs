@@ -128,17 +128,31 @@ pub fn issuer_allowed(url: &str) -> bool {
     }
 }
 
-/// A page the browser may open for the sign-in: https on the issuer's own host, or the
-/// loopback issuer's own address in development.
+/// A page the browser may open for the sign-in. With a loopback issuer (development): a
+/// loopback page on any port. Otherwise https on the issuer's host or on its parent domain,
+/// where the web app usually sits (`api.kortix.com` -> `kortix.com`, `app.kortix.com`).
 pub fn approval_url_ok(url: &str, issuer: &str) -> bool {
     let (Ok(u), Ok(i)) = (url::Url::parse(url.trim()), url::Url::parse(issuer.trim())) else {
         return false;
     };
-    issuer_allowed(issuer)
-        && u.scheme() == i.scheme()
-        && u.host_str().is_some()
-        && u.host_str() == i.host_str()
-        && u.port_or_known_default() == i.port_or_known_default()
+    let (Some(page), Some(api)) = (u.host_str(), i.host_str()) else {
+        return false;
+    };
+    if !issuer_allowed(issuer) {
+        return false;
+    }
+    if is_loopback(api) {
+        return is_loopback(page) && matches!(u.scheme(), "http" | "https");
+    }
+    if u.scheme() != "https" {
+        return false;
+    }
+    // The parent domain only when it still has two labels: never widen to a TLD.
+    let site = match api.split_once('.') {
+        Some((_, parent)) if parent.contains('.') => parent,
+        _ => api,
+    };
+    page == api || page == site || page.ends_with(&format!(".{site}"))
 }
 
 /// Forget the registration and the token; drop cached credentials.
@@ -600,6 +614,7 @@ pub fn adopt(paths: &MemoryPaths, a: &Adoption) -> Result<Registration> {
     s.sync.kortix.url = issuer.to_string();
     s.sync.encrypt = false;
     s.sync.enabled = true;
+    s.follow_sync_default(true);
     s.airgap = false;
     s.validate()?;
     s.save(paths)?;
@@ -750,17 +765,29 @@ mod tests {
     }
 
     #[test]
-    fn the_approval_page_is_on_the_issuers_own_host() {
+    fn the_approval_page_is_on_the_issuers_site() {
         let i = "https://api.kortix.example";
         assert!(approval_url_ok("https://api.kortix.example/device?code=A", i));
         assert!(!approval_url_ok("https://evil.example/device", i));
         assert!(!approval_url_ok("https://api.kortix.example.evil.example/", i));
         assert!(!approval_url_ok("http://api.kortix.example/device", i), "scheme must match");
-        assert!(!approval_url_ok("https://api.kortix.example:8443/", i), "port must match");
+        assert!(approval_url_ok("https://api.kortix.example:8443/", i), "same host, another port");
         assert!(!approval_url_ok("javascript:alert(1)", i));
         assert!(!approval_url_ok("file:///etc/passwd", i));
         assert!(approval_url_ok("http://127.0.0.1:8787/approve", "http://127.0.0.1:8787"));
         assert!(!approval_url_ok("http://127.0.0.1:8787/approve", "http://example.com"));
+        // The web app may sit on the API's parent domain (api.kortix.com -> kortix.com), always https.
+        assert!(approval_url_ok("https://kortix.example/capture/authorize?user_code=A", i));
+        assert!(approval_url_ok("https://app.kortix.example/capture/authorize", i));
+        assert!(!approval_url_ok("http://kortix.example/capture/authorize", i), "https only");
+        assert!(!approval_url_ok("https://notkortix.example/", i));
+        assert!(!approval_url_ok("https://example/", "https://kortix.example"), "never widen to a TLD");
+        // Local development: the API and the web app on this computer, on different ports.
+        assert!(approval_url_ok(
+            "http://localhost:37200/capture/authorize?user_code=A",
+            "http://localhost:37208"
+        ));
+        assert!(!approval_url_ok("http://evil.example/approve", "http://localhost:37208"));
         assert!(open_browser("file:///etc/passwd").is_err());
         assert!(open_browser("http://evil.example/").is_err());
     }

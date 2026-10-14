@@ -7,7 +7,7 @@ credentials of a local S3 server (MinIO in CI). The first enrollment answers
 paths. Every request goes to <log> as one JSON line, the enrollment token
 replaced by "<redacted>".
 
-Usage: python ci_fake_issuer.py --port 8787 --token <enrollment token> --log <file>
+Usage: python ci_fake_issuer.py --port 8787 --token <enrollment token> --log <file> [--approve-after <s>]
        --s3-endpoint http://127.0.0.1:9000 --bucket capture --access-key K --secret-key S
 It creates the bucket first. With `--list <prefix>` it prints the bucket's keys
 under the prefix (SigV4 ListObjectsV2) and exits instead of serving.
@@ -33,7 +33,7 @@ DEVICE = str(uuid.UUID("0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"))
 p = argparse.ArgumentParser()
 for a in ("--s3-endpoint", "--bucket", "--access-key", "--secret-key"):
     p.add_argument(a, required=True)
-for a in ("--port", "--token", "--log", "--list"):
+for a in ("--port", "--token", "--log", "--list", "--approve-after"):
     p.add_argument(a)
 args = p.parse_args()
 
@@ -137,6 +137,7 @@ class Handler(BaseHTTPRequestHandler):
             log({"path": self.path, "status": 200})
             with lock:
                 state["polls"] = 0
+                state["authorized_at"] = time.time()
             return self.reply(200, {
                 "device_code": "ci-device-code", "user_code": "CI12-3456", "expires_in": 600, "interval": 1,
                 "verification_uri": f"http://{self.headers.get('host')}/device",
@@ -146,7 +147,9 @@ class Handler(BaseHTTPRequestHandler):
             # RFC 8628: pending on the first poll, approved on the next (a person approving in the browser).
             with lock:
                 state["polls"] = state.get("polls", 0) + 1
-                first = state["polls"] == 1
+                waited = time.time() - state.get("authorized_at", 0)
+                # A person approving in the browser takes a while: --approve-after seconds.
+                first = state["polls"] == 1 or waited < float(args.approve_after or 0)
                 if not first:
                     state["token"] = "kortix_cap_ci" + uuid.uuid4().hex
                 token = state["token"]

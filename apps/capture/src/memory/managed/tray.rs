@@ -4,9 +4,9 @@
 //! brings the gtk and appindicator system libraries).
 //!
 //! The menu: the recording status, the sync status, "Open Kortix Capture", and on a
-//! computer the person set up, "Pause for 1 hour" / "Resume" and "Quit". Signing in
+//! computer the person set up, the pauses and "Resume". There is no Quit. Signing in
 //! to Kortix lives in the window, under Sync. On a managed computer the menu names
-//! the organization and has no Quit and no Pause: the person cannot end a recording
+//! the organization and has no Pause: the person cannot end a recording
 //! the organization runs; the machine service's `service run --managed` owns it and
 //! stops it.
 //!
@@ -19,8 +19,7 @@
 //!
 //! One tray runs per library (`tray.lock`); a second one exits at once. At the
 //! start of each session the tray shows the organization's notice, only if its policy
-//! set one, once per notice text ([`super::notify`]). "Quit" exits with code 0,
-//! and the service does not start a tray that exited that way again.
+//! set one, once per notice text ([`super::notify`]). The tray never ends the recorder.
 
 use super::{mark_notice_shown, notify, pending_notice, tray_text, TrayAction};
 use crate::memory::paths::MemoryPaths;
@@ -47,7 +46,8 @@ const SETTINGS: &str = "kortix.settings";
 const STATUS: &str = "kortix.status";
 const PAUSE: &str = "kortix.pause";
 const RESUME: &str = "kortix.resume";
-const QUIT: &str = "kortix.quit";
+const PAUSE_TOMORROW: &str = "kortix.pause.tomorrow";
+const PAUSE_FOREVER: &str = "kortix.pause.forever";
 /// How often the tray looks for a notice it has not shown yet.
 const NOTICE_POLL: Duration = Duration::from_secs(5);
 
@@ -105,7 +105,7 @@ fn view(paths: &MemoryPaths) -> View {
     }
     View {
         recording: state == "recording",
-        paused: paused_until.is_some(),
+        paused: paused_until.is_some() || !Settings::load(paths).recording_enabled,
         sync: crate::memory::cli::sync_view(paths).line,
         tooltip: if managed || signed_in {
             text.tip
@@ -148,12 +148,14 @@ fn menu(v: &View) -> (Menu, MenuItem, MenuItem) {
             TrayAction::Pause => {
                 let _ = menu.append(&MenuItem::with_id(PAUSE, "Pause for 1 hour", true, None));
             }
+            TrayAction::PauseTomorrow => {
+                let _ = menu.append(&MenuItem::with_id(PAUSE_TOMORROW, "Pause until tomorrow", true, None));
+            }
+            TrayAction::PauseForever => {
+                let _ = menu.append(&MenuItem::with_id(PAUSE_FOREVER, "Pause until I resume", true, None));
+            }
             TrayAction::Resume => {
                 let _ = menu.append(&MenuItem::with_id(RESUME, "Resume", true, None));
-            }
-            TrayAction::Quit => {
-                let _ = menu.append(&PredefinedMenuItem::separator());
-                let _ = menu.append(&MenuItem::with_id(QUIT, "Quit", true, None));
             }
         }
     }
@@ -282,17 +284,14 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
                 OPEN => spawn_self(&["ui"]),
                 SETTINGS => spawn_self(&["open", "kortix-capture://settings"]),
                 STATUS => spawn_self(&["permissions", "--request"]),
-                PAUSE | RESUME => {
-                    spawn_self(if menu_event.id.as_ref() == PAUSE {
-                        &["pause", "--for", "1h"]
-                    } else {
-                        &["resume"]
+                PAUSE | PAUSE_TOMORROW | PAUSE_FOREVER | RESUME => {
+                    spawn_self(match menu_event.id.as_ref() {
+                        PAUSE => &["pause", "--for", "1h"],
+                        PAUSE_TOMORROW => &["pause", "--for", "tomorrow"],
+                        PAUSE_FOREVER => &["pause", "--for", "forever"],
+                        _ => &["resume"],
                     });
                     next_refresh = Instant::now() + Duration::from_secs(2);
-                }
-                QUIT => {
-                    tray = None;
-                    *control_flow = ControlFlow::Exit;
                 }
                 _ => {}
             }

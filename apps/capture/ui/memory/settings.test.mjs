@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,neverRows,privacyControls,DESTINATIONS,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,neverRows,privacyControls,keepHint,lastHour,DESTINATIONS,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, neverRows, privacyControls, DESTINATIONS, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, neverRows, privacyControls, keepHint, lastHour, DESTINATIONS, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -35,14 +35,15 @@ assert.deepEqual(syncPanel({ managed: true }, kortixView, 'off', { account_name:
 assert.deepEqual(syncPanel({}, offView, 'off', {}, null), { kind: 'off', sub: 'Recordings stay on this computer.' });
 // Kortix: signed out asks to sign in; an expired sign-in says so; a running job shows its code.
 assert.equal(syncPanel({}, offView, 'kortix', {}, null).kind, 'kortix-out');
-assert.match(syncPanel({}, offView, 'kortix', { sign_in_required: true }, null).sub, /Sign in again/);
+assert.equal(syncPanel({}, offView, 'kortix', { sign_in_required: true }, null).sub, '', 'the status line already says it');
 assert.equal(syncPanel({}, offView, 'kortix', {}, null).sub, 'Not connected.');
 assert.deepEqual(syncPanel({}, offView, 'kortix', {}, { running: true, progress: { user_code: 'ABCD-1234' } }), { kind: 'kortix-wait', code: 'ABCD-1234' });
 assert.deepEqual(syncPanel({}, offView, 'kortix', {}, { running: true }), { kind: 'kortix-wait', code: null });
 // Signed in and syncing: names the account and the person. Signed in but Off: offers to turn sync on.
 const k = { account_name: 'Example Org', member_email: 'person@example.com' };
 assert.deepEqual(syncPanel({ signed_in: true }, kortixView, 'kortix', k, null), { kind: 'kortix-in', title: 'Kortix \u00b7 Example Org', sub: 'Signed in as person@example.com' });
-assert.deepEqual(syncPanel({ signed_in: true }, offView, 'kortix', k, null), { kind: 'kortix-ready', title: 'Kortix \u00b7 Example Org', sub: 'Signed in as person@example.com. Sync is off.' });
+// Signed in means syncing: there is no "turn on" state, whatever the status line says.
+assert.deepEqual(syncPanel({ signed_in: true }, offView, 'kortix', k, null), { kind: 'kortix-in', title: 'Kortix \u00b7 Example Org', sub: 'Signed in as person@example.com' });
 // The S3 form shows for S3 whatever else is on.
 assert.equal(syncPanel({ signed_in: true }, kortixView, 's3', k, null).kind, 's3');
 assert.equal(syncPanel({}, s3View, 's3', {}, null).kind, 's3');
@@ -104,6 +105,25 @@ assert.deepEqual(privacyControls({ destination: 'kortix' }, {}, {}), { on: false
 assert.deepEqual(privacyControls({ destination: 'kortix' }, null, { experimental: { privacy_controls: true } }), { on: true, local: true }, 'no policy cached yet');
 assert.deepEqual(privacyControls({ destination: 's3' }, { experimental: { privacy_controls: true } }, {}), { on: false, local: true }, 'a policy applies only while synced to Kortix');
 
+// The keep row states its rule; the forget range starts as the last hour.
+assert.match(keepHint('7', true, 50), /only once uploaded/);
+assert.match(keepHint('space', true, 50), /50 GB/);
+assert.match(keepHint('space', false, 50), /^Nothing is uploaded/);
+assert.equal(keepHint('custom', true, 50), '');
+const hr = lastHour(new Date(2026, 9, 14, 15, 30).getTime());
+assert.deepEqual(hr, { from: '2026-10-14T14:30', to: '2026-10-14T15:30' });
+assert.notEqual(hr.from, hr.to);
+assert.ok(forgetRange(hr.from, hr.to), 'the default range is a valid range');
+
+// Onboarding: permission (macOS, only when missing) -> connect -> waiting -> done.
+assert.equal(onboardingStep({ state: 'recording' }, null, { destination: 'off' }, { mac: true }), 'connect');
+assert.equal(onboardingStep({ state: 'permission_missing' }, null, { destination: 'off' }, { mac: true }), 'permission');
+assert.equal(onboardingStep({ state: 'permission_missing' }, null, { destination: 'off' }, { mac: false }), 'connect', 'only macOS asks');
+assert.equal(onboardingStep({ state: 'permission_missing' }, null, { destination: 'off' }, { mac: true, permissionSkipped: true }), 'connect');
+assert.equal(onboardingStep({ state: 'permission_missing' }, { running: true, progress: { user_code: 'A' } }, { destination: 'off' }, { mac: true }), 'waiting');
+assert.equal(onboardingStep({ state: 'recording' }, { running: false, ok: true }, { destination: 'kortix' }, { signedIn: true }), 'done');
+assert.equal(onboardingStep({ state: 'recording' }, { running: false, ok: false, error: 'x' }, { destination: 'off' }, {}), 'connect');
+
 // The window never tells a person to stop recording to change the destination.
 assert.ok(!/Stop recording before/i.test(src), 'switching accounts must not require stopping');
 
@@ -164,5 +184,6 @@ for (const gone of ['staging_quality', 'video_quality', 'chunk_max_frames', 'ocr
 // No marketing, no hero: labels and status only.
 for (const phrase of ['know your work', 'Kortix agents', 'so you can search', 'Start recording', 'Connect to Kortix instead']) assert.ok(!src.includes(phrase), phrase);
 assert.ok(!/welcome/i.test(src), 'no welcome screen');
+assert.ok(!src.includes('Turn on sync'), 'signed in means syncing');
 assert.ok(!/control plane|control_plane|dashboard_url|enrolled_url/.test(src), 'no old control plane copy');
 console.log('settings ok');

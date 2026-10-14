@@ -17,6 +17,7 @@ pub mod exclusions;
 pub mod frames;
 pub mod legacy;
 pub mod managed;
+pub mod onboarding;
 pub mod paths;
 pub mod policy;
 pub mod privacy;

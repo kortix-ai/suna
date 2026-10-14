@@ -270,6 +270,16 @@ impl Ctx {
             (_, "/brand/app-icon.png") => Response::new(200, "image/png", APP_ICON_PNG.into()),
             ("GET", "/api/status") => Response::json(cli::status_value(&self.paths)),
             ("GET", "/api/app") => Response::json(self.app_info()),
+            ("POST", "/api/app/onboarding") => {
+                let b = json_body(body)?;
+                match b["state"].as_str().and_then(super::super::onboarding::State::parse) {
+                    Some(st @ (super::super::onboarding::State::Done | super::super::onboarding::State::Skipped)) => {
+                        super::super::onboarding::set(&self.paths, st);
+                        Response::json(json!({"ok": true}))
+                    }
+                    _ => Response::error(400, "State must be done or skipped."),
+                }
+            }
             ("POST", "/api/app/permissions") => {
                 spawn_self(&["permissions", "--request"]);
                 Response::json(json!({"ok": true}))
@@ -938,6 +948,8 @@ impl Ctx {
             "default_issuer_missing": k["issuer_url"].is_null(),
             "state": cli::recording_state(&self.paths),
             "service": cli::service_status_value(&self.paths),
+            // A personal install with nothing connected: the window starts on onboarding.
+            "onboarding": super::super::onboarding::needed_now(&self.paths),
         })
     }
 
@@ -953,7 +965,11 @@ impl Ctx {
         let s = Settings::load(&self.paths);
         let eff = Settings::effective(&self.paths);
         let creds = sync::load_credentials(&self.paths);
-        let jobs = self.jobs.lock().map(|j| json!(*j)).unwrap_or(json!({}));
+        let mut jobs = self.jobs.lock().map(|j| json!(*j)).unwrap_or(json!({}));
+        // The sign-in's own progress file wins: it also covers a sign-in started elsewhere.
+        if let Some(c) = cli::read_connect_state(&self.paths) {
+            jobs["connect"] = c;
+        }
         let now = store::now_ms();
         let layer =
             |on: bool, why: Option<&str>| json!({"on": on && why.is_none(), "blocked_by": why});
@@ -1949,6 +1965,28 @@ mod tests {
     }
 
     #[test]
+    fn onboarding_shows_on_a_fresh_personal_install_until_connected_or_skipped() {
+        let (_d, ctx) = bare();
+        if super::super::super::managed::machine_service_installed() {
+            return; // an IT-configured computer has no onboarding
+        }
+        assert_eq!(get(&ctx, "/api/app")["onboarding"], true);
+        let (status, _) = post(&ctx, "/api/app/onboarding", json!({"state": "fresh"}));
+        assert_eq!(status, 400, "only done or skipped can be set");
+        let (status, _) = post(&ctx, "/api/app/onboarding", json!({"state": "skipped"}));
+        assert_eq!(status, 200);
+        assert_eq!(get(&ctx, "/api/app")["onboarding"], false, "skip is remembered");
+        // Signing out brings it back on the next open.
+        cli::sync_sign_out(&ctx.paths).unwrap();
+        assert_eq!(get(&ctx, "/api/app")["onboarding"], true);
+        // Connected: no onboarding.
+        let mut s = Settings::load(&ctx.paths);
+        s.sync.enabled = true;
+        s.save(&ctx.paths).unwrap();
+        assert_eq!(get(&ctx, "/api/app")["onboarding"], false);
+    }
+
+    #[test]
     fn a_personal_install_is_not_managed_and_needs_no_account() {
         let (_d, ctx) = bare();
         let app = get(&ctx, "/api/app");
@@ -2211,7 +2249,7 @@ mod tests {
             json!({"issuer": "http://127.0.0.1:1"}),
         );
         let j = wait_job(&ctx, "connect");
-        assert_eq!(j["error"], "Could not reach the server.", "{j}");
+        assert_eq!(j["error"], "Could not reach Kortix to start sign-in.", "{j}");
         assert!(!ctx.paths.root.join("sync-issuer.json").exists());
     }
 

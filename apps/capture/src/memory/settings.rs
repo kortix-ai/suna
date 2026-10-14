@@ -333,6 +333,31 @@ impl Default for StorageSettings {
     }
 }
 
+impl StorageSettings {
+    /// "Keep recordings on this computer" while sync copies them elsewhere: 7 days, and
+    /// by-age retention never deletes what is not uploaded yet.
+    pub fn synced_default() -> Self {
+        Self {
+            management_mode: "retention".into(),
+            retention_days: 7,
+            retention_action: "delete".into(),
+            ..Self::default()
+        }
+    }
+}
+
+impl Settings {
+    /// The default for "Keep recordings" follows sync: 7 days once sync is on, "until space
+    /// runs low" while it is off. Only a value the person has not chosen changes.
+    pub fn follow_sync_default(&mut self, sync_on: bool) {
+        if sync_on && self.storage == StorageSettings::default() {
+            self.storage = StorageSettings::synced_default();
+        } else if !sync_on && self.storage == StorageSettings::synced_default() {
+            self.storage = StorageSettings::default();
+        }
+    }
+}
+
 impl Default for ShortcutSettings {
     fn default() -> Self {
         Self {
@@ -737,6 +762,23 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keep_recordings_follows_sync_until_the_person_chooses() {
+        let mut s = Settings::default();
+        assert_eq!(s.storage, StorageSettings::default(), "off: until space runs low");
+        s.follow_sync_default(true);
+        assert_eq!((s.storage.management_mode.as_str(), s.storage.retention_days, s.storage.retention_action.as_str()), ("retention", 7, "delete"));
+        s.follow_sync_default(false);
+        assert_eq!(s.storage, StorageSettings::default(), "back to space-based when sync goes off");
+        // A value the person chose stays, whatever sync does.
+        s.storage.retention_days = 30;
+        s.storage.management_mode = "retention".into();
+        let chosen = s.storage.clone();
+        s.follow_sync_default(true);
+        s.follow_sync_default(false);
+        assert_eq!(s.storage, chosen);
+    }
 
     #[test]
     fn partial_file_fills_defaults_and_keeps_unknown_keys() {

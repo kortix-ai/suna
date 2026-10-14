@@ -18,6 +18,9 @@
   <string>@VERSION@</string>
   <key>CFBundleVersion</key>
   <string>@VERSION@</string>
+  <!-- No Dock icon, no Cmd-Tab entry, ever: the menu-bar icon is the app's presence. -->
+  <key>LSUIElement</key>
+  <true/>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>

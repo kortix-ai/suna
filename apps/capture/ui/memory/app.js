@@ -625,7 +625,7 @@ function deepMerge(dst, src) {
 const DESTINATIONS = [['off', 'Off'], ['kortix', 'Kortix'], ['s3', 'Your S3 bucket']];
 /* What the Sync section shows for the destination the person picked.
    `app` is /api/app, `view` is /api/sync `view`, `kortix` is /api/sync status.kortix, `job` the sign-in job.
-   kind: managed | off | kortix-wait | kortix-in | kortix-ready | kortix-out | s3 */
+   kind: managed | off | kortix-wait | kortix-in | kortix-out | s3 */
 function syncPanel(app, view, chosen, kortix, job) {
   const a = app || {}, v = view || { destination: 'off' }, k = kortix || {};
   const org = k.account_name || '';
@@ -634,9 +634,9 @@ function syncPanel(app, view, chosen, kortix, job) {
   if (chosen === 's3') return { kind: 's3' };
   if (job && job.running) return { kind: 'kortix-wait', code: job.progress ? job.progress.user_code : null };
   const who = k.member_email ? `Signed in as ${k.member_email}` : '';
-  if (a.signed_in && v.destination === 'kortix') return { kind: 'kortix-in', title: `Kortix · ${k.account_name || 'your account'}`, sub: who };
-  if (a.signed_in) return { kind: 'kortix-ready', title: `Kortix · ${k.account_name || 'your account'}`, sub: who ? `${who}. Sync is off.` : 'Sync is off.' };
-  return { kind: 'kortix-out', sub: k.sign_in_required ? 'Sign in again to resume.' : 'Not connected.' };
+  // Signed in means syncing, or paused with a reason in the status line.
+  if (a.signed_in) return { kind: 'kortix-in', title: `Kortix · ${k.account_name || 'your account'}`, sub: who };
+  return { kind: 'kortix-out', sub: k.sign_in_required ? '' : 'Not connected.' };
 }
 /* Path-style URLs (`endpoint/bucket/key`) suit MinIO and most self-hosted S3. Hosted services want the bucket in the host name. */
 function guessPathStyle(endpoint) {
@@ -687,6 +687,27 @@ function neverRows(s, groups, pp, org) {
   if (!pp.exclude_private_browsing) rows.push({ kind: 'private', id: 'private', label: 'Private browsing windows', sub: 'Skip private and incognito windows', locked: false, on: !!s.exclude_private_browsing });
   for (const i of ownItems) rows.push({ kind: i.kind, id: i.v, label: i.v, sub: '', locked: false, key: i.key });
   return rows;
+}
+/* "Keep recordings on this computer" says its rule in one line: with sync on, 7 days and never
+   anything not uploaded yet; with sync off, nothing is uploaded, so only space frees it. */
+function keepHint(keep, syncOn, limitGb) {
+  if (keep === 'custom') return '';
+  if (syncOn) return keep === 'space' ? `The oldest go first when the library reaches ${limitGb} GB or the disk runs low.` : 'Removed here after that time, and only once uploaded.';
+  return keep === 'space' ? `Nothing is uploaded. The oldest go first when the library reaches ${limitGb} GB or the disk runs low.` : 'Nothing is uploaded. These are gone for good.';
+}
+/* The "Forget recent recordings" range starts as the last hour: two datetime-local values. */
+function lastHour(nowMs) {
+  const f = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+  return { from: f(nowMs - 3600000), to: f(nowMs) };
+}
+/* Onboarding: which step shows. `app` is /api/app, `job` the sign-in job (/api/sync jobs.connect),
+   `view` /api/sync view. permission (macOS, Screen Recording missing) -> connect -> waiting -> done. */
+function onboardingStep(app, job, view, o) {
+  o = o || {};
+  if (job && job.running) return 'waiting';
+  if (o.signedIn && view && view.destination === 'kortix') return 'done';
+  if (o.mac && app && app.state === 'permission_missing' && !o.permissionSkipped) return 'permission';
+  return 'connect';
 }
 /* ---- end sync: pure ---- */
 /* The status line from /api/app `state` and the pause end (epoch ms or null). */
@@ -1257,7 +1278,7 @@ $('#btn-settings').onclick = () => openSettings();
 
 /* ---------- search ---------- */
 const searchEl = $('#search');
-const panelOpen = () => !searchEl.hidden || !$('#settings').hidden;
+const panelOpen = () => !searchEl.hidden || !$('#settings').hidden || !$('#onboarding').hidden;
 let searchBuilt = false, results = [], total = 0, offset = 0, loading = false, searchSeq = 0, heat = null;
 
 function buildSearch() {
@@ -1566,6 +1587,78 @@ async function datePop(anchor) {
 let appData = null;
 const MAC = PC === 'Mac';
 
+/* ---------- onboarding: a personal install with nothing connected ---------- */
+const obEl = $('#onboarding');
+const OB = { active: false, signedIn: false, sawJob: false, permissionSkipped: false, requested: false, issuer: '', error: '', poll: 0 };
+function showOnboarding(on) {
+  obEl.hidden = !on;
+  OB.active = on;
+  clearInterval(OB.poll);
+  if (!on) return;
+  obTick();
+  OB.poll = setInterval(obTick, 1500);
+}
+async function obTick() {
+  try {
+    const [app, sync] = await Promise.all([api('/api/app'), api('/api/sync')]);
+    appData = app;
+    const job = sync.jobs?.connect || null;
+    if (job?.running) OB.sawJob = true;
+    // Signed in during this onboarding: the "done" step stays until the person closes it.
+    if (OB.sawJob && job && !job.running && job.ok === true && sync.view?.destination === 'kortix') OB.signedIn = true;
+    if (job && !job.running && job.ok === false) OB.error = job.error || '';
+    // Connected somewhere else (the command line, IT): nothing left to ask.
+    if (!app.onboarding && !OB.signedIn) return showOnboarding(false);
+    const step = onboardingStep(app, job, sync.view, { mac: MAC, signedIn: OB.signedIn, permissionSkipped: OB.permissionSkipped });
+    paintOnboarding(step, job, sync, app);
+  } catch (e) { console.error(e); }
+}
+function paintOnboarding(step, job, sync, app) {
+  const icon = '<img class="ob-icon" src="/brand/app-icon.png" alt="">';
+  const err = OB.error ? `<p class="ob-err">${esc(OB.error)}</p>` : '';
+  let body;
+  if (step === 'permission') {
+    body = `<h1>Allow Screen Recording</h1>
+      <button class="btn primary" id="ob-grant"${OB.requested ? ' disabled' : ''}>${OB.requested ? 'Waiting for permission...' : 'Allow Screen Recording'}</button>
+      <div class="ob-foot"><button class="link-btn" id="ob-perm-skip">Not now</button></div>`;
+  } else if (step === 'waiting') {
+    const p = job?.progress;
+    body = `<h1>Approve in your browser</h1>
+      ${p ? `<div class="ob-code mono" id="ob-code">${esc(p.user_code)}</div><button class="btn" id="ob-approve">Open approval page</button>` : '<p class="ob-sub">Starting...</p>'}`;
+  } else if (step === 'done') {
+    const who = sync.status?.kortix?.account_name;
+    body = `<h1>${esc(who ? `Recording and syncing to ${who}.` : 'Recording and syncing to Kortix.')}</h1>
+      <button class="btn primary" id="ob-close">Close</button>`;
+  } else {
+    const needsUrl = app && app.default_issuer_missing;
+    body = `<h1>Connect to Kortix</h1>
+      ${needsUrl ? `<input type="text" id="ob-issuer" class="mono" placeholder="https://kortix.example.com" value="${esc(OB.issuer)}" aria-label="Kortix address">` : ''}
+      <button class="btn primary" id="ob-signin">Sign in with Kortix</button>${err}
+      <div class="ob-foot"><button class="link-btn" id="ob-s3">Use your own S3 bucket</button><button class="link-btn" id="ob-skip">Skip. Keep recordings on this ${esc(PC)}</button></div>`;
+  }
+  setHtml(obEl, `<div class="ob-card" data-step="${step}">${icon}${body}</div>`);
+}
+obEl.addEventListener('input', (e) => { if (e.target.id === 'ob-issuer') OB.issuer = e.target.value; });
+obEl.addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.id === 'ob-signin') {
+    OB.error = '';
+    if (!(await act('/api/kortix/connect', { issuer: OB.issuer.trim() }, true))) { OB.error = actError; }
+    obTick();
+  } else if (b.id === 'ob-approve') {
+    const j = (await api('/api/sync')).jobs?.connect;
+    if (j?.progress?.approve_url) post({ cmd: 'open_url', url: j.progress.approve_url });
+  } else if (b.id === 'ob-grant') {
+    OB.requested = true;
+    await act('/api/app/permissions');
+    obTick();
+  } else if (b.id === 'ob-perm-skip') { OB.permissionSkipped = true; obTick(); }
+  else if (b.id === 'ob-skip') { await act('/api/app/onboarding', { state: 'skipped' }); showOnboarding(false); refreshBounds(); }
+  else if (b.id === 'ob-close') { await act('/api/app/onboarding', { state: 'done' }); showOnboarding(false); refreshBounds(); paintChip(); }
+  else if (b.id === 'ob-s3') { showOnboarding(false); openSettings('s3'); }
+});
+
 /* ---------- the status chip: recording, paused or needs permission ---------- */
 const chipEl = $('#status-chip');
 function paintChip() {
@@ -1720,8 +1813,7 @@ function paintSync() {
     case 'off': inner = `<p class="hint">${esc(panel.sub)}</p>`; break;
     case 'kortix-wait': inner = `<div class="row"><div class="lab">Waiting for approval in your browser<small>${panel.code ? `Code <span class="mono">${esc(panel.code)}</span>. Check it matches, then approve.` : 'Starting sign-in...'}</small></div>${panel.code ? '<button class="btn" id="kortix-approve">Open approval page</button>' : ''}</div>`; break;
     case 'kortix-in': inner = `<div class="row"><div class="lab">${esc(panel.title)}${panel.sub ? `<small>${esc(panel.sub)}</small>` : ''}</div><button class="btn" id="kortix-signout" data-confirm="Sign out">Sign out</button></div>`; break;
-    case 'kortix-ready': inner = `<div class="row"><div class="lab">${esc(panel.title)}<small>${esc(panel.sub)}</small></div><span><button class="btn primary" id="kortix-on">Turn on sync</button> <button class="btn" id="kortix-signout" data-confirm="Sign out">Sign out</button></span></div>`; break;
-    case 'kortix-out': inner = `<p class="hint">${esc(panel.sub)}</p>
+    case 'kortix-out': inner = `${panel.sub ? `<p class="hint">${esc(panel.sub)}</p>` : ''}
       ${appData.default_issuer_missing ? field('kortix-issuer', 'Kortix address', draft.issuer, { ph: 'https://kortix.example.com' }) : ''}
       <div class="actions"><button class="btn primary" id="kortix-connect">Sign in with Kortix</button></div>`; break;
     case 's3': {
@@ -1812,7 +1904,7 @@ function renderSettings() {
 
       <h3 id="sec-storage">Storage</h3>
       ${row('Library size', esc(st.library), `<span>${gb(st.usage_total_bytes || 0)}</span>`)}
-      ${row('Keep recordings on this computer', keep === 'space' ? `The oldest go first when the library reaches ${s.storage.limit_gb} GB or the disk runs low.` : '',
+      ${row('Keep recordings on this computer', keepHint(keep, syncData?.view?.destination !== 'off', s.storage.limit_gb),
         `<select id="keep-for">${KEEP_CHOICES.map(([k, n]) => `<option value="${k}"${keep === k ? ' selected' : ''}>${n}</option>`).join('')}${keep === 'custom' ? '<option value="custom" selected>Custom (set with the command line)</option>' : ''}</select>`)}
       ${forgetHtml()}
 
@@ -1847,7 +1939,7 @@ function audioHtml(s) {
 
 /* ---- storage: forget a time range ---- */
 function forgetHtml() {
-  const f = draft.forget || {};
+  const f = { ...lastHour(Date.now()), ...(draft.forget || {}) };
   const r = f.report;
   const when = (ms) => (ms == null ? '-' : fmtDate.format(new Date(ms)) + ' ' + fmtHM.format(new Date(ms)));
   return `<div class="row stack"><div class="lab">Forget recent recordings<small>Deletes the frames, text, video, audio and action recordings in the range, here and in the cloud. Whole chunks go, so the range can grow a little.</small></div>
@@ -1957,10 +2049,6 @@ settingsEl.addEventListener('click', async (e) => {
       else { draft.syncError = actError; paintSync(); }
       break;
     case 'kortix-approve': post({ cmd: 'open_url', url: syncData.jobs.connect?.progress?.approve_url }); break;
-    case 'kortix-on':
-      if (await act('/api/sync/on', {}, true)) { toast('Sync is on'); draft.dest = null; await loadSettings(); }
-      else { draft.syncError = actError; paintSync(); }
-      break;
     case 'kortix-signout':
       if (await act('/api/app/signout')) { toast('Signed out. Sync is off and recording continues.'); draft.dest = null; draft.syncError = ''; await loadSettings(); }
       break;
@@ -1997,6 +2085,15 @@ settingsEl.addEventListener('click', async (e) => {
 window.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
   const mod = e.metaKey || e.ctrlKey;
+  // The window is an accessory app with no Edit menu: edit keys work by hand in text fields.
+  if (mod && typing && e.target.select !== undefined) {
+    const el = e.target, k = e.key.toLowerCase();
+    const sel = () => String(el.value || '').slice(el.selectionStart, el.selectionEnd);
+    if (k === 'a') { e.preventDefault(); el.select(); return; }
+    if (k === 'c' && sel()) { e.preventDefault(); post({ cmd: 'copy_text', text: sel() }); return; }
+    if (k === 'x' && sel()) { e.preventDefault(); post({ cmd: 'copy_text', text: sel() }); el.setRangeText('', el.selectionStart, el.selectionEnd, 'end'); el.dispatchEvent(new Event('input', { bubbles: true })); return; }
+    if (k === 'v') { e.preventDefault(); post({ cmd: 'paste' }); return; }
+  }
   if (mod && e.key.toLowerCase() === 'c') {
     const sel = String(window.getSelection() || '');
     if (sel && !typing) { post({ cmd: 'copy_text', text: sel }); toast('Text copied'); e.preventDefault(); }
@@ -2057,6 +2154,13 @@ async function navigate(t) {
   drawTrack();
 }
 window.kmemNavigate = navigate;
+window.kmemPaste = (text) => {
+  const el = document.activeElement;
+  if (el && el.setRangeText && typeof el.selectionStart === 'number') {
+    el.setRangeText(String(text), el.selectionStart, el.selectionEnd, 'end');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+};
 
 /* ---------- boot ---------- */
 new ResizeObserver(() => { fitStage(); resizeTrack(); }).observe(document.body);
@@ -2069,6 +2173,7 @@ window.addEventListener('resize', () => { fitStage(); resizeTrack(); });
   history.replaceState(null, '', location.pathname);
   resizeTrack();
   try { appData = await api('/api/app'); } catch (e) { console.error(e); }
+  if (appData && appData.onboarding) showOnboarding(true);
   paintChip();
   setInterval(refreshApp, 5000);
   await refreshBounds();

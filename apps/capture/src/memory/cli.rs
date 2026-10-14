@@ -72,7 +72,7 @@ pub enum Command {
     /// Audio memory: input devices and the recorded segments.
     #[command(subcommand)]
     Audio(AudioCommand),
-    /// Pause recording (default: 1 hour).
+    /// Pause recording (default: 1 hour; `tomorrow` = 6:00 tomorrow; `forever` = until `resume`).
     Pause(PauseArgs),
     /// Resume recording.
     Resume,
@@ -128,10 +128,24 @@ pub enum Command {
     /// every session. Records for the organization once the machine is configured.
     #[command(hide = true)]
     Agent,
+    /// The installer's or the first login's one-time request: open the window on onboarding,
+    /// only on a personal install with nothing connected, and only once.
+    #[command(hide = true)]
+    Onboard(OnboardArgs),
     /// What the Start menu entry, the desktop entry and Finder open: the Kortix
     /// Capture window, with the tray and (once signed in) the 24/7 service behind it.
     #[command(hide = true)]
     App(AppArgs),
+}
+
+#[derive(Args, Debug, Default)]
+pub struct OnboardArgs {
+    /// Print whether onboarding is needed and in which state; open nothing.
+    #[arg(long)]
+    pub status: bool,
+    /// Skip onboarding: keep recordings on this computer, never ask again.
+    #[arg(long)]
+    pub skip: bool,
 }
 
 #[derive(Args, Debug, Default)]
@@ -752,6 +766,23 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Service(c) => service_cmd(&paths, c, json_out),
         Command::Machine(c) => machine_cmd(c, json_out),
         Command::Tray(a) => super::managed::tray(&paths, a.autostart),
+        Command::Onboard(a) => {
+            if a.skip {
+                super::onboarding::set(&paths, super::onboarding::State::Skipped);
+            }
+            if a.status || a.skip {
+                print(
+                    &json!({"needed": super::onboarding::needed_now(&paths), "state": format!("{:?}", super::onboarding::state(&paths)).to_lowercase()}),
+                    json_out,
+                    |v| format!("onboarding needed: {}", v["needed"]),
+                );
+                return Ok(());
+            }
+            if super::onboarding::force_open_once(&paths) {
+                super::ui::open_url(&paths, "kortix-capture://timeline")?;
+            }
+            Ok(())
+        }
         Command::Agent => super::managed::agent(&paths),
         Command::App(a) => {
             // A shortcut to a console program opens a console: run again without one.
@@ -780,12 +811,19 @@ pub fn app(paths: &MemoryPaths) -> Result<()> {
             .arg("ui")
             .spawn()
     };
+    // Earlier installs left agents and processes that fight this one: remove them first.
+    super::legacy::remove_legacy();
+    super::legacy::migrate_legacy_settings(paths);
     if super::managed::machine_service_installed() || super::managed::tray_running(paths) {
         open_window()?;
         return Ok(());
     }
-    // Earlier installs left agents and processes that fight this one: remove them first.
-    super::legacy::remove_legacy();
+    // The system agent (pkg, deb) records and hosts the tray: make sure it runs, open the
+    // window, and leave. This process never hosts the recording, so closing it changes nothing.
+    if super::legacy::system_agent_installed() && super::legacy::start_system_agent() {
+        open_window()?;
+        return Ok(());
+    }
     // Opened by the person and not recording yet: start recording in the background at once.
     service_start(paths, &ServiceHostArgs::default())?;
     let mut window = open_window()?;
@@ -1670,6 +1708,9 @@ fn pause(paths: &MemoryPaths, a: PauseArgs, json_out: bool) -> Result<()> {
     if a.duration == "forever" {
         s.recording_enabled = false;
         s.paused_until_ms = None;
+    } else if a.duration == "tomorrow" {
+        s.recording_enabled = true;
+        s.paused_until_ms = Some(tomorrow_6am_ms(now_ms()));
     } else {
         let Some(ms) = parse_duration_ms(&a.duration) else {
             bail!("invalid duration {:?} (examples: 15m, 1h, 1d)", a.duration)
@@ -1691,6 +1732,18 @@ fn pause(paths: &MemoryPaths, a: PauseArgs, json_out: bool) -> Result<()> {
         None => "recording disabled".into(),
     });
     Ok(())
+}
+
+/// 6:00 local time tomorrow, in epoch ms: "Pause until tomorrow".
+pub fn tomorrow_6am_ms(now: i64) -> i64 {
+    use chrono::{Duration as D, Local, TimeZone};
+    let local = Local.timestamp_millis_opt(now).single().unwrap_or_else(Local::now);
+    let next = (local.date_naive() + D::days(1)).and_hms_opt(6, 0, 0).unwrap_or_default();
+    Local
+        .from_local_datetime(&next)
+        .earliest()
+        .map(|d| d.timestamp_millis())
+        .unwrap_or(now + 86_400_000)
 }
 
 fn resume(paths: &MemoryPaths, json_out: bool) -> Result<()> {
@@ -1807,6 +1860,8 @@ pub fn sync_setup_s3(paths: &MemoryPaths, a: S3Setup) -> Result<Value> {
     )?;
     sync::save_credentials(paths, &a.creds)?;
     s.sync.enabled = true;
+    s.follow_sync_default(true);
+    super::onboarding::set(paths, super::onboarding::State::Done);
     s.sync.encrypt = s.sync.encrypt || a.encrypt;
     s.save(paths)?;
     let key = sync::ensure_key(paths, &s)?;
@@ -1840,19 +1895,67 @@ pub fn sync_setup_kortix(
     s.sync.provider = "kortix".into();
     s.sync.encrypt = false;
     s.validate()?;
-    let reg = iss::sign_in(paths, &url, show, stop)?;
+    // The sign-in's progress is shared state: the window shows the code whoever started it.
+    let started = now_ms();
+    let progress = |a: &iss::DeviceAuthorization| {
+        write_connect_state(paths, &json!({"running": true, "started_ms": started, "progress": {"user_code": a.user_code, "approve_url": a.verification_uri_complete}}));
+    };
+    let mut show_and_record = |a: &iss::DeviceAuthorization| {
+        progress(a);
+        show(a);
+    };
+    let reg = match iss::sign_in(paths, &url, &mut show_and_record, stop) {
+        Ok(r) => r,
+        Err(e) => {
+            write_connect_state(paths, &json!({"running": false, "ok": false, "started_ms": started, "finished_ms": now_ms(), "error": super::sync::view::humanize(&e)}));
+            return Err(e);
+        }
+    };
     iss::forget_credentials();
-    let elapsed = sync::target(paths, &s)?
-        .probe(&reg.device_id)
-        .context("the issued credentials do not reach the bucket; sync stays off")?;
+    // Signed in means syncing. A server that cannot hand out credentials yet (a 503) does not
+    // undo the sign-in: sync turns on, keeps the recordings, and retries. A refusal does.
+    let probe = sync::target(paths, &s).and_then(|t| t.probe(&reg.device_id));
+    let probe_ms = match probe {
+        Ok(d) => Some(d.as_millis() as u64),
+        Err(e) if sync::classify(&e) == sync::ErrorClass::Transient => {
+            tracing::warn!("sign-in succeeded; credentials are not available yet: {e:#}");
+            None
+        }
+        Err(e) => {
+            write_connect_state(paths, &json!({"running": false, "ok": false, "started_ms": started, "finished_ms": now_ms(), "error": super::sync::view::humanize(&e)}));
+            return Err(e.context("the issued credentials do not reach the bucket; sync stays off"));
+        }
+    };
     sync::view::apply_switch(paths, prev.as_deref(), &sync::view::kortix_key(&reg.issuer, &reg.prefix))?;
     s.sync.enabled = true;
+    s.follow_sync_default(true);
     s.save(paths)?;
+    super::onboarding::set(paths, super::onboarding::State::Done);
+    write_connect_state(paths, &json!({"running": false, "ok": true, "started_ms": started, "finished_ms": now_ms()}));
     Ok(
         json!({"ok": true, "enabled": true, "provider": "kortix", "issuer": url, "device_id": reg.device_id,
-              "prefix": reg.prefix, "member_email": reg.member_email, "probe_ms": elapsed.as_millis() as u64,
+              "prefix": reg.prefix, "member_email": reg.member_email, "probe_ms": probe_ms,
               "keep_local_hours": s.sync.keep_local_hours}),
     )
+}
+
+/// `<library>/connect.json`: the sign-in in progress or just finished (user code, approval
+/// page, result). No secrets. The window reads it, so a sign-in started from the command
+/// line shows up there too.
+pub fn connect_state_path(paths: &MemoryPaths) -> std::path::PathBuf {
+    paths.root.join("connect.json")
+}
+
+fn write_connect_state(paths: &MemoryPaths, v: &Value) {
+    let _ = paths.ensure();
+    let _ = std::fs::write(connect_state_path(paths), v.to_string());
+}
+
+pub fn read_connect_state(paths: &MemoryPaths) -> Option<Value> {
+    let v: Value = serde_json::from_slice(&std::fs::read(connect_state_path(paths)).ok()?).ok()?;
+    // A sign-in lasts at most 15 minutes: an older "running" file belongs to a process that died.
+    let fresh = now_ms() - v["started_ms"].as_i64().unwrap_or(0) < 15 * 60_000;
+    (fresh || v["running"] != true).then_some(v)
 }
 
 /// `sync enroll`: enroll with an enrollment token as the OS user (or the given
@@ -1901,8 +2004,11 @@ pub fn sync_sign_out(paths: &MemoryPaths) -> Result<Value> {
     let mut s = Settings::load(paths);
     if s.sync.provider == "kortix" {
         s.sync.enabled = false;
+        s.follow_sync_default(false);
         s.save(paths)?;
     }
+    // Back to onboarding on the next open (never forced at login).
+    super::onboarding::set(paths, super::onboarding::State::SignedOut);
     Ok(json!({"signed_out": true, "enabled": s.sync.enabled}))
 }
 
@@ -1925,6 +2031,7 @@ pub fn sync_set_enabled(paths: &MemoryPaths, on: bool) -> Result<Value> {
         super::sync::view::apply_switch(paths, None, "resume")?;
     }
     s.sync.enabled = on;
+    s.follow_sync_default(on);
     s.save(paths)?;
     Ok(json!({"enabled": on}))
 }
@@ -2579,6 +2686,18 @@ run again with --yes to delete"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pause_until_tomorrow_ends_at_six_local_the_next_day() {
+        use chrono::{Local, TimeZone, Timelike};
+        let now = Local.with_ymd_and_hms(2026, 10, 14, 23, 50, 0).unwrap().timestamp_millis();
+        let t = Local.timestamp_millis_opt(tomorrow_6am_ms(now)).unwrap();
+        assert_eq!((t.format("%Y-%m-%d").to_string(), t.hour(), t.minute()), ("2026-10-15".to_string(), 6, 0));
+        let morning = Local.with_ymd_and_hms(2026, 10, 14, 5, 0, 0).unwrap().timestamp_millis();
+        let t = Local.timestamp_millis_opt(tomorrow_6am_ms(morning)).unwrap();
+        assert_eq!(t.format("%Y-%m-%d").to_string(), "2026-10-15", "always the next day");
+    }
+
 
     #[test]
     fn durations_parse() {

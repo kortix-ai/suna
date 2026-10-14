@@ -188,6 +188,7 @@ pub fn open_url(paths: &MemoryPaths, url: &str) -> Result<()> {
 
 fn launch(paths: &MemoryPaths, target: Target) -> Result<()> {
     paths.ensure()?;
+    super::legacy::migrate_legacy_settings(paths);
     if forward(paths, &target)? {
         return Ok(());
     }
@@ -208,6 +209,8 @@ mod window {
     enum UiEvent {
         Navigate(Value),
         Close,
+        /// Clipboard text for the field in focus (the window has no Edit menu).
+        Paste(String),
     }
 
     /// `kmem://localhost/` on macOS and Linux, `http://kmem.localhost/` on Windows.
@@ -218,7 +221,15 @@ mod window {
 
     pub fn run(paths: &MemoryPaths, target: Target) -> Result<()> {
         let ctx = Arc::new(api::Ctx::new(paths.clone()));
-        let event_loop = EventLoopBuilder::<UiEvent>::with_user_event().build();
+        #[allow(unused_mut)]
+        let mut event_loop = EventLoopBuilder::<UiEvent>::with_user_event().build();
+        // No Dock icon and no Cmd-Tab entry, even while the window is open: the window is a
+        // guest of the menu-bar app and holds no recording state.
+        #[cfg(target_os = "macos")]
+        {
+            use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+            event_loop.set_activation_policy(ActivationPolicy::Accessory);
+        }
         let proxy = event_loop.create_proxy();
 
         // Lock heartbeat + request mailbox.
@@ -257,6 +268,8 @@ mod window {
             .with_inner_size(LogicalSize::new(1240.0, 800.0))
             .with_min_inner_size(LogicalSize::new(720.0, 480.0))
             .build(&event_loop)?;
+        // An accessory app starts behind the others: bring the window forward.
+        window.set_focus();
 
         let handler_ctx = ctx.clone();
         let ipc_ctx = ctx.clone();
@@ -302,7 +315,7 @@ mod window {
                     if v["cmd"] == "close" {
                         let _ = close_proxy.send_event(UiEvent::Close);
                     }
-                    handle_ipc(&ipc_ctx, &v);
+                    handle_ipc(&ipc_ctx, &v, &close_proxy);
                 }
             })
             // Audio memory: the next segment starts playing while the playhead
@@ -352,6 +365,12 @@ mod window {
                         }
                     }
                 }
+                Event::UserEvent(UiEvent::Paste(text)) => {
+                    let _ = webview.evaluate_script(&format!(
+                        "window.kmemPaste && window.kmemPaste({})",
+                        Value::String(text)
+                    ));
+                }
                 Event::UserEvent(UiEvent::Navigate(v)) => {
                     let _ = webview.evaluate_script(&format!(
                         "window.kmemNavigate && window.kmemNavigate({v})"
@@ -367,7 +386,7 @@ mod window {
     const MIC_SETTINGS_URL: &str =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
 
-    fn handle_ipc(ctx: &api::Ctx, v: &Value) {
+    fn handle_ipc(ctx: &api::Ctx, v: &Value, proxy: &tao::event_loop::EventLoopProxy<UiEvent>) {
         match v["cmd"].as_str() {
             Some("open_url") => {
                 if let Some(url) = v["url"]
@@ -385,6 +404,12 @@ mod window {
                     .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
                 {
                     open_in_browser(url);
+                }
+            }
+            // An accessory app has no Edit menu, so the window pastes by itself.
+            Some("paste") => {
+                if let Ok(text) = arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
+                    let _ = proxy.send_event(UiEvent::Paste(text));
                 }
             }
             Some("copy_text") => {

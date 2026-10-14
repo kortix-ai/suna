@@ -32,6 +32,7 @@ install -m 644 "$here/kortix-capture-machine.service" "$root/usr/lib/systemd/sys
 install -m 644 "$here/kortix-capture.service" "$root/usr/lib/systemd/user/"
 install -m 644 "$here/kortix-capture.desktop" "$root/usr/share/applications/"
 install -m 644 "$here/kortix-capture-tray.desktop" "$root/etc/xdg/autostart/"
+install -m 644 "$here/kortix-capture-onboard.desktop" "$root/etc/xdg/autostart/"
 install -m 644 "$here/../../assets/icons/app-256.png" "$root/usr/share/icons/hicolor/256x256/apps/kortix-capture.png"
 sed "s/@VERSION@/$version/" "$here/control.in" > "$root/DEBIAN/control"
 for s in postinst prerm postrm; do install -m 755 "$here/$s" "$root/DEBIAN/$s"; done

@@ -65,6 +65,58 @@ pub fn legacy_task_names(csv: &str) -> Vec<String> {
         .collect()
 }
 
+/// Keys the retired 0.2.x control-plane sync wrote into `settings.json`.
+const LEGACY_SETTINGS_KEYS: [&str; 8] = [
+    "control_plane",
+    "controlPlane",
+    "control_plane_url",
+    "dashboard_url",
+    "enrolled_url",
+    "api_url",
+    "memory_api",
+    "memory_api_url",
+];
+
+/// `settings.json` still carries the retired control-plane sync: one of its keys, or its endpoint.
+pub fn has_legacy_sync(raw: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(raw) else {
+        return false;
+    };
+    let top = v.as_object();
+    let sync = v.get("sync").and_then(Value::as_object);
+    [top, sync]
+        .into_iter()
+        .flatten()
+        .any(|o| LEGACY_SETTINGS_KEYS.iter().any(|k| o.contains_key(*k)))
+        || raw.contains("/api/agent/memory")
+}
+
+/// A library from 0.2.x holds control-plane sync settings and a sign-in at that retired server.
+/// Turn sync Off (the recordings stay), drop those keys and forget that sign-in, so nothing
+/// calls the retired endpoint and the window does not ask to sign in again. Runs once: the
+/// keys are gone after it. Returns true when it changed the library.
+pub fn migrate_legacy_settings(paths: &crate::memory::paths::MemoryPaths) -> bool {
+    use crate::memory::settings::Settings;
+    let Ok(raw) = std::fs::read_to_string(paths.settings()) else {
+        return false;
+    };
+    if !has_legacy_sync(&raw) {
+        return false;
+    }
+    let mut s = Settings::load(paths);
+    for k in LEGACY_SETTINGS_KEYS {
+        s.extra.remove(k);
+    }
+    s.sync.enabled = false;
+    if s.sync.provider == "kortix" {
+        s.sync.provider = "s3".into();
+    }
+    crate::memory::sync::issuer::sign_out(paths);
+    let saved = s.save(paths).is_ok();
+    tracing::info!("[legacy] control-plane sync settings replaced by Sync Off ({saved})");
+    saved
+}
+
 /// Remove what an earlier install left for this person. Returns what it removed.
 pub fn remove_legacy() -> Value {
     let mut removed: Vec<String> = Vec::new();
@@ -193,6 +245,33 @@ mod tests {
         assert!(!is_legacy_agent_label("ai.kortix.capture.agent"));
         assert!(!is_legacy_agent_label("ai.kortix.capture.machine"));
         assert!(!is_legacy_agent_label("com.example.other"));
+    }
+
+    #[test]
+    fn a_library_from_the_control_plane_era_becomes_sync_off_and_keeps_its_recordings() {
+        assert!(has_legacy_sync(r#"{"control_plane":{"url":"http://localhost:3000"}}"#));
+        assert!(has_legacy_sync(r#"{"sync":{"enabled":true,"dashboard_url":"x"}}"#));
+        assert!(has_legacy_sync(r#"{"sync":{"url":"http://localhost:3000/api/agent/memory/audio"}}"#));
+        assert!(!has_legacy_sync(r#"{"sync":{"enabled":true,"provider":"kortix"},"interval_ms":2000}"#));
+        assert!(!has_legacy_sync("not json"));
+        std::env::set_var(crate::secret_store::STORE_ENV, "file");
+        let dir = std::env::temp_dir().join(format!("kcap-legacy-{}", uuid::Uuid::new_v4().simple()));
+        let paths = crate::memory::paths::MemoryPaths::at(&dir);
+        paths.ensure().unwrap();
+        std::fs::write(
+            paths.settings(),
+            r#"{"interval_ms":3000,"control_plane":{"url":"http://localhost:3000"},"sync":{"enabled":true,"provider":"kortix"}}"#,
+        )
+        .unwrap();
+        std::fs::write(paths.root.join("memory.db-marker"), b"recordings").unwrap();
+        assert!(migrate_legacy_settings(&paths));
+        let s = crate::memory::settings::Settings::load(&paths);
+        assert!(!s.sync.enabled, "Sync Off");
+        assert_eq!(s.interval_ms, 3000, "the person's own settings stay");
+        assert!(!std::fs::read_to_string(paths.settings()).unwrap().contains("control_plane"));
+        assert!(paths.root.join("memory.db-marker").exists(), "recordings stay");
+        assert!(!migrate_legacy_settings(&paths), "it runs once");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

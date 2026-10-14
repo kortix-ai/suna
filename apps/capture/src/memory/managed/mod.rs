@@ -566,26 +566,26 @@ impl LowerFirst for String {
 pub enum TrayAction {
     /// "Pause for 1 hour" (`kortix-capture pause 1h`).
     Pause,
+    /// "Pause until tomorrow" (`kortix-capture pause tomorrow`).
+    PauseTomorrow,
+    /// "Pause until I resume" (`kortix-capture pause forever`).
+    PauseForever,
     /// "Resume" while paused (`kortix-capture resume`).
     Resume,
-    Quit,
 }
 
 /// A managed computer offers none of them: the organization runs the recording.
-/// A computer the person set up offers "Pause for 1 hour" (or "Resume" while
-/// paused) and Quit. Signing in lives in the window, under Sync.
+/// A computer the person set up offers the pauses (or "Resume" while paused). There is no
+/// Quit: nothing in the menu stops the background recorder, only a pause does.
 pub fn tray_actions(managed: bool, paused: bool) -> Vec<TrayAction> {
     if managed {
         return vec![];
     }
-    vec![
-        if paused {
-            TrayAction::Resume
-        } else {
-            TrayAction::Pause
-        },
-        TrayAction::Quit,
-    ]
+    if paused {
+        vec![TrayAction::Resume]
+    } else {
+        vec![TrayAction::Pause, TrayAction::PauseTomorrow, TrayAction::PauseForever]
+    }
 }
 
 /// The tray's status line. A managed computer uses the organization's words; a
@@ -870,12 +870,10 @@ mod tests {
         assert_eq!(tray_actions(true, true), vec![]);
         assert_eq!(
             tray_actions(false, false),
-            vec![TrayAction::Pause, TrayAction::Quit]
+            vec![TrayAction::Pause, TrayAction::PauseTomorrow, TrayAction::PauseForever],
+            "pauses only, never a Quit"
         );
-        assert_eq!(
-            tray_actions(false, true),
-            vec![TrayAction::Resume, TrayAction::Quit]
-        );
+        assert_eq!(tray_actions(false, true), vec![TrayAction::Resume]);
         let t = tray_words(Some("Example Org"), true, None);
         assert_eq!(tray_status(&t, false, "recording", None), "Recording");
         assert_eq!(tray_status(&t, false, "not_recording", None), "Not recording");

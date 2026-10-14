@@ -90,8 +90,21 @@ struct VideoRow {
     size: i64,
 }
 
-/// With sync on, a chunk that has not been uploaded is spared until it is this old.
+/// With sync on, a chunk that has not been uploaded is spared until it is this old when the
+/// disk-cap mode frees space. The retention-by-age mode never deletes an unsent chunk.
 const UNSENT_GRACE_MS: i64 = 7 * 86_400_000;
+
+/// Unsent chunks before this time may go. `None`: everything may (sync off).
+/// By-age retention (`older_than_ms` set) spares every unsent chunk: 0 matches none.
+fn unsent_cutoff(s: &Settings, older_than_ms: Option<i64>) -> Option<i64> {
+    s.sync.enabled.then(|| {
+        if older_than_ms.is_some() {
+            0
+        } else {
+            now_ms() - UNSENT_GRACE_MS
+        }
+    })
+}
 
 fn oldest_videos(
     conn: &Connection,
@@ -100,7 +113,7 @@ fn oldest_videos(
     older_than_ms: Option<i64>,
     limit: i64,
 ) -> Result<Vec<VideoRow>> {
-    let unsent_before = s.sync.enabled.then(|| now_ms() - UNSENT_GRACE_MS);
+    let unsent_before = unsent_cutoff(s, older_than_ms);
     let mut stmt = conn.prepare(
         "SELECT id, path, num_frames, status, COALESCE(size_bytes, 0) FROM video
          WHERE status <= ?1 AND (?2 IS NULL OR COALESCE(end_timestamp, 0) < ?2)
@@ -135,7 +148,7 @@ fn oldest_audio(
     older_than_ms: Option<i64>,
     limit: i64,
 ) -> Result<Vec<AudioRow>> {
-    let unsent_before = s.sync.enabled.then(|| now_ms() - UNSENT_GRACE_MS);
+    let unsent_before = unsent_cutoff(s, older_than_ms);
     let mut stmt = conn.prepare(
         "SELECT id, path, end_ms, size_bytes FROM audio
          WHERE status = 0 AND (?1 IS NULL OR end_ms < ?1)
@@ -341,6 +354,35 @@ pub fn preview(conn: &Connection, paths: &MemoryPaths, s: &Settings) -> Result<s
 mod tests {
     use super::*;
     use crate::memory::store;
+
+    #[test]
+    fn age_retention_never_deletes_what_is_not_uploaded_yet() {
+        let dir = std::env::temp_dir().join(format!("kmem-ret-unsent-{}", uuid::Uuid::new_v4()));
+        let paths = MemoryPaths::at(&dir);
+        let conn = store::open(&paths).unwrap();
+        // Two old chunks: one uploaded, one not; one local-only (made before a destination switch).
+        for (name, uploaded, local) in [("sent", 1, 0), ("unsent", 0, 0), ("local", 0, 1)] {
+            std::fs::write(paths.videos_dir().join(name), b"x").unwrap();
+            conn.execute(
+                "INSERT INTO video(height, width, path, num_frames, size_bytes, start_timestamp, end_timestamp, uploaded_at, local_only)
+                 VALUES (10, 10, ?1, 1, 1, 1000, 2000, CASE WHEN ?2 = 1 THEN 5 END, ?3)",
+                rusqlite::params![name, uploaded, local],
+            )
+            .unwrap();
+        }
+        let mut s = Settings::default();
+        s.sync.enabled = true;
+        let old = Some(now_ms());
+        let names: Vec<String> = oldest_videos(&conn, &s, STATUS_FULL, old, 10)
+            .unwrap()
+            .into_iter()
+            .map(|v| v.path)
+            .collect();
+        assert_eq!(names, vec!["sent", "local"], "the unsent chunk stays");
+        s.sync.enabled = false;
+        assert_eq!(oldest_videos(&conn, &s, STATUS_FULL, old, 10).unwrap().len(), 3, "sync off: all may go");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn delete_keeps_text_and_marks_video() {

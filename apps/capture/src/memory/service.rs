@@ -817,6 +817,8 @@ pub fn run_with(
     managed: bool,
     watch_config: Option<&dyn Fn() -> bool>,
 ) -> Result<bool> {
+    // A library from the control-plane era becomes Sync Off before anything syncs.
+    super::legacy::migrate_legacy_settings(paths);
     // The recorders it starts inherit the class: the person's apps win the CPU.
     crate::os_proc::below_normal_priority();
     fs::create_dir_all(&paths.root)?;
