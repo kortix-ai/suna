@@ -32,6 +32,7 @@ import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
 import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
@@ -875,6 +876,24 @@ describe('pi harness', () => {
         KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'writer', agent: { build: { prompt: 'You build.' }, writer: { prompt: 'You write docs.' } } }),
       },
     })
+    expect(r.service.runtime()!.agentNameValue()).toBe('writer')
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))).toContain('You write docs.')
+  })
+
+  // Over 128 KiB the guest cannot exec with the raw var, so the API sends it gzip-encoded
+  // (@kortix/api-contract/compiled-agent-config-env). Platinum prod, 2026-10-14.
+  test('a compiled config over the exec limit arrives gzip-encoded and pi runs it', async () => {
+    const compiled = JSON.stringify({
+      default_agent: 'writer',
+      agent: { build: { prompt: 'You build.' }, writer: { prompt: `You write docs. ${'Keep every section short. '.repeat(6_000)}` } },
+    })
+    const encoded = encodeCompiledAgentConfigEnv(compiled)
+    expect(encoded).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG')
+    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'default', ...encoded } })
     expect(r.service.runtime()!.agentNameValue()).toBe('writer')
     const root = r.service.runtime()!.rootId
     const before = gateway.sent.length
