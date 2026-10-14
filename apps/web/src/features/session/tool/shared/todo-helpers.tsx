@@ -16,7 +16,7 @@ export function parseTodos(value: unknown): TodoItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw) => {
     if (!raw || typeof raw !== 'object') return [];
-    const content = (raw as any).content;
+    const content = (raw as any).content ?? (raw as any).step;
     if (typeof content !== 'string' || !content.trim()) return [];
     const s = (raw as any).status;
     const status: TodoItem['status'] =

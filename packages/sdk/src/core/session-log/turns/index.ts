@@ -10,7 +10,7 @@
  *   `planAnchorMessageId` (`plan`) and `getChildSessionId` lookups (`threads`).
  * - `sessionLogTurnSegments`: `segmentTurn` + `groupShowSegments`. `splitSessionLogTurnWork`: `splitTurnWork`.
  * - `sessionLogBurstSteps`: `mergeBurstSteps` + `stepLabel` + the host's `burstSteps`.
- * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
+ * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstWorkLabel`: `burstWorkLabel`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
  * - `sessionLogOpenCall`: the host's `openCall` (the open shape of a closure-rule call).
  * - `sessionLogShowGroupCall`: the host's `mergeShowParts`. `sessionLogAnsweredQuestionCall`: the
  *   host's synthetic answered question part.
@@ -31,6 +31,7 @@ export {
   sessionLogBurstRunning,
   sessionLogBurstSteps,
   sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
   sessionLogOpenCall,
   sessionLogShowGroupCall,
   sessionLogTurnSegments,

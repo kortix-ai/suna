@@ -12,11 +12,11 @@
  * (project_id, slug) key.
  */
 import { randomBytes } from 'node:crypto';
-import { projectTriggerRuntime } from '@kortix/db';
+import { projectTriggerRuntime, projects } from '@kortix/db';
 import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
-import { and, asc, count, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { REMINDER_ID_PREFIX } from '../../notifications/push-payload';
 import { db } from '../../shared/db';
 import {
@@ -374,6 +374,32 @@ export async function deleteSessionReminder(projectId: string, id: string): Prom
   await db
     .delete(projectTriggerRuntime)
     .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
+}
+
+/**
+ * Offboarding (KRTX-1722): pause every live reminder `userId` set in the
+ * account's projects. Its fire would act as a person who no longer has access.
+ * It is the same pause a fire applies when it finds the author gone
+ * (`lib/trigger-fire.ts`), done at once instead of at the next fire. A
+ * reminder the session's agent set has no author and keeps firing as the
+ * agent. Returns the number of reminders paused.
+ */
+export async function disableRemindersAuthoredBy(accountId: string, userId: string, now: Date): Promise<number> {
+  const paused = await db
+    .update(projectTriggerRuntime)
+    .set({ enabled: false, nextFireAt: null, updatedAt: now })
+    .where(
+      and(
+        inArray(
+          projectTriggerRuntime.projectId,
+          db.select({ projectId: projects.projectId }).from(projects).where(eq(projects.accountId, accountId)),
+        ),
+        sql`${projectTriggerRuntime.scheduleSpec} -> 'reminder' ->> 'promptAuthorUserId' = ${userId}`,
+        ...activeReminder,
+      ),
+    )
+    .returning({ slug: projectTriggerRuntime.slug });
+  return paused.length;
 }
 
 /** A fire found the reminder's session gone: switch the reminder off so it stops firing. */

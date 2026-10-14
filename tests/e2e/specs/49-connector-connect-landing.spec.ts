@@ -274,13 +274,17 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
     await expect(addDialog).toBeVisible();
     await expect(addDialog.getByRole("radio", { name: /^Only you/ })).toBeChecked();
-    const mine = page.waitForRequest(
-      (request) =>
-        request.url().endsWith(`/projects/${project.id}/connections/me`) &&
-        request.method() === "POST",
+    // The response, not the request: the read-back below must run after the
+    // API stored the account (a slower runner read it back first, 3 of 3).
+    const mine = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/projects/${project.id}/connections/me`) &&
+        response.request().method() === "POST",
     );
     await addDialog.getByRole("button", { name: "Continue", exact: true }).click();
-    expect((await mine).postDataJSON()).toEqual(expect.objectContaining({ connector_alias: slug }));
+    const created = await mine;
+    expect(created.request().postDataJSON()).toEqual(expect.objectContaining({ connector_alias: slug }));
+    expect(created.ok(), `POST connections/me answered ${created.status()}`).toBe(true);
 
     // Read back: a private account now sits beside the untouched shared one.
     expect((await accountsOf(slug)).map((row) => row.owner_type).sort()).toEqual([

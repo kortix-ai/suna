@@ -80,6 +80,8 @@ import {
 import type { KortixMessage, KortixPart } from '@kortix/api-contract/transcript'
 import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges } from '../shared/session-log-journal'
+import { isRestoreNote } from '../shared/session-log-boot'
+import type { BytesReader } from '../shared/session-log-restore'
 import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore'
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
@@ -145,11 +147,15 @@ const native: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
   freeform_tool_input: false,
 }
-/** Tested in the prototype adapter; restore lands in P6. */
+/**
+ * `harness_versions` and `schema_minors` name what the oracle suites (`pi-session-log-restore.test.ts`,
+ * `pi-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
+ * fails when the pin (package.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
+ */
 export const PI_CAPABILITIES: AdapterCapabilities = {
   harness: 'pi',
-  harness_versions: PI_VERSION,
-  schema_minors: [SESSION_LOG_MINOR],
+  harness_versions: '1.0.3',
+  schema_minors: [1],
   dialects: ['openai-chat'],
   native,
   // A tool-result image becomes a follow-up user turn; a layout compaction is rendered as entries.
@@ -300,6 +306,7 @@ function deriveThread(input: {
         m.in_context = false
         m.hidden_reason = 'retracted'
       }
+      if (m.role === 'user' && isRestoreNote(m)) m.origin = 'notification'
       out.push({ message: m, native: nativeParts })
       continue
     }
@@ -499,13 +506,14 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null, tar
       return out.changes
     },
     /** Writes `log` into the dump the runtime loads at its next start (`session-log-restore.ts`); needs `target`. */
-    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult> {
+    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>, readAttachment?: BytesReader): Promise<SessionLogRestoreResult> {
       if (!target) throw new Error('pi session-log restore needs a target (state dir, session id, workspace)')
-      return restorePiSessionLog(log, target, seqMax)
+      return restorePiSessionLog(log, readAttachment ? { ...target, readAttachment } : target, seqMax)
     },
-    async fingerprint(): Promise<string> {
+    /** Every message id of the store; null without a dump. pi deletes no message (entries are append-only). */
+    async held() {
       const s = read()
-      return sha256(JSON.stringify(s ? [s.header, s.entries, s.children.map((c) => c.agentMessages)] : null))
+      return s ? new Set(piSessionLog(s).log.threads.flatMap((t) => t.messages.map((m) => m.message_id))) : null
     },
     live(threadId: string, messageId: string) {
       const s = read()

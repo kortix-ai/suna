@@ -6,6 +6,7 @@ import {
   createDatabaseSession,
   deleteDatabaseProject,
 } from "../../src/fixtures/database-project";
+import { seedSessionTranscript } from "../../src/fixtures/session-transcript";
 import { runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
@@ -142,31 +143,15 @@ test("26 — ChatGPT session usage excludes historical subscription costs and re
           };
         }),
       ];
-      await runDatabaseSql(
-        "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
-        [sessionId, rootId],
-        env.databaseUrl,
-      );
-      await runDatabaseSql(
-        "INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)",
-        [sessionId, projectId, accountId, rootId],
-        env.databaseUrl,
-      );
-      for (const message of messages) {
-        await runDatabaseSql(
-          "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-          [
-            sessionId,
-            message.info.id,
-            rootId,
-            message.info.role,
-            new Date(message.info.time.created),
-            JSON.stringify(message.info),
-            JSON.stringify(message.parts),
-          ],
-          env.databaseUrl,
-        );
-      }
+      // The saved history is the session log (the project's `session_log` flag on).
+      await seedSessionTranscript(env, {
+        projectId,
+        accountId,
+        sessionId,
+        ensureSandbox: false,
+        messages: () => messages,
+        log: { bearer: auth.access_token },
+      });
       // A retained, stopped computer with a wake in flight makes the persisted
       // transcript readable: /start answers `starting` + the stopped sandbox
       // row (`stoppedWakeResult`, before any provider call), and the page
@@ -188,7 +173,7 @@ test("26 — ChatGPT session usage excludes historical subscription costs and re
         [sessionId, accountId, projectId, JSON.stringify(wakeClaim)],
         env.databaseUrl,
       );
-      // The browser reads the persisted mirror through the real authenticated API.
+      // The browser reads the saved history through the real authenticated API.
       const snapshot = page.waitForResponse(
         (r) =>
           r.url().includes(`/sessions/${sessionId}/snapshot`) &&

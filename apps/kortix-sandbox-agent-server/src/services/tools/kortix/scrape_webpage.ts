@@ -19,7 +19,10 @@ interface ToolContext {
   signal?: AbortSignal
 }
 
-const TIMEOUT_MS = 35_000
+// Firecrawl documents scrape `timeout` up to 60000ms and can answer past it
+// when engines cascade (observed 32s–75s); a lower cap turns slow-but-good
+// scrapes into tool timeouts.
+const TIMEOUT_MS = 90_000
 const RETRIES = 3
 
 /** The Kortix router proxy and the session token, or Firecrawl and the project's own key. */

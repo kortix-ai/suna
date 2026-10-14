@@ -11,7 +11,7 @@
  * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
 import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 import cuaDriverTools from './cua-driver-tools.generated.json';
@@ -360,6 +360,8 @@ export async function attachComputerConnection(
       .set({
         tunnelId: input.tunnelId,
         status: 'active',
+        // An active account was not revoked: offboarding's reason no longer holds.
+        metadata: sql`${connectorConnections.metadata} - 'revokedReason'`,
         ...(hasDefault ? {} : { isDefault: true }),
         updatedAt: new Date(),
       })
@@ -411,5 +413,43 @@ export async function attachComputerConnection(
     })
     .returning();
   return { connection: created!, created: true };
+}
+
+/**
+ * Offboarding (KRTX-1722): revoke every computer account in `accountId` that
+ * reaches a machine `userId` owns. The machine can live in that account
+ * (shared with a project at pairing) or in the owner's personal account
+ * (attached to a team project as their private account). Both match, because
+ * the match is on the machine's owner, not on where the machine lives.
+ * Accounts in other Kortix accounts the person still belongs to stay active.
+ *
+ * Like unpairing, the default pin goes too, so no resolver picks an account
+ * that reaches nothing. `metadata.revokedReason` records why. Returns the
+ * number of accounts revoked.
+ */
+export async function revokeComputersOfDepartedOwner(accountId: string, userId: string): Promise<number> {
+  const revoked = await db
+    .update(connectorConnections)
+    .set({
+      status: 'revoked',
+      isDefault: false,
+      metadata: sql`${connectorConnections.metadata} || '{"revokedReason":"owner_left"}'::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(connectorConnections.accountId, accountId),
+        ne(connectorConnections.status, 'revoked'),
+        inArray(
+          connectorConnections.tunnelId,
+          db
+            .select({ tunnelId: tunnelConnections.tunnelId })
+            .from(tunnelConnections)
+            .where(eq(tunnelConnections.ownerUserId, userId)),
+        ),
+      ),
+    )
+    .returning({ connectionId: connectorConnections.connectionId });
+  return revoked.length;
 }
 

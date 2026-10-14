@@ -316,16 +316,16 @@ test.describe('30 — pooled provider secrets', () => {
 
       const existingSession = await createDatabaseSession(env, { projectId, accountId, userId: user.id });
       const runtimeId = `ses_${existingSession.replaceAll('-', '')}`;
-      await runDatabaseSql("UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1", [existingSession, runtimeId], databaseUrl);
-      await runDatabaseSql("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')", [existingSession, accountId, projectId], databaseUrl);
-      await runDatabaseSql('INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)', [existingSession, projectId, accountId, runtimeId], databaseUrl);
       const messageId = 'msg_000000000000000000000001';
       const createdAt = Date.now() - 60_000;
-      await runDatabaseSql('INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-        existingSession, messageId, runtimeId, 'user', new Date(createdAt),
-        JSON.stringify({ id: messageId, sessionID: runtimeId, role: 'user', agent: 'kortix', time: { created: createdAt }, model: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4.6' } }),
-        JSON.stringify([{ id: 'prt_pool_previous', sessionID: runtimeId, messageID: messageId, type: 'text', text: 'Previous session prompt' }]),
-      ], databaseUrl);
+      await seedSessionTranscript(env, {
+        projectId, accountId, sessionId: existingSession,
+        messages: () => [{
+          info: { id: messageId, sessionID: runtimeId, role: 'user', agent: 'kortix', time: { created: createdAt }, model: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4.6' } },
+          parts: [{ id: 'prt_pool_previous', sessionID: runtimeId, messageID: messageId, type: 'text', text: 'Previous session prompt' }],
+        }],
+        log: { bearer: session.access_token },
+      });
       await page.route(`**/sessions/${existingSession}/start?*`, async (route) => {
         await route.fulfill({ status: 200, json: {
           stage: 'ready', agent_name: 'kortix', retriable: false, opencode_session_id: runtimeId,
@@ -859,8 +859,7 @@ test.describe('30 — pooled provider secrets', () => {
       };
       const responseBody = JSON.stringify({ error: { ...failure, type: failure.code }, ...failure });
       const seedFailedTurn = async (sessionId: string) => {
-        const { root } = await seedSessionTranscript(env, { projectId, accountId, sessionId });
-        await runDatabaseSql("UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1", [sessionId], databaseUrl);
+        const root = `ses_${sessionId.replaceAll('-', '')}`;
         const failedAt = Date.now() - 30_000;
         const prompt = {
           info: { id: 'msg_000000000000000000000003', sessionID: root, role: 'user', time: { created: failedAt },
@@ -876,12 +875,12 @@ test.describe('30 — pooled provider secrets', () => {
             error: { name: 'APIError', data: { message, statusCode: 400, isRetryable: false, responseBody } } },
           parts: [],
         };
-        for (const saved of [prompt, refused]) {
-          await runDatabaseSql(`INSERT INTO kortix.session_transcript_messages
-            (session_id, message_id, opencode_session_id, role, message_created_at, info, parts)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)`, [sessionId, saved.info.id, root, saved.info.role,
-            new Date(saved.info.time.created), JSON.stringify(saved.info), JSON.stringify(saved.parts)], databaseUrl);
-        }
+        await seedSessionTranscript(env, {
+          projectId, accountId, sessionId,
+          messages: (_root, defaults) => [...defaults, prompt, refused],
+          log: { bearer: ownerSession.access_token },
+        });
+        await runDatabaseSql("UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1", [sessionId], databaseUrl);
       };
       const ownSessionId = await createDatabaseSession(env, { projectId, accountId, userId: member.id });
       const sharedSessionId = await createDatabaseSession(env, { projectId, accountId, userId: member.id, visibility: 'project' });

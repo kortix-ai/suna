@@ -621,6 +621,18 @@ describe('toV1 on native v2 records', () => {
     expect(row.parts.some((p) => (p as { anything?: boolean }).anything)).toBe(false);
   });
 
+  test('a native tool call: its display data is the v1 state.metadata, as the harness v1 part has it (result.details, else the adapter ext details)', () => {
+    const log = JSON.parse(readFileSync(join(FIXTURE_DIR, 'pi.v2.json'), 'utf8')) as SessionLog;
+    const parts = toV1(log).rows.flatMap((r) => r.parts as Array<{ type: string; tool?: string; state?: { status: string; metadata?: unknown } }>);
+    const task = parts.find((p) => p.tool === 'task')!;
+    expect(task.state!.metadata).toMatchObject({ sessionId: 'ses_pilive0000000000000001-child1' });
+    const call = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'task') as { result: { details?: unknown }; ext?: unknown };
+    call.ext = { pi: { version: '1.0.3', native_id: 'r1', data: { details: { answers: [['Yes']] } } } };
+    delete call.result.details;
+    const moved = toV1(log).rows.flatMap((r) => r.parts as typeof parts).find((p) => p.tool === 'task')!;
+    expect(moved.state!.metadata).toEqual({ answers: [['Yes']] });
+  });
+
   test('toV1 does not alias its input', () => {
     const log = fromV1(mainFixture());
     const out = toV1(log);

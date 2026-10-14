@@ -443,7 +443,12 @@ export function registerConnectionActionsRoutes(): void {
           if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
           await db
             .update(connectorConnections)
-            .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
+            .set(
+              operation === 'revoke'
+                ? { status: 'revoked', updatedAt: new Date() }
+                : // Offboarding's revokedReason (connectors/computers.ts) no longer holds.
+                  { status: 'active', metadata: sql`${connectorConnections.metadata} - 'revokedReason'`, updatedAt: new Date() },
+            )
             .where(eq(connectorConnections.connectionId, connectionId));
         }
         // The default shared account may have changed: activate or park pending event triggers.
