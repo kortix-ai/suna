@@ -19,7 +19,7 @@
 // truncated `session-<8 chars>` display name) — plus a monotonic `attempt`
 // counter threaded in via opts.createAttempt (see restorePlatinumCreateAttempt
 // in session-sandbox.ts for the persistence/restore side of that counter).
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { platinumHttpError } from '../../__tests__/helpers/platinum-http-error';
 mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
@@ -94,6 +94,7 @@ mock.module('../service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' 
 mock.module('../sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 const { PlatinumProvider } = await import('./platinum');
+const { logger } = await import('../../lib/logger');
 await import('../services/session-sandbox');
 
 const SANDBOX_ID = '11111111-2222-4333-8444-555555555555';
@@ -166,30 +167,80 @@ describe('us_region: region on the Platinum create', () => {
 });
 
 describe('us_region: a template not yet copied to the region', () => {
+  // The 409 bodies Platinum sends (platinum apps/api/src/api/sandboxes.ts,
+  // create path): `replicating` while a copy runs, `failed` while a failed
+  // copy cools down (Platinum requeues it on the next create after 2 min), and
+  // `absent` when that control plane cannot copy the template at all.
   const notResident = (state: string) =>
     platinumHttpError(
       'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 409 ' +
       JSON.stringify({
-        error: "template tpl_default is being copied to region 'us-east' — retry shortly",
+        error: state === 'replicating'
+          ? "template tpl_default is being copied to region 'us-east' — retry shortly"
+          : state === 'failed'
+            ? "template tpl_default failed to copy to region 'us-east': chunk copy timed out"
+            : "template tpl_default is not available in region 'us-east' yet",
         code: 'template_not_resident', template: 'tpl_default', region: 'us-east', state,
       }),
     );
 
-  for (const state of ['replicating', 'absent', 'failed']) {
-    test(`409 template_not_resident (${state}) surfaces as the patient "image still building" condition`, async () => {
-      createSequence = [{ error: notResident(state) }];
-      const p = new PlatinumProvider();
-      const err = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east' }).catch((e) => e);
+  test('409 template_not_resident (replicating) surfaces as the patient "image still building" condition', async () => {
+    createSequence = [{ error: notResident('replicating') }];
+    const p = new PlatinumProvider();
+    const err = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east' }).catch((e) => e);
 
-      // sandbox-init-state.ts waits out exactly this class.
-      expect((err as Error).name).toBe('SnapshotStillBuildingError');
-      expect(/snapshot .+ is building/i.test((err as Error).message)).toBe(true);
-      expect((err as Error).message).toContain('us-east');
-      expect((err as Error).message).toContain(`state=${state}`);
-      // One POST: the retry window belongs to the provisioning loop, not here.
-      expect(createCalls()).toHaveLength(1);
+    // sandbox-init-state.ts waits out exactly this class.
+    expect((err as Error).name).toBe('SnapshotStillBuildingError');
+    expect(/snapshot .+ is building/i.test((err as Error).message)).toBe(true);
+    expect((err as Error).message).toContain('us-east');
+    expect((err as Error).message).toContain('state=replicating');
+    // One POST: the retry window belongs to the provisioning loop, not here.
+    expect(createCalls()).toHaveLength(1);
+  });
+
+  for (const state of ['failed', 'absent']) {
+    test(`409 template_not_resident (${state}) ⇒ the same create boots in the home region`, async () => {
+      createSequence = [
+        { error: notResident(state) },
+        { result: { id: 'sbx_home', state: 'running', region: 'eu-west' } },
+      ];
+      const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+      const p = new PlatinumProvider();
+      const result = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east' });
+      const lines = warn.mock.calls.map((call) => String(call[0]));
+      warn.mockRestore();
+
+      const [regional, home] = createCalls();
+      expect(createCalls()).toHaveLength(2);
+      expect(regional.body?.region).toBe('us-east');
+      // The second create asks for no region: Platinum places it at home,
+      // under the home-region key of this same attempt.
+      expect(home.body && 'region' in home.body).toBe(false);
+      expect(home.body?.name).toBe(regional.body?.name);
+      expect(home.headers['Idempotency-Key']).toBe(sha(`${SANDBOX_ID}|tpl_default|a1`));
+      expect(result.externalId).toBe('sbx_home');
+      expect(result.metadata?.platinumRegion).toBe('eu-west');
+      // One plain line names the region, the state and Platinum's reason.
+      expect(lines).toHaveLength(1);
+      const [line] = lines;
+      expect(line).toContain('us-east');
+      expect(line).toContain(`state=${state}`);
+      expect(line).toContain('home region');
+      if (state === 'failed') expect(line).toContain('chunk copy timed out');
     });
   }
+
+  test('a warm (speculative) box never leaves its region: failed fails fast, with no home-region create', async () => {
+    createSequence = [{ error: notResident('failed') }];
+    const p = new PlatinumProvider();
+    const err = await p
+      .create({ ...baseOpts, createAttempt: 1, location: 'us-east', locationRequired: true })
+      .catch((e) => e);
+
+    expect((err as Error).name).not.toBe('SnapshotStillBuildingError');
+    expect((err as Error).message).toContain('state=failed');
+    expect(createCalls()).toHaveLength(1);
+  });
 
   test('any other refusal (region not granted) is rethrown untouched', async () => {
     const refused = platinumHttpError(
