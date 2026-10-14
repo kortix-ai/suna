@@ -74,9 +74,11 @@ for real use) running Linux, and a domain you control.
    until one of them is set. `init --disable-signup` turns sign-up off from
    the first start, for an install that creates its accounts another way.
    While sign-ups confirm without email, Kortix treats a password login's
-   address as unproven: sign-in does not accept a pending invite (the person
-   accepts it in the app), and SCIM or **Members → Invite** for that address
-   creates an invite instead of adding the login. See
+   address as unproven: sign-in does not accept a pending invite, SCIM or
+   **Members → Invite** for that address creates an invite instead of adding
+   the login, and a SCIM invite needs single sign-on. An invite a person sent
+   is still accepted by whoever signed up first with the address, and the
+   same holds for the admin email. See
    [Unconfirmed email addresses](https://kortix.com/docs/host#unconfirmed-email-addresses).
    Then:
    - **Settings → Git** — connect a GitHub App (or PAT) so the platform can
