@@ -96,3 +96,14 @@ paths = [
 regexes = [
   '''kortix_[a-z]+_\.\.\.''',
 ]
+
+[[allowlists]]
+description = "The synthetic Kortix Capture fixture bucket. device.json holds `machine_key_sha256`, the SHA-256 of a made-up key: a hash, not a secret. This exception requires the fixture path AND that field name on the line."
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/capture/fixtures/capture-format-v2/.*/device\.json$''',
+]
+regexes = [
+  '''"machine_key_sha256"''',
+]

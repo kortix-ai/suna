@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/suna/blob/dev/apps/capture/schemas/policy.schema.json",
+  "title": "policy.json",
+  "description": "<prefix>/policy.json or <prefix>/<device_id>/policy.json (the device file replaces the prefix file). Written by the operator; applied within 60 s; only narrows what the person allowed.",
+  "type": "object",
+  "required": [
+    "schema"
+  ],
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "layers": {
+      "type": "object",
+      "properties": {
+        "screen": {
+          "type": "boolean"
+        },
+        "actions": {
+          "type": "boolean"
+        },
+        "audio": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "redact_pii": {
+          "type": "boolean"
+        },
+        "excluded_bundle_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excluded_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclusion_groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude_private_browsing": {
+          "type": "boolean"
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "local_hours": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remote_days": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "recording": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "paused_until_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "interval_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 500,
+          "maximum": 10000,
+          "description": "One screen frame per display every this many ms on every device; null keeps the device's own setting."
+        },
+        "max_height": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            720,
+            1080,
+            1440,
+            2160,
+            null
+          ],
+          "description": "Frame height cap on every device (the width follows: 1280, 1920, 2560, 3840); null keeps the device's own setting."
+        }
+      }
+    },
+    "notice": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updated_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

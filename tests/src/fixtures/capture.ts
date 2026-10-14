@@ -1,6 +1,6 @@
 /**
- * The Kortix Capture format (schema 2) contract, vendored from kortix-ai/capture
- * at the commit in tests/fixtures/capture-format-v2/SOURCE.json: the engine's
+ * The Kortix Capture format (schema 2) contract, owned by the app in apps/capture:
+ * the engine's
  * JSON Schemas and its synthetic fixture bucket (one device, 2026-10-01: two
  * screen chunks, two action segments with screenshots, one audio segment).
  *
@@ -22,7 +22,9 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } fro
 import Ajv2020 from "ajv/dist/2020.js";
 import { readLocalSupabaseEnvironment, resolveLocalTopology } from "../core/local-stack";
 
-export const CONTRACT_DIR = resolve(fileURLToPath(new URL("../../fixtures/capture-format-v2", import.meta.url)));
+const CAPTURE_APP = resolve(fileURLToPath(new URL("../../../apps/capture", import.meta.url)));
+export const CONTRACT_DIR = join(CAPTURE_APP, "fixtures/capture-format-v2");
+const SCHEMAS_DIR = join(CAPTURE_APP, "schemas");
 const FIXTURE_PREFIX = "fixture-prefix";
 const FIXTURE_DEVICE = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
@@ -183,8 +185,8 @@ let ajv: Ajv2020 | null = null;
 export function captureSchemaErrors(name: CaptureSchemaName, value: unknown): string | null {
   if (!ajv) {
     ajv = new Ajv2020({ allErrors: true, strict: false });
-    for (const file of readdirSync(join(CONTRACT_DIR, "schemas"))) {
-      ajv.addSchema(JSON.parse(readFileSync(join(CONTRACT_DIR, "schemas", file), "utf8")), file.replace(/\.schema\.json$/, ""));
+    for (const file of readdirSync(SCHEMAS_DIR)) {
+      ajv.addSchema(JSON.parse(readFileSync(join(SCHEMAS_DIR, file), "utf8")), file.replace(/\.schema\.json$/, ""));
     }
   }
   const validate = ajv.getSchema(name);

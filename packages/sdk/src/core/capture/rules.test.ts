@@ -59,9 +59,9 @@ describe('Capture rules shared by the API, the web and the CLI', () => {
     expect(normalizeCaptureAppId(input)).toBeNull();
   });
 
-  // The engine owns the domain rule; its vectors are vendored into suna (tests/fixtures/capture-format-v2).
+  // The engine owns the domain rule; its vectors are vendored into suna (apps/capture/fixtures/capture-format-v2).
   const vectors = JSON.parse(
-    readFileSync(join(import.meta.dir, '../../../../../tests/fixtures/capture-format-v2/domains.json'), 'utf8'),
+    readFileSync(join(import.meta.dir, '../../../../../apps/capture/fixtures/capture-format-v2/domains.json'), 'utf8'),
   ) as { patterns: Array<{ input: string; pattern: string | null }> };
   test.each(vectors.patterns.map((v) => [v.input, v.pattern] as const))(
     'the engine vector %p normalizes to %p',

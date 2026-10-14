@@ -1,0 +1,28 @@
+#!/bin/sh
+# Upgrade: stop the running daemon and agents before the files change.
+# Their configuration (config.json, MDM profile) and the people's libraries stay.
+/bin/launchctl bootout system/ai.kortix.capture.machine >/dev/null 2>&1
+for uid in $(/usr/bin/dscl . -list /Users UniqueID | /usr/bin/awk '$2 >= 500 { print $2 }'); do
+  /bin/launchctl bootout "gui/$uid/ai.kortix.capture.agent" >/dev/null 2>&1
+done
+
+# Earlier installs left per-user agents (the old tray, per-library service units). The system
+# agent records now, and a leftover keeps a second copy alive or restarts every 10 s.
+# Remove them for every person. Never touch ~/Library/Application Support/ai.kortix.capture.
+/usr/bin/dscl . -list /Users UniqueID | /usr/bin/awk '$2 >= 500 { print $1, $2 }' | while read -r user uid; do
+  home=$(/usr/bin/dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{ print $2 }')
+  [ -d "$home/Library/LaunchAgents" ] || continue
+  for plist in "$home/Library/LaunchAgents/ai.kortix.capture.tray.plist" "$home"/Library/LaunchAgents/ai.kortix.capture.service.*.plist; do
+    [ -f "$plist" ] || continue
+    label=$(/usr/bin/basename "$plist" .plist)
+    /bin/launchctl bootout "gui/$uid/$label" >/dev/null 2>&1
+    /bin/rm -f "$plist"
+  done
+done
+# The old tray, and a recorder or service started from any other Kortix Capture copy.
+/bin/ps -axo pid=,command= | /usr/bin/awk '
+  /\/Contents\/MacOS\/kortix-tray/ { print $1; next }
+  /Kortix Capture.*\.app\/Contents\/MacOS\// && ($0 ~ / record --supervised/ || $0 ~ / service run/) && $0 !~ /^ *[0-9]+ \/Applications\/Kortix Capture\.app\// { print $1 }' | while read -r pid; do
+  /bin/kill "$pid" >/dev/null 2>&1
+done
+exit 0

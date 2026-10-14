@@ -1,0 +1,15 @@
+[Unit]
+Description=Kortix Capture (this session)
+Documentation=https://kortix.com
+
+[Service]
+# `agent` records at once and locally (sync Off) on a personal install. With
+# /etc/kortix/capture.json it is `service run --managed`: it records once the machine service
+# has enrolled this person.
+ExecStart=/usr/bin/kortix-capture agent
+Restart=always
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

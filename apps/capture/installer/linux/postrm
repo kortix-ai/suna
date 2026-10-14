@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove|purge)
+    systemctl --global disable kortix-capture.service >/dev/null 2>&1 || true
+    if [ -d /run/systemd/system ]; then
+      systemctl disable kortix-capture-machine.service >/dev/null 2>&1 || true
+      systemctl daemon-reload || true
+    fi
+    ;;
+esac
+if [ "$1" = "purge" ]; then
+  # The configuration (and its token) and the machine service's state. People's libraries stay.
+  rm -rf /etc/kortix/capture.json /var/lib/kortix
+  rmdir /etc/kortix 2>/dev/null || true
+fi
+exit 0

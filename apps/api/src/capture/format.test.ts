@@ -1,7 +1,7 @@
 /**
  * The reader side of the Kortix Capture format against the engine's own
- * contract: the JSON Schemas and fixture bucket vendored, pinned, in
- * tests/fixtures/capture-format-v2 (see SOURCE.json).
+ * contract: the JSON Schemas (apps/capture/schemas) and the fixture bucket
+ * (apps/capture/fixtures/capture-format-v2).
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -23,12 +23,13 @@ import {
   policyDocument,
 } from './format';
 
-const CONTRACT = join(import.meta.dir, '../../../../tests/fixtures/capture-format-v2');
+const APP = join(import.meta.dir, '../../../capture');
+const CONTRACT = join(APP, 'fixtures/capture-format-v2');
 const FIXTURE_DEVICE = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
 const DAY = join(CONTRACT, 'bucket/fixture-prefix', FIXTURE_DEVICE, '2026/10/01');
 const ajv = new Ajv2020({ allErrors: true, strict: false });
-for (const file of readdirSync(join(CONTRACT, 'schemas'))) {
-  ajv.addSchema(JSON.parse(readFileSync(join(CONTRACT, 'schemas', file), 'utf8')), file.replace(/\.schema\.json$/, ''));
+for (const file of readdirSync(join(APP, 'schemas'))) {
+  ajv.addSchema(JSON.parse(readFileSync(join(APP, 'schemas', file), 'utf8')), file.replace(/\.schema\.json$/, ''));
 }
 const conforms = (name: string, value: unknown) => {
   const validate = ajv.getSchema(name)!;

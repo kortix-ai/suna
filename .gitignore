@@ -186,3 +186,6 @@ botkube-comm-real.yaml
 /core
 core.[0-9]*
 *.core
+
+# Kortix Capture (apps/capture): Cargo build output
+apps/capture/target/

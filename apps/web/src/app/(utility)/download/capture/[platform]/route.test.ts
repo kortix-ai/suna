@@ -13,16 +13,16 @@ const asset = (name: string) => ({
 let assets = [
   asset('Kortix-1.0.0-universal.dmg'),
   asset('Kortix-Setup-1.0.0.exe'),
-  asset('KortixCapture-0.39-x64.msi'),
-  asset('KortixCapture-0.39-universal.pkg'),
-  asset('kortix-capture_0.39_amd64.deb'),
+  asset('KortixCapture-x64.msi'),
+  asset('KortixCapture-universal.pkg'),
+  asset('kortix-capture_amd64.deb'),
 ];
 beforeEach(() => {
-  // The Releases list: a Kortix release (never used here) and the Capture release.
+  // The Releases list: a newer Kortix release without Capture installers (skipped) and the one that has them.
   globalThis.fetch = (async () =>
     Response.json([
-      { tag_name: 'v1.0.0', draft: false, assets: [asset('Kortix-Setup-1.0.0.exe')] },
-      { tag_name: 'capture-v0.39', draft: false, assets },
+      { tag_name: 'v1.0.1', draft: false, assets: [asset('Kortix-Setup-1.0.1.exe')] },
+      { tag_name: 'v1.0.0', draft: false, assets },
     ])) as unknown as typeof fetch;
 });
 afterEach(() => {
@@ -35,9 +35,9 @@ const call = (platform: string) =>
 describe('GET /download/capture/<platform>', () => {
   test('302s each OS to its Kortix Capture installer, never the Kortix app', async () => {
     for (const [platform, name] of [
-      ['windows', 'KortixCapture-0.39-x64.msi'],
-      ['macos', 'KortixCapture-0.39-universal.pkg'],
-      ['linux', 'kortix-capture_0.39_amd64.deb'],
+      ['windows', 'KortixCapture-x64.msi'],
+      ['macos', 'KortixCapture-universal.pkg'],
+      ['linux', 'kortix-capture_amd64.deb'],
     ] as const) {
       const res = await call(platform);
       expect(res.status).toBe(302);

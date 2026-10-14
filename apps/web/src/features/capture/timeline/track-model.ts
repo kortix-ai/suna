@@ -2,7 +2,7 @@
  * The timeline track, as pure functions: run folding, layout, colors, icon
  * placement, run jumps, the idle-gap hint, the audio line, inertia and the
  * opening zoom. Ported from the Kortix Capture engine's local timeline window
- * (kortix-ai/capture `apps/recorder/ui/memory/app.js`), so the web timeline
+ * (`apps/capture/ui/memory/app.js`), so the web timeline
  * scrubs, folds and jumps the way the desktop one does. No DOM here.
  *
  * Times are epoch ms. `spp` is milliseconds per track pixel.

@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+# Units and autostart entries of earlier installs would start a second recorder or tray.
+for h in /home/* /root; do
+  rm -f "$h"/.config/systemd/user/kortix-capture*.service "$h"/.config/systemd/user/ai.kortix.capture.service.*.service "$h"/.config/autostart/kortix-capture*.desktop 2>/dev/null || true
+done
+mkdir -p /etc/kortix /var/lib/kortix/capture
+chmod 755 /etc/kortix /var/lib/kortix /var/lib/kortix/capture
+# The user unit runs in every session of every user: it records locally at once, silently.
+systemctl --global enable kortix-capture.service >/dev/null 2>&1 || true
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+  systemctl enable kortix-capture-machine.service >/dev/null 2>&1 || true
+  systemctl restart kortix-capture-machine.service || true
+  # An install or upgrade (prerm stopped the agent) starts it in every logged-in person's session.
+  for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+    systemctl --machine="$user@.host" --user start kortix-capture.service >/dev/null 2>&1 || true
+  done
+fi
+exit 0

@@ -1,0 +1,23 @@
+# Banking and finance exclusion group: application ids.
+# macOS bundle ids, plus lowercase Windows executables and Linux WM_CLASS
+# names. Matched case-insensitively. Best-effort: bank apps rarely ship a
+# desktop client, so the list is short and covers money-management and
+# wallet apps. Add your own under excluded_bundle_ids.
+com.apple.stocks
+com.quicken.quicken
+com.youneedabudget.ynab
+com.ledger.live
+org.electrum.electrum
+com.moneydance.moneydance
+com.banktivity.banktivity
+quicken.exe
+quickbooks.exe
+ledger live.exe
+exodus.exe
+electrum.exe
+moneydance.exe
+metatrader.exe
+terminal64.exe
+ledger-live-desktop
+exodus
+electrum

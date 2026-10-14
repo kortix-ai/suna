@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>ai.kortix.capture</string>
+  <key>CFBundleName</key>
+  <string>Kortix Capture</string>
+  <key>CFBundleDisplayName</key>
+  <string>Kortix Capture</string>
+  <key>CFBundleExecutable</key>
+  <string>Kortix Capture</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>kortix-capture</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+  <!-- No Dock icon, no Cmd-Tab entry, ever: the menu-bar icon is the app's presence. -->
+  <key>LSUIElement</key>
+  <true/>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Kortix Capture records what is on your screen, for you or for the organization that installed it.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Kortix Capture records audio only when audio memory is turned on.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Kortix Capture reads the address of the page open in your browser, to label what it records.</string>
+</dict>
+</plist>
