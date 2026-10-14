@@ -10,7 +10,7 @@ const { invalidateReviewInbox } = await import('./use-review-items');
 describe('invalidateReviewInbox', () => {
   test('refetches every inbox page, the needs-you counts and the needs-input summary', async () => {
     const queryClient = new QueryClient();
-    const invalidateSpy = mock(() => Promise.resolve());
+    const invalidateSpy = mock((_filters: unknown) => Promise.resolve());
     queryClient.invalidateQueries = invalidateSpy as typeof queryClient.invalidateQueries;
 
     await invalidateReviewInbox(queryClient, 'proj-1');
