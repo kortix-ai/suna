@@ -8,6 +8,7 @@
  * off and on, and `GET …/log`. `SLOG-3` is the restore claim (P6.1); its operator
  * switch (503) is covered in
  * apps/api/src/__tests__/integration-session-log-restore.test.ts.
+ * `SLOG-4` is the switch preflight (P7.1): the loss report of a stored log on another harness.
  */
 import { createHash } from "node:crypto";
 import {
@@ -17,6 +18,7 @@ import {
   SessionLogPageSchema,
   SessionLogRestoreMissingSchema,
   SessionLogRestoreSchema,
+  SessionLogSwitchPreflightSchema,
   type SessionLogRestore,
   type V1Row,
 } from "@kortix/api-contract/session-log";
@@ -409,6 +411,76 @@ flow(
         const r = await box.get(ATTACHMENT, { params: { ...params, attachmentId: blob.ref.split("/").at(-1)! } });
         r.status(200);
         if (createHash("sha256").update(r.text()).digest("hex") !== blob.sha256) throw new Error("the attachment's sha256 differs from the blob's");
+      });
+    } finally {
+      await close();
+    }
+  },
+);
+
+const PREFLIGHT = "/v1/projects/:projectId/sessions/:sessionId/log/switch-preflight";
+
+flow(
+  "SLOG-4",
+  {
+    domain: "sessions",
+    requires: ["database"],
+    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, `POST ${PREFLIGHT}`],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId! });
+    ctx.track("session", sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id, sessionId };
+    const preflight = (to: unknown, as = owner) => as.post(PREFLIGHT, { to }, { params });
+    const { box, close } = await sandboxCredential(ctx, project.id, sessionId);
+    const thread = (id: string, parent: string | null) => ({ schema: "kortix.session/2", v: 1, thread_id: id, parent_thread_id: parent, spawned_by: null, agent: null, title: null, created_at: T, ext: {} });
+    const call = (id: string, name: string, kind: string) => ({ type: "tool_call", id, call_id: id, name, kind, input: {}, status: "complete", result: { content: [{ type: "text", text: "ok" }], is_error: false } });
+    const pdf = { type: "attachment", id: "prt_pdf", mime: "application/pdf", ref: "blob:synthetic", bytes: 3, sha256: "a".repeat(64) };
+    const session = {
+      schema: "kortix.session/2", v: 1, session_id: sessionId, title: "Synthetic switch", created_at: T, restore_grade: "native",
+      harness: { current: "opencode", history: [{ harness: "opencode", version: "1.18.23", from_seq: 1, at: T }] },
+      selection: { agent: null, model: null }, todos: [{ content: "ship it", status: "pending" }], pending: { questions: [], permissions: [] }, ext: {},
+    };
+
+    try {
+      await ctx.step("a session without a stored log → 404; a `to` that is not a harness → 400", async () => {
+        (await preflight("pi")).status(404);
+        (await preflight("claude-code")).status(400);
+      });
+
+      await ctx.step("the OpenCode box journals a sub-agent, a todo list, a PDF, an MCP tool, a rewound message → 200", async () => {
+        (await box.post(JOURNAL, Bun.gzipSync(JSON.stringify({
+          generation: 0, session, threads: [thread("main", null), thread("ses_child", "main")], tombstones: [],
+          puts: [
+            { rev: REV + 1, message: message("msg_u0", 0, { blocks: [{ type: "text", id: "prt_t", text: "read this" }, pdf] }) },
+            { rev: REV + 2, message: message("msg_a1", 1, { role: "assistant", finish: "stop", blocks: [call("call_task", "task", "task"), call("call_todo", "todowrite", "todo"), call("call_mcp", "github_search", "mcp")] }) },
+            { rev: REV + 3, message: message("msg_u2", 2, { in_context: false, hidden_reason: "reverted" }) },
+            { rev: REV + 4, message: message("msg_c0", 0, { thread_id: "ses_child" }) },
+          ],
+        })), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+      });
+
+      await ctx.step("preflight to pi → 200: the todos, the PDF, the MCP tool and the rewind are lost; the sub-agent is not listed (pi runs it natively)", async () => {
+        (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
+          session_id: sessionId, from: "opencode", to: "pi",
+          losses: [
+            { feature: "attachments.user", detail: "application/pdf", used: 1, status: "lost" },
+            { feature: "todos", used: 1, status: "lost" },
+            { feature: "session.mcp", detail: "github_search", used: 1, status: "lost" },
+            { feature: "session.rewind", used: 1, status: "lost" },
+          ],
+        });
+      });
+
+      await ctx.step("preflight to opencode (the same harness) → 200 with no loss; the read claimed nothing (a journal batch at generation 0 → 200)", async () => {
+        (await preflight("opencode")).status(200).body().has("$.losses", []);
+        (await box.post(JOURNAL, batch(0, [{ rev: REV + 5, message: message("msg_u3", 3) }]), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+      });
+
+      await ctx.step("a user with no membership in the project's account → 403, no report", async () => {
+        (await preflight("pi", ctx.client.as(ctx.P.NONMEMBER))).status(403);
       });
     } finally {
       await close();

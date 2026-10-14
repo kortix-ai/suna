@@ -46,6 +46,12 @@
  *   without a restore. A 404 with another body is an API that predates the route.
  * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
  *
+ * Switch preflight (P7.1): `POST /v1/projects/:p/sessions/:s/log/switch-preflight`, body
+ * `{ to: 'pi' | 'opencode' }`, the caller's session read permission (the `GET …/log` gate). Read
+ * only: it claims nothing and changes nothing. 200 `SessionLogSwitchPreflight`: the loss report of
+ * a switch of the stored log to `to` (`switchPreflight`, `capabilities.ts`). 404 when the session
+ * has no stored log.
+ *
  * `rev` is monotonic per message across daemon boots, not a per-boot counter: the daemon
  * issues `max(Date.now() * 1000, last + 1)`, a safe integer that needs a `bigint` column. The
  * API applies the highest `rev` it has seen for a message (a lower or equal one changes
@@ -129,7 +135,32 @@ export const SessionLogRestoreSchema = z.object({
 });
 export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });
 
+/** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
+export const SessionLogHarnessSchema = z.enum(['pi', 'opencode']);
+export const SessionLogSwitchPreflightRequestSchema = z.object({ to: SessionLogHarnessSchema });
+/** One line of the loss report (`switchPreflight` in `capabilities.ts`). */
+export const SessionLogSwitchLossSchema = z.object({
+  /** A `CapabilityFeatures` path (`todos`, `attachments.user`, `compaction`, ...) or a `RuntimeCapability` (`session.mcp`, ...). */
+  feature: z.string().min(1),
+  /** The mime type, compaction kind, sub-agent mode or tool names the line is about. */
+  detail: z.string().min(1).optional(),
+  /** How many records of the log use it. */
+  used: z.number().int().positive(),
+  /** `degraded`: the target writes it by lowering or emulating. `lost`: the target cannot write or serve it. */
+  status: z.enum(['degraded', 'lost']),
+});
+export const SessionLogSwitchPreflightSchema = z.object({
+  session_id: z.string(),
+  /** `harness.current` of the stored log. */
+  from: z.string(),
+  to: SessionLogHarnessSchema,
+  losses: z.array(SessionLogSwitchLossSchema),
+});
+
 export type SessionLogPut = z.infer<typeof SessionLogPutSchema>;
+export type SessionLogHarness = z.infer<typeof SessionLogHarnessSchema>;
+export type SwitchLoss = z.infer<typeof SessionLogSwitchLossSchema>;
+export type SessionLogSwitchPreflight = z.infer<typeof SessionLogSwitchPreflightSchema>;
 export type SessionLogTombstone = z.infer<typeof SessionLogTombstoneSchema>;
 export type SessionLogThreadUpsert = z.infer<typeof SessionLogThreadUpsertSchema>;
 export type SessionLogSessionPatch = z.infer<typeof SessionLogSessionPatchSchema>;

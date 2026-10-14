@@ -129,6 +129,8 @@ SessionLogBlockSchema = union(
   | HarnessBlockSchema
 )
 
+SessionLogHarnessSchema = enum(pi | opencode)
+
 SessionLogJournalConflictSchema = {
   generation: number(int)(min0)
 }
@@ -303,6 +305,24 @@ SessionLogSessionPatchSchema = {
 SessionLogStateEventSchema = {
   generation: number(int)(min0)
   session: SessionLogSessionPatchSchema
+}
+
+SessionLogSwitchLossSchema = {
+  feature: string(min1)
+  detail: string(min1) | absent
+  used: number(int)(min0)
+  status: enum(degraded | lost)
+}
+
+SessionLogSwitchPreflightRequestSchema = {
+  to: SessionLogHarnessSchema
+}
+
+SessionLogSwitchPreflightSchema = {
+  session_id: string
+  from: string
+  to: SessionLogHarnessSchema
+  losses: array(SessionLogSwitchLossSchema)
 }
 
 SessionLogThreadSchema = {

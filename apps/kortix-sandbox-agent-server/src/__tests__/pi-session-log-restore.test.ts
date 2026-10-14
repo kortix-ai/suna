@@ -28,7 +28,7 @@ import type { SessionLogChanges } from '@/harness/contract/session-log'
 import { loadConfig } from '@/harness/harness'
 import { requirePiConfig } from '@/harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
-import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES } from '@/harness/pi/session-log'
+import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, PI_VERSION } from '@/harness/pi/session-log'
 import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import { reconcileSessionLog } from '@/harness/shared/session-log-boot'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
@@ -497,11 +497,18 @@ describe('the boot reconcile on pi (P6.4)', () => {
       const sent = api.journal.flatMap((b) => b.puts.map((p) => p.message.message_id))
       expect(sent.filter((id) => log.threads.some((t) => t.messages.some((m) => m.message_id === id)))).toEqual([])
       expect(sent.length).toBeGreaterThanOrEqual(2)
+      // P7.1: the log's harness (`fixture`) stays in the history, and pi serves the session from the first root seq after the restore.
+      const floor = Math.max(...log.threads[0]!.messages.map((m) => m.seq))
+      expect(boot.harness).toEqual({ history: log.harness.history, from_seq: floor + 1, at: expect.any(String) })
+      expect(api.journal.find((b) => b.session?.harness)?.session?.harness).toEqual({
+        current: 'pi',
+        history: [...log.harness.history, { harness: 'pi', version: PI_VERSION, from_seq: floor + 1, at: boot.harness!.at }],
+      })
 
       // A daemon restart: the store holds the log and the turn; nothing is restored.
       await service.lifecycle.stop()
       resetSessionLogJournalForTests()
-      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toEqual({ generation: 1, cursors: [] })
+      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toEqual({ generation: 1, cursors: [], harness: boot.harness })
       expect(restores(api)).toBe(1)
     } finally {
       api.stop()
@@ -526,7 +533,7 @@ describe('the boot reconcile on pi (P6.4)', () => {
       expect(oracle(log, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
       // That turn never reached the API (no journal ran): the store is ahead of the log.
       await service.lifecycle.stop()
-      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toEqual({ generation: 1, cursors: [] })
+      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toMatchObject({ generation: 1, cursors: [] })
       expect(restores(api)).toBe(1)
       const again = await box.start()
       expect(JSON.stringify(again.transcript.all())).toContain('UNSENT-ANSWER')

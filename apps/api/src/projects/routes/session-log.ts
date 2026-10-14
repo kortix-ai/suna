@@ -16,6 +16,10 @@
  * session the v1 transcript route serves it. A read claims nothing; the restore claims.
  * Postgres only (`../session-log-read.ts`).
  *
+ * The switch preflight, `POST /:projectId/sessions/:sessionId/log/switch-preflight` (P7.1), has the
+ * read's gate and changes nothing: the loss report of the stored log on another harness
+ * (`switchPreflight`, `@kortix/api-contract/session-log` `capabilities.ts`).
+ *
  * The journal body is gzipped JSON. It is not declared as a validated request schema: the
  * OpenAPI validator would call `req.json()` on gzip bytes (same reason as
  * `platform/routes/runtime-projection.ts`). The handler gunzips, caps and validates it.
@@ -31,6 +35,9 @@ import {
   SessionLogPageSchema,
   SessionLogRestoreMissingSchema,
   SessionLogRestoreSchema,
+  SessionLogSwitchPreflightRequestSchema,
+  SessionLogSwitchPreflightSchema,
+  switchPreflight,
   type SessionLogJournalRequest,
 } from '@kortix/api-contract/session-log';
 import type { Context } from 'hono';
@@ -45,7 +52,7 @@ import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { ingestSessionLogJournal, readSessionLogManifest, type SessionLogScope } from '../session-log-ingest';
 import { readSessionLogPage } from '../session-log-read';
-import { claimSessionLog } from '../session-log-restore';
+import { claimSessionLog, readSessionLog } from '../session-log-restore';
 import { resolveSessionBinding } from './lib/route-bindings';
 
 const MAX_GZIP_BYTES = 2 * 1024 * 1024;
@@ -88,6 +95,16 @@ async function readJournalBody(c: Context<AppEnv>): Promise<BodyRead> {
   } catch {
     return { ok: false, status: 400, error: 'Journal body is not JSON' };
   }
+}
+
+/** The session read gate of `GET …/transcript`: null when the caller may read the session, else the response. */
+async function sessionReadGate(c: Context<AppEnv>, projectId: string, sessionId: string): Promise<Response | null> {
+  const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+  if (binding.kind === 'error') return binding.response;
+  const { loaded } = binding;
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  return visible ? null : c.json({ error: 'Not found' }, 404);
 }
 
 export function registerSessionLogRoutes(): void {
@@ -215,17 +232,43 @@ export function registerSessionLogRoutes(): void {
         return c.json({ error: 'Invalid thread' }, 400);
       }
 
-      const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
-      if (binding.kind === 'error') return binding.response as never;
-      const { loaded } = binding;
-      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      const denied = await sessionReadGate(c, projectId, sessionId);
+      if (denied) return denied as never;
 
       const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
       if (!page) return c.json({ error: 'No session log for this session' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/log/switch-preflight',
+      tags: ['sessions'],
+      summary: 'List what a session would lose on another harness',
+      description:
+        'Read only: claims nothing, changes nothing. Body `{ to: "pi" | "opencode" }`. Answers `SessionLogSwitchPreflight`: ' +
+        'one line for each feature the stored session log uses that `to` renders worse than the harness that wrote it ' +
+        '(`degraded`: lowered or emulated; `lost`), and each runtime control the session used that `to` does not serve. ' +
+        'The capability manifests are `PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`). ' +
+        'Session read permission, the `GET .../log` gate. 404 when the session has no stored log.',
+      ...auth,
+      request: { params, body: { content: { 'application/json': { schema: SessionLogSwitchPreflightRequestSchema } }, required: true } },
+      responses: {
+        200: json(SessionLogSwitchPreflightSchema, 'The loss report'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId } = c.req.valid('param');
+      const { to } = c.req.valid('json');
+      const denied = await sessionReadGate(c, projectId, sessionId);
+      if (denied) return denied as never;
+      const log = await readSessionLog(sessionId);
+      if (!log) return c.json({ error: 'No session log for this session' }, 404);
+      return c.json(switchPreflight(log, to), 200);
     },
   );
 }
