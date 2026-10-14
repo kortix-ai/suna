@@ -9,8 +9,10 @@ import {
   zoomOut,
   zoomReset,
 } from '@/lib/desktop';
+import { normalizeDarkTheme, normalizeLightTheme } from '@/lib/interface-themes';
 import { projectIdFromPathname } from '@/stores/project-switch-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useTheme } from 'next-themes';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -23,13 +25,15 @@ import { useEffect } from 'react';
  */
 export function DesktopChrome() {
   const { theme } = useTheme();
+  const lightTheme = useUserPreferencesStore((s) => normalizeLightTheme(s.preferences.lightTheme));
+  const darkTheme = useUserPreferencesStore((s) => normalizeDarkTheme(s.preferences.darkTheme));
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
     if (!isDesktop() || !theme) return;
-    void setDesktopNativeTheme(theme);
-  }, [theme]);
+    void setDesktopNativeTheme(theme, { light: lightTheme, dark: darkTheme });
+  }, [theme, lightTheme, darkTheme]);
 
   useEffect(() => {
     if (!isDesktop()) return;
