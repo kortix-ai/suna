@@ -31,7 +31,11 @@ export { type GrepFileGroup, parseGrepOutput } from '@kortix/shared/tool-output'
  * listing with no entry; `null` when the text is not a listing, or lists only directories.
  */
 export function parseListing(output: string, dir?: string): string[] | null {
-  const lines = output.split(/\r?\n/).filter((l) => l.trim() && !/^[[(]/.test(l.trim()));
+  // Only pi's two notices are dropped: a `[…]` line and `(empty directory)`. An entry may
+  // start with `[` or `(` (route folders `[locale]/`, `(app)/`, a `[id].tsx` file).
+  const lines = output
+    .split(/\r?\n/)
+    .filter((l) => l.trim() && !/^\[.*\]$|^\(empty directory\)$/.test(l.trim()));
   let root = dir ? dir.replace(/\/*$/, '/') : '';
   if (/^\/.*\/$/.test(lines[0]?.trim() ?? '')) root = lines.shift()!.trim();
   if (!root) return null;

@@ -195,6 +195,12 @@ describe('parseListing', () => {
     expect(parseListing('components/\nindex.ts\n\n[1 entries limit reached]', '/w/src')).toEqual(['/w/src/index.ts']);
   });
 
+  test('entries in brackets or parentheses (route folders) are entries, not notices', () => {
+    const tree = '/w/app/\n  (system)/\n    debug/\n      page.tsx\n  [locale]/\n    layout.tsx\n  globals.css\n';
+    expect(parseListing(tree, '/w/app')).toEqual(['/w/app/(system)/debug/page.tsx', '/w/app/[locale]/layout.tsx', '/w/app/globals.css']);
+    expect(parseListing('[locale]/\n(app)/\nlayout.tsx\n[id].tsx\n\n[4 entries limit reached]', '/w/app')).toEqual(['/w/app/layout.tsx', '/w/app/[id].tsx']);
+  });
+
   test('an empty listing → [], text that is not a listing → null', () => {
     expect(parseListing('(empty directory)', '/w/src')).toEqual([]);
     expect(parseListing('/w/src/\n', '/w/src')).toEqual([]);
