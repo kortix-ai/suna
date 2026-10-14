@@ -179,21 +179,21 @@ describe('scrape_webpage', () => {
     // Firecrawl documents its own `timeout` up to 60000ms and answers past it
     // when engines cascade. A tool cap below that envelope turns a
     // slow-but-successful scrape into a tool timeout. Scale the tool's cap
-    // 100x down so this runs in ~1s: the router answers at 500ms, a 35s cap
-    // aborts at 350ms, the shipped cap waits and the call is made once.
-    const real = AbortSignal.timeout.bind(AbortSignal)
-    const sig = AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }
-    sig.timeout = (ms) => real(Math.round(ms / 100))
+    // 50x down so this runs in ~2s: the router answers at 1000ms, a 35s cap
+    // aborts at 700ms, the shipped cap (1.8s) waits and the call is made once.
+    const native = AbortSignal.timeout
+    const patched = AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }
+    patched.timeout = (ms) => native(Math.round(ms / 50))
     try {
       router(async (call) => {
-        await new Promise((resolve) => setTimeout(resolve, 500))
+        await new Promise((resolve) => setTimeout(resolve, 1000))
         return page(call.body.url)
       })
       const result = JSON.parse(out(await scrapeWebpage.execute({ urls: 'https://slow.example.test/page' }, ctx())))
       expect(result).toMatchObject({ url: 'https://slow.example.test/page', success: true, title: 'T' })
       expect(calls).toHaveLength(1)
     } finally {
-      sig.timeout = real
+      patched.timeout = native
     }
   })
 })
