@@ -1,0 +1,16 @@
+{
+  "source_hash": "4a7ccfb7aaf2d496ebdefac1ed752a93c798b200955819e2c2e6907995ef4f37",
+  "diff_files": [
+    "apps/web/src/features/file-renderers/csv/csv-viewer.test.tsx",
+    "apps/web/src/features/file-renderers/csv/csv-viewer.tsx"
+  ],
+  "diff_hash": "a7780b123de22ddc85d8a202fa72b5fd85408c3ad928cbff310fd475217f4334",
+  "head": "dac3a1a5d1ba7b7b0a515f15bc376777fe4c90d7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T12:38:54.892Z"
+}
