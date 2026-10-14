@@ -88,6 +88,7 @@ describe('readSessionAuditActions', () => {
       audited: true,
       limit: 100,
       canResolve: async () => true,
+      resolvers: 'managers_and_launcher',
     });
 
     expect(result).toEqual({
@@ -112,6 +113,7 @@ describe('readSessionAuditActions', () => {
           resolved_at: null,
           approval_url: null,
           can_resolve: false,
+          resolvers: null,
         },
       ],
     });
@@ -140,6 +142,7 @@ describe('readSessionAuditActions', () => {
       audited: true,
       limit: 100,
       canResolve: async () => true,
+      resolvers: 'managers_and_launcher',
     });
 
     expect(result.actions[0]?.approval_url).toBe(
@@ -171,6 +174,7 @@ describe('readSessionAuditActions', () => {
       audited: true,
       limit: 100,
       canResolve: async () => true,
+      resolvers: 'managers_and_launcher',
     });
 
     expect(result.actions[0]?.approval_url).toBeNull();
@@ -200,6 +204,7 @@ describe('readSessionAuditActions', () => {
       audited: true,
       limit: 100,
       canResolve: async () => true,
+      resolvers: 'managers_and_launcher',
     });
 
     expect(emailLookupCalls).toHaveLength(1);
@@ -220,6 +225,7 @@ describe('readSessionAuditActions', () => {
       audited: false,
       limit: 100,
       canResolve: async () => true,
+      resolvers: 'managers_and_launcher',
     });
     expect(result).toEqual({
       session_id: SESSION_ID,
@@ -257,6 +263,7 @@ describe('readSessionAuditActions', () => {
         audited: true,
         limit: 100,
         canResolve: async () => true,
+        resolvers: 'managers_and_launcher',
       });
       expect(result.actions.map((action) => [action.execution_id, action.can_resolve])).toEqual([
         ['exec-pending', true],
@@ -273,8 +280,29 @@ describe('readSessionAuditActions', () => {
         audited: true,
         limit: 100,
         canResolve: async () => false,
+        resolvers: 'managers',
       });
       expect(result.actions[0]?.can_resolve).toBe(false);
+    });
+
+    test('a pending row names who decides; a settled row names nobody', async () => {
+      rows = [
+        pendingRow('exec-pending'),
+        pendingRow('exec-ok', { status: 'ok', approvedBy: USER_ID, resolvedAt: new Date() }),
+      ];
+      const result = await readSessionAuditActions({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        agentName: null,
+        audited: true,
+        limit: 100,
+        canResolve: async () => false,
+        resolvers: 'managers',
+      });
+      expect(result.actions.map((action) => [action.execution_id, action.resolvers])).toEqual([
+        ['exec-pending', 'managers'],
+        ['exec-ok', null],
+      ]);
     });
 
     test('asks for the verdict once for many pending rows, and never when none is pending', async () => {
@@ -291,6 +319,7 @@ describe('readSessionAuditActions', () => {
         audited: true,
         limit: 100,
         canResolve,
+        resolvers: 'managers_and_launcher',
       });
       expect(calls).toBe(1);
 
@@ -303,6 +332,7 @@ describe('readSessionAuditActions', () => {
         audited: true,
         limit: 100,
         canResolve,
+        resolvers: 'managers_and_launcher',
       });
       expect(calls).toBe(1);
     });
@@ -333,6 +363,7 @@ describe('readSessionAuditActions', () => {
       audited: true,
       limit: 100,
       canResolve: async () => true,
+      resolvers: 'managers_and_launcher',
     });
     expect(result.actions[0]?.connector).toBeNull();
     expect(result.actions[0]?.connector_id).toBeNull();

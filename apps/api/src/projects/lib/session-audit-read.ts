@@ -27,6 +27,7 @@ import { approvalPageUrl } from '../../setup-links/token';
 import { lookupEmailsByUserIds } from '../lib/access';
 
 import type { SessionAuditAction as SessionAuditActionRow } from '@kortix/api-contract';
+import type { ApprovalResolvers } from './approval-authority';
 
 export interface SessionAuditActionsResult {
   session_id: string;
@@ -55,6 +56,9 @@ export interface ReadSessionAuditActionsParams {
    * a session with nothing pending pays no authority probe.
    */
   canResolve: () => Promise<boolean>;
+  /** Who decides this session's pending calls, as a class (`approvalResolvers`):
+   *  a client names it to a viewer whose `can_resolve` is false. */
+  resolvers: ApprovalResolvers;
 }
 
 /**
@@ -66,7 +70,7 @@ export interface ReadSessionAuditActionsParams {
 export async function readSessionAuditActions(
   params: ReadSessionAuditActionsParams,
 ): Promise<SessionAuditActionsResult> {
-  const { projectId, sessionId, agentName, audited, limit, canResolve } = params;
+  const { projectId, sessionId, agentName, audited, limit, canResolve, resolvers } = params;
 
   const rows = await db
     .select({
@@ -156,6 +160,7 @@ export async function readSessionAuditActions(
       // KRTX-1724: true only when THIS caller's POST would succeed, so a
       // client offers Approve / Deny to the people who can use them.
       can_resolve: isPending(r) && callerMayResolve,
+      resolvers: isPending(r) ? resolvers : null,
     })),
   };
 }

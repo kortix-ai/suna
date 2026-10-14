@@ -70,7 +70,7 @@ export function approvalTargetOf(
 
 export async function approvalTargetSession(
   projectId: string,
-  row: PendingApprovalRow,
+  row: Pick<PendingApprovalRow, 'sessionId' | 'actingUserId'>,
 ): Promise<ApprovalTarget> {
   if (!row.sessionId) return approvalTargetOf(row, undefined);
   const [session] = await db

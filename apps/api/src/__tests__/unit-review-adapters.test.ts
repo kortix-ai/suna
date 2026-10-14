@@ -134,6 +134,13 @@ describe('connectorCallToReviewItem', () => {
     const item = connectorCallToReviewItem(baseCall);
     expect(item.status).toBe('waiting');
     expect(item.can_resolve).toBe(false);
+    expect(item.resolvers).toBeNull();
+  });
+
+  test('the item names who decides the call', () => {
+    expect(
+      connectorCallToReviewItem(baseCall, { canResolve: false, resolvers: 'managers' }).resolvers,
+    ).toBe('managers');
   });
 });
 

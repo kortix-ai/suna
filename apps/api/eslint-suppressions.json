@@ -2960,11 +2960,6 @@
       "count": 1
     }
   },
-  "src/setup-links/approval-app.ts": {
-    "kortix-api/projects-surface": {
-      "count": 2
-    }
-  },
   "src/setup-links/connector-completion-watch.ts": {
     "kortix-api/projects-surface": {
       "count": 1

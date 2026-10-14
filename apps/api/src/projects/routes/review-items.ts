@@ -14,13 +14,14 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { mayResolveApproval } from '../lib/approval-authority';
+import { approvalResolvers, mayResolveApproval } from '../lib/approval-authority';
 import { approvalTargetOf } from '../lib/connector-approval-decision';
 import { approvalCallerOf } from '../lib/http-approval-caller';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isAdaptedId } from '../review-adapters';
 import {
+  type ConnectorCallVerdict,
   type ReviewSegment,
   applyVerdict,
   bulkApplyVerdict,
@@ -119,30 +120,27 @@ export function registerReviewItemsRoutes(): void {
             )
         : [];
       const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
+      const verdicts = new Map<string, ConnectorCallVerdict>();
       // The caller probe runs only when something is pending.
       const caller = pendingExecutions.length ? await approvalCallerOf(c, loaded, projectId) : null;
-      const resolvableExecutionIds = new Set(
-        caller
-          ? pendingExecutions
-              .filter((execution) => {
-                const target = approvalTargetOf(
-                  execution,
-                  execution.sessionId ? sessionById.get(String(execution.sessionId)) : undefined,
-                );
-                return mayResolveApproval({
-                  ...caller,
-                  targetSessionOrigin: target.origin,
-                  targetSessionCreatedBy: target.createdBy,
-                }).allowed;
-              })
-              .map((execution) => execution.executionId)
-          : [],
-      );
+      if (caller) {
+        for (const execution of pendingExecutions) {
+          const session = execution.sessionId
+            ? sessionById.get(String(execution.sessionId))
+            : undefined;
+          const { origin, createdBy } = approvalTargetOf(execution, session);
+          const target = { targetSessionOrigin: origin, targetSessionCreatedBy: createdBy };
+          verdicts.set(execution.executionId, {
+            canResolve: mayResolveApproval({ ...caller, ...target }).allowed,
+            resolvers: approvalResolvers(target),
+          });
+        }
+      }
 
       const items = await listInboxItems(projectId, {
         segment: segment as ReviewSegment | undefined,
         kind: kind as (typeof KINDS)[number] | undefined,
-        canResolveConnectorCall: (execution) => resolvableExecutionIds.has(execution.executionId),
+        connectorCallVerdict: (execution) => verdicts.get(execution.executionId),
       });
       return c.json({ review_items: items });
     },

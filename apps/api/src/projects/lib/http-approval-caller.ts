@@ -3,14 +3,20 @@
  *
  * `POST /approvals/:executionId` refuses a caller `mayResolveApproval` refuses.
  * The session audit reads and the Review Center list tell the same caller, per
- * pending call, whether that POST would succeed (`can_resolve`, KRTX-1724).
- * Both sides build the caller here, so the list and the route cannot disagree.
+ * pending call, whether that POST would succeed (`can_resolve`, KRTX-1724), and
+ * the approval page (`GET /v1/approval-links/:token`) refuses the same caller.
+ * Every side builds the caller here, so they cannot disagree.
  */
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { actorOf } from '../../middleware/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
-import type { ApprovalCaller } from './approval-authority';
+import {
+  approvalResolvers,
+  mayResolveApproval,
+  type ApprovalCaller,
+  type ApprovalResolvers,
+} from './approval-authority';
 import { assertProjectCapability } from './access';
 
 export async function approvalCallerOf(
@@ -44,5 +50,28 @@ export async function approvalCallerOf(
     callerAuthType: (c.get('authType') as string | undefined) ?? null,
     callerCredentialKind: actor.credential.kind,
     callerSessionId: callerKortixSessionId(c),
+  };
+}
+
+/**
+ * The verdict a session read reports on that session's pending calls: GET
+ * .../audit and the snapshot's `audit` leg spread it into
+ * `readSessionAuditActions`. `canResolve` is asked only when a call is pending.
+ * `resolvers` names who decides, for a viewer who may not.
+ */
+export function sessionApprovalVerdict(
+  c: Context,
+  loaded: { userId: string; row: { accountId: string } },
+  projectId: string,
+  session: { origin?: string | null; createdBy?: string | null },
+): { canResolve: () => Promise<boolean>; resolvers: ApprovalResolvers } {
+  const target = {
+    targetSessionOrigin: session.origin ?? null,
+    targetSessionCreatedBy: session.createdBy ?? null,
+  };
+  return {
+    canResolve: async () =>
+      mayResolveApproval({ ...(await approvalCallerOf(c, loaded, projectId)), ...target }).allowed,
+    resolvers: approvalResolvers(target),
   };
 }

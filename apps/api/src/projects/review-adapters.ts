@@ -10,6 +10,7 @@
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
 import type { serializeReviewItem } from './review-items';
+import type { ApprovalResolvers } from './lib/approval-authority';
 
 type ReviewItemDTO = ReturnType<typeof serializeReviewItem>;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
@@ -45,11 +46,12 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * arguments are shown, `can_resolve`, and the status. A caller who may resolve
  * finds the call under Needs you; anyone else finds it under Waiting, because
  * the decision is someone else's (KRTX-1724). Absent means false (fail closed).
+ * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
 export function connectorCallToReviewItem(
   ex: ConnectorCallRow,
-  options: { canResolve?: boolean } = {},
-): ReviewItemDTO & { can_resolve: boolean } {
+  options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
+): ReviewItemDTO & { can_resolve: boolean; resolvers: ApprovalResolvers | null } {
   const includeArgsPreview = options.canResolve === true;
   const summary =
     ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
@@ -69,6 +71,7 @@ export function connectorCallToReviewItem(
     kind: 'approval',
     status: includeArgsPreview ? 'needs_you' : 'waiting',
     can_resolve: includeArgsPreview,
+    resolvers: options.resolvers ?? null,
     risk: ex.risk ? CALL_RISK[ex.risk] : 'medium',
     source: 'agent',
     title: `Approve: ${ex.actionPath}`,

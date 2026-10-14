@@ -147,7 +147,10 @@ describe('collectInboxItems connector-call preview authorization', () => {
 
   test('includes the full redacted preview only for an authorized execution', async () => {
     const [item] = await collectInboxItems(sources, {
-      canResolveConnectorCall: (row) => row.executionId === execution.executionId,
+      connectorCallVerdict: (row) =>
+        row.executionId === execution.executionId
+          ? { canResolve: true, resolvers: 'managers_and_launcher' }
+          : undefined,
     });
     expect(item.detail).toMatchObject({
       args_preview: { to: ['private@example.com'], body: 'sensitive body' },
@@ -161,25 +164,30 @@ describe('collectInboxItems connector-call preview authorization', () => {
   test('a call the caller may resolve is needs_you with can_resolve true', async () => {
     const items = await collectInboxItems(sources, {
       segment: 'needs_you',
-      canResolveConnectorCall: () => true,
+      connectorCallVerdict: () => ({ canResolve: true, resolvers: 'managers_and_launcher' }),
     });
-    expect(items.map((item) => [item.review_item_id, item.status, item.can_resolve])).toEqual([
-      ['call:exec-sensitive', 'needs_you', true],
-    ]);
+    expect(
+      items.map((item) => [item.review_item_id, item.status, item.can_resolve, item.resolvers]),
+    ).toEqual([['call:exec-sensitive', 'needs_you', true, 'managers_and_launcher']]);
   });
 
   test('a call the caller may not resolve is waiting with can_resolve false', async () => {
     const needsYou = await collectInboxItems(sources, {
       segment: 'needs_you',
-      canResolveConnectorCall: () => false,
+      connectorCallVerdict: () => ({ canResolve: false, resolvers: 'managers' }),
     });
     expect(needsYou).toEqual([]);
     const waiting = await collectInboxItems(sources, {
       segment: 'waiting',
-      canResolveConnectorCall: () => false,
+      connectorCallVerdict: () => ({ canResolve: false, resolvers: 'managers' }),
     });
-    expect(waiting.map((item) => [item.review_item_id, item.status, item.can_resolve])).toEqual([
-      ['call:exec-sensitive', 'waiting', false],
-    ]);
+    expect(
+      waiting.map((item) => [item.review_item_id, item.status, item.can_resolve, item.resolvers]),
+    ).toEqual([['call:exec-sensitive', 'waiting', false, 'managers']]);
+  });
+
+  test('a call with no verdict (it raced the read) fails closed and names nobody', async () => {
+    const [item] = await collectInboxItems(sources, { connectorCallVerdict: () => undefined });
+    expect([item.status, item.can_resolve, item.resolvers]).toEqual(['waiting', false, null]);
   });
 });

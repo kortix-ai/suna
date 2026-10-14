@@ -66,8 +66,7 @@ import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readSessionAuditActions } from '../lib/session-audit-read';
-import { mayResolveApproval } from '../lib/approval-authority';
-import { approvalCallerOf } from '../lib/http-approval-caller';
+import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -228,13 +227,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           agentName: (visible.row.agentName as string | null) ?? null,
           audited,
           limit: AUDIT_ACTIONS_LIMIT,
-          // The same verdict `GET .../audit` reports (KRTX-1724).
-          canResolve: async () =>
-            mayResolveApproval({
-              ...(await approvalCallerOf(c, loaded, projectId)),
-              targetSessionOrigin: visible.row.origin ?? null,
-              targetSessionCreatedBy: visible.row.createdBy ?? null,
-            }).allowed,
+          // `can_resolve` + `resolvers`: the resolve route's verdict (KRTX-1724).
+          ...sessionApprovalVerdict(c, loaded, projectId, visible.row),
         });
       })(),
       // = `GET .../log`, the first page of the root thread, only with the
