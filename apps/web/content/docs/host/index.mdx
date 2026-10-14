@@ -194,7 +194,7 @@ What the stack does by itself:
 - [Connectors](/docs/connect/connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
-Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable.
+Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login. A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
 
 ## The platform admin console
 
@@ -287,7 +287,7 @@ A manual `update` uses the same rollout as the daily run. When another update ho
 Every setting lives in the instance `.env`.
 
 - `kortix self-host env ls` lists every value by group and masks secrets. `--show` reveals them.
-- `kortix self-host env set KEY=VALUE ...` writes values and restarts the services that read them. A bare `KEY` prompts for the value.
+- `kortix self-host env set KEY=VALUE ...` writes values and restarts the services that read them. A bare `KEY` prompts for the value. A new `API_KEY_SECRET` makes every stored credential undecryptable, so `env set` warns first: at a terminal it asks you to confirm, and a script must pass `--yes` (without it the command exits `2` and writes nothing).
 - `kortix self-host env rotate <KEY>` or `--all-generated` regenerates a generated secret. Rotating `SUPABASE_JWT_SECRET` also regenerates the anon and service-role keys. The CLI refuses `API_KEY_SECRET`, `POSTGRES_PASSWORD` and `SAML_PRIVATE_KEY`, because a new value breaks stored data or connections.
 
 `env set` refuses the image and version keys (`KORTIX_VERSION`, `API_IMAGE`, `FRONTEND_IMAGE`, `GATEWAY_IMAGE`). Use `--tag` or `--channel` instead. When a change does not take effect, run `kortix self-host start`: it recreates every service whose configuration changed.

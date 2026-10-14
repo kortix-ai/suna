@@ -180,7 +180,7 @@ exact command, no SSH key or open port required):
 ```sh
 kortix self-host update            # pull the newest image on your channel now, migrate, roll forward
 kortix self-host env ls            # list every value, grouped by service (secrets masked)
-kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, EMAIL_URL, ...); restarts affected services only
+kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, EMAIL_URL, ...); restarts affected services only; a new API_KEY_SECRET needs a confirmation or --yes
 kortix self-host env rotate KEY    # regenerate a rotatable generated secret (or --all-generated); API_KEY_SECRET and POSTGRES_PASSWORD are refused: a new value breaks stored data
 kortix self-host logs [service]    # tail Compose logs
 kortix self-host status            # container status

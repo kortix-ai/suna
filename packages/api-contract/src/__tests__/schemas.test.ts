@@ -632,6 +632,25 @@ describe('SecretSchema', () => {
     ).not.toThrow();
   });
 
+  test('status is ok or undecryptable, and optional for older servers', () => {
+    for (const status of ['ok', 'undecryptable'] as const) {
+      expect(SecretSchema.strict().parse(secretFixture({ status })).status).toBe(status);
+    }
+    expect(SecretSchema.strict().parse(secretFixture()).status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ status: 'missing' })).success).toBe(false);
+  });
+
+  test("mine.status reports the caller's override apart from the shared status", () => {
+    const mine = { active: true, updated_at: NOW, status: 'undecryptable' };
+    const parsed = SecretSchema.strict().parse(
+      secretFixture({ status: 'ok', effective_source: 'mine', mine }),
+    );
+    expect(parsed.status).toBe('ok');
+    expect(parsed.mine?.status).toBe('undecryptable');
+    expect(SecretSchema.parse(secretFixture({ mine: { active: true, updated_at: NOW } })).mine?.status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ mine: { ...mine, status: 'missing' } })).success).toBe(false);
+  });
+
   test('accepts the system git-auth secret shape', () => {
     expect(() =>
       SecretSchema.parse(
