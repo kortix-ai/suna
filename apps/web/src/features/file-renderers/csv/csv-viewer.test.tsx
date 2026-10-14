@@ -10,23 +10,24 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { CsvViewer } from './csv-viewer';
 
+const originalActEnvironment = Object.getOwnPropertyDescriptor(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 const win = new Window({ width: 1440, height: 900 });
-const globals = globalThis as Record<string, unknown>;
+const globals = globalThis;
 /** Everything this file installs on globalThis, restored in afterAll. */
 const installedKeys = ['window', 'document', 'navigator', 'location', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle'];
 const originals = new Map<string, PropertyDescriptor | undefined>();
 for (const key of installedKeys) {
   originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-  globals[key] =
+  Reflect.set(globals, key,
     key === 'requestAnimationFrame'
       ? (cb: () => void) => setTimeout(cb, 0)
       : key === 'cancelAnimationFrame'
         ? (id: number) => clearTimeout(id)
         : key === 'getComputedStyle'
           ? win.getComputedStyle.bind(win)
-          : Reflect.get(win, key);
+          : Reflect.get(win, key));
 }
 for (const key of Object.getOwnPropertyNames(win)) {
   // Event classes too: Radix dispatches a `CustomEvent` on a happy-dom node,
@@ -34,7 +35,7 @@ for (const key of Object.getOwnPropertyNames(win)) {
   if (/^[A-Z]/.test(key) && (!(key in globals) || key.endsWith('Event'))) {
     originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     installedKeys.push(key);
-    globals[key] = Reflect.get(win, key);
+    Reflect.set(globals, key, Reflect.get(win, key));
   }
 }
 if (!win.document.body) {
@@ -48,13 +49,15 @@ const originalAnchorClick = win.HTMLAnchorElement.prototype.click;
 /** Captures the `download` attribute of every anchor the viewer downloads. */
 const downloads: (string | null)[] = [];
 
-globalThis.URL.createObjectURL = (() => 'blob:csv-viewer-test') as typeof URL.createObjectURL;
-globalThis.URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
+globalThis.URL.createObjectURL = () => 'blob:csv-viewer-test';
+globalThis.URL.revokeObjectURL = () => {};
 win.HTMLAnchorElement.prototype.click = function click() {
   downloads.push(this.download);
 };
 
 afterAll(() => {
+  if (originalActEnvironment) Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', originalActEnvironment);
+  else Reflect.deleteProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
   for (const key of installedKeys) {
     const descriptor = originals.get(key);
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -74,6 +77,7 @@ afterEach(async () => {
 });
 
 async function downloadFromViewer(props: { data: string; fileName?: string }) {
+  downloads.length = 0;
   await act(async () => {
     renderer = create(<CsvViewer data={props.data} fileName={props.fileName} />);
   });
@@ -82,7 +86,7 @@ async function downloadFromViewer(props: { data: string; fileName?: string }) {
   await act(async () => {
     button.props.onClick();
   });
-  expect(downloads.length).toBeGreaterThan(0);
+  expect(downloads).toHaveLength(1);
   return downloads[downloads.length - 1];
 }
 
