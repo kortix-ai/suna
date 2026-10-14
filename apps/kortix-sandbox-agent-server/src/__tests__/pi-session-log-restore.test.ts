@@ -343,6 +343,53 @@ describe('a pi session recorded here, restored into a fresh box', () => {
   }, 60_000)
 })
 
+describe('P2.10 and P2.12 on the real pi runtime', () => {
+  afterEach(() => resetSessionLogJournalForTests())
+
+  test('P2.10: reasoning tokens, a call title and a child context message time reach the log', async () => {
+    const rt = await freshBox('sess-pi-p2-10').start()
+    await turn(rt, 'spawn a helper', [
+      { tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general' } },
+      { tool: 'bash', args: { command: 'printf sub > sub.txt' }, reasoning: 7 },
+      { text: 'child wrote sub.txt', reasoning: 19 },
+      { text: 'parent done' },
+    ])
+    const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+    const [root, child] = log.threads
+    const childMessages = child!.messages
+    expect(childMessages.filter((m) => m.role === 'assistant').map((m) => m.usage?.reasoning)).toEqual([7, 19])
+    expect(root!.messages.filter((m) => m.role === 'assistant').map((m) => m.usage?.reasoning)).toEqual([0, 0])
+    const bash = childMessages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'bash')
+    expect(bash).toMatchObject({ status: 'complete', title: 'bash' })
+    const context = childMessages.find((m) => m.kind === 'context')!
+    expect(Date.parse(context.created_at)).toBe(Date.parse(child!.created_at))
+    expect(Date.parse(context.created_at)).toBeGreaterThan(Date.parse('2020-01-01T00:00:00Z'))
+  }, 60_000)
+
+  test('P2.12: a manual compaction reaches the journal when pi stores it, without another turn', async () => {
+    const sessionId = 'sess-pi-p2-12'
+    const box = freshBox(sessionId)
+    const api = fakeSessionLogApi({ session_id: sessionId, threads: [] } as unknown as SessionLog, { projectId: 'proj-pi-restore', stateDir: join(box.workspace, '.runtime') })
+    try {
+      const rt = await box.start()
+      expect(startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), { generation: 0, cursors: [] })).not.toBeNull()
+      await turn(rt, 'list the files', [{ tool: 'bash', args: { command: 'ls' } }, { text: 'listed' }])
+      // As the turn end does (`relayTurnEnd`).
+      expect(await flushSessionLogJournal()).toBe(true)
+      const compactions = () => api.stored().threads.flatMap((t) => t.messages).filter((m) => m.kind === 'compaction')
+      expect(compactions()).toEqual([])
+      model.script([{ text: 'SUMMARY-P2-12: one listing.' }])
+      rt.compact()
+      // No turn and no flush from here: the compaction must reach the API on its own.
+      await waitFor(() => compactions().length === 1)
+      expect(compactions()[0]!.blocks[0]).toMatchObject({ type: 'compaction', trigger: 'manual' })
+      expect((compactions()[0]!.blocks[0] as { summary: string }).summary).toContain('SUMMARY-P2-12')
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+})
+
 /** What the API holds after the journal posts `changes` on top of `log` (puts replace by id, tombstones remove, new threads join). */
 function applyJournal(log: SessionLog, changes: SessionLogChanges): SessionLog {
   const out = structuredClone(log)
