@@ -176,6 +176,17 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     expect(oracle(changed, root, prompts('golden')[root]!, sent[root]!).pass).toBe(false)
   }, 90_000)
 
+  test('an assistant text with model_text: the model gets model_text, never the display text (P6.5 review)', async () => {
+    const log = load('golden')
+    const block = log.threads[0]!.messages.find((m) => m.message_id === 'msg_g10')!.blocks[0] as { text: string; model_text?: string }
+    block.model_text = 'MODEL-TEXT-G10: exit status 1.'
+    const { out, sent } = await restoreAndCheck(log, prompts('golden'))
+    const body = JSON.stringify(sent[log.threads[0]!.thread_id])
+    expect(body).toContain('MODEL-TEXT-G10: exit status 1.')
+    expect(body).not.toContain(block.text)
+    for (const [thread, check] of Object.entries(out)) expect(check.diffs, thread).toEqual([])
+  }, 90_000)
+
   test("reasoning: another model's is lowered to assistant text; the same model's is not", async () => {
     for (const same of [false, true]) {
       const log = load('golden')
