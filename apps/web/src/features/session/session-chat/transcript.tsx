@@ -109,6 +109,7 @@ import {
   type Command,
   type PermissionRequest,
   type QuestionRequest,
+  extractGatewayErrorDetails,
   formatDuration,
   getPermissionForTool,
   getRetryInfo,
@@ -333,8 +334,12 @@ export function deriveTurnErrorPresentation(input: {
           'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
-    case 'cause':
-      return { isAbort: false, text: notice.message, suggestion: undefined };
+    case 'cause': {
+      // The ledger keeps the provider body as recorded (`400: {"message": …}`): show the
+      // gateway's sentence and next step, as a transcript error does.
+      const gateway = extractGatewayErrorDetails(notice.message);
+      return { isAbort: false, text: gateway?.message || notice.message, suggestion: gateway?.message ? gateway.suggestion : undefined };
+    }
     case 'unexplained':
       return {
         isAbort: false,

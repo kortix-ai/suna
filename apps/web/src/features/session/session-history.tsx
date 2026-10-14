@@ -56,7 +56,9 @@ export function RestoreNotice({ notice, onDismiss }: { notice: SessionLogRestore
     notice.missing.map((m) => t(MISSING_KEY[m.kind], { count: m.count })),
   );
   return (
+    // `info`: the neutral tone keeps `Alert`'s default fill under a hairline (two boundaries).
     <InfoBanner
+      tone="info"
       role="status"
       data-restore-notice=""
       className="mb-6 rounded-md"
