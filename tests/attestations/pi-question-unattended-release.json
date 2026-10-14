@@ -1,24 +1,28 @@
 {
-  "source_hash": "6f8fc39cdd33d4517955fd271189f34ba1f6f431cd2a8cde7568b9ff9b31dc3b",
+  "source_hash": "050d3df04052fe3db9124be23ed63734665ac99241fd039cdbaec34b5d0e9a60",
   "diff_files": [
-    ".agents/skills/learnings/entries/2026-10-14T192741Z-never-let-an-unanswered-question-block-a-session-a-new-messa.md",
-    "apps/api/src/__tests__/unit-channel-question-release.test.ts",
-    "apps/api/src/__tests__/unit-genui-relay.test.ts",
-    "apps/api/src/__tests__/unit-teams-settings-authz.test.ts",
-    "apps/api/src/channels/question-release.ts",
-    "apps/api/src/projects/lib/__tests__/turn-start-convergence-probe-coalesce.test.ts",
-    "apps/api/src/projects/review-items.ts",
-    "apps/api/src/projects/routes/turn-questions-notify.test.ts",
-    "apps/api/src/projects/routes/turn-questions.ts",
-    "apps/api/src/projects/session-log-switch.ts"
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/__tests__/e2e-project-maintenance.test.ts",
+    "apps/api/src/projects/reaping/box-reaper.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.test.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.ts",
+    "apps/api/src/projects/routes/marketplace-install-session.test.ts",
+    "apps/api/src/projects/routes/turn-stream.test.ts",
+    "apps/api/src/projects/sandbox-reaper.test.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts",
+    "apps/api/src/projects/session-lifecycle/actions.ts",
+    "apps/api/src/sandbox-proxy/index.ts",
+    "apps/api/src/sandbox-proxy/provider.ts",
+    "apps/api/src/sandbox-proxy/routes/preview-deadline.test.ts",
+    "apps/api/src/sandbox-proxy/routes/share.ts"
   ],
-  "diff_hash": "87761fd51319f19f64aa991ff3a519687890a1bf09ae28c8692f9afc709c1355",
-  "head": "b8a9a5c19fcd9b82b18e3f4ff8b10f2659248899",
+  "diff_hash": "538f5cb792c0f7df210fec8cb80f442c1ca13fe64b97eabcb4ad02c2a27ac59c",
+  "head": "3924f5cf9f37024de93c61b6c03a5273e980287c",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T21:36:35.818Z"
+  "at": "2026-10-14T22:16:02.704Z"
 }
