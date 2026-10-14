@@ -5,12 +5,12 @@
     "apps/web/src/features/file-renderers/sqlite-renderer.tsx"
   ],
   "diff_hash": "ddb41bfb98fa8f09ef894dc1e98e1045992dda5dce6b4423f9a9689042e54388",
-  "head": "35d38a10ba20a4624720a31a580d62ea23b81fb2",
+  "head": "a987a66f9a13be84aaf5d5368ddc17f9ed86e7b7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-14T05:05:46.071Z"
+  "at": "2026-10-14T06:12:41.815Z"
 }
