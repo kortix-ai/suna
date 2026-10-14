@@ -1,16 +1,16 @@
 {
-  "source_hash": "799aa4220544172fc103eea9a6995cfefc77c4acdc292fb489cba556218c7fd6",
+  "source_hash": "fd567961c59ffae7195fb60b360a41a7918e6ce2006a5346970e4f574fc5b452",
   "diff_files": [
     "apps/web/src/app/[locale]/game-of-life/game-of-life.test.tsx",
     "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx"
   ],
   "diff_hash": "e0306f67fa05cc9661470f9d1e33b241401c93397116805e3cdf2991da591973",
-  "head": "a4ec9d12a7b0f16c9969c0b8d511e039737e9268",
+  "head": "eb25a0094161e0b8192338c3a62dad1599e50b52",
   "passed": false,
   "lanes": {
     "packages": "fail",
     "db-suites": "skipped-unaffected",
     "core": "pass"
   },
-  "at": "2026-10-14T14:08:36.969Z"
+  "at": "2026-10-14T14:22:41.501Z"
 }
