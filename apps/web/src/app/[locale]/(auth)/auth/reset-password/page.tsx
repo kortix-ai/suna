@@ -128,7 +128,7 @@ function ResetPasswordContent() {
 export default function ResetPassword() {
   const t = useTranslations('auth.passwordReset');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={t('resetting')} />}>
+    <Suspense fallback={<ConnectingScreen minimal title={t('resetting')} />}>
       <ResetPasswordContent />
     </Suspense>
   );

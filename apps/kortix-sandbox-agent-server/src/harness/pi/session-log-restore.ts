@@ -33,7 +33,7 @@
  *   A model-invisible block stays in the v1 transcript only.
  * - Assistant content is what the model saw: `model_text ?? text`, no
  *   synthetic text, reasoning as `thinking` (pi-ai replays it to the model that
- *   wrote it and lowers it to text for any other), signatures from `ext.pi`.
+ *   wrote it; `reasoning.ts` drops it from a request to any other), signatures from `ext.pi`.
  *   A call input that is not an object is `{ input }` (a string) or `{}`
  *   (`dropped.tool_input`).
  * - A tool result is a `toolResult` entry (`ext.pi.native_id` keeps pi's entry
@@ -213,7 +213,9 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
     type: 'message', id, timestamp: m.created_at,
     message: {
       role: 'assistant', content,
-      ...(m.model?.api ? { api: API[m.model.api] ?? m.model.api } : {}),
+      // A log without `api` (v1, OpenCode-converted) names a gateway model by provider and model, as modelView
+      // compares them: give it the dialect every pi gateway model uses (model.ts), so pi-ai sees the same model.
+      ...(m.model?.api ? { api: API[m.model.api] ?? m.model.api } : m.model?.provider === 'kortix' ? { api: 'openai-completions' } : {}),
       provider: m.model?.provider ?? 'unknown', model: m.model?.model ?? 'unknown',
       usage: piUsage(m.usage), stopReason,
       ...(m.error ? { errorMessage: m.error.message } : {}),

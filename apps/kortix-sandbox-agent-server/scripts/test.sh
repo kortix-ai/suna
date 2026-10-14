@@ -9,4 +9,6 @@ cd "$(dirname "$0")/.."
 
 . ../../scripts/hermetic-test-env.sh
 
-exec bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} "$@"
+# Four isolated workers, as apps/cli: the serial run took 254-366 s, most of
+# it in tests that wait on real processes and timers.
+exec bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4 "$@"

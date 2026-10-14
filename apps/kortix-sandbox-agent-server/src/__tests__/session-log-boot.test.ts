@@ -162,6 +162,8 @@ const STORED = log([message('m1', 1, 'one', { role: 'user' }), message('m2', 2, 
 const LIVE: Array<[string]> = [['m1'], ['m2']]
 const state = () => JSON.parse(readFileSync(sessionLogBootStatePath(), 'utf8'))
 const RETRY = { retryMs: 1 }
+/** What a restore of a log with no history (named `fake`) hands the journal: the log's harness from seq 1, this box's from `from_seq`. */
+const carry = (from_seq: number) => ({ history: [{ harness: 'fake', version: 'unknown', from_seq: 1, at: AT }], from_seq, at: expect.any(String) })
 
 describe('the boot reconcile: when the boot restores (P6.4)', () => {
   test('no native state: the box restores, journals at the claimed generation with the cursors restore returned, and persists the generation', async () => {
@@ -173,8 +175,8 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(api.requests).toEqual(['GET /v1/projects/project-1/sessions/session-1/log/manifest', 'POST /v1/projects/project-1/sessions/session-1/log/restore'])
     expect(store.restores).toHaveLength(1)
     expect(store.restores[0]!.seqMax).toEqual({ thr_root: 2 })
-    expect(boot).toEqual({ generation: 1, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }] })
-    expect(state()).toEqual({ version: 1, generation: 1, unwritten: [] })
+    expect(boot).toEqual({ generation: 1, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }], harness: carry(3) })
+    expect(state()).toEqual({ version: 1, generation: 1, unwritten: [], harness: carry(3) })
   })
 
   test('current native state (every live id held, same generation): no restore, the persisted generation', async () => {
@@ -226,12 +228,12 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     const store = fakeStore(null)
 
     expect((await reconcileSessionLog(store.port, RETRY))?.generation).toBe(5)
-    expect(state()).toEqual({ version: 1, generation: 5, unwritten: ['ctx'] })
+    expect(state()).toEqual({ version: 1, generation: 5, unwritten: ['ctx'], harness: carry(4) })
 
     // The restart: the manifest now names the claimed generation; the store holds what it wrote.
     resetSessionLogJournalForTests()
     const again = fakeApi({ manifest: [manifest(5, [['ctx'], ...LIVE])] })
-    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 5, cursors: [] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 5, cursors: [], harness: carry(4) })
     expect(again.count.restore).toBe(0)
     expect(api.count.restore).toBe(1)
   })
@@ -250,7 +252,7 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect((await reconcileSessionLog(fakeStore(null).port, RETRY))?.generation).toBe(7)
     process.env.KORTIX_SESSION_LOG_RESTORE = '0'
     const off = fakeApi({})
-    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 7, cursors: [] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 7, cursors: [], harness: carry(3) })
     expect(off.requests).toEqual([])
   })
 
@@ -386,7 +388,7 @@ describe('a partial restore (D3): a note for the agent and a notice for the user
     fakeApi({ manifest: [manifest(1, LIVE)], restore: [restoreAnswer(2, STORED)] })
     const store = fakeStore(null)
     const boot = await reconcileSessionLog(store.port, RETRY)
-    expect(boot).toEqual({ generation: 2, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }] })
+    expect(boot).toEqual({ generation: 2, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }], harness: carry(3) })
     expect(store.restores).toHaveLength(1)
     expect(state().session).toBeUndefined()
   })
@@ -418,5 +420,55 @@ describe('a partial restore (D3): a note for the agent and a notice for the user
     const journal = new SessionLogJournal(port, { generation: 1, session: { restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } } })
     expect(await journal.flush()).toBe(true)
     expect(api.journal[0]!.session).toEqual({ title: 'A synthetic title', restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
+  })
+})
+
+describe('the harness history across a switch (P7.1)', () => {
+  const OPENCODE = { harness: 'opencode', version: '1.18.23', from_seq: 1, at: AT }
+  const opencodeLog = log(STORED.threads[0]!.messages, { harness: { current: 'opencode', history: [OPENCODE] } })
+  /** A box of `harness` whose export names only itself, as both adapters do. */
+  const box = (harness: string, version: string): SessionLogPort => ({
+    ...fakeStore(null).port,
+    async changes() {
+      return { messages: [], tombstones: [], threads: [], session: { harness: { current: harness, history: [{ harness, version, from_seq: 1, at: AT }] } } }
+    },
+  })
+  const sent = async (port: SessionLogPort, boot: Awaited<ReturnType<typeof reconcileSessionLog>>, api: ReturnType<typeof fakeApi>) => {
+    expect(await new SessionLogJournal(port, boot!).flush()).toBe(true)
+    return api.journal.at(-1)!.session!.harness
+  }
+
+  test('an OpenCode log restored into a pi box: the journal sends the OpenCode entry and a pi entry from the first seq after the restore, at every boot', async () => {
+    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [restoreAnswer(1, opencodeLog)] })
+    const port = box('pi', '1.0.3')
+    const boot = await reconcileSessionLog(port, RETRY)
+    const harness = await sent(port, boot, api)
+    expect(harness).toEqual({ current: 'pi', history: [OPENCODE, { harness: 'pi', version: '1.0.3', from_seq: 3, at: expect.any(String) }] })
+
+    // A daemon restart (no restore): the persisted carry gives the same history.
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, LIVE)] })
+    const restarted = await reconcileSessionLog(port, RETRY)
+    expect(again.count.restore).toBe(0)
+    expect(await sent(port, restarted, again)).toEqual(harness)
+  })
+
+  test('the same harness (a new version too) adds no entry; a log that already switched keeps its whole history', async () => {
+    let api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [restoreAnswer(1, opencodeLog)] })
+    let port = box('opencode', '1.18.24')
+    expect(await sent(port, await reconcileSessionLog(port, RETRY), api)).toEqual({ current: 'opencode', history: [OPENCODE] })
+
+    resetSessionLogJournalForTests()
+    const switched = { current: 'pi', history: [OPENCODE, { harness: 'pi', version: '1.0.3', from_seq: 3, at: AT }] }
+    api = fakeApi({ manifest: [manifest(2, LIVE)], restore: [restoreAnswer(3, log(STORED.threads[0]!.messages, { harness: switched }))] })
+    port = box('pi', '1.0.3')
+    expect(await sent(port, await reconcileSessionLog(port, RETRY), api)).toEqual(switched)
+  })
+
+  test('a box that never restored sends the history its adapter exports', async () => {
+    delete process.env.KORTIX_SESSION_LOG_RESTORE
+    const api = fakeApi({})
+    const port = box('pi', '1.0.3')
+    expect(await sent(port, await reconcileSessionLog(port, RETRY), api)).toEqual({ current: 'pi', history: [{ harness: 'pi', version: '1.0.3', from_seq: 1, at: AT }] })
   })
 })

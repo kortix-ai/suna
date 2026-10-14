@@ -252,7 +252,7 @@ export function AccountHubContent() {
   }, [accountId, activeSection, closeHubSheet]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
 
   const account = accountQuery.data;

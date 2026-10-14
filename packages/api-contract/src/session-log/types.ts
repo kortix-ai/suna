@@ -182,8 +182,8 @@ export type TextBlock = BlockBase & { type: 'text'; text: string; model_text?: s
 
 /**
  * Display only. C3: a restore MUST NOT hand a reasoning block to a target whose
- * (provider, model) differs from the block's message model — pi, OpenCode v1 and
- * OpenCode v2 would replay it as visible text. Same-provider continuation data
+ * (provider, model) differs from the block's message model — pi-ai, OpenCode v1 and
+ * OpenCode v2 would replay it as visible text (kortixd's pi adapter drops it, P7.3). Same-provider continuation data
  * (signatures, encrypted_content) lives in ext[harness].
  */
 export type ReasoningBlock = BlockBase & { type: 'reasoning'; text: string; summary?: string[]; redacted?: boolean; ext?: Ext }

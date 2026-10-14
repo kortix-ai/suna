@@ -21,7 +21,17 @@ the project's `pi_harness` feature flag is on, or when the manifest says
 the gateway); OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
 loads its own environment, so only the selected adapter's variables are parsed.
 There is no per-request switching: one box, one harness, for the life of the
-session (a restart or resume re-reads the selection).
+box. A new box of the session re-reads the selection, so a change of the flag or
+of `runtime:` switches an existing session's harness at its next new box. With
+`session_log_restore` on, that box restores the log into the new harness and
+records the switch in `harness.history` ("Harness history, a switch" below).
+`POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
+before that happens: whether the switch can happen (`available`, `reason`:
+`same_harness`, or `llm_gateway_off` for pi), whether the new box restores the
+log (`restores`; off, `losses` starts with `history`), what the session uses
+that the target handles worse (`losses`) and everything the target lacks, used
+or not (`unsupported`). The contract is `switchPreflight` in
+`@kortix/api-contract/session-log` (`capabilities.ts`).
 
 ## Ownership
 
@@ -264,6 +274,17 @@ root. No turn runs at either point.
   The stored log then keeps `restore_grade: 'partial'`, so every later restore
   of the session is partial too (no new note unless it loses more); only a
   restore of a log graded otherwise clears the notice. P5.6 shows it.
+- **Harness history, a switch (P7.1).** Each adapter exports a one-entry
+  `harness.history` (its own harness). A restore keeps the log's history
+  (`HarnessCarry` in `session-log-restore.json`: the history, the first root
+  seq after the restore, the restore time), and the journal sends it in place
+  of the adapter's (`carryHarness`), at every boot. When this box's harness is
+  another than the last entry's (a session whose log says `opencode` boots on
+  pi), the journal appends `{ harness, version, from_seq, at }`; P5.6 draws the
+  switch before the turn at `from_seq`. A new version of the same harness adds
+  no entry. A log without a history (a converted log) starts with the harness
+  its `harness.current` names. Limit: a box that never restored (flag off)
+  sends its adapter's one-entry history, which replaces the stored one.
 - **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
   all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
   1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the flag
@@ -332,8 +353,9 @@ Known limits of the OpenCode export:
 ### Bumping a harness (P6.5)
 
 Each adapter declares in its capabilities what its oracle suites passed against:
-`PI_CAPABILITIES` (`pi/session-log.ts`) and `OPENCODE_CAPABILITIES`
-(`open-code/session-log.ts`), field `harness_versions` (a semver range, today
+`PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`,
+`capabilities.ts`: apps/api reads the same manifests for the switch preflight,
+`POST /v1/projects/:p/sessions/:s/log/switch-preflight`), field `harness_versions` (a semver range, today
 `1.0.3` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
 by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
 reads them and fails when a pin leaves them:
@@ -365,7 +387,7 @@ The suites run in the `packages` lane (`tests/bin/package-quality.ts` runs
 prove the oracle can fail: OpenCode's golden test checks a log with one changed
 answer against the request and expects a difference, and pi's partial-log test
 expects exactly the one difference the restore dropped. A broken mapping fails
-the suites: dropping pi's reasoning fails 2 of 19 pi restore tests, writing
+the suites: dropping pi's reasoning fails 1 of 22 pi restore tests, writing
 OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
 no fixture holds an assistant text with `model_text` (no harness exports one),
 so OpenCode's restore passes when it drops that field.
@@ -786,6 +808,24 @@ message flagged `summary` with the summary text or an error,
 transcript keeps every message. A project's `settings.json` in the pi config
 dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
+
+Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
+block that another model wrote as visible assistant text, and pi's summarizers
+(compaction, branch summary) flatten every thinking block into the prompt
+text. `pi/reasoning.ts` removes the thinking of another model on both paths,
+with pi-ai's own test (provider, api, model id): `withoutForeignReasoning`
+wraps the stream function of the root and every child agent, and the hidden
+`kortix-reasoning` extension filters the summarizer input in
+`session_before_compact` and `session_before_tree`. A model switch (a prompt's
+`model`, `POST /kortix/env`) and a restored log written by another model or
+harness both go through it. The same model's thinking goes back unchanged, and
+the store and the session log keep every block.
+`PI_CAPABILITIES.native.reasoning_replay` is `same_model` (OpenCode: `lowers_to_text`), so the
+switch preflight lists another model's in-context reasoning as a `lost` line on a
+switch from OpenCode to pi (OpenCode showed it as text). modelView compares
+provider and model only, so the restore gives a `kortix` message without `api`
+(a v1 or OpenCode-converted log) the gateway dialect `openai-completions`;
+pi-ai then sees the same model and keeps its reasoning.
 
 `GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
 dir, and the templates of pi packages) as slash commands.
