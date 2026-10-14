@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { UnifiedMarkdown } from './unified-markdown';
+import { MarkdownImage, UnifiedMarkdown } from './unified-markdown';
 import { prepareMarkdownSource } from './unified-markdown-utils';
 
 function withIntl(node: ReactNode) {
@@ -699,5 +699,23 @@ describe('UnifiedMarkdown — a link to a workspace file', () => {
     );
 
     expect(html).not.toContain('<button');
+  });
+});
+
+describe('MarkdownImage — a remote image in untrusted content', () => {
+  const SRC = 'https://img.example.test/a.png';
+  test('the default placeholder is a labelled button with the host text', () => {
+    const html = renderToStaticMarkup(withIntl(<MarkdownImage src={SRC} flush />));
+    expect(html).toMatch(/<button[^>]*>[\s\S]*<span class="truncate">/);
+  });
+
+  test('compact: an icon-only button that fills its thumbnail and keeps its name in aria-label and title', () => {
+    const html = renderToStaticMarkup(withIntl(<MarkdownImage src={SRC} flush compact />));
+    const button = html.match(/<button[^>]*>/)![0];
+    expect(button).toContain('size-full');
+    expect(button).toMatch(/aria-label="[^"]+"/);
+    expect(button).toMatch(/title="[^"]+"/);
+    expect(html).not.toContain('class="truncate"');
+    expect(html).not.toContain('<img');
   });
 });

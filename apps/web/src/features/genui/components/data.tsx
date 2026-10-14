@@ -186,7 +186,7 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
             </span>
             {item.props.image ? (
               <span className="bg-muted size-10 shrink-0 overflow-hidden rounded-md [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-cover [&_img]:outline-0">
-                <MarkdownImage src={String(item.props.image)} alt="" flush />
+                <MarkdownImage src={String(item.props.image)} alt="" flush compact />
               </span>
             ) : null}
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">

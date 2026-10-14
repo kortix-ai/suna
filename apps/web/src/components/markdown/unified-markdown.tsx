@@ -150,8 +150,12 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   );
 }
 
-/** `flush`: no vertical margin, for an image inside a generative UI block that spaces its own children. */
-export function MarkdownImage({ src, alt, flush = false }: { src?: string; alt?: string; flush?: boolean }) {
+/**
+ * `flush`: no vertical margin, for an image inside a generative UI block that spaces its own children.
+ * `compact`: the click-to-load placeholder is an icon-only button that fills its box, for a small thumbnail
+ * whose box would clip the labelled button.
+ */
+export function MarkdownImage({ src, alt, flush = false, compact = false }: { src?: string; alt?: string; flush?: boolean; compact?: boolean }) {
   const { proxy, policy } = useContext(MarkdownRenderContext);
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [loadRequested, setLoadRequested] = useState(false);
@@ -159,6 +163,22 @@ export function MarkdownImage({ src, alt, flush = false }: { src?: string; alt?:
   const resolvedSrc = proxy(src) ?? src;
   const remoteHost = remoteImageHost(src, resolvedSrc);
   if (policy.remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
+    const label = tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', { host: remoteHost });
+    if (compact) {
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={label}
+          aria-label={label}
+          onClick={() => setLoadRequested(true)}
+          className="text-muted-foreground size-full"
+        >
+          <ImageIcon className="size-4" />
+        </Button>
+      );
+    }
     return (
       <Button
         type="button"
@@ -169,11 +189,7 @@ export function MarkdownImage({ src, alt, flush = false }: { src?: string; alt?:
         className="text-muted-foreground max-w-full"
       >
         <ImageIcon className="size-3.5 shrink-0" />
-        <span className="truncate">
-          {tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', {
-            host: remoteHost,
-          })}
-        </span>
+        <span className="truncate">{label}</span>
       </Button>
     );
   }

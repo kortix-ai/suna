@@ -210,7 +210,7 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
             <li key={id} data-card={id} className="flex gap-4 py-4 first:pt-0 last:pb-0">
               {props.image ? (
                 <div className="bg-muted size-18 shrink-0 self-start overflow-hidden rounded-lg p-1.5 [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-contain [&_img]:outline-0">
-                  <MarkdownImage src={String(props.image)} alt="" flush />
+                  <MarkdownImage src={String(props.image)} alt="" flush compact />
                 </div>
               ) : null}
               <CardText props={props} />

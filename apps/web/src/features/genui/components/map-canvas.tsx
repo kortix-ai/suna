@@ -132,7 +132,7 @@ function PlaceCard({ place }: { place: MapPlace }) {
       <div className="flex gap-3">
         {place.image ? (
           <div className="bg-muted size-16 shrink-0 overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-cover [&_img]:outline-0">
-            <MarkdownImage src={place.image} alt="" flush />
+            <MarkdownImage src={place.image} alt="" flush compact />
           </div>
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
