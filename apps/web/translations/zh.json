@@ -20155,7 +20155,8 @@
     "verified": "已验证",
     "invalidCode": "该验证码无效。请检查身份验证器应用后重试。",
     "noFactorTitle": "设置双重身份验证",
-    "noFactorDescription": "此操作需要双重身份验证。请在“设置 → 安全”中添加身份验证器应用，然后重试。"
+    "noFactorDescription": "此操作需要双重身份验证。请在“设置 → 安全”中添加身份验证器应用，然后重试。",
+    "setUp": "设置身份验证器"
   },
   "connectorPages": {
     "install": "安装",

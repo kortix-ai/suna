@@ -190,8 +190,8 @@ export type ConnectorApprovalState =
 
 export interface ConnectorApprovalStateInput {
   executionId: string;
-  /** The project's review list (`reviewKeys.list`, the query `ReviewPage`
-   *  reads). The API adapts only still-pending connector calls into it, as
+  /** The project's pending approvals (`useReviewItems` with `kind: 'approval'`).
+   *  The API adapts only still-pending connector calls into the review list, as
    *  `call:<execution_id>`. `undefined` until it loads. `canResolve` is the
    *  call's own verdict (`ReviewApprovalAction.canResolve`), when known.
    *  A failed request holds no list, so no verdict: `unknown`. */

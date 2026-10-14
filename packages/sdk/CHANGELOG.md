@@ -5,6 +5,30 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (bounded review reads)
+- `getReviewSummary(projectId)` and `project(id).review.summary()`
+  (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you
+  counts of the review inbox, `{ needs_you_total, needs_you_by_session }`.
+  Read it for a badge or a per-session indicator instead of the list. A
+  connector call the caller may not resolve counts nowhere. Additive
+  (KRTX-2316).
+- `listReviewItems` takes `sessionId`, `limit` and `cursor`
+  (`ReviewItemsQuery`) and resolves to `ReviewItemsPage`, which adds
+  `next_cursor` (null on the last page). The server now returns one page:
+  50 items by default, at most 200, with Needs you first, then Waiting, then
+  Done, newest first within each. A caller that read the whole inbox from one
+  response pages with `cursor` or passes `segment`. Additive types.
+- `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
+  The server now returns one page: 50 change requests by default, at most
+  500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
+- React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
+  60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
+  rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
+  keys `qk.project.reviewSummary`, `qk.project.reviewItemsScope` and
+  `qk.project.reviewItemPages`. Additive.
+
 ### Added (who may decide an approval)
 - `SessionAuditAction.can_resolve`: true only on an unresolved connector call
   the viewer may approve or deny, the verdict `resolveApproval` would get

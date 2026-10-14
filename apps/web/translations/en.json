@@ -20155,7 +20155,8 @@
     "verified": "Verified",
     "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
     "noFactorTitle": "Set up two-factor authentication",
-    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again."
+    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again.",
+    "setUp": "Set up authenticator"
   },
   "connectorPages": {
     "install": "Install",

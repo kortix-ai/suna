@@ -20155,7 +20155,8 @@
     "verified": "Verificado",
     "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
     "noFactorTitle": "Configure a autenticação de dois fatores",
-    "noFactorDescription": "Esta ação exige autenticação de dois fatores. Adicione um app autenticador em Configurações → Segurança e tente novamente."
+    "noFactorDescription": "Esta ação exige autenticação de dois fatores. Adicione um app autenticador em Configurações → Segurança e tente novamente.",
+    "setUp": "Configurar autenticador"
   },
   "connectorPages": {
     "install": "Instalar",

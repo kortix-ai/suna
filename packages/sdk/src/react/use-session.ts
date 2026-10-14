@@ -141,6 +141,29 @@ export function shouldRetrySessionStart(
 }
 
 /**
+ * Whether a human coming BACK to this tab should re-open (wake) a stopped
+ * session. Two states park a session with no way back except an explicit
+ * Restart or a remount:
+ *
+ * - the hold: a user Stop made from this tab (`stoppedByUserRef`);
+ * - the cached answer is terminal-`stopped`: the poll stopped dead on the
+ *   dormant answer (a manual stop from any host, or the idle reaper), and
+ *   `shouldPollSessionStart` will never fire again for it.
+ *
+ * The caller fires this only on an absent→present presence transition — a
+ * person who left and returned — and resets the open intent before it, so the
+ * wake wins the `userStopFollowsIntent` race that parked the session. A stop
+ * pressed moments ago in this same tab (presence never dropped) is not a
+ * return, and stays stopped.
+ */
+export function presenceReturnReopensSession(
+  heldByThisTab: boolean,
+  cachedStage: string | null | undefined,
+): boolean {
+  return heldByThisTab || cachedStage === 'stopped';
+}
+
+/**
  * Gap between `/start` polls. The server long-polls each tick, so this is the
  * pause between holds, not the latency to observe `ready`.
  */
@@ -1131,6 +1154,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const presenceAlertsRef = useRef(presenceAlerts);
   const presencePageExitRef = useRef(presencePageExit);
   const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
+  // The previous presence report, to recognize an absent→present transition —
+  // a human coming BACK (tab shown again, input after idle, page unhidden).
+  // Null until the first report: the initial present at mount is not a return.
+  const lastPresenceActiveRef = useRef<boolean | null>(null);
   // Until when this person's presence keeps the computer on (KRTX-1729), from
   // the latest present PUT's response. Null while absent, for a viewer, for a
   // computer the renewal found not running, and from a turn's start until the
@@ -1155,6 +1182,25 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // Without page exit, an absent PUT goes without `keepalive`, as before
     // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
+      // A human coming back to a stopped session is a fresh visit: release the
+      // stop hold and re-open (`presenceReturnReopensSession`). Presence-gated
+      // on purpose — a background tab never reports a return, so it never
+      // wakes a box for nobody. A stop made seconds ago in THIS tab (presence
+      // never dropped) is not a return and stays stopped.
+      if (
+        active &&
+        lastPresenceActiveRef.current === false &&
+        presenceReturnReopensSession(
+          stoppedByUserRef.current === sessionId,
+          queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId))
+            ?.stage,
+        )
+      ) {
+        stoppedByUserRef.current = null;
+        openedAtRef.current = { sessionId, at: Date.now() };
+        void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+      }
+      lastPresenceActiveRef.current = active;
       const report = ++presenceReportRef.current;
       if (!active) setPresenceAwake(null);
       const keepalive = !active && presencePageExitRef.current;
@@ -1183,7 +1229,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       presenceReporterRef.current = null;
       stop();
     };
-  }, [browserPresence, presenceTabId, projectId, sessionId]);
+  }, [browserPresence, presenceTabId, projectId, sessionId, queryClient]);
   useEffect(() => {
     presenceAlertsRef.current = presenceAlerts;
     presenceReporterRef.current?.setAlerts(presenceAlerts);
