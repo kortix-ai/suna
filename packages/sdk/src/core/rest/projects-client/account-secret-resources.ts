@@ -1,6 +1,6 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
-import type { SecretConsumer, SecretDeliveryStrategy } from './secrets';
+import type { SecretConsumer, SecretDeliveryStrategy, SecretValueStatus } from './secrets';
 
 export interface AccountSecretResource {
   secret_id: string;
@@ -26,6 +26,10 @@ export interface AccountSecretResource {
   updated_at: string;
   granted_user_ids: string[];
   can_use: boolean;
+  /** Can the server decrypt the stored value? `undecryptable` means enter it
+   *  again with `rotateAccountSecretResource` (a ChatGPT login: reconnect).
+   *  Absent from APIs older than this field. */
+  status?: SecretValueStatus;
 }
 
 export interface CreateAccountSecretResourceInput {
