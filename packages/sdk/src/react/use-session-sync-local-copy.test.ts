@@ -452,3 +452,47 @@ test("a sub-agent reads its own saved window by `child`, and never touches the p
   expect(requests[1]).toContain('child=ses_subagent_one');
   expect(requests[1]).toContain('before=msg_ses_subagent_one_1');
 });
+
+test('a runtime read that holds the saved cursor and leaves no runtime cursor ends the saved paging: hasOlder is false', async () => {
+  // The saved copy is the newest window (2..4, cursor msg_…_2). The runtime then answers its
+  // whole history (1..4, no cursor). Every older saved message is in the runtime too: offering
+  // "earlier messages" would page a window the store already holds (mobile showed the control
+  // after the whole history had loaded).
+  const ROOT = 'ses_whole_history';
+  const requests: string[] = [];
+  const window = envelope(ROOT, 4);
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json({ ...window, messages: window.messages.slice(1), next_cursor: `msg_${ROOT}_2` });
+  }) as unknown as typeof fetch;
+
+  const hook = await mount(ROOT, offline);
+  await settle();
+  expect(hook.value().messages).toHaveLength(3);
+  expect(hook.value().hasOlder).toBe(true);
+
+  await act(async () => {
+    useSyncStore.getState().hydrate(ROOT, window.messages as never);
+  });
+  expect(hook.value().messages).toHaveLength(4);
+  expect(hook.value().hasOlder).toBe(false);
+  await act(async () => {
+    await hook.value().loadOlder();
+  });
+  expect(requests).toHaveLength(1);
+});
+
+test('a runtime read that lacks the saved cursor (the box lost its state) keeps the saved paging', async () => {
+  const ROOT = 'ses_lost_box';
+  const window = envelope(ROOT, 4);
+  globalThis.fetch = mock(async () =>
+    Response.json({ ...window, messages: window.messages.slice(1), next_cursor: `msg_${ROOT}_2` }),
+  ) as unknown as typeof fetch;
+
+  const hook = await mount(ROOT, offline);
+  await settle();
+  await act(async () => {
+    useSyncStore.getState().hydrate(ROOT, [message(ROOT, 9)] as never);
+  });
+  expect(hook.value().hasOlder).toBe(true);
+});

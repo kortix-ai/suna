@@ -614,6 +614,7 @@ The turn model over session-log blocks: what a transcript renders a thread from.
 | `sessionLogReferencedTexts(messages)` | The texts the API stored by reference (a text over 256 kB keeps a 16 kB preview, plus `ref` and `bytes`) that a transcript renders, text blocks and tool results' `content` items (not `model_content`), once per `ref`: `{ ref, bytes }`. Read one with `fetchSessionAttachment(ref)`. | new |
 | `sessionLogWithFullTexts(thread, texts)` | `thread` with each text whose `ref` is a key of `texts` replaced by the whole text, without `ref` and `bytes`. Untouched messages, and the thread when nothing changes, keep their identity. | new |
 | `sessionLogFullTextAction(refs)` | How a host offers the whole of `refs`: `'inline'` up to `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'download'` (a multi-MB text rendered as markdown stalls the page). | new |
+| `sessionLogFullTextPlan(refs)` | Which of `refs` show inline and which download: the smallest texts fill the 1 MiB inline budget first, only the rest download (`{ inline, download }`, both in record order). Nothing downloads exactly when `sessionLogFullTextAction` says `'inline'`. | new |
 
 A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept a `SessionLogTurn[]` as well as v1 turns, and `stepLabel` any session-log block (a non-call block reads by its `type`).
 
