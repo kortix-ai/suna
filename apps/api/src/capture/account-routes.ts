@@ -41,6 +41,7 @@ import {
   chunkOf,
   deviceInAccount,
   deviceView,
+  devicesView,
   frameOf,
   frameVideoOffsetMs,
   listDevices,
@@ -60,6 +61,7 @@ import {
   type Who,
 } from './reads';
 import { captureStoreConfigured } from './store';
+import { latestCaptureVersion } from './update-manifest';
 import { enqueueLink, pollDevice } from './workers';
 import { isAccountMember, readWorkspace, setCaptureEnabled } from './workspace';
 
@@ -387,7 +389,7 @@ accountsRouter.openapi(
     const query = c.req.valid('query');
     const access = await captureAccess(c, { userId: query.user_id, accountWide: query.scope === 'account' });
     if (isResponse(access)) return access as never;
-    return c.json({ devices: (await listDevices(access.accountId, whoUserId(access.subject))).map((d) => deviceView(d)) }, 200);
+    return c.json(devicesView(await listDevices(access.accountId, whoUserId(access.subject)), await latestCaptureVersion()), 200);
   },
 );
 
@@ -407,7 +409,7 @@ accountsRouter.openapi(
     if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot revoke a capture device');
     const device = await loadDevice(access, c.req.valid('param').deviceId, { write: true });
     if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
-    return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
+    return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer), Date.now(), await latestCaptureVersion()), 200);
   },
 );
 
@@ -447,7 +449,7 @@ accountsRouter.openapi(
     }
     if (userId) await enqueueLink(access.accountId, device.deviceId, userId);
     annotateAuditEvent({ resourceType: 'capture_device', resourceId: device.deviceId, metadata: { member_user_id: userId, previous_user_id: device.userId } });
-    return c.json(deviceView(outcome.device), 200);
+    return c.json(deviceView(outcome.device, Date.now(), await latestCaptureVersion()), 200);
   },
 );
 

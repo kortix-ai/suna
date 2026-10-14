@@ -27,6 +27,7 @@ import {
   stopAuditReconciliationWorker,
 } from './workers/audit-reconciliation-worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
+import { startCaptureHealthWorker, stopCaptureHealthWorker } from './workers/capture-health-worker';
 import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
@@ -229,6 +230,8 @@ async function startSingletonWorkers() {
   startProjectSnapshotWorker();
   // Kortix Capture: index polling, maintenance, and the SQS events reader when configured.
   startCaptureWorkers();
+  // Fleet health: tells the people with capture.manage when a computer stops recording, and when it records again.
+  startCaptureHealthWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -272,6 +275,7 @@ async function stopSingletonWorkers() {
   stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
   stopCaptureWorkers();
+  stopCaptureHealthWorker();
   const { stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
