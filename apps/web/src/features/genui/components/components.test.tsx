@@ -44,18 +44,18 @@ link = Link("Book", "https://example.com/book")`);
     expect(html).not.toContain('data-fallback');
   });
 
-  test('badges follow Paper Badge 01: the tone paints the tint and the label; neutral is a muted well', () => {
+  test('badges: the tone paints the /15 tint only, the label stays ink (AA on every tint); neutral is a muted well', () => {
     const html = render(`root = Stack([bad, good, plain])
 bad = Badge("Sold out", "bad")
 good = Badge("Top pick", "good")
 plain = Badge("Hotel")`);
     const chip = (label: string) => html.match(new RegExp(`<span[^>]*>${label}</span>`))?.[0] ?? '';
     expect(chip('Sold out')).toContain('bg-kortix-red/15');
-    expect(chip('Sold out')).toContain('text-kortix-red');
-    // Red is a status hue here, never the destructive action color.
-    expect(chip('Sold out')).not.toContain('text-destructive');
+    expect(chip('Sold out')).toContain('text-foreground');
+    expect(chip('Sold out')).not.toMatch(/text-(kortix-red|destructive)/);
     expect(chip('Top pick')).toContain('bg-kortix-green/15');
-    expect(chip('Top pick')).toContain('text-kortix-green');
+    expect(chip('Top pick')).toContain('text-foreground');
+    expect(chip('Top pick')).not.toContain('text-kortix-green');
     expect(chip('Hotel')).toContain('bg-muted');
     expect(chip('Hotel')).not.toContain('kortix-');
   });

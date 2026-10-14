@@ -21,13 +21,12 @@ const CALLOUT = {
 
 export const badgeTone = (tone: unknown): BadgeTone => BADGE_TONE[(tone ?? 'neutral') as keyof typeof BADGE_TONE] ?? 'neutral';
 
-// Paper Badge 01 (picked over color.md D5's ink label): the tone paints the /15 tint and the label.
-// The label is 12px medium; the accent hues sit near 3:1 on white, so a badge stays a short status word.
+// The tone paints the /15 tint; the 12px label stays ink, as GenuiCallout does (D5): an accent never paints text.
 const BADGE_CLASS: Record<BadgeTone, string> = {
   neutral: 'bg-muted text-foreground',
-  success: 'bg-kortix-green/15 text-kortix-green',
-  warning: 'bg-kortix-orange/15 text-kortix-orange',
-  destructive: 'bg-kortix-red/15 text-kortix-red',
+  success: 'bg-kortix-green/15 text-foreground',
+  warning: 'bg-kortix-orange/15 text-foreground',
+  destructive: 'bg-kortix-red/15 text-foreground',
 };
 
 export function GenuiBadge({ props }: GenuiComponentProps) {
