@@ -43,20 +43,28 @@ interface GenuiFenceProps {
 
 /**
  * The block as markdown, from the SDK conversion. The converter is a dynamic import; until it
- * answers, or when it fails too, this renders nothing: never the OpenUI source.
+ * answers this renders nothing. When it fails too (a stale deploy's second chunk), the raw fence
+ * source shows as a plain code block, so the reader never loses the content.
  */
 function GenuiMarkdownFallback({ code, version, streaming, trust, variant }: Omit<GenuiFenceProps, 'cutOff'>) {
-  const [markdown, setMarkdown] = useState('');
+  const [markdown, setMarkdown] = useState<string | null>('');
   useEffect(() => {
     let live = true;
     genuiBlockText(code, version, { streaming }).then(
       (text) => live && setMarkdown(text),
-      () => {},
+      () => live && setMarkdown(null),
     );
     return () => {
       live = false;
     };
   }, [code, version, streaming]);
+  if (markdown === null) {
+    return (
+      <pre className="not-prose bg-popover text-foreground my-5 max-h-[520px] overflow-auto rounded-md border px-4 py-2.5 font-mono text-xs leading-[1.65] whitespace-pre">
+        {code}
+      </pre>
+    );
+  }
   return markdown ? <UnifiedMarkdown content={markdown} trust={trust} variant={variant} /> : null;
 }
 
