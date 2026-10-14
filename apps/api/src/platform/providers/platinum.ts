@@ -106,11 +106,15 @@ const START_IN_FLIGHT_STATES: ReadonlySet<string> = new Set([
  * 503 codes Platinum answers with "retry later" while it moves a stopped box
  * to another host. The S3 copy keeps warming the target, so the next /start
  * finishes faster (prod 2026-10-13: copies of 53 s, 12 s, 4 s, then running).
+ * `capacity` is "host saturated": the box's own host has no room until other
+ * boxes stop. Failing on it parked the session stopped and dropped the prompt
+ * that woke it (staging and prod 2026-10-14).
  */
 const START_RETRY_CODES: ReadonlySet<string> = new Set([
   'relocation_fetch_timeout',
   'relocation_failed',
   'relocation_unavailable',
+  'capacity',
 ]);
 export const START_RETRY_BACKOFF_MS = 2_000;
 /**
