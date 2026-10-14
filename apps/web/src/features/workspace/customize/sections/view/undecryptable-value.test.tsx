@@ -17,6 +17,9 @@ globals.window = win;
 globals.document = win.document;
 globals.navigator = win.navigator;
 globals.location = win.location;
+// secrets-view pulls in stores that read storage when they load.
+globals.localStorage = win.localStorage;
+globals.sessionStorage = win.sessionStorage;
 globals.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
 globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
 for (const key of Object.getOwnPropertyNames(win)) {
