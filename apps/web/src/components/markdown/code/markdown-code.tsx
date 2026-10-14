@@ -60,7 +60,7 @@ function GenuiMarkdownFallback({ code, version, streaming, trust, variant }: Omi
   }, [code, version, streaming]);
   if (markdown === null) {
     return (
-      <pre className="not-prose bg-popover text-foreground my-5 max-h-[520px] overflow-auto rounded-md border px-4 py-2.5 font-mono text-xs leading-[1.65] whitespace-pre">
+      <pre className="not-prose bg-popover text-foreground my-5 max-h-[520px] overflow-auto rounded-md border px-4 py-2.5 font-mono text-xs whitespace-pre">
         {code}
       </pre>
     );
