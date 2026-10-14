@@ -269,7 +269,8 @@ def recording_ok(baseline_frames, state0, what):
         st = person()
         if st.get("recorder_running") is not True:
             return False
-        return state0 != "recording" or (st.get("counts") or {}).get("frames", 0) > baseline_frames
+        # A recorder that says paused (screen locked, idle) is the person's state, not the update's.
+        return state0 != "recording" or st.get("state") != "recording" or (st.get("counts") or {}).get("frames", 0) > baseline_frames
     wait_for(f"recording continues {what}", ok, timeout=300, every=5)
 
 
