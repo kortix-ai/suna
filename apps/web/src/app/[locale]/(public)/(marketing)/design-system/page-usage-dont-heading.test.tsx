@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
-import { createElement } from 'react';
-import { act, create, type ReactTestInstance } from 'react-test-renderer';
-import { NextIntlClientProvider } from '@/i18n/use-translations';
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import { NextIntlClientProvider, type AbstractIntlMessages } from '@/i18n/use-translations';
 import de from '../../../../../../translations/de.json';
 import en from '../../../../../../translations/en.json';
 import es from '../../../../../../translations/es.json';
@@ -13,6 +12,7 @@ import sr from '../../../../../../translations/sr.json';
 import zh from '../../../../../../translations/zh.json';
 
 import DesignSystemPage from './page';
+import type { MessageTree } from '@/i18n/client-catalog';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -27,7 +27,10 @@ import DesignSystemPage from './page';
  * visitor does: the `#usage` deep link (the page's followHash effect).
  */
 
-const EXPECTED_DONT_HEADINGS: Record<string, string> = {
+const LOCALES = ['en', 'es', 'de', 'fr', 'it', 'ja', 'pt', 'sr', 'zh'] as const;
+type CatalogLocale = (typeof LOCALES)[number];
+
+const EXPECTED_DONT_HEADINGS: Record<CatalogLocale, string> = {
   en: "Don't",
   es: 'No hagas',
   de: 'Nicht',
@@ -39,7 +42,17 @@ const EXPECTED_DONT_HEADINGS: Record<string, string> = {
   zh: '不要',
 };
 
-const CATALOGS: Record<string, object> = { en, es, de, fr, it, ja, pt, sr, zh };
+const CATALOGS: Record<CatalogLocale, MessageTree> = {
+  en,
+  es,
+  de,
+  fr,
+  it,
+  ja,
+  pt,
+  sr,
+  zh,
+};
 
 Object.defineProperty(globalThis, 'window', {
   value: {
@@ -69,21 +82,25 @@ function paragraphText(node: ReactTestInstance): string {
   return node.children.map((child) => (typeof child === 'string' ? child : '')).join('');
 }
 
-test.each(Object.keys(EXPECTED_DONT_HEADINGS))(
+test.each([...LOCALES])(
   "design-system usage 'Don't' heading renders the complete %s clause",
   async (locale) => {
-    const expected = EXPECTED_DONT_HEADINGS[locale]!;
-    let root: Awaited<ReturnType<typeof create>> | null = null;
+    const expected = EXPECTED_DONT_HEADINGS[locale];
+    const rendered: ReactTestRenderer[] = [];
     try {
       await act(async () => {
-        root = create(
-          createElement(
-            NextIntlClientProvider,
-            { locale, messages: CATALOGS[locale] },
-            createElement(DesignSystemPage),
+        rendered.push(
+          create(
+            <NextIntlClientProvider
+              locale={locale}
+              messages={CATALOGS[locale] as AbstractIntlMessages}
+            >
+              <DesignSystemPage />
+            </NextIntlClientProvider>,
           ),
         );
       });
+      const root = rendered[0];
       if (!root) throw new Error('Design-system page did not render');
       // Scope to the usage section: "Don't" also appears verbatim elsewhere on
       // the page (line566JsxTextDonAposT), so the page-level match is not unique.
@@ -94,7 +111,7 @@ test.each(Object.keys(EXPECTED_DONT_HEADINGS))(
       expect(headings).toHaveLength(1);
       expect(paragraphText(headings[0]!)).toBe(expected);
     } finally {
-      if (root) await act(async () => root!.unmount());
+      for (const r of rendered) await act(async () => r.unmount());
     }
   },
 );
