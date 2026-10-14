@@ -156,6 +156,8 @@ for (const store of STORES) {
         await held;
         await route.continue().catch(() => {});
       });
+      // The saved-history read waits for the held snapshot for 2 s at most,
+      // then asks its own route (KRTX-189).
       const history = page.waitForResponse(
         (r) =>
           r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
@@ -691,8 +693,12 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
         await route.continue().catch(() => {});
       });
       await test.step('saved history and the sent message paint before wake completes', async () => {
+        // The saved window arrives once (KRTX-189): in the session-open
+        // snapshot, or from the saved-history route when the snapshot is slow.
         const history = page.waitForResponse(
-          (r) => r.url().includes(`${sessionPath}/transcript?`) && r.url().includes('history=true'),
+          (r) =>
+            r.url().includes(`${sessionPath}/snapshot`) ||
+            (r.url().includes(`${sessionPath}/transcript?`) && r.url().includes('history=true')),
         );
         await page.goto(sessionPath, { waitUntil: 'domcontentloaded' });
         expect((await history).status()).toBe(200);
