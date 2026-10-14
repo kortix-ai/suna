@@ -9,7 +9,7 @@
  * The restore, `POST /:projectId/sessions/:sessionId/log/restore` (P6.1), takes the same
  * credential: a fresh box's daemon claims the session and reads its whole log
  * (`../session-log-restore.ts`). The app-wide `compressResponse` (`../../middleware/compress.ts`)
- * gzips its answer for a caller that accepts gzip; it falls back to `node:zlib` on the image's Bun 1.2.
+ * gzips its answer for a caller that accepts gzip.
  *
  * The read, `GET /:projectId/sessions/:sessionId/log` (P4.2), is a session read: the
  * transcript route's gate, so a session-bound token (a box's `KORTIX_TOKEN`) reads every
