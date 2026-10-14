@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { resolveWorkingTurn } from '@kortix/sdk';
 import { SESSION_FIXTURE } from '@kortix/shared/session-fixture';
 
 import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react';
-import { sessionRows } from '@/lib/session/session-store';
-import { hasCompactionTurn, type TurnBodyTurn } from '@/lib/session/turn-body';
+import { sessionMessageIds } from '@/lib/session/session-store';
+import { lastCompactionTurnIndex } from '@/lib/session/turn-body';
+import { threadOf } from '@/lib/testing/session-log';
 import {
   fixturePendingTurnIds,
   fixtureQueueState,
@@ -58,29 +58,27 @@ describe('seedSessionFixture', () => {
     const cleanup = seedSessionFixture('busy');
     cleanup();
     // The SDK store clears a session to an empty transcript (it has no evict).
-    for (const id of fixtureSessionIds()) expect(sessionRows(id)).toEqual([]);
+    for (const id of fixtureSessionIds()) expect(sessionMessageIds(id)).toEqual([]);
     expect(pendingFor(ROOT).questions).toEqual([]);
   });
 });
 
 describe('fixture turns', () => {
-  test('store messages group into one turn per user message, in fixture order', () => {
-    seedSessionFixture('busy');
-    const turns = fixtureTurns(sessionRows(ROOT));
+  test('the fixture thread groups into one turn per user message, in fixture order', () => {
+    const turns = fixtureTurns(threadOf(SESSION_FIXTURE.messages, ROOT), true);
     const userIds = SESSION_FIXTURE.messages.filter((m) => m.info.role === 'user').map((m) => m.info.id);
-    expect(turns.map((t) => t.userMessage.info.id)).toEqual(userIds);
+    expect(turns.map((t) => t.id)).toEqual(userIds);
   });
 
   test("the SDK's working-turn resolver agrees with the fixture's working turn", () => {
-    const turns = fixtureTurns(SESSION_FIXTURE.messages as never);
-    const resolved = resolveWorkingTurn({ turns: turns as never, hintMessageId: null });
-    expect(resolved.workingTurnId).toBe(SESSION_FIXTURE.working.userMessageId);
-    expect([...fixturePendingTurnIds()]).toEqual(resolved.pendingTurnIds as string[]);
+    const turns = fixtureTurns(threadOf(SESSION_FIXTURE.messages, ROOT), true);
+    expect(turns.filter((t) => t.live).map((t) => t.id)).toEqual([SESSION_FIXTURE.working.userMessageId]);
+    expect([...fixturePendingTurnIds()]).toEqual(turns.filter((t) => t.queued).map((t) => t.id));
   });
 
   test('the compaction turn renders as a landed marker', () => {
-    const turns = fixtureTurns(SESSION_FIXTURE.messages as never) as unknown as TurnBodyTurn[];
-    expect(hasCompactionTurn(turns)).toBe(true);
+    const turns = fixtureTurns(threadOf(SESSION_FIXTURE.messages, ROOT), true);
+    expect(lastCompactionTurnIndex(turns)).toBeGreaterThanOrEqual(0);
   });
 
   test('queue states map to the interrupted and queued rows', () => {

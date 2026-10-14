@@ -67,6 +67,42 @@ Fleet:
   proven (`proven_at` set) vs. failed (`failed_release_id` reported by ≥
   `PROJECT_QUARANTINE_SESSIONS` = 2 distinct sessions — see "Fallback chain").
 
+## Published releases (boot without an API call)
+
+A pi box boots from a release the API built before the box asked for it
+(`publish.ts`):
+
+1. A base ref moves (`notifyBaseBranchMoved`: a push through the git proxy, an
+   API write, a change-request merge, a manifest write, a repository
+   replacement). The API builds the `project` release of the new tip in the
+   background, writes its v3 descriptor to the store
+   (`projects/<project>/releases/<commit>-<ms>.json`, next to the archive), and
+   upserts `kortix.config_release_heads` `(project_id, ref)`. A push made
+   directly on the upstream reaches the API through the descriptor route (any
+   running box's 60 s convergence) or through session create, which publish
+   the tip they resolved.
+2. Session create reads the row and puts `KORTIX_CONFIG_RELEASE` in the box
+   env: the release ID and signed URLs (15 min) of the descriptor and the
+   archive.
+3. The box reads both from the store (`config-release-published` mark) and
+   asks the API nothing.
+
+The row can name the previous commit while a publish runs: that session boots
+one commit behind and converges at the next turn end. There is no env value,
+and the box asks the descriptor route as before, when: there is no row; the
+row is older than 20 days (`REPUBLISH_AFTER_MS`, under the 30-day lifecycle; a
+republish starts); the session's agent is not declared at the row's commit
+(only the route re-points); the release is quarantined; the store URL is not
+reachable from a cloud box (local Supabase); the session is OpenCode, the meta
+coordinator, or has no repository access; or the tree is over the archive cap.
+The box falls back the same way when the URLs expired or the store cannot
+deliver the descriptor, and to the API archive route when the store cannot
+deliver the archive.
+
+Log lines: `[config-releases] published`, `tip not published`, `publish
+failed`, `published release lookup failed`; on the box `[boot-config]
+published release …`.
+
 ## Fallback chain
 
 Two chains, one on each side of the wire. Neither ever leaves a session

@@ -104,3 +104,7 @@ export { readStoredTranscriptWindow } from './session-log-read';
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 // The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
 export { backfillSessionLogs, newBackfillState } from './session-log-backfill';
+
+// Git reads (consumed by config-releases/publish.ts).
+export { resolveCommitSha } from './git/commits';
+export type { GitBackedProject } from './git/types';

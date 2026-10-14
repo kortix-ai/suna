@@ -19,15 +19,14 @@
 import {
   createArtifactKind,
   familyForTool,
-  isToolPart,
   normalizeActivityToolName,
   toWorkspaceRelative,
-  type ToolPart,
+  type SessionLogMessage,
+  type ToolCallBlock,
 } from '@kortix/sdk';
 
-import type { MessageWithParts } from '@/lib/session/types';
 import { withoutTrailingSlashes } from '@kortix/shared/tool-output';
-import { partInput, partMetadata } from './tool-part-accessors';
+import { partInput, partMetadata, partRawOutput } from './tool-part-accessors';
 import { parseImageOutput, parseVideoOutput } from './tools/web-media';
 import { parseShowItems } from './tools/web-show';
 
@@ -108,22 +107,22 @@ function candidate(callID: string, path: string, extra?: Partial<Candidate>): Ca
   return { callID, name, path, kind: 'file', shown: false, ...extra };
 }
 
-function patchCandidates(part: ToolPart): Candidate[] {
-  const raw = partMetadata(part as never).files;
+function patchCandidates(call: ToolCallBlock): Candidate[] {
+  const raw = partMetadata(call).files;
   if (!Array.isArray(raw)) return [];
   const out: Candidate[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
     const file = entry as { type?: unknown; filePath?: unknown; relativePath?: unknown };
     if (file.type === 'delete') continue;
-    const item = candidate(part.callID, text(file.filePath) || text(file.relativePath));
+    const item = candidate(call.call_id, text(file.filePath) || text(file.relativePath));
     if (item) out.push(item);
   }
   return out;
 }
 
-function showCandidates(part: ToolPart): Candidate[] {
-  const input = partInput(part as never);
+function showCandidates(call: ToolCallBlock): Candidate[] {
+  const input = partInput(call);
   const items = parseShowItems(input.items);
   const payloads: Array<Record<string, unknown>> =
     items && items.length > 0 ? (items as never) : [input];
@@ -132,7 +131,7 @@ function showCandidates(part: ToolPart): Candidate[] {
     // A URL is web's "app" output: nothing to open by path.
     if (/^https?:\/\//i.test(text(payload?.url))) continue;
     const path = text(payload?.path);
-    const item = candidate(part.callID, path, {
+    const item = candidate(call.call_id, path, {
       kind: kindOfName(basename(path)),
       title: text(payload?.title) || undefined,
       shown: true,
@@ -142,15 +141,10 @@ function showCandidates(part: ToolPart): Candidate[] {
   return out;
 }
 
-function completedOutput(part: ToolPart): string {
-  const state = part.state as { status?: string; output?: unknown };
-  return state.status === 'completed' && typeof state.output === 'string' ? state.output : '';
-}
-
-function createdCandidates(part: ToolPart): Candidate[] {
-  const kind = createArtifactKind(part);
+function createdCandidates(call: ToolCallBlock): Candidate[] {
+  const kind = createArtifactKind(call);
   if (!kind) return [];
-  const output = completedOutput(part);
+  const output = partRawOutput(call);
   let path = '';
   if (kind === 'image') path = parseImageOutput(output).imagePath ?? '';
   else if (kind === 'video') path = parseVideoOutput(output).videoPath ?? '';
@@ -161,27 +155,26 @@ function createdCandidates(part: ToolPart): Candidate[] {
       path = '';
     }
   }
-  const item = candidate(part.callID, path, { kind });
+  const item = candidate(call.call_id, path, { kind });
   return item ? [item] : [];
 }
 
-function candidatesOf(part: ToolPart): Candidate[] {
-  const status = (part.state as { status?: string }).status;
-  if (status === 'error' || status === 'running' || status === 'pending') return [];
+function candidatesOf(call: ToolCallBlock): Candidate[] {
+  if (call.status !== 'complete') return [];
 
-  const family = familyForTool(part.tool);
-  const tool = normalizeActivityToolName(part.tool);
+  const family = familyForTool(call.name);
+  const tool = normalizeActivityToolName(call.name);
 
   if (family === 'edit') {
-    if (tool === 'apply_patch') return patchCandidates(part);
-    const input = partInput(part as never);
-    const item = candidate(part.callID, text(input.filePath ?? input.file_path ?? input.path));
+    if (tool === 'apply_patch') return patchCandidates(call);
+    const input = partInput(call);
+    const item = candidate(call.call_id, text(input.filePath ?? input.file_path ?? input.path));
     return item ? [item] : [];
   }
 
   if (family === 'create') {
-    if (tool === 'show' || tool === 'show_user') return showCandidates(part);
-    return createdCandidates(part);
+    if (tool === 'show' || tool === 'show_user') return showCandidates(call);
+    return createdCandidates(call);
   }
 
   return [];
@@ -210,13 +203,13 @@ function byRank(files: SessionFile[]): SessionFile[] {
     .map((entry) => entry.file);
 }
 
-export function deriveSessionFiles(messages: MessageWithParts[] | undefined): SessionFile[] {
+export function deriveSessionFiles(messages: ReadonlyArray<SessionLogMessage> | undefined): SessionFile[] {
   if (!messages || messages.length === 0) return [];
 
   // The latest run: every message from the last user message on.
   let latestStart = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].info?.role === 'user') {
+    if (messages[i].role === 'user') {
       latestStart = i;
       break;
     }
@@ -227,9 +220,9 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
 
   messages.forEach((message, messageIndex) => {
     const isLatest = messageIndex >= latestStart;
-    for (const part of message.parts ?? []) {
-      if (!isToolPart(part as never)) continue;
-      for (const item of candidatesOf(part as unknown as ToolPart)) {
+    for (const block of message.blocks) {
+      if (block.type !== 'tool_call') continue;
+      for (const item of candidatesOf(block)) {
         const key = pathKey(item.path);
         const existing = indexByKey.get(key);
         if (existing === undefined) {

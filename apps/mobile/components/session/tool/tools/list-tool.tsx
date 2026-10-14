@@ -27,10 +27,10 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 
-export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+export function ListTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled, openFile } = useToolNavigation();
   const trigger = useMemo(
@@ -43,7 +43,7 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TreeStructureIcon}
       trigger={{ title: trigger.title, subtitle: trigger.subtitle, args: trigger.args }}
       defaultOpen={defaultOpen}
