@@ -7,7 +7,7 @@ const store = Bun.serve({
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname.endsWith('/boom')) return new Response('x', { status: 403, headers: { 'x-amz-request-id': 'req-1' } });
-    return Response.json({ method: request.method, path: url.pathname, query: url.search, host: request.headers.get('host'), auth: request.headers.get('authorization'), body: await request.text() });
+    return Response.json({ method: request.method, path: url.pathname, query: url.search, host: request.headers.get('host'), length: request.headers.get('content-length'), chunked: request.headers.get('transfer-encoding'), auth: request.headers.get('authorization'), body: await request.text() });
   },
 });
 afterAll(() => store.stop(true));
@@ -17,7 +17,7 @@ test('forwards path, query, method, body and the signed Host and Authorization u
   const res = await handle(
     new Request('http://api.example.test/kortix-capture/orgs/a/d/chunk.mp4?uploadId=1', {
       method: 'PUT',
-      headers: { host: 'api.example.test', authorization: 'AWS4-HMAC-SHA256 Credential=synthetic' },
+      headers: { host: 'api.example.test', 'content-length': '11', authorization: 'AWS4-HMAC-SHA256 Credential=synthetic' },
       body: 'chunk-bytes',
     }),
   );
@@ -27,6 +27,9 @@ test('forwards path, query, method, body and the signed Host and Authorization u
     path: '/kortix-capture/orgs/a/d/chunk.mp4',
     query: '?uploadId=1',
     host: 'api.example.test',
+    // The store refuses a chunked PUT with 411, so the length must reach it.
+    length: '11',
+    chunked: null,
     auth: 'AWS4-HMAC-SHA256 Credential=synthetic',
     body: 'chunk-bytes',
   });
